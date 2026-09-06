@@ -37,6 +37,7 @@ import {
 } from '@lantern/shared/utils';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type DirectMessage } from '../../stores/groupStore';
+import { sendOutcomeToast } from '../../stores/sendOutcome';
 import {
   EmptyState,
   ErrorState,
@@ -838,9 +839,12 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       const replyId = replyTo?.id;
       setReplyTo(null);
       isNearBottomRef.current = true;
-      await sendDirectMessageTo(user.id, recipientId, trimmed, threadId, {
+      const outcome = await sendDirectMessageTo(user.id, recipientId, trimmed, threadId, {
         replyToMessageId: replyId,
       });
+      // Queued, not failed — see GroupChatScreen.handleSend.
+      const notice = sendOutcomeToast(outcome.status);
+      if (notice) useToastStore.getState().showToast(notice, 'info');
       listRef.current?.scrollToEnd({ animated: true });
       setNewMessagesBelow(0);
     } catch (error) {
@@ -1803,7 +1807,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         onReload={reloadThread}
         onSend={async (text, replyToMessageId) => {
           if (!user?.id) return;
-          await sendDirectMessageTo(user.id, recipientId, text, threadId, { replyToMessageId });
+          return await sendDirectMessageTo(user.id, recipientId, text, threadId, { replyToMessageId });
         }}
         onEdit={(messageId, content) =>
           editDirectMessage(threadId, messageId, content)

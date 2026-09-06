@@ -73,12 +73,25 @@ export function ForwardMessageSheet({ visible, onClose, messageText }: Props) {
     setSendingKey(target.key);
     const store = useGroupStore.getState();
     try {
-      if (target.kind === 'group') {
-        await store.sendMessage(target.id, messageText.trim(), uid, profileName || undefined);
-      } else {
-        await store.sendDirectMessageTo(uid, target.otherUserId!, messageText.trim(), target.id);
-      }
-      useToastStore.getState().showToast(`Forwarded to ${target.name}`, 'success');
+      const outcome =
+        target.kind === 'group'
+          ? await store.sendMessage(target.id, messageText.trim(), uid, profileName || undefined)
+          : await store.sendDirectMessageTo(
+              uid,
+              target.otherUserId!,
+              messageText.trim(),
+              target.id
+            );
+      // An offline forward is queued, not delivered — claiming "Forwarded" for
+      // a message still sitting in the outbox is the same lie in reverse.
+      useToastStore
+        .getState()
+        .showToast(
+          outcome.status === 'queued'
+            ? `Will forward to ${target.name} when the connection is back`
+            : `Forwarded to ${target.name}`,
+          outcome.status === 'queued' ? 'info' : 'success'
+        );
       onClose();
     } catch {
       useToastStore.getState().showToast(`Could not forward to ${target.name}`, 'error');

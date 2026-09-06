@@ -11,7 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { getConnectionStatus, featureAccents } from '@lantern/shared/design';
-import { useSyncStatus, useNetworkStatus } from '../hooks';
+import { useSyncStatus, useNetworkStatus, usePendingWork } from '../hooks';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useUIStore } from '../stores/uiStore';
 import { retryAuthRefresh } from '../services/api';
@@ -111,6 +111,10 @@ export function SyncStatusIndicator({
 }: SyncStatusIndicatorProps) {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  // The whole queue, not just the SyncQueue: offline test results and queued
+  // question-bank scores are work waiting to upload too, and counting only one
+  // of the three told students "synced" while their work sat unsent.
+  const pending = usePendingWork();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
   const { authOffline, retrying, retry } = useAuthOffline(network.isConnected);
   const { colors } = useTheme();
@@ -123,19 +127,25 @@ export function SyncStatusIndicator({
         // "connected" while nothing gets through.
         isOnline: network.isConnected && !authOffline,
         lowDataMode,
-        pendingSyncCount: sync.pendingCount,
+        pendingSyncCount: pending.total,
         isSyncing: sync.isSyncing,
       }),
-    [network.isConnected, authOffline, lowDataMode, sync.pendingCount, sync.isSyncing]
+    [network.isConnected, authOffline, lowDataMode, pending.total, sync.isSyncing]
   );
 
   const color = statusColor(status.state);
-  const hasPending = sync.pendingCount > 0;
+  const hasPending = pending.total > 0;
   // Only speak for auth while the radio itself is fine; a genuinely offline
   // phone should keep saying "Offline".
   const showAuthOffline = authOffline && network.isConnected;
   const label = showAuthOffline ? AUTH_OFFLINE_SHORT : status.shortLabel;
-  const a11yLabel = showAuthOffline ? AUTH_OFFLINE_LABEL : status.label;
+  // Screen readers get the breakdown, not a bare number: "Offline · 1" alone
+  // never says what the 1 is.
+  const a11yLabel = showAuthOffline
+    ? AUTH_OFFLINE_LABEL
+    : hasPending
+      ? `${status.label}. ${pending.label}`
+      : status.label;
 
   // The compact chip is a floating overlay on every screen. When everything is
   // online and synced it states the default and only covers content, so it
@@ -166,7 +176,7 @@ export function SyncStatusIndicator({
       )}
       {hasPending && !sync.isSyncing && !compact && (
         <View style={[styles.badge, { backgroundColor: color }]}>
-          <Text style={styles.badgeText}>{sync.pendingCount}</Text>
+          <Text style={styles.badgeText}>{pending.total}</Text>
         </View>
       )}
       {showAuthOffline && !compact && (
@@ -198,13 +208,14 @@ export function SyncStatusIndicator({
 export function SyncDot() {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  const pending = usePendingWork();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
   const authOffline = useUIStore((s) => s.authOffline);
 
   const status = getConnectionStatus({
     isOnline: network.isConnected && !authOffline,
     lowDataMode,
-    pendingSyncCount: sync.pendingCount,
+    pendingSyncCount: pending.total,
     isSyncing: sync.isSyncing,
   });
 
@@ -228,13 +239,14 @@ export function SyncBanner({
 }) {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  const pending = usePendingWork();
   const lowDataMode = useSettingsStore(s => s.settings.appearance.lowDataMode);
   const { authOffline, retrying, retry } = useAuthOffline(network.isConnected);
 
   const status = getConnectionStatus({
     isOnline: network.isConnected && !authOffline,
     lowDataMode,
-    pendingSyncCount: sync.pendingCount,
+    pendingSyncCount: pending.total,
     isSyncing: sync.isSyncing,
   });
 
@@ -250,7 +262,8 @@ export function SyncBanner({
     ? AUTH_OFFLINE_LABEL
     : isOffline
       ? 'You are offline. Study progress will sync when you reconnect.'
-      : `${sync.pendingCount} changes waiting to sync`;
+      // Name the work, don't just count it.
+      : pending.label;
 
   return (
     <View style={[styles.banner, { backgroundColor: bannerColor }]}>
@@ -275,7 +288,7 @@ export function SyncBanner({
         </TouchableOpacity>
       ) : (
         !isOffline &&
-        sync.pendingCount > 0 &&
+        pending.total > 0 &&
         onSyncPress && (
           <TouchableOpacity
             onPress={onSyncPress}

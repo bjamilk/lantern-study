@@ -31,6 +31,7 @@ import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { useGroupStore, type Message, type GroupMember } from '../../stores/groupStore';
+import { sendOutcomeToast, type SendOutcome } from '../../stores/sendOutcome';
 import { useTestStore, type TestMode } from '../../stores/testStore';
 import { useOfflineStore } from '../../stores/offlineStore';
 import TestConfigModal, { type TestConfigOptions, type TestConfigAvailableFilter } from '../../components/TestConfigModal';
@@ -1142,10 +1143,15 @@ export function GroupChatView({
                   mentionedUsernames.has(c.username.toLowerCase()) && c.id !== '__all__'
               )
               .map((c) => c.id);
-      await sendMessage(groupId, trimmed, user.id, undefined, {
+      const outcome = await sendMessage(groupId, trimmed, user.id, undefined, {
         replyToMessageId: replyId,
         mentionedUserIds,
       });
+      // Offline is not a failure: the message is in the outbox and its bubble
+      // stays in the "Sending…" state. Say so quietly and leave the composer
+      // clear, so the student does not retype (and duplicate) a queued send.
+      const notice = sendOutcomeToast(outcome.status);
+      if (notice) useToastStore.getState().showToast(notice, 'info');
       listRef.current?.scrollToEnd({ animated: true });
       setNewMessagesBelow(0);
     } catch (error) {
@@ -2500,7 +2506,7 @@ export function GroupChatView({
         onReload={reloadThread}
         onSend={async (text, replyToMessageId) => {
           if (!user?.id) return;
-          await sendMessage(groupId, text, user.id, undefined, { replyToMessageId });
+          return await sendMessage(groupId, text, user.id, undefined, { replyToMessageId });
         }}
         onEdit={(messageId, content) =>
           editGroupMessage(groupId, messageId, content)

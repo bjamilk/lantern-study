@@ -31,7 +31,12 @@ import { useAuthStore } from '../../stores/authStore';
 import { restoreQuestionBanks } from '../../services/api';
 import { PublishQuestionBankModal } from './PublishQuestionBankModal';
 import { getConnectionStatus, syncCopy, featureAccents } from '@lantern/shared/design';
-import { useNetworkStatus } from '../../hooks';
+import { useNetworkStatus, usePendingWork } from '../../hooks';
+import { syncService } from '../../services/syncService';
+import {
+  flushPendingQuestionBankScores,
+  readPendingQuestionBankScores,
+} from '../../utils/pendingQuestionBankScores';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { AppIcon } from '../../components/ui/AppIcon';
 
@@ -83,6 +88,8 @@ export default function OfflineScreen() {
   const userId = useAuthStore(s => s.user?.id) || '';
   const [refreshing, setRefreshing] = useState(false);
   const [restoringBanks, setRestoringBanks] = useState(false);
+  /** True while handleSync drains the sync queue as well as the results. */
+  const [syncingAll, setSyncingAll] = useState(false);
   const [publishTarget, setPublishTarget] = useState<OfflineTest | null>(null);
   const [selectedTab, setSelectedTab] = useState<'downloads' | 'pending'>('downloads');
   const { colors } = useTheme();
@@ -107,11 +114,18 @@ export default function OfflineScreen() {
     clearAllOfflineData,
   } = useOfflineStore();
 
+  // Every queue, not just offline test results: a queued flashcard or message
+  // is work waiting to upload, and counting only results made the screen say
+  // "Pending Sync 0" while that work sat unsent. Declared after the store for
+  // the same reason as connectionStatus below.
+  const pending = usePendingWork();
+  const unsyncedResults = pendingResults.filter(r => !r.synced).length;
+
   // Must run after useOfflineStore — earlier access caused a TDZ crash (blank screen).
   const connectionStatus = getConnectionStatus({
     isOnline: network.isConnected,
     lowDataMode,
-    pendingSyncCount: pendingResults.filter(r => !r.synced).length,
+    pendingSyncCount: pending.total,
     isSyncing,
     lastSyncedAt: lastSyncAt,
   });
@@ -213,28 +227,94 @@ export default function OfflineScreen() {
     }
   };
 
+  /**
+   * Upload everything that is waiting, not just test results.
+   *
+   * Two independent queues have to be drained: the shared SyncQueue (messages,
+   * flashcards, decks, notes) and the offline store's results — which also
+   * flushes queued question-bank scores. Draining only the second is what made
+   * a queued flashcard invisible here.
+   */
   const handleSync = async () => {
-    if (pendingResults.length === 0) {
-      Alert.alert('Nothing to Sync', 'All your results are already synced.');
+    if (pending.total === 0) {
+      Alert.alert('Nothing to sync', 'All your work is already uploaded.');
       return;
     }
-    
+
+    setSyncingAll(true);
+    let queueSynced = 0;
     try {
-      const { synced, remaining } = await syncPendingResults(userId);
-      // Per-result failures don't throw — report what actually happened
-      // instead of an unconditional "Success".
-      if (remaining === 0) {
-        Alert.alert('Success', 'All results have been synced!');
-      } else if (synced > 0) {
-        Alert.alert(
-          'Partially synced',
-          `${synced} result${synced !== 1 ? 's' : ''} synced; ${remaining} still pending. Check your connection and try again.`
-        );
-      } else {
-        Alert.alert('Sync Failed', 'No results could be synced. Please check your internet connection and try again.');
+      const queueResult = await syncService.syncNow();
+      queueSynced = queueResult.success;
+    } catch {
+      // Per-queue failures are reported through the remaining count below.
+    }
+
+    // Queued question-bank scores are the third queue and can be the ONLY
+    // thing pending. Flush them here, awaited, before the results replay:
+    // syncPendingResults fires its own detached flush, which then finds an
+    // empty queue instead of racing this one and posting a score twice.
+    // flushPendingQuestionBankScores never throws.
+    const scoreOutcome = await flushPendingQuestionBankScores(userId);
+
+    let resultsSynced = 0;
+    if (unsyncedResults > 0) {
+      try {
+        const outcome = await syncPendingResults(userId);
+        resultsSynced = outcome.synced;
+      } catch {
+        // Same: what is left is what matters, not the throw.
       }
-    } catch (error) {
-      Alert.alert('Sync Failed', 'Please check your internet connection and try again.');
+    }
+
+    // A tap that lands while the automatic sync is already running hits the
+    // queue's "already syncing" guard and returns {0,0} — that is a no-op, not
+    // a failure (build 149 showed the false "Sync failed" alert 1.5s before the
+    // concurrent run finished with 1 success). Wait for the in-flight run to
+    // settle before judging what is left.
+    const waitForQueueIdle = async () => {
+      for (let i = 0; i < 50; i += 1) {
+        if (!syncService.getStatus().queueStatus.isSyncing) return;
+        await new Promise<void>(resolve => setTimeout(resolve, 300));
+      }
+    };
+    await waitForQueueIdle();
+    const queueSnapshot = syncService.getStatus();
+
+    // Count what is actually left in all three queues before reporting —
+    // "Everything has been uploaded" must be true of the scores as well.
+    const scoresRemaining = await readPendingQuestionBankScores(userId)
+      .then(entries => entries.length)
+      .catch(() => scoreOutcome.remaining);
+    pending.refresh();
+    setSyncingAll(false);
+
+    const synced = queueSynced + resultsSynced + scoreOutcome.posted;
+    const remaining = syncService.getPendingCount() +
+      useOfflineStore.getState().pendingResults.filter(r => !r.synced).length +
+      scoresRemaining;
+
+    if (remaining === 0) {
+      Alert.alert('Synced', 'Everything has been uploaded.');
+    } else if (synced > 0) {
+      Alert.alert(
+        'Partly synced',
+        `${synced} item${synced !== 1 ? 's' : ''} uploaded; ${remaining} still waiting. ` +
+          'The rest is still saved on this device — check your connection and try again.'
+      );
+    } else if (!queueSnapshot.isOnline || !network.isConnected) {
+      // Offline is not a failure: nothing was attempted, nothing was lost.
+      Alert.alert(
+        'Waiting for a connection',
+        `${remaining} item${remaining !== 1 ? 's' : ''} saved on this device. ` +
+          'They will upload automatically as soon as you are back online.'
+      );
+    } else {
+      Alert.alert(
+        'Sync failed',
+        'Nothing could be uploaded. Your work is still saved on this device and will sync ' +
+          'automatically once you are back online.'
+      );
     }
   };
 
@@ -439,23 +519,41 @@ export default function OfflineScreen() {
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Downloaded</Text>
             </View>
             <View style={styles.storageStat}>
-              <Text style={[styles.statValue, { color: colors.text }]}>{pendingResults.filter(r => !r.synced).length}</Text>
+              <Text style={[styles.statValue, { color: colors.text }]}>{pending.total}</Text>
               <Text style={[styles.statLabel, { color: colors.textSecondary }]}>Pending Sync</Text>
             </View>
           </View>
-          
-          {pendingResults.filter(r => !r.synced).length > 0 && (
+
+          {/* Name the pending work. A bare number never told the student
+              whether it was a result, a message or a flashcard. */}
+          {pending.total > 0 && (
+            <Text
+              accessibilityLabel={pending.label}
+              style={[styles.pendingBreakdown, { color: colors.textSecondary }]}
+            >
+              {pending.breakdownLabel} waiting to sync
+            </Text>
+          )}
+
+          {pending.total > 0 && (
             <TouchableOpacity
               style={styles.syncButton}
               onPress={handleSync}
-              disabled={isSyncing}
+              disabled={isSyncing || syncingAll}
+              accessibilityRole="button"
+              accessibilityLabel={`Sync now. ${pending.label}`}
+              accessibilityState={{ disabled: isSyncing || syncingAll, busy: isSyncing || syncingAll }}
             >
-              {isSyncing ? (
+              {isSyncing || syncingAll ? (
                 <ActivityIndicator size="small" color="#ffffff" />
               ) : (
                 <>
                   <AppIcon name="cloud-upload" size={18} color="#ffffff" />
-                  <Text style={styles.syncButtonText}>Sync Results</Text>
+                  <Text style={styles.syncButtonText}>
+                    {/* Honest label: the button drains every queue, so it only
+                        says "Results" when results are all there is. */}
+                    {unsyncedResults === pending.total ? 'Sync Results' : 'Sync now'}
+                  </Text>
                 </>
               )}
             </TouchableOpacity>
@@ -549,7 +647,7 @@ export default function OfflineScreen() {
               { color: selectedTab === 'pending' ? colors.primary : colors.textSecondary },
               selectedTab === 'pending' && styles.activeTabText
             ]}>
-              Pending ({pendingResults.filter(r => !r.synced).length})
+              Results ({pendingResults.filter(r => !r.synced).length})
             </Text>
           </TouchableOpacity>
         </View>
@@ -718,6 +816,11 @@ const styles = StyleSheet.create({
   statLabel: {
     fontSize: 12,
     color: '#9ca3af',
+  },
+  pendingBreakdown: {
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 4,
   },
   syncButton: {
     flexDirection: 'row',

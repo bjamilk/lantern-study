@@ -6,6 +6,7 @@
 export {
   useNetworkStatus,
   useSyncStatus,
+  usePendingWork,
   useSync,
   useOnlineEffect,
   useAutoSync,
@@ -14,6 +15,7 @@ export {
 export type {
   NetworkStatus,
   SyncStatus,
+  UsePendingWorkResult,
   UseSyncResult,
 } from './useSync';
 

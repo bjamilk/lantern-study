@@ -22,6 +22,8 @@ import { ChatComposer, type MentionCandidate, type ReplyPreview } from './ChatCo
 import { MessageBubble } from './MessageBubble';
 import { DmBubble } from './DmBubble';
 import type { DirectMessage, GroupMember, Message } from '../../stores/groupStore';
+import { sendOutcomeToast, type SendOutcome } from '../../stores/sendOutcome';
+import { useToastStore } from '../../stores/toastStore';
 import { useTheme } from '../../theme';
 import { ChatWallpaperLayer, useChatWallpaper } from './ChatWallpaper';
 import {
@@ -47,7 +49,14 @@ interface ChatThreadModalProps {
   loadError?: string | null;
   messages: ThreadMessage[];
   onReload: () => Promise<void>;
-  onSend: (text: string, replyToMessageId?: string) => Promise<void>;
+  /**
+   * Resolves with the send outcome where the caller has one: an offline send is
+   * 'queued', not a failure, and must not raise the "Send failed" alert.
+   */
+  onSend: (
+    text: string,
+    replyToMessageId?: string
+  ) => Promise<SendOutcome<Message | DirectMessage> | void>;
   onEdit?: (messageId: string, content: string) => Promise<void>;
   onRemove?: (messageId: string) => Promise<void>;
   currentUserId?: string;
@@ -202,7 +211,9 @@ export function ChatThreadModal({
 
       setText('');
       const replyId = threadReplyTo?.id || rootId || undefined;
-      await onSend(trimmed, replyId);
+      const outcome = await onSend(trimmed, replyId);
+      const notice = outcome ? sendOutcomeToast(outcome.status) : null;
+      if (notice) useToastStore.getState().showToast(notice, 'info');
       await onReload();
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error) {

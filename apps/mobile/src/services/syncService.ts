@@ -68,6 +68,13 @@ class SyncService {
   private retryAttempts: Map<string, number> = new Map();
   private readonly MAX_RETRY_ATTEMPTS = 5;
   private readonly BASE_RETRY_DELAY = 1000; // 1 second
+  /**
+   * Every status subscriber. SyncManager.onStatus keeps a *single* callback,
+   * so before this fan-out each new subscriber silently replaced the previous
+   * one and only the last-mounted indicator ever updated. The pending counter
+   * is shown in several places at once, so it must be a set.
+   */
+  private statusListeners: Set<(isOnline: boolean, pendingCount: number) => void> = new Set();
 
   constructor() {
     const storage = new AsyncStorageAdapter();
@@ -77,6 +84,35 @@ class SyncService {
       syncOnReconnect: true,
       retryDelay: 5000,
     });
+    // The manager's own notifications (process, reconnect, auto-sync tick) are
+    // fanned out through the same path as our explicit emissions.
+    this.manager.onStatus((isOnline, pendingCount) => {
+      this.dispatchStatus(isOnline, pendingCount);
+    });
+  }
+
+  /** Notify every subscriber; one throwing listener must not silence the rest. */
+  private dispatchStatus(isOnline: boolean, pendingCount: number): void {
+    this.statusListeners.forEach(listener => {
+      try {
+        listener(isOnline, pendingCount);
+      } catch (error) {
+        console.error('[SyncService] Status listener failed:', error);
+      }
+    });
+  }
+
+  /**
+   * Emit the current status.
+   *
+   * SyncManager only notifies when it processes the queue or the connection
+   * flips — enqueueing and switching accounts change the pending count without
+   * any of that, which is why a queued flashcard used to leave the "pending"
+   * counter reading zero. Both paths call this.
+   */
+  private emitStatus(): void {
+    const status = this.manager.getStatus();
+    this.dispatchStatus(status.isOnline, status.queueStatus.pendingOperations.length);
   }
 
   /**
@@ -144,6 +180,9 @@ class SyncService {
           // Signed out: nothing to sync, and the timer must not process a
           // queue that belongs to nobody.
           this.manager.stop();
+          // The in-memory queue just emptied — say so, otherwise the previous
+          // account's count stays on screen.
+          this.emitStatus();
           return;
         }
         if (this.isInitialized) this.manager.start();
@@ -154,6 +193,9 @@ class SyncService {
               console.error('[SyncService] Failed to revive failed operations:', err)
             );
         }
+        // Loading this account's queue (and reviving its failed operations)
+        // changes the pending count without going through SyncManager.
+        this.emitStatus();
       })
       .catch(err => console.error('[SyncService] Failed to switch active user:', err));
     return this.activeUserChain;
@@ -564,7 +606,11 @@ class SyncService {
     if (userId && !this.queue.getActiveUserId()) {
       await this.setActiveUser(userId);
     }
-    return this.queue.enqueue(entityType, entityId, operation, data, userId);
+    const id = await this.queue.enqueue(entityType, entityId, operation, data, userId);
+    // The queue just grew: tell the indicators, or the student sees "synced"
+    // while their work sits in the queue.
+    this.emitStatus();
+    return id;
   }
 
   /**
@@ -605,8 +651,11 @@ class SyncService {
   /**
    * Set status change callback
    */
-  onStatusChange(callback: (isOnline: boolean, pendingCount: number) => void): void {
-    this.manager.onStatus(callback);
+  onStatusChange(callback: (isOnline: boolean, pendingCount: number) => void): () => void {
+    this.statusListeners.add(callback);
+    return () => {
+      this.statusListeners.delete(callback);
+    };
   }
 
   // ============================================

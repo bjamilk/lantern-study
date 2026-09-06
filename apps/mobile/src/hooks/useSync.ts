@@ -2,10 +2,17 @@
  * Network & Sync Hooks
  * React hooks for network connectivity and sync status
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { AppState, AppStateStatus } from 'react-native';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
 import { syncService } from '../services/syncService';
 import { useOfflineStore } from '../stores/offlineStore';
+import { useAuthStore } from '../stores/authStore';
+import { readPendingQuestionBankScores } from '../utils/pendingQuestionBankScores';
+import {
+  summarisePendingWork,
+  type PendingWorkSummary,
+} from '../utils/pendingWork';
 
 /**
  * Replay offline test results saved in the offline store (these live outside
@@ -80,39 +87,139 @@ export interface SyncStatus {
   pendingCount: number;
   isSyncing: boolean;
   lastSyncTime: number | null;
+  /** Entity type of each pending queue operation, for the pending breakdown. */
+  pendingEntityTypes: string[];
+}
+
+function readSyncStatus(): SyncStatus {
+  const { isOnline, queueStatus } = syncService.getStatus();
+  return {
+    isOnline,
+    pendingCount: queueStatus.pendingOperations.length,
+    isSyncing: queueStatus.isSyncing,
+    lastSyncTime: queueStatus.lastSyncTime,
+    pendingEntityTypes: queueStatus.pendingOperations.map(op => op.entityType),
+  };
+}
+
+function sameSyncStatus(a: SyncStatus, b: SyncStatus): boolean {
+  return (
+    a.isOnline === b.isOnline &&
+    a.pendingCount === b.pendingCount &&
+    a.isSyncing === b.isSyncing &&
+    a.lastSyncTime === b.lastSyncTime &&
+    a.pendingEntityTypes.length === b.pendingEntityTypes.length &&
+    a.pendingEntityTypes.every((t, i) => t === b.pendingEntityTypes[i])
+  );
 }
 
 export function useSyncStatus(): SyncStatus {
-  const [status, setStatus] = useState<SyncStatus>({
+  const [status, setStatus] = useState<SyncStatus>(() => ({
     isOnline: true,
     pendingCount: 0,
     isSyncing: false,
     lastSyncTime: null,
-  });
+    pendingEntityTypes: [],
+  }));
 
   useEffect(() => {
-    // Set up status change listener
-    syncService.onStatusChange((isOnline, pendingCount) => {
-      const queueStatus = syncService.getStatus().queueStatus;
-      setStatus({
-        isOnline,
-        pendingCount,
-        isSyncing: queueStatus.isSyncing,
-        lastSyncTime: queueStatus.lastSyncTime,
+    // onStatusChange returns an unsubscribe: several components mount this
+    // hook at once, and each must keep receiving updates after the others
+    // unmount.
+    const unsubscribe = syncService.onStatusChange(() => {
+      // Keep the previous object when nothing actually moved: the auto-sync
+      // timer fires regularly and must not re-render every indicator.
+      setStatus(prev => {
+        const next = readSyncStatus();
+        return sameSyncStatus(prev, next) ? prev : next;
       });
     });
-
-    // Get initial status
-    const initialStatus = syncService.getStatus();
-    setStatus({
-      isOnline: initialStatus.isOnline,
-      pendingCount: initialStatus.queueStatus.pendingOperations.length,
-      isSyncing: initialStatus.queueStatus.isSyncing,
-      lastSyncTime: initialStatus.queueStatus.lastSyncTime,
+    setStatus(prev => {
+      const next = readSyncStatus();
+      return sameSyncStatus(prev, next) ? prev : next;
     });
+    return unsubscribe;
   }, []);
 
   return status;
+}
+
+// ============================================
+// usePendingWork Hook
+// ============================================
+
+export interface UsePendingWorkResult extends PendingWorkSummary {
+  /** Re-read the question-bank score queue (AsyncStorage) on demand. */
+  refresh: () => void;
+}
+
+/**
+ * Every piece of work waiting to upload, in one honest number.
+ *
+ * Three separate queues feed this — see utils/pendingWork.ts. Before it, the
+ * UI counted only offline test results, so a queued flashcard or message read
+ * as "Pending Sync 0" while the work sat unsent.
+ */
+export function usePendingWork(): UsePendingWorkResult {
+  const sync = useSyncStatus();
+  // Primitive/array-reference selectors only — never build an object inside a
+  // zustand selector.
+  const userId = useAuthStore(s => s.user?.id) ?? '';
+  const pendingResults = useOfflineStore(s => s.pendingResults);
+  const unsyncedResults = useMemo(
+    () => pendingResults.filter(r => !r.synced).length,
+    [pendingResults]
+  );
+
+  const [pendingScores, setPendingScores] = useState(0);
+  const [refreshToken, setRefreshToken] = useState(0);
+  const refresh = useCallback(() => setRefreshToken(t => t + 1), []);
+
+  // The score queue lives in AsyncStorage, so it is read on the events that
+  // can change it — never on every render.
+  const queueCount = sync.pendingCount;
+  const isSyncing = sync.isSyncing;
+  const lastSyncTime = sync.lastSyncTime;
+  useEffect(() => {
+    let cancelled = false;
+    if (!userId) {
+      setPendingScores(0);
+      return;
+    }
+    readPendingQuestionBankScores(userId)
+      .then(entries => {
+        if (!cancelled) setPendingScores(entries.length);
+      })
+      .catch(() => {
+        // A read failure must not blank the rest of the counter.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, queueCount, unsyncedResults, isSyncing, lastSyncTime, refreshToken]);
+
+  // Re-read when the student comes back to the app: a score can be queued by a
+  // path that touches none of the counts above.
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next: AppStateStatus) => {
+      if (next === 'active') refreshRef.current();
+    });
+    return () => subscription.remove();
+  }, []);
+
+  const summary = useMemo(
+    () =>
+      summarisePendingWork({
+        queueEntityTypes: sync.pendingEntityTypes,
+        pendingResults: unsyncedResults,
+        pendingScores,
+      }),
+    [sync.pendingEntityTypes, unsyncedResults, pendingScores]
+  );
+
+  return { ...summary, refresh };
 }
 
 // ============================================
@@ -122,6 +229,8 @@ export function useSyncStatus(): SyncStatus {
 export interface UseSyncResult {
   network: NetworkStatus;
   sync: SyncStatus;
+  /** Every queue folded together — total, breakdown and honest copy. */
+  pendingWork: UsePendingWorkResult;
   syncNow: () => Promise<{ success: number; failed: number }>;
   hasPendingChanges: boolean;
 }
@@ -129,6 +238,7 @@ export interface UseSyncResult {
 export function useSync(): UseSyncResult {
   const network = useNetworkStatus();
   const sync = useSyncStatus();
+  const pendingWork = usePendingWork();
 
   const syncNow = useCallback(async () => {
     return syncService.syncNow();
@@ -137,8 +247,10 @@ export function useSync(): UseSyncResult {
   return {
     network,
     sync,
+    pendingWork,
     syncNow,
-    hasPendingChanges: sync.pendingCount > 0,
+    // Any queue, not just the SyncQueue: results and scores are work too.
+    hasPendingChanges: pendingWork.total > 0,
   };
 }
 
@@ -261,6 +373,7 @@ export function useAutoSync(
 export default {
   useNetworkStatus,
   useSyncStatus,
+  usePendingWork,
   useSync,
   useOnlineEffect,
   useAutoSync,

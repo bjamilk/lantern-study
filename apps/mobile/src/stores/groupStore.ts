@@ -30,6 +30,14 @@ import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
 import { resolveSenderIdentity } from '../utils/senderIdentity';
+import {
+  isQueueableSendError,
+  queuedOutcome,
+  sentOutcome,
+  toSendError,
+  type SendOutcome,
+} from './sendOutcome';
+import { lastDeliveredMessage, previewFromServerAndCache } from './chatListPreview';
 
 export type DMThread = SharedDMThread;
 export type DirectMessage = SharedDirectMessage;
@@ -359,7 +367,13 @@ interface GroupState {
        */
       imageUrl?: string | null;
     }
-  ) => Promise<void>;
+    /**
+     * Resolves with the outcome instead of throwing for offline sends: a send
+     * that could not reach the server but IS in the outbox resolves 'queued',
+     * so the caller can clear the composer and say so honestly. Only errors the
+     * user must act on (server rejection, auth) still throw.
+     */
+  ) => Promise<SendOutcome<Message>>;
   editGroupMessage: (groupId: string, messageId: string, content: string) => Promise<void>;
   removeGroupMessage: (groupId: string, messageId: string) => Promise<void>;
   createGroup: (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => Promise<Group>;
@@ -381,7 +395,8 @@ interface GroupState {
     text: string,
     threadId: string,
     options?: { replyToMessageId?: string }
-  ) => Promise<void>;
+    /** Same contract as `sendMessage`: 'queued' resolves, it does not throw. */
+  ) => Promise<SendOutcome<DirectMessage>>;
   editDirectMessage: (threadId: string, messageId: string, content: string) => Promise<void>;
   /** Patch one DM in place (used for optimistic reaction counts). */
   patchDirectMessageInState: (
@@ -434,19 +449,6 @@ interface GroupState {
   getBreadcrumbs: (groupId: string) => Group[];
   getTopLevelGroups: () => Group[];
   getActiveDmThreads: () => DMThread[];
-}
-
-/** Newest row that is neither removed nor stuck in the outbox. */
-function lastDeliveredMessage<T extends { isRemoved?: boolean; removedAt?: string | null; deliveryState?: 'pending' | 'failed' }>(
-  list: T[]
-): T | undefined {
-  for (let i = list.length - 1; i >= 0; i--) {
-    const m = list[i]!;
-    if (m.isRemoved || m.removedAt) continue;
-    if (m.deliveryState === 'failed' || m.deliveryState === 'pending') continue;
-    return m;
-  }
-  return undefined;
 }
 
 function isOptimisticMessageId(id: string): boolean {
@@ -858,14 +860,28 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       ]);
 
       const prevById = new Map(get().groups.map((g) => [g.id, g]));
+      const cacheById = get().messagesCache;
       const groups: Group[] = apiGroups.map((g: any) => {
         const mapped = mapApiGroup(g, unreadCounts);
         const existing = prevById.get(mapped.id);
+        // The group-list endpoint's `last_message` can lag the thread it
+        // summarises, so after a cold start the list previewed a 38-day-old
+        // message until the thread was opened. Prefer whichever of the two is
+        // actually newer; a queued row never wins (it is not delivered).
+        const preview = previewFromServerAndCache(mapped.lastMessage, cacheById[mapped.id]);
+        const withPreview: Group =
+          preview === mapped.lastMessage
+            ? mapped
+            : {
+                ...mapped,
+                lastMessage: preview as Message,
+                updatedAt: preview?.createdAt || mapped.updatedAt,
+              };
         // API group list omits members — keep any roster already loaded for @mentions.
-        if (existing?.members?.length && !mapped.members.length) {
-          return { ...mapped, members: existing.members, memberCount: existing.members.length };
+        if (existing?.members?.length && !withPreview.members.length) {
+          return { ...withPreview, members: existing.members, memberCount: existing.members.length };
         }
-        return mapped;
+        return withPreview;
       });
 
       const currentGroup = get().currentGroup;
@@ -1267,6 +1283,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         };
       });
       deliveryIntents.clear(deliveryScope, deliveryFingerprint, clientMessageId);
+      return sentOutcome(serverMessage);
     } catch (error: any) {
       if (isUncertainDeliveryError(error)) {
         deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);
@@ -1317,7 +1334,17 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         };
       });
       void get().saveToStorage();
-      throw error instanceof Error ? error : new Error(error?.message || 'Failed to send message');
+      // Queued is NOT a failure: the row is in the outbox and stays 'pending'
+      // on screen. Throwing here made every screen alert "Send failed" and put
+      // the text back in the composer, inviting a duplicate of a message that
+      // was already on its way.
+      if (queueable) {
+        const queued =
+          (get().messagesCache[groupId] || []).find((m) => m.id === newMessage.id)
+          || { ...newMessage, deliveryState: 'pending' as const };
+        return queuedOutcome(queued);
+      }
+      throw toSendError(error);
     } finally {
       releaseSendSlot();
     }
@@ -2023,6 +2050,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       // Refresh thread + messages so the first bubble survives empty open-fetch races.
       void get().fetchDmThreads(senderId).catch(() => undefined);
       void get().fetchDirectMessagesForThread(senderId, recipientId, threadId).catch(() => undefined);
+      return sentOutcome(confirmed);
     } catch (error) {
       if (isUncertainDeliveryError(error)) {
         deliveryIntents.markUncertain(deliveryScope, deliveryFingerprint, clientMessageId);
@@ -2065,7 +2093,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           ),
         };
       });
-      throw error;
+      if (dmQueueable) {
+        const queued =
+          (get().directMessages[threadId] || []).find((m) => m.id === optimistic.id)
+          || { ...optimistic, deliveryState: 'pending' as const };
+        return queuedOutcome(queued);
+      }
+      throw toSendError(error);
     } finally {
       releaseDmSendSlot();
     }
@@ -2595,17 +2629,6 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 }));
 
-/** Network-shaped failure — worth queueing rather than surfacing as failed. */
-function isQueueableSendError(error: unknown): boolean {
-  const status = (error as { status?: number } | null)?.status;
-  if (typeof status === 'number') {
-    if (status === 408 || status === 429 || status >= 500) return true;
-    if (status >= 400 && status < 500) return false;
-  }
-  const message = String((error as { message?: string } | null)?.message || '');
-  return /network request failed|network error|timed out|failed to fetch/i.test(message);
-}
-
 /**
  * Outbox. Chat was the only major feature that never touched the sync queue, so
  * an offline send simply failed. Registered here rather than inside syncService
@@ -2648,6 +2671,15 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
           state.activeGroupId === data.groupId
             ? replaceOptimisticWithServer(state.messages, op.entityId, server)
             : state.messages,
+        // The optimistic send reverted the list preview when it was queued
+        // (a pending row is not delivered), so nothing put the flushed message
+        // back on the Chat list — it kept previewing the previous message until
+        // the next cold fetch. Advance it here, now that the server has it.
+        groups: state.groups.map((group) =>
+          group.id === data.groupId
+            ? { ...group, lastMessage: server, updatedAt: server.createdAt }
+            : group
+        ),
       }));
     } else if (data.kind === 'dm' && data.threadId && data.recipientId) {
       const sent = await api.sendDirectMessage(
@@ -2667,6 +2699,17 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
             [op.entityId]
           ),
         },
+        // Same reason as the group case: the queued send reverted the inbox
+        // preview, so the flush has to advance it.
+        dmThreads: state.dmThreads.map((t) =>
+          t.id === data.threadId
+            ? {
+                ...t,
+                lastMessage: chatMessagePreview(confirmed.text, ''),
+                lastMessageTimestamp: confirmed.timestamp,
+              }
+            : t
+        ),
       }));
     }
     void useGroupStore.getState().saveToStorage();
