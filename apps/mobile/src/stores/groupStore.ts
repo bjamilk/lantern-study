@@ -15,6 +15,7 @@ import {
   resolveThreadRootId,
   computeDmReceiptStatus,
   mergeChatMessagesById,
+  mergeServerRefresh,
   mergeDmThreadLists,
   filterMessagesAfterDmHistoryCutoff,
   createOptimisticClientMessageId,
@@ -1040,13 +1041,14 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
       const existing = get().messagesCache[groupId] || [];
       // Always merge by id so a late fetch cannot wipe realtime/optimistic rows.
-      const merged = mergeChatMessagesById<Message>(
-        refresh ? [] : existing,
-        mapped
-      );
+      // A refresh MUST use mergeServerRefresh: the old code merged the cache in
+      // as the *incoming* side to keep optimistic rows, which made every stale
+      // cached field (reactions, edits, removals, votes, pins) win over the
+      // fresh server row — so a reaction saved on the server vanished on the
+      // first fetch after a cold start, when the cache is the AsyncStorage copy.
       const withLocalOptimistic = refresh
-        ? mergeChatMessagesById<Message>(merged, existing)
-        : merged;
+        ? mergeServerRefresh<Message>(mapped, existing)
+        : mergeChatMessagesById<Message>(existing, mapped);
 
       const hasMore = pagination?.hasMore ?? mapped.length >= limit;
 
@@ -1903,8 +1905,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         if (!incoming.length && existing.length && !historyClearedAt) {
           return state;
         }
+        // Server-authoritative, same rule as the group refresh above: the fetch
+        // is the whole (post-cutoff) history, so a cached row the server no
+        // longer returns was deleted and must not be resurrected — while
+        // pending/failed outbox rows and anything newer than the newest server
+        // row (a realtime insert that landed mid-fetch) are kept.
         const merged = filterMessagesAfterDmHistoryCutoff(
-          mergeChatMessagesById<DirectMessage>(existing, incoming),
+          mergeServerRefresh<DirectMessage>(incoming, existing),
           historyClearedAt,
         );
         return {

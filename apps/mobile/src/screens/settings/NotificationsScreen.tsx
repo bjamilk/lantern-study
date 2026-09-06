@@ -47,6 +47,8 @@ import { AcademicFeedPanel } from "../../components/AcademicFeedPanel";
 import { useChrome } from '../../components/layout/ChromeContext';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 interface AppNotification {
   id: string;
   message?: string;
@@ -390,7 +392,7 @@ export default function NotificationsScreen() {
                     name: "Main",
                     params: {
                       screen: "MarketTab",
-                      params: { screen: "Feed" },
+                      params: toTab('Feed'),
                     },
                   }),
                 )

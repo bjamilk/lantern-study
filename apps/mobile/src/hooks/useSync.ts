@@ -16,7 +16,9 @@ async function syncOfflineTestResults(userId: string): Promise<void> {
   const store = useOfflineStore.getState();
   if (store.isSyncing) return;
   if (store.pendingResults.length === 0) {
-    await store.loadOfflineData();
+    // Pass the user: pending results are stored per account, and an unscoped
+    // load would neither find this student's queue nor be safe to upload.
+    await store.loadOfflineData(userId);
   }
   const { pendingResults, isSyncing, syncPendingResults } = useOfflineStore.getState();
   if (isSyncing || !pendingResults.some(r => !r.synced)) return;

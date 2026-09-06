@@ -10,6 +10,8 @@ import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { Card } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 /**
  * Dashboard "Exam readiness" card: one compact bar per active course, a
  * Start-here pointer for day one, tap-through to the full Mastery screen
@@ -26,7 +28,7 @@ const BAND_BAR: Record<string, string> = {
 const openMastery = (courseId?: string) =>
   navigateFromRoot('Main', {
     screen: 'MarketTab',
-    params: { screen: 'Mastery', params: courseId ? { courseId } : undefined },
+    params: toTab('Mastery', courseId ? { courseId } : undefined),
   });
 
 export function CourseReadinessCard() {

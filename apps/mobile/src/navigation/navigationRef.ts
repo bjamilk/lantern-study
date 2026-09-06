@@ -72,6 +72,8 @@ export function navigateToTestTaking(params: {
   mode?: 'test' | 'study';
   groupName?: string;
   groupId?: string;
+  /** Origin tab/screen to return to on exit; see screens/tests/testSessionExit. */
+  returnTo?: import('../screens/tests/testSessionExit').ReturnToTarget;
 }) {
   if (!navigationRef.isReady()) return;
   navigationRef.dispatch(

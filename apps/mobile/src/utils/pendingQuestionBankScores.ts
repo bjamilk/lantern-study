@@ -6,37 +6,76 @@
  * POST is queued in AsyncStorage and flushed by syncPendingResults — the same
  * path that replays offline test results.
  *
+ * The queue is scoped per account (see pendingQuestionBankScoresScope.ts): the
+ * entry carries its owner and lives under `<legacy key>:<userId>`, so a shared
+ * handset can never post one student's attempt to another's leaderboard.
+ *
  * Entries drop after MAX_ATTEMPTS or MAX_AGE so a permanently un-postable
  * score (bank deleted, entitlement revoked) cannot wedge the queue.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-const STORAGE_KEY = '@lantern_pending_qbank_scores';
+import {
+  PENDING_QBANK_SCORES_LEGACY_KEY,
+  parsePendingQbankScores,
+  pendingQbankScoresKey,
+  planPendingQbankScoresLoad,
+  stampScoreOwner,
+  type ScopedPendingQuestionBankScore,
+} from './pendingQuestionBankScoresScope';
+
 const MAX_ATTEMPTS = 5;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
 
-export interface PendingQuestionBankScore {
-  listingId: string;
-  correct: number;
-  total: number;
-  completedAt: string;
-  attempts: number;
-}
+export type PendingQuestionBankScore = ScopedPendingQuestionBankScore;
 
-export async function readPendingQuestionBankScores(): Promise<PendingQuestionBankScore[]> {
+/**
+ * Read `userId`'s queue, folding in (and cleaning up) the legacy unkeyed key.
+ * Legacy entries name no owner and are dropped — see planPendingQbankScoresLoad.
+ */
+export async function readPendingQuestionBankScores(
+  userId: string
+): Promise<PendingQuestionBankScore[]> {
+  if (!userId) return [];
+  let scopedRaw: string | null = null;
+  let legacyRaw: string | null = null;
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    scopedRaw = await AsyncStorage.getItem(pendingQbankScoresKey(userId));
+    legacyRaw = await AsyncStorage.getItem(PENDING_QBANK_SCORES_LEGACY_KEY);
   } catch {
     return [];
   }
+
+  const plan = planPendingQbankScoresLoad<PendingQuestionBankScore>(
+    userId,
+    scopedRaw,
+    legacyRaw
+  );
+
+  if (plan.removeLegacy) {
+    if (plan.dropped > 0) {
+      console.warn(
+        `[qbank-scores] Dropped ${plan.dropped} unscoped pending score(s): no owner recorded, ` +
+          'and attributing them to the signed-in account could post another student\'s attempt.'
+      );
+    }
+    try {
+      if (plan.entries.length > 0) await writeQueue(userId, plan.entries);
+      await AsyncStorage.removeItem(PENDING_QBANK_SCORES_LEGACY_KEY);
+    } catch {
+      // Cleanup is best-effort; the drop rule is re-applied on the next read.
+    }
+  }
+
+  return plan.entries;
 }
 
-async function writeQueue(entries: PendingQuestionBankScore[]): Promise<void> {
+async function writeQueue(
+  userId: string,
+  entries: PendingQuestionBankScore[]
+): Promise<void> {
   try {
-    await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+    await AsyncStorage.setItem(pendingQbankScoresKey(userId), JSON.stringify(entries));
   } catch {
     // Storage failure must not break the test flow.
   }
@@ -44,33 +83,48 @@ async function writeQueue(entries: PendingQuestionBankScore[]): Promise<void> {
 
 /** Queue one attempt from an offline bundle id ("qbank-<listingId>"). */
 export async function enqueueScoreForBundle(
+  userId: string | undefined,
   bundleId: string | undefined,
   correct: number,
   total: number
 ): Promise<void> {
+  if (!userId) return;
   if (!bundleId || !bundleId.startsWith('qbank-')) return;
   if (!Number.isFinite(total) || total <= 0) return;
 
-  const queue = await readPendingQuestionBankScores();
-  queue.push({
-    listingId: bundleId.slice('qbank-'.length),
-    correct: Math.max(0, Math.floor(correct)),
-    total: Math.floor(total),
-    completedAt: new Date().toISOString(),
-    attempts: 0,
-  });
-  await writeQueue(queue);
+  // Read the key directly: the entry belongs to this user regardless of what
+  // the legacy migration decides, and a read failure must not lose the score.
+  let existingRaw: string | null = null;
+  try {
+    existingRaw = await AsyncStorage.getItem(pendingQbankScoresKey(userId));
+  } catch {
+    existingRaw = null;
+  }
+  const queue = parsePendingQbankScores<PendingQuestionBankScore>(existingRaw);
+  queue.push(
+    stampScoreOwner(
+      {
+        listingId: bundleId.slice('qbank-'.length),
+        correct: Math.max(0, Math.floor(correct)),
+        total: Math.floor(total),
+        completedAt: new Date().toISOString(),
+        attempts: 0,
+      },
+      userId
+    )
+  );
+  await writeQueue(userId, queue);
 }
 
 /**
- * Post every queued score. Successes and exhausted/expired entries are
- * removed; transient failures stay queued. Never throws.
+ * Post every score queued by `userId`. Successes and exhausted/expired entries
+ * are removed; transient failures stay queued. Never throws.
  */
-export async function flushPendingQuestionBankScores(): Promise<{
-  posted: number;
-  remaining: number;
-}> {
-  const queue = await readPendingQuestionBankScores();
+export async function flushPendingQuestionBankScores(
+  userId: string | undefined
+): Promise<{ posted: number; remaining: number }> {
+  if (!userId) return { posted: 0, remaining: 0 };
+  const queue = await readPendingQuestionBankScores(userId);
   if (queue.length === 0) return { posted: 0, remaining: 0 };
 
   const { recordQuestionBankScore } = await import('../services/api');
@@ -91,6 +145,8 @@ export async function flushPendingQuestionBankScores(): Promise<{
     }
   }
 
-  await writeQueue(keep);
+  await writeQueue(userId, keep);
   return { posted, remaining: keep.length };
 }
+
+export { pendingQbankScoreKeysToClearOnSignOut } from './pendingQuestionBankScoresScope';

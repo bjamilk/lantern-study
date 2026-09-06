@@ -18,6 +18,13 @@ import { signInWithGoogleOAuth, signInWithAppleNative } from '../services/social
 import type { User, Session } from '@supabase/supabase-js';
 import { isEmailNotConfirmedError } from '@lantern/shared';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
+import { PENDING_RESULTS_LEGACY_KEY, pendingResultsKey } from './pendingResultsScope';
+import { SYNC_QUEUE_LEGACY_KEY, syncQueueKey } from '@lantern/shared/sync';
+import {
+  PENDING_QBANK_SCORES_LEGACY_KEY,
+  pendingQbankScoresKey,
+} from '../utils/pendingQuestionBankScoresScope';
+import { planSignOutKeyRemoval } from './signOutStorageKeys';
 
 /**
  * Who ended the session.
@@ -31,11 +38,13 @@ import { extractAcademicProfile, type AcademicProfile } from '../utils/academicP
 export type SignOutReason = 'user' | 'revoked';
 
 /**
- * Outbound queues holding work the student has done but not yet uploaded.
- * These are never cleared on a sign-out the student did not ask for: wiping
- * them is how a dropped connection used to delete a finished offline test.
+ * Outbound queues holding work the student has done but not yet uploaded:
+ * pending offline results, the offline sync queue and queued question-bank
+ * scores. Which of them a sign-out may delete is decided by
+ * stores/signOutStorageKeys — never cleared on a sign-out the student did not
+ * ask for (wiping them is how a dropped connection used to delete a finished
+ * offline test), and never for another account on the same handset.
  */
-const UNSYNCED_WORK_KEYS = ['@lantern_pending_results', 'lantern_sync_queue'] as const;
 
 interface AuthState {
   user: User | null;
@@ -363,6 +372,18 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // continue with local sign-out
     }
 
+    // Pending offline results are stored per user, but the store's IN-MEMORY
+    // list is module state that outlives the sign-out. Left in place, the next
+    // account's sync would see a non-empty list, skip loading its own, and
+    // persist "none of these are mine" over its stored results. Storage is
+    // untouched here — the keyed removal below decides that by reason.
+    try {
+      const { useOfflineStore } = await import('./offlineStore');
+      useOfflineStore.setState({ pendingResults: [] });
+    } catch {
+      // continue with local sign-out
+    }
+
     // Signed storage URLs are module-level, in-memory and keyed only by
     // (bucket, path, variant) — nothing in the key says WHOSE session minted
     // them. Board and chat photos are now re-signed on read against that
@@ -405,10 +426,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     const keysToRemove = [
       '@lantern_offline_data',
-      '@lantern_pending_results',
+      PENDING_RESULTS_LEGACY_KEY,
+      PENDING_QBANK_SCORES_LEGACY_KEY,
       'lantern_groups',
       'lantern_messages',
-      'lantern_sync_queue',
+      SYNC_QUEUE_LEGACY_KEY,
       'lantern_decks',
       'lantern_flashcards',
       'lantern_stats',
@@ -423,6 +445,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     if (userId) {
       keysToRemove.push(
+        // Pending results are keyed per user; only THIS account's list is a
+        // candidate for removal, and only on a sign-out they asked for.
+        pendingResultsKey(userId),
+        // Same rule for the other two outbound queues: this account's key is
+        // a candidate, nobody else's ever is.
+        syncQueueKey(userId),
+        pendingQbankScoresKey(userId),
         `walletBalance_${userId}`,
         `savingsGoals_${userId}`,
         `expenseSplits_${userId}`,
@@ -434,8 +463,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     // session their unsynced work stays put so it can still be uploaded when
     // they sign back in — a session ending is not permission to delete a
     // finished test they have not managed to submit yet.
-    const preserved = reason === 'user' ? new Set<string>() : new Set<string>(UNSYNCED_WORK_KEYS);
-    const finalKeys = [...new Set(keysToRemove)].filter((key) => !preserved.has(key));
+    const finalKeys = planSignOutKeyRemoval(reason, userId, keysToRemove);
 
     await AsyncStorage.multiRemove(finalKeys).catch(() => {});
 

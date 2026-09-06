@@ -98,6 +98,8 @@ import { AppIcon, isAppIconName } from '../../components/ui/AppIcon';
 
 
 
+import { toTab } from '../../navigation/nestedTab';
+
 type Props = CompositeScreenProps<
 
   NativeStackScreenProps<HomeStackParamList, 'Dashboard'>,
@@ -678,7 +680,7 @@ export function DashboardScreen({ navigation }: Props) {
 
     }
 
-    parent?.navigate('StudyTab', { screen: 'TestsList' });
+    parent?.navigate('StudyTab', toTab('TestsList'));
 
   };
 
@@ -698,21 +700,15 @@ export function DashboardScreen({ navigation }: Props) {
 
     if (!activeTest) return;
 
-    parent?.navigate('StudyTab', {
+    parent?.navigate('StudyTab', toTab('TestTaking', {
 
-      screen: 'TestTaking',
+      testId: activeTest.test.id,
 
-      params: {
+      testName: activeTest.test.name,
 
-        testId: activeTest.test.id,
+      mode: activeTest.mode,
 
-        testName: activeTest.test.name,
-
-        mode: activeTest.mode,
-
-      },
-
-    });
+    }));
 
   };
 
@@ -725,14 +721,11 @@ export function DashboardScreen({ navigation }: Props) {
       await resumePausedSession(sessionId);
       const resumed = useTestStore.getState().activeTest;
       if (!resumed) return;
-      parent?.navigate('StudyTab', {
-        screen: 'TestTaking',
-        params: {
-          testId: resumed.test.id,
-          testName: resumed.test.name,
-          mode: resumed.mode,
-        },
-      });
+      parent?.navigate('StudyTab', toTab('TestTaking', {
+        testId: resumed.test.id,
+        testName: resumed.test.name,
+        mode: resumed.mode,
+      }));
     } catch {
       // refresh list if resume failed
       void refreshPausedSessions();
@@ -785,7 +778,7 @@ export function DashboardScreen({ navigation }: Props) {
           className={heroQuestsSideBySide ? 'mb-0 h-full' : undefined}
           onPrimaryAction={() => {
             if (dueCount > 0) {
-              parent?.navigate('StudyTab', { screen: 'FlashcardsList' });
+              parent?.navigate('StudyTab', toTab('FlashcardsList'));
             } else {
               setImportOpen(true);
             }
@@ -815,11 +808,11 @@ export function DashboardScreen({ navigation }: Props) {
           hasGroups={groups.length > 0}
           hasBudget={Boolean(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
           hasTriedCompanion={companionOpen}
-          onCreateDeck={() => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'flashcards' } })}
-          onTakeTest={() => parent?.navigate('StudyTab', { screen: 'TestsList' })}
+          onCreateDeck={() => parent?.navigate('StudyTab', toTab('Library', { tab: 'flashcards' }))}
+          onTakeTest={() => parent?.navigate('StudyTab', toTab('TestsList'))}
           onJoinGroup={() => parent?.navigate('ChatTab')}
           onSetBudget={() => parent?.navigate('BudgetTab')}
-          onOpenLibrary={() => parent?.navigate('StudyTab', { screen: 'Library' })}
+          onOpenLibrary={() => parent?.navigate('StudyTab', toTab('Library'))}
           onTryCompanion={() => openCompanion()}
           onSubmitQuestion={() => parent?.navigate('ChatTab')}
           onExploreMarketplace={() => parent?.navigate('MarketTab')}
@@ -1352,21 +1345,21 @@ export function DashboardScreen({ navigation }: Props) {
               icon: 'layers',
               iconColor: '#059669',
               badge: dueCount,
-              onPress: () => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'flashcards' } }),
+              onPress: () => parent?.navigate('StudyTab', toTab('Library', { tab: 'flashcards' })),
             },
             {
               id: 'notes',
               label: 'Notes',
               icon: 'document-text',
               iconColor: featureAccents.library,
-              onPress: () => parent?.navigate('StudyTab', { screen: 'Library', params: { tab: 'notes' } }),
+              onPress: () => parent?.navigate('StudyTab', toTab('Library', { tab: 'notes' })),
             },
             {
               id: 'tests',
               label: 'Tests',
               icon: 'help-circle',
               iconColor: '#d97706',
-              onPress: () => parent?.navigate('StudyTab', { screen: 'TestsList' }),
+              onPress: () => parent?.navigate('StudyTab', toTab('TestsList')),
             },
             {
               id: 'marketplace',
@@ -1387,14 +1380,11 @@ export function DashboardScreen({ navigation }: Props) {
         onClose={() => setImportOpen(false)}
         onOpenNote={(noteId) => {
           setImportOpen(false);
-          parent?.navigate('StudyTab', { screen: 'NoteEditor', params: { noteId } });
+          parent?.navigate('StudyTab', toTab('NoteEditor', { noteId }));
         }}
         onTurnIntoStudyProduct={(result) => {
           setImportOpen(false);
-          parent?.navigate('MarketTab', {
-            screen: 'StudyProductDrafts',
-            params: { source: { noteIds: [result.noteId], title: result.noteTitle } },
-          });
+          parent?.navigate('MarketTab', toTab('StudyProductDrafts', { source: { noteIds: [result.noteId], title: result.noteTitle } }));
         }}
       />
 
@@ -1453,7 +1443,7 @@ export function DashboardScreen({ navigation }: Props) {
 
                 setGroupPickerOpen(false);
 
-                parent?.navigate('StudyTab', { screen: 'TestsList' });
+                parent?.navigate('StudyTab', toTab('TestsList'));
 
               }}
 

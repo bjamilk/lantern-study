@@ -9,6 +9,14 @@ import {
   canonicalOfflineQuestionType,
   matchesOfflineQuestionTypeFilter,
 } from '../utils/questionHelpers';
+import {
+  PENDING_RESULTS_LEGACY_KEY,
+  mergeIntoStoredResults,
+  pendingResultsKey,
+  planPendingResultsLoad,
+  resultsOwnedBy,
+  stampOwner,
+} from './pendingResultsScope';
 
 export interface OfflineTest {
   id: string;
@@ -67,6 +75,13 @@ export interface PendingResult {
   completedAt: string;
   timeSpent: number;
   synced: boolean;
+  /**
+   * The account that finished the test. Pending results are stored per user
+   * (see pendingResultsScope) so a second account on the same handset can
+   * neither see nor upload the first student's work. Optional only because
+   * legacy entries written before scoping carry no owner.
+   */
+  userId?: string;
   sessionPayload?: {
     questions?: unknown[];
     userAnswers?: Record<string, unknown>;
@@ -114,7 +129,10 @@ interface OfflineState {
     userId?: string
   ) => Promise<void>;
   deleteDownloadedTest: (id: string, userId?: string) => Promise<void>;
-  savePendingResult: (result: Omit<PendingResult, 'id' | 'synced'>) => Promise<void>;
+  savePendingResult: (
+    result: Omit<PendingResult, 'id' | 'synced' | 'userId'>,
+    userId?: string
+  ) => Promise<void>;
   /** Returns honest counts — per-result failures don't throw, so callers must
       not treat a clean return as "everything synced". */
   syncPendingResults: (userId: string) => Promise<{ synced: number; remaining: number }>;
@@ -123,7 +141,40 @@ interface OfflineState {
 }
 
 const STORAGE_KEY = '@lantern_offline_data';
-const RESULTS_KEY = '@lantern_pending_results';
+/**
+ * Pending results are keyed per user. RESULTS_KEY is the LEGACY unkeyed key,
+ * read once per account on load and then removed — see pendingResultsScope.
+ */
+const RESULTS_KEY = PENDING_RESULTS_LEGACY_KEY;
+
+/**
+ * Write pending results to `key`, MERGED with what the key already holds.
+ *
+ * Memory is only a cache of the key and may not have been loaded for this
+ * user yet (second account on a shared handset, a save before the first
+ * load); a plain overwrite would drop the results that live only in storage.
+ * `dropIds` removes the entries a sync just uploaded.
+ */
+const writePendingResults = async (
+  key: string,
+  results: PendingResult[],
+  dropIds?: ReadonlySet<string>
+) => {
+  const existingRaw = await AsyncStorage.getItem(key);
+  await AsyncStorage.setItem(
+    key,
+    JSON.stringify(mergeIntoStoredResults(existingRaw, results, dropIds))
+  );
+};
+
+/** Persist `userId`'s pending results under their own key. */
+const persistPendingResults = async (
+  userId: string | undefined,
+  results: PendingResult[],
+  dropIds?: ReadonlySet<string>
+) => {
+  await writePendingResults(userId ? pendingResultsKey(userId) : RESULTS_KEY, results, dropIds);
+};
 
 type ApiOfflineBundle = Awaited<ReturnType<typeof api.fetchOfflineBundles>>[number];
 
@@ -265,13 +316,34 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
 
   loadOfflineData: async (userId?: string) => {
     try {
-      const [testsData, resultsData] = await Promise.all([
+      const [testsData, scopedResultsRaw, legacyResultsRaw] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEY),
+        userId ? AsyncStorage.getItem(pendingResultsKey(userId)) : Promise.resolve(null),
         AsyncStorage.getItem(RESULTS_KEY),
       ]);
-      
+
       let downloadedTests: OfflineTest[] = testsData ? JSON.parse(testsData) : [];
-      const pendingResults = resultsData ? JSON.parse(resultsData) : [];
+
+      // Without a user there is nobody to attribute pending results to, so we
+      // load none rather than risk showing (and later uploading) another
+      // account's work. Whatever is already in memory stays put.
+      let pendingResults: PendingResult[] = get().pendingResults;
+      if (userId) {
+        const plan = planPendingResultsLoad<PendingResult>(
+          userId,
+          scopedResultsRaw,
+          legacyResultsRaw
+        );
+        for (const write of plan.writes) {
+          // Merged, not overwritten: another account's key may already hold
+          // results the legacy list knows nothing about.
+          await writePendingResults(write.key, write.results);
+        }
+        if (plan.removeLegacy) {
+          await AsyncStorage.removeItem(RESULTS_KEY);
+        }
+        pendingResults = plan.results;
+      }
 
       if (userId) {
         try {
@@ -415,18 +487,24 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
-  savePendingResult: async (result) => {
+  savePendingResult: async (result, userId) => {
     try {
       const newResult: PendingResult = {
         ...result,
         id: `result-${Date.now()}`,
         synced: false,
+        ...(userId ? { userId } : {}),
       };
-      
+
       const pendingResults = [...get().pendingResults, newResult];
-      
-      await AsyncStorage.setItem(RESULTS_KEY, JSON.stringify(pendingResults));
-      
+
+      // Persist only this user's own entries under their key; anything in
+      // memory belonging to nobody/another account is not written there.
+      await persistPendingResults(
+        userId,
+        userId ? resultsOwnedBy(pendingResults, userId) : pendingResults
+      );
+
       set({ pendingResults });
     } catch (error) {
       console.error('Failed to save result:', error);
@@ -440,13 +518,20 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     // Question-bank scores ride the same reconnect moment, independent of the
     // result replay below so a failure on either side cannot block the other.
     void import('../utils/pendingQuestionBankScores')
-      .then(({ flushPendingQuestionBankScores }) => flushPendingQuestionBankScores())
+      .then(({ flushPendingQuestionBankScores }) => flushPendingQuestionBankScores(userId))
       .catch(() => {
         /* leaderboard is not critical to result sync */
       });
 
     try {
-      const unsynced = get().pendingResults.filter(r => !r.synced);
+      // Only this account's results. An entry belonging to another student on
+      // a shared handset must never be uploaded under this user id. An entry
+      // with no owner at all is adopted by the signed-in user, the same rule
+      // the legacy migration uses — otherwise it could never be uploaded.
+      const owned = get().pendingResults.map(r =>
+        r.userId ? r : stampOwner(r, userId)
+      );
+      const unsynced = resultsOwnedBy(owned, userId).filter(r => !r.synced);
       const syncedIds = new Set<string>();
 
       for (const result of unsynced) {
@@ -476,9 +561,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         }
       }
 
-      const pendingResults = get().pendingResults.filter(r => !syncedIds.has(r.id));
+      const pendingResults = get()
+        .pendingResults.map(r => (r.userId ? r : stampOwner(r, userId)))
+        .filter(r => !syncedIds.has(r.id));
 
-      await AsyncStorage.setItem(RESULTS_KEY, JSON.stringify(pendingResults));
+      await persistPendingResults(userId, resultsOwnedBy(pendingResults, userId), syncedIds);
 
       set({
         pendingResults,
@@ -511,7 +598,10 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
 
       await Promise.all([
         AsyncStorage.removeItem(STORAGE_KEY),
+        // Clear only the signed-in account's results (plus the legacy key,
+        // which by then holds nothing this app writes).
         AsyncStorage.removeItem(RESULTS_KEY),
+        ...(userId ? [AsyncStorage.removeItem(pendingResultsKey(userId))] : []),
       ]);
       
       set({

@@ -17,6 +17,7 @@ import {
   Modal,
   Pressable,
   AppState,
+  BackHandler,
 } from 'react-native';
 import { Screen, useScreenInsets, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
@@ -32,7 +33,8 @@ import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
-import { planTestExit } from './testSessionExit';
+import { toTab } from '../../navigation/nestedTab';
+import { planTestExit, type ReturnToTarget } from './testSessionExit';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -45,6 +47,12 @@ type TestTakingRouteParams = {
     offlineTestId?: string;
     groupName?: string;
     groupId?: string;
+    /**
+     * Set by a launcher outside the Study tab (a group chat thread's Test
+     * mode). Exit — and the results screen this session hands off to — go
+     * back there instead of leaving the reader on the Study hub.
+     */
+    returnTo?: ReturnToTarget;
   };
 };
 
@@ -546,7 +554,7 @@ export default function TestTakingScreen() {
    */
   const navFooterPadding = useScreenBottomPadding({ bottom: 'auto', bottomExtra: 12 });
   const userId = useAuthStore(s => s.user?.id) || '';
-  const { testName, isOffline, groupName, groupId, offlineTestId } = route.params;
+  const { testName, isOffline, groupName, groupId, offlineTestId, returnTo } = route.params;
 
   const {
     activeTest,
@@ -600,7 +608,41 @@ export default function TestTakingScreen() {
       ? nearestPreviousUnlockedIndex(activeTest.questions.map((q) => q.id), activeTest.lockedQuestionIds, activeTest.currentQuestionIndex)
       : activeTest.currentQuestionIndex - 1;
 
-  useConfirmBeforeExit(!!activeTest && !isSubmitting, {
+  /**
+   * Getting back to the tab this session was launched from.
+   *
+   * The parent (tab) navigator is captured BEFORE the Study stack is reset:
+   * this screen unmounts on that reset, and `getParent()` on an unmounted
+   * screen is not something to rely on — least of all from the deferred
+   * branch below, which runs a tick after the reset has already happened.
+   */
+  const goToReturnTarget = useCallback(
+    (target: ReturnToTarget, parent?: { navigate?: (name: string, params?: object) => void } | null) => {
+      const tabNav = parent ?? navigation.getParent?.();
+      tabNav?.navigate?.(target.tab, toTab(target.screen, target.params));
+    },
+    [navigation]
+  );
+
+  /**
+   * A return target waiting on the "Exit Test?" confirmation.
+   *
+   * The guard below `preventDefault()`s the reset and re-dispatches it only if
+   * the reader confirms, so the tab switch cannot be fired beside the reset —
+   * cancelling would then leave them in the thread with the session still
+   * running behind it. It is parked here and released by `onConfirm`.
+   */
+  const pendingReturnRef = useRef<{
+    target: ReturnToTarget;
+    parent?: { navigate?: (name: string, params?: object) => void } | null;
+  } | null>(null);
+
+  /** The exact condition the guard is armed under — read by dismissSession. */
+  const exitGuardArmed = !!activeTest && !isSubmitting;
+  const exitGuardArmedRef = useRef(exitGuardArmed);
+  exitGuardArmedRef.current = exitGuardArmed;
+
+  useConfirmBeforeExit(exitGuardArmed, {
     title: isStudyMode ? 'Exit Study Mode' : 'Exit Test',
     message: isStudyMode
       ? 'Are you sure you want to exit? You can come back anytime.'
@@ -608,7 +650,16 @@ export default function TestTakingScreen() {
     confirmLabel: 'Exit',
     destructive: !isStudyMode,
     // Always abandon so the timer cannot keep running and auto-submit a zero.
-    onConfirm: () => exitStudyMode(),
+    onConfirm: () => {
+      exitStudyMode();
+      const pending = pendingReturnRef.current;
+      pendingReturnRef.current = null;
+      if (!pending) return;
+      // AFTER the guard's own dispatch, never before it: the hook re-dispatches
+      // the reset the moment this callback returns, and the Study stack has to
+      // shed this screen before the reader is put back in the thread.
+      setTimeout(() => goToReturnTarget(pending.target, pending.parent), 0);
+    },
   });
 
   // Keep local countdown in sync when resuming an in-progress session.
@@ -749,18 +800,54 @@ export default function TestTakingScreen() {
    * The reset still runs through useConfirmBeforeExit's `beforeRemove` guard,
    * so the "Exit Test?" prompt now appears on this path too — it could not
    * fire before, because nothing was being removed.
+   *
+   * With a `returnTo` the same reset clears Study and the reader is then put
+   * back in the thread they pressed Start Test in. The tab switch waits for
+   * the confirmation when the guard is armed (see `pendingReturnRef`), and
+   * follows the reset immediately when it is not.
    */
   const dismissSession = useCallback(() => {
     const plan = planTestExit({
       state: navigation.getState?.(),
       rootRouteName: TAB_STACK_ROOT_ROUTE.StudyTab,
+      returnTo,
     });
     if (plan.action === 'pop') {
       navigation.goBack();
       return;
     }
+    if (plan.action === 'returnToTab') {
+      const parent = navigation.getParent?.();
+      if (exitGuardArmedRef.current) {
+        pendingReturnRef.current = { target: plan.returnTo, parent };
+      }
+      navigation.reset({ index: 0, routes: plan.routes.map(name => ({ name })) });
+      if (!exitGuardArmedRef.current) goToReturnTarget(plan.returnTo, parent);
+      return;
+    }
     navigation.reset({ index: 0, routes: plan.routes.map(name => ({ name })) });
-  }, [navigation]);
+  }, [navigation, returnTo, goToReturnTarget]);
+
+  /**
+   * Hardware BACK, when this session came out of a chat thread.
+   *
+   * Left alone, BACK is a GO_BACK through the exit guard: it pops the Study
+   * stack and lands on the Study hub, while the on-screen Exit beside it
+   * returns to the thread — two answers to the same gesture. Routing BACK
+   * through `dismissSession` gives it the one answer: the same reset, the
+   * same "Exit Test?" prompt (the guard still fires on the reset), the same
+   * deferred return. Focus-scoped so anything pushed above owns its own
+   * BACK; inert without a `returnTo`, so every in-Study launch keeps the
+   * guard's plain GO_BACK exactly as it was.
+   */
+  useEffect(() => {
+    if (!returnTo || !isFocused) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      dismissSession();
+      return true;
+    });
+    return () => sub.remove();
+  }, [returnTo, isFocused, dismissSession]);
 
   const finalizeSubmit = useCallback(async () => {
     const liveSession = useTestStore.getState().activeTest;
@@ -780,21 +867,31 @@ export default function TestTakingScreen() {
         const correct = (attempt.answers || []).filter((a) => a.isCorrect).length;
         void import('../../utils/pendingQuestionBankScores')
           .then(async ({ enqueueScoreForBundle, flushPendingQuestionBankScores }) => {
-            await enqueueScoreForBundle(offlineTestId, correct, liveSession.questions.length);
+            await enqueueScoreForBundle(
+              userId,
+              offlineTestId,
+              correct,
+              liveSession.questions.length
+            );
             // Opportunistic flush; failures stay queued for the next sync.
-            await flushPendingQuestionBankScores();
+            await flushPendingQuestionBankScores(userId);
           })
           .catch(() => {
             // leaderboard is not critical to finishing a test
           });
       }
       setShowReviewModal(false);
-      navigation.replace('TestResults', { attemptId: attempt.id });
+      // Thread the origin on: the results screen is where Done lives, and it
+      // has no other way to know this session came out of a chat thread.
+      navigation.replace('TestResults', {
+        attemptId: attempt.id,
+        ...(returnTo ? { returnTo } : {}),
+      });
     } catch {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [submitTest, userId, isOffline, groupName, groupId, offlineTestId, navigation]);
+  }, [submitTest, userId, isOffline, groupName, groupId, offlineTestId, navigation, returnTo]);
 
   const handleSubmit = useCallback(async (timeUp = false) => {
     // Session may have been abandoned (exit) while a timer tick was queued.

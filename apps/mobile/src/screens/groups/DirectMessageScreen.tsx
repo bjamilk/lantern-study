@@ -89,6 +89,8 @@ import { MessageReactions, ReactionPickerRow } from '../../components/chat/Messa
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 type ThreadInquiry = Awaited<ReturnType<typeof fetchInquiryByThread>>;
 
 type NavigationProp = {
@@ -808,10 +810,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const openListing = useCallback(() => {
     const listingId = inquiry?.listing?.id || inquiry?.listing_id;
     if (!listingId) return;
-    navigation.getParent?.()?.navigate('MarketTab', {
-      screen: 'ListingDetail',
-      params: { listingId },
-    });
+    navigation.getParent?.()?.navigate('MarketTab', toTab('ListingDetail', { listingId }));
   }, [inquiry, navigation]);
 
   const openOffers = useCallback(() => {
@@ -819,7 +818,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     // their own inquiry would land on an empty list while the seller's counter
     // sat under Sent. The inquiry says which side this viewer is.
     const tab = inquiry?.buyer_id === user?.id ? 'buyer' : 'seller';
-    navigation.getParent?.()?.navigate('MarketTab', { screen: 'Offers', params: { tab } });
+    navigation.getParent?.()?.navigate('MarketTab', toTab('Offers', { tab }));
   }, [navigation, inquiry?.buyer_id, user?.id]);
 
   const handleSend = async (overrideText?: string) => {

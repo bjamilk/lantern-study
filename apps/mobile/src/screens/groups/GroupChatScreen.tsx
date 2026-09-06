@@ -99,6 +99,8 @@ import { collectKnownLounges, useCommunityStore } from '../../stores/communitySt
 import { findMyCommunity } from '../../utils/communityOverlay';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 export type GroupChatNavigation = {
   goBack: () => void;
   canGoBack?: () => boolean;
@@ -556,7 +558,7 @@ export function GroupChatView({
       if (host === 'chat') {
         navigation.navigate(screen, params);
       } else {
-        navigation.getParent()?.navigate('ChatTab', { screen, params });
+        navigation.getParent()?.navigate('ChatTab', toTab(screen, params));
       }
     },
     [host, navigation]
@@ -1022,26 +1024,27 @@ export function GroupChatView({
         // is dropped unless that same modal also picked the course it sits in.
         topicId: config.courseId !== undefined ? config.topicId ?? null : null,
       });
+      // The session runs on the STUDY stack, so every exit used to end on the
+      // Study hub — a tab the reader never asked for. `returnTo` is the way
+      // back: Exit, Done and hardware BACK reset Study and land here again.
+      const returnTo = {
+        tab: 'ChatTab',
+        screen: 'GroupChat',
+        params: { groupId, groupName: displayName },
+      };
+      const sessionParams = {
+        testId: 'custom',
+        testName: displayName,
+        mode,
+        groupName: displayName,
+        groupId,
+        returnTo,
+      };
       const parent = navigation.getParent?.();
       if (parent?.navigate) {
-        parent.navigate('StudyTab', {
-          screen: 'TestTaking',
-          params: {
-            testId: 'custom',
-            testName: displayName,
-            mode,
-            groupName: displayName,
-            groupId,
-          },
-        });
+        parent.navigate('StudyTab', toTab('TestTaking', sessionParams));
       } else {
-        navigateToTestTaking({
-          testId: 'custom',
-          testName: displayName,
-          mode,
-          groupName: displayName,
-          groupId,
-        });
+        navigateToTestTaking(sessionParams);
       }
     } catch (err) {
       Alert.alert(
@@ -2607,19 +2610,16 @@ export function GroupChatScreen({ navigation, route }: Props) {
 
   useEffect(() => {
     if (!isBoard) return;
-    navigation.getParent()?.navigate('MarketTab', {
-      screen: 'CommunityChannel',
-      params: {
-        groupId,
-        groupName: groupName ?? resolvedGroup?.name,
-        communitySlug: resolved?.slug,
-        communityName: resolved?.name,
-        communityId: groupCommunityId ?? undefined,
-        // We have already resolved the surface here; hand the answer over so
-        // the router never has to guess it from a missing slug.
-        isLounge: false,
-      },
-    });
+    navigation.getParent()?.navigate('MarketTab', toTab('CommunityChannel', {
+      groupId,
+      groupName: groupName ?? resolvedGroup?.name,
+      communitySlug: resolved?.slug,
+      communityName: resolved?.name,
+      communityId: groupCommunityId ?? undefined,
+      // We have already resolved the surface here; hand the answer over so
+      // the router never has to guess it from a missing slug.
+      isLounge: false,
+    }));
     // Leave no chat screen underneath for hardware back to return to.
     const hasScreenBelow = (navigation.getState?.()?.index ?? 0) > 0;
     if (hasScreenBelow) navigation.goBack();
@@ -2640,10 +2640,7 @@ export function GroupChatScreen({ navigation, route }: Props) {
     return {
       label: COMMUNITY_COPY.inCommunity(resolved.name),
       onPress: () =>
-        navigation.getParent()?.navigate('MarketTab', {
-          screen: 'CommunityDetail',
-          params: { slug: resolved.slug },
-        }),
+        navigation.getParent()?.navigate('MarketTab', toTab('CommunityDetail', { slug: resolved.slug })),
     };
   }, [resolved?.slug, resolved?.name, navigation]);
 

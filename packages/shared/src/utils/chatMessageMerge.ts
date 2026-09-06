@@ -84,3 +84,107 @@ export function mergeChatMessagesById<T extends MergeableChatMessage>(
 
   return [...byId.values()].sort((a, b) => messageTimeMs(a) - messageTimeMs(b));
 }
+
+/** A cached chat row can also carry local-only outbox state (mobile). */
+export type MergeableCachedChatMessage = MergeableChatMessage & {
+  deliveryState?: 'pending' | 'failed' | null;
+};
+
+/**
+ * Merge a FRESH SERVER PAGE with a persisted/local cache for the same
+ * conversation, with the server authoritative.
+ *
+ * `mergeChatMessagesById(cache, server)` is the right call when the cache is
+ * the base and the server rows are the update. It is the WRONG call when a
+ * caller wants "keep my optimistic rows" and reaches for
+ * `merge(serverRows, cache)` — that makes the cache the incoming (winning)
+ * side, so every stale cached field (reactions, edits, removals, votes, pins)
+ * overwrites the fresh server row. That is the hole this helper closes.
+ *
+ * Rules:
+ * - Id present on both sides: the server row wins field-by-field. Cached-only
+ *   keys the server never returns (viewer-specific extras) are preserved, and
+ *   local outbox state is cleared, because a row the server returned is
+ *   delivered by definition.
+ * - A server row whose `clientMessageId` matches a cached temp row replaces
+ *   that temp row (optimistic reconciliation).
+ * - A cached row the server did not return is kept ONLY if it is either
+ *   local-only (deliveryState 'pending' | 'failed', or an unreconciled
+ *   optimistic temp id) or outside the fetched page's time window — i.e.
+ *   older than the oldest or newer than the newest server row. Older keeps
+ *   pagination working (page 1 is the newest N; earlier pages live only in
+ *   the cache); newer keeps a realtime insert that landed while the fetch was
+ *   in flight. A cached row INSIDE the window that the server no longer
+ *   returns was deleted, and is dropped rather than resurrected.
+ * - An empty server page is treated as "no information" and leaves the cache
+ *   untouched: an empty page and a transient/filtered empty response are
+ *   indistinguishable here, and wiping a conversation is not recoverable.
+ *
+ * Ordering matches `mergeChatMessagesById`: ascending by timestamp.
+ */
+export function mergeServerRefresh<T extends MergeableCachedChatMessage>(
+  serverRows: T[],
+  cachedRows: T[]
+): T[] {
+  if (!cachedRows.length) return serverRows.slice();
+  if (!serverRows.length) return cachedRows.slice();
+
+  const clientIdOf = (message: T): string | undefined =>
+    typeof message.clientMessageId === 'string' && message.clientMessageId
+      ? message.clientMessageId
+      : undefined;
+
+  const serverIds = new Set<string>();
+  const reconciledClientIds = new Set<string>();
+  let oldestServerMs = Number.POSITIVE_INFINITY;
+  let newestServerMs = Number.NEGATIVE_INFINITY;
+  for (const row of serverRows) {
+    serverIds.add(row.id);
+    const clientMessageId = clientIdOf(row);
+    if (clientMessageId) reconciledClientIds.add(clientMessageId);
+    const ms = messageTimeMs(row);
+    if (ms < oldestServerMs) oldestServerMs = ms;
+    if (ms > newestServerMs) newestServerMs = ms;
+  }
+
+  const cachedById = new Map<string, T>();
+  for (const row of cachedRows) cachedById.set(row.id, row);
+
+  const byId = new Map<string, T>();
+  for (const row of serverRows) {
+    const clientMessageId = clientIdOf(row);
+    const prev =
+      cachedById.get(row.id) ||
+      (clientMessageId && clientMessageId !== row.id
+        ? cachedById.get(clientMessageId)
+        : undefined);
+    if (!prev) {
+      byId.set(row.id, row);
+      continue;
+    }
+    const merged = { ...prev, ...row, id: row.id } as T;
+    if (prev.deliveryState && row.deliveryState == null) {
+      // The server has this row, so any local 'pending' / 'failed' badge is stale.
+      (merged as MergeableCachedChatMessage).deliveryState = undefined;
+    }
+    byId.set(row.id, merged);
+  }
+
+  for (const row of cachedRows) {
+    if (serverIds.has(row.id) || byId.has(row.id)) continue;
+    // A temp row the server has already reconciled under a real id is gone.
+    if (reconciledClientIds.has(row.id)) continue;
+    const clientMessageId = clientIdOf(row);
+    if (clientMessageId && reconciledClientIds.has(clientMessageId)) continue;
+
+    const isLocalOnly =
+      row.deliveryState === 'pending' ||
+      row.deliveryState === 'failed' ||
+      isTempMessageId(row.id);
+    const ms = messageTimeMs(row);
+    const isOutsidePageWindow = ms < oldestServerMs || ms > newestServerMs;
+    if (isLocalOnly || isOutsidePageWindow) byId.set(row.id, row);
+  }
+
+  return [...byId.values()].sort((a, b) => messageTimeMs(a) - messageTimeMs(b));
+}

@@ -1722,16 +1722,22 @@ export const useTestStore = create<TestState>((set, get) => ({
     );
 
     if (options?.isOffline) {
-      await useOfflineStore.getState().savePendingResult({
-        testId: activeTest.test.id,
-        groupName: options.groupName || activeTest.test.name,
-        score: correctCount,
-        totalQuestions: activeTest.questions.length,
-        percentage,
-        completedAt: attempt.completedAt || new Date().toISOString(),
-        timeSpent,
-        sessionPayload,
-      });
+      // The owning account rides with the result: pending results are stored
+      // per user, so an unattributed one would be invisible to its owner and
+      // could be adopted by whoever signs in next on this handset.
+      await useOfflineStore.getState().savePendingResult(
+        {
+          testId: activeTest.test.id,
+          groupName: options.groupName || activeTest.test.name,
+          score: correctCount,
+          totalQuestions: activeTest.questions.length,
+          percentage,
+          completedAt: attempt.completedAt || new Date().toISOString(),
+          timeSpent,
+          sessionPayload,
+        },
+        userId || undefined
+      );
     } else if (!DEMO_MODE && userId) {
       try {
         let sessionId = activeTest.draftId;

@@ -52,6 +52,8 @@ import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -355,15 +357,12 @@ function CommunityServer({
   /** A study group row taps into CHAT — never into a board. */
   const openStudyGroup = (group: CommunityStudyGroup) => {
     if (!community) return;
-    navigation.getParent?.()?.navigate('ChatTab', {
-      screen: 'GroupChat',
-      params: {
-        groupId: group.id,
-        groupName: group.name,
-        communitySlug: community.slug,
-        communityName: community.name,
-      },
-    });
+    navigation.getParent?.()?.navigate('ChatTab', toTab('GroupChat', {
+      groupId: group.id,
+      groupName: group.name,
+      communitySlug: community.slug,
+      communityName: community.name,
+    }));
   };
 
   const joinThenOpenStudyGroup = async (group: CommunityStudyGroup) => {

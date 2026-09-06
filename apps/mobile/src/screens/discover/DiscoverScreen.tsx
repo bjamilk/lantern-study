@@ -49,6 +49,8 @@ import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 import { RequestError } from '../../components/RequestError';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -249,7 +251,7 @@ function DiscoverHub({
 
   const openOrJoinGroup = async (group: DiscoverGroup) => {
     if (group.isMember) {
-      tabNav?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId: group.id, groupName: group.name } });
+      tabNav?.navigate('ChatTab', toTab('GroupChat', { groupId: group.id, groupName: group.name }));
       return;
     }
     setPendingId(group.id);
@@ -263,7 +265,7 @@ function DiscoverHub({
             : item
         )
       );
-      tabNav?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId: group.id, groupName: group.name } });
+      tabNav?.navigate('ChatTab', toTab('GroupChat', { groupId: group.id, groupName: group.name }));
     } catch (err) {
       setActionFailure({
         error: err,
@@ -476,7 +478,7 @@ function DiscoverHub({
       </View>
     ) : section === 'groups' ? (
       <Pressable
-        onPress={() => tabNav?.navigate('ChatTab', { screen: 'CreateGroup' })}
+        onPress={() => tabNav?.navigate('ChatTab', toTab('CreateGroup'))}
         className="mx-4 mt-3 rounded-lg bg-lantern-primary px-3 py-2"
       >
         <Text className="text-center text-xs font-semibold text-white">Create a study group</Text>

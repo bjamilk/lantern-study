@@ -61,8 +61,18 @@ export type StudyStackParamList = {
     offlineTestId?: string;
     groupName?: string;
     groupId?: string;
+    /**
+     * Where this session was launched from, when that was not the Study tab
+     * (today: a group chat thread). Exit / Done / hardware BACK reset the
+     * Study stack and go back there instead of landing on the Study hub.
+     */
+    returnTo?: import("../screens/tests/testSessionExit").ReturnToTarget;
   };
-  TestResults: { attemptId: string };
+  /** `returnTo` is threaded from TestTaking on submit, so a retake keeps it. */
+  TestResults: {
+    attemptId: string;
+    returnTo?: import("../screens/tests/testSessionExit").ReturnToTarget;
+  };
   TestAnalysis: {
     test?: import("../types/dashboardStats").RecentTest;
     sessionId?: string;

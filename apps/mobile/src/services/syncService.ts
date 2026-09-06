@@ -55,6 +55,16 @@ class SyncService {
   private appStateSubscription: { remove: () => void } | null = null;
   private realtimeSubscriptions: Map<string, ReturnType<typeof supabase.channel>> = new Map();
   private periodicSyncInterval: ReturnType<typeof setInterval> | null = null;
+  /** Unsubscribe from the auth store's user changes. */
+  private authUnsubscribe: (() => void) | null = null;
+  /**
+   * The account the queue is pointed at, as far as this service is concerned.
+   * `null` means signed out: the queue holds nothing in memory and nothing is
+   * processed, so no operation can ever be replayed under the wrong session.
+   */
+  private queueUserId: string | null = null;
+  /** Serialises account switches — each awaits the previous one's storage I/O. */
+  private activeUserChain: Promise<void> = Promise.resolve();
   private retryAttempts: Map<string, number> = new Map();
   private readonly MAX_RETRY_ATTEMPTS = 5;
   private readonly BASE_RETRY_DELAY = 1000; // 1 second
@@ -75,23 +85,83 @@ class SyncService {
   async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
-    await this.queue.initialize();
     this.registerSyncHandlers();
-    // Cold start online never sees an offline→online transition, so ops
-    // parked in failedOperations by a previous session would sit forever.
-    // Revive them now; the first sync pass picks them up.
-    if (this.queue.getFailedCount() > 0) {
-      await this.queue.retryFailed().catch(err =>
-        console.error('[SyncService] Failed to revive failed operations at boot:', err)
-      );
-    }
+    // The queue is per account: `setActiveUser` is what loads operations from
+    // storage (and migrates the pre-split shared key), so there is deliberately
+    // no unscoped `queue.initialize()` here. Signed out, the queue stays empty.
+    await this.bindActiveUser();
     this.setupNetworkListener();
     this.setupAppStateListener();
     this.startPeriodicSync();
-    this.manager.start();
+    if (this.queueUserId) this.manager.start();
     this.isInitialized = true;
 
     console.log('[SyncService] Initialized');
+  }
+
+  /**
+   * Point the queue at the signed-in account and follow every change to it.
+   *
+   * The auth store is imported lazily: stores import this service, so a static
+   * import would close the cycle (store -> syncService -> authStore -> store).
+   */
+  private async bindActiveUser(): Promise<void> {
+    try {
+      const { useAuthStore } = await import('../stores/authStore');
+      await this.setActiveUser(useAuthStore.getState().user?.id ?? null);
+      this.authUnsubscribe?.();
+      // Plain zustand subscribe (no selector) — the store has no
+      // subscribeWithSelector middleware, and comparing ids here is enough.
+      this.authUnsubscribe = useAuthStore.subscribe((state) => {
+        const userId = state.user?.id ?? null;
+        if (userId === this.queueUserId) return;
+        void this.setActiveUser(userId);
+      });
+    } catch (error) {
+      console.error('[SyncService] Failed to bind active user:', error);
+    }
+  }
+
+  /**
+   * Switch the queue to `userId` (`null` when signed out).
+   *
+   * Switches are serialised: an account swap does storage I/O, and two
+   * overlapping swaps could otherwise leave the queue loaded for one account
+   * while persisting under the other's key. On sign-in, operations parked in
+   * failedOperations by a previous session are revived — a cold start online
+   * never sees an offline→online transition, so they would sit forever.
+   */
+  async setActiveUser(userId: string | null): Promise<void> {
+    if (userId === this.queueUserId && this.queue.getActiveUserId() === userId) {
+      return this.activeUserChain;
+    }
+    this.queueUserId = userId;
+    this.activeUserChain = this.activeUserChain
+      .catch(() => {})
+      .then(async () => {
+        await this.queue.setActiveUser(userId);
+        if (!userId) {
+          // Signed out: nothing to sync, and the timer must not process a
+          // queue that belongs to nobody.
+          this.manager.stop();
+          return;
+        }
+        if (this.isInitialized) this.manager.start();
+        if (this.queue.getFailedCount() > 0) {
+          await this.queue
+            .retryFailed()
+            .catch(err =>
+              console.error('[SyncService] Failed to revive failed operations:', err)
+            );
+        }
+      })
+      .catch(err => console.error('[SyncService] Failed to switch active user:', err));
+    return this.activeUserChain;
+  }
+
+  /** The account whose operations the queue currently holds. */
+  getActiveUserId(): string | null {
+    return this.queue.getActiveUserId();
   }
 
   /**
@@ -99,6 +169,10 @@ class SyncService {
    */
   shutdown(): void {
     this.manager.stop();
+    if (this.authUnsubscribe) {
+      this.authUnsubscribe();
+      this.authUnsubscribe = null;
+    }
     if (this.networkUnsubscribe) {
       this.networkUnsubscribe();
     }
@@ -482,6 +556,14 @@ class SyncService {
     data: Record<string, any>,
     userId: string
   ): Promise<string> {
+    // The queue is bound to the signed-in account at boot, but a store can
+    // enqueue before that has landed (or straight after a swap). Make sure the
+    // owner's queue is the active one first; enqueueing for anyone else writes
+    // to their key without touching this session's in-memory list.
+    await this.activeUserChain.catch(() => {});
+    if (userId && !this.queue.getActiveUserId()) {
+      await this.setActiveUser(userId);
+    }
     return this.queue.enqueue(entityType, entityId, operation, data, userId);
   }
 
@@ -489,6 +571,13 @@ class SyncService {
    * Trigger immediate sync
    */
   async syncNow(): Promise<{ success: number; failed: number }> {
+    // Wait for any in-flight account switch, then refuse to process a queue
+    // that belongs to nobody: with no signed-in user there is no session to
+    // replay these writes under.
+    await this.activeUserChain.catch(() => {});
+    if (!this.queue.getActiveUserId()) {
+      return { success: 0, failed: 0 };
+    }
     return this.manager.syncNow();
   }
 

@@ -4,6 +4,17 @@
 // Local-first sync queue with conflict resolution
 
 import { IStorageAdapter } from '../storage';
+import {
+  SYNC_QUEUE_LEGACY_KEY,
+  emptySyncQueueSnapshot,
+  mergeSyncQueueSnapshots,
+  parseSyncQueueSnapshot,
+  planSyncQueueLoad,
+  syncQueueKey,
+  type SyncQueueSnapshot,
+} from './syncQueueScope';
+
+export * from './syncQueueScope';
 
 // ============================================
 // TYPES
@@ -57,7 +68,7 @@ export type ConflictResolutionStrategy = 'local-wins' | 'remote-wins' | 'latest-
 // SYNC QUEUE CLASS
 // ============================================
 
-const SYNC_QUEUE_KEY = 'lantern_sync_queue';
+const SYNC_QUEUE_KEY = SYNC_QUEUE_LEGACY_KEY;
 const MAX_RETRIES = 3;
 
 /**
@@ -87,6 +98,19 @@ export class SyncQueue {
   private conflictStrategy: ConflictResolutionStrategy;
   private onSyncComplete?: (operation: SyncOperation, success: boolean) => void;
   private syncHandlers: Map<SyncEntityType, (op: SyncOperation) => Promise<boolean>>;
+  /**
+   * The account whose operations are in memory, and whose scoped key is
+   * persisted to. `null` means no user has been set — the queue then reads and
+   * writes the legacy unscoped key, which is the behaviour web callers that
+   * never call `setActiveUser` have always had.
+   */
+  private activeUserId: string | null = null;
+  /**
+   * > 0 while `setActiveUser` is between emptying memory and loading the new
+   * account's operations. `processQueue` must not run (and persist an empty
+   * snapshot over the new key) in that window.
+   */
+  private switching = 0;
 
   constructor(
     storage: IStorageAdapter,
@@ -103,12 +127,103 @@ export class SyncQueue {
     };
   }
 
+  /** The account the in-memory queue belongs to (`null` = legacy/unscoped). */
+  getActiveUserId(): string | null {
+    return this.activeUserId;
+  }
+
+  /** The storage key the in-memory queue is persisted to. */
+  private activeKey(): string {
+    return this.activeUserId ? syncQueueKey(this.activeUserId) : SYNC_QUEUE_KEY;
+  }
+
+  /**
+   * Switch the queue to `userId`.
+   *
+   * Runs the one-time legacy migration (each owner's operations are written to
+   * their own scoped key and the shared key is deleted), loads that user's
+   * operations into memory, and drops the previous user's operations from
+   * memory — those stay persisted under their own key and come back when they
+   * sign in again.
+   *
+   * Passing `null` empties memory and returns the queue to the legacy key.
+   */
+  async setActiveUser(userId: string | null): Promise<void> {
+    if (userId === this.activeUserId) return;
+
+    if (!userId) {
+      this.activeUserId = null;
+      this.state.pendingOperations = [];
+      this.state.failedOperations = [];
+      this.state.lastSyncTime = null;
+      return;
+    }
+
+    this.activeUserId = userId;
+    this.state.pendingOperations = [];
+    this.state.failedOperations = [];
+    this.state.lastSyncTime = null;
+    this.switching++;
+
+    try {
+      const [scopedRaw, legacyRaw] = await Promise.all([
+        this.storage.getItem(syncQueueKey(userId)),
+        this.storage.getItem(SYNC_QUEUE_KEY),
+      ]);
+
+      const plan = planSyncQueueLoad<SyncOperation>(userId, scopedRaw, legacyRaw);
+
+      for (const write of plan.writes) {
+        if (write.key === syncQueueKey(userId)) {
+          await this.writeSnapshot(write.key, write.ops);
+        } else {
+          // Another account's partition. Merge rather than overwrite: they may
+          // already have written a scoped key of their own.
+          await this.mergeIntoKey(write.key, write.ops);
+        }
+      }
+
+      if (plan.removeLegacy) {
+        await this.storage.removeItem(SYNC_QUEUE_KEY);
+      }
+      if (plan.droppedOwnerless > 0) {
+        console.warn(
+          `[SyncQueue] Dropped ${plan.droppedOwnerless} legacy operation(s) with no userId — they cannot be replayed under an account`
+        );
+      }
+
+      this.state.pendingOperations = plan.ops.pendingOperations;
+      this.state.failedOperations = plan.ops.failedOperations;
+      this.state.lastSyncTime = plan.ops.lastSyncTime;
+    } catch (error) {
+      console.error('[SyncQueue] Failed to switch active user:', error);
+    } finally {
+      this.switching--;
+    }
+  }
+
+  private async writeSnapshot(
+    key: string,
+    snapshot: SyncQueueSnapshot<SyncOperation>
+  ): Promise<void> {
+    await this.storage.setItem(key, JSON.stringify(snapshot));
+  }
+
+  /** Read-merge-write, so a write never clobbers operations we did not load. */
+  private async mergeIntoKey(
+    key: string,
+    snapshot: SyncQueueSnapshot<SyncOperation>
+  ): Promise<void> {
+    const existing = parseSyncQueueSnapshot<SyncOperation>(await this.storage.getItem(key));
+    await this.writeSnapshot(key, mergeSyncQueueSnapshots(existing, snapshot));
+  }
+
   /**
    * Initialize queue by loading from storage
    */
   async initialize(): Promise<void> {
     try {
-      const stored = await this.storage.getItem(SYNC_QUEUE_KEY);
+      const stored = await this.storage.getItem(this.activeKey());
       if (stored) {
         const parsed = JSON.parse(stored);
         this.state = {
@@ -128,11 +243,11 @@ export class SyncQueue {
    */
   private async persistState(): Promise<void> {
     try {
-      await this.storage.setItem(SYNC_QUEUE_KEY, JSON.stringify({
+      await this.writeSnapshot(this.activeKey(), {
         pendingOperations: this.state.pendingOperations,
         failedOperations: this.state.failedOperations,
         lastSyncTime: this.state.lastSyncTime,
-      }));
+      });
     } catch (error) {
       console.error('[SyncQueue] Failed to persist state:', error);
     }
@@ -182,6 +297,20 @@ export class SyncQueue {
       userId,
     };
 
+    // An operation queued for somebody other than the signed-in account is
+    // persisted to THAT account's key and kept out of this session's queue, so
+    // it is never replayed under the wrong user — and never silently lost.
+    if (this.activeUserId && userId !== this.activeUserId) {
+      console.warn(
+        `[SyncQueue] Enqueued ${operation} for ${entityType}:${entityId} owned by ${userId}, not the active user ${this.activeUserId} — persisted to their queue`
+      );
+      await this.mergeIntoKey(syncQueueKey(userId), {
+        ...emptySyncQueueSnapshot<SyncOperation>(),
+        pendingOperations: [syncOp],
+      });
+      return opId;
+    }
+
     // Check for existing operations on same entity and deduplicate.
     // Never for event-type entities — each of those operations is real work.
     if (!EVENT_ENTITY_TYPES.has(entityType)) {
@@ -205,10 +334,23 @@ export class SyncQueue {
       console.log('[SyncQueue] Already syncing, skipping');
       return { success: 0, failed: 0 };
     }
+    if (this.switching > 0) {
+      // Memory is empty while the next account's operations load; running now
+      // would persist that emptiness over their key.
+      return { success: 0, failed: 0 };
+    }
 
     this.state.isSyncing = true;
     let success = 0;
     let failed = 0;
+
+    // The account this run belongs to. `setActiveUser` can swap the queue
+    // underneath an `await handler(op)`; from then on nothing here may touch
+    // the (now different) in-memory state or run the previous user's ops.
+    const owner = this.activeUserId;
+    const ownerKey = this.activeKey();
+    const succeededIds = new Set<string>();
+    const ownerChanged = () => this.activeUserId !== owner;
 
     // Sort by timestamp to process in order
     const operations = [...this.state.pendingOperations].sort(
@@ -216,6 +358,10 @@ export class SyncQueue {
     );
 
     for (const op of operations) {
+      if (ownerChanged()) {
+        console.warn('[SyncQueue] Active user changed mid-sync; abandoning the rest of the run');
+        break;
+      }
       const handler = this.syncHandlers.get(op.entityType);
       
       if (!handler) {
@@ -225,12 +371,20 @@ export class SyncQueue {
 
       try {
         const result = await handler(op);
+
+        if (ownerChanged()) {
+          // The op already ran; remember a success so it is not replayed for
+          // its owner, but do not touch the new account's state.
+          if (result) succeededIds.add(op.id);
+          break;
+        }
         
         if (result) {
           // Remove from pending
           this.state.pendingOperations = this.state.pendingOperations.filter(
             p => p.id !== op.id
           );
+          succeededIds.add(op.id);
           success++;
           this.onSyncComplete?.(op, true);
         } else {
@@ -248,6 +402,7 @@ export class SyncQueue {
         }
       } catch (error: any) {
         console.error(`[SyncQueue] Error processing ${op.entityType}:${op.entityId}:`, error);
+        if (ownerChanged()) break;
         op.lastError = error.message;
 
         // A dead connection is not the operation's fault: don't burn one of
@@ -274,11 +429,39 @@ export class SyncQueue {
     }
 
     this.state.isSyncing = false;
+
+    if (ownerChanged()) {
+      // Memory now belongs to another account. Record this run's successes
+      // against the previous owner's stored queue so they are not replayed
+      // when that account signs back in; nothing else is written.
+      await this.dropStoredOperations(ownerKey, succeededIds);
+      console.log(`[SyncQueue] Processed (abandoned on user change): ${success} success, ${failed} failed`);
+      return { success, failed };
+    }
+
     this.state.lastSyncTime = Date.now();
     await this.persistState();
 
     console.log(`[SyncQueue] Processed: ${success} success, ${failed} failed`);
     return { success, failed };
+  }
+
+  /** Remove `ids` from the queue persisted under `key` without loading it into memory. */
+  private async dropStoredOperations(key: string, ids: ReadonlySet<string>): Promise<void> {
+    if (ids.size === 0) return;
+    try {
+      const raw = await this.storage.getItem(key);
+      // Nothing stored (a user sign-out already removed it): do not resurrect the key.
+      if (raw == null) return;
+      const stored = parseSyncQueueSnapshot<SyncOperation>(raw);
+      await this.writeSnapshot(key, {
+        ...stored,
+        pendingOperations: stored.pendingOperations.filter(op => !ids.has(op.id)),
+        failedOperations: stored.failedOperations.filter(op => !ids.has(op.id)),
+      });
+    } catch (error) {
+      console.error('[SyncQueue] Failed to record synced operations for previous user:', error);
+    }
   }
 
   /**
@@ -335,12 +518,26 @@ export class SyncQueue {
   }
 
   /**
-   * Clear all operations (use with caution)
+   * Clear the ACTIVE user's operations (use with caution). Other accounts'
+   * queues, persisted under their own keys, are untouched.
    */
   async clear(): Promise<void> {
     this.state.pendingOperations = [];
     this.state.failedOperations = [];
     await this.persistState();
+  }
+
+  /** Clear one account's queue, whether or not they are the active user. */
+  async clearForUser(userId: string): Promise<void> {
+    if (userId === this.activeUserId) {
+      await this.clear();
+      return;
+    }
+    try {
+      await this.storage.removeItem(syncQueueKey(userId));
+    } catch (error) {
+      console.error('[SyncQueue] Failed to clear queue for user:', error);
+    }
   }
 }
 

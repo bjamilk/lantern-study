@@ -27,6 +27,7 @@ import { CoursePicker } from '../../components/CoursePicker';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discover/GroupDiscoverabilityFields';
 import type { ChatStackParamList } from '../../navigation/types';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { toTab } from '../../navigation/nestedTab';
 
 type CreateGroupParams = ChatStackParamList['CreateGroup'];
 
@@ -298,7 +299,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
             communitySlug,
             communityName,
           };
-          if (parent) parent.navigate('ChatTab', { screen: 'GroupChat', params });
+          if (parent) parent.navigate('ChatTab', toTab('GroupChat', params));
           else navigation.replace('GroupChat', params);
           useToastStore.getState().showToast(COMMUNITY_COPY.createdInChat(created.name), 'success');
           return;

@@ -35,6 +35,8 @@ import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
   goBack: () => void;
@@ -664,10 +666,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           setImportOpen(false);
           navigateRootStack('Main', {
             screen: 'MarketTab',
-            params: {
-              screen: 'StudyProductDrafts',
-              params: { source: { noteIds: [result.noteId], title: result.noteTitle } },
-            },
+            params: toTab('StudyProductDrafts', { source: { noteIds: [result.noteId], title: result.noteTitle } }),
           });
         }}
       />

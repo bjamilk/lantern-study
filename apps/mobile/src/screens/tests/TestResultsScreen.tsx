@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Test Results Screen
 // ===========================================
 
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -10,12 +10,15 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
+  Alert,
+  BackHandler,
 } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
+import { useRoute, useNavigation, useIsFocused, RouteProp } from '@react-navigation/native';
 import { useTestStore, type TestQuestion } from '../../stores/testStore';
-import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
+import { formatCorrectAnswerDisplay, normalizeApiQuestions } from '../../utils/questionHelpers';
+import { useAuthStore } from '../../stores/authStore';
 import { useTheme, type ThemeColors } from '../../theme';
 import AIExplainModal from '../../components/AIExplainModal';
 import AIUsageBadge from '../../components/AIUsageBadge';
@@ -26,25 +29,42 @@ import {
 import type { RecentTest } from '../../types/dashboardStats';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
-import { planExitToTestsList, planTestExit } from './testSessionExit';
+import { toTab } from '../../navigation/nestedTab';
+import {
+  planExitToTestsList,
+  planRetakeFromResults,
+  planTestExit,
+  type ReturnToTabPlan,
+  type ReturnToTarget,
+} from './testSessionExit';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 type TestResultsRouteParams = {
   TestResults: {
     attemptId: string;
+    /**
+     * Threaded here by TestTaking when the session was launched from another
+     * tab. Done, the header's back arrow and hardware BACK then return to
+     * that thread instead of dropping the reader on the Study tab.
+     */
+    returnTo?: ReturnToTarget;
   };
 };
 
 export default function TestResultsScreen() {
   const route = useRoute<RouteProp<TestResultsRouteParams, 'TestResults'>>();
   const navigation = useNavigation<any>();
-  const { attemptId } = route.params;
+  const isFocused = useIsFocused();
+  const { attemptId, returnTo } = route.params;
   const { colors } = useTheme();
   // Styles were hardcoded dark, so results stayed dark in light mode.
   const styles = useMemo(() => createStyles(colors), [colors]);
 
-  const { attempts, startQuestionSet, hydrateAttemptDetail } = useTestStore();
+  const { attempts, tests, startQuestionSet, startTest, hydrateAttemptDetail } = useTestStore();
+  const { user } = useAuthStore();
+  // Guards a double-tap while the store is assembling the new session.
+  const [startingRetake, setStartingRetake] = useState(false);
   // Called above the early return so hook order is stable. It reads the
   // app-root provider (this component's own SafeAreaProvider is inside the
   // returned tree), which reports 0 in a fullScreenModal window — the
@@ -76,6 +96,38 @@ export default function TestResultsScreen() {
       .filter(a => !a.isCorrect && a.questionSnapshot)
       .map(a => a.questionSnapshot!);
   }, [attempt]);
+
+  /**
+   * "Try Again" relaunches the SAME session; these three memos are its inputs.
+   *
+   * The button used to call `exitToTestsList` — Done's handler — so it just
+   * left the results. It now goes through the same two-step launch the tests
+   * list's own Retake uses (snapshots first, source test second), which is
+   * what keeps one time-limit rule across every launch path.
+   */
+  const retakeQuestions = useMemo((): TestQuestion[] => {
+    if (!attempt) return [];
+    return normalizeApiQuestions(
+      attempt.answers
+        .map(a => a.questionSnapshot)
+        .filter((q): q is NonNullable<typeof q> => !!q)
+    );
+  }, [attempt]);
+
+  const retakeSourceTest = useMemo(() => {
+    if (!attempt) return null;
+    const lookupId = attempt.originalTestId || attempt.testId;
+    return tests.find(t => t.id === lookupId) ?? null;
+  }, [attempt, tests]);
+
+  const retakePlan = useMemo(() => planRetakeFromResults({
+    attempt,
+    snapshotCount: retakeQuestions.length,
+    sourceTest: retakeSourceTest,
+    // A retake is the same excursion out of the thread; the planner puts the
+    // origin into the relaunched session's params so the fix survives it.
+    returnTo,
+  }), [attempt, retakeQuestions.length, retakeSourceTest, returnTo]);
 
   const analysisTest = useMemo((): RecentTest | null => {
     if (!attempt || attempt.answers.length === 0) return null;
@@ -162,6 +214,24 @@ export default function TestResultsScreen() {
   };
 
   /**
+   * Clear Study, then land in the tab this session was launched from.
+   *
+   * Order matters and so does capturing the parent first: the reset unmounts
+   * this screen, and `getParent()` afterwards is not something to lean on.
+   * Resetting BEFORE the tab switch is the round-4 invariant — a bare
+   * `navigate('ChatTab', …)` would leave these results sitting on the Study
+   * tab, alive long after their session is gone.
+   */
+  const performReturnToTab = useCallback(
+    (plan: ReturnToTabPlan) => {
+      const parent = navigation.getParent?.();
+      navigation.reset({ index: 0, routes: plan.routes.map((name: string) => ({ name })) });
+      parent?.navigate?.(plan.returnTo.tab, toTab(plan.returnTo.screen, plan.returnTo.params));
+    },
+    [navigation]
+  );
+
+  /**
    * Back out of the results without stranding them.
    *
    * Submitting from a session that was itself the Study stack's only route
@@ -175,13 +245,40 @@ export default function TestResultsScreen() {
     const plan = planTestExit({
       state: navigation.getState?.(),
       rootRouteName: TAB_STACK_ROOT_ROUTE.StudyTab,
+      returnTo,
     });
     if (plan.action === 'pop') {
       navigation.goBack();
       return;
     }
+    if (plan.action === 'returnToTab') {
+      performReturnToTab(plan);
+      return;
+    }
     navigation.reset({ index: 0, routes: plan.routes.map((name: string) => ({ name })) });
   };
+
+  /**
+   * Hardware BACK, when this session came out of a chat thread.
+   *
+   * Without this it pops the Study stack — landing on whatever the launcher
+   * left underneath (the Study hub), which is the tab the reader never chose.
+   * Same handler as Done: with a `returnTo` both planners agree on the one
+   * answer, so the two buttons and the gesture cannot drift apart.
+   *
+   * Focus-scoped: TestAnalysis is PUSHED above these results, and BACK there
+   * belongs to that screen.
+   */
+  useEffect(() => {
+    if (!returnTo || !isFocused) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      dismissResults();
+      return true;
+    });
+    return () => sub.remove();
+    // dismissResults is re-made every render and reads only `navigation` and
+    // the route param; re-subscribing on either of those is enough.
+  }, [returnTo, isFocused, navigation]);
 
   if (!attempt) {
     return (
@@ -198,6 +295,8 @@ export default function TestResultsScreen() {
       </Screen>
     );
   }
+
+  const retakeBlocked = retakePlan.action === 'unavailable';
 
   const correctCount = attempt.answers.filter(a => a.isCorrect).length;
   const incorrectCount = attempt.answers.length - correctCount;
@@ -221,7 +320,14 @@ export default function TestResultsScreen() {
       state: navigation.getState?.(),
       rootRouteName: TAB_STACK_ROOT_ROUTE.StudyTab,
       testsListRouteName: 'TestsList',
+      returnTo,
     });
+    if (plan.action === 'returnToTab') {
+      // Launched from a chat thread: "Done" means back to the thread, not a
+      // tests list on a tab the reader never opened.
+      performReturnToTab(plan);
+      return;
+    }
     if (plan.action === 'popTo') {
       navigation.popTo(plan.routeName);
       return;
@@ -235,6 +341,50 @@ export default function TestResultsScreen() {
     });
   };
 
+  /**
+   * Retake this test: start the same session again and REPLACE the results.
+   *
+   * Replace, not push: the score on screen stops describing anything the
+   * moment the new attempt begins, so leaving it underneath would let
+   * hardware BACK walk into a stale result.
+   */
+  const handleTryAgain = async () => {
+    if (retakePlan.action === 'unavailable') {
+      Alert.alert('Cannot retake', retakePlan.message);
+      return;
+    }
+    if (startingRetake) return;
+    setStartingRetake(true);
+    try {
+      if (retakePlan.action === 'retakeQuestionSet') {
+        // The exact question set that was sat, with the timer it was sat under.
+        await startQuestionSet(retakePlan.sessionName, retakeQuestions, 'test', {
+          timeLimitMinutes: retakePlan.timeLimitMinutes,
+          groupId: retakePlan.groupId,
+          groupName: retakePlan.groupName,
+          courseId: retakePlan.courseId,
+          topicId: retakePlan.topicId,
+        });
+      } else {
+        // The store's own start path, so the reader's shuffle settings and any
+        // refetch of the questions apply exactly as they do from the list.
+        await startTest(retakePlan.testId, 'test', {
+          timeLimit: retakePlan.timeLimitMinutes,
+          userId: user?.id,
+          groupId: retakePlan.groupId,
+          groupName: retakePlan.groupName,
+          courseId: retakePlan.courseId,
+          topicId: retakePlan.topicId,
+        });
+      }
+      navigation.replace('TestTaking', retakePlan.params);
+    } catch {
+      Alert.alert('Error', 'Failed to start test');
+    } finally {
+      setStartingRetake(false);
+    }
+  };
+
   const handlePracticeFailed = async () => {
     if (!failedQuestions.length) return;
     const sessionName = `${attempt.testName} - Practice Failed`;
@@ -246,6 +396,8 @@ export default function TestResultsScreen() {
       testId: 'custom',
       testName: sessionName,
       mode: 'study',
+      // Same excursion, same way home.
+      ...(returnTo ? { returnTo } : {}),
     });
   };
 
@@ -465,6 +617,11 @@ export default function TestResultsScreen() {
           an inset, so under edge-to-edge Done / Try Again sat inside the
           Android navigation-bar band with a sub-44px effective target. */}
       <View style={[styles.bottomActions, { paddingBottom: actionsPadding }]}>
+        {retakePlan.action === 'unavailable' ? (
+          <Text style={[styles.retakeNotice, { color: colors.textSecondary }]}>
+            {retakePlan.message}
+          </Text>
+        ) : null}
         {failedQuestions.length > 0 ? (
           <TouchableOpacity
             style={styles.practiceFailedButton}
@@ -477,11 +634,29 @@ export default function TestResultsScreen() {
           </TouchableOpacity>
         ) : null}
         <TouchableOpacity
-          style={styles.retryButton}
-          onPress={exitToTestsList}
+          style={[styles.retryButton, retakeBlocked && styles.retryButtonDisabled]}
+          onPress={() => void handleTryAgain()}
+          disabled={retakeBlocked || startingRetake}
+          accessibilityRole="button"
+          accessibilityState={{ disabled: retakeBlocked || startingRetake, busy: startingRetake }}
+          accessibilityLabel={
+            retakeBlocked
+              ? `Retake unavailable. ${retakePlan.action === 'unavailable' ? retakePlan.message : ''}`
+              : 'Try again'
+          }
         >
-          <AppIcon name="refresh" size={20} color="#6366f1" />
-          <Text style={styles.retryButtonText} numberOfLines={1}>Try Again</Text>
+          <AppIcon
+            name="refresh"
+            size={20}
+            color={retakeBlocked ? colors.textSecondary : '#6366f1'}
+          />
+          {/* The label carries the state too — never colour alone. */}
+          <Text
+            style={[styles.retryButtonText, retakeBlocked && { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            {retakeBlocked ? 'Cannot retake' : startingRetake ? 'Starting…' : 'Try Again'}
+          </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.doneButton}
@@ -777,10 +952,20 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderRadius: 12,
     backgroundColor: '#6366f120',
   },
+  retryButtonDisabled: {
+    // Muted fill AND a changed label ("Cannot retake") — the state never rests
+    // on colour alone. The reason itself is spelled out above the row.
+    backgroundColor: c.backgroundSecondary,
+  },
   retryButtonText: {
     fontSize: 16,
     fontWeight: '600',
     color: '#6366f1',
+  },
+  retakeNotice: {
+    width: '100%',
+    fontSize: 13,
+    lineHeight: 18,
   },
   doneButton: {
     flexGrow: 1,

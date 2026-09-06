@@ -35,6 +35,8 @@ import { useNetworkStatus } from '../../hooks';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 // Question type options
 const QUESTION_TYPES = [
   { id: 'mcq-single', label: 'Single Choice', icon: 'radio-button-on' },
@@ -197,17 +199,14 @@ export default function OfflineScreen() {
       // 'Main' also pops this modal so the test screen is actually visible.
       navigation.navigate('Main', {
         screen: 'StudyTab',
-        params: {
-          screen: 'TestTaking',
-          params: {
-            testId: test.testId,
-            testName: test.testName,
-            mode,
-            isOffline: true,
-            offlineTestId: test.id,
-            groupName: test.groupName,
-          },
-        },
+        params: toTab('TestTaking', {
+          testId: test.testId,
+          testName: test.testName,
+          mode,
+          isOffline: true,
+          offlineTestId: test.id,
+          groupName: test.groupName,
+        }),
       });
     } catch {
       Alert.alert('Error', 'Failed to start offline test.');
@@ -249,7 +248,7 @@ export default function OfflineScreen() {
           text: 'Clear All',
           style: 'destructive',
           onPress: async () => {
-            await clearAllOfflineData();
+            await clearAllOfflineData(userId || undefined);
           },
         },
       ]

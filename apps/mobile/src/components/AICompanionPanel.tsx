@@ -20,6 +20,7 @@ import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageBadge from './AIUsageBadge';
 import { navigate as navigateFromRef } from '../navigation/navigationRef';
+import { toTab } from '../navigation/nestedTab';
 import { submitCompanionFeedback } from '../services/ai';
 import type { CompanionAction } from '@lantern/shared/types';
 
@@ -27,13 +28,13 @@ import type { CompanionAction } from '@lantern/shared/types';
 const MOBILE_ACTION_ROUTES: Partial<Record<CompanionAction['type'], (payload?: Record<string, string>) => void>> = {
   navigate_to_dashboard: () => navigateFromRef('Main', { screen: 'HomeTab' }),
   navigate_to_chat: () => navigateFromRef('Main', { screen: 'ChatTab' }),
-  navigate_to_flashcards: () => navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'FlashcardsList' } }),
-  navigate_to_notes: () => navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'NotesList' } }),
+  navigate_to_flashcards: () => navigateFromRef('Main', { screen: 'StudyTab', params: toTab('FlashcardsList') }),
+  navigate_to_notes: () => navigateFromRef('Main', { screen: 'StudyTab', params: toTab('NotesList') }),
   open_note_learn: (payload) => {
     if (payload?.noteId) {
-      navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'NoteEditor', params: { noteId: payload.noteId } } });
+      navigateFromRef('Main', { screen: 'StudyTab', params: toTab('NoteEditor', { noteId: payload.noteId }) });
     } else {
-      navigateFromRef('Main', { screen: 'StudyTab', params: { screen: 'NotesList' } });
+      navigateFromRef('Main', { screen: 'StudyTab', params: toTab('NotesList') });
     }
   },
 };

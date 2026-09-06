@@ -8,6 +8,8 @@ import { joinGroupByInvite } from '../services/api';
 import { navigationRef } from '../navigation/navigationRef';
 import { useAuthStore } from '../stores/authStore';
 
+import { toTab } from '../navigation/nestedTab';
+
 const PENDING_NOTE_SHARE_TOKEN_KEY = '@lantern_pending_note_share_token';
 
 function navigateWhenReady(action: Parameters<typeof CommonActions.navigate>[0]) {
@@ -30,7 +32,7 @@ function navigateToNoteShare(token: string) {
     name: 'Main',
     params: {
       screen: 'StudyTab',
-      params: { screen: 'NoteShareAccept', params: { token } },
+      params: toTab('NoteShareAccept', { token }),
     },
   });
 }
@@ -92,7 +94,7 @@ async function handleIncomingUrl(url: string, userId?: string) {
     case 'deck':
       navigateWhenReady({
         name: 'Main',
-        params: { screen: 'StudyTab', params: { screen: 'DeckDetail', params: { deckId: parsed.id } } },
+        params: { screen: 'StudyTab', params: toTab('DeckDetail', { deckId: parsed.id }) },
       });
       break;
     case 'group':
@@ -104,7 +106,7 @@ async function handleIncomingUrl(url: string, userId?: string) {
     case 'listing':
       navigateWhenReady({
         name: 'Main',
-        params: { screen: 'MarketTab', params: { screen: 'ListingDetail', params: { listingId: parsed.id } } },
+        params: { screen: 'MarketTab', params: toTab('ListingDetail', { listingId: parsed.id }) },
       });
       break;
     default:

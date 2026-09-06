@@ -74,6 +74,8 @@ import * as ImagePicker from 'expo-image-picker';
 import type { NoteAttachment } from '../../services/notes';
 import { AppIcon } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 type NavigationProp = {
 
   goBack: () => void;
@@ -902,10 +904,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           onPress={() =>
             (navigation as unknown as {
               navigate: (screen: string, params?: Record<string, unknown>) => void;
-            }).navigate('MarketTab', {
-              screen: 'StudyProductDrafts',
-              params: { source: { noteIds: [noteId], title: title || selectedNote?.title } },
-            })
+            }).navigate('MarketTab', toTab('StudyProductDrafts', { source: { noteIds: [noteId], title: title || selectedNote?.title } }))
           }
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Turn into a Study Product"

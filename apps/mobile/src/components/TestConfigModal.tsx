@@ -13,6 +13,7 @@ import {
   Switch,
   TextInput,
   Alert,
+  useWindowDimensions,
 } from 'react-native';
 import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
 import { useSettingsStore } from '../stores/settingsStore';
@@ -154,6 +155,14 @@ export default function TestConfigModal({
   // dark in light mode. Rebuild it whenever the theme changes.
   const styles = useMemo(() => createStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
+  // Size the sheet in pixels from the window, not with a percentage: under
+  // edge-to-edge a transparent Modal's window can be measured before the
+  // system bars are accounted for, and a '92%' container then mounts ~170px
+  // too low with its footer off-screen until something re-renders it (seen on
+  // build 146). The group-actions sheet uses the same pixel formula and never
+  // misplaces.
+  const { height: windowHeight } = useWindowDimensions();
+  const sheetHeight = Math.round(windowHeight * 0.92);
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
 
   /**
@@ -454,10 +463,12 @@ export default function TestConfigModal({
       visible={visible}
       animationType="slide"
       transparent={true}
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <View style={[styles.container, { backgroundColor: colors.card }]}>
+        <View style={[styles.container, { backgroundColor: colors.card, height: sheetHeight, maxHeight: sheetHeight }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={onClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
@@ -1017,8 +1028,6 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.card,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    height: '92%',
-    maxHeight: '92%',
     overflow: 'hidden',
   },
   header: {

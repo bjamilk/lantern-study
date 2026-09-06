@@ -29,6 +29,8 @@ import {
 } from '../../utils/libraryArchive';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
+import { toTab } from '../../navigation/nestedTab';
+
 type Tab = LibraryTab;
 
 interface Props {
@@ -207,10 +209,7 @@ export function LibraryScreen({ navigation, route }: Props) {
     // navigationRef.navigateToChallengesInbox uses for ChatTab.
     navigateRootStack('Main', {
       screen: 'MarketTab',
-      params: {
-        screen: 'StudyProductDrafts',
-        params: { source: { courseId: filter.id, title: filter.label } },
-      },
+      params: toTab('StudyProductDrafts', { source: { courseId: filter.id, title: filter.label } }),
     });
   }, []);
 
@@ -321,7 +320,7 @@ export function LibraryScreen({ navigation, route }: Props) {
           onTurnSemesterIntoProducts={() =>
             navigateRootStack('Main', {
               screen: 'MarketTab',
-              params: { screen: 'SemesterProducts' },
+              params: toTab('SemesterProducts'),
             })
           }
           onRetry={() => setOverviewAttempt(a => a + 1)}
