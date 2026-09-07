@@ -1,16 +1,23 @@
 import React, { useEffect, useState } from 'react';
 import type { ClassMaterial, Course } from '@lantern/shared';
-import { Card } from '../ui';
-import { fetchOfficialClassMaterials } from '../../services/classes';
+import { Button, Card } from '../ui';
+import { copyClassMaterialToNotes, fetchOfficialClassMaterials } from '../../services/classes';
 
 interface ClassOfficialMaterialsProps {
   courseId?: string | null;
+  onOpenNote?: (noteId: string) => void;
 }
 
 /** Library callout: published lecturer materials for the selected course. */
-export const ClassOfficialMaterials: React.FC<ClassOfficialMaterialsProps> = ({ courseId }) => {
+export const ClassOfficialMaterials: React.FC<ClassOfficialMaterialsProps> = ({
+  courseId,
+  onOpenNote,
+}) => {
   const [items, setItems] = useState<(ClassMaterial & { classTitle?: string; course?: Course })[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [copyingId, setCopyingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOfficialClassMaterials(courseId)
@@ -25,6 +32,11 @@ export const ClassOfficialMaterials: React.FC<ClassOfficialMaterialsProps> = ({ 
       <p className="text-caption font-semibold uppercase tracking-wide text-lantern-text-secondary">
         From your lecturer
       </p>
+      <p className="mt-1 text-caption text-lantern-text-secondary">
+        These notes stay available after the class is archived. They are read-only — copy one into
+        your notes to edit or share your own version.
+      </p>
+      {error ? <p className="mt-2 text-caption text-lantern-error">{error}</p> : null}
       <ul className="mt-2 flex flex-col gap-2">
         {items.slice(0, 8).map((item) => {
           const open = openId === item.id;
@@ -44,6 +56,32 @@ export const ClassOfficialMaterials: React.FC<ClassOfficialMaterialsProps> = ({ 
                 <p className="mt-2 whitespace-pre-wrap text-caption text-lantern-text-secondary">
                   {item.body}
                 </p>
+              ) : null}
+              {open ? (
+                <div className="mt-2">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    disabled={copyingId === item.id}
+                    onClick={async (event) => {
+                      event.stopPropagation();
+                      setError(null);
+                      setCopyingId(item.id);
+                      try {
+                        const copied = await copyClassMaterialToNotes(item.classId, item.id);
+                        setCopiedId(item.id);
+                        onOpenNote?.(copied.noteId);
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : 'Could not copy this lecture');
+                      } finally {
+                        setCopyingId(null);
+                      }
+                    }}
+                  >
+                    {copiedId === item.id ? 'Copied to my notes' : 'Copy to my notes'}
+                  </Button>
+                </div>
               ) : null}
             </li>
           );

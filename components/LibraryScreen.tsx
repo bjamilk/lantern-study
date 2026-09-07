@@ -419,6 +419,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                   courseId={
                     courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : null
                   }
+                  onOpenNote={onOpenNote}
                 />
               </div>
             ) : null}

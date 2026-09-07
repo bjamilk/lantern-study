@@ -190,6 +190,24 @@ export class ClassSectionsService {
     return row;
   }
 
+  /**
+   * Join, roster adds and a new join code are for an open class only. Published
+   * materials stay readable after archive so last term's students keep the notes
+   * they were taught from.
+   */
+  private async assertClassOpen(classId: string): Promise<void> {
+    const { data, error } = await this.db
+      .from('class_sections')
+      .select('archived_at')
+      .eq('id', classId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) classFail('Class not found', 404);
+    if (data.archived_at) {
+      classFail('This class is archived. Open a new class for the next set of students.', 409);
+    }
+  }
+
   private mapSection(
     row: Record<string, unknown>,
     role: ClassRole,
@@ -478,7 +496,9 @@ export class ClassSectionsService {
     classId: string,
     input: { title?: unknown; semester?: unknown; archived?: unknown }
   ) {
-    await this.requireStaff(classId, userId);
+    // Closing a class for the next session is a lecturer decision, not a TA one.
+    if (input.archived !== undefined) await this.requireInstructor(classId, userId);
+    else await this.requireStaff(classId, userId);
     const updates: Record<string, unknown> = {};
     if (typeof input.title === 'string') {
       const title = input.title.trim().replace(/\s+/g, ' ');
@@ -537,6 +557,7 @@ export class ClassSectionsService {
     input: { username: unknown; role?: unknown }
   ) {
     await this.requireInstructor(classId, userId);
+    await this.assertClassOpen(classId);
     const username = typeof input.username === 'string' ? input.username.trim().replace(/^@/, '').toLowerCase() : '';
     if (!username) classFail('username is required');
     const role: ClassRole = input.role === 'ta' ? 'ta' : input.role === 'instructor' ? 'instructor' : 'student';
@@ -635,6 +656,7 @@ export class ClassSectionsService {
 
   async rotateCode(userId: string, classId: string) {
     await this.requireInstructor(classId, userId);
+    await this.assertClassOpen(classId);
     for (let i = 0; i < 6; i += 1) {
       const join_code = newJoinCode();
       const { data, error } = await this.db
@@ -750,6 +772,41 @@ export class ClassSectionsService {
     const { error } = await this.db.from('class_materials').delete().eq('id', materialId).eq('class_id', classId);
     if (error) throw error;
     return { success: true };
+  }
+
+  /**
+   * Student-owned copy of a published lecturer snapshot. The original stays
+   * read-only and is never attached to a group or listing — they edit and share
+   * this copy, not the hall notes.
+   */
+  async copyMaterialToNotes(userId: string, classId: string, materialId: string) {
+    await this.requireMember(classId, userId);
+    if (!isUuid(materialId)) classFail('material id is invalid');
+    const { data, error } = await this.db
+      .from('class_materials')
+      .select(MATERIAL_SELECT)
+      .eq('id', materialId)
+      .eq('class_id', classId)
+      .not('published_at', 'is', null)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) classFail('That lecture is not published', 404);
+
+    const { data: section, error: sectionError } = await this.db
+      .from('class_sections')
+      .select('course_id, topic_id')
+      .eq('id', classId)
+      .maybeSingle();
+    if (sectionError) throw sectionError;
+
+    const note = await this.supabaseService.createNote(userId, {
+      title: String(data.title || 'Lecturer notes'),
+      body: String(data.body_snapshot || ''),
+      courseId: section?.course_id ? String(section.course_id) : null,
+      topicId: section?.topic_id ? String(section.topic_id) : null,
+      sourceType: 'typed',
+    });
+    return { noteId: String(note.id), title: String(note.title || data.title || 'Lecturer notes') };
   }
 
   private async publishedCorpus(classId: string): Promise<string> {
@@ -889,6 +946,7 @@ export class ClassSectionsService {
     }
   ) {
     await this.requireStaff(classId, userId);
+    await this.assertClassOpen(classId);
     const { count } = await this.db
       .from('class_assignments')
       .select('id', { count: 'exact', head: true })
@@ -1296,6 +1354,8 @@ export class ClassSectionsService {
   }
 
   async publishedMaterialsForStudentCourse(userId: string, courseId: string | null) {
+    // Includes archived classes on purpose: last term's published notes stay in
+    // Library after the lecturer closes the section for a new cohort.
     const classes = await this.listForUser(userId, 'all');
     const relevant = courseId ? classes.filter((c) => c.course.id === courseId) : classes;
     const materials = [];

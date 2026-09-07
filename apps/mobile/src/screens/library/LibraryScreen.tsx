@@ -398,6 +398,7 @@ export function LibraryScreen({ navigation, route }: Props) {
           courseId={
             courseFilter?.id && courseFilter.id !== UNFILED_COURSE_ID ? courseFilter.id : null
           }
+          onOpenNote={(noteId) => navigation.navigate('NoteEditor', { noteId })}
         />
 
         {/* Only while something is typed: the way out to decks, cards and

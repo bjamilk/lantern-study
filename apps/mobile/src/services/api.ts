@@ -588,6 +588,7 @@ export const {
   fetchMyClassWork,
   completeClassAssignment,
   fetchOfficialClassMaterials,
+  copyClassMaterialToNotes,
   // Library archive: course tree + cross-artefact search (contract §1 / §3)
   fetchLibraryOverview,
   searchLibrary,

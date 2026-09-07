@@ -109,6 +109,12 @@ export const deleteClassMaterial = (classId: string, materialId: string) =>
     { method: 'DELETE' }
   );
 
+export const copyClassMaterialToNotes = (classId: string, materialId: string) =>
+  academicRequest<{ noteId: string; title: string }>(
+    `/classes/${encodeURIComponent(classId)}/materials/${encodeURIComponent(materialId)}/copy`,
+    { method: 'POST' }
+  );
+
 export const generateClassContent = (
   classId: string,
   input: { kind: 'quiz' | 'flashcards' | 'outline'; count?: number }

@@ -219,6 +219,60 @@ describe('join upserts enrolment', () => {
   });
 });
 
+describe('archive and TA', () => {
+  it('refuses roster adds on an archived class', async () => {
+    const db = makeDb({
+      class_members: { data: { class_id: CLASS_ID, user_id: USER, role: 'instructor', status: 'active' } },
+      class_sections: { data: { archived_at: '2026-09-01T00:00:00.000Z' } },
+    });
+    await expect(
+      service(db).addMemberByUsername(USER, CLASS_ID, { username: 'ada', role: 'ta' })
+    ).rejects.toMatchObject({ message: expect.stringMatching(/archived/) });
+  });
+
+  it('lets only the lecturer archive', async () => {
+    const db = makeDb({
+      class_members: { data: { class_id: CLASS_ID, user_id: STUDENT, role: 'ta', status: 'active' } },
+    });
+    await expect(service(db).patch(STUDENT, CLASS_ID, { archived: true })).rejects.toMatchObject({
+      message: 'Only the lecturer can do that',
+    });
+  });
+
+  it('copies a published snapshot into a student-owned note', async () => {
+    const materialId = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+    const createNote = jest.fn(async () => ({ id: 'note-1', title: 'Week 3' }));
+    const db = makeDb({
+      class_members: { data: { class_id: CLASS_ID, user_id: STUDENT, role: 'student', status: 'active' } },
+      class_materials: {
+        data: {
+          id: materialId,
+          class_id: CLASS_ID,
+          note_id: null,
+          kind: 'lecture',
+          title: 'Week 3',
+          body_snapshot: 'Membranes',
+          published_at: '2026-09-01T00:00:00.000Z',
+          created_by: USER,
+          created_at: '2026-09-01T00:00:00.000Z',
+        },
+      },
+      class_sections: { data: { course_id: COURSE_ID, topic_id: null } },
+    });
+    const svc = new ClassSectionsService({
+      getClient: () => db,
+      createNotification: jest.fn(),
+      createNote,
+    } as any);
+    const copied = await svc.copyMaterialToNotes(STUDENT, CLASS_ID, materialId);
+    expect(copied).toEqual({ noteId: 'note-1', title: 'Week 3' });
+    expect(createNote).toHaveBeenCalledWith(
+      STUDENT,
+      expect.objectContaining({ title: 'Week 3', body: 'Membranes', courseId: COURSE_ID })
+    );
+  });
+});
+
 describe('last instructor', () => {
   it('refuses to remove the only lecturer', async () => {
     const db = makeDb({

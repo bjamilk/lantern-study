@@ -169,21 +169,23 @@ Roster privacy: **never return email**. Students and instructors see `id, name, 
 | `GET /classes/preview?code=` | | `{ title, course, topic, instructorName, memberCount, academicYear }` | Auth required; does not join |
 | `POST /classes/join` | `{ code }` | `ClassSection` | Inserts `student` (or invite `role`). Idempotent if already active. `ensureEnrolment` on the course. 404 invalid/expired; 409 archived. |
 | `GET /classes/:classId` | | `ClassSection` + `membership` + `joinCode` (staff only) | Member |
-| `PATCH /classes/:classId` | `{ title?, semester?, archived? }` | `ClassSection` | Instructor / TA |
+| `PATCH /classes/:classId` | `{ title?, semester?, archived? }` | `ClassSection` | Title/semester: instructor / TA. `archived` is **instructor only**. Join, roster adds and new assignments refuse 409 once archived. Published materials stay readable. |
 | `GET /classes/:classId/roster` | | `{ members: ClassMember[] }` | Member. No emails. |
-| `POST /classes/:classId/members` | `{ username, role?: 'ta'\|'student' }` | `ClassMember` | Instructor |
-| `PATCH /classes/:classId/members/:userId` | `{ role?, status? }` | `ClassMember` | Instructor. Cannot remove last instructor. |
-| `POST /classes/:classId/rotate-code` | | `{ joinCode }` | Instructor |
-| `GET /classes/:classId/materials` | | `ClassMaterial[]` | Students: published only. Staff: all. |
+| `POST /classes/:classId/members` | `{ username, role?: 'ta'\|'student' }` | `ClassMember` | Instructor. `role: 'ta'` chooses a teaching assistant. 409 if the class is archived. |
+| `PATCH /classes/:classId/members/:userId` | `{ role?, status? }` | `ClassMember` | Instructor. Promote student ↔ TA. Cannot remove last instructor. |
+| `POST /classes/:classId/rotate-code` | | `{ joinCode }` | Instructor. 409 if archived. |
+| `GET /classes/:classId/materials` | | `ClassMaterial[]` | Students: published only. Staff: all. Still listed after archive. |
 | `POST /classes/:classId/materials` | `{ noteId?, title, body?, kind? }` | `ClassMaterial` | Instructor / TA. If `noteId`, copy title/body from a note **owned by the caller**. |
 | `POST /classes/:classId/materials/:id/publish` | | `ClassMaterial` | Instructor / TA |
 | `POST /classes/:classId/materials/:id/unpublish` | | `ClassMaterial` | Instructor / TA |
+| `POST /classes/:classId/materials/:id/copy` | | `{ noteId, title }` 201 | Member. Creates a **student-owned** note from the published snapshot. The original is not shareable; the copy is theirs. |
 | `DELETE /classes/:classId/materials/:id` | | `{ success }` | Instructor |
 | `POST /classes/:classId/generate` | `{ kind: 'quiz'\|'flashcards'\|'outline', count? }` | `{ kind, questions? , cards?, outline? }` | Instructor / TA. Grounds in **published** `body_snapshot` only (≥50 chars for quiz/flashcards). |
 | `GET /classes/:classId/assignments` | | `ClassAssignment[]` (+ own progress for students; counts for staff) | Member |
-| `POST /classes/:classId/assignments` | `{ title, kind, dueAt?, noteId?, deckId?, payload? }` | `ClassAssignment` 201 | Instructor / TA. Notifies active students (`type: class_assignment`, `link: class:<id>`). |
+| `POST /classes/:classId/assignments` | `{ title, kind, dueAt?, noteId?, deckId?, payload? }` | `ClassAssignment` 201 | Instructor / TA. Notifies active students (`type: class_assignment`, `link: class:<id>`). 409 if archived. |
 | `POST /classes/:classId/assignments/:id/complete` | `{ score? }` | `ClassAssignmentProgress` | Student member of the class. Records a learning event. |
 | `GET /classes/:classId/analytics` | | `ClassAnalytics` | Instructor / TA |
+| `GET /classes/official-materials` | `?courseId=` | Published `ClassMaterial[]` (+ classTitle, course) | Member of those classes, **including archived**. Read-only lecturer snapshots. |
 | `GET /lms/connectors` | | `{ available: false, connectors: [] }` | Auth. Documents that Moodle / Classroom / Canvas are not v1. |
 | `GET /schools` | `?q=&kind=` | School summaries | Auth. Search campuses of kind primary/secondary/college/polytechnic/university. |
 | `POST /schools` | `{ name, kind, city?, state? }` | School summary 200/201 | Auth. Find-or-create. City/state default `—`. Client then PUTs `institutionId` on the profile. |
@@ -241,6 +243,7 @@ InstitutionStaff { institutionId; userId; role; status; createdAt }
 ## 5. Web
 
 - Isolated tree: `components/teach/TeachApp.tsx`, lazy-loaded when the path is `/teach` or `/teach/*`. **No** student AppShell, marketplace, jobs, campus social, or gamification chrome.
+- Class page: instructor picks a TA (add-by-username role, or Make TA on the roster) and archives the class when the session ends. Archived classes sit in a separate list; join and new assignments stop. Students keep published notes.
 - Guest `/teach` — instructor landing (primary/secondary/tertiary). CTAs: `/signup/teach`, `/login?next=/teach`. Student home `/` has a **For instructors** link.
 - `/signup/teach` — same auth screen, instructor copy. After success, skip student onboarding and open `/teach`. No `is_teacher` flag.
 - Affiliation form on Teach home / New class when `institutionId` is missing: search or create a school of any allowed kind, then `PUT` profile `institutionId`.
@@ -248,13 +251,13 @@ InstitutionStaff { institutionId; userId; role; status; createdAt }
 - `/join/:code` — standalone join page (post-login redirect if signed out). Preview shows the topic when the class is topic-scoped.
 - Me → “Teach” opens `/teach`.
 - Dashboard: join-class card + assigned work (`ClassWorkCard`).
-- Library: “From your lecturer” list of published materials for the selected course (`ClassOfficialMaterials`).
+- Library: “From your lecturer” list of published materials for the selected course (`ClassOfficialMaterials`), including archived classes. Read-only; **Copy to my notes** creates a student-owned note. No share/distribute on the original.
 - Companion: optional `classId`; server may also attach published snapshots for classes the user belongs to.
 
 ## 6. Mobile
 
 - `JoinClass` modal (Settings → Academic, Dashboard).
-- Assigned work on Dashboard; official materials on Library.
+- Assigned work on Dashboard; official materials on Library, including **Copy to my notes**.
 - Teach portal is **mobile web** at `/teach` in v1 (no native instructor app). Settings may deep-link the site.
 
 ## 7. Out of scope (do not build)

@@ -10,7 +10,7 @@ import type {
   StudyNote,
 } from '@lantern/shared';
 import { classJoinPath, classSubjectLine, teachClassPath, teachHomePath } from '@lantern/shared/academic';
-import { Button, Card, Input, Tabs, TabList, Tab, TabPanel } from '../ui';
+import { Button, Card, Input, Select, Tabs, TabList, Tab, TabPanel } from '../ui';
 import { useNotesStore } from '../../stores/notesStore';
 import {
   addClassMaterial,
@@ -23,6 +23,7 @@ import {
   fetchClassMaterials,
   fetchClassRoster,
   generateClassContent,
+  patchClass,
   patchClassMember,
   publishClassMaterial,
   rotateClassJoinCode,
@@ -41,6 +42,7 @@ export const TeachClassPage: React.FC<TeachClassPageProps> = ({ classId, tab }) 
   const navigate = useNavigate();
   const [cls, setCls] = useState<ClassSection | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -77,14 +79,45 @@ export const TeachClassPage: React.FC<TeachClassPageProps> = ({ classId, tab }) 
     );
   }
 
+  const archived = Boolean(cls.archivedAt);
+  const canManageRoster = cls.role === 'instructor' && !archived;
+
   return (
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 md:p-8">
-      <div>
-        <p className="text-caption text-lantern-text-secondary">
-          {classSubjectLine(cls.course, cls.topic)} · {cls.academicYear}
-        </p>
-        <h1 className="text-title font-semibold text-lantern-text">{cls.title}</h1>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-caption text-lantern-text-secondary">
+            {classSubjectLine(cls.course, cls.topic)} · {cls.academicYear}
+            {archived ? ' · Archived' : ''}
+          </p>
+          <h1 className="text-title font-semibold text-lantern-text">{cls.title}</h1>
+        </div>
+        {cls.role === 'instructor' ? (
+          <Button
+            type="button"
+            variant={archived ? 'secondary' : 'ghost'}
+            onClick={async () => {
+              setActionError(null);
+              try {
+                const next = await patchClass(cls.id, { archived: !archived });
+                setCls(next);
+              } catch (err) {
+                setActionError(err instanceof Error ? err.message : 'Could not update class');
+              }
+            }}
+          >
+            {archived ? 'Reopen class' : 'Archive class'}
+          </Button>
+        ) : null}
       </div>
+      {actionError ? <p className="text-body text-lantern-error">{actionError}</p> : null}
+      {archived ? (
+        <p className="text-body text-lantern-text-secondary">
+          This class is closed for new students. Published notes stay in their Library — they can
+          read them and copy them into their own notes, but they cannot share the originals. Open a
+          new class for the next session.
+        </p>
+      ) : null}
       <Tabs
         value={tab}
         onValueChange={(next) => navigate(teachClassPath(classId, next as ClassTab))}
@@ -96,13 +129,13 @@ export const TeachClassPage: React.FC<TeachClassPageProps> = ({ classId, tab }) 
           <Tab value="analytics">Analytics</Tab>
         </TabList>
         <TabPanel value="roster">
-          <RosterTab cls={cls} onRefresh={load} />
+          <RosterTab cls={cls} canManage={canManageRoster} onRefresh={load} />
         </TabPanel>
         <TabPanel value="materials">
           <MaterialsTab classId={classId} />
         </TabPanel>
         <TabPanel value="assign">
-          <AssignTab classId={classId} />
+          <AssignTab classId={classId} open={!archived} />
         </TabPanel>
         <TabPanel value="analytics">
           <AnalyticsTab classId={classId} />
@@ -112,9 +145,14 @@ export const TeachClassPage: React.FC<TeachClassPageProps> = ({ classId, tab }) 
   );
 };
 
-const RosterTab: React.FC<{ cls: ClassSection; onRefresh: () => Promise<void> }> = ({ cls, onRefresh }) => {
+const RosterTab: React.FC<{
+  cls: ClassSection;
+  canManage: boolean;
+  onRefresh: () => Promise<void>;
+}> = ({ cls, canManage, onRefresh }) => {
   const [members, setMembers] = useState<ClassMember[]>([]);
   const [username, setUsername] = useState('');
+  const [addRole, setAddRole] = useState<'student' | 'ta'>('student');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -134,7 +172,7 @@ const RosterTab: React.FC<{ cls: ClassSection; onRefresh: () => Promise<void> }>
 
   return (
     <div className="flex flex-col gap-6 pt-4">
-      {cls.joinCode ? (
+      {cls.joinCode && canManage ? (
         <Card padding="md" className="flex flex-col md:flex-row items-center gap-6">
           <div className="flex-1">
             <p className="text-caption text-lantern-text-secondary">Join code</p>
@@ -160,31 +198,43 @@ const RosterTab: React.FC<{ cls: ClassSection; onRefresh: () => Promise<void> }>
         </Card>
       ) : null}
 
-      <form
-        className="flex flex-wrap gap-2 items-end"
-        onSubmit={async (event) => {
-          event.preventDefault();
-          setBusy(true);
-          setError(null);
-          try {
-            await addClassMember(cls.id, { username, role: 'student' });
-            setUsername('');
-            await loadRoster();
-          } catch (err) {
-            setError(err instanceof Error ? err.message : 'Could not add member');
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <label className="flex flex-col gap-1 flex-1 min-w-[12rem]">
-          <span className="text-caption text-lantern-text-secondary">Add by username</span>
-          <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="ada" />
-        </label>
-        <Button type="submit" disabled={busy || !username.trim()}>
-          Add student
-        </Button>
-      </form>
+      {canManage ? (
+        <form
+          className="flex flex-wrap gap-2 items-end"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            setBusy(true);
+            setError(null);
+            try {
+              await addClassMember(cls.id, { username, role: addRole });
+              setUsername('');
+              await loadRoster();
+            } catch (err) {
+              setError(err instanceof Error ? err.message : 'Could not add member');
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <label className="flex flex-col gap-1 flex-1 min-w-[12rem]">
+            <span className="text-caption text-lantern-text-secondary">Add by username</span>
+            <Input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="ada" />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-caption text-lantern-text-secondary">Role</span>
+            <Select
+              value={addRole}
+              onChange={(event) => setAddRole(event.target.value === 'ta' ? 'ta' : 'student')}
+            >
+              <option value="student">Student</option>
+              <option value="ta">Teaching assistant</option>
+            </Select>
+          </label>
+          <Button type="submit" disabled={busy || !username.trim()}>
+            {addRole === 'ta' ? 'Add TA' : 'Add student'}
+          </Button>
+        </form>
+      ) : null}
       {error ? <p className="text-body text-lantern-error">{error}</p> : null}
 
       <ul className="divide-y divide-lantern-border rounded-lantern-lg border border-lantern-border bg-lantern-surface">
@@ -196,8 +246,36 @@ const RosterTab: React.FC<{ cls: ClassSection; onRefresh: () => Promise<void> }>
                 {member.username ? `@${member.username}` : member.role}
               </p>
             </div>
-            <span className="text-caption text-lantern-text-secondary capitalize">{member.role}</span>
-            {member.role !== 'instructor' ? (
+            <span className="text-caption text-lantern-text-secondary capitalize">
+              {member.role === 'ta' ? 'TA' : member.role}
+            </span>
+            {canManage && member.role === 'student' ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  await patchClassMember(cls.id, member.userId, { role: 'ta' });
+                  await loadRoster();
+                }}
+              >
+                Make TA
+              </Button>
+            ) : null}
+            {canManage && member.role === 'ta' ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  await patchClassMember(cls.id, member.userId, { role: 'student' });
+                  await loadRoster();
+                }}
+              >
+                Make student
+              </Button>
+            ) : null}
+            {canManage && member.role !== 'instructor' ? (
               <Button
                 type="button"
                 size="sm"
@@ -344,7 +422,7 @@ const MaterialsTab: React.FC<{ classId: string }> = ({ classId }) => {
   );
 };
 
-const AssignTab: React.FC<{ classId: string }> = ({ classId }) => {
+const AssignTab: React.FC<{ classId: string; open: boolean }> = ({ classId, open }) => {
   const [assignments, setAssignments] = useState<ClassAssignment[]>([]);
   const [generated, setGenerated] = useState<ClassGenerateResult | null>(null);
   const [title, setTitle] = useState('Practice quiz');
@@ -362,8 +440,12 @@ const AssignTab: React.FC<{ classId: string }> = ({ classId }) => {
   return (
     <div className="flex flex-col gap-4 pt-4">
       <p className="text-body text-lantern-text-secondary">
-        Generate a quiz or flashcards from published materials, then assign them to the roster.
+        {open
+          ? 'Generate a quiz or flashcards from published materials, then assign them to the roster.'
+          : 'This class is archived. Existing assignments stay; assign new work from a new class.'}
       </p>
+      {open ? (
+        <>
       <div className="flex flex-wrap gap-2">
         <Button
           type="button"
@@ -459,6 +541,8 @@ const AssignTab: React.FC<{ classId: string }> = ({ classId }) => {
             Assign to class
           </Button>
         </Card>
+      ) : null}
+        </>
       ) : null}
       {error ? <p className="text-body text-lantern-error">{error}</p> : null}
       <ul className="flex flex-col gap-2">

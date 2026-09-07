@@ -4598,6 +4598,11 @@ export function createApiEndpoints(client: ApiClient) {
         `/classes/${encodeURIComponent(classId)}/materials/${encodeURIComponent(materialId)}`,
         { method: "DELETE" },
       ),
+    copyClassMaterialToNotes: (classId: string, materialId: string) =>
+      apiRequest<{ noteId: string; title: string }>(
+        `/classes/${encodeURIComponent(classId)}/materials/${encodeURIComponent(materialId)}/copy`,
+        { method: "POST" },
+      ),
     generateClassContent: (
       classId: string,
       input: { kind: "quiz" | "flashcards" | "outline"; count?: number },

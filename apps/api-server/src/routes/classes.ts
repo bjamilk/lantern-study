@@ -288,6 +288,25 @@ router.post(
   })
 );
 
+router.post(
+  '/:classId/materials/:materialId/copy',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await classes().copyMaterialToNotes(
+        userId,
+        String(req.params.classId),
+        String(req.params.materialId)
+      );
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
 router.delete(
   '/:classId/materials/:materialId',
   authMiddleware,
