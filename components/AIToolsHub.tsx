@@ -1,13 +1,5 @@
 import React, { useState, useCallback, useRef } from 'react';
-import {
-  DocumentArrowUpIcon,
-  SparklesIcon,
-  DocumentTextIcon,
-  ChatBubbleLeftRightIcon,
-  RectangleStackIcon,
-  AcademicCapIcon,
-  CameraIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { ScreenHeader, Button, Card } from './ui';
 import * as notesApi from '../services/notes';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
@@ -153,7 +145,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       id: 'pdf',
       title: 'PDF Summarizer',
       description: 'Upload readings or slides',
-      icon: DocumentArrowUpIcon,
+      icon: 'document-upload' as AppIconName,
       action: 'file-pdf' as const,
       // The label already styled a disabled state but nothing ever set it.
       disabled: lowDataMode,
@@ -162,7 +154,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       id: 'pptx',
       title: 'PowerPoint',
       description: 'Import lecture slides',
-      icon: DocumentArrowUpIcon,
+      icon: 'document-upload' as AppIconName,
       action: 'file-pptx' as const,
       disabled: lowDataMode,
     },
@@ -170,7 +162,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       id: 'photos',
       title: 'Photograph pages',
       description: 'Read handwritten or printed notes',
-      icon: CameraIcon,
+      icon: 'camera' as AppIconName,
       action: 'file-photos' as const,
       disabled: lowDataMode,
     },
@@ -178,14 +170,14 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       id: 'paste',
       title: 'Paste notes',
       description: 'Turn text into study tools',
-      icon: DocumentTextIcon,
+      icon: 'document-text' as AppIconName,
       action: 'paste' as const,
     },
     {
       id: 'weak',
       title: 'Weak topics',
       description: 'AI cards from your performance',
-      icon: RectangleStackIcon,
+      icon: 'albums' as AppIconName,
       action: 'weak' as const,
       disabled: lowDataMode,
     },
@@ -193,7 +185,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
       id: 'chat',
       title: 'Lantern AI',
       description: 'Chat about your materials',
-      icon: ChatBubbleLeftRightIcon,
+      icon: 'chatbubbles' as AppIconName,
       action: 'chat' as const,
       disabled: lowDataMode,
     },
@@ -205,7 +197,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
         <ScreenHeader
           title="AI Tools"
           subtitle="Add material once — get notes, flashcards, and practice tests"
-          icon={<SparklesIcon className="w-6 h-6" />}
+          icon={<AppIcon name="sparkles" size={24} />}
         />
 
         {step === 'hub' && (
@@ -215,7 +207,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                 <Card key={tool.id} padding="md" className="hover:border-lantern-primary transition-colors">
                   {tool.action === 'file-pdf' && (
                     <label className={`cursor-pointer block ${tool.disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-                      <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
+                      <AppIcon name={tool.icon} size={28} className="text-lantern-primary mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                       <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
@@ -223,7 +215,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                   )}
                   {tool.action === 'file-pptx' && (
                     <label className={`cursor-pointer block ${tool.disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-                      <tool.icon className="w-7 h-7 text-violet-600 mb-2" />
+                      <AppIcon name={tool.icon} size={28} className="text-violet-600 mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                       <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
@@ -231,7 +223,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                   )}
                   {tool.action === 'file-photos' && (
                     <label className={`cursor-pointer block ${tool.disabled ? 'opacity-50 pointer-events-none' : ''}`}>
-                      <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
+                      <AppIcon name={tool.icon} size={28} className="text-lantern-primary mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                       <input
@@ -259,21 +251,21 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
                       }}
                       className="text-left w-full"
                     >
-                      <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
+                      <AppIcon name={tool.icon} size={28} className="text-lantern-primary mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1 mb-3">{tool.description}</p>
                     </button>
                   )}
                   {tool.action === 'weak' && (
                     <button type="button" disabled={tool.disabled} onClick={() => openWithMessage('Generate flashcards for my weak topics from recent tests and save them to a new deck.')} className="text-left w-full disabled:opacity-50">
-                      <tool.icon className="w-7 h-7 text-emerald-600 mb-2" />
+                      <AppIcon name={tool.icon} size={28} className="text-emerald-600 mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                     </button>
                   )}
                   {tool.action === 'chat' && (
                     <button type="button" disabled={tool.disabled} onClick={() => openWithMessage('Help me create a study plan from my notes and flashcards.')} className="text-left w-full disabled:opacity-50">
-                      <tool.icon className="w-7 h-7 text-lantern-primary mb-2" />
+                      <AppIcon name={tool.icon} size={28} className="text-lantern-primary mb-2" />
                       <p className="font-semibold text-lantern-text">{tool.title}</p>
                       <p className="text-xs text-lantern-text-secondary mt-1">{tool.description}</p>
                     </button>
@@ -354,7 +346,7 @@ export const AIToolsHub: React.FC<AIToolsHubProps> = ({
               </Button>
               {onStartLearn && result.flashcardCount ? (
                 <Button variant="accent" onClick={() => onStartLearn(result)}>
-                  <AcademicCapIcon className="w-4 h-4" />
+                  <AppIcon name="school" size={16} />
                   Start Learn
                 </Button>
               ) : null}

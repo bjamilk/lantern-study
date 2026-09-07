@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDownIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import {
   filterCampusesByQuery,
   formatCampusLabel,
   isOtherCityCampus,
   type MarketplaceCampus,
 } from '@lantern/shared/marketplace';
+import { AppIcon } from '../ui/AppIcon';
 
 type CampusOption = Pick<MarketplaceCampus, 'id' | 'name' | 'city' | 'slug' | 'state'>;
 
@@ -83,8 +83,10 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
         <span className={selected ? 'text-lantern-text' : 'text-lantern-text-secondary'}>
           {selected ? formatCampusLabel(selected) : emptyLabel}
         </span>
-        <ChevronDownIcon
-          className={`w-4 h-4 shrink-0 text-lantern-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
+        <AppIcon
+          name="chevron-down"
+          size={16}
+          className={`shrink-0 text-lantern-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
         />
       </button>
 
@@ -94,7 +96,7 @@ export const CampusSearchSelect: React.FC<CampusSearchSelectProps> = ({
           className="border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary overflow-hidden"
         >
           <div className="relative border-b border-lantern-border">
-            <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
+            <AppIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
             <input
               type="search"
               value={query}

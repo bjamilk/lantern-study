@@ -45,7 +45,16 @@ async function notesRequest<T>(
     return pollApiJob<T>(data.jobId);
   }
   if (!response.ok) {
-    throw new Error(data.message || data.error || `Notes request failed (${response.status})`);
+    // The status and the body ride along with the throw. Callers must not have
+    // to read a server sentence to find out what happened — the walk-through's
+    // page classifier reads `status` to tell "this server has no pages route"
+    // apart from "something went wrong", and neither message is ever shown.
+    const error = new Error(
+      data.message || data.error || `Notes request failed (${response.status})`
+    ) as Error & { status?: number; body?: unknown };
+    error.status = response.status;
+    error.body = data;
+    throw error;
   }
   return data.data ?? data;
 }
@@ -467,6 +476,78 @@ export const refreshNoteAttachmentUrl = (
     `/${noteId}/attachments/${attachmentId}/url${qs}`
   );
 };
+
+/** One page of a document, exactly as the pages route returns it. */
+export interface NoteAttachmentPage {
+  attachmentId: string;
+  pageIndex: number;
+  text: string;
+  charCount: number;
+  /** Present only when a page image exists. Short-lived signed URL — never cache it. */
+  imageUrl?: string;
+  createdAt?: string;
+}
+
+export interface NoteAttachmentPagesResult {
+  attachmentId: string;
+  /** False only where the page-model migration has not been applied yet. */
+  available: boolean;
+  reason: 'ok' | 'schema_missing' | 'unsupported' | 'source_missing' | 'preview_pending' | 'unreadable';
+  pageCount: number;
+  maxPages: number;
+  pages: NoteAttachmentPage[];
+}
+
+/**
+ * The pages of one attachment, for the walk-through.
+ *
+ * `images` is opt-in because it is the expensive half: asking for it renders
+ * and stores any page image that is missing before the response comes back,
+ * and the plan panel — which needs headings and nothing else — should never
+ * pay for that. A render failure is swallowed server-side, so a call with
+ * `images: true` can still answer with text and no `imageUrl`; the viewer
+ * falls through to the text, which is why it must never treat a missing image
+ * as an error.
+ *
+ * `available: false` is a STATE, not a failure: the route says so when the
+ * page model is not on this server yet, and the screen says "not split into
+ * pages yet" rather than showing an error the student can do nothing about.
+ */
+export const fetchNoteAttachmentPages = (
+  noteId: string,
+  attachmentId: string,
+  options?: { images?: boolean }
+) =>
+  notesRequest<NoteAttachmentPagesResult>(
+    `/${noteId}/attachments/${attachmentId}/pages${options?.images ? '?images=1' : ''}`
+  );
+
+/**
+ * Transcribe a short spoken QUESTION — not a lecture.
+ *
+ * Deliberately different from `transcribeAudioForNote` in two ways, and both
+ * of them matter. It sends no `noteId`, so the transcript is never appended to
+ * the note the student is reading; and it declares `featureKey` so the server
+ * can bill it under the question cap instead of the lecture price. Until the
+ * AI lane accepts that key the caller must not send audio at all — a 15-second
+ * question would otherwise be charged as a recording, which is the one outcome
+ * this whole path exists to avoid. `WalkthroughAskSheet` checks the server's
+ * own feature rows before it will record.
+ */
+export const transcribeVoiceQuestion = (
+  audioBase64: string,
+  options: { mimeType?: string; durationMs?: number; featureKey: string; signal?: AbortSignal }
+) =>
+  notesLongTimedRequest<{ transcript: string }>(
+    '/transcribe-audio',
+    {
+      audioBase64,
+      mimeType: options.mimeType || 'audio/m4a',
+      durationMs: options.durationMs,
+      featureKey: options.featureKey,
+    },
+    { signal: options.signal, timeoutMs: 60_000 }
+  );
 
 export const fetchNoteCollaborators = (noteId: string) =>
   // Server constrains collaborator roles to viewer | editor.

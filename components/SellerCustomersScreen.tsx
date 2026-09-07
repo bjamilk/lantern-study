@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { fetchSellerBuyers } from '../services/supabase';
 import { SellerBuyerContact, SellerCustomerSegment } from '../types';
-import { ArrowLeftIcon, UserGroupIcon, MegaphoneIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
 import SellerCampaignPanel from './marketplace/SellerCampaignPanel';
+import { AppIcon } from './ui/AppIcon';
 
 const SEGMENT_LABELS: Record<SellerCustomerSegment, string> = {
   repeat_buyer: 'Repeat buyers',
@@ -42,11 +42,11 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
     <div className="flex flex-col h-full bg-lantern-background">
       <div className="flex items-center gap-3 p-4 border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
         <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-          <ArrowLeftIcon className="w-5 h-5" />
+          <AppIcon name="arrow-back" size={20} />
         </button>
         <h1 className="text-lg font-semibold flex-1">Customers</h1>
         <Button size="sm" variant="secondary" onClick={() => setShowCampaign(true)}>
-          <MegaphoneIcon className="w-4 h-4 mr-1" />
+          <AppIcon name="megaphone" size={16} className="mr-1" />
           Campaign
         </Button>
       </div>
@@ -75,7 +75,7 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
         {loading && <p className="text-sm text-lantern-text-secondary">Loading...</p>}
         {!loading && buyers.length === 0 && (
           <div className="text-center py-12 text-lantern-text-secondary">
-            <UserGroupIcon className="w-12 h-12 mx-auto mb-2 opacity-40" />
+            <AppIcon name="people" size={48} className="mx-auto mb-2 opacity-40" />
             <p>No customer history yet</p>
           </div>
         )}

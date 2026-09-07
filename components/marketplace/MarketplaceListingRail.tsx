@@ -1,7 +1,7 @@
 import React from 'react';
-import { ShoppingBagIcon } from '@heroicons/react/24/outline';
 import type { MarketplaceListing } from '../../types';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
+import { AppIcon } from '../ui/AppIcon';
 
 interface MarketplaceListingRailProps {
   title: string;
@@ -46,7 +46,7 @@ export const MarketplaceListingRail: React.FC<MarketplaceListingRailProps> = ({
                     />
                   ) : (
                     <div className="w-full h-full flex items-center justify-center">
-                      <ShoppingBagIcon className="w-6 h-6 text-lantern-text-tertiary" />
+                      <AppIcon name="bag" size={24} className="text-lantern-text-tertiary" />
                     </div>
                   )}
                   {price.onSale ? (

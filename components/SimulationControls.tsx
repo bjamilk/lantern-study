@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { XCircleIcon, LightBulbIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import Modal from './ui/Modal';
 
 interface SimulationControlsProps {
@@ -61,7 +61,7 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
       <div className="bg-lantern-surface w-full overflow-hidden max-h-[85vh] flex flex-col">
         <div className="bg-gradient-to-r from-cyan-500 to-blue-600 px-5 py-4 flex justify-between items-center shrink-0">
           <h2 id="simulation-controls-title" className="text-lg font-bold text-white flex items-center gap-2">
-            <LightBulbIcon className="w-5 h-5" aria-hidden /> Financial Toolkit
+            <AppIcon name="bulb" size={20} aria-hidden /> Financial Toolkit
           </h2>
           <button
             type="button"
@@ -69,7 +69,7 @@ const SimulationControls: React.FC<SimulationControlsProps> = ({ isOpen, onClose
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white"
             aria-label="Close financial toolkit"
           >
-            <XCircleIcon className="w-6 h-6" aria-hidden />
+            <AppIcon name="close-circle" size={24} aria-hidden />
           </button>
         </div>
 

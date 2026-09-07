@@ -11,7 +11,7 @@ import {
   type SemesterPackProposal,
   type SemesterPackProposalResponse,
 } from '@lantern/shared/marketplace';
-import { ArrowLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 
 interface Props {
   onBack: () => void;
@@ -99,7 +99,7 @@ export const SemesterProductsScreen: React.FC<Props> = ({ onBack, onNavigateToDr
             className="p-2 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
             aria-label="Back"
           >
-            <ArrowLeftIcon className="w-5 h-5" />
+            <AppIcon name="arrow-back" size={20} />
           </button>
           <h1 className="text-xl font-semibold text-lantern-text">Turn this semester into products</h1>
         </div>
@@ -177,7 +177,7 @@ export const SemesterProductsScreen: React.FC<Props> = ({ onBack, onNavigateToDr
               onClick={() => void run()}
               className="mt-4 inline-flex items-center gap-2 rounded-lg bg-lantern-primary px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
             >
-              <SparklesIcon className="w-4 h-4" />
+              <AppIcon name="sparkles" size={16} />
               {running ? 'Starting…' : 'Generate selected packs'}
             </button>
           </>

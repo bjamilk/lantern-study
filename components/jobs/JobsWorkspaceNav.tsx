@@ -1,11 +1,5 @@
 import React from 'react';
-import {
-  BriefcaseIcon,
-  DocumentTextIcon,
-  BuildingOffice2Icon,
-  PlusIcon,
-  ShoppingBagIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import type { JobsWorkspaceSection } from '@lantern/shared';
 
 const btn = (active: boolean) =>
@@ -28,11 +22,11 @@ export function JobsWorkspaceNav({
     <div className="flex items-center gap-1.5 sm:gap-2 min-w-0" role="navigation" aria-label="Jobs workspace">
       <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-1 overflow-x-auto scrollbar-none">
         <button type="button" className={btn(false)} onClick={() => onNavigate('Marketplace')}>
-          <ShoppingBagIcon className="w-3.5 h-3.5" aria-hidden />
+          <AppIcon name="bag" size={14} aria-hidden />
           <span>Goods</span>
         </button>
         <button type="button" className={btn(active === 'jobs')} onClick={() => onNavigate('MarketplaceJobs')}>
-          <BriefcaseIcon className="w-3.5 h-3.5" aria-hidden />
+          <AppIcon name="briefcase" size={14} aria-hidden />
           <span>Jobs</span>
         </button>
         <button
@@ -40,7 +34,7 @@ export function JobsWorkspaceNav({
           className={btn(active === 'my_applications')}
           onClick={() => onNavigate('MyJobApplications')}
         >
-          <DocumentTextIcon className="w-3.5 h-3.5" aria-hidden />
+          <AppIcon name="document-text" size={14} aria-hidden />
           <span className="hidden sm:inline">Applications</span>
           <span className="sm:hidden">Apps</span>
         </button>
@@ -48,7 +42,7 @@ export function JobsWorkspaceNav({
           <span>My jobs</span>
         </button>
         <button type="button" className={btn(active === 'employer')} onClick={() => onNavigate('JobEmployer')}>
-          <BuildingOffice2Icon className="w-3.5 h-3.5" aria-hidden />
+          <AppIcon name="business" size={14} aria-hidden />
           <span className="hidden sm:inline">Employer</span>
         </button>
       </div>
@@ -58,7 +52,7 @@ export function JobsWorkspaceNav({
           onClick={onPostJob}
           className="h-9 min-h-[44px] sm:h-8 sm:min-h-[36px] px-2.5 sm:px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-1"
         >
-          <PlusIcon className="w-3.5 h-3.5" aria-hidden />
+          <AppIcon name="add" size={14} aria-hidden />
           Post job
         </button>
       ) : null}

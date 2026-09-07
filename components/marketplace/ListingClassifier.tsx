@@ -1,12 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  MagnifyingGlassIcon,
-  ChevronRightIcon,
-  ChevronDownIcon,
-  CheckCircleIcon,
-  SparklesIcon,
-  ArrowTopRightOnSquareIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   classifyListing,
   searchTaxonomy,
@@ -107,7 +100,7 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-lantern-text flex items-center gap-1.5">
-                <CheckCircleIcon className="w-4 h-4 text-lantern-primary shrink-0" aria-hidden />
+                <AppIcon name="checkmark-circle" size={16} className="text-lantern-primary shrink-0" aria-hidden />
                 {selected.label}
               </p>
               <p className="mt-1 text-xs text-lantern-text-secondary">{selected.description}</p>
@@ -140,7 +133,7 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
                     className="inline-flex items-center gap-1 rounded-md bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white min-h-[40px]"
                   >
                     Open Study products
-                    <ArrowTopRightOnSquareIcon className="w-3.5 h-3.5" aria-hidden />
+                    <AppIcon name="open" size={14} aria-hidden />
                   </button>
                 )}
                 {selected.publishFlow === 'question_bank' && (
@@ -202,7 +195,7 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
           <label className="block">
             <span className="sr-only">Search listing types</span>
             <span className="relative block">
-              <MagnifyingGlassIcon className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary" aria-hidden />
+              <AppIcon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary" aria-hidden />
               <input
                 type="search"
                 value={query}
@@ -238,7 +231,7 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
           {title.trim().length >= 4 && suggestions.length > 0 && query.trim().length < 2 && (
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-secondary mb-1.5 flex items-center gap-1">
-                <SparklesIcon className="w-3.5 h-3.5" aria-hidden />
+                <AppIcon name="sparkles" size={14} aria-hidden />
                 Suggested from your title
               </p>
               <ul className="space-y-1.5">
@@ -348,9 +341,9 @@ function BrowseBranch({
         aria-expanded={open}
       >
         {open ? (
-          <ChevronDownIcon className="w-4 h-4 shrink-0 text-lantern-text-secondary" aria-hidden />
+          <AppIcon name="chevron-down" size={16} className="shrink-0 text-lantern-text-secondary" aria-hidden />
         ) : (
-          <ChevronRightIcon className="w-4 h-4 shrink-0 text-lantern-text-secondary" aria-hidden />
+          <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-secondary" aria-hidden />
         )}
         {node.label}
       </button>

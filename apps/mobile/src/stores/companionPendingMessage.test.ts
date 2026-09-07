@@ -49,4 +49,22 @@ describe('companion pendingMessage lifecycle', () => {
     expect(useCompanionStore.getState().isOpen).toBe(true);
     expect(useCompanionStore.getState().pendingMessage).toBe('queued while shut');
   });
+
+  it('keeps a page scope with the queued message and drops it on close', () => {
+    useCompanionStore
+      .getState()
+      .openWithMessage('What is on this page?', { attachmentId: 'att-1', pageIndex: 6 });
+    expect(useCompanionStore.getState().pendingMessageContext).toEqual({
+      attachmentId: 'att-1',
+      pageIndex: 6,
+    });
+
+    // A scope that outlived the queued question would silently pin every
+    // later question in the thread to page 7.
+    useCompanionStore.getState().close();
+    expect(useCompanionStore.getState().pendingMessageContext).toBeNull();
+
+    useCompanionStore.getState().openWithMessage('Plain question');
+    expect(useCompanionStore.getState().pendingMessageContext).toBeNull();
+  });
 });

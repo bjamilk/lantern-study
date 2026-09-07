@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { StarIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 
 interface StarRatingProps {
   rating: number;
@@ -17,10 +17,10 @@ const StarRating: React.FC<StarRatingProps> = ({
 }) => {
   const starCount = 5;
 
-  const sizeClasses = {
-    sm: 'w-4 h-4',
-    md: 'w-5 h-5',
-    lg: 'w-6 h-6',
+  const sizeMap = {
+    sm: 16,
+    md: 20,
+    lg: 24,
   };
 
   return (
@@ -40,8 +40,11 @@ const StarRating: React.FC<StarRatingProps> = ({
             aria-label={`Rate ${starValue} star${starValue > 1 ? 's' : ''}`}
             aria-pressed={isFilled}
           >
-            <StarIcon 
-              className={`${sizeClasses[size]} ${isFilled ? 'text-yellow-500' : 'text-lantern-text-tertiary dark:text-lantern-text-secondary'}`} 
+            <AppIcon
+              name="star"
+              size={sizeMap[size]}
+              filled
+              className={isFilled ? 'text-yellow-500' : 'text-lantern-text-tertiary dark:text-lantern-text-secondary'}
             />
           </button>
         );

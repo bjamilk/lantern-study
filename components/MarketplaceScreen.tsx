@@ -29,28 +29,7 @@ import {
   type MarketplaceSavedSearchFilters,
 } from './marketplace/marketplaceSearchFilters';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
-import {
-  ClockIcon,
-  AcademicCapIcon,
-  BriefcaseIcon,
-  ShoppingBagIcon,
-  HomeIcon,
-  TruckIcon,
-  TicketIcon,
-  SparklesIcon,
-  FunnelIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  MapPinIcon,
-  BookmarkIcon,
-  TrashIcon,
-  PlusIcon,
-  BuildingStorefrontIcon,
-  RectangleStackIcon,
-  StarIcon,
-  ExclamationTriangleIcon,
-  ArrowPathIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 interface MarketplaceScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -175,29 +154,29 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [primaryListingsLoaded, setPrimaryListingsLoaded] = useState(false);
 
-  const categoryIcons: Record<string, typeof AcademicCapIcon> = {
-    textbook_exchange: AcademicCapIcon,
-    pq_bank: SparklesIcon,
-    study_pack: RectangleStackIcon,
-    lecture_notes: BriefcaseIcon,
-    project_thesis: BriefcaseIcon,
-    data_collection: HomeIcon,
-    equipment_rental: ShoppingBagIcon,
-    accommodation: HomeIcon,
-    travel_transport: TruckIcon,
-    personal_goods: SparklesIcon,
-    aso_ebi: ShoppingBagIcon,
-    campus_services: BriefcaseIcon,
-    events_social: TicketIcon,
+  const categoryIcons: Record<string, AppIconName> = {
+    textbook_exchange: 'school',
+    pq_bank: 'sparkles',
+    study_pack: 'albums',
+    lecture_notes: 'briefcase',
+    project_thesis: 'briefcase',
+    data_collection: 'home',
+    equipment_rental: 'bag',
+    accommodation: 'home',
+    travel_transport: 'truck',
+    personal_goods: 'sparkles',
+    aso_ebi: 'bag',
+    campus_services: 'briefcase',
+    events_social: 'ticket',
   };
 
   const academicCategories = browseListingCategories('academic').map((row) => ({
     ...row,
-    icon: categoryIcons[row.id] || AcademicCapIcon,
+    icon: categoryIcons[row.id] || 'school',
   }));
   const studentLifeCategories = browseListingCategories('student-life').map((row) => ({
     ...row,
-    icon: categoryIcons[row.id] || BriefcaseIcon,
+    icon: categoryIcons[row.id] || 'briefcase',
   }));
 
   const userCampusId = useMemo(() => {
@@ -656,7 +635,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
   const getCategoryIcon = (categoryId: string) => {
     const category = allCategories.find(cat => cat.id === categoryId);
-    return category ? category.icon : SparklesIcon;
+    return category ? category.icon : 'sparkles';
   };
 
   const getCategoryName = (categoryId: string) => {
@@ -712,7 +691,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           All
         </button>
         {categories.map(category => {
-          const IconComponent = category.icon;
+          const iconName = category.icon;
           const isSelected = selectedCategory === category.id;
           return (
             <button
@@ -723,7 +702,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               onClick={() => selectCategory(category.id)}
               className={categoryChipClass(isSelected)}
             >
-              <IconComponent className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" aria-hidden="true" />
+              <AppIcon name={iconName} size={14} className="shrink-0" aria-hidden />
               <span className="text-center md:text-left leading-tight truncate">{category.name}</span>
             </button>
           );
@@ -741,14 +720,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onClick={() => setShowSavedSearches(!showSavedSearches)}
             className="text-sm font-semibold text-lantern-text mb-2 flex items-center gap-1.5 hover:text-lantern-primary transition-colors"
           >
-            <BookmarkIcon className="w-4 h-4" />
+            <AppIcon name="bookmark" size={16} />
             Saved Searches ({savedSearches.length})
             {savedSearchNewMatches > 0 && (
               <span className="ml-1 px-1.5 py-0.5 rounded-full bg-lantern-primary text-white text-label tracking-normal">
                 {savedSearchNewMatches} new
               </span>
             )}
-            <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showSavedSearches ? 'rotate-180' : ''}`} />
+            <AppIcon name="chevron-down" size={14} className={`transition-transform ${showSavedSearches ? 'rotate-180' : ''}`} />
           </button>
           {showSavedSearches && (
             <div className="flex flex-wrap gap-2">
@@ -770,7 +749,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                     className="text-lantern-text-tertiary hover:text-lantern-error sm:opacity-0 sm:group-hover:opacity-100 transition-all p-1 -m-1 touch-manipulation"
                     aria-label="Delete saved search"
                   >
-                    <TrashIcon className="w-3.5 h-3.5" />
+                    <AppIcon name="trash" size={14} />
                   </button>
                 </div>
               ))}
@@ -782,7 +761,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       {recentlyViewed.length > 0 && !searchTerm && !selectedCategory && !browseNodeId && !minPrice && !maxPrice && !locationFilter && !campusIdFilter && (
         <MarketplaceListingRail
           title="Recently viewed"
-          icon={<ClockIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+          icon={<AppIcon name="time" size={16} />}
           listings={recentlyViewed}
           onPress={handleListingClick}
         />
@@ -791,7 +770,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       {dealListings.length > 0 && !searchTerm && !selectedCategory && !browseNodeId && (
         <MarketplaceListingRail
           title="On sale now"
-          icon={<SparklesIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+          icon={<AppIcon name="sparkles" size={16} />}
           listings={dealListings}
           onPress={handleListingClick}
         />
@@ -812,7 +791,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onClick={retryLoadListings}
             className="shrink-0 inline-flex items-center gap-1 font-semibold underline hover:no-underline"
           >
-            <ArrowPathIcon className="w-3.5 h-3.5" />
+            <AppIcon name="refresh" size={14} />
             Retry
           </button>
         </div>
@@ -852,7 +831,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
       ) : listings.length === 0 && loadError ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="w-20 h-20 bg-lantern-error/10 rounded-2xl flex items-center justify-center mb-5">
-            <ExclamationTriangleIcon className="w-10 h-10 text-lantern-error" />
+            <AppIcon name="warning" size={40} className="text-lantern-error" />
           </div>
           <h3 className="text-lg font-semibold text-lantern-text mb-2">
             Couldn't load listings
@@ -865,14 +844,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onClick={retryLoadListings}
             className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center transition-colors duration-150 text-sm shadow-sm"
           >
-            <ArrowPathIcon className="w-4 h-4 mr-2" />
+            <AppIcon name="refresh" size={16} className="mr-2" />
             Retry
           </button>
         </div>
       ) : listings.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-16 text-center">
           <div className="w-20 h-20 bg-lantern-background-secondary rounded-2xl flex items-center justify-center mb-5">
-            <ShoppingBagIcon className="w-10 h-10 text-lantern-text-tertiary" />
+            <AppIcon name="bag" size={40} className="text-lantern-text-tertiary" />
           </div>
           <h3 className="text-lg font-semibold text-lantern-text mb-2">
             No listings found
@@ -888,14 +867,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             onClick={handleCreateListing}
             className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center transition-colors duration-150 text-sm shadow-sm"
           >
-            <PlusIcon className="w-4 h-4 mr-2" />
+            <AppIcon name="add" size={16} className="mr-2" />
             Create First Listing
           </button>
         </div>
       ) : (
         <div className="grid w-full max-w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-4 md:gap-5">
           {listings.map(listing => {
-            const IconComponent = getCategoryIcon(listing.category);
+            const iconName = getCategoryIcon(listing.category);
             return (
               <ListingCard
                 key={listing.id}
@@ -909,7 +888,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   (listing.user_id === currentUser.id || listing.seller_id === currentUser.id)
                 }
                 categoryName={listingTypeLabel(listing, getCategoryName(listing.category))}
-                CategoryIcon={IconComponent}
+                categoryIcon={iconName}
                 viewerCampusId={userCampusId}
                 onPress={() => handleListingClick(listing)}
                 onToggleFavorite={e => toggleFavorite(listing.id, e)}
@@ -934,7 +913,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               </>
             ) : (
               <>
-                <ChevronDownIcon className="w-4 h-4" />
+                <AppIcon name="chevron-down" size={16} />
                 Load More
               </>
             )}
@@ -983,7 +962,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
               }`}
             >
-              <MapPinIcon className="w-3.5 h-3.5" />
+              <AppIcon name="location" size={14} />
               <span className="hidden sm:inline">{campusIdFilter === userCampusId ? 'Your campus' : 'Shop campus'}</span>
             </button>
           ) : null}
@@ -997,7 +976,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 : 'bg-lantern-surface text-lantern-text-secondary border-lantern-border hover:border-lantern-primary/30'
             }`}
           >
-            <FunnelIcon className="w-4 h-4" />
+            <AppIcon name="filter" size={16} />
             {activeFilterCount > 0 ? (
               <span className="sr-only">{activeFilterCount} filters active</span>
             ) : null}
@@ -1010,7 +989,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               className="shrink-0 h-9 w-9 min-w-[36px] rounded-lantern flex items-center justify-center border border-lantern-border bg-lantern-surface text-lantern-text-secondary hover:border-lantern-primary/30 disabled:opacity-50 transition-colors"
               title="Save current search"
             >
-              <BookmarkIcon className="w-4 h-4" />
+              <AppIcon name="bookmark" size={16} />
             </button>
           ) : null}
           <MarketplaceWorkspaceBar
@@ -1119,7 +1098,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 <Tab
                   value="academic"
                   index={0}
-                  icon={<AcademicCapIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  icon={<AppIcon name="school" size={16} />}
                   className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Academic
@@ -1127,7 +1106,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 <Tab
                   value="student-life"
                   index={1}
-                  icon={<BriefcaseIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  icon={<AppIcon name="briefcase" size={16} />}
                   className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Student Life
@@ -1135,7 +1114,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 <Tab
                   value="shops"
                   index={2}
-                  icon={<BuildingStorefrontIcon className="w-3.5 h-3.5 sm:w-4 sm:h-4" />}
+                  icon={<AppIcon name="storefront" size={16} />}
                   className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-5 !py-2 sm:!py-2.5 !min-h-[36px] !text-xs sm:!text-sm border-b-2 border-transparent"
                 >
                   Shops
@@ -1149,7 +1128,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-label tracking-normal font-medium text-lantern-text-secondary"
                 >
                   Types
-                  <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showBrowseTree ? 'rotate-180' : ''}`} />
+                  <AppIcon name="chevron-down" size={14} className={`transition-transform ${showBrowseTree ? 'rotate-180' : ''}`} />
                 </button>
               ) : null}
               <button
@@ -1159,7 +1138,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 aria-label={COURSE_ANCHOR_COPY.browseTitle}
                 className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-label tracking-normal font-medium text-lantern-text-secondary"
               >
-                <AcademicCapIcon className="w-3.5 h-3.5" aria-hidden />
+                <AppIcon name="school" size={14} aria-hidden />
                 By course
               </button>
               <button
@@ -1170,7 +1149,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 className="shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-label tracking-normal sm:text-caption font-medium text-lantern-text-secondary"
               >
                 <span className="truncate">{activeCategoryLabel}</span>
-                <ChevronDownIcon className={`w-3.5 h-3.5 shrink-0 transition-transform ${showCategoryPanel ? 'rotate-180' : ''}`} />
+                <AppIcon name="chevron-down" size={14} className={`shrink-0 transition-transform ${showCategoryPanel ? 'rotate-180' : ''}`} />
               </button>
             </div>
           </div>
@@ -1213,7 +1192,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                       .filter((node) => node.parentId)
                       .map((node) => (
                         <React.Fragment key={node.id}>
-                          <ChevronRightIcon className="w-3 h-3" />
+                          <AppIcon name="chevron-forward" size={12} />
                           <button
                             type="button"
                             onClick={() => selectBrowseNode(node.id)}
@@ -1268,7 +1247,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                       .filter((node) => node.parentId)
                       .map((node) => (
                         <React.Fragment key={node.id}>
-                          <ChevronRightIcon className="w-3 h-3" />
+                          <AppIcon name="chevron-forward" size={12} />
                           <button
                             type="button"
                             onClick={() => selectBrowseNode(node.id)}
@@ -1298,7 +1277,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
               </div>
             ) : shops.length === 0 ? (
               <div className="text-center py-16 px-4">
-                <BuildingStorefrontIcon className="w-10 h-10 text-lantern-text-tertiary mx-auto mb-3" />
+                <AppIcon name="storefront" size={40} className="text-lantern-text-tertiary mx-auto mb-3" />
                 <p className="text-sm font-semibold text-lantern-text">No shops yet</p>
                 <p className="text-xs text-lantern-text-secondary mt-1">
                   Sellers with active listings appear here automatically.
@@ -1335,7 +1314,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                           <span>{shop.activeListingCount} active</span>
                           {shop.avgRating > 0 ? (
                             <span className="inline-flex items-center gap-0.5">
-                              <StarIcon className="w-3 h-3 text-amber-400" />
+                              <AppIcon name="star" size={12} className="text-amber-400" />
                               {shop.avgRating.toFixed(1)}
                             </span>
                           ) : null}

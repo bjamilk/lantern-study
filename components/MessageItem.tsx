@@ -22,21 +22,7 @@ import {
   canEditChatMessage,
   canRemoveChatMessage,
 } from '@lantern/shared/utils';
-import {
-  HandThumbUpIcon,
-  HandThumbDownIcon,
-  TagIcon,
-  FlagIcon,
-  ArrowUturnLeftIcon,
-  PencilIcon,
-  TrashIcon,
-} from '@heroicons/react/24/outline';
-import {
-  HandThumbUpIcon as HandThumbUpSolidIcon,
-  HandThumbDownIcon as HandThumbDownSolidIcon,
-  PlayIcon,
-  PauseIcon,
-} from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 
 function formatChatAudioTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -236,9 +222,9 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
         aria-label={playing ? 'Pause voice note' : 'Play voice note'}
       >
         {playing ? (
-          <PauseIcon className="w-4 h-4" aria-hidden />
+          <AppIcon name="pause" size={16} filled aria-hidden />
         ) : (
-          <PlayIcon className="w-4 h-4 translate-x-0.5" aria-hidden />
+          <AppIcon name="play" size={16} filled className="translate-x-0.5" aria-hidden />
         )}
       </button>
       <div className="flex-1 min-w-0 flex flex-col gap-1.5">
@@ -403,9 +389,6 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
     }
   };
 
-  const UpvoteIcon = currentUserVote === 'up' ? HandThumbUpSolidIcon : HandThumbUpIcon;
-  const DownvoteIcon = currentUserVote === 'down' ? HandThumbDownSolidIcon : HandThumbDownIcon;
-
   const renderMatchingItemsList = (items: MatchingItem[] | undefined, listTitle: string) => {
     if (!items || items.length === 0) return null;
     return (
@@ -459,7 +442,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 aria-label="Reply to message"
                 title="Reply"
               >
-                <ArrowUturnLeftIcon className="w-3.5 h-3.5" />
+                <AppIcon name="arrow-undo" size={14} />
               </button>
             )}
             {canEdit && (
@@ -470,7 +453,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 aria-label="Edit message"
                 title="Edit message"
               >
-                <PencilIcon className="w-3.5 h-3.5" />
+                <AppIcon name="pencil" size={14} />
               </button>
             )}
             {canRemove && (
@@ -481,7 +464,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 aria-label="Remove message"
                 title="Remove message"
               >
-                <TrashIcon className="w-3.5 h-3.5" />
+                <AppIcon name="trash" size={14} />
               </button>
             )}
             {canReport && (
@@ -492,7 +475,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 aria-label="Report message"
                 title="Report message"
               >
-                <FlagIcon className="w-3.5 h-3.5" />
+                <AppIcon name="flag" size={14} />
               </button>
             )}
           </div>
@@ -646,7 +629,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
             {/* Tags */}
             {message.tags && message.tags.length > 0 && (
               <div className="flex items-center flex-wrap gap-1 pt-2 mt-1 border-t border-lantern-border">
-                <TagIcon className="w-3 h-3 text-lantern-text-tertiary" />
+                <AppIcon name="pricetag" size={12} className="text-lantern-text-tertiary" />
                 {message.tags.map((tag, index) => (
                   <span
                     key={index}
@@ -717,7 +700,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                   aria-pressed={currentUserVote === 'up'}
                   aria-label={`Upvote question, current upvotes: ${message.upvotes}`}
                 >
-                  <UpvoteIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="thumbs-up" size={14} />
                   <span className="font-medium">{message.upvotes}</span>
                 </button>
                 <button
@@ -730,7 +713,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                   aria-pressed={currentUserVote === 'down'}
                   aria-label={`Downvote question, current downvotes: ${message.downvotes}`}
                 >
-                  <DownvoteIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="thumbs-down" size={14} />
                   <span className="font-medium">{message.downvotes}</span>
                 </button>
                 <div className="w-px h-4 mx-0.5 bg-lantern-border" />
@@ -746,7 +729,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                   aria-label={`Flag as similar, current flags: ${message.flaggedAsSimilarUserIds?.length || 0}`}
                   title={isCurrentUserMessage ? "Cannot flag your own question" : "Flag as similar/duplicate"}
                 >
-                  <FlagIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="flag" size={14} />
                   <span className="font-medium">{message.flaggedAsSimilarUserIds?.length || 0}</span>
                 </button>
               </div>

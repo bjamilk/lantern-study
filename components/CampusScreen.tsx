@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { AcademicCapIcon, MapPinIcon } from '@heroicons/react/24/outline';
 import { fetchCampusSummary, type CampusSummary } from '../services/supabase';
+import { AppIcon } from './ui/AppIcon';
 
 /**
  * Public campus page (Phase 4 · R).
@@ -83,7 +83,7 @@ export const CampusScreen: React.FC<CampusScreenProps> = ({
     <div className="mx-auto w-full max-w-3xl px-4 py-8 space-y-6">
       <header className="space-y-2">
         <p className="inline-flex items-center gap-1.5 text-xs text-lantern-text-secondary">
-          <MapPinIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <AppIcon name="location" size={14} aria-hidden="true" />
           {campus.city}
           {campus.state ? `, ${campus.state}` : ''}
         </p>
@@ -139,7 +139,7 @@ export const CampusScreen: React.FC<CampusScreenProps> = ({
                 key={p}
                 className="inline-flex items-center gap-1 rounded-full bg-lantern-background-secondary px-2.5 py-1 text-xs text-lantern-text-secondary"
               >
-                <AcademicCapIcon className="h-3 w-3" aria-hidden="true" />
+                <AppIcon name="school" size={12} aria-hidden="true" />
                 {p}
               </li>
             ))}

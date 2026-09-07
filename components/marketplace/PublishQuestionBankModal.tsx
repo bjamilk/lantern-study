@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AppIcon } from '../ui/AppIcon';
 import Modal from '../ui/Modal';
 import { CampusSearchSelect } from './CampusSearchSelect';
 import {
@@ -17,7 +18,6 @@ import {
 } from '@lantern/shared';
 import { COURSE_ANCHOR_COPY, hasCourseAnchor, validateCourseAnchor } from '@lantern/shared/marketplace';
 import { useGroupStore } from '../../stores/groupStore';
-import { BuildingStorefrontIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { CoursePicker } from '../academic/CoursePicker';
 import { TopicPicker } from '../academic/TopicPicker';
 import { RightsAttestationCheckbox } from '../moderation/RightsAttestationCheckbox';
@@ -210,7 +210,7 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
     >
       <div className="w-full">
         <div className="flex items-center gap-2 p-5 border-b border-lantern-border">
-          <BuildingStorefrontIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
+          <AppIcon name="storefront" size={20} className="text-lantern-primary" aria-hidden />
           <h3 id="publish-qbank-title" className="text-lg font-bold text-lantern-text">
             Publish to Marketplace
           </h3>
@@ -240,7 +240,7 @@ export const PublishQuestionBankModal: React.FC<PublishQuestionBankModalProps> =
                       : 'bg-lantern-background-secondary text-lantern-text-secondary hover:text-lantern-text'
                   }`}
                 >
-                  <ArrowPathIcon className="w-3.5 h-3.5" aria-hidden />
+                  <AppIcon name="refresh" size={14} aria-hidden />
                   Update it to v{existingBank.version + 1}
                 </button>
                 <button

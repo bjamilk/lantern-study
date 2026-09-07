@@ -34,7 +34,10 @@ export type AiJobKind =
   | 'smart_notes'
   | 'flashcards'
   | 'quiz'
-  | 'import_study';
+  | 'import_study'
+  // Read-it-to-me writes a narration SCRIPT. No audio is produced or stored —
+  // the device speaks it — so the job ends when the words exist.
+  | 'narration';
 
 export type AiJobStatus = 'running' | 'succeeded' | 'failed' | 'orphaned';
 

@@ -11,18 +11,8 @@ import { normalizeStorageUrl } from '../utils/storageUrl';
 import { MarketplaceInquiry, MarketplaceOffer } from '../types';
 import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared/utils';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
-import {
-  ChatBubbleLeftIcon,
-  ArrowLeftIcon,
-  ClockIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ShoppingBagIcon,
-  UserCircleIcon,
-  ChevronRightIcon,
-  CurrencyDollarIcon
-} from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
+import { AppIcon } from './ui/AppIcon';
 
 /**
  * Accepting an offer atomically creates an order (marketplace_orders.offer_id),
@@ -196,13 +186,13 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'open':
-        return <ClockIcon className="w-4 h-4" />;
+        return <AppIcon name="time" size={16} />;
       case 'negotiating':
-        return <ChatBubbleLeftIcon className="w-4 h-4" />;
+        return <AppIcon name="chatbubble" size={16} />;
       case 'closed':
-        return <XCircleIcon className="w-4 h-4" />;
+        return <AppIcon name="close-circle" size={16} />;
       case 'purchased':
-        return <CheckCircleIcon className="w-4 h-4" />;
+        return <AppIcon name="checkmark-circle" size={16} />;
       default:
         return null;
     }
@@ -237,7 +227,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
     </div>
   ) : inquiries.length === 0 ? (
     <div className="text-center py-12">
-      <ChatBubbleLeftIcon className="w-16 h-16 mx-auto text-lantern-text-tertiary mb-4" />
+      <AppIcon name="chatbubble" size={64} className="mx-auto text-lantern-text-tertiary mb-4" />
       <h3 className="text-xl font-semibold text-lantern-text mb-2">
         No inquiries {statusFilter ? `with status "${statusFilter}"` : ''}
       </h3>
@@ -268,7 +258,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center">
-                  <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary" />
+                  <AppIcon name="bag" size={48} className="text-lantern-text-tertiary" />
                 </div>
               )}
             </div>
@@ -291,7 +281,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                     </p>
                   )}
                   <div className="flex items-center mt-3 text-sm text-lantern-text-secondary">
-                    <UserCircleIcon className="w-5 h-5 mr-2" />
+                    <AppIcon name="person-circle" size={20} className="mr-2" />
                     <span>
                       {activeTab === 'seller'
                         ? `From: ${inquiry.buyer?.name || 'Unknown'}`
@@ -312,9 +302,9 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                     onClick={() => handleOpenConversation(inquiry)}
                     className="px-3 sm:px-4 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors"
                   >
-                    <ChatBubbleLeftIcon className="w-4 h-4 mr-1 sm:mr-2" />
+                    <AppIcon name="chatbubble" size={16} className="mr-1 sm:mr-2" />
                     Chat
-                    <ChevronRightIcon className="w-4 h-4 ml-1 hidden sm:block" />
+                    <AppIcon name="chevron-forward" size={16} className="ml-1 hidden sm:block" />
                   </button>
                   {activeTab === 'seller' && inquiry.status === 'open' && (
                     <button
@@ -350,11 +340,11 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
             onClick={onBack}
             className="mr-2 sm:mr-4 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0"
           >
-            <ArrowLeftIcon className="w-5 h-5 text-lantern-text-secondary" />
+            <AppIcon name="arrow-back" size={20} className="text-lantern-text-secondary" />
           </button>
           <div className="min-w-0">
             <h1 className="text-lg sm:text-2xl font-bold text-lantern-text flex items-center">
-              <ChatBubbleLeftIcon className="w-5 h-5 sm:w-7 sm:h-7 mr-2 sm:mr-3 text-lantern-primary flex-shrink-0" />
+              <AppIcon name="chatbubble" size={28} className="mr-2 sm:mr-3 text-lantern-primary flex-shrink-0" />
               Inquiries
             </h1>
             <p className="text-lantern-text-secondary mt-0.5 sm:mt-1 text-xs sm:text-base hidden sm:block">
@@ -383,7 +373,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
             <Tab
               value="offers"
               index={2}
-              icon={<CurrencyDollarIcon className="w-4 h-4" />}
+              icon={<AppIcon name="currency" size={16} />}
               className="flex-1 sm:flex-initial !rounded-none !px-2 sm:!px-6 !py-2.5 sm:!py-3 !text-xs sm:!text-sm !font-semibold"
             >
               Offers
@@ -408,7 +398,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
             </div>
           ) : offers.length === 0 ? (
             <div className="text-center py-12">
-              <CurrencyDollarIcon className="w-16 h-16 mx-auto text-lantern-text-tertiary mb-4" />
+              <AppIcon name="currency" size={64} className="mx-auto text-lantern-text-tertiary mb-4" />
               <h3 className="text-xl font-semibold text-lantern-text mb-2">No offers yet</h3>
               <p className="text-lantern-text-secondary">
                 Price offers you've sent or received will appear here.
@@ -442,7 +432,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                           />
                         ) : (
                           <div className="w-full h-full flex items-center justify-center">
-                            <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary" />
+                            <AppIcon name="bag" size={48} className="text-lantern-text-tertiary" />
                           </div>
                         )}
                       </div>
@@ -499,7 +489,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                             {/* Expires */}
                             {offer.status === 'pending' && !isExpired && (
                               <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-                                <ClockIcon className="w-3.5 h-3.5" />
+                                <AppIcon name="time" size={14} />
                                 Expires {new Date(offer.expires_at).toLocaleDateString()} at {new Date(offer.expires_at).toLocaleTimeString()}
                               </p>
                             )}
@@ -519,7 +509,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                     disabled={respondingTo === offer.id}
                                     className="px-3 sm:px-4 py-1.5 sm:py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors disabled:opacity-50"
                                   >
-                                    <CheckCircleIcon className="w-4 h-4 mr-1" />
+                                    <AppIcon name="checkmark-circle" size={16} className="mr-1" />
                                     {getOfferProposedBy(offer) === 'seller' ? 'Accept Counter' : 'Accept'}
                                   </button>
                                   <button
@@ -527,7 +517,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                     disabled={respondingTo === offer.id}
                                     className="px-3 sm:px-4 py-1.5 sm:py-2 border border-red-300 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg text-xs sm:text-sm font-medium transition-colors disabled:opacity-50"
                                   >
-                                    <XCircleIcon className="w-4 h-4 mr-1 inline" />
+                                    <AppIcon name="close-circle" size={16} className="mr-1 inline" />
                                     {getOfferProposedBy(offer) === 'seller' ? 'Decline Counter' : 'Decline'}
                                   </button>
                                   <div className="flex gap-1">
@@ -574,7 +564,7 @@ const MarketplaceInquiriesScreen: React.FC<MarketplaceInquiriesScreenProps> = ({
                                   disabled={payingOfferId !== null}
                                   className="px-3 sm:px-4 py-1.5 sm:py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-xs sm:text-sm font-medium flex items-center transition-colors disabled:opacity-50"
                                 >
-                                  <CurrencyDollarIcon className="w-4 h-4 mr-1" />
+                                  <AppIcon name="currency" size={16} className="mr-1" />
                                   {payingOfferId === offer.id ? 'Opening…' : 'Pay now'}
                                 </button>
                               ) : (

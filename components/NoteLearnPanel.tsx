@@ -17,17 +17,32 @@ import {
 } from '@lantern/shared/utils/aiCredits';
 import { subscribeToAIUsage, getLatestAIUsage, type AIUsageInfo } from '../services/ai';
 import AIUsageInline from './AIUsageInline';
-import {
-  SparklesIcon,
-  ChatBubbleLeftRightIcon,
-  RectangleStackIcon,
-  QuestionMarkCircleIcon,
-  ArrowPathIcon,
-} from '@heroicons/react/24/outline';
 import type { StudyNote } from '../types';
+import { AppIcon } from './ui/AppIcon';
+import { FeatureDisc } from './ui/FeatureDisc';
+import WalkthroughScreen from './walkthrough/WalkthroughScreen';
+import NarrationPlayer from './narration/NarrationPlayer';
+
+/**
+ * What the walk-through needs from an attachment.
+ *
+ * The panel used to take attachments as `{ extractedText }` alone, which is
+ * all Smart Notes ever read. The walk-through works page by page, so it needs
+ * to know WHICH document it is walking through — hence the id, and the type
+ * that says whether the document has pages at all.
+ */
+type LearnAttachment = {
+  id?: string;
+  type?: string;
+  fileName?: string;
+  extractedText?: string | null;
+};
+
+/** Only uploaded documents are split into pages. */
+const WALKABLE_ATTACHMENT_TYPES = new Set(['pdf', 'presentation']);
 
 interface NoteLearnPanelProps {
-  note: StudyNote & { attachments?: Array<{ extractedText?: string | null }> };
+  note: StudyNote & { attachments?: LearnAttachment[] };
   studyContentLength?: number;
   theme: 'light' | 'dark';
   onSmartNote: (
@@ -54,6 +69,15 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   const [guidance, setGuidance] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const [usage, setUsage] = useState<AIUsageInfo>(getLatestAIUsage());
+  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
+  const [narrationOpen, setNarrationOpen] = useState(false);
+
+  // The first uploaded document on the note is the one a walk-through walks.
+  // A note with only photos, audio or a video link has no pages, so the door
+  // is not shown at all rather than opening onto "unsupported".
+  const walkableAttachment = (note.attachments || []).find(
+    (attachment) => attachment.id && WALKABLE_ATTACHMENT_TYPES.has(String(attachment.type))
+  );
 
   React.useEffect(() => subscribeToAIUsage(setUsage), []);
 
@@ -91,7 +115,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
   return (
     <div className={`rounded-xl border p-5 ${isDark ? 'bg-lantern-surface border-lantern-border' : 'bg-lantern-primary-background border-lantern-primary/20'}`}>
       <h3 className={`text-sm font-semibold mb-4 flex items-center gap-2 ${isDark ? 'text-lantern-text' : 'text-lantern-primary-dark'}`}>
-        <SparklesIcon className="w-5 h-5 text-lantern-primary" />
+        <AppIcon name="sparkles" size={20} className="text-lantern-primary" />
         Learn from this note
       </h3>
 
@@ -108,6 +132,40 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
             <MarkdownRenderer content={note.summary} enableMath={false} />
           </div>
         </div>
+      )}
+
+      {walkableAttachment?.id && (
+        <button
+          type="button"
+          onClick={() => setWalkthroughOpen(true)}
+          className={`mb-4 flex w-full items-center gap-3 rounded-lg border p-3 text-left ${isDark ? 'border-lantern-border bg-lantern-background hover:bg-lantern-surface-secondary' : 'border-lantern-border bg-lantern-surface hover:bg-lantern-background'}`}
+        >
+          <FeatureDisc feature="notes" size={32} icon={<AppIcon name="book-open" size={18} />} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-body font-medium text-lantern-text">Walk me through it</span>
+            <span className={`block truncate text-caption ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+              {walkableAttachment.fileName || 'This document'} — one page at a time
+            </span>
+          </span>
+          <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
+        </button>
+      )}
+
+      {walkableAttachment?.id && (
+        <button
+          type="button"
+          onClick={() => setNarrationOpen(true)}
+          className={`mb-4 flex w-full items-center gap-3 rounded-lg border p-3 text-left ${isDark ? 'border-lantern-border bg-lantern-background hover:bg-lantern-surface-secondary' : 'border-lantern-border bg-lantern-surface hover:bg-lantern-background'}`}
+        >
+          <FeatureDisc feature="notes" size={32} icon={<AppIcon name="volume-medium" size={18} />} />
+          <span className="min-w-0 flex-1">
+            <span className="block text-body font-medium text-lantern-text">Read it to me</span>
+            <span className={`block truncate text-caption ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
+              Your device reads the pages aloud — nothing to download
+            </span>
+          </span>
+          <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
+        </button>
       )}
 
       {!canGenerateStudyMaterials && (
@@ -176,7 +234,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           }
           className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-lantern-primary text-white hover:bg-lantern-primary-dark disabled:opacity-50"
         >
-          {smartNoting ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
+          {smartNoting ? <AppIcon name="refresh" size={16} className="animate-spin" /> : <AppIcon name="sparkles" size={16} />}
           Smart Note
         </button>
         <button
@@ -185,7 +243,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           onClick={onChatWithNote}
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
-          <ChatBubbleLeftRightIcon className="w-4 h-4" />
+          <AppIcon name="chatbubbles" size={16} />
           Chat
         </button>
         <button
@@ -201,7 +259,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           }
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
-          <RectangleStackIcon className="w-4 h-4" />
+          <AppIcon name="albums" size={16} />
           Flashcards
         </button>
         <button
@@ -217,7 +275,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           }
           className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium ${isDark ? 'bg-lantern-surface-secondary text-lantern-text hover:bg-lantern-border' : 'bg-lantern-surface text-lantern-text hover:bg-lantern-background border border-lantern-border'}`}
         >
-          <QuestionMarkCircleIcon className="w-4 h-4" />
+          <AppIcon name="help-circle" size={16} />
           Practice test
         </button>
       </div>
@@ -225,6 +283,30 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
       <div className="mt-3">
         <AIUsageInline cost={smartNotesCost} />
       </div>
+
+      {walkableAttachment?.id && narrationOpen && (
+        <NarrationPlayer
+          isOpen={narrationOpen}
+          onClose={() => setNarrationOpen(false)}
+          noteId={note.id}
+          noteTitle={note.title}
+          attachmentId={walkableAttachment.id}
+          documentLabel={walkableAttachment.fileName}
+          theme={theme}
+        />
+      )}
+
+      {walkableAttachment?.id && walkthroughOpen && (
+        <WalkthroughScreen
+          isOpen={walkthroughOpen}
+          onClose={() => setWalkthroughOpen(false)}
+          noteId={note.id}
+          noteTitle={note.title}
+          attachmentId={walkableAttachment.id}
+          documentLabel={walkableAttachment.fileName}
+          theme={theme}
+        />
+      )}
     </div>
   );
 };

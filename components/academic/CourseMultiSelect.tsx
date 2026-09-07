@@ -1,5 +1,5 @@
 import React, { useId, useMemo, useState } from 'react';
-import { MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import type { Course } from '../../types';
 import { courseLabel } from '../../utils/academicSetup';
 import { useCourseSearch } from './useCourseSearch';
@@ -88,7 +88,7 @@ export const CourseMultiSelect: React.FC<CourseMultiSelectProps> = ({
                 aria-label={`Remove ${course.code}`}
                 className="rounded-full p-0.5 hover:bg-lantern-primary/20"
               >
-                <XMarkIcon className="w-3.5 h-3.5" aria-hidden />
+                <AppIcon name="close" size={14} aria-hidden />
               </button>
             </li>
           ))}
@@ -96,7 +96,7 @@ export const CourseMultiSelect: React.FC<CourseMultiSelectProps> = ({
       ) : null}
       <div className="border border-lantern-border rounded-lg bg-lantern-surface dark:bg-lantern-surface-secondary overflow-hidden">
         <div className="relative">
-          <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
+          <AppIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
           <input
             id={controlId}
             type="search"
@@ -150,7 +150,7 @@ export const CourseMultiSelect: React.FC<CourseMultiSelectProps> = ({
                     disabled={creating}
                     className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
                   >
-                    <PlusIcon className="w-4 h-4" aria-hidden />
+                    <AppIcon name="add" size={16} aria-hidden />
                     {creating ? 'Adding…' : `Add ‘${offer.code}’`}
                   </button>
                 </li>

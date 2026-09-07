@@ -8,7 +8,7 @@ import React, {
   useState,
 } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronRightIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './AppIcon';
 import { useMenuKeyboard } from '../../hooks/useMenuKeyboard';
 import { useDismissableLayer } from '../../hooks/useDismissableLayer';
 
@@ -313,11 +313,12 @@ export function MenuSubmenu({
       >
         {icon}
         <span className="flex-1 min-w-0">{label}</span>
-        <ChevronRightIcon
-          className={`w-4 h-4 flex-shrink-0 text-lantern-text-tertiary transition-transform ${
+        <AppIcon
+          name="chevron-forward"
+          size={16}
+          className={`flex-shrink-0 text-lantern-text-tertiary transition-transform ${
             open ? 'rotate-90' : ''
           }`}
-          aria-hidden
         />
       </button>
       {open ? (

@@ -3,7 +3,7 @@ import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { Flashcard } from '../types';
 import { shuffleArray } from '../utils/helpers';
 import { Button } from './ui';
-import { XMarkIcon, ClockIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { trackStudyModeCompleted } from '../services/productAnalytics';
 
 interface MatchStudyScreenProps {
@@ -118,12 +118,12 @@ export const MatchStudyScreen: React.FC<MatchStudyScreenProps> = ({
         <div>
           <h1 className="font-bold text-lg">{FLASHCARD_MODE_LABELS.match.label} — {deckName}</h1>
           <p className="text-sm text-lantern-text-secondary">
-            {matchedCount}/{totalPairs} pairs · <ClockIcon className="w-3 h-3 inline" /> {formatTime(elapsed)}
+            {matchedCount}/{totalPairs} pairs · <AppIcon name="time" size={12} className="inline" /> {formatTime(elapsed)}
             {isTruncated ? ` · ${MATCH_PAIR_LIMIT} of ${eligibleBasicCards.length} pairs` : ''}
           </p>
         </div>
         <button onClick={onExit} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-          <XMarkIcon className="w-5 h-5" />
+          <AppIcon name="close" size={20} />
         </button>
       </div>
 

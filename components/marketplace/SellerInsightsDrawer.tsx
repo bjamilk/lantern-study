@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChartBarIcon, HeartIcon, XMarkIcon, BanknotesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import type { SellerAnalytics } from '../../types';
 import { Drawer } from '../ui';
 import { updateSellerPreferences, fetchSellerPayments, type SellerPaymentRow } from '../../services/supabase';
@@ -48,7 +48,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
     <Drawer isOpen={isOpen} onClose={onClose} maxWidthClass="max-w-md" side="right" ariaLabelledBy="seller-insights-title">
       <div className="flex items-center justify-between px-4 py-3 border-b border-lantern-border">
         <h2 id="seller-insights-title" className="text-base font-bold text-lantern-text flex items-center gap-2">
-          <ChartBarIcon className="w-5 h-5 text-lantern-primary" />
+          <AppIcon name="bar-chart" size={20} className="text-lantern-primary" />
           Performance & preferences
         </h2>
         <button
@@ -57,7 +57,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
           className="p-2 rounded-lg hover:bg-lantern-background-secondary min-h-[44px] min-w-[44px] flex items-center justify-center"
           aria-label="Close insights"
         >
-          <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" />
+          <AppIcon name="close" size={20} className="text-lantern-text-secondary" />
         </button>
       </div>
 
@@ -185,7 +185,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
             {analytics.favoriteHighlights && analytics.favoriteHighlights.length > 0 ? (
               <div className="p-3 rounded-xl bg-pink-50 dark:bg-pink-950/20 border border-pink-200 dark:border-pink-900/40">
                 <p className="text-xs font-semibold text-pink-800 dark:text-pink-300 mb-2 flex items-center gap-1">
-                  <HeartIcon className="w-4 h-4" /> Favorite highlights
+                  <AppIcon name="heart" size={16} /> Favorite highlights
                 </p>
                 {analytics.favoriteHighlights.map(l => (
                   <p key={l.id} className="text-xs text-pink-900 dark:text-pink-200">
@@ -230,7 +230,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
         {payments && payments.length > 0 ? (
           <div className="p-3 rounded-xl bg-lantern-surface border border-lantern-border overflow-x-auto">
             <p className="text-xs font-semibold text-lantern-text-secondary mb-2 flex items-center gap-1">
-              <BanknotesIcon className="w-4 h-4" /> Earnings
+              <AppIcon name="cash" size={16} /> Earnings
             </p>
             <table className="w-full text-xs text-left tabular-nums">
               <thead>

@@ -84,6 +84,7 @@ const studyBar = (): ContextualBarSpec => barFor('StudyHub');
 const deckBar = (): ContextualBarSpec => barFor('DeckDetail');
 const noteBar = (): ContextualBarSpec => barFor('NoteEditor');
 const shopBar = (): ContextualBarSpec => barFor('ShopBrowse');
+const walkthroughBar = (): ContextualBarSpec => barFor('Walkthrough');
 
 /** The params a real `DeckDetail` route carries. */
 const DECK = { deckId: 'deck-1', deckName: 'Pharmacology' };
@@ -333,6 +334,40 @@ describe('the Study row itself', () => {
   it('keeps the two non-screen doors as doors, not routes', () => {
     expect(itemById(studyBar(), 'record').target.kind).toBe('record');
     expect(itemById(studyBar(), 'ai').target.kind).toBe('ai');
+  });
+});
+
+describe('the walk-through row', () => {
+  it('is Plan · Ask · Quiz · Done', () => {
+    expect(walkthroughBar().items.map(item => item.id)).toEqual(['plan', 'ask', 'quiz', 'done']);
+    expect(walkthroughBar().items.map(item => item.label)).toEqual(['Plan', 'Ask', 'Quiz', 'Done']);
+  });
+
+  it('paints teal with nothing active — you stand on the document, not on a door', () => {
+    expect(activeItem('Walkthrough')).toBeNull();
+    expect(accentForRoute('Walkthrough')).toBe('notes');
+  });
+
+  it('hands all four back to the screen: none of them is a place', () => {
+    const actions = walkthroughBar().items.map(item =>
+      planContextualPress({ focusedRoute: 'Walkthrough', item }),
+    );
+    expect(actions).toEqual([
+      { kind: 'screenAction', action: 'walkthroughPlan' },
+      { kind: 'screenAction', action: 'walkthroughAsk' },
+      { kind: 'screenAction', action: 'walkthroughQuiz' },
+      { kind: 'screenAction', action: 'walkthroughDone' },
+    ]);
+  });
+
+  it('is a reading screen, so it keeps its row rather than going immersive', () => {
+    // A session subtracts its own row (`shouldHideTabBar`); the walk-through
+    // is somewhere a student reads, and the way out is the global bar.
+    expect(specForRoute('Walkthrough')).not.toBeNull();
+  });
+
+  it('is a different row from the note editor’s', () => {
+    expect(specForRoute('Walkthrough')).not.toBe(specForRoute('NoteEditor'));
   });
 });
 

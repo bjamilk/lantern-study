@@ -1,5 +1,5 @@
 import React from 'react';
-import { CheckCircleIcon, FireIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 
 export interface DailyQuest {
   id: string;
@@ -64,7 +64,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
         <div className="flex items-center justify-between mb-2">
           <h3 className="font-semibold text-lantern-text">Daily Quests</h3>
           <div className="flex items-center gap-2 text-sm">
-            <FireIcon className="w-4 h-4 text-orange-500" />
+            <AppIcon name="flame" size={16} className="text-orange-500" />
             <span className="font-bold text-orange-600">{streak} day streak</span>
           </div>
         </div>
@@ -87,7 +87,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-semibold text-lantern-text">Daily Quests</h3>
         <div className="flex items-center gap-2 text-sm">
-          <FireIcon className="w-4 h-4 text-orange-500" />
+          <AppIcon name="flame" size={16} className="text-orange-500" />
           <span className="font-bold text-orange-600">{streak} day streak</span>
           {streakFreezes > 0 && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-lantern-primary" title="Streak freezes available">
@@ -112,7 +112,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
           return (
             <div key={quest.id} className="flex items-center gap-3">
               {quest.completed ? (
-                <CheckCircleIcon className="w-5 h-5 text-emerald-500 flex-shrink-0" />
+                <AppIcon name="checkmark-circle" size={20} className="text-emerald-500 flex-shrink-0" />
               ) : (
                 <div className="w-5 h-5 rounded-full border-2 border-lantern-border flex-shrink-0" />
               )}

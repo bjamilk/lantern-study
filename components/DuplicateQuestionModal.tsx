@@ -1,6 +1,6 @@
 import React from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { Message } from '../types';
-import { CheckBadgeIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 interface DuplicateQuestionModalProps {
@@ -31,7 +31,7 @@ const DuplicateQuestionModal: React.FC<DuplicateQuestionModalProps> = ({
     >
       <div className="flex justify-between items-center mb-4">
         <h2 id="duplicate-question-modal-title" className="text-xl font-semibold text-lantern-text flex items-center">
-          <CheckBadgeIcon className="w-6 h-6 mr-2 text-lantern-accent" aria-hidden />
+          <AppIcon name="badge-check" size={24} className="mr-2 text-lantern-accent" aria-hidden />
           Duplicate Question Found
         </h2>
         <button
@@ -40,7 +40,7 @@ const DuplicateQuestionModal: React.FC<DuplicateQuestionModalProps> = ({
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Close duplicate question dialog"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
 

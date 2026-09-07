@@ -2,9 +2,8 @@
 
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { TestSessionData, StudySessionData, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel, type AnswerConfidence, type TestSessionKind } from '../types';
-import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid, XCircleIcon as XCircleSolid, ClockIcon, ArrowLeftIcon, ExclamationTriangleIcon, XMarkIcon, PauseIcon, LockClosedIcon } from '@heroicons/react/24/outline';
-import { BookmarkIcon as BookmarkSolidIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
 import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
@@ -645,10 +644,10 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
           optionClasses += " cursor-default";
           if (isCorrectOption) {
               optionClasses = `${optionClasses} bg-green-100 dark:bg-green-900/40 border-green-500 dark:border-green-600 text-green-700 dark:text-green-300`;
-              icon = <CheckCircleSolid className="w-4 h-4 sm:w-5 sm:h-5 ml-auto text-green-600 dark:text-green-400" />;
+              icon = <AppIcon name="checkmark-circle" size={16} className="ml-auto text-green-600 dark:text-green-400" />;
           } else if (isSelected && !isCorrectOption) {
               optionClasses = `${optionClasses} bg-red-100 dark:bg-red-900/40 border-red-500 dark:border-red-600 text-red-700 dark:text-red-300`;
-              icon = <XCircleSolid className="w-4 h-4 sm:w-5 sm:h-5 ml-auto text-red-600 dark:text-red-400" />;
+              icon = <AppIcon name="close-circle" size={16} className="ml-auto text-red-600 dark:text-red-400" />;
           } else {
               optionClasses = `${optionClasses} opacity-70 dark:opacity-60`;
           }
@@ -719,7 +718,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 <h1 className="text-2xl md:text-3xl font-semibold text-lantern-text">Review Your Answers</h1>
                 {timeLeftDisplay && (
                     <div className={`flex items-center text-sm font-medium px-3 py-1 rounded-full transition-colors ${isTimeLow ? 'text-white bg-red-600 animate-pulse' : 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/50'}`}>
-                        <ClockIcon className="w-5 h-5 mr-1.5" />
+                        <AppIcon name="time" size={20} className="mr-1.5" />
                         Time Remaining: {timeLeftDisplay}
                     </div>
                 )}
@@ -764,10 +763,10 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                         return (
                             <button key={q.id} onClick={() => handleQuestionSelect(index)} disabled={isLocked} aria-disabled={isLocked} className={buttonClasses} aria-label={isLocked ? `Question ${q.questionNumber} (locked)` : `Go to question ${q.questionNumber}`}>
                                 {isLocked ? (
-                                    <LockClosedIcon className="w-4 h-4" aria-hidden="true" />
+                                    <AppIcon name="lock-closed" size={16} aria-hidden="true" />
                                 ) : (
                                   <>
-                                    {isBookmarked && <BookmarkSolidIcon className="w-3 h-3 absolute top-1 right-1 text-lantern-primary"/>}
+                                    {isBookmarked && <AppIcon name="bookmark" size={12} filled className="absolute top-1 right-1 text-lantern-primary" />}
                                     {q.questionNumber}
                                   </>
                                 )}
@@ -778,7 +777,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             </div>
             
             <div className="bg-red-100 dark:bg-red-900/30 border-l-4 border-red-500 text-red-700 dark:text-red-300 p-4 rounded-r-lg mb-6 flex items-start" role="alert">
-                <ExclamationTriangleIcon className="w-6 h-6 mr-3 flex-shrink-0" />
+                <AppIcon name="warning" size={24} className="mr-3 flex-shrink-0" />
                 <div>
                   <p className="font-bold">Final Submission Warning</p>
                   <p className="text-sm">Once you submit, you will not be able to change your answers. Please review your questions carefully.</p>
@@ -787,7 +786,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
             <div className="flex-shrink-0 flex justify-between items-center">
                 <button onClick={() => setIsReviewMode(false)} className="px-6 py-3 bg-lantern-border hover:bg-lantern-border text-white rounded-md flex items-center">
-                    <ArrowLeftIcon className="w-5 h-5 mr-2" />
+                    <AppIcon name="arrow-back" size={20} className="mr-2" />
                     Return to Test
                 </button>
                 <button
@@ -795,7 +794,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     disabled={isSubmittingTest}
                     className={`px-6 py-3 text-white rounded-md flex items-center font-semibold ${isSubmittingTest ? 'bg-red-400 cursor-not-allowed' : 'bg-red-600 hover:bg-red-700'}`}
                 >
-                    {isSubmittingTest ? 'Submitting...' : 'Confirm & Submit Test'} <CheckCircleSolid className="w-5 h-5 ml-2" />
+                    {isSubmittingTest ? 'Submitting...' : 'Confirm & Submit Test'} <AppIcon name="checkmark-circle" size={20} className="ml-2" />
                 </button>
             </div>
         </div>
@@ -907,7 +906,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     className="inline-flex items-center gap-1 text-label tracking-normal sm:text-caption font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full whitespace-nowrap"
                     title="Locked mode: once you answer a question and move on, you can't return to it."
                   >
-                    <LockClosedIcon className="w-3 h-3" aria-hidden="true" />
+                    <AppIcon name="lock-closed" size={12} aria-hidden="true" />
                     Locked
                   </span>
                 )}
@@ -933,11 +932,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 aria-label={`Time remaining ${timeLeftDisplay}`}
                 title="Time remaining"
               >
-                <ClockIcon
-                  className={`w-3.5 h-3.5 sm:w-4 sm:h-4 mr-1 shrink-0 ${
-                    isTimeLow ? 'text-white' : 'text-lantern-primary'
-                  }`}
-                />
+                <AppIcon name="time" size={14} className={`mr-1 shrink-0 ${
+ isTimeLow ? 'text-white' : 'text-lantern-primary'
+ }`} />
                 <span>{timeLeftDisplay}</span>
               </div>
             )}
@@ -948,7 +945,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               aria-label="Pause Session"
               title="Pause & Exit Session"
             >
-              <PauseIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <AppIcon name="pause" size={16} />
             </button>
             <button
               type="button"
@@ -957,7 +954,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               aria-label="Cancel Session"
               title="Cancel & Exit Session"
             >
-              <XMarkIcon className="w-4 h-4 sm:w-5 sm:h-5" />
+              <AppIcon name="close" size={16} />
             </button>
           </div>
         </div>
@@ -1091,7 +1088,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                                 </div>
                                 {isStudyModeAnswered && !isMatchCorrect && (
                                     <div className="mt-2 text-xs flex items-center text-green-700 dark:text-green-300">
-                                        <CheckCircleSolid className="w-4 h-4 mr-1"/>
+                                        <AppIcon name="checkmark-circle" size={16} className="mr-1" />
                                         Correct answer: <span className="font-semibold ml-1">{(shuffledAnswers as MatchingItem[]).find(a => a.id === correctMatch?.answerItemId)?.text || 'N/A'}</span>
                                     </div>
                                 )}
@@ -1139,7 +1136,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                                         <option key={opt.id} value={opt.id}>{opt.text}</option>
                                     ))}
                                 </select>
-                                {isStudyModeAnswered && (isCorrect ? <CheckCircleSolid className="w-5 h-5 text-green-500"/> : <XCircleSolid className="w-5 h-5 text-red-500"/>)}
+                                {isStudyModeAnswered && (isCorrect ? <AppIcon name="checkmark-circle" size={20} className="text-green-500" /> : <AppIcon name="close-circle" size={20} className="text-red-500" />)}
                             </div>
                           );
                       })}
@@ -1222,7 +1219,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             title={lockMode && previousTargetIndex < session.currentQuestionIndex - 1 && previousTargetIndex >= 0 ? 'Back to your last open question' : undefined}
             className="px-2.5 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm bg-lantern-background-secondary text-lantern-text rounded-md hover:bg-lantern-border dark:hover:bg-lantern-border disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
             >
-            <ChevronLeftIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:mr-1" />
+            <AppIcon name="chevron-back" size={16} className="sm:mr-1" />
             <span className="hidden sm:inline">Previous</span>
             </button>
 
@@ -1254,7 +1251,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     >
                         <span className="hidden sm:inline">Next Question</span>
                         <span className="sm:hidden">Next</span>
-                        <ChevronRightIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:ml-1" />
+                        <AppIcon name="chevron-forward" size={16} className="sm:ml-1" />
                     </button>
                 )
             )}
@@ -1267,7 +1264,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 >
                     <span className="hidden sm:inline">Next Question</span>
                     <span className="sm:hidden">Next</span>
-                    <ChevronRightIcon className="w-4 h-4 sm:w-5 sm:h-5 sm:ml-1" />
+                    <AppIcon name="chevron-forward" size={16} className="sm:ml-1" />
                 </button>
             )}
         </div>
@@ -1326,11 +1323,11 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 title={title}
               >
                 {isLocked ? (
-                    <LockClosedIcon className="w-3.5 h-3.5" aria-hidden="true" />
+                    <AppIcon name="lock-closed" size={14} aria-hidden="true" />
                 ) : (
                   <>
                     {isBookmarked && (
-                        <BookmarkSolidIcon className={`w-3 h-3 absolute top-0.5 right-0.5 ${isCurrent ? 'text-yellow-300' : 'text-yellow-600 dark:text-yellow-400'}`} />
+                        <AppIcon name="bookmark" size={12} filled className={`absolute top-0.5 right-0.5 ${isCurrent ? 'text-yellow-300' : 'text-yellow-600 dark:text-yellow-400'}`} />
                     )}
                     {q.questionNumber}
                   </>

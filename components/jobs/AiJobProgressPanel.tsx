@@ -12,13 +12,7 @@
  */
 
 import React, { useEffect } from 'react';
-import {
-  ArrowPathIcon,
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  SparklesIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { useVisibleAiJobs, type AiJobView } from '../../hooks/useAiJobs';
 import { useAiJobStore } from '../../stores/aiJobStore';
 import {
@@ -57,14 +51,11 @@ const AiJobRow: React.FC<{ view: AiJobView }> = ({ view }) => {
       <div className="flex items-start gap-2">
         <span className="mt-0.5 shrink-0" aria-hidden>
           {succeeded ? (
-            <CheckCircleIcon className="w-4 h-4" style={{ color: AI_INK }} />
+            <AppIcon name="checkmark-circle" size={16} style={{ color: AI_INK }} />
           ) : job.status === 'failed' ? (
-            <ExclamationTriangleIcon className="w-4 h-4 text-lantern-error" />
+            <AppIcon name="warning" size={16} className="text-lantern-error" />
           ) : (
-            <SparklesIcon
-              className={`w-4 h-4 ${running ? 'animate-pulse' : ''}`}
-              style={{ color: AI_INK }}
-            />
+            <AppIcon name="sparkles" size={16} className={running ? 'animate-pulse' : ''} style={{ color: AI_INK }} />
           )}
         </span>
 
@@ -82,7 +73,7 @@ const AiJobRow: React.FC<{ view: AiJobView }> = ({ view }) => {
           className="shrink-0 p-1 rounded hover:bg-lantern-background text-lantern-text-secondary"
           aria-label={running ? `Hide progress for ${job.title}` : `Dismiss ${job.title}`}
         >
-          <XMarkIcon className="w-4 h-4" />
+          <AppIcon name="close" size={16} />
         </button>
       </div>
 
@@ -146,7 +137,7 @@ const AiJobRow: React.FC<{ view: AiJobView }> = ({ view }) => {
               onClick={() => retryAiJob(job.id)}
               className="mt-2 px-2.5 py-1 rounded-lg text-caption font-medium border border-lantern-border text-lantern-text"
             >
-              <ArrowPathIcon className="w-3.5 h-3.5 inline-block mr-1 align-[-2px]" />
+              <AppIcon name="refresh" size={14} className="inline-block mr-1 align-[-2px]" />
               {savingRetry ? (
                 'Save to your library (no extra credits)'
               ) : (
@@ -200,7 +191,7 @@ export const AiJobProgressPanel: React.FC = () => {
       aria-live="polite"
     >
       <div className="px-3 py-2 border-b border-lantern-border flex items-center gap-2">
-        <SparklesIcon className="w-4 h-4" style={{ color: AI_INK }} aria-hidden />
+        <AppIcon name="sparkles" size={16} style={{ color: AI_INK }} aria-hidden />
         <p className="text-label uppercase text-lantern-text-secondary flex-1">
           {runningCount > 0 ? `AI working · ${runningCount}` : 'AI results'}
         </p>

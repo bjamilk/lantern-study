@@ -158,6 +158,7 @@ const DONE_TITLE: Record<AiJobKind, string> = {
   // is titled "Test · <source>": one name for one thing.
   quiz: 'Test ready',
   import_study: 'Study set ready',
+  narration: 'Ready to read aloud',
 };
 
 function notifyDone(jobId: string): void {

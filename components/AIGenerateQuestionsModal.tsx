@@ -1,11 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { useToastStore } from '../stores/toastStore';
-import {
-  SparklesIcon,
-  XMarkIcon,
-  ArrowPathIcon,
-  DocumentArrowUpIcon,
-} from '@heroicons/react/24/outline';
 import AIUsageInline from './AIUsageInline';
 import { AIDisclaimer } from './AIDisclaimer';
 import Modal from './ui/Modal';
@@ -165,7 +160,7 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
           id="ai-generate-questions-title"
           className="text-xl font-semibold text-lantern-text flex items-center"
         >
-          <SparklesIcon className="w-6 h-6 mr-2 text-lantern-primary" aria-hidden />
+          <AppIcon name="sparkles" size={24} className="mr-2 text-lantern-primary" aria-hidden />
           Generate Questions with AI
         </h2>
         <button
@@ -175,7 +170,7 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50"
           aria-label="Close generate questions dialog"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
       <p className="text-sm text-lantern-text-secondary mb-2">
@@ -217,9 +212,9 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
                 className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-lantern-border bg-lantern-background-secondary px-3 py-1.5 text-xs font-medium text-lantern-text hover:bg-lantern-surface disabled:opacity-50"
               >
                 {isUploading ? (
-                  <ArrowPathIcon className="h-4 w-4 animate-spin" aria-hidden />
+                  <AppIcon name="refresh" size={16} className="animate-spin" aria-hidden />
                 ) : (
-                  <DocumentArrowUpIcon className="h-4 w-4" aria-hidden />
+                  <AppIcon name="document-upload" size={16} aria-hidden />
                 )}
                 {isUploading ? 'Uploading…' : 'Upload PDF / PPT'}
               </button>
@@ -329,7 +324,7 @@ const AIGenerateQuestionsModal: React.FC<AIGenerateQuestionsModalProps> = ({
               disabled={busy}
               className="min-h-[44px] px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark rounded-lg shadow-sm flex items-center justify-center disabled:opacity-50"
             >
-              {isGenerating && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" aria-hidden />}
+              {isGenerating && <AppIcon name="refresh" size={16} className="mr-2 animate-spin" aria-hidden />}
               {isGenerating ? 'Generating...' : 'Generate Questions'}
             </button>
           </div>

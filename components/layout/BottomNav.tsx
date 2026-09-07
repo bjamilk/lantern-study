@@ -1,12 +1,6 @@
 import React from 'react';
 import { AppMode } from '../../types';
-import {
-    HomeIcon,
-    ChatBubbleLeftRightIcon,
-    AcademicCapIcon,
-    BuildingLibraryIcon,
-    UserCircleIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import {
     DESTINATION_LABELS,
     resolveActiveDestination,
@@ -26,7 +20,7 @@ interface BottomNavProps {
 
 interface NavTab {
     id: DestinationId;
-    icon: React.ElementType;
+    icon: AppIconName;
     onSelect: () => void;
     badge?: number;
     badgeSuffix?: string;
@@ -59,12 +53,12 @@ const BottomNav: React.FC<BottomNavProps> = ({
     const tabs: NavTab[] = [
         {
             id: 'home',
-            icon: HomeIcon,
+            icon: 'home',
             onSelect: () => onNavigate(AppMode.DASHBOARD),
         },
         {
             id: 'study',
-            icon: AcademicCapIcon,
+            icon: 'school',
             onSelect: () => onNavigate(AppMode.STUDY_HUB),
             badge: dueCardsCount,
             badgeSuffix: 'due',
@@ -72,7 +66,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
         },
         {
             id: 'chat',
-            icon: ChatBubbleLeftRightIcon,
+            icon: 'chatbubbles',
             onSelect: () => onNavigate(AppMode.CHAT),
             badge: unreadChatCount,
             badgeSuffix: 'unread',
@@ -80,13 +74,13 @@ const BottomNav: React.FC<BottomNavProps> = ({
         },
         {
             id: 'campus',
-            icon: BuildingLibraryIcon,
+            icon: 'business',
             onSelect: onNavigateToCampus,
             tipId: 'nav.marketplace',
         },
         {
             id: 'me',
-            icon: UserCircleIcon,
+            icon: 'person',
             onSelect: onNavigateToMe,
         },
     ];
@@ -100,7 +94,6 @@ const BottomNav: React.FC<BottomNavProps> = ({
                 {tabs.map((tab) => {
                     const label = DESTINATION_LABELS[tab.id];
                     const isActive = active === tab.id;
-                    const Icon = tab.icon;
                     const badgeCount = tab.badge && tab.badge > 0 ? tab.badge : 0;
                     const shown = badgeCount > 99 ? '99+' : String(badgeCount);
                     const accessibleName = badgeCount > 0
@@ -128,7 +121,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
                                     isActive ? 'bg-lantern-primary-background' : ''
                                 }`}
                             >
-                                <Icon className="w-6 h-6" aria-hidden="true" />
+                                <AppIcon name={tab.icon} size={24} />
                                 {badgeCount > 0 ? (
                                     <span
                                         aria-hidden="true"

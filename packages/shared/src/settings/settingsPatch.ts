@@ -2,11 +2,13 @@
  * Deep category-patch helpers and range validation for UserSettings.
  * Used by API merge, web save queue, and mobile offline sync.
  */
+import { normalizeGenerationOptions } from '../flashcards/generationOptions';
 import {
   DEFAULT_USER_SETTINGS,
   type AccessibilitySettings,
   type AppearanceSettings,
   type FeatureTipsSettings,
+  type FlashcardGenerationSettings,
   type MarketplaceSettings,
   type NotificationSettings,
   type PrivacySettings,
@@ -24,7 +26,8 @@ export type SettingsCategoryKey =
   | 'accessibility'
   | 'sync'
   | 'marketplace'
-  | 'featureTips';
+  | 'featureTips'
+  | 'flashcardGeneration';
 
 /** Partial nested settings blob (one or more categories). */
 export type UserSettingsPatch = {
@@ -36,6 +39,7 @@ export type UserSettingsPatch = {
   sync?: Partial<SyncSettings>;
   marketplace?: Partial<MarketplaceSettings>;
   featureTips?: Partial<FeatureTipsSettings>;
+  flashcardGeneration?: Partial<FlashcardGenerationSettings>;
   version?: number;
   updatedAt?: string;
 };
@@ -254,6 +258,22 @@ function sanitizeFeatureTips(
 }
 
 /**
+ * Validated through the same normalizer the options sheet and the request
+ * planner use, so a remembered count can never be one the generator would
+ * clamp behind the student's back.
+ */
+function sanitizeFlashcardGeneration(
+  partial: Partial<FlashcardGenerationSettings>,
+  base: FlashcardGenerationSettings
+): FlashcardGenerationSettings {
+  const merged = normalizeGenerationOptions({
+    count: partial.count ?? base.count,
+    typeMix: partial.typeMix ?? base.typeMix,
+  });
+  return { count: merged.count, typeMix: merged.typeMix };
+}
+
+/**
  * Apply a partial nested patch onto current settings with deep category merge + validation.
  * Privileged top-level keys are not accepted here (server strips them separately).
  */
@@ -285,6 +305,12 @@ export function applySettingsPatch(
     featureTips: p.featureTips
       ? sanitizeFeatureTips(p.featureTips, base.featureTips ?? DEFAULT_USER_SETTINGS.featureTips!)
       : base.featureTips,
+    flashcardGeneration: p.flashcardGeneration
+      ? sanitizeFlashcardGeneration(
+          p.flashcardGeneration,
+          base.flashcardGeneration ?? DEFAULT_USER_SETTINGS.flashcardGeneration!
+        )
+      : base.flashcardGeneration,
     version: typeof p.version === 'number' && Number.isFinite(p.version) ? p.version : base.version,
     updatedAt: new Date().toISOString(),
   };
@@ -306,6 +332,7 @@ export function diffSettingsPatch(
     'sync',
     'marketplace',
     'featureTips',
+    'flashcardGeneration',
   ];
   for (const key of categories) {
     const prevCat = previous[key];

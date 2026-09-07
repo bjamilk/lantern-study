@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { CheckIcon, DocumentTextIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { acceptNoteShareLink, previewNoteShareLink } from '../services/notes';
 import { navigateToPath } from '../utils/appNavigation';
 import { NOTE_SHARE_STORAGE_KEY } from '../hooks/useNoteShareLink';
+import { AppIcon } from './ui/AppIcon';
 
 interface NoteShareAcceptScreenProps {
   token: string;
@@ -77,7 +77,7 @@ const NoteShareAcceptScreen: React.FC<NoteShareAcceptScreenProps> = ({ token }) 
           )}
           {!loading && preview && !error && (
             <div className="space-y-6 text-center">
-              <DocumentTextIcon className="mx-auto h-16 w-16 text-lantern-primary" />
+              <AppIcon name="document-text" size={64} className="mx-auto text-lantern-primary" />
               <div>
                 <h2 className="text-xl font-semibold text-lantern-text">{title}</h2>
                 {owner && <p className="mt-1 text-sm text-lantern-text-secondary">Shared by {owner}</p>}
@@ -85,10 +85,10 @@ const NoteShareAcceptScreen: React.FC<NoteShareAcceptScreenProps> = ({ token }) 
               </div>
               <div className="flex gap-3">
                 <button type="button" onClick={close} disabled={accepting} className="flex-1 rounded-xl border border-lantern-border py-3 font-semibold text-lantern-text">
-                  <XMarkIcon className="mr-1 inline h-5 w-5" />Decline
+                  <AppIcon name="close" size={20} className="mr-1 inline" />Decline
                 </button>
                 <button type="button" onClick={() => void accept()} disabled={accepting} className="flex-1 rounded-xl bg-lantern-primary py-3 font-semibold text-white disabled:opacity-50">
-                  <CheckIcon className="mr-1 inline h-5 w-5" />{accepting ? 'Accepting…' : (preview.alreadyAccepted || preview.alreadyHasAccess) ? 'Open note' : 'Accept'}
+                  <AppIcon name="checkmark" size={20} className="mr-1 inline" />{accepting ? 'Accepting…' : (preview.alreadyAccepted || preview.alreadyHasAccess) ? 'Open note' : 'Accept'}
                 </button>
               </div>
             </div>

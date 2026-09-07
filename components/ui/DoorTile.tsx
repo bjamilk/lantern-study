@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRightIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './AppIcon';
 import { Card } from './Card';
 import { Illustration, type IllustrationName } from './Illustration';
 import { FEATURE_INK_TEXT, type FeatureKey } from './featureClasses';
@@ -94,9 +94,11 @@ export const DoorTile: React.FC<DoorTileProps> = ({
         ) : (
           <span />
         )}
-        <ChevronRightIcon
-          className={`w-5 h-5 shrink-0 ${FEATURE_INK_TEXT[feature]}`}
-          aria-hidden="true"
+        <AppIcon
+          name="chevron-forward"
+          size={20}
+          className={`shrink-0 ${FEATURE_INK_TEXT[feature]}`}
+          aria-hidden={true}
         />
       </div>
     </div>

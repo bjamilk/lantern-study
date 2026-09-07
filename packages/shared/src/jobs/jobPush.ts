@@ -47,6 +47,7 @@ const PUSHABLE_KINDS = new Set<JobKind>([
   'quiz',
   'smart_notes',
   'study_pack',
+  'narration',
   'import',
   'ocr',
   'transcript',
@@ -123,6 +124,8 @@ export function jobArtefactLabel(kind: JobKind, count?: number): string {
       return 'Your summary';
     case 'study_pack':
       return 'Your study pack';
+    case 'narration':
+      return 'Your reading';
     case 'import':
       return 'Your import';
     case 'ocr':

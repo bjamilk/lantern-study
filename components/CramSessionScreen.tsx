@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Deck, Flashcard, FlashcardSession, FlashcardType } from '../types';
-import { ArrowUturnLeftIcon, CheckIcon, XMarkIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { escapeHtml } from '../utils/helpers';
 import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
@@ -217,7 +217,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
               onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })}
               className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold"
             >
-              <ArrowUturnLeftIcon className="w-5 h-5 mr-2" /> Finish
+              <AppIcon name="arrow-undo" size={20} className="mr-2" /> Finish
             </button>
             {incorrectCards.length > 0 && (
                  <button
@@ -273,10 +273,10 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
             ) : (
               <div className="grid grid-cols-2 gap-4">
                 <button onClick={() => handleAnswer(false)} className="py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold flex items-center justify-center">
-                    <XMarkIcon className="w-6 h-6 mr-2" /> Incorrect
+                    <AppIcon name="close" size={24} className="mr-2" /> Incorrect
                 </button>
                  <button onClick={() => handleAnswer(true)} className="py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold flex items-center justify-center">
-                    <CheckIcon className="w-6 h-6 mr-2" /> Correct
+                    <AppIcon name="checkmark" size={24} className="mr-2" /> Correct
                 </button>
               </div>
             )}
@@ -292,7 +292,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
                   }}
                   className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
                 >
-                  <SparklesIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="sparkles" size={14} />
                   Ask Lantern
                 </button>
               </div>

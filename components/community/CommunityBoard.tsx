@@ -1,12 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ArrowLeftIcon,
-  BellAlertIcon,
-  BellSlashIcon,
-  BookmarkIcon,
-  EllipsisHorizontalIcon,
-  MagnifyingGlassIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BOARD_FAVORITE_EMOJI,
@@ -1036,7 +1029,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
           aria-label="Back to community"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
         >
-          <ArrowLeftIcon className="h-5 w-5" aria-hidden="true" />
+          <AppIcon name="arrow-back" size={20} />
         </button>
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-base font-semibold text-lantern-text">{title}</h1>
@@ -1055,12 +1048,12 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
             title="Board options"
             className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           >
-            <EllipsisHorizontalIcon className="h-5 w-5" aria-hidden="true" />
+            <AppIcon name="ellipsis-horizontal" size={20} />
           </MenuTrigger>
           <MenuContent align="end" className="w-60">
             <MenuItem
               onSelect={() => setSearchOpen((open) => !open)}
-              icon={<MagnifyingGlassIcon className="h-4 w-4 text-lantern-text-tertiary" aria-hidden="true" />}
+              icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}
             >
               {COMMUNITY_BOARD_COPY.searchBoard}
             </MenuItem>
@@ -1078,7 +1071,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
                   savedOpenerRef.current = document.activeElement as HTMLElement | null;
                   setSavedPanelOpen(true);
                 }}
-                icon={<BookmarkIcon className="h-4 w-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                icon={<AppIcon name="bookmark" size={16} className="text-lantern-text-tertiary" />}
               >
                 {COMMUNITY_BOARD_COPY.savedPosts}
               </MenuItem>
@@ -1087,14 +1080,14 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
               <MenuItem
                 onSelect={() => void handleUnmute()}
                 disabled={muteBusy}
-                icon={<BellAlertIcon className="h-4 w-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                icon={<AppIcon name="notifications-alert" size={16} className="text-lantern-text-tertiary" />}
               >
                 Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
               </MenuItem>
             ) : (
               <MenuSubmenu
                 label={COMMUNITY_BOARD_COPY.muteBoard}
-                icon={<BellSlashIcon className="h-4 w-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                icon={<AppIcon name="notifications-off" size={16} className="text-lantern-text-tertiary" />}
                 open={muteDurationsOpen}
                 onOpenChange={setMuteDurationsOpen}
               >

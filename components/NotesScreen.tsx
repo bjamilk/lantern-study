@@ -1,25 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  PlusIcon,
-  FolderPlusIcon,
-  FolderIcon,
-  MagnifyingGlassIcon,
-  DocumentArrowUpIcon,
-  PhotoIcon,
-  CameraIcon,
-  PresentationChartBarIcon,
-  PlayCircleIcon,
-  EllipsisHorizontalIcon,
-  BookmarkIcon,
-  ArchiveBoxIcon,
-  CheckIcon,
-  TrashIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  AcademicCapIcon,
-  FlagIcon,
-} from '@heroicons/react/24/outline';
-import { BookmarkIcon as BookmarkSolidIcon } from '@heroicons/react/24/solid';
 import ReportContentModal from './moderation/ReportContentModal';
 import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
@@ -49,6 +28,7 @@ import { MoveToCourseModal } from './academic/MoveToCourseModal';
 import { useIsMdUp } from '../hooks/useMediaQuery';
 import { buildFolderTree, folderParentOptions, folderScopeIds } from '../utils/libraryArchive';
 import { confirmDialog } from '../stores/confirmStore';
+import { AppIcon } from './ui/AppIcon';
 
 interface NotesScreenProps {
   theme: 'light' | 'dark';
@@ -436,9 +416,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               className={`shrink-0 rounded p-0.5 ${isActive ? 'text-white/90 hover:bg-white/15' : 'text-lantern-text-tertiary hover:bg-lantern-background-secondary'}`}
             >
               {tree.expanded ? (
-                <ChevronDownIcon className="h-3.5 w-3.5" aria-hidden />
+                <AppIcon name="chevron-down" size={14} aria-hidden />
               ) : (
-                <ChevronRightIcon className="h-3.5 w-3.5" aria-hidden />
+                <AppIcon name="chevron-forward" size={14} aria-hidden />
               )}
             </button>
           ) : null}
@@ -485,7 +465,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                       : 'text-lantern-text-tertiary hover:bg-lantern-background-secondary'
                   }`}
                 >
-                  <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
+                  <AppIcon name="ellipsis-horizontal" size={16} aria-hidden />
                 </MenuTrigger>
                 <MenuContent align="end" className="w-44">
                   {onRenameFolder ? (
@@ -562,7 +542,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             onClick={() => void handleMoveToFolder(null)}
             className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-body text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
           >
-            <FolderIcon className="h-4 w-4 text-lantern-text-secondary shrink-0" aria-hidden />
+            <AppIcon name="folder" size={16} className="text-lantern-text-secondary shrink-0" aria-hidden />
             <span className="min-w-0 flex-1">All notes</span>
             <span className="text-caption text-lantern-text-tertiary shrink-0">Unfiled</span>
           </button>
@@ -688,11 +668,11 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   </Button>
                 ) : null}
                 <Button variant="secondary" size="sm" onClick={() => setFolderModalOpen(true)} aria-label="New folder">
-                  <FolderPlusIcon className="w-4 h-4 sm:mr-1" />
+                  <AppIcon name="folder-add" size={16} className="sm:mr-1" />
                   <span className="hidden sm:inline">Folder</span>
                 </Button>
                 <Button size="sm" onClick={onCreateNote} aria-label="New note">
-                  <PlusIcon className="w-4 h-4 sm:mr-1" />
+                  <AppIcon name="add" size={16} className="sm:mr-1" />
                   <span className="hidden sm:inline">New note</span>
                 </Button>
               </div>
@@ -775,11 +755,11 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                     </Button>
                   ) : null}
                   <Button variant="secondary" size="sm" onClick={() => setFolderModalOpen(true)} aria-label="New folder">
-                    <FolderPlusIcon className="w-4 h-4 sm:mr-1" />
+                    <AppIcon name="folder-add" size={16} className="sm:mr-1" />
                     <span className="hidden sm:inline">Folder</span>
                   </Button>
                   <Button size="sm" onClick={onCreateNote} aria-label="New note">
-                    <PlusIcon className="w-4 h-4 sm:mr-1" />
+                    <AppIcon name="add" size={16} className="sm:mr-1" />
                     <span className="hidden sm:inline">New note</span>
                   </Button>
                 </div>
@@ -810,7 +790,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                   }`}
                 >
                   {filter === 'archived' ? (
-                    <ArchiveBoxIcon className="h-4 w-4" aria-hidden />
+                    <AppIcon name="archive" size={16} aria-hidden />
                   ) : null}
                   {filter === 'active' ? 'Active' : 'Archived'}
                 </button>
@@ -821,7 +801,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 for one intent. Mobile makes the same cut. */}
             {!embedded ? (
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-lantern-border min-w-0 w-full sm:flex-1 sm:min-w-[200px] bg-lantern-surface">
-                <MagnifyingGlassIcon className="w-5 h-5 text-lantern-text-secondary shrink-0" />
+                <AppIcon name="search" size={20} className="text-lantern-text-secondary shrink-0" />
                 <input
                   value={ownSearch}
                   onChange={e => setOwnSearch(e.target.value)}
@@ -845,20 +825,20 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                     : 'bg-lantern-surface text-lantern-text cursor-pointer hover:bg-lantern-background-secondary'
                 }`}
               >
-                <DocumentArrowUpIcon className="w-5 h-5" aria-hidden />
+                <AppIcon name="document-upload" size={20} aria-hidden />
                 Import
-                <ChevronDownIcon className="w-4 h-4" aria-hidden />
+                <AppIcon name="chevron-down" size={16} aria-hidden />
               </MenuTrigger>
               <MenuContent align="end">
                 <MenuItem
-                  icon={<DocumentArrowUpIcon className="w-5 h-5" aria-hidden />}
+                  icon={<AppIcon name="document-upload" size={20} aria-hidden />}
                   onSelect={() => pdfInputRef.current?.click()}
                 >
                   Import PDF
                 </MenuItem>
                 {onPresentationImport ? (
                   <MenuItem
-                    icon={<PresentationChartBarIcon className="w-5 h-5" aria-hidden />}
+                    icon={<AppIcon name="easel" size={20} aria-hidden />}
                     onSelect={() => presentationInputRef.current?.click()}
                   >
                     Import PowerPoint
@@ -866,7 +846,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 ) : null}
                 {onPhotosImport ? (
                   <MenuItem
-                    icon={<PhotoIcon className="w-5 h-5" aria-hidden />}
+                    icon={<AppIcon name="image" size={20} aria-hidden />}
                     onSelect={() => photosInputRef.current?.click()}
                   >
                     Import photos
@@ -874,7 +854,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 ) : null}
                 {onPhotosImport ? (
                   <MenuItem
-                    icon={<CameraIcon className="w-5 h-5" aria-hidden />}
+                    icon={<AppIcon name="camera" size={20} aria-hidden />}
                     onSelect={() => cameraInputRef.current?.click()}
                   >
                     Photograph pages
@@ -882,7 +862,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 ) : null}
                 {onYoutubeImport ? (
                   <MenuItem
-                    icon={<PlayCircleIcon className="w-5 h-5" aria-hidden />}
+                    icon={<AppIcon name="play-circle" size={20} aria-hidden />}
                     onSelect={() => setYoutubeModalOpen(true)}
                   >
                     From YouTube
@@ -963,7 +943,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                     disabled={selectedNoteIds.length === 0 || selectionBusy}
                     onClick={() => setMovePickerOpen(true)}
                   >
-                    <FolderIcon className="w-4 h-4 sm:mr-1" aria-hidden />
+                    <AppIcon name="folder" size={16} className="sm:mr-1" aria-hidden />
                     Move to folder
                   </Button>
                 ) : null}
@@ -975,7 +955,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                     onClick={handleDeleteSelected}
                     aria-label="Delete selected notes"
                   >
-                    <TrashIcon className="w-4 h-4 sm:mr-1" aria-hidden />
+                    <AppIcon name="trash" size={16} className="sm:mr-1" aria-hidden />
                     Delete
                   </Button>
                 ) : null}
@@ -993,7 +973,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
             // "New note" there reads as if the notes were gone.
             search.trim() ? (
               <EmptyState
-                icon={<MagnifyingGlassIcon className="w-8 h-8" />}
+                icon={<AppIcon name="search" size={32} />}
                 title={`No notes match “${search.trim()}”`}
                 description={
                   embedded
@@ -1006,7 +986,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               />
             ) : listFilter === 'archived' ? (
               <EmptyState
-                icon={<ArchiveBoxIcon className="w-8 h-8" />}
+                icon={<AppIcon name="archive" size={32} />}
                 title="No archived notes"
                 description="Archive a note from its menu to hide it from your active list."
                 actionLabel="Back to active"
@@ -1077,16 +1057,14 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                           }`}
                           aria-hidden
                         >
-                          {isSelected ? <CheckIcon className="h-3.5 w-3.5" /> : null}
+                          {isSelected ? <AppIcon name="checkmark" size={14} /> : null}
                         </span>
                       ) : null}
                       <div className="flex items-start justify-between gap-2 mb-2 min-w-0">
                         <h3 className="text-heading line-clamp-2 sm:line-clamp-1 min-w-0 text-lantern-text inline-flex items-center gap-1.5">
                           {note.isPinned ? (
-                            <BookmarkSolidIcon
-                              className="h-4 w-4 shrink-0 text-lantern-primary"
-                              aria-label="Pinned"
-                            />
+                            <AppIcon name="bookmark" size={16} filled className="shrink-0 text-lantern-primary"
+                              aria-label="Pinned" />
                           ) : null}
                           {note.title}
                         </h3>
@@ -1133,7 +1111,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                           }}
                           className="rounded-md p-1 text-lantern-text-tertiary hover:bg-lantern-background-secondary hover:text-lantern-text"
                         >
-                          <EllipsisHorizontalIcon className="h-5 w-5" aria-hidden />
+                          <AppIcon name="ellipsis-horizontal" size={20} aria-hidden />
                         </button>
                         {menuOpen ? (
                           <div
@@ -1148,7 +1126,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                 className="flex w-full items-center gap-2 px-3 py-2 text-left text-body text-lantern-text hover:bg-lantern-background-secondary"
                                 onClick={() => openMovePickerForNotes([note.id])}
                               >
-                                <FolderIcon className="h-4 w-4" aria-hidden />
+                                <AppIcon name="folder" size={16} aria-hidden />
                                 Move to folder
                               </button>
                             ) : null}
@@ -1162,7 +1140,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                   window.setTimeout(() => setCourseMoveNote(note), 50);
                                 }}
                               >
-                                <AcademicCapIcon className="h-4 w-4" aria-hidden />
+                                <AppIcon name="school" size={16} aria-hidden />
                                 Move to course…
                               </button>
                             ) : null}
@@ -1176,7 +1154,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                   void onTogglePinNote(note.id, !note.isPinned);
                                 }}
                               >
-                                <BookmarkIcon className="h-4 w-4" aria-hidden />
+                                <AppIcon name="bookmark" size={16} aria-hidden />
                                 {note.isPinned ? 'Unpin' : 'Pin'}
                               </button>
                             ) : null}
@@ -1190,7 +1168,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                   void onArchiveNote(note.id, !note.isArchived);
                                 }}
                               >
-                                <ArchiveBoxIcon className="h-4 w-4" aria-hidden />
+                                <AppIcon name="archive" size={16} aria-hidden />
                                 {note.isArchived ? 'Unarchive' : 'Archive'}
                               </button>
                             ) : null}
@@ -1204,7 +1182,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                   window.setTimeout(() => setReportNote(note), 50);
                                 }}
                               >
-                                <FlagIcon className="h-4 w-4" aria-hidden />
+                                <AppIcon name="flag" size={16} aria-hidden />
                                 Report…
                               </button>
                             ) : null}
@@ -1218,7 +1196,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                   window.setTimeout(() => handleDeleteNotesByIds([note.id]), 50);
                                 }}
                               >
-                                <TrashIcon className="h-4 w-4" aria-hidden />
+                                <AppIcon name="trash" size={16} aria-hidden />
                                 Delete
                               </button>
                             ) : null}

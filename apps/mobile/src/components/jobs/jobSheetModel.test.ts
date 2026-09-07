@@ -21,6 +21,9 @@ import {
   jobResultLink,
   jobSheetState,
   jobStages,
+  jobStagesFor,
+  jobDoneLabel,
+  jobRunningHeadline,
   percentFor,
   stageIndexFor,
 } from './jobSheetModel';
@@ -606,5 +609,61 @@ describe('the promise the sheet makes about being told', () => {
     expect(label).not.toMatch(/notifications are off/i);
     // Nothing to turn on: we do not know that anything is off.
     expect(state.actions).not.toContain('enable-notifications');
+  });
+});
+
+
+describe('a count that is a ceiling (build 168)', () => {
+  const test = (overrides: Partial<TrackedJob> = {}): TrackedJob => ({
+    ...createJob({
+      id: 'j-test',
+      userId: 'u1',
+      kind: 'test',
+      sourceTitle: 'SDOH',
+      requestedCount: 10,
+      requestedCountIsMax: true,
+      now: NOW,
+    }),
+    ...overrides,
+  });
+
+  it('says "up to" in the checklist rather than promising ten', () => {
+    expect(jobStagesFor(test())[1]).toBe('Writing up to 10 questions');
+    expect(jobStages('test', 10)[1]).toBe('Writing 10 questions');
+  });
+
+  it('does not put the ceiling in the running headline', () => {
+    // "10-question test · SDOH" over work that saved five was the promise the
+    // sheet could not keep.
+    expect(jobRunningHeadline(test({ status: 'running' }))).toBe('Your test · SDOH');
+  });
+
+  it('states the SAVED count once there is one', () => {
+    const done = test({
+      status: 'done',
+      resultCount: 5,
+      artifact: { type: 'test', id: 't1', name: 'Test · SDOH' },
+    });
+    expect(jobDoneLabel(done)).toBe('5-question test');
+    expect(jobSheetState(done, NOW + 20_000).headline).toBe('5-question test ready');
+    expect(jobNotification(done)?.title).toBe('5-question test ready · SDOH');
+  });
+
+  it('never borrows the requested count for a finished job', () => {
+    const done = test({
+      status: 'done',
+      artifact: { type: 'test', id: 't1', name: 'Test · SDOH' },
+    });
+    expect(jobNotification(done)?.title).toBe('Your test ready · SDOH');
+    expect(jobDoneLabel(done)).not.toContain('10');
+  });
+
+  it('counts what the save recorded when the runner reported no count', () => {
+    const done = test({
+      status: 'done',
+      savedCount: 7,
+      artifact: { type: 'test', id: 't1' },
+    });
+    expect(jobDoneLabel(done)).toBe('7-question test');
   });
 });

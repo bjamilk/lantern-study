@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowPathIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import {
   MASTERY_BAND_LABELS,
   examCountdownLabel,
@@ -115,9 +115,11 @@ export const MasteryPanel: React.FC<MasteryPanelProps> = ({ courseId, className 
           className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary disabled:opacity-50"
           aria-label="Recalculate topic mastery"
         >
-          <ArrowPathIcon
-            className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`}
-            aria-hidden="true"
+          <AppIcon
+            name="refresh"
+            size={16}
+            className={refreshing ? 'animate-spin' : ''}
+            aria-hidden
           />
         </button>
       </header>
@@ -129,9 +131,11 @@ export const MasteryPanel: React.FC<MasteryPanelProps> = ({ courseId, className 
               key={exam.courseId}
               className="flex items-start gap-2 rounded-lg bg-lantern-background-secondary px-3 py-2"
             >
-              <AcademicCapIcon
-                className="mt-0.5 h-4 w-4 shrink-0 text-lantern-primary"
-                aria-hidden="true"
+              <AppIcon
+                name="school"
+                size={16}
+                className="mt-0.5 shrink-0 text-lantern-primary"
+                aria-hidden
               />
               <div className="min-w-0">
                 <p className="text-xs font-medium text-lantern-text">

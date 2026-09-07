@@ -3,7 +3,7 @@ import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { Flashcard } from '../types';
 import { shuffleArray } from '../utils/helpers';
 import { Button } from './ui';
-import { XMarkIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { trackStudyModeCompleted } from '../services/productAnalytics';
 
 interface LearnStudyScreenProps {
@@ -97,7 +97,7 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
   if (phase === 'done') {
     return (
       <div className={`flex-1 flex flex-col items-center justify-center p-8 ${isDark ? 'bg-lantern-background' : 'bg-lantern-background'}`}>
-        <CheckCircleIcon className="w-16 h-16 text-emerald-500 mb-4" />
+        <AppIcon name="checkmark-circle" size={64} className="text-emerald-500 mb-4" />
         <h2 className="text-2xl font-bold mb-2">Session complete!</h2>
         <p className="text-lantern-text-secondary mb-6">Mastered {mastered} of {total} cards</p>
         <Button onClick={onExit}>Done</Button>
@@ -113,7 +113,7 @@ export const LearnStudyScreen: React.FC<LearnStudyScreenProps> = ({
           <p className="text-sm text-lantern-text-secondary">{progress}/{total} mastered</p>
         </div>
         <button onClick={onExit} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-          <XMarkIcon className="w-5 h-5" />
+          <AppIcon name="close" size={20} />
         </button>
       </div>
 

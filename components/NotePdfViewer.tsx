@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowsPointingInIcon, ArrowsPointingOutIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import type { NoteAttachment } from '../types';
 import { fetchNoteAttachmentContent } from '../services/notes';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
+import { AppIcon } from './ui/AppIcon';
 
 const PDFJS_VERSION = '4.10.38';
 
@@ -139,9 +139,9 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
             title={isFullscreen ? 'Exit fullscreen' : 'View fullscreen'}
           >
             {isFullscreen ? (
-              <ArrowsPointingInIcon className="w-4 h-4" />
+              <AppIcon name="contract" size={16} />
             ) : (
-              <ArrowsPointingOutIcon className="w-4 h-4" />
+              <AppIcon name="expand" size={16} />
             )}
           </button>
           {isFullscreen && (
@@ -152,7 +152,7 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
               aria-label="Close fullscreen"
               title="Close"
             >
-              <XMarkIcon className="w-4 h-4" />
+              <AppIcon name="close" size={16} />
             </button>
           )}
         </span>

@@ -12,17 +12,54 @@
   }
 }
 
-/* ===== Icon weight =====
-   Heroicons 24/outline ships stroke-width 1.5 as an SVG presentation
-   attribute, which reads as a hairline on a phone screen — the same
-   "their outline feels too thin" the mobile icons had. A CSS rule beats a
-   presentation attribute, so this one line lifts every outline glyph at once
-   and keeps mobile and web at the same weight.
+/* ===== Icon weight (heroicons only, and only until the sweep lands) =====
+   Heroicons 24/outline ships stroke-width 1.5 as a presentation attribute,
+   which reads as a hairline — the same "their outline feels too thin" the
+   mobile icons had. This used to be a single hand-matched `stroke-width: 1.85`
+   for every heroicon at every size, which is too heavy on a 48px decorative
+   glyph and still too light on a 12px one.
+
+   That flat number is gone. What is left is the SAME ramp AppIcon uses, spelt
+   out per Tailwind sizing class, so a heroicon that has not been swept yet is
+   drawn at the weight its replacement will be drawn at. The ramp itself lives
+   in components/ui/appIconStroke.ts and is the source of truth — these numbers
+   only mirror it, and a CSS file cannot read an element's rendered size, which
+   is exactly why the ramp belongs in the component.
 
    `data-slot="icon"` is on every heroicon and nothing else, so the solid
-   (fill-based) set, hand-drawn SVGs and spinner rings are untouched. */
+   (fill-based) set, hand-drawn SVGs, spinner rings and AppIcon's lucide glyphs
+   are all untouched — AppIcon carries its own stroke-width attribute from the
+   ramp, and no rule here overrides it.
+
+   DELETE THIS WHOLE BLOCK when the last heroicon is swept. The guard is
+   components/ui/heroiconsMigration.test.ts: when its call-site scan reaches
+   zero, this block, the migration table and @heroicons/react all go together. */
 svg[data-slot="icon"] {
-  stroke-width: 1.85;
+  /* No sizing class: heroicons render at their intrinsic 24px. */
+  stroke-width: 2.1;
+}
+svg[data-slot="icon"].w-3,
+svg[data-slot="icon"].w-3\.5 {
+  stroke-width: 2.5;
+}
+svg[data-slot="icon"].w-4,
+svg[data-slot="icon"].w-5 {
+  stroke-width: 2.25;
+}
+svg[data-slot="icon"].w-6,
+svg[data-slot="icon"].w-7 {
+  stroke-width: 2.1;
+}
+svg[data-slot="icon"].w-8,
+svg[data-slot="icon"].w-9,
+svg[data-slot="icon"].w-10,
+svg[data-slot="icon"].w-11,
+svg[data-slot="icon"].w-12,
+svg[data-slot="icon"].w-14,
+svg[data-slot="icon"].w-16,
+svg[data-slot="icon"].w-20,
+svg[data-slot="icon"].w-24 {
+  stroke-width: 1.9;
 }
 
 /* ===== Lantern Design Tokens (CSS Variables) ===== */

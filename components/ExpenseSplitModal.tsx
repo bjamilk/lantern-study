@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { ExpenseSplit, STUDENT_EXPENSE_CATEGORIES } from '../types';
-import { PlusIcon, TrashIcon, UserPlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { useBudgetStore } from '../stores/budgetStore';
 import Modal from './ui/Modal';
 
@@ -101,7 +101,7 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           aria-label="Close expense splits"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
 
@@ -233,14 +233,14 @@ const ExpenseSplitModal: React.FC<ExpenseSplitModalProps> = ({ isOpen, onClose, 
                         placeholder="Name of person" />
                       {participants.length > 1 && (
                         <button onClick={() => handleRemoveParticipant(i)} className="text-lantern-text-tertiary hover:text-red-500">
-                          <TrashIcon className="w-4 h-4" />
+                          <AppIcon name="trash" size={16} />
                         </button>
                       )}
                     </div>
                   ))}
                   <button onClick={handleAddParticipant}
                     className="flex items-center gap-1 text-sm text-lantern-primary hover:text-lantern-primary-dark font-medium">
-                    <UserPlusIcon className="w-4 h-4" /> Add person
+                    <AppIcon name="person-add" size={16} /> Add person
                   </button>
                 </div>
                 {totalAmount && participants.filter(p => p.name.trim()).length > 0 && (

@@ -1,19 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import {
-  XMarkIcon,
-  TrashIcon,
-  PaperAirplaneIcon,
-  SparklesIcon,
-  HandThumbUpIcon,
-  HandThumbDownIcon,
-  MicrophoneIcon,
-  StopIcon,
-  PlusIcon,
-  DocumentTextIcon,
-  ClockIcon,
-  ChatBubbleLeftRightIcon,
-} from '@heroicons/react/24/outline';
-import { HandThumbUpIcon as ThumbUpSolid, HandThumbDownIcon as ThumbDownSolid } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 import { useCompanionStore } from '../stores/companionStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useAuthStore } from '../stores/authStore';
@@ -590,7 +576,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
         <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-primary-background'}`}>
           <div className="flex items-center justify-center w-9 h-9 rounded-full bg-lantern-primary flex-shrink-0">
-            <SparklesIcon className="w-5 h-5 text-white" />
+            <AppIcon name="sparkles" size={20} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
             <p id="ai-companion-title" className="font-semibold text-sm text-lantern-primary">Lantern AI</p>
@@ -606,7 +592,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               aria-pressed={showHistoryList}
               className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'} ${showHistoryList ? 'text-lantern-primary' : ''}`}
             >
-              <ClockIcon className="w-4 h-4" />
+              <AppIcon name="time" size={16} />
             </button>
             <button
               onClick={handleNewChat}
@@ -614,7 +600,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               aria-label="New chat"
               className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
-              <ChatBubbleLeftRightIcon className="w-4 h-4" />
+              <AppIcon name="chatbubbles" size={16} />
             </button>
             <button
               onClick={() => setShowClearConfirm(true)}
@@ -622,7 +608,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               aria-label="Delete this chat"
               className={`p-1.5 rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
-              <TrashIcon className="w-4 h-4" />
+              <AppIcon name="trash" size={16} />
             </button>
             <button
               onClick={close}
@@ -630,7 +616,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               aria-label="Close AI companion"
               className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg transition-colors ${theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
             >
-              <XMarkIcon className="w-5 h-5" />
+              <AppIcon name="close" size={20} />
             </button>
           </div>
         </div>
@@ -706,7 +692,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                     </div>
                     {conversation.noteTitle && (
                       <p className="mt-0.5 text-[11px] text-lantern-primary truncate flex items-center gap-1">
-                        <DocumentTextIcon className="w-3 h-3 flex-shrink-0" />
+                        <AppIcon name="document-text" size={12} className="flex-shrink-0" />
                         {conversation.noteTitle}
                       </p>
                     )}
@@ -735,7 +721,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                         ? 'opacity-100 text-red-500 bg-red-500/10'
                         : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-lantern-text-tertiary hover:text-red-500'}`}
                   >
-                    <TrashIcon className="w-3.5 h-3.5" />
+                    <AppIcon name="trash" size={14} />
                   </button>
                   </div>
                 );
@@ -777,7 +763,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
           {isLoading && !isStreaming && (
             <div className="flex items-start gap-2">
               <div className="flex items-center justify-center w-7 h-7 rounded-full bg-lantern-primary flex-shrink-0 mt-0.5">
-                <SparklesIcon className="w-4 h-4 text-white" />
+                <AppIcon name="sparkles" size={16} className="text-white" />
               </div>
               <div className={`px-3 py-2 rounded-2xl rounded-tl-none max-w-[80%]
                 ${theme === 'dark' ? 'bg-lantern-surface-secondary' : 'bg-lantern-background-secondary'}`}>
@@ -803,7 +789,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                     : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary'
                   }`}
               >
-                <DocumentTextIcon className="w-3.5 h-3.5 flex-shrink-0" />
+                <AppIcon name="document-text" size={14} className="flex-shrink-0" />
                 <span className="truncate font-medium" title={activeNoteContext.title}>
                   {activeNoteContext.title}
                 </span>
@@ -814,7 +800,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                   aria-label="Remove note context"
                   className="flex-shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
                 >
-                  <XMarkIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="close" size={14} />
                 </button>
               </div>
             </div>
@@ -893,7 +879,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                     : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
                 }`}
             >
-              <PlusIcon className="w-4 h-4" />
+              <AppIcon name="add" size={16} />
             </button>
             <button
               type="button"
@@ -913,7 +899,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
                     : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
                 }`}
             >
-              {isRecording ? <StopIcon className="w-4 h-4" /> : <MicrophoneIcon className="w-4 h-4" />}
+              {isRecording ? <AppIcon name="stop" size={16} /> : <AppIcon name="mic" size={16} />}
             </button>
             <textarea
               ref={inputRef}
@@ -946,7 +932,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
               aria-label="Send message"
               className="flex-shrink-0 p-1.5 rounded-lg bg-lantern-primary text-white disabled:opacity-40 hover:bg-lantern-primary-dark transition-colors"
             >
-              <PaperAirplaneIcon className="w-4 h-4" />
+              <AppIcon name="send" size={16} />
             </button>
           </div>
           {(isRecording || isTranscribing) && (
@@ -1012,7 +998,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
     <div className={`flex items-start gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
       {!isUser && (
         <div className="flex items-center justify-center w-7 h-7 rounded-full bg-lantern-primary flex-shrink-0 mt-0.5">
-          <SparklesIcon className="w-4 h-4 text-white" />
+          <AppIcon name="sparkles" size={16} className="text-white" />
         </div>
       )}
       <div className={`flex flex-col gap-1.5 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
@@ -1067,7 +1053,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
                   : theme === 'dark' ? 'text-lantern-text-secondary hover:text-green-400' : 'text-lantern-text-tertiary hover:text-green-500'
                 }`}
             >
-              {feedback === 'up' ? <ThumbUpSolid className="w-3.5 h-3.5" /> : <HandThumbUpIcon className="w-3.5 h-3.5" />}
+              {feedback === 'up' ? <AppIcon name="thumbs-up" size={14} /> : <AppIcon name="thumbs-up" size={14} />}
             </button>
             <button
               type="button"
@@ -1081,7 +1067,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
                   : theme === 'dark' ? 'text-lantern-text-secondary hover:text-red-400' : 'text-lantern-text-tertiary hover:text-red-500'
                 }`}
             >
-              {feedback === 'down' ? <ThumbDownSolid className="w-3.5 h-3.5" /> : <HandThumbDownIcon className="w-3.5 h-3.5" />}
+              {feedback === 'down' ? <AppIcon name="thumbs-down" size={14} /> : <AppIcon name="thumbs-down" size={14} />}
             </button>
           </div>
         )}

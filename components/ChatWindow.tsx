@@ -28,27 +28,6 @@ import {
   shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 import {
-  EllipsisVerticalIcon,
-  UserGroupIcon,
-  PencilSquareIcon,
-  PlusCircleIcon,
-  ArchiveBoxIcon,
-  ChatBubbleLeftRightIcon,
-  BookOpenIcon,
-  ClipboardDocumentCheckIcon,
-  SparklesIcon,
-  ArrowLeftIcon,
-  ChatBubbleOvalLeftEllipsisIcon,
-  TrashIcon,
-  UserCircleIcon,
-  ShoppingBagIcon,
-  CurrencyDollarIcon,
-  NoSymbolIcon,
-  BellSlashIcon,
-  BellAlertIcon,
-  FlagIcon,
-} from '@heroicons/react/24/outline';
-import {
   CHAT_MUTE_DURATIONS,
   formatMuteUntilLabel,
   type ChatMuteDurationId,
@@ -85,8 +64,8 @@ import {
   messagePassesQuestionVisibility,
   type QuestionVisibilityMode,
 } from '@lantern/shared/utils';
-import { XMarkIcon } from '@heroicons/react/24/solid';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
+import { AppIcon } from './ui/AppIcon';
 
 
 interface ChatWindowProps {
@@ -1062,7 +1041,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {/* Desktop placeholder */}
         <div className="hidden md:flex flex-1 flex-col items-center justify-center p-8 text-center">
           <div className="w-20 h-20 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-6">
-            <ChatBubbleLeftRightIcon className="w-10 h-10 text-lantern-primary" />
+            <AppIcon name="chatbubbles" size={40} className="text-lantern-primary" />
           </div>
           <h2 className="text-xl font-bold text-lantern-text mb-2">Welcome to Lantern Study!</h2>
           <p className="text-lantern-text-secondary max-w-sm">
@@ -1078,12 +1057,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div className="flex items-center gap-2">
               {onOpenNewDmModal && (
                 <button onClick={onOpenNewDmModal} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New message">
-                  <ChatBubbleOvalLeftEllipsisIcon className="w-5 h-5" />
+                  <AppIcon name="chatbubble-ellipses" size={20} />
                 </button>
               )}
               {onCreateGroup && (
                 <button onClick={onCreateGroup} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New group">
-                  <PlusCircleIcon className="w-5 h-5" />
+                  <AppIcon name="add-circle" size={20} />
                 </button>
               )}
             </div>
@@ -1096,7 +1075,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             inboundRequestThreads.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
                 <div className="w-16 h-16 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-4">
-                  <UserGroupIcon className="w-8 h-8 text-lantern-primary" />
+                  <AppIcon name="people" size={32} className="text-lantern-primary" />
                 </div>
                 <h3 className="text-base font-semibold text-lantern-text mb-1">No conversations yet</h3>
                 <p className="text-sm text-lantern-text-secondary mb-4">Create a group or start a direct message to begin.</p>
@@ -1317,7 +1296,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const muteOverflowMenu = chatMuted ? (
     <MenuItem
       onSelect={() => handleDropdownAction(() => void handleUnmute())}
-      icon={<BellAlertIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+      icon={<AppIcon name="notifications-alert" size={16} className="text-lantern-text-tertiary" />}
       disabled={muteBusy}
     >
       Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
@@ -1325,7 +1304,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   ) : (
     <MenuSubmenu
       label="Mute"
-      icon={<BellSlashIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+      icon={<AppIcon name="notifications-off" size={16} className="text-lantern-text-tertiary" />}
       open={muteDurationsOpen}
       onOpenChange={setMuteDurationsOpen}
     >
@@ -1475,7 +1454,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             ) : (
               <>
                 <div className="w-16 h-16 rounded-2xl bg-lantern-background-secondary/60 dark:bg-lantern-surface flex items-center justify-center mb-4">
-                  <ChatBubbleLeftRightIcon className="w-8 h-8 text-lantern-text-tertiary" />
+                  <AppIcon name="chatbubbles" size={32} className="text-lantern-text-tertiary" />
                 </div>
                 <h3 className="text-base font-semibold text-lantern-text mb-1">
                   {isArchived ? 'This group is archived' : 'No messages yet'}
@@ -1503,7 +1482,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
       {isArchived ? (
         <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
-          <ArchiveBoxIcon className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+          <AppIcon name="archive" size={16} className="text-amber-600 dark:text-amber-400" />
           <p className="text-sm text-amber-800 dark:text-amber-300">
             This group is archived.
           </p>
@@ -1624,7 +1603,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             className="p-1.5 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
             aria-label="Close thread"
           >
-            <XMarkIcon className="w-5 h-5" />
+            <AppIcon name="close" size={20} />
           </button>
         </div>
         <div ref={threadScrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
@@ -1738,7 +1717,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             {/* Mobile back button */}
             {onBack && (
               <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-lantern-text-secondary hover:text-lantern-text rounded-lantern hover:bg-lantern-background-secondary relative z-20" aria-label={communityContext ? 'Back to community' : 'Back to chats'}>
-                <ArrowLeftIcon className="w-5 h-5" />
+                <AppIcon name="arrow-back" size={20} />
               </button>
             )}
             <div className="relative flex-shrink-0">
@@ -1789,7 +1768,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   aria-label="Submit question"
                   title="Submit Question"
                 >
-                  <PencilSquareIcon className="w-4 h-4" />
+                  <AppIcon name="create" size={16} />
                   <span className="hidden lg:inline">Question</span>
                 </button>
                 <button
@@ -1799,7 +1778,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   aria-label="Take a test"
                   title="Take a Test"
                 >
-                  <ClipboardDocumentCheckIcon className="w-4 h-4" />
+                  <AppIcon name="clipboard-check" size={16} />
                   <span className="hidden lg:inline">Test</span>
                 </button>
                 <button
@@ -1809,7 +1788,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   aria-label="Study mode"
                   title="Study Mode"
                 >
-                  <BookOpenIcon className="w-4 h-4" />
+                  <AppIcon name="book-open" size={16} />
                   <span className="hidden lg:inline">Study</span>
                 </button>
               </div>
@@ -1823,11 +1802,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 aria-label="Chat options"
                 data-tip-id={isGroupAdmin ? 'chat.aiGenerate' : undefined}
               >
-                <EllipsisVerticalIcon className="w-5 h-5" />
+                <AppIcon name="ellipsis-vertical" size={20} />
               </MenuTrigger>
               {isGroup && group && (
                 <MenuContent align="end" className="w-56">
-                  <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<UserGroupIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                  <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<AppIcon name="people" size={16} className="text-lantern-text-tertiary" />}>
                     Group Info & Members
                   </MenuItem>
                   <MenuSeparator />
@@ -1866,7 +1845,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   {isArchived ? (
                     <MenuItem
                       onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                      icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                      icon={<AppIcon name="archive" size={16} />}
                       className="text-amber-700 dark:text-amber-400"
                     >
                       Unarchive Group
@@ -1880,23 +1859,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         <>
                           <MenuItem
                             onSelect={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
-                            icon={<PlusCircleIcon className="w-4 h-4 text-lantern-text-tertiary" />}
+                            icon={<AppIcon name="add-circle" size={16} className="text-lantern-text-tertiary" />}
                           >
                             Create Sub-group
                           </MenuItem>
                           <MenuSeparator />
                           <div className="lg:hidden">
-                            <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<ClipboardDocumentCheckIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                            <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<AppIcon name="clipboard-check" size={16} className="text-lantern-text-tertiary" />}>
                               Take a Test
                             </MenuItem>
-                            <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<BookOpenIcon className="w-4 h-4 text-lantern-text-tertiary" />}>
+                            <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<AppIcon name="book-open" size={16} className="text-lantern-text-tertiary" />}>
                               Study Mode
                             </MenuItem>
                           </div>
                           {onOpenAIGenerateModal && isGroupAdmin && (
                             <MenuItem
                               onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
-                              icon={<SparklesIcon className="w-4 h-4" />}
+                              icon={<AppIcon name="sparkles" size={16} />}
                               className="text-lantern-primary"
                             >
                               AI Generate Questions
@@ -1905,7 +1884,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           <MenuSeparator />
                           <MenuItem
                             onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                            icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                            icon={<AppIcon name="archive" size={16} />}
                             className="text-amber-600 dark:text-amber-400"
                           >
                             Archive Group
@@ -1929,7 +1908,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         setIsDropdownOpen(false);
                         onUnarchiveDmThread?.(chat.id);
                       }}
-                      icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                      icon={<AppIcon name="archive" size={16} />}
                       className="text-amber-700 dark:text-amber-400"
                     >
                       Unarchive Conversation
@@ -1940,7 +1919,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         setIsDropdownOpen(false);
                         onArchiveDmThread?.(chat.id);
                       }}
-                      icon={<ArchiveBoxIcon className="w-4 h-4" />}
+                      icon={<AppIcon name="archive" size={16} />}
                       className="text-amber-600 dark:text-amber-400"
                     >
                       Archive Conversation
@@ -1952,7 +1931,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         setIsDropdownOpen(false);
                         void handleToggleDmBlock();
                       }}
-                      icon={<NoSymbolIcon className="w-4 h-4" />}
+                      icon={<AppIcon name="ban" size={16} />}
                       className="text-red-600 dark:text-red-400"
                     >
                       {iBlockedThem ? 'Unblock User' : 'Block User'}
@@ -1964,7 +1943,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                         setIsDropdownOpen(false);
                         setReportTarget({ type: 'user', id: dmPeerId, label: name });
                       }}
-                      icon={<FlagIcon className="w-4 h-4" />}
+                      icon={<AppIcon name="flag" size={16} />}
                       className="text-red-600 dark:text-red-400"
                     >
                       Report User…
@@ -1985,7 +1964,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                           if (ok) onDeleteDmThread(chat.id);
                         });
                       }}
-                      icon={<TrashIcon className="w-4 h-4" />}
+                      icon={<AppIcon name="trash" size={16} />}
                     >
                       Delete Conversation
                     </MenuItem>
@@ -1999,7 +1978,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         {chatMuted && (
           <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300">
             <span className="inline-flex items-center gap-1.5 min-w-0">
-              <BellSlashIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+              <AppIcon name="notifications-off" size={14} className="shrink-0" aria-hidden />
               <span className="truncate">
                 Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
               </span>
@@ -2035,7 +2014,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 />
               ) : (
                 <div className="w-12 h-12 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center flex-shrink-0 border border-lantern-border">
-                  <ShoppingBagIcon className="w-6 h-6 text-lantern-text-tertiary" />
+                  <AppIcon name="bag" size={24} className="text-lantern-text-tertiary" />
                 </div>
               )}
               <div className="min-w-0">
@@ -2107,7 +2086,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <>
                     <span className="text-xs text-lantern-text-secondary">No active offer.</span>
                     <button type="button" onClick={() => setShowMakeOfferModal(true)} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5">
-                      <CurrencyDollarIcon className="w-3.5 h-3.5" /> Make an offer
+                      <AppIcon name="currency" size={14} /> Make an offer
                     </button>
                   </>
                 ) : (
@@ -2204,7 +2183,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 />
               ) : (
                 <div className="w-full sm:w-32 h-32 rounded-xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center border border-lantern-border flex-shrink-0">
-                  <ShoppingBagIcon className="w-10 h-10 text-lantern-text-tertiary" />
+                  <AppIcon name="bag" size={40} className="text-lantern-text-tertiary" />
                 </div>
               )}
               <div className="flex-1 flex flex-col justify-between min-w-0">
@@ -2239,7 +2218,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             {/* Active Offer Section */}
             <div className="bg-lantern-surface rounded-2xl p-5 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm mb-6">
               <h3 className="text-sm font-bold text-lantern-text mb-4 flex items-center gap-1.5">
-                <CurrencyDollarIcon className="w-5 h-5 text-emerald-500" />
+                <AppIcon name="currency" size={20} className="text-emerald-500" />
                 Active Offer
               </h3>
               
@@ -2409,7 +2388,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             onClick={() => setShowMakeOfferModal(true)}
                             className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
                           >
-                            <CurrencyDollarIcon className="w-4 h-4" />
+                            <AppIcon name="currency" size={16} />
                             Make an Offer
                           </button>
                         )}

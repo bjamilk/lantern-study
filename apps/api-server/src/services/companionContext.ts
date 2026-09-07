@@ -153,11 +153,9 @@ export async function buildTrustedCompanionContext(
     mode: normalizeCompanionMode(clientContext.mode),
   };
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const rawNoteId = typeof clientContext.noteId === 'string' ? clientContext.noteId.trim() : '';
-  const noteId =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawNoteId)
-      ? rawNoteId
-      : undefined;
+  const noteId = UUID_RE.test(rawNoteId) ? rawNoteId : undefined;
   if (noteId) {
     const { data: note } = await db
       .from('notes')
@@ -180,11 +178,46 @@ export async function buildTrustedCompanionContext(
     }
   }
 
+  /**
+   * Walk-through page scope.
+   *
+   * When the student asks about the page they are on, the trusted context is
+   * that page and NOTHING else: the whole-note body above is replaced, and the
+   * class corpus below is not appended. Anything wider would put "answered
+   * from your notes" under a reply written from material the student is not
+   * looking at.
+   *
+   * Every failure lands in the same place — an empty `noteContext`. A page
+   * that is blank, a page that does not exist and a migration that has not
+   * been applied all mean the companion has been shown nothing, and the
+   * existing clamp in companionChat turns "shown nothing" into
+   * "answered from general knowledge" on its own.
+   */
+  const rawAttachmentId =
+    typeof clientContext.attachmentId === 'string' ? clientContext.attachmentId.trim() : '';
+  const attachmentId = UUID_RE.test(rawAttachmentId) ? rawAttachmentId : undefined;
+  const rawPageIndex = Number(clientContext.pageIndex);
+  const pageIndex =
+    Number.isFinite(rawPageIndex) && rawPageIndex >= 0 ? Math.floor(rawPageIndex) : undefined;
+  const pageScoped = Boolean(noteId && trusted.noteId && attachmentId && pageIndex !== undefined);
+
+  if (pageScoped && noteId && attachmentId && pageIndex !== undefined) {
+    trusted.attachmentId = attachmentId;
+    trusted.pageIndex = pageIndex;
+    trusted.noteContext = undefined;
+    try {
+      const { getPageText } = await import('./notePages');
+      const page = await getPageText(supabaseService, { noteId, attachmentId, pageIndex });
+      const text = page.reason === 'ok' ? page.text.trim() : '';
+      if (text) trusted.noteContext = text.slice(0, MAX_NOTE_LEN);
+    } catch {
+      /* pages unavailable — the companion answers from general knowledge */
+    }
+    return trusted;
+  }
+
   const rawClassId = typeof clientContext.classId === 'string' ? clientContext.classId.trim() : '';
-  const classId =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawClassId)
-      ? rawClassId
-      : undefined;
+  const classId = UUID_RE.test(rawClassId) ? rawClassId : undefined;
   try {
     const { getClassSectionsService } = await import('./classSections');
     const corpus = await getClassSectionsService(supabaseService).corpusForCompanion(userId, classId);

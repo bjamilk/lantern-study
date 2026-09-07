@@ -11,7 +11,19 @@
  */
 
 /** What a job is producing. Drives the stage copy and the artefact route. */
-export type JobKind = 'flashcards' | 'quiz' | 'test' | 'summary' | 'import';
+export type JobKind =
+  | 'flashcards'
+  | 'quiz'
+  | 'test'
+  | 'summary'
+  | 'import'
+  /**
+   * "Read it to me": the server writes a narration SCRIPT for a document. The
+   * artefact is the note it hangs off — a reading has no id and no list of its
+   * own — and replaying one costs nothing, so the notification's tap lands on
+   * the note where the reading door is.
+   */
+  | 'narration';
 
 /**
  * Lifecycle.
@@ -86,6 +98,15 @@ export interface TrackedJob {
   sourceTitle: string;
   /** How many cards/questions were asked for, when a count was chosen. */
   requestedCount?: number;
+  /**
+   * True when `requestedCount` is a CEILING rather than a promise.
+   *
+   * A question generator asks for up to ten and writes what the material
+   * supports: build 168 asked for 10 and saved 5, while the sheet said
+   * "10-question test" and "Writing 10 questions" throughout. With this set
+   * the sheet says "up to", and only the saved count is ever stated plainly.
+   */
+  requestedCountIsMax?: boolean;
   status: TrackedJobStatus;
   /** Server-supplied fraction 0..1, when there is one. */
   progress?: number;
@@ -616,6 +637,7 @@ export const createJob = (input: {
   kind: JobKind;
   sourceTitle: string;
   requestedCount?: number;
+  requestedCountIsMax?: boolean;
   serverJobId?: string;
   now: number;
 }): TrackedJob => ({
@@ -625,6 +647,7 @@ export const createJob = (input: {
   kind: input.kind,
   sourceTitle: input.sourceTitle,
   requestedCount: input.requestedCount,
+  requestedCountIsMax: input.requestedCountIsMax,
   status: 'queued',
   startedAt: input.now,
   updatedAt: input.now,
@@ -804,13 +827,48 @@ export const planServerSettle = (
   return plan && snapshot.push ? { ...plan, pushAudit: snapshot.push } : plan;
 };
 
+/**
+ * How many artefacts the server's own result blob holds, when it says.
+ *
+ * Mirrors the shape the completion push reads (`@lantern/shared/jobs/jobPush`
+ * `jobResultCount`): the questions/cards array, at the top level or one level
+ * inside `session`/`data`, which is where a note quiz's session keeps them.
+ */
+const serverResultCount = (result: unknown): number | undefined => {
+  const read = (value: unknown): number | undefined => {
+    if (!value || typeof value !== 'object') return undefined;
+    const record = value as Record<string, unknown>;
+    for (const key of ['questions', 'flashcards', 'cards']) {
+      const list = record[key];
+      if (Array.isArray(list)) return list.length;
+    }
+    return undefined;
+  };
+  const top = read(result);
+  if (typeof top === 'number') return top;
+  const record = (result ?? {}) as Record<string, unknown>;
+  return read(record.session) ?? read(record.data);
+};
+
 const planServerOutcome = (
   job: TrackedJob,
   snapshot: JobStatusSnapshot
 ): Partial<TrackedJob> | null => {
   if (snapshot.status === 'completed') {
     const artifact = job.savedRef ?? snapshot.artifact;
-    if (artifact) return { status: 'done', artifact };
+    if (artifact) {
+      // The COUNT travels with the settle, not just the artefact. Without it a
+      // job settled from the server (a cold start, a poll after the app was
+      // backgrounded) had no result count, and every done surface fell back to
+      // what was ASKED for — which is how a 5-question test was announced as a
+      // "10-question test ready" push on build 168.
+      const resultCount = job.savedCount ?? job.resultCount ?? serverResultCount(snapshot.result);
+      return {
+        status: 'done',
+        artifact,
+        ...(typeof resultCount === 'number' ? { resultCount } : {}),
+      };
+    }
     // The generation itself is on this device, unsaved. That is a failure the
     // student can finish in one tap, and it must not be reported as a loss.
     if (hasUnsavedGeneration(job)) {

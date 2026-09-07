@@ -1,17 +1,16 @@
 import React from 'react';
 import { MarketplaceListing } from '../../types';
-import { MapPinIcon, ClockIcon, StarIcon } from '@heroicons/react/24/outline';
-import { HeartIcon } from '@heroicons/react/24/solid';
 import { featureAccents } from '@lantern/shared/design';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 import { listingConditionLabel, listingTypeLabel, lowStockLabel } from '@lantern/shared/marketplace';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 export interface ListingCardProps {
   listing: MarketplaceListing;
   isFavorite: boolean;
   isOwner: boolean;
   categoryName: string;
-  CategoryIcon: React.ComponentType<{ className?: string }>;
+  categoryIcon: AppIconName;
   onPress: () => void;
   onToggleFavorite: (e: React.MouseEvent) => void;
   viewerCampusId?: string | null;
@@ -49,7 +48,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
   isFavorite,
   isOwner,
   categoryName,
-  CategoryIcon,
+  categoryIcon,
   onPress,
   onToggleFavorite,
   viewerCampusId,
@@ -111,7 +110,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center pointer-events-none">
-              <CategoryIcon className="w-10 h-10 text-lantern-text-tertiary" />
+              <AppIcon name={categoryIcon} size={40} className="text-lantern-text-tertiary" />
             </div>
           )}
         </button>
@@ -122,8 +121,11 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           className="absolute top-2 right-2 sm:top-2.5 sm:right-2.5 z-10 p-2 sm:p-1.5 bg-lantern-surface/90 backdrop-blur-sm rounded-lg hover:bg-lantern-surface transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary touch-manipulation min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex items-center justify-center"
           aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
         >
-          <HeartIcon
-            className={`w-4 h-4 ${isFavorite ? 'text-lantern-error fill-current' : 'text-lantern-text-tertiary'}`}
+          <AppIcon
+            name="heart"
+            size={16}
+            filled
+            className={isFavorite ? 'text-lantern-error' : 'text-lantern-text-tertiary'}
           />
         </button>
 
@@ -131,7 +133,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 max-w-[calc(100%-3.5rem)] px-2 py-0.5 bg-lantern-surface/90 backdrop-blur-sm text-label tracking-normal sm:text-caption font-medium rounded-md text-lantern-text flex items-center gap-1 shadow-sm pointer-events-none z-10"
           style={{ borderLeft: `2px solid ${featureAccents.marketplace}` }}
         >
-          <CategoryIcon className="w-3 h-3 shrink-0" />
+          <AppIcon name={categoryIcon} size={12} className="shrink-0" />
           <span className="truncate">{typeLabel}</span>
         </span>
 
@@ -201,7 +203,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
               className="flex items-center text-xs text-lantern-text-tertiary shrink-0"
               aria-label={`Rated ${avgRating.toFixed(1)} out of 5 from ${ratingCount} review${ratingCount === 1 ? '' : 's'}`}
             >
-              <StarIcon className="w-3.5 h-3.5 mr-0.5 text-amber-400 fill-current" />
+              <AppIcon name="star" size={14} className="mr-0.5 text-amber-400 fill-current" />
               {avgRating.toFixed(1)}
               {ratingCount > 0 ? <span className="ml-0.5">({ratingCount})</span> : null}
             </div>
@@ -226,13 +228,13 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           ) : null}
           {listing.location ? (
             <span className="flex items-center gap-0.5 truncate min-w-0">
-              <MapPinIcon className="w-3 h-3 shrink-0" />
+              <AppIcon name="location" size={12} className="shrink-0" />
               <span className="truncate">{listing.location}</span>
             </span>
           ) : null}
           {postedAge ? (
             <span className="flex items-center gap-0.5 shrink-0 ml-auto">
-              <ClockIcon className="w-3 h-3" />
+              <AppIcon name="time" size={12} />
               {postedAge}
             </span>
           ) : null}
@@ -254,6 +256,6 @@ export const ListingCard = React.memo(
     prev.isFavorite === next.isFavorite &&
     prev.isOwner === next.isOwner &&
     prev.categoryName === next.categoryName &&
-    prev.CategoryIcon === next.CategoryIcon &&
+    prev.categoryIcon === next.categoryIcon &&
     prev.viewerCampusId === next.viewerCampusId
 );

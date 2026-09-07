@@ -23,6 +23,7 @@ import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { exportDeck } from '../../services/api';
 import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
+import { ImportCardsSheet } from '../../components/flashcards';
 import { JobProgressSheet } from '../../components/jobs';
 import { COURSE_TOPIC_COPY, FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
@@ -203,6 +204,9 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
   const [refreshing, setRefreshing] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  // The zero-credit door. Deliberately separate from `importOpen` above, which
+  // opens the AI note import — that one costs an AI use, this one costs nothing.
+  const [importCardsOpen, setImportCardsOpen] = useState(false);
   const [deckName, setDeckName] = useState('');
   const [deckCourseId, setDeckCourseId] = useState<string | null>(null);
   const [deckTopicId, setDeckTopicId] = useState<string | null>(null);
@@ -507,7 +511,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
             </Button>
           ) : null}
           <Button size="sm" variant="secondary" onPress={() => setImportOpen(true)}>
-            Import
+            Import notes
           </Button>
           <Button size="sm" onPress={() => setCreateOpen(true)}>
             + Deck
@@ -522,7 +526,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         right={
           <View className="flex-row gap-1.5">
             <Button size="sm" variant="secondary" onPress={() => setImportOpen(true)}>
-              Import
+              Import notes
             </Button>
             <Button size="sm" onPress={() => setCreateOpen(true)}>
               + Deck
@@ -593,6 +597,22 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         </View>
       ) : null}
 
+      {/* The zero-credit door. No price line because there is no price: the
+          parse happens on the device and no AI use is spent. */}
+      <Pressable
+        onPress={() => setImportCardsOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel="Import cards from a Quizlet or Anki export. Free."
+        className="mx-4 mb-3 flex-row items-center gap-3 px-3 py-3 rounded-2xl bg-lantern-surface border border-lantern-border"
+      >
+        <FeatureDisc feature="flashcards" icon="download" size={32} />
+        <View className="flex-1">
+          <T.Body className="font-semibold">Import cards</T.Body>
+          <T.Caption tone="secondary">Free — Quizlet or Anki export</T.Caption>
+        </View>
+        <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
+      </Pressable>
+
       {isLoading && decks.length === 0 ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator size="large" color={colors.primaryText} />
@@ -635,8 +655,8 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
               {deckQuery ? null : (
                 <>
                   <Button onPress={() => setCreateOpen(true)}>Create Deck</Button>
-                  <Button className="mt-2" variant="secondary" onPress={() => setImportOpen(true)}>
-                    Import deck
+                  <Button className="mt-2" variant="secondary" onPress={() => setImportCardsOpen(true)}>
+                    Import cards
                   </Button>
                 </>
               )}
@@ -772,6 +792,18 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           deckName={decks.find((d) => d.id === aiDeckId)?.name}
         />
       ) : null}
+
+      <ImportCardsSheet
+        visible={importCardsOpen}
+        onClose={() => setImportCardsOpen(false)}
+        onImported={({ deckId, deckName: name, queued }) => {
+          // A queued import has a local `temp_` id the deck screen cannot
+          // fetch, so it stays in the list rather than pushing a screen that
+          // would ask the server for a deck the server has never heard of.
+          if (queued) return;
+          navigation.navigate('DeckDetail', { deckId, deckName: name });
+        }}
+      />
 
       <JobProgressSheet />
     </Wrapper>

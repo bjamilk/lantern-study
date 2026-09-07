@@ -83,6 +83,18 @@
       "require": "./dist/settings/index.js",
       "default": "./src/settings/index.ts"
     },
+    "./flashcards": {
+      "types": "./src/flashcards/index.ts",
+      "import": "./src/flashcards/index.ts",
+      "require": "./dist/flashcards/index.js",
+      "default": "./src/flashcards/index.ts"
+    },
+    "./flashcards/*": {
+      "types": "./src/flashcards/*.ts",
+      "import": "./src/flashcards/*.ts",
+      "require": "./dist/flashcards/*.js",
+      "default": "./src/flashcards/*.ts"
+    },
     "./featureTips": {
       "types": "./src/featureTips/index.ts",
       "import": "./src/featureTips/index.ts",
@@ -166,6 +178,18 @@
       "import": "./src/analytics/index.ts",
       "require": "./dist/analytics/index.js",
       "default": "./src/analytics/index.ts"
+    },
+    "./notes": {
+      "types": "./src/notes/index.ts",
+      "import": "./src/notes/index.ts",
+      "require": "./dist/notes/index.js",
+      "default": "./src/notes/index.ts"
+    },
+    "./notes/*": {
+      "types": "./src/notes/*.ts",
+      "import": "./src/notes/*.ts",
+      "require": "./dist/notes/*.js",
+      "default": "./src/notes/*.ts"
     },
     "./moderation": {
       "types": "./src/moderation/index.ts",

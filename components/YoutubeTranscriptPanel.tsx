@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowPathIcon, ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import type { NoteAttachment } from '../types';
 import { Button } from './ui';
+import { AppIcon } from './ui/AppIcon';
 
 type TranscriptStatus = 'ready' | 'processing' | 'failed' | 'missing';
 
@@ -88,7 +88,7 @@ const YoutubeTranscriptPanel: React.FC<YoutubeTranscriptPanelProps> = ({
             className="shrink-0"
           >
             {retrying ? (
-              <ArrowPathIcon className="w-4 h-4 animate-spin" aria-hidden />
+              <AppIcon name="refresh" size={16} className="animate-spin" aria-hidden />
             ) : (
               'Retry'
             )}
@@ -103,11 +103,11 @@ const YoutubeTranscriptPanel: React.FC<YoutubeTranscriptPanelProps> = ({
           >
             {expanded ? (
               <>
-                Hide <ChevronUpIcon className="w-4 h-4" aria-hidden />
+                Hide <AppIcon name="chevron-up" size={16} aria-hidden />
               </>
             ) : (
               <>
-                Show <ChevronDownIcon className="w-4 h-4" aria-hidden />
+                Show <AppIcon name="chevron-down" size={16} aria-hidden />
               </>
             )}
           </button>
@@ -116,7 +116,7 @@ const YoutubeTranscriptPanel: React.FC<YoutubeTranscriptPanelProps> = ({
 
       {(status === 'processing' || retrying) && (
         <div className="flex items-center gap-2 text-xs text-lantern-text-tertiary">
-          <ArrowPathIcon className="w-4 h-4 animate-spin" aria-hidden />
+          <AppIcon name="refresh" size={16} className="animate-spin" aria-hidden />
           Pulling captions from YouTube…
         </div>
       )}

@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import {
   requireNoteAccess,
@@ -17,9 +17,30 @@ import {
   NOTE_OCR_CREDIT_COST,
 } from '../middleware/aiRateLimit';
 import {
+  MAX_NARRATION_PAGES,
   getLectureTranscriptionCost,
+  getNarrationCreditCost,
   getSmartNotesCreditCost,
 } from '@lantern/shared/utils/aiCredits';
+import {
+  NARRATION_IMAGE_URL_TTL_SECONDS,
+  buildNarrationScript,
+  claimNarrationRun,
+  getNarrationBundle,
+  narrationApiPayload,
+  markNarrationFailed,
+  markStatus as markNarrationStatus,
+  releaseNarrationClaim,
+  resolveNarrationTarget,
+  type NarrationClaimResult,
+  type NarrationTarget,
+} from '../services/narrationService';
+import {
+  VOICE_ASK_FEATURE_KEY,
+  VOICE_ASK_MAX_AUDIO_BYTES,
+  VOICE_ASK_MAX_DURATION_MS,
+  VOICE_ASK_TOO_LONG_MESSAGE,
+} from '@lantern/shared/utils/aiUsage';
 import {
   aiPostBurstRateLimit,
   collaboratorInviteRateLimit,
@@ -51,6 +72,7 @@ import {
   type SmartNotesDepth,
   generateDailyQuiz,
   generateFlashcardsFromNotes,
+  generateQuestionsFromNotes,
   resolveAudioUploadMeta,
   transcribeAudioBase64,
   transcribeAudioBuffer,
@@ -92,9 +114,17 @@ import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
 import { runYoutubeTranscriptJob } from '../services/youtubeNote';
 import { ocrPlaceholder, runNoteOcrJob, shouldAutoEnqueueOcr } from '../services/noteOcr';
+import {
+  ensurePageImages,
+  ensurePages,
+  getPages,
+  getPageText,
+  signPageImages,
+} from '../services/notePages';
 import { logger } from '../utils/logger';
 import { processImageForUpload } from '../services/imageProcessing';
 import { storageThumbPath } from '@lantern/shared/utils/storageUrl';
+import { isFlashcardTypeMix } from '@lantern/shared/flashcards';
 import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
@@ -1471,10 +1501,84 @@ export function lectureTranscriptionCostFromRequest(req: { body?: unknown }): nu
   return getLectureTranscriptionCost(Number(body.durationMs));
 }
 
-router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitWithCost(
-  lectureTranscriptionCostFromRequest,
-  { label: 'Transcribing this recording' }
-), asyncHandler(async (req: Request, res: Response) => {
+/**
+ * Is this request a spoken QUESTION rather than a recording to write out?
+ *
+ * The client says so with `featureKey: "voice_ask"`. Nothing else about the
+ * two paths differs at the transport level — same audio, same Whisper call —
+ * so the flag is what decides which rules apply, and every rule below is
+ * enforced server-side because a flag in a body is a claim.
+ */
+export function isVoiceAskRequest(req: { body?: unknown }): boolean {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  return body.featureKey === VOICE_ASK_FEATURE_KEY;
+}
+
+/** Bytes of audio actually in this request, or null when it came from storage. */
+function voiceAskPayloadBytes(body: Record<string, unknown>): number | null {
+  const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64 : '';
+  if (!audioBase64) return null;
+  // Base64 is 4 characters per 3 bytes; padding trims up to two.
+  const padding = audioBase64.endsWith('==') ? 2 : audioBase64.endsWith('=') ? 1 : 0;
+  return Math.max(0, Math.floor((audioBase64.length * 3) / 4) - padding);
+}
+
+/**
+ * Why this voice question is refused, or null when it is fine.
+ *
+ * Two rules, both about keeping the free door narrow enough that it stays
+ * free: the clip must CLAIM to be short, and it must BE short. The claim
+ * alone would let a mislabelled lecture through; the size alone would let a
+ * silent hour of near-empty audio through. A voice question also never comes
+ * from storage — it is recorded and posted in one go — so a storagePath here
+ * is a lecture wearing the wrong flag.
+ */
+export function voiceAskRejection(req: { body?: unknown }): string | null {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  const durationMs = Number(body.durationMs);
+  if (!Number.isFinite(durationMs) || durationMs <= 0) {
+    return `Ask by voice needs the length of the clip. Record again, or type your question.`;
+  }
+  if (durationMs > VOICE_ASK_MAX_DURATION_MS) return VOICE_ASK_TOO_LONG_MESSAGE;
+
+  if (typeof body.storagePath === 'string' && body.storagePath) {
+    return VOICE_ASK_TOO_LONG_MESSAGE;
+  }
+
+  const bytes = voiceAskPayloadBytes(body);
+  if (bytes === null || bytes === 0) {
+    return 'Ask by voice needs the recording itself. Record again, or type your question.';
+  }
+  if (bytes > VOICE_ASK_MAX_AUDIO_BYTES) return VOICE_ASK_TOO_LONG_MESSAGE;
+
+  return null;
+}
+
+/**
+ * One route, two prices.
+ *
+ * A lecture is priced by its length (1 AI use per 15 minutes). A spoken
+ * question is free, capped 40 a day, and pays no per-15-minute charge at all —
+ * asking out loud must never cost more than typing the same words. The
+ * duration guard runs BEFORE either limiter, so a refused clip does not spend
+ * one of the day's questions on its way to a 400.
+ */
+export function transcribeAudioLimiter(req: Request, res: Response, next: NextFunction): void {
+  if (!isVoiceAskRequest(req)) {
+    void aiRateLimitWithCost(lectureTranscriptionCostFromRequest, {
+      label: 'Transcribing this recording',
+    })(req, res, next);
+    return;
+  }
+  const rejection = voiceAskRejection(req);
+  if (rejection) {
+    res.status(400).json({ error: rejection });
+    return;
+  }
+  void aiRateLimitForFeature(VOICE_ASK_FEATURE_KEY)(req, res, next);
+}
+
+router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, transcribeAudioLimiter, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   // CF Pages proxy / empty Content-Type can leave body unset — never destructure undefined.
@@ -1494,9 +1598,15 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
     return;
   }
 
+  // A spoken question is never written into the note — it is a question, not a
+  // transcript — so it needs no edit rights on the note it is asked about. It
+  // also skips the note-writing tail below entirely: appending "what does
+  // Krebs mean here" to a student's lecture notes would be a bug, not a save.
+  const voiceAsk = isVoiceAskRequest(req);
+
   // Authorize edit before calling Whisper so collaborators without write access
   // (and failed ACL checks) do not burn AI quota.
-  if (noteId) {
+  if (noteId && !voiceAsk) {
     const canEdit = await supabaseService.canEditNote(userId, noteId);
     if (!canEdit) {
       res.status(403).json({
@@ -1533,12 +1643,12 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   const { logAIInference } = await import('../services/aiInferenceLog');
   await logAIInference(supabaseService.getClient(), {
     userId,
-    feature: 'transcribe-audio',
+    feature: voiceAsk ? 'voice-ask' : 'transcribe-audio',
     provider: result.provider,
     requestId,
   });
 
-  if (!noteId) {
+  if (!noteId || voiceAsk) {
     res.json({ success: true, data: result });
     return;
   }
@@ -1932,6 +2042,414 @@ router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Re
   );
   res.json({ success: true, data: { url, expiresIn: 60 * 60 * 24, variant } });
 }));
+
+/**
+ * The page model: one row per page of an uploaded document, for walk-through
+ * mode, per-page quizzes and page-scoped grounding.
+ *
+ * Pages are backfilled from the stored file the first time this is called, so a
+ * document uploaded before the page model existed gets pages on first open.
+ * Page images are NOT rendered unless asked for (`?images=1`) — rendering is
+ * the expensive half of OCR, and a plan panel only needs the text.
+ *
+ * When the migration has not been hand-applied yet this answers 200 with
+ * `available: false` and no pages, so the client says the document has not been
+ * split into pages rather than showing an error or inventing pages.
+ */
+router.get('/:noteId/attachments/:attachmentId/pages', asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  // Same ACL as every other attachment read: owner, collaborator, or a member
+  // of the group the note is shared into. Throws when the user cannot read it.
+  await supabaseService.getNote(req.params.noteId, userId);
+  const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+  if (!attachment) {
+    res.status(404).json({ error: 'Attachment not found.' });
+    return;
+  }
+
+  // Text first, pictures second: the image pass only renders pages that
+  // already have rows, so on a document's first open it must run AFTER the
+  // backfill or the first walk-through would come back with no pictures and
+  // only the second would have them.
+  let result = await ensurePages(supabaseService, {
+    noteId: req.params.noteId,
+    attachmentId: req.params.attachmentId,
+  });
+
+  const wantsImages = req.query.images === '1' || req.query.images === 'true';
+  if (wantsImages && result.available && result.pages.length > 0) {
+    const render = await ensurePageImages(supabaseService, {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+    }).catch((err) => {
+      // A failed render must not fail the read — the page text is the answer.
+      logger.warn('Page image render failed', {
+        attachmentId: req.params.attachmentId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return { available: true, rendered: 0 };
+    });
+    if (render.rendered > 0) {
+      const refreshed = await getPages(supabaseService, req.params.attachmentId);
+      if (refreshed.available && refreshed.pages.length > 0) {
+        result = { ...result, pages: refreshed.pages };
+      }
+    }
+  }
+  const signed = result.pages.length
+    ? await signPageImages(supabaseService, result.pages)
+    : new Map<number, string>();
+
+  res.json({
+    success: true,
+    data: {
+      attachmentId: req.params.attachmentId,
+      available: result.available,
+      reason: result.reason,
+      pageCount: result.pages.length,
+      maxPages: MAX_OCR_PDF_PAGES,
+      pages: result.pages.map((page) => ({
+        attachmentId: page.attachmentId,
+        pageIndex: page.pageIndex,
+        text: page.text,
+        charCount: page.charCount,
+        ...(signed.has(page.pageIndex) ? { imageUrl: signed.get(page.pageIndex) } : {}),
+        createdAt: page.createdAt,
+      })),
+    },
+  });
+}));
+
+/* ------------------------------------------------- read it to me (narration) -- */
+
+/**
+ * Where a resolved narration target is parked between the two middlewares.
+ *
+ * The page count has to be known BEFORE the credit middleware runs — the price
+ * depends on it, and a document with no readable pages must be refused without
+ * charging — but the credit middleware is what stands between the request and
+ * the handler. So the resolver runs first, answers the request itself in every
+ * case that must not be charged, and leaves the target here for the two that
+ * follow it.
+ */
+type NarrationRequest = Request & {
+  narrationTarget?: Extract<NarrationTarget, { ok: true }>;
+  /** The row this request owns, taken before the credit middleware ran. */
+  narrationClaim?: NarrationClaimResult;
+  /**
+   * Set the moment the charge succeeded. Until then the claim is a reservation
+   * that must be handed back if the response ends without a run starting.
+   */
+  narrationClaimConsumed?: boolean;
+};
+
+/**
+ * Resolve the pages, decide the price, CLAIM the run, and answer every request
+ * that must not be charged: the migration is not applied, the document has no
+ * readable pages, or a script for this student already exists (or is being
+ * written, or was just claimed by a request that arrived a moment before this
+ * one).
+ *
+ * Only a request that will genuinely produce a new script reaches
+ * `aiRateLimitWithCost` below, and it arrives there already holding the row —
+ * reading the row and then writing `queued` in the handler left a window in
+ * which two taps a tenth of a second apart both looked like the first, and the
+ * student paid twice for one reading.
+ */
+export const resolveNarrationCharge = asyncHandler(async (req: Request, res: Response, next: NextFunction) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+  const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+  if (!attachment) {
+    res.status(404).json({ error: 'Attachment not found.' });
+    return;
+  }
+
+  const regenerate = req.body?.regenerate === true;
+  const target = await resolveNarrationTarget(supabaseService, {
+    noteId: req.params.noteId,
+    attachmentId: req.params.attachmentId,
+    userId,
+    regenerate,
+  });
+
+  if (!target.ok) {
+    if (target.status === 200) {
+      // The hand-applied migration is missing. That is not an error the student
+      // caused, and it is not a failure of their document — say so plainly.
+      res.json({
+        success: true,
+        data: {
+          attachmentId: req.params.attachmentId,
+          available: false,
+          reason: target.reason,
+          message: target.message,
+          pageCount: 0,
+          segments: [],
+          pages: [],
+        },
+      });
+      return;
+    }
+    res.status(target.status).json({ error: target.message, reason: target.reason });
+    return;
+  }
+
+  if (target.reuse) {
+    // Rule 2: charge once. A retry gets the script (or the run in flight) that
+    // already exists, and no credit is reserved on the way.
+    const bundle = await getNarrationBundle(supabaseService, {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+      userId,
+    });
+    res.json({
+      success: true,
+      data: narrationApiPayload(req.params.attachmentId, bundle.bundle, { reused: true }),
+    });
+    return;
+  }
+
+  // Take the row before the credit middleware runs. Whoever wins this write
+  // owns the run; everyone else is reuse, at cost 0.
+  const claim = await claimNarrationRun(supabaseService, {
+    attachmentId: req.params.attachmentId,
+    userId,
+    previous: target.existing,
+    pageCount: target.pageCount,
+    creditCost: target.cost,
+  });
+
+  if (!claim.available) {
+    res.json({
+      success: true,
+      data: {
+        attachmentId: req.params.attachmentId,
+        available: false,
+        reason: 'schema_missing',
+        message: 'Reading documents aloud is not switched on yet.',
+        pageCount: 0,
+        segments: [],
+        pages: [],
+      },
+    });
+    return;
+  }
+
+  if (!claim.claimed) {
+    // Another request for this same document claimed the row between our read
+    // and our write. That run is the answer to this one, and this one pays
+    // nothing — the same contract as any other repeat request.
+    const bundle = await getNarrationBundle(supabaseService, {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+      userId,
+    });
+    res.json({
+      success: true,
+      data: narrationApiPayload(req.params.attachmentId, bundle.bundle, { reused: true }),
+    });
+    return;
+  }
+
+  const narrationReq = req as NarrationRequest;
+  narrationReq.narrationTarget = target;
+  narrationReq.narrationClaim = claim;
+
+  // The claim is a reservation until the charge goes through. If the response
+  // ends without a run having started — a 429 from the limiter below is the
+  // ordinary case — put the row back exactly as it was, or the student is
+  // locked out of their own document until the stale window passes.
+  res.on('finish', () => {
+    if (narrationReq.narrationClaimConsumed) return;
+    void releaseNarrationClaim(supabaseService, {
+      attachmentId: req.params.attachmentId,
+      userId,
+      previous: claim.previous,
+    });
+  });
+
+  next();
+});
+
+/**
+ * POST /notes/:noteId/attachments/:attachmentId/narration — write the script a
+ * device will read aloud.
+ *
+ * 2 AI uses for a document up to 20 pages, 3 above that, charged once per
+ * document per student. Playing it back, replaying it and listening offline
+ * are all free; only `{ regenerate: true }` pays again.
+ */
+router.post(
+  '/:noteId/attachments/:attachmentId/narration',
+  requirePermission('ai'),
+  aiPostBurstRateLimit,
+  resolveNarrationCharge,
+  aiRateLimitWithCost(
+    (req) => getNarrationCreditCost((req as NarrationRequest).narrationTarget?.pageCount ?? 0),
+    { label: 'Reading this document aloud' }
+  ),
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const target = (req as NarrationRequest).narrationTarget;
+    if (!target) {
+      res.status(500).json({ error: 'Narration request was not resolved.' });
+      return;
+    }
+
+    // Past the limiter the charge is made, so the claim is spent: nothing may
+    // hand the row back now. A failure from here on is the run's own, and is
+    // recorded as a failure with a reason (and refunded by the job hook).
+    (req as NarrationRequest).narrationClaimConsumed = true;
+
+    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const version =
+      (req as NarrationRequest).narrationClaim?.version ??
+      (target.existing ? target.existing.version + 1 : 1);
+    const cost = Number(res.getHeader('X-AI-Cost')) || target.cost;
+
+    // The claim already wrote `queued`; this rewrites it with what the charge
+    // actually cost, so a client polling GET sees the real price.
+    await markNarrationStatus(supabaseService, {
+      attachmentId: req.params.attachmentId,
+      userId,
+      version,
+      status: 'queued',
+      pageCount: target.pageCount,
+      creditCost: cost,
+      errorMessage: null,
+    });
+
+    const outcome = await runSyncOrEnqueue(
+      'notes.ai.narration',
+      {
+        noteId: req.params.noteId,
+        attachmentId: req.params.attachmentId,
+        version,
+        creditCost: cost,
+        title: note.title,
+      },
+      userId,
+      async () => {
+        try {
+          await buildNarrationScript(
+            supabaseService,
+            {
+              noteId: req.params.noteId,
+              attachmentId: req.params.attachmentId,
+              userId,
+              version,
+              creditCost: cost,
+              title: note.title,
+            }
+          );
+        } catch (err) {
+          await markNarrationFailed(supabaseService, {
+            attachmentId: req.params.attachmentId,
+            userId,
+            version,
+            message: clientErrorMessage(err, 'The reading could not be written.'),
+          });
+          throw err;
+        }
+        const bundle = await getNarrationBundle(supabaseService, {
+          noteId: req.params.noteId,
+          attachmentId: req.params.attachmentId,
+          userId,
+        });
+        return narrationApiPayload(req.params.attachmentId, bundle.bundle, {
+          truncated: target.truncated,
+        });
+      },
+      aiChargeFromRes(res)
+    );
+
+    if (outcome.mode === 'async') {
+      await markNarrationStatus(supabaseService, {
+        attachmentId: req.params.attachmentId,
+        userId,
+        version,
+        status: 'queued',
+        jobId: outcome.jobId,
+      });
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+    res.json({ success: true, data: outcome.result });
+  })
+);
+
+/**
+ * GET /notes/:noteId/attachments/:attachmentId/narration — the deck, ready to
+ * cache for offline play.
+ *
+ * One response carries the script AND this document's page images, signed in a
+ * single batch, because that is what a client stores to play the deck with no
+ * network. Signed URLs expire, so the response says how long they last
+ * (`imageUrlExpiresIn`) and a client refreshes by calling this again — the
+ * script itself never changes underneath it.
+ *
+ * Free, always: reading back a script the student already paid for costs
+ * nothing, and no AI runs here.
+ */
+router.get(
+  '/:noteId/attachments/:attachmentId/narration',
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    await supabaseService.getNote(req.params.noteId, userId);
+    const attachment = await supabaseService.getNoteAttachment(req.params.noteId, req.params.attachmentId);
+    if (!attachment) {
+      res.status(404).json({ error: 'Attachment not found.' });
+      return;
+    }
+
+    const includeImages = req.query.images !== '0' && req.query.images !== 'false';
+    const result = await getNarrationBundle(supabaseService, {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+      userId,
+      includeImages,
+    });
+
+    if (!result.available) {
+      res.json({
+        success: true,
+        data: {
+          attachmentId: req.params.attachmentId,
+          available: false,
+          reason: 'schema_missing',
+          pageCount: 0,
+          segments: [],
+          pages: [],
+        },
+      });
+      return;
+    }
+
+    // Only a FINISHED deck is cacheable, and then privately for as long as the
+    // shortest thing in the payload stays valid: the signed image URLs. A run
+    // still being written must never be cached — the web player polls this
+    // route every few seconds while the status is queued/generating, and a
+    // max-age on that answer would have the browser's HTTP cache replay
+    // "queued" for twelve hours after the script was ready. Nothing yet, and
+    // failed, are answered fresh for the same reason.
+    if (result.bundle?.status === 'ready') {
+      res.setHeader(
+        'Cache-Control',
+        `private, max-age=${Math.floor(NARRATION_IMAGE_URL_TTL_SECONDS / 2)}`
+      );
+    } else {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+    res.json({
+      success: true,
+      data: narrationApiPayload(req.params.attachmentId, result.bundle),
+    });
+  })
+);
 
 router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
@@ -2337,6 +2855,145 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
   res.json({ success: true, data: outcome.result });
 }));
 
+/**
+ * "Quiz me on this page" — questions from ONE page of a document.
+ *
+ * Deliberately not the note quiz (`POST /:noteId/quiz`): that one is persisted
+ * and protected once it has answers, so a page quiz sharing it would either
+ * overwrite a student's finished quiz or be refused by it. This returns its
+ * questions and stores nothing, which is also what the walk-through wants — a
+ * quick check on the page you are reading, not a saved artefact.
+ *
+ * It costs the same one AI use as any other generation and counts against the
+ * SAME `generate_questions` cap, so scoping to a page cannot be used to buy
+ * more generations than the whole note would have.
+ *
+ * Every "no questions" answer says which of the four reasons it is, in plain
+ * words, because "failed to generate" for an unapplied migration, a blank
+ * page and a photo attachment are three different things a student can act on
+ * differently.
+ */
+function pageScopeMessage(
+  reason: string,
+  pageIndex: number
+): string | null {
+  switch (reason) {
+    case 'ok':
+      return null;
+    case 'schema_missing':
+      return 'This document has not been split into pages yet.';
+    case 'preview_pending':
+      return 'This document is still being converted. Try again in a moment.';
+    case 'unsupported':
+      return 'This attachment has no pages to quiz you on.';
+    case 'page_missing':
+      return `Page ${pageIndex + 1} is not part of this document.`;
+    case 'source_missing':
+      return 'The original file for this document is missing, so its pages cannot be read.';
+    default:
+      return 'This document could not be split into pages, so a page quiz is not available.';
+  }
+}
+
+router.post(
+  '/:noteId/generate-questions',
+  requirePermission('ai'),
+  aiPostBurstRateLimit,
+  aiRateLimitForFeature('generate_questions'),
+  validateNoteId,
+  handleValidationErrors,
+  asyncHandler(async (req: Request, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+    const attachmentId = typeof body.attachmentId === 'string' ? body.attachmentId : '';
+    const pageIndex = Math.floor(Number(body.pageIndex));
+    if (!attachmentId || !Number.isFinite(pageIndex) || pageIndex < 0) {
+      res.status(400).json({ error: 'attachmentId and a page number are required.' });
+      return;
+    }
+
+    // Same ACL as every other attachment read: throws when the user cannot
+    // read the note, 404 when the attachment belongs to a different one.
+    const note = await supabaseService.getNote(req.params.noteId, userId);
+    const attachment = await supabaseService.getNoteAttachment(req.params.noteId, attachmentId);
+    if (!attachment) {
+      res.status(404).json({ error: 'Attachment not found.' });
+      return;
+    }
+
+    const page = await getPageText(supabaseService, {
+      noteId: req.params.noteId,
+      attachmentId,
+      pageIndex,
+    });
+    const blocked = pageScopeMessage(page.reason, pageIndex);
+    if (blocked) {
+      // A 400 here is refunded by the limiter's finish hook, so a page that
+      // cannot be quizzed costs the student nothing.
+      res.status(400).json({ error: blocked, reason: page.reason });
+      return;
+    }
+
+    const source = page.text.trim();
+    if (source.length < 50) {
+      res.status(400).json({
+        error: `There is too little text on page ${pageIndex + 1} to make questions from.`,
+        reason: 'page_blank',
+      });
+      return;
+    }
+
+    const rawCount = Number(body.count);
+    const count = Number.isFinite(rawCount) ? Math.max(1, Math.min(10, Math.floor(rawCount))) : 5;
+    const difficulty =
+      body.difficulty === 'easy' || body.difficulty === 'medium' || body.difficulty === 'hard'
+        ? body.difficulty
+        : 'mixed';
+    const questionTypes = Array.isArray(body.questionTypes)
+      ? body.questionTypes.filter((type): type is string => typeof type === 'string')
+      : undefined;
+
+    const surface = surfaceFromRequest(req);
+    const generated = await generateQuestionsFromNotes(source, {
+      count,
+      difficulty,
+      questionTypes,
+      subject: note.title || undefined,
+    });
+
+    const { logAIInference } = await import('../services/aiInferenceLog');
+    await logAIInference(supabaseService.getClient(), {
+      userId,
+      feature: 'generate-questions-page',
+      provider: generated.provider,
+      requestId: (req as { requestId?: string }).requestId,
+    });
+
+    await recordLearningEvent(supabaseService, {
+      userId,
+      eventType: 'question_generated',
+      targetType: 'note',
+      targetId: note.id,
+      noteId: note.id,
+      courseId: note.courseId ?? null,
+      count: Array.isArray(generated.questions) ? generated.questions.length : 0,
+      surface,
+    });
+
+    res.json({
+      success: true,
+      data: {
+        attachmentId,
+        pageIndex,
+        pageCount: page.pageCount,
+        questions: generated.questions,
+        provider: generated.provider,
+      },
+    });
+  })
+);
+
 router.patch('/:noteId/quiz', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
@@ -2366,7 +3023,11 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
     return;
   }
   const content = getNoteStudyContent(studyInput);
-  const { count, style } = req.body || {};
+  const { count, style, typeMix, difficulty } = req.body || {};
+  if (typeMix !== undefined && !isFlashcardTypeMix(typeMix)) {
+    res.status(400).json({ error: 'typeMix must be one of basic, cloze, mixed.' });
+    return;
+  }
   const sliced = content.slice(0, 8000);
   const surface = surfaceFromRequest(req);
   const outcome = await runSyncOrEnqueue(
@@ -2377,6 +3038,8 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
       content: sliced,
       count,
       style,
+      typeMix,
+      difficulty,
       noteId: note.id,
       courseId: note.courseId ?? null,
       surface,
@@ -2385,7 +3048,12 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
     },
     userId,
     async () => {
-      const generated = await generateFlashcardsFromNotes(sliced, { count, style });
+      const generated = await generateFlashcardsFromNotes(sliced, {
+        count,
+        style,
+        typeMix,
+        difficulty,
+      });
       // learning_events: card_generated with count + note. Never throws.
       await recordLearningEvent(supabaseService, {
         userId,

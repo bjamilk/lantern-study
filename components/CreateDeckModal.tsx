@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
-import { RectangleStackIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { Course, Deck } from '../types';
 import Modal from './ui/Modal';
 import { CoursePicker } from './academic/CoursePicker';
@@ -69,7 +69,7 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
     <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="create-deck-modal-title" maxWidthClass="max-w-md">
       <div className="flex justify-between items-center mb-4">
         <h2 id="create-deck-modal-title" className="text-xl font-semibold text-lantern-text flex items-center">
-          <RectangleStackIcon className="w-6 h-6 mr-2 text-lantern-primary" aria-hidden />
+          <AppIcon name="albums" size={24} className="mr-2 text-lantern-primary" aria-hidden />
           {isEditing ? 'Edit Deck' : 'Create New Deck'}
         </h2>
         <button
@@ -78,7 +78,7 @@ const CreateDeckModal: React.FC<CreateDeckModalProps> = ({ isOpen, onClose, onSu
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Close deck dialog"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">

@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Group } from '../types';
-import { XMarkIcon, UserPlusIcon, MagnifyingGlassIcon, CheckIcon, UsersIcon, AtSymbolIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import { normalizeUserSearchQuery } from '@lantern/shared';
 import { searchUsers } from '../services/supabase';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
 import Modal from './ui/Modal';
+import { AppIcon } from './ui/AppIcon';
 
 interface SearchResult {
   id: string;
@@ -129,7 +129,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
     >
         <div className="flex justify-between items-center px-6 py-4 border-b border-lantern-border flex-shrink-0">
           <h2 id="add-members-modal-title" className="text-xl font-semibold text-lantern-text flex items-center min-w-0">
-            <UserPlusIcon className="w-6 h-6 mr-2 text-lantern-primary shrink-0" aria-hidden />
+            <AppIcon name="person-add" size={24} className="mr-2 text-lantern-primary shrink-0" aria-hidden />
             <span className="truncate">Add Members to &quot;{group.name}&quot;</span>
           </h2>
           <button
@@ -138,14 +138,14 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close add members dialog"
           >
-            <XMarkIcon className="w-6 h-6" aria-hidden />
+            <AppIcon name="close" size={24} aria-hidden />
           </button>
         </div>
 
         <div className="px-6 py-4 flex flex-col flex-1 min-h-0 bg-lantern-surface">
         {successMessage && (
           <div className="mb-3 p-3 bg-lantern-success/10 border border-lantern-success/30 rounded-lg flex items-center text-lantern-success">
-            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0" aria-hidden />
+            <AppIcon name="checkmark-circle" size={20} className="mr-2 flex-shrink-0" aria-hidden />
             <span className="text-sm font-medium">{successMessage}</span>
           </div>
         )}
@@ -153,7 +153,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
         {/* Search input — always visible at top */}
         <div className="relative mb-3 flex-shrink-0">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <MagnifyingGlassIcon className="h-5 w-5 text-lantern-text-tertiary" />
+            <AppIcon name="search" size={20} className="text-lantern-text-tertiary" />
           </div>
           <input
             ref={searchInputRef}
@@ -182,7 +182,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
           {!isSearching && !searchError && searchTerm.length < 2 && (
             <div className="p-8 text-center">
-              <AtSymbolIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
+              <AppIcon name="at" size={48} className="mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
               <p className="text-sm text-lantern-text-secondary">
                 Type at least 2 characters to search for users
               </p>
@@ -194,7 +194,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
 
           {!isSearching && !searchError && searchTerm.length >= 2 && searchResults.length === 0 && (
             <div className="p-8 text-center">
-              <UsersIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
+              <AppIcon name="people" size={48} className="mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
               <p className="text-sm text-lantern-text-secondary">
                 No users found matching "{searchTerm}"
               </p>
@@ -220,7 +220,7 @@ const AddMembersModal: React.FC<AddMembersModalProps> = ({ isOpen, onClose, onSu
                         <img src={getAvatarUrl(user)} alt={user.name} className="w-10 h-10 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }} />
                         {isSelected && (
                           <div className="absolute bottom-0 right-2 w-5 h-5 bg-lantern-primary rounded-full flex items-center justify-center border-2 border-white dark:border-lantern-border">
-                            <CheckIcon className="w-3 h-3 text-white"/>
+                            <AppIcon name="checkmark" size={12} className="text-white" />
                           </div>
                         )}
                       </div>

@@ -5,7 +5,7 @@ import GroupListItem from './GroupListItem';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { PlusIcon, HomeIcon, CameraIcon, ArchiveBoxIcon, ChevronDownIcon, ChevronRightIcon, SparklesIcon, AcademicCapIcon, ChatBubbleLeftRightIcon, BuildingLibraryIcon, BellAlertIcon, Bars3Icon, PlayIcon, XCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { useUIStore } from '../stores/uiStore';
 import { formatUnreadBadgeCount, getTotalActiveUnreadChatCount } from '../utils/chatUnread';
@@ -292,7 +292,8 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const NavButton = ({
     navFunc,
-    icon: Icon,
+    icon,
+    renderIcon,
     label,
     isActive = false,
     badgeCount,
@@ -301,7 +302,9 @@ const Sidebar: React.FC<SidebarProps> = ({
     tipId,
   }: {
     navFunc: () => void;
-    icon: React.ElementType;
+    icon?: AppIconName;
+    /** The Me row's "icon" is the student's own face, not a glyph. */
+    renderIcon?: (className: string) => React.ReactNode;
     label: string;
     isActive?: boolean;
     badgeCount?: number;
@@ -333,7 +336,15 @@ const Sidebar: React.FC<SidebarProps> = ({
       disabled={!canInteractWithChats && !isSessionPaused}
       title={label}
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${isActive ? 'text-lantern-primary-text' : ''}`} aria-hidden="true" />
+      {renderIcon ? (
+        renderIcon(`flex-shrink-0 ${showText ? 'mr-3' : ''}`)
+      ) : icon ? (
+        <AppIcon
+          name={icon}
+          size={20}
+          className={`flex-shrink-0 ${showText ? 'mr-3' : ''} ${isActive ? 'text-lantern-primary-text' : ''}`}
+        />
+      ) : null}
       {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
       {showText && countLabel ? (
         <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-lantern-background-secondary px-2 py-0.5 text-label tracking-normal text-lantern-text-secondary">
@@ -382,7 +393,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 }
                 title={isChatsSectionExpanded ? 'Hide chats panel' : 'Show chats panel'}
               >
-                <ChatBubbleLeftRightIcon className="w-6 h-6" aria-hidden="true" />
+                <AppIcon name="chatbubbles" size={24} />
                 {showChatsHeaderBadge && (
                   <span aria-hidden="true" className="absolute top-0 right-0 bg-lantern-error-strong text-white text-label tracking-normal font-bold min-w-[1rem] h-4 px-1 flex items-center justify-center rounded-full">
                     {formatUnreadBadgeCount(totalUnreadChatCount)}
@@ -395,7 +406,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               className="p-2 text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-surface rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
               aria-label={effectiveExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
-              <Bars3Icon className={`w-6 h-6 transition-transform duration-300`} />
+              <AppIcon name="menu" size={24} className="transition-transform duration-300" />
             </button>
         </div>
       </div>
@@ -404,7 +415,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         {isSessionPaused && (
             <div className="p-2 space-y-1">
                 <button onClick={() => onResumeSession(sessionAppMode)} className={`w-full flex items-center p-3 rounded-md text-white bg-yellow-500 hover:bg-yellow-600 animate-pulse ${!showText && 'justify-center'}`} title={`Resume ${pausedSessionLabel}`}>
-                    <PlayIcon className={`w-6 h-6 ${showText && 'mr-2'}`} />
+                    <AppIcon name="play" size={24} className={showText ? 'mr-2' : ''} />
                     {showText && <span className="font-semibold text-body">Resume Session</span>}
                 </button>
                 <button 
@@ -412,7 +423,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                     className={`w-full flex items-center p-2 rounded-md text-red-700 bg-red-100 hover:bg-red-200 dark:bg-red-900/40 dark:text-red-300 dark:hover:bg-red-900/60 ${!showText && 'justify-center'}`} 
                     title="Cancel Session"
                 >
-                    <XCircleIcon className={`w-5 h-5 ${showText && 'mr-2'}`} />
+                    <AppIcon name="close-circle" size={20} className={showText ? 'mr-2' : ''} />
                     {showText && <span className="font-semibold text-caption">Cancel Session</span>}
                 </button>
             </div>
@@ -425,13 +436,13 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="px-2 pt-2 space-y-1">
             <NavButton
               navFunc={onNavigateToDashboard}
-              icon={HomeIcon}
+              icon="home"
               label={DESTINATION_LABELS.home}
               isActive={destinationActive('home')}
             />
             <NavButton
               navFunc={onNavigateToStudy}
-              icon={AcademicCapIcon}
+              icon="school"
               label={DESTINATION_LABELS.study}
               isActive={destinationActive('study')}
               badgeCount={dueCardsCount > 0 ? dueCardsCount : undefined}
@@ -440,7 +451,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
             <NavButton
               navFunc={onNavigateToChat}
-              icon={ChatBubbleLeftRightIcon}
+              icon="chatbubbles"
               label={DESTINATION_LABELS.chat}
               isActive={destinationActive('chat')}
               badgeCount={totalUnreadChatCount > 0 ? totalUnreadChatCount : undefined}
@@ -448,14 +459,14 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
             <NavButton
               navFunc={onNavigateToCampus}
-              icon={BuildingLibraryIcon}
+              icon="institution"
               label={DESTINATION_LABELS.campus}
               isActive={destinationActive('campus')}
               tipId="nav.marketplace"
             />
             <NavButton
               navFunc={onNavigateToMe}
-              icon={MeAvatarIcon}
+              renderIcon={(className) => <MeAvatarIcon className={className} />}
               label={DESTINATION_LABELS.me}
               isActive={destinationActive('me')}
             />
@@ -467,7 +478,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           <div className="mt-3 border-t border-lantern-border px-2 pt-3 space-y-1">
             <NavButton
               navFunc={onToggleCompanion}
-              icon={SparklesIcon}
+              icon="sparkles"
               label="Lantern AI"
               isActive={!!isCompanionOpen}
               countLabel={aiCredits != null ? `${aiCredits} AI credits` : undefined}
@@ -475,7 +486,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
             <NavButton
               navFunc={onOpenNotificationModal}
-              icon={BellAlertIcon}
+              icon="notifications-alert"
               label="Notifications"
               badgeCount={unreadNotificationCount > 0 ? unreadNotificationCount : undefined}
             />
@@ -508,7 +519,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             aria-label="Change profile picture"
             className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-opacity rounded-full"
           >
-            <CameraIcon className="w-4 h-4 text-white opacity-0 group-hover:opacity-100 transition-opacity" aria-hidden="true" />
+            <AppIcon name="camera" size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
           </button>
           <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
         </div>
@@ -546,7 +557,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 disabled={!canInteractWithChats}
                 title="New Group"
               >
-                <PlusIcon className="w-4 h-4" />
+                <AppIcon name="add" size={16} />
               </button>
               <button
                 onClick={onOpenNewDmModal}
@@ -554,7 +565,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 disabled={!canInteractWithChats}
                 title="New DM"
               >
-                <ChatBubbleLeftRightIcon className="w-4 h-4" />
+                <AppIcon name="chatbubbles" size={16} />
               </button>
               {!columnPinned && (
                 <button
@@ -563,7 +574,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   title="Close chats panel"
                   aria-label="Close chats panel"
                 >
-                  <XMarkIcon className="w-4 h-4" />
+                  <AppIcon name="close" size={16} />
                 </button>
               )}
             </div>
@@ -615,8 +626,8 @@ const Sidebar: React.FC<SidebarProps> = ({
                   className="w-full flex items-center justify-between p-3 text-label text-lantern-text-secondary uppercase hover:text-lantern-text focus:outline-none"
                   aria-expanded={isArchivedExpanded}
                 >
-                  <span className="flex items-center"><ArchiveBoxIcon className="w-4 h-4 mr-2"/> Archived</span>
-                  {isArchivedExpanded ? <ChevronDownIcon className="w-5 h-5" /> : <ChevronRightIcon className="w-5 h-5" />}
+                  <span className="flex items-center"><AppIcon name="archive" size={16} className="mr-2" /> Archived</span>
+                  {isArchivedExpanded ? <AppIcon name="chevron-down" size={20} /> : <AppIcon name="chevron-forward" size={20} />}
                 </button>
                 {isArchivedExpanded && (
                   <div className="mt-1">

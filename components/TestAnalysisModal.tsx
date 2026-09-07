@@ -3,8 +3,8 @@
 
 
 import React, { useEffect, useRef } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { TestResult } from '../types';
-import { ChartPieIcon, ClockIcon, TagIcon, SparklesIcon, XMarkIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 import { Chart, registerables } from 'chart.js';
 import type { Chart as ChartType } from 'chart.js';
@@ -238,9 +238,9 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                         title={weakTopics.length ? `Generate flashcards for: ${weakTopics.join(', ')}` : 'Generate flashcards from questions you missed'}
                     >
                         {isGeneratingFlashcards ? (
-                            <ArrowPathIcon className="w-4 h-4 animate-spin" aria-hidden />
+                            <AppIcon name="refresh" size={16} className="animate-spin" aria-hidden />
                         ) : (
-                            <SparklesIcon className="w-4 h-4" aria-hidden />
+                            <AppIcon name="sparkles" size={16} aria-hidden />
                         )}
                         {isGeneratingFlashcards
                             ? 'Generating...'
@@ -254,7 +254,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                         className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
                         aria-label="Close analysis dialog"
                     >
-                        <XMarkIcon className="w-6 h-6" aria-hidden />
+                        <AppIcon name="close" size={24} aria-hidden />
                     </button>
                 </div>
             </div>
@@ -262,7 +262,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                     {/* Pie Chart */}
                     <section>
                         <h3 className="text-lg font-semibold text-lantern-text mb-2 flex items-center">
-                            <ChartPieIcon className="w-5 h-5 mr-2 text-lantern-success" aria-hidden />
+                            <AppIcon name="pie-chart" size={20} className="mr-2 text-lantern-success" aria-hidden />
                             Question Performance
                         </h3>
                         <div className="relative h-64 md:h-80 mx-auto max-w-sm">
@@ -272,7 +272,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                     {/* Time per Question */}
                     <section>
                         <h3 className="text-lg font-semibold text-lantern-text mb-2 flex items-center">
-                            <ClockIcon className="w-5 h-5 mr-2 text-lantern-primary" aria-hidden />
+                            <AppIcon name="time" size={20} className="mr-2 text-lantern-primary" aria-hidden />
                             Time Spent per Question
                         </h3>
                         <div className="mb-3 flex flex-wrap gap-3 text-xs text-lantern-text-secondary">
@@ -297,7 +297,7 @@ const TestAnalysisModal: React.FC<TestAnalysisModalProps> = ({
                     {hasTags && (
                         <section>
                              <h3 className="text-lg font-semibold text-lantern-text mb-2 flex items-center">
-                                <TagIcon className="w-5 h-5 mr-2 text-lantern-accent" aria-hidden />
+                                <AppIcon name="pricetag" size={20} className="mr-2 text-lantern-accent" aria-hidden />
                                 Average Time per Tag
                             </h3>
                             <div className="relative h-72">

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { FaceSmileIcon } from '@heroicons/react/24/outline';
 import {
   CHAT_REACTION_EMOJI,
   sortedReactionEntries,
   totalReactionCount,
 } from '@lantern/shared/chat';
+import { AppIcon } from '../ui/AppIcon';
 
 interface MessageReactionsProps {
   reactions?: Record<string, number> | null;
@@ -104,7 +104,7 @@ export const MessageReactions: React.FC<MessageReactionsProps> = ({
               touch ? 'min-h-[44px] px-3 text-xs font-medium' : 'h-6 w-6'
             }`}
           >
-            <FaceSmileIcon className="h-3.5 w-3.5" aria-hidden />
+            <AppIcon name="happy" size={14} aria-hidden />
             {touch ? <span>{addLabel}</span> : null}
           </button>
 

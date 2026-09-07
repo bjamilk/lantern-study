@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 
 export type ToolType = 'highlight' | 'strikeout' | null;
 
@@ -114,7 +114,7 @@ const Calculator: React.FC<{ onClose: () => void }> = ({ onClose }) => {
           onClick={onClose}
           className="text-lantern-text-secondary hover:text-lantern-text-tertiary p-1 rounded-lg transition-colors"
         >
-          <XMarkIcon className="w-4 h-4" />
+          <AppIcon name="close" size={16} />
         </button>
       </div>
 

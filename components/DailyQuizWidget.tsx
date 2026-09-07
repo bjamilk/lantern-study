@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { SparklesIcon, CheckCircleIcon, ArrowPathIcon, DocumentTextIcon } from '@heroicons/react/24/outline';
 import type { DailyQuizSession, StudyGoalMode } from '../types';
 import { Button } from './ui';
 import { isQuizAnswerCorrect, resolveQuizCorrectAnswer } from '../utils/quizAnswerHelpers';
+import { AppIcon } from './ui/AppIcon';
 
 export type DailyQuizNoteOption = { id: string; title: string };
 
@@ -47,7 +47,7 @@ function SourceContext({
     >
       {noteTitle ? (
         <span className="inline-flex items-center gap-1 min-w-0">
-          <DocumentTextIcon className="w-3.5 h-3.5 flex-shrink-0" />
+          <AppIcon name="document-text" size={14} className="flex-shrink-0" />
           <span className="truncate">
             From: <span className="font-medium text-lantern-text">{noteTitle}</span>
           </span>
@@ -175,7 +175,7 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
           onClick={() => selectedNoteId && onStartQuiz(selectedNoteId)}
           disabled={!selectedNoteId || starting}
         >
-          <SparklesIcon className="w-4 h-4 mr-1" />
+          <AppIcon name="sparkles" size={16} className="mr-1" />
           {starting ? 'Generating…' : "Start today's quiz"}
         </Button>
       </div>
@@ -190,7 +190,7 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
         }`}
       >
         <div className="flex items-center gap-2 text-green-600 font-semibold">
-          <CheckCircleIcon className="w-5 h-5" />
+          <AppIcon name="checkmark-circle" size={20} />
           {title} complete!
         </div>
         <SourceContext
@@ -208,7 +208,7 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
         </p>
         {onRegenerateQuiz && (
           <Button size="sm" onClick={onRegenerateQuiz}>
-            <ArrowPathIcon className="w-4 h-4 mr-1" />
+            <AppIcon name="refresh" size={16} className="mr-1" />
             Generate new set
           </Button>
         )}

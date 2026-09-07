@@ -15,9 +15,70 @@ export const DEFAULT_AI_FEATURE_LIMITS = {
   enhance_flashcard: 25,
   study_recommendations: 25,
   listing_description: 20,
+  /**
+   * Asking a question out loud, from the walk-through.
+   *
+   * A spoken question is the same question typed — it must not cost a lecture.
+   * The clip is capped at VOICE_ASK_MAX_DURATION_MS, so the transcription
+   * behind it is a few seconds of audio, and the only thing standing between a
+   * student and asking is this daily cap. It is deliberately generous: 40 is
+   * more spoken questions than a day of study contains, and the point of the
+   * number is to bound a runaway loop, not to ration the feature.
+   */
+  voice_ask: 40,
 } as const;
 
 export type AIFeatureLimitKey = keyof typeof DEFAULT_AI_FEATURE_LIMITS;
+
+/**
+ * The features that have a daily cap but spend NO AI uses.
+ *
+ * The per-feature counter is a fairness rule about how much of one tool you
+ * may run in a day; the global allowance is the currency. These keys have the
+ * first and not the second: the limiter must enforce the cap without touching
+ * the daily counter or the banked bonus, or the counter would tick down for
+ * something the app told the student was free.
+ */
+export const ZERO_CREDIT_AI_FEATURES = ['voice_ask'] as const;
+
+export type ZeroCreditAIFeatureKey = (typeof ZERO_CREDIT_AI_FEATURES)[number];
+
+/** True when this feature key is capped but costs nothing. */
+export function isZeroCreditAIFeature(featureKey: string | null | undefined): boolean {
+  return (
+    typeof featureKey === 'string' &&
+    (ZERO_CREDIT_AI_FEATURES as readonly string[]).includes(featureKey)
+  );
+}
+
+/** The feature key a spoken question is charged (or rather, not charged) under. */
+export const VOICE_ASK_FEATURE_KEY = 'voice_ask';
+
+/**
+ * Longest clip the voice-ask path accepts, in milliseconds.
+ *
+ * This is what keeps "ask a question out loud" from becoming a free
+ * transcription door: a 15-second clip is a question, and anything longer is
+ * a recording, which goes through the priced lecture path instead. The server
+ * checks the claimed duration AND the actual audio size, because a duration
+ * in a request body is a claim.
+ */
+export const VOICE_ASK_MAX_DURATION_MS = 15_000;
+
+/**
+ * Largest audio payload the voice-ask path accepts, in bytes.
+ *
+ * The measured half of the same rule. 15 seconds of speech is tens of
+ * kilobytes at any codec a phone records; 2 MB is far above that and still far
+ * below a lecture, so an honest clip is never refused and a mislabelled
+ * hour-long file cannot slip through by claiming to be 12 seconds.
+ */
+export const VOICE_ASK_MAX_AUDIO_BYTES = 2_000_000;
+
+/** What the student is told when a voice question is too long. */
+export const VOICE_ASK_TOO_LONG_MESSAGE = `Ask by voice takes a clip of up to ${Math.round(
+  VOICE_ASK_MAX_DURATION_MS / 1000
+)} seconds. Record the lecture instead if you want the whole thing written out.`;
 
 export function formatAIResetCountdown(resetsAt: string, nowMs = Date.now()): string {
   if (!resetsAt) return '';

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AppIcon } from '../ui/AppIcon';
 import { semesterOptions } from '@lantern/shared/academic';
-import { ArchiveBoxIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { currentAcademicYear } from '@lantern/shared';
 import type { Course, User, UserCourse } from '../../types';
 import { useAuthStore } from '../../stores/authStore';
@@ -361,7 +361,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
             disabled={archiving || activeCourses.length === 0}
             title="Move every course of this year to the archive"
           >
-            <ArchiveBoxIcon className="w-4 h-4" aria-hidden />
+            <AppIcon name="archive" size={16} aria-hidden />
             {archiving ? 'Archiving…' : 'Archive this semester'}
           </Button>
         </div>
@@ -408,7 +408,7 @@ export const AcademicSettingsSection: React.FC<AcademicSettingsSectionProps> = (
                   className="p-1.5 rounded-md text-lantern-text-secondary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
                   aria-label={`Remove ${uc.course.code}`}
                 >
-                  <TrashIcon className="w-4 h-4" aria-hidden />
+                  <AppIcon name="trash" size={16} aria-hidden />
                 </button>
               </li>
             ))}

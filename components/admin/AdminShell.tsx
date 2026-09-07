@@ -36,7 +36,7 @@ import {
 import { Button } from '../ui/Button';
 import { FeatureHero } from '../ui/FeatureHero';
 import { Tabs, TabList, Tab, TabPanel } from '../ui';
-import { ShieldCheckIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { featureAccents } from '@lantern/shared/design';
 import { AdminAI } from './AdminAI';
 import { AdminAnalyticsPanel } from './AdminAnalytics';
@@ -640,7 +640,7 @@ export const AdminShell: React.FC<AdminShellProps> = ({ onBackToDashboard }) => 
             title="Admin Console"
             subtitle="Platform oversight and moderation"
             accentColor={featureAccents.admin}
-            icon={<ShieldCheckIcon className="w-6 h-6" />}
+            icon={<AppIcon name="shield-checkmark" size={24} />}
             actions={
               <div className="flex gap-2">
                 <Button variant="secondary" size="sm" onClick={onRefreshCurrent} loading={globalLoading}>

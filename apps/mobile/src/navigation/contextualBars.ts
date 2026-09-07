@@ -106,7 +106,15 @@ export type ContextualScreenAction =
   /** Scroll to / open the note editor's "Learn from this note" card. */
   | 'noteLearn'
   /** The editor's own "Turn into → Flashcards" generate flow. */
-  | 'noteFlashcards';
+  | 'noteFlashcards'
+  /** The walk-through's plan panel — the document's pages, and which are done. */
+  | 'walkthroughPlan'
+  /** Ask about the page on screen: the composer, typed or spoken. */
+  | 'walkthroughAsk'
+  /** Make questions from THIS page (one AI use). */
+  | 'walkthroughQuiz'
+  /** Mark the page on screen done, or undo that. */
+  | 'walkthroughDone';
 
 export interface ContextualBarItem {
   /** Stable id, for keys and for tests; not shown to anyone. */
@@ -320,6 +328,55 @@ const NOTE_BAR: ContextualBarSpec = {
 };
 
 /**
+ * The walk-through row: Plan · Ask · Quiz · Done.
+ *
+ * All four are `screenAction`s, and that is not a shortcut — none of them is a
+ * place. Plan and Ask open the screen's own panels, Quiz spends an AI use on
+ * the page in front of the student, and Done writes a mark. A row item may not
+ * open a sheet that belongs to somewhere else (§7.2's swap rule); these open
+ * this screen's own surfaces, which is the same thing the note editor's Learn
+ * item already does.
+ *
+ * Accent teal (`notes`) for the same reason the note row declares one: the
+ * student is standing on the document, never on one of its four doors, so
+ * there is no active item to derive a colour from.
+ */
+const WALKTHROUGH_BAR: ContextualBarSpec = {
+  stack: 'StudyTab',
+  accent: 'notes',
+  items: [
+    {
+      id: 'plan',
+      label: 'Plan',
+      icon: 'list',
+      feature: 'notes',
+      target: { kind: 'screenAction', action: 'walkthroughPlan' },
+    },
+    {
+      id: 'ask',
+      label: 'Ask',
+      icon: 'sparkles',
+      feature: 'ai',
+      target: { kind: 'screenAction', action: 'walkthroughAsk' },
+    },
+    {
+      id: 'quiz',
+      label: 'Quiz',
+      icon: 'clipboard',
+      feature: 'tests',
+      target: { kind: 'screenAction', action: 'walkthroughQuiz' },
+    },
+    {
+      id: 'done',
+      label: 'Done',
+      icon: 'checkmark-circle',
+      feature: 'notes',
+      target: { kind: 'screenAction', action: 'walkthroughDone' },
+    },
+  ],
+};
+
+/**
  * The Shop row: Browse · Cart · You, §7.2's third registry.
  *
  * Shop lives on the CAMPUS stack — `MarketTab` in the spec table is the retired
@@ -401,6 +458,10 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
   // The note editor. `NotesList` keeps the STUDY row above — the list is a
   // Study surface; the editor is a note.
   NoteEditor: NOTE_BAR,
+
+  // The walk-through. A reading screen, not a session: it keeps both bars, so
+  // the way out is the global bar rather than the pixel it was entered by.
+  Walkthrough: WALKTHROUGH_BAR,
 
   // Shop, on the Campus stack. The three keys the row points at, plus the
   // browse rooms that hang off them, so the row never disappears mid-shop.

@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { GameSession, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel } from '../types';
-import { ChevronRightIcon, UserIcon, SpeakerWaveIcon, SpeakerXMarkIcon, PauseIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 import VoiceInputButton from './VoiceInputButton';
 import { gameAudio } from '../utils/audio';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
@@ -166,10 +165,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({
           cardClass += ' cursor-default ';
           if (isCorrectOption) {
             cardClass += ' ring-4 ring-green-400 border-green-500 scale-[1.02] z-10 ';
-            icon = <CheckCircleIcon className="w-6 h-6 ml-auto text-white" />;
+            icon = <AppIcon name="checkmark-circle" size={24} className="ml-auto text-white" />;
           } else if (isSelected && !isCorrectOption) {
             cardClass += ' ring-4 ring-red-400 border-red-500 scale-[0.98] opacity-90 ';
-            icon = <XCircleIcon className="w-6 h-6 ml-auto text-white" />;
+            icon = <AppIcon name="close-circle" size={24} className="ml-auto text-white" />;
           } else {
             cardClass += ' opacity-30 scale-95 ';
           }
@@ -297,7 +296,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     title="Pause & exit"
                     aria-label="Pause game"
                   >
-                    <PauseIcon className="w-5 h-5 sm:w-6 sm:h-6 text-lantern-text-secondary" />
+                    <AppIcon name="pause" size={20} className="text-lantern-text-secondary" />
                   </button>
                   <button
                     onClick={onRequestEndSession}
@@ -305,7 +304,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     title="End game"
                     aria-label="End game"
                   >
-                    <XMarkIcon className="w-5 h-5 sm:w-6 sm:h-6 text-red-600 dark:text-red-400" />
+                    <AppIcon name="close" size={20} className="text-red-600 dark:text-red-400" />
                   </button>
                   <button 
                     onClick={toggleMute}
@@ -314,9 +313,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     aria-label={isMuted ? "Unmute audio" : "Mute audio"}
                   >
                     {isMuted ? (
-                      <SpeakerXMarkIcon className="w-5 h-5 sm:w-6 sm:h-6 text-lantern-text-secondary" />
+                      <AppIcon name="volume-mute" size={20} className="text-lantern-text-secondary" />
                     ) : (
-                      <SpeakerWaveIcon className="w-5 h-5 sm:w-6 sm:h-6 text-lantern-primary" />
+                      <AppIcon name="volume-medium" size={20} className="text-lantern-primary" />
                     )}
                   </button>
                 </div>
@@ -471,7 +470,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
               onClick={handleNextQuestion}
               className="w-full sm:w-auto sm:ml-auto sm:flex px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl items-center justify-center font-bold shadow-md hover:shadow-lg transition-all duration-150"
             >
-              Next Question <ChevronRightIcon className="w-5 h-5 ml-1" />
+              Next Question <AppIcon name="chevron-forward" size={20} className="ml-1" />
             </button>
           ) : (
             <p className="text-center text-sm text-lantern-text-secondary font-medium italic">

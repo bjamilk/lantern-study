@@ -444,3 +444,142 @@ export function formatTestConfigSummary(input: TestConfigSummaryInput): string {
   if (input.lockAnswered) parts.push('answers locked');
   return parts.join(' · ');
 }
+
+/* ------------------------------------------------------------------ *
+ * Picking a source, confirming it, and only then spending
+ * ------------------------------------------------------------------ */
+
+/**
+ * The most questions one generation asks for.
+ *
+ * A CEILING, not a promise. The generator writes what the material supports
+ * and the server keeps what is answerable, so a short note comes back with
+ * fewer — build 168 asked for 10 and saved 5. Every surface built from this
+ * number therefore says "up to"; the number a student is TOLD they have comes
+ * from the save, never from here.
+ */
+export const MAX_GENERATED_QUESTIONS = 10;
+
+/** "up to 10 questions" — the phrase every pre-generation surface uses. */
+export function questionRequestLabel(max: number = MAX_GENERATED_QUESTIONS): string {
+  const n = Math.max(1, Math.round(max));
+  return n === 1 ? 'up to 1 question' : `up to ${n} questions`;
+}
+
+/** A row of the deck or note picker, as the sheet holds it. */
+export interface TestSourcePick {
+  kind: 'deck' | 'note';
+  id: string;
+  title: string;
+  /** "12 cards", or whatever the row showed underneath. */
+  subtitle?: string;
+  /** Set when the row cannot be used, and why. */
+  disabledReason?: string;
+}
+
+/** A source the student has chosen and not yet paid for. */
+export interface TestSourceSelection {
+  kind: 'deck' | 'note';
+  id: string;
+  title: string;
+  subtitle?: string;
+}
+
+export type PickedSourcePlan =
+  /** Close the picker and show the confirmation card. Nothing is spent. */
+  | { action: 'confirm'; selection: TestSourceSelection }
+  /** The row cannot be used; the picker stays open and says why. */
+  | { action: 'refuse'; reason: string };
+
+/**
+ * What tapping a picker ROW means.
+ *
+ * It means "this one", and nothing else. On build 168 a tap on a note row
+ * generated immediately and took an AI use (the badge fell 76 → 75) with no
+ * confirmation anywhere and no button that ever named the price — the student
+ * paid for a press whose only label was the note's own name. A row now selects;
+ * `planConfirmedGeneration` is the only door to a charge, and the button that
+ * opens it says what it costs.
+ */
+export function planPickedTestSource(pick: TestSourcePick): PickedSourcePlan {
+  const id = (pick.id ?? '').trim();
+  if (!id) return { action: 'refuse', reason: 'This one cannot be used just now.' };
+  if (pick.disabledReason) return { action: 'refuse', reason: pick.disabledReason };
+  return {
+    action: 'confirm',
+    selection: {
+      kind: pick.kind,
+      id,
+      title: (pick.title ?? '').trim() || (pick.kind === 'deck' ? 'This deck' : 'This note'),
+      subtitle: pick.subtitle,
+    },
+  };
+}
+
+/** The confirmation card above the sources, in the words it shows. */
+export interface TestSourceConfirmCard {
+  /** "FROM THIS NOTE" / "FROM THIS DECK". */
+  eyebrow: string;
+  title: string;
+  subtitle?: string;
+  /** "Generate up to 10 questions · 1 AI use". */
+  buttonLabel: string;
+  accessibilityLabel: string;
+}
+
+/**
+ * The card a chosen source shows before anything is spent.
+ *
+ * `priceLabel` is passed in, never computed: prices come from
+ * `formatCreditCost` over the shared credit constants, and a figure written
+ * into a label here is how the counter starts lying.
+ */
+export function testSourceConfirmCard(
+  selection: TestSourceSelection,
+  priceLabel: string,
+  max: number = MAX_GENERATED_QUESTIONS
+): TestSourceConfirmCard {
+  const eyebrow = selection.kind === 'deck' ? 'FROM THIS DECK' : 'FROM THIS NOTE';
+  const buttonLabel = `Generate ${questionRequestLabel(max)} · ${priceLabel}`;
+  return {
+    eyebrow,
+    title: selection.title,
+    subtitle: selection.subtitle,
+    buttonLabel,
+    accessibilityLabel: `${buttonLabel}. From ${selection.title}.`,
+  };
+}
+
+export type ConfirmedGenerationPlan =
+  | {
+      action: 'generate';
+      kind: 'deck' | 'note';
+      id: string;
+      title: string;
+      /** The ceiling the request carries — never a promise of a count. */
+      requestedCount: number;
+    }
+  | { action: 'refuse'; reason: string };
+
+/**
+ * What the labelled button does. The ONLY plan that spends anything.
+ *
+ * `busy` is refused rather than queued: a second press while the first job is
+ * starting is a second charge for one intention.
+ */
+export function planConfirmedGeneration(
+  selection: TestSourceSelection | null | undefined,
+  options: { busy?: boolean; max?: number } = {}
+): ConfirmedGenerationPlan {
+  if (!selection || !selection.id) {
+    return { action: 'refuse', reason: 'Pick a deck or a note first.' };
+  }
+  if (options.busy) return { action: 'refuse', reason: 'This is already starting.' };
+  return {
+    action: 'generate',
+    kind: selection.kind,
+    id: selection.id,
+    title: selection.title,
+    requestedCount: Math.max(1, Math.round(options.max ?? MAX_GENERATED_QUESTIONS)),
+  };
+}

@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES } from '../types';
 import { useToastStore } from '../stores/toastStore';
@@ -9,7 +10,6 @@ import {
   runRecurring,
   type RecurringRule,
 } from '../services/budgetApi';
-import { XMarkIcon, TrashIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 interface RecurringModalProps {
@@ -118,7 +118,7 @@ const RecurringModal: React.FC<RecurringModalProps> = ({ isOpen, onClose, onChan
     >
       <div className="bg-gradient-to-r from-lantern-primary to-lantern-primary-dark px-5 py-4 flex justify-between items-center shrink-0">
         <h2 id="recurring-modal-title" className="text-lg font-bold text-white flex items-center gap-2">
-          <ArrowPathIcon className="w-5 h-5" aria-hidden /> Recurring
+          <AppIcon name="refresh" size={20} aria-hidden /> Recurring
         </h2>
         <button
           type="button"
@@ -126,7 +126,7 @@ const RecurringModal: React.FC<RecurringModalProps> = ({ isOpen, onClose, onChan
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           aria-label="Close recurring"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
 
@@ -162,7 +162,7 @@ const RecurringModal: React.FC<RecurringModalProps> = ({ isOpen, onClose, onChan
                     aria-label={`Remove recurring ${rule.description || labelFor(rule)}`}
                     className="text-lantern-text-tertiary hover:text-red-500"
                   >
-                    <TrashIcon className="w-4 h-4" aria-hidden />
+                    <AppIcon name="trash" size={16} aria-hidden />
                   </button>
                 </div>
               </div>

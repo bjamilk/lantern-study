@@ -1,11 +1,6 @@
 import React from 'react';
-import {
-  UserGroupIcon,
-  ChatBubbleLeftRightIcon,
-  UsersIcon,
-  ClockIcon,
-} from '@heroicons/react/24/outline';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 /**
  * Discover's section tabs (Phase 3 · L, decision D12).
@@ -31,12 +26,12 @@ const TABS: Array<{
   id: DiscoverSection;
   label: string;
   shortLabel: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: AppIconName;
 }> = [
-  { id: 'communities', label: 'Communities', shortLabel: 'Community', icon: UserGroupIcon },
-  { id: 'groups', label: 'Groups', shortLabel: 'Groups', icon: ChatBubbleLeftRightIcon },
-  { id: 'people', label: 'People', shortLabel: 'People', icon: UsersIcon },
-  { id: 'rooms', label: 'Rooms', shortLabel: 'Room', icon: ClockIcon },
+  { id: 'communities', label: 'Communities', shortLabel: 'Community', icon: 'people' },
+  { id: 'groups', label: 'Groups', shortLabel: 'Groups', icon: 'chatbubbles' },
+  { id: 'people', label: 'People', shortLabel: 'People', icon: 'people' },
+  { id: 'rooms', label: 'Rooms', shortLabel: 'Room', icon: 'time' },
 ];
 
 export const DiscoverWorkspaceBar: React.FC<DiscoverWorkspaceBarProps> = ({
@@ -56,7 +51,7 @@ export const DiscoverWorkspaceBar: React.FC<DiscoverWorkspaceBarProps> = ({
     className={`grid border-b border-lantern-border ${className}`}
     style={{ gridTemplateColumns: `repeat(${visible.length}, minmax(0, 1fr))` }}
   >
-    {visible.map(({ id, label, shortLabel, icon: Icon }) => {
+    {visible.map(({ id, label, shortLabel, icon }) => {
       const selected = active === id;
       return (
         <button
@@ -72,7 +67,7 @@ export const DiscoverWorkspaceBar: React.FC<DiscoverWorkspaceBarProps> = ({
               : 'text-lantern-text-secondary hover:text-lantern-text'
           }`}
         >
-          <Icon className="hidden h-3.5 w-3.5 sm:block" aria-hidden="true" />
+          <AppIcon name={icon} size={14} className="hidden sm:block" aria-hidden={true} />
           <span className="truncate sm:hidden">{shortLabel}</span>
           <span className="hidden truncate sm:inline">{label}</span>
           {selected ? (

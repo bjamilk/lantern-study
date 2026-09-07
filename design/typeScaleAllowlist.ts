@@ -79,7 +79,6 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/FlashcardsScreen.tsx': 6,
   'components/GameResultScreen.tsx': 15,
   'components/GameScreen.tsx': 22,
-  'components/GenerateFlashcardsModal.tsx': 6,
   'components/GroupInfoModal.tsx': 26,
   'components/GroupInviteLinkPanel.tsx': 5,
   'components/GroupListItem.tsx': 3,

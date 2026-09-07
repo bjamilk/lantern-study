@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
-import { LockClosedIcon } from '@heroicons/react/24/outline';
 import { COMMUNITY_COPY, resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';
 import { fetchMyCommunities } from '../../services/supabase';
+import { AppIcon } from '../ui/AppIcon';
 
 export type GroupDiscoveryValue = {
   visibility: 'private' | 'community' | 'public';
@@ -44,7 +44,7 @@ export const GroupDiscoverabilityFields: React.FC<GroupDiscoverabilityFieldsProp
       <div className="space-y-1">
         <p className="text-sm font-medium text-lantern-text">Discover</p>
         <p className="flex items-start gap-1.5 text-xs text-lantern-text-secondary">
-          <LockClosedIcon className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <AppIcon name="lock-closed" size={14} className="mt-0.5 shrink-0" aria-hidden="true" />
           <span>{COMMUNITY_COPY.listedIn(lockedCommunity.name)}</span>
         </p>
       </div>

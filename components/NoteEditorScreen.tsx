@@ -9,21 +9,6 @@ import {
   isPhotoNoteSource,
   isPlaceholderExtractedText,
 } from '@lantern/shared';
-import {
-  ArrowLeftIcon,
-  TrashIcon,
-  UserPlusIcon,
-  ShareIcon,
-  BuildingStorefrontIcon,
-  DocumentDuplicateIcon,
-  MicrophoneIcon,
-  StopIcon,
-  ArrowPathIcon,
-  RectangleStackIcon,
-  QuestionMarkCircleIcon,
-  SparklesIcon,
-  ChatBubbleLeftRightIcon,
-} from '@heroicons/react/24/outline';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
 import { runAiJob, type AiJobHooks } from '../stores/aiJobRunner';
@@ -59,6 +44,7 @@ import { useToastStore } from '../stores/toastStore';
 import { navigateToPath } from '../utils/appNavigation';
 import { useNoteCommentsSync } from '../hooks/useNoteCommentsSync';
 import { setStudyIntent } from '../services/presenceHeartbeat';
+import { AppIcon } from './ui/AppIcon';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -835,7 +821,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           aria-label="Back to notes"
           className="shrink-0 p-1.5 sm:p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary"
         >
-          <ArrowLeftIcon className="w-5 h-5" />
+          <AppIcon name="arrow-back" size={20} />
         </button>
         <input
           value={title}
@@ -855,18 +841,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               title="Turn into a Study Product"
               className="shrink-0 px-2 sm:px-3"
             >
-              <BuildingStorefrontIcon className="w-4 h-4" />
+              <AppIcon name="storefront" size={16} />
               <span className="hidden sm:inline ml-1">Sell</span>
             </Button>
           )}
           <Button variant="secondary" size="sm" onClick={handleShareGroup} aria-label="Share with group" className="shrink-0 px-2 sm:px-3">
-            <ShareIcon className="w-4 h-4" />
+            <AppIcon name="share-social" size={16} />
           </Button>
           <Button variant="secondary" size="sm" onClick={() => setShowCollabModal(true)} aria-label="Manage sharing" className="shrink-0 px-2 sm:px-3">
-            <UserPlusIcon className="w-4 h-4" />
+            <AppIcon name="person-add" size={16} />
           </Button>
         </>}
-        {!isOwner && <Button variant="secondary" size="sm" onClick={() => void handleMakeCopy()} aria-label="Make a copy" className="shrink-0 px-2 sm:px-3"><DocumentDuplicateIcon className="w-4 h-4" /></Button>}
+        {!isOwner && <Button variant="secondary" size="sm" onClick={() => void handleMakeCopy()} aria-label="Make a copy" className="shrink-0 px-2 sm:px-3"><AppIcon name="copy" size={16} /></Button>}
         {!isOwner && <Button variant="ghost" size="sm" onClick={() => void handleLeave()} className="hidden sm:inline-flex">Leave</Button>}
         {isOwner && <button
           type="button"
@@ -874,7 +860,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           aria-label="Delete note"
           className="shrink-0 p-1.5 sm:p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
         >
-          <TrashIcon className="w-5 h-5" />
+          <AppIcon name="trash" size={20} />
         </button>}
       </div>
 
@@ -892,7 +878,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 onClick={startRecording}
                 disabled={transcribingForThisNote || (lectureStatus !== 'idle' && lectureNoteId !== note.id)}
               >
-                <MicrophoneIcon className="w-4 h-4 sm:mr-1" />
+                <AppIcon name="mic" size={16} className="sm:mr-1" />
                 <span className="hidden sm:inline">Record lecture</span>
                 <span className="sm:hidden">Record</span>
               </Button>
@@ -909,7 +895,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                       : undefined
                   }
                 >
-                  <StopIcon className="w-4 h-4 sm:mr-1" />
+                  <AppIcon name="stop" size={16} className="sm:mr-1" />
                   <span className="hidden sm:inline">
                     {recordingSeconds < 2 ? `Wait ${2 - recordingSeconds}s` : 'Stop & transcribe'}
                   </span>
@@ -1000,13 +986,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-label uppercase text-lantern-text-secondary">Turn into</span>
               {([
-                { key: 'cards', label: 'Cards', cost: formatCreditCost(AI_CREDIT_COSTS.generate_flashcards), feature: 'flashcards', icon: <RectangleStackIcon className="w-4 h-4" />, run: () => { setGeneratingCards(true); void runFlashcardJob().finally(() => setGeneratingCards(false)); } },
-                { key: 'test', label: 'Test', cost: formatCreditCost(AI_CREDIT_COSTS.generate_questions), feature: 'tests', icon: <QuestionMarkCircleIcon className="w-4 h-4" />, run: () => { setGeneratingQuiz(true); void runQuizJob().finally(() => setGeneratingQuiz(false)); } },
-                { key: 'smart', label: 'Smart note', cost: formatCreditCost(SMART_NOTES_CREDIT_COST.standard), feature: 'ai', icon: <SparklesIcon className="w-4 h-4" />, run: () => { void runSmartNoteJob({ title, body }); } },
+                { key: 'cards', label: 'Cards', cost: formatCreditCost(AI_CREDIT_COSTS.generate_flashcards), feature: 'flashcards', icon: <AppIcon name="albums" size={16} />, run: () => { setGeneratingCards(true); void runFlashcardJob().finally(() => setGeneratingCards(false)); } },
+                { key: 'test', label: 'Test', cost: formatCreditCost(AI_CREDIT_COSTS.generate_questions), feature: 'tests', icon: <AppIcon name="help-circle" size={16} />, run: () => { setGeneratingQuiz(true); void runQuizJob().finally(() => setGeneratingQuiz(false)); } },
+                { key: 'smart', label: 'Smart note', cost: formatCreditCost(SMART_NOTES_CREDIT_COST.standard), feature: 'ai', icon: <AppIcon name="sparkles" size={16} />, run: () => { void runSmartNoteJob({ title, body }); } },
                 // Opening the companion spends nothing; the reply is charged in
                 // the chat's own counter, so promising "free" here would be a
                 // lie by omission.
-                { key: 'ai', label: 'Ask AI', cost: 'no credit to open', feature: 'ai', icon: <ChatBubbleLeftRightIcon className="w-4 h-4" />, run: onChatWithNote },
+                { key: 'ai', label: 'Ask AI', cost: 'no credit to open', feature: 'ai', icon: <AppIcon name="chatbubbles" size={16} />, run: onChatWithNote },
               ] as const).map((action) => (
                 <button
                   key={action.key}
@@ -1220,10 +1206,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 aria-label="Refresh discussion"
                 title="Refresh discussion"
               >
-                <ArrowPathIcon
-                  className={`h-4 w-4 ${isRefreshingComments ? 'animate-spin' : ''}`}
-                  aria-hidden
-                />
+                <AppIcon name="refresh" size={16} className={isRefreshingComments ? 'animate-spin' : undefined}
+                  aria-hidden />
                 Refresh
               </button>
             </div>

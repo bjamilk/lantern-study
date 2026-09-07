@@ -1,17 +1,9 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  MagnifyingGlassMinusIcon,
-  MagnifyingGlassPlusIcon,
-  PencilSquareIcon,
-  PhotoIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
 import type { NoteAttachment } from '../types';
 import { refreshNoteAttachmentUrl, reorderNoteAttachments } from '../services/notes';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { Button } from './ui';
+import { AppIcon } from './ui/AppIcon';
 
 interface NoteImageGalleryProps {
   noteId: string;
@@ -177,7 +169,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
         }`}
       >
         <span className="font-medium truncate flex items-center gap-2">
-          <PhotoIcon className="w-4 h-4 shrink-0" />
+          <AppIcon name="image" size={16} className="shrink-0" />
           {ordered.length === 1 ? '1 photo' : `${ordered.length} photos`}
         </span>
         <div className="flex items-center gap-2 shrink-0">
@@ -191,7 +183,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
                   : 'border-lantern-border text-lantern-text-secondary hover:bg-lantern-background-secondary'
               }`}
             >
-              <PencilSquareIcon className="w-3.5 h-3.5" />
+              <AppIcon name="create" size={14} />
               {editMode ? 'Done' : 'Reorder'}
             </button>
           )}
@@ -222,7 +214,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
                     className="p-1.5 rounded-md bg-black/55 text-white disabled:opacity-40"
                     aria-label="Move up"
                   >
-                    <ArrowUpIcon className="w-4 h-4" />
+                    <AppIcon name="arrow-up" size={16} />
                   </button>
                   <button
                     type="button"
@@ -231,7 +223,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
                     className="p-1.5 rounded-md bg-black/55 text-white disabled:opacity-40"
                     aria-label="Move down"
                   >
-                    <ArrowDownIcon className="w-4 h-4" />
+                    <AppIcon name="arrow-down" size={16} />
                   </button>
                 </div>
               )}
@@ -279,7 +271,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
                 className="p-2 rounded-md bg-white/10"
                 aria-label="Zoom out"
               >
-                <MagnifyingGlassMinusIcon className="w-5 h-5" />
+                <AppIcon name="zoom-out" size={20} />
               </button>
               <span className="text-xs w-12 text-center">{Math.round(zoomScale * 100)}%</span>
               <button
@@ -288,7 +280,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
                 className="p-2 rounded-md bg-white/10"
                 aria-label="Zoom in"
               >
-                <MagnifyingGlassPlusIcon className="w-5 h-5" />
+                <AppIcon name="zoom-in" size={20} />
               </button>
               <button
                 type="button"
@@ -296,7 +288,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
                 className="p-2 rounded-md bg-white/10"
                 aria-label="Close"
               >
-                <XMarkIcon className="w-5 h-5" />
+                <AppIcon name="close" size={20} />
               </button>
             </div>
           </div>

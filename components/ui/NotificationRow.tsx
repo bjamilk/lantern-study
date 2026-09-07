@@ -1,39 +1,25 @@
 import React from 'react';
-import {
-  BellIcon,
-  BriefcaseIcon,
-  ChatBubbleLeftEllipsisIcon,
-  ClipboardDocumentListIcon,
-  CurrencyDollarIcon,
-  EnvelopeIcon,
-  ExclamationTriangleIcon,
-  HeartIcon,
-  MegaphoneIcon,
-  PuzzlePieceIcon,
-  ReceiptPercentIcon,
-  RectangleStackIcon,
-  ShoppingBagIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './AppIcon';
 import {
   getNotificationMeta,
   formatRelativeTime,
   type NotificationIconKey,
 } from '@lantern/shared';
 
-const iconMap: Record<NotificationIconKey, React.ComponentType<{ className?: string }>> = {
-  bell: BellIcon,
-  currency: CurrencyDollarIcon,
-  chat: ChatBubbleLeftEllipsisIcon,
-  shopping: ShoppingBagIcon,
-  envelope: EnvelopeIcon,
-  flashcards: RectangleStackIcon,
-  test: ClipboardDocumentListIcon,
-  game: PuzzlePieceIcon,
-  briefcase: BriefcaseIcon,
-  order: ReceiptPercentIcon,
-  megaphone: MegaphoneIcon,
-  heart: HeartIcon,
-  alert: ExclamationTriangleIcon,
+const iconMap: Record<NotificationIconKey, AppIconName> = {
+  bell: 'notifications',
+  currency: 'currency',
+  chat: 'chatbubble-ellipses',
+  shopping: 'bag',
+  envelope: 'mail',
+  flashcards: 'albums',
+  test: 'clipboard',
+  game: 'puzzle',
+  briefcase: 'briefcase',
+  order: 'receipt',
+  megaphone: 'megaphone',
+  heart: 'heart',
+  alert: 'warning',
 };
 
 interface NotificationRowProps {
@@ -58,7 +44,7 @@ export const NotificationRow: React.FC<NotificationRowProps> = ({
   className = '',
 }) => {
   const meta = getNotificationMeta(link, { type, data, link });
-  const Icon = iconMap[meta.iconKey];
+  const iconName = iconMap[meta.iconKey];
   const Wrapper = onPress ? 'button' : 'div';
 
   return (
@@ -77,7 +63,7 @@ export const NotificationRow: React.FC<NotificationRowProps> = ({
         <div
           className={`w-9 h-9 rounded-lantern flex items-center justify-center flex-shrink-0 ${meta.webColorClass}`}
         >
-          <Icon className="w-4 h-4" />
+          <AppIcon name={iconName} size={16} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex justify-between items-start gap-2">

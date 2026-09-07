@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useReducer, useRef } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { useToastStore } from '../stores/toastStore';
 import { QuestionType, QuestionOption, MatchingItem, DiagramLabel } from '../types';
-import { PlusCircleIcon, TrashIcon, PhotoIcon, XCircleIcon, TagIcon, CheckIcon, InformationCircleIcon, MapPinIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import VoiceInputButton from './VoiceInputButton';
 import { v4 as uuidv4 } from 'uuid';
 import { uploadQuestionImage } from '../services/supabase';
@@ -445,20 +445,20 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
           </div>
           {state.options.length > 2 && (
             <button type="button" onClick={() => handleRemoveOption(option.id)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300" aria-label={`Remove option ${index + 1}`}>
-              <TrashIcon className="w-5 h-5" />
+              <AppIcon name="trash" size={20} />
             </button>
           )}
         </div>
       ))}
       {state.options.length < 6 && (
         <button type="button" onClick={handleAddOption} className="mt-2 text-sm text-lantern-primary hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 flex items-center">
-          <PlusCircleIcon className="w-5 h-5 mr-1" /> Add Option
+          <AppIcon name="add-circle" size={20} className="mr-1" /> Add Option
         </button>
       )}
       {isMultipleType && (
         <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md">
             <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start">
-                <InformationCircleIcon className="w-4 h-4 mr-1.5 flex-shrink-0 mt-0.5" />
+                <AppIcon name="information-circle" size={16} className="mr-1.5 flex-shrink-0 mt-0.5" />
                 <span>Scoring: Typically, all selected options must be correct, and no incorrect options chosen, for full credit. Specific scoring rules (like partial credit) are not yet customizable.</span>
             </p>
         </div>
@@ -480,7 +480,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
         <div className="flex justify-between items-center mb-4">
           <h2 id="question-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">Add Question to <span className="text-lantern-primary">{groupName}</span></h2>
           <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:hover:text-lantern-text" aria-label="Close modal">
-             <XCircleIcon className="w-6 h-6" />
+             <AppIcon name="close-circle" size={24} />
           </button>
         </div>
         <form onSubmit={handleSubmit}>
@@ -527,7 +527,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             <label htmlFor="questionImage" className="block text-sm font-medium text-lantern-text mb-1">Attach Image (Optional)</label>
             <div className="mt-1 flex items-center space-x-2">
               <label className="flex items-center px-3 py-2 border border-lantern-border rounded-md shadow-sm text-sm font-medium text-lantern-text bg-lantern-surface dark:bg-lantern-surface-secondary hover:bg-lantern-background dark:hover:bg-lantern-border cursor-pointer">
-                <PhotoIcon className="w-5 h-5 mr-2 text-lantern-text-secondary" />
+                <AppIcon name="image" size={20} className="mr-2 text-lantern-text-secondary" />
                 <span>Choose Image</span>
                 <input id="questionImage" name="questionImage" type="file" accept="image/*" onChange={handleImageChange} className="sr-only" />
               </label>
@@ -540,7 +540,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                     className="absolute -top-2 -right-2 p-0.5 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity focus:outline-none focus:ring-2 focus:ring-red-400"
                     aria-label="Remove image"
                   >
-                    <XCircleIcon className="w-5 h-5" />
+                    <AppIcon name="close-circle" size={20} />
                   </button>
                 </div>
               )}
@@ -550,7 +550,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
 
           <div className="mb-4">
             <label htmlFor="questionTags" className="block text-sm font-medium text-lantern-text mb-1 flex items-center">
-              <TagIcon className="w-5 h-5 mr-1 text-lantern-text-secondary" />
+              <AppIcon name="pricetag" size={20} className="mr-1 text-lantern-text-secondary" />
               Tags (Optional, comma-separated)
             </label>
             <input
@@ -567,7 +567,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
             <div className="my-4 p-3 border-t border-b border-lantern-border">
                 <div className="mb-3 p-2 bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30 rounded-md">
                     <p className="text-xs text-lantern-primary flex items-start">
-                        <InformationCircleIcon className="w-4 h-4 mr-1.5 flex-shrink-0 mt-0.5" />
+                        <AppIcon name="information-circle" size={16} className="mr-1.5 flex-shrink-0 mt-0.5" />
                         <span>Define correct answers/criteria below. This information will be used to score the question in tests and study mode (where applicable).</span>
                     </p>
                 </div>
@@ -613,20 +613,20 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                         {state.promptItems.map((item, index) => (
                         <div key={item.id} className="flex items-center space-x-2 mb-2">
                             <input type="text" value={item.text} onChange={e => handleMatchingItemTextChange('prompt', item.id, e.target.value)} placeholder={`Prompt ${index + 1}`} className="flex-1 p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" required/>
-                            {state.promptItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('prompt', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>}
+                            {state.promptItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('prompt', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><AppIcon name="trash" size={20} /></button>}
                         </div>
                         ))}
-                        <button type="button" onClick={() => handleAddMatchingItem('prompt')} className="text-sm text-lantern-primary hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Prompt</button>
+                        <button type="button" onClick={() => handleAddMatchingItem('prompt')} className="text-sm text-lantern-primary hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><AppIcon name="add-circle" size={20} className="mr-1" />Add Prompt</button>
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Answer Items</label>
                         {state.answerItems.map((item, index) => (
                         <div key={item.id} className="flex items-center space-x-2 mb-2">
                             <input type="text" value={item.text} onChange={e => handleMatchingItemTextChange('answer', item.id, e.target.value)} placeholder={`Answer ${index + 1}`} className="flex-1 p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" required/>
-                            {state.answerItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('answer', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>}
+                            {state.answerItems.length > 1 && <button type="button" onClick={() => handleRemoveMatchingItem('answer', item.id)} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><AppIcon name="trash" size={20} /></button>}
                         </div>
                         ))}
-                        <button type="button" onClick={() => handleAddMatchingItem('answer')} className="text-sm text-lantern-primary hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><PlusCircleIcon className="w-5 h-5 mr-1"/>Add Answer</button>
+                        <button type="button" onClick={() => handleAddMatchingItem('answer')} className="text-sm text-lantern-primary hover:text-blue-800 dark:hover:text-blue-300 flex items-center"><AppIcon name="add-circle" size={20} className="mr-1" />Add Answer</button>
                     </div>
                     {state.promptItems.length > 0 && state.answerItems.length > 0 && state.promptItems.some(p => p.text.trim()) && state.answerItems.some(a => a.text.trim()) && (
                         <div>
@@ -694,7 +694,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
                                                  className="flex-grow p-2 border border-lantern-border rounded-md shadow-sm bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border text-lantern-text dark:text-lantern-text"
                                                  required
                                              />
-                                             <button type="button" onClick={() => dispatch({type: 'REMOVE_DIAGRAM_LABEL', id: label.id})} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><TrashIcon className="w-5 h-5"/></button>
+                                             <button type="button" onClick={() => dispatch({type: 'REMOVE_DIAGRAM_LABEL', id: label.id})} className="text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300"><AppIcon name="trash" size={20} /></button>
                                          </div>
                                      ))}
                                 </div>
@@ -738,7 +738,7 @@ const QuestionModal: React.FC<QuestionModalProps> = ({ isOpen, onClose, onSubmit
               className="flex items-center justify-center px-4 py-2 text-sm font-medium text-white bg-lantern-primary hover:bg-lantern-primary-dark border border-transparent rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary disabled:opacity-50"
               disabled={!isFormValid() || submitting}
             >
-              {submitting && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin" />}
+              {submitting && <AppIcon name="refresh" size={16} className="mr-2 animate-spin" />}
               {submitting ? 'Submitting...' : 'Submit Question'}
             </button>
           </div>

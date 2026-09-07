@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { CheckIcon, ChevronDownIcon, MagnifyingGlassIcon, PlusIcon, SparklesIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { COURSE_TOPIC_COPY, formatAddTopicOffer } from '@lantern/shared';
 import type { CourseTopic } from '../../types';
 import { TOPIC_TITLE_MAX, useTopicSearch } from './useTopicSearch';
@@ -156,10 +156,8 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
           <span className={`truncate ${selected ? 'text-lantern-text' : 'text-lantern-text-secondary'}`}>
             {triggerLabel}
           </span>
-          <ChevronDownIcon
-            className={`w-4 h-4 shrink-0 text-lantern-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
-            aria-hidden
-          />
+          <AppIcon name="chevron-down" size={16} className={`shrink-0 text-lantern-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
+            aria-hidden />
         </button>
         {clearable && selectedId && !disabled && !noCourse ? (
           <button
@@ -168,7 +166,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
             aria-label={COURSE_TOPIC_COPY.clear}
             className={`shrink-0 ${compact ? 'px-2' : 'px-3'} rounded-lg border border-lantern-border text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary`}
           >
-            <XMarkIcon className="w-4 h-4" aria-hidden />
+            <AppIcon name="close" size={16} aria-hidden />
           </button>
         ) : null}
       </div>
@@ -180,7 +178,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
           role="presentation"
         >
           <div className="relative border-b border-lantern-border">
-            <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
+            <AppIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
             <input
               type="search"
               value={query}
@@ -208,7 +206,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
                   }`}
                 >
                   <span className="block truncate italic">{COURSE_TOPIC_COPY.none}</span>
-                  {!selectedId ? <CheckIcon className="w-4 h-4 ml-auto shrink-0" aria-hidden /> : null}
+                  {!selectedId ? <AppIcon name="checkmark" size={16} className="ml-auto shrink-0" aria-hidden /> : null}
                 </button>
               </li>
             ) : null}
@@ -240,7 +238,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
                   disabled={creating}
                   className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
                 >
-                  <PlusIcon className="w-4 h-4" aria-hidden />
+                  <AppIcon name="add" size={16} aria-hidden />
                   {creating ? COURSE_TOPIC_COPY.adding : formatAddTopicOffer(offer.title)}
                 </button>
                 {/* Creating a topic changes the shared outline — say so once, here. */}
@@ -258,7 +256,7 @@ export const TopicPicker: React.FC<TopicPickerProps> = ({
                 disabled={seeding}
                 className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
               >
-                <SparklesIcon className="w-4 h-4" aria-hidden />
+                <AppIcon name="sparkles" size={16} aria-hidden />
                 {COURSE_TOPIC_COPY.seed}
               </button>
               <p className="mt-1 px-1 text-[11px] leading-snug text-lantern-text-tertiary">

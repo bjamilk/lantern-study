@@ -8,7 +8,7 @@
  */
 
 import React from 'react';
-import { SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { useActiveAiJobs } from '../../hooks/useAiJobs';
 
 const AI_INK = 'rgb(var(--color-feature-ai-ink))';
@@ -24,7 +24,7 @@ export const AiJobsCard: React.FC = () => {
       aria-label="AI work in progress"
     >
       <div className="flex items-center gap-2 mb-3">
-        <SparklesIcon className="w-4 h-4 animate-pulse" style={{ color: AI_INK }} aria-hidden />
+        <AppIcon name="sparkles" size={16} className="animate-pulse" style={{ color: AI_INK }} aria-hidden />
         <h3 className="text-heading text-lantern-text">
           AI is working on {views.length} {views.length === 1 ? 'thing' : 'things'}
         </h3>

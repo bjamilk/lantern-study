@@ -37,6 +37,8 @@
     "src/utils/chatMedia.ts",
     "src/utils/chatMute.ts",
     "src/utils/dmHistoryCutoff.ts",
+    "src/utils/flashcardGeneration.ts",
+    "src/flashcards/**/*.ts",
     "src/settings/**/*.ts",
     "src/network/**/*.ts",
     "src/marketplace/**/*.ts",
@@ -47,6 +49,7 @@
     "src/jobs/**/*.ts",
     "src/analytics/**/*.ts",
     "src/moderation/**/*.ts",
+    "src/notes/**/*.ts",
     "src/cookieConsent.ts",
     "src/accountLifecycle.ts",
     "src/contactForm.ts"

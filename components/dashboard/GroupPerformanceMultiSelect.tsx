@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { CheckIcon, ChevronDownIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from '../ui/AppIcon';
 
 export interface GroupPerformanceOption {
   id: string;
@@ -75,9 +75,7 @@ export function GroupPerformanceMultiSelect({
         className="w-full flex items-center justify-between gap-2 px-3 py-2 text-body rounded-lantern border border-lantern-border bg-lantern-surface text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span className="truncate text-left">{buttonLabel}</span>
-        <ChevronDownIcon
-          className={`w-4 h-4 flex-shrink-0 text-lantern-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`}
-        />
+        <AppIcon name="chevron-down" size={16} className={`flex-shrink-0 text-lantern-text-tertiary transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {open && (
@@ -125,7 +123,7 @@ export function GroupPerformanceMultiSelect({
                           : 'border-lantern-border bg-lantern-surface'
                       }`}
                     >
-                      {checked ? <CheckIcon className="w-3 h-3" /> : null}
+                      {checked ? <AppIcon name="checkmark" size={12} /> : null}
                     </span>
                     <span className="truncate text-lantern-text">
                       {opt.level > 0 ? (

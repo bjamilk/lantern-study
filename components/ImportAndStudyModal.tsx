@@ -1,10 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import {
-  DocumentArrowUpIcon,
-  PhotoIcon,
-  SparklesIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
@@ -274,7 +269,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     >
         <div className="flex items-center justify-between p-4 border-b border-lantern-border">
           <h2 id="import-study-title" className="text-lg font-bold flex items-center gap-2 text-lantern-text">
-            <SparklesIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
+            <AppIcon name="sparkles" size={20} className="text-lantern-primary" aria-hidden />
             Import & Study
           </h2>
           <button
@@ -284,7 +279,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-lantern-background-secondary disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close import and study dialog"
           >
-            <XMarkIcon className="w-5 h-5" aria-hidden />
+            <AppIcon name="close" size={20} aria-hidden />
           </button>
         </div>
 
@@ -310,22 +305,22 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
               <div className="flex flex-wrap gap-3">
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <DocumentArrowUpIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
+                  <AppIcon name="document-upload" size={32} className="text-lantern-primary" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Upload PDF</span>
                   <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
                 </label>
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <DocumentArrowUpIcon className="w-8 h-8 text-lantern-accent" aria-hidden />
+                  <AppIcon name="document-upload" size={32} className="text-lantern-accent" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
                 </label>
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <PhotoIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
+                  <AppIcon name="image" size={32} className="text-lantern-primary" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Photos</span>
                   <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <PhotoIcon className="w-8 h-8 text-lantern-accent" aria-hidden />
+                  <AppIcon name="image" size={32} className="text-lantern-accent" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Camera</span>
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>

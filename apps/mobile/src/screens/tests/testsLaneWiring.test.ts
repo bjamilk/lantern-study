@@ -93,3 +93,34 @@ describe('TestResultsScreen: blanks are not failures (T5)', () => {
     expect(source).toContain('Practice wrong answers ({failedQuestions.length})');
   });
 });
+
+describe('TestBuilderScreen: a picked row is not a purchase (build 168)', () => {
+  const source = read('TestBuilderScreen.tsx');
+
+  it('a picker row selects, and never calls a generate handler', () => {
+    const rows = source.slice(
+      source.indexOf('data={pickerRows}'),
+      source.indexOf('</Modal>')
+    );
+    expect(rows).toContain('handlePickRow(');
+    // The defect: the row's own onPress ran the generation, so one tap on a
+    // note's name spent an AI use with nothing on screen naming a price.
+    expect(rows).not.toContain('handleDeckPicked(');
+    expect(rows).not.toContain('handleNotePicked(');
+  });
+
+  it('the only spending control carries the price on its face', () => {
+    const button = source.slice(source.indexOf('testID="test-builder-generate"'));
+    expect(source).toContain('confirmCard.buttonLabel');
+    expect(source).toContain('formatCreditCost(AI_CREDIT_COSTS.generate_questions)');
+    expect(button.length).toBeGreaterThan(0);
+    expect(source).toContain('onPress={handleGenerate}');
+  });
+
+  it('asks for a ceiling and tells the job sheet it is one', () => {
+    expect(source).toContain('requestedCount: MAX_GENERATED_QUESTIONS');
+    expect(source).toContain('requestedCountIsMax: true');
+    // No hard-coded ten anywhere near the copy: the ceiling has one home.
+    expect(source).not.toContain('GENERATED_QUESTION_COUNT = 10');
+  });
+});

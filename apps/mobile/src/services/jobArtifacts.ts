@@ -38,6 +38,7 @@
  */
 import { mapFlashcardsFromApi } from '@lantern/shared';
 import { createDeckWithCards, createPersonalTest } from './api';
+import { writeCachedScript, type NarrationScriptResult } from './narration';
 import { useFlashcardStore, type Deck } from '../stores/flashcardStore';
 import { useJobsStore } from '../stores/jobsStore';
 import { useNotesStore } from '../stores/notesStore';
@@ -376,4 +377,54 @@ async function writeTest(
     ref: { type: 'test', id, name: inserted.name },
     saved: inserted.questionCount,
   };
+}
+
+/* -------------------------------------------------------- read it to me -- */
+
+export interface SaveNarrationScriptInput {
+  /** The job this save belongs to. */
+  jobId: string;
+  /** The note the document hangs off — where the artefact link lands. */
+  noteId: string;
+  noteTitle: string;
+  /** The script, exactly as the server wrote it. */
+  result: NarrationScriptResult;
+}
+
+export interface SavedNarration {
+  ref: JobArtifactRef;
+  /** Pages actually covered — never how many the document has. */
+  saved: number;
+}
+
+/**
+ * File a narration script.
+ *
+ * The odd one out in this module, and deliberately so: there is nothing to
+ * create on the server. The script already exists there the moment the job
+ * finishes — writing it is what was paid for — so "saving" here means keeping
+ * a copy on THIS device, which is what makes a reading play with no signal.
+ *
+ * That inverts the failure this file was written for. A deck that fails to
+ * save is work lost; a cached copy that fails to write is nothing lost at all,
+ * because the server still has the script and the next open re-fetches it. So
+ * a storage failure is swallowed rather than thrown, and the job still settles
+ * as done — it IS done, and telling a student their reading failed because
+ * AsyncStorage was full would be false.
+ *
+ * The artefact is the NOTE. A reading has no id of its own and no list to sit
+ * in, so the notification opens the note the document belongs to, where the
+ * "Read it to me" door is — and replaying a script that already exists costs
+ * nothing, so that door is now free.
+ */
+export async function saveNarrationScript(
+  input: SaveNarrationScriptInput
+): Promise<SavedNarration> {
+  await writeCachedScript(input.result);
+  const covered =
+    input.result.pageCount ||
+    new Set(input.result.segments.map((segment) => segment.pageIndex)).size;
+  const ref: JobArtifactRef = { type: 'note', id: input.noteId, name: input.noteTitle };
+  useJobsStore.getState().recordSave(input.jobId, ref, covered);
+  return { ref, saved: covered };
 }

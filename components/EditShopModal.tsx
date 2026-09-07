@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { updateMyShop, uploadMarketplaceImage } from '../services/supabase';
 import { normalizeStorageUrl } from '../utils/storageUrl';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 
 interface EditShopModalProps {
   isOpen: boolean;
@@ -83,7 +83,7 @@ const EditShopModal: React.FC<EditShopModalProps> = ({ isOpen, onClose, initial,
             className="p-2 rounded-lg hover:bg-lantern-background-secondary"
             aria-label="Close"
           >
-            <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" />
+            <AppIcon name="close" size={20} className="text-lantern-text-secondary" />
           </button>
         </div>
 

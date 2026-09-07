@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ClipboardIcon, CheckIcon, ShareIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import {
   REFERRAL_ACTIVATION_EXPLAINER,
   REFERRAL_REWARD_REFEREE,
@@ -140,9 +140,9 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
                 className="inline-flex h-9 min-h-[44px] items-center gap-1.5 rounded-lg bg-lantern-primary px-3 text-sm font-medium text-white sm:min-h-[36px]"
               >
                 {copied ? (
-                  <CheckIcon className="h-4 w-4" aria-hidden="true" />
+                  <AppIcon name="checkmark" size={16} aria-hidden="true" />
                 ) : (
-                  <ClipboardIcon className="h-4 w-4" aria-hidden="true" />
+                  <AppIcon name="clipboard" size={16} aria-hidden="true" />
                 )}
                 {copied ? 'Copied' : 'Copy link'}
               </button>
@@ -151,12 +151,12 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
                 onClick={() => void handleShare()}
                 className="inline-flex h-9 min-h-[44px] items-center gap-1.5 rounded-lg bg-lantern-background-secondary px-3 text-sm font-medium text-lantern-text sm:min-h-[36px]"
               >
-                <ShareIcon className="h-4 w-4" aria-hidden="true" />
+                <AppIcon name="share-social" size={16} aria-hidden="true" />
                 Share
               </button>
             </div>
             <p className="mt-3 flex items-start gap-1.5 text-xs text-lantern-text-secondary">
-              <SparklesIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-lantern-primary" aria-hidden="true" />
+              <AppIcon name="sparkles" size={14} className="mt-0.5 shrink-0 text-lantern-primary" aria-hidden="true" />
               {REFERRAL_ACTIVATION_EXPLAINER}
             </p>
           </section>

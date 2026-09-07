@@ -701,6 +701,26 @@ export interface NoteAttachment {
   createdAt: string;
 }
 
+/**
+ * One page of an uploaded document (`note_attachment_pages`).
+ *
+ * `pageIndex` is 0-based. `text` is that page's text alone — the whole-document
+ * blob stays on `NoteAttachment.extractedText` and is unchanged by this.
+ *
+ * `imageUrl` is a short-lived signed URL minted by the API on read; it is never
+ * stored, so never cache it past the response that carried it. It is absent
+ * when no page image has been rendered, which is the normal case for a text
+ * PDF — a client that needs a picture must render the page itself.
+ */
+export interface NoteAttachmentPage {
+  attachmentId: string;
+  pageIndex: number;
+  text: string;
+  charCount: number;
+  imageUrl?: string;
+  createdAt?: string;
+}
+
 export interface NoteComment {
   id: string;
   noteId: string;
@@ -1793,6 +1813,15 @@ export interface CompanionUserContext {
   noteContext?: string;
   noteTitle?: string;
   noteId?: string;
+  /**
+   * Walk-through page scope. With `noteId`, the server grounds the reply in
+   * that ONE page of the attachment (or in nothing, when the page is blank)
+   * instead of the whole note. Sent once, with the question asked from the
+   * page — never persisted with the active note.
+   */
+  attachmentId?: string;
+  /** 0-based page of `attachmentId`. */
+  pageIndex?: number;
   /** When set, companion grounding may include that class's published materials. */
   classId?: string;
   studyGoal?: StudyGoalMode;

@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { BookmarkIcon, ShareIcon } from "@heroicons/react/24/outline";
-import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
+import { AppIcon } from './ui/AppIcon';
 import {
   JOB_EMPLOYMENT_TYPE_LABELS,
   JOB_POSTING_STATUS_LABELS,
@@ -271,7 +270,7 @@ export default function JobDetailScreen({
                   }}
                   className="inline-flex items-center gap-2 rounded-lg border border-lantern-border px-3 py-2 text-sm font-semibold text-lantern-text hover:border-lantern-primary/40"
                 >
-                  <ShareIcon className="h-4 w-4" aria-hidden />
+                  <AppIcon name="share-social" size={16} aria-hidden />
                   <span className="hidden sm:inline">Share</span>
                 </button>
               ) : null}
@@ -293,9 +292,9 @@ export default function JobDetailScreen({
                 }`}
               >
                 {job.isSaved ? (
-                  <BookmarkSolidIcon className="h-4 w-4" aria-hidden />
+                  <AppIcon name="bookmark" size={16} filled aria-hidden />
                 ) : (
-                  <BookmarkIcon className="h-4 w-4" aria-hidden />
+                  <AppIcon name="bookmark" size={16} aria-hidden />
                 )}
                 <span className="hidden sm:inline">
                   {job.isSaved ? "Saved" : "Save job"}

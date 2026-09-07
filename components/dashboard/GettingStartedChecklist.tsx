@@ -1,8 +1,7 @@
 import React, { useEffect } from 'react';
-import { CheckCircleIcon, XMarkIcon } from '@heroicons/react/24/outline';
-import { CheckCircleIcon as CheckCircleSolid } from '@heroicons/react/24/solid';
 import { CHECKLIST_ITEMS, shouldShowChecklist, type ChecklistItemKey } from '@lantern/shared/featureTips';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
+import { AppIcon } from '../ui/AppIcon';
 
 interface Props {
   hasDecks: boolean;
@@ -117,7 +116,7 @@ export const GettingStartedChecklist: React.FC<Props> = ({
           onClick={() => dismissGettingStarted()}
           className="p-1 rounded-lg text-lantern-primary-text hover:bg-lantern-primary-background dark:hover:bg-lantern-primary-dark/40"
         >
-          <XMarkIcon className="w-4 h-4" />
+          <AppIcon name="close" size={16} />
         </button>
       </div>
       <ul className="space-y-2">
@@ -134,9 +133,9 @@ export const GettingStartedChecklist: React.FC<Props> = ({
               }`}
             >
               {item.done ? (
-                <CheckCircleSolid className="w-5 h-5 text-emerald-500 shrink-0" />
+                <AppIcon name="checkmark-circle" size={20} className="text-emerald-500 shrink-0" />
               ) : (
-                <CheckCircleIcon className="w-5 h-5 text-lantern-primary-text shrink-0" />
+                <AppIcon name="checkmark-circle" size={20} className="text-lantern-primary-text shrink-0" />
               )}
               <span className={item.done ? 'line-through opacity-80' : ''}>{item.label}</span>
             </button>

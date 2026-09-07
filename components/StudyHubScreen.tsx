@@ -1,18 +1,9 @@
 import React from 'react';
-import {
-  AcademicCapIcon,
-  ArrowDownOnSquareIcon,
-  ClipboardDocumentCheckIcon,
-  ClockIcon,
-  MicrophoneIcon,
-  PlayIcon,
-  RectangleStackIcon,
-  Squares2X2Icon,
-} from '@heroicons/react/24/outline';
 import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
 import { getStudyAllDueLabel, getStudyCtaLabel, FLASHCARD_MODE_LABELS, isCardDue } from '@lantern/shared';
 import { ScreenHeader, Card, Button, StatPill, FeatureDisc, DoorTile } from './ui';
 import SavedSessionsList from './SavedSessionsList';
+import { AppIcon } from './ui/AppIcon';
 
 interface StudyHubScreenProps {
   dueCardsCount: number;
@@ -96,7 +87,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <Card padding="md">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-3">
-                <FeatureDisc feature="budget" icon={<ClockIcon className="w-5 h-5" />} />
+                <FeatureDisc feature="budget" icon={<AppIcon name="time" size={20} />} />
                 <div>
                   <p className="text-heading text-lantern-text">
                     {activeTestSession ? 'Test paused' : 'Study session paused'}
@@ -107,7 +98,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                 </div>
               </div>
               <Button variant="accent" onClick={onResumeSession}>
-                <PlayIcon className="w-4 h-4" />
+                <AppIcon name="play" size={16} />
                 Resume
               </Button>
             </div>
@@ -132,12 +123,12 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
               onClick={dueCardsCount > 0 ? onStartDueReview : onOpenAITools}
               disabled={dueCardsCount === 0 && decks.length === 0}
             >
-              <AcademicCapIcon className="w-5 h-5" />
+              <AppIcon name="school" size={20} />
               {dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : 'Import & study'}
             </Button>
           </div>
           <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t border-lantern-border">
-            <StatPill label="Decks" value={decks.length} accent="primary" icon={<RectangleStackIcon className="w-4 h-4" />} />
+            <StatPill label="Decks" value={decks.length} accent="primary" icon={<AppIcon name="albums" size={16} />} />
             {recentTestCount > 0 && onViewRecentTests && (
               <button type="button" onClick={onViewRecentTests} className="text-body text-lantern-primary-text font-medium hover:underline">
                 {recentTestCount} recent test{recentTestCount !== 1 ? 's' : ''}
@@ -150,7 +141,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
           <DoorTile
             feature="notes"
-            icon={<Squares2X2Icon className="w-6 h-6" />}
+            icon={<AppIcon name="document-text" size={24} />}
             illustration="notes-stack"
             title="Library"
             promise="Turn slides into cards"
@@ -163,7 +154,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           />
           <DoorTile
             feature="flashcards"
-            icon={<RectangleStackIcon className="w-6 h-6" />}
+            icon={<AppIcon name="layers" size={24} />}
             illustration="cards-fan"
             title="Flashcards"
             promise="Spaced repetition that remembers for you"
@@ -173,7 +164,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           {onOpenTests && (
             <DoorTile
               feature="tests"
-              icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}
+              icon={<AppIcon name="clipboard" size={24} />}
               illustration="test-sheet"
               title="Tests"
               promise="Sit a practice test, see what to fix"
@@ -184,7 +175,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           {onRecordLecture && (
             <DoorTile
               feature="recording"
-              icon={<MicrophoneIcon className="w-6 h-6" />}
+              icon={<AppIcon name="mic" size={24} />}
               illustration="mic-wave"
               title="Record"
               promise="Record a lecture, get a note back"
@@ -193,7 +184,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           )}
           <DoorTile
             feature="notes"
-            icon={<ArrowDownOnSquareIcon className="w-6 h-6" />}
+            icon={<AppIcon name="cloud-upload" size={24} />}
             illustration="import-tray"
             title="Import & study"
             promise="PDF, slides or pasted notes — one step"
@@ -215,7 +206,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   className="flex items-center justify-between gap-3 p-3 rounded-xl border border-lantern-border bg-lantern-surface"
                 >
                   <button type="button" onClick={() => onSelectDeck(deck)} className="text-left min-w-0 flex-1 flex items-center gap-3">
-                    <FeatureDisc feature="flashcards" icon={<RectangleStackIcon className="w-5 h-5" />} />
+                    <FeatureDisc feature="flashcards" icon={<AppIcon name="albums" size={20} />} />
                     <span className="min-w-0 flex-1">
                       <span className="block text-body font-semibold text-lantern-text truncate">{deck.name}</span>
                       <span className="block text-caption text-lantern-text-secondary truncate">
@@ -226,7 +217,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   {canStartSrsReview ? (
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <Button size="sm" variant="accent" onClick={() => onStartReview!(deck.id)}>
-                        <AcademicCapIcon className="w-4 h-4" />
+                        <AppIcon name="school" size={16} />
                         {getStudyCtaLabel(dueCount, totalCount)}
                       </Button>
                       {onStartLearn && (
@@ -237,7 +228,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                     </div>
                   ) : onStartLearn ? (
                     <Button size="sm" variant="secondary" onClick={() => onStartLearn(deck)}>
-                      <AcademicCapIcon className="w-4 h-4" />
+                      <AppIcon name="school" size={16} />
                       {quizLabel}
                     </Button>
                   ) : null}

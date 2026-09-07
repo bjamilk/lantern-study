@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { fetchMarketplaceOrders, resumeMarketplaceOrderCheckout } from '../services/supabase';
 import { MarketplaceOrder } from '../types';
-import { ArrowLeftIcon, ShoppingBagIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
 import { useToastStore } from '../stores/toastStore';
+import { AppIcon } from './ui/AppIcon';
 
 interface MarketplaceOrdersScreenProps {
   onBack: () => void;
@@ -94,7 +94,7 @@ const MarketplaceOrdersScreen: React.FC<MarketplaceOrdersScreenProps> = ({ onBac
     <div className="flex flex-col h-full bg-lantern-background">
       <div className="flex items-center gap-3 p-4 border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
         <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-          <ArrowLeftIcon className="w-5 h-5" />
+          <AppIcon name="arrow-back" size={20} />
         </button>
         <h1 className="text-lg font-semibold flex-1">
           {role === 'buyer' ? 'Purchase history' : 'My orders'}
@@ -114,7 +114,7 @@ const MarketplaceOrdersScreen: React.FC<MarketplaceOrdersScreenProps> = ({ onBac
         {loading && <p className="text-sm text-lantern-text-secondary">Loading orders...</p>}
         {!loading && orders.length === 0 && (
           <div className="text-center py-12 text-lantern-text-secondary">
-            <ShoppingBagIcon className="w-12 h-12 mx-auto mb-2 opacity-40" />
+            <AppIcon name="bag" size={48} className="mx-auto mb-2 opacity-40" />
             <p>{role === 'buyer' ? 'No purchases yet' : 'No orders yet'}</p>
           </div>
         )}

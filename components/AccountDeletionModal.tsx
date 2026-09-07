@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import {
   ACCOUNT_DATA_LOSS_ITEMS,
   ACCOUNT_DELETE_CONFIRM_TEXT,
@@ -7,7 +8,6 @@ import {
   isSignedExportV2,
 } from '@lantern/shared';
 import { Button, Input } from './ui';
-import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 export type AccountDeletionChoice = 'pause' | 'immediate';
@@ -83,7 +83,7 @@ export const AccountDeletionModal: React.FC<AccountDeletionModalProps> = ({
     >
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-start gap-2">
-            <ExclamationTriangleIcon className="w-6 h-6 text-lantern-error shrink-0 mt-0.5" aria-hidden />
+            <AppIcon name="warning" size={24} className="text-lantern-error shrink-0 mt-0.5" aria-hidden />
             <div>
               <h2 id="account-deletion-title" className="text-lg font-semibold text-lantern-text">
                 {step === 'warn' && 'Before you go'}
@@ -104,7 +104,7 @@ export const AccountDeletionModal: React.FC<AccountDeletionModalProps> = ({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50"
             aria-label="Close account deletion dialog"
           >
-            <XMarkIcon className="w-6 h-6" aria-hidden />
+            <AppIcon name="close" size={24} aria-hidden />
           </button>
         </div>
 

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { Flashcard, FlashcardType, Deck } from '../types';
 import { uploadFlashcardImage } from '../services/supabase';
-import { XCircleIcon, PlusCircleIcon, InformationCircleIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import AIUsageInline from './AIUsageInline';
 import Modal from './ui/Modal';
 import {
@@ -664,7 +664,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
     >
       <div className="flex justify-between items-center px-6 py-4 border-b border-lantern-border flex-shrink-0">
           <h2 id="create-card-modal-title" className="text-xl font-semibold text-lantern-text flex items-center">
-            <PlusCircleIcon className="w-6 h-6 mr-2 text-lantern-success" aria-hidden />
+            <AppIcon name="add-circle" size={24} className="mr-2 text-lantern-success" aria-hidden />
             {isEditing ? 'Edit Flashcard' : 'Create New Flashcard'}
           </h2>
           <button
@@ -673,7 +673,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close flashcard dialog"
           >
-            <XCircleIcon className="w-6 h-6" aria-hidden />
+            <AppIcon name="close-circle" size={24} aria-hidden />
           </button>
         </div>
 
@@ -1003,7 +1003,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                             disabled={isEnhancing}
                             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary-background border border-lantern-primary/30 rounded-lg transition-colors disabled:opacity-50"
                           >
-                            <SparklesIcon className={`w-4 h-4 ${isEnhancing ? 'animate-pulse' : ''}`} />
+                            <AppIcon name="sparkles" size={16} className={isEnhancing ? 'animate-pulse' : ''} />
                             {isEnhancing ? 'Enhancing...' : 'Enhance with AI'}
                           </button>
                         )}
@@ -1359,7 +1359,7 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                         <textarea id="cardCloze" value={clozeText} onChange={e => setClozeText(e.target.value)} rows={4} className="w-full p-2 mt-1 border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary dark:border-lantern-border border-lantern-border text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary" placeholder="e.g., The powerhouse of the cell is the {{c1::mitochondria}}."/>
                         <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-md">
                             <p className="text-xs text-blue-700 dark:text-blue-300 flex items-start">
-                                <InformationCircleIcon className="w-4 h-4 mr-1.5 flex-shrink-0 mt-0.5" />
+                                <AppIcon name="information-circle" size={16} className="mr-1.5 flex-shrink-0 mt-0.5" />
                                 <span>Wrap the text you want to hide in double curly braces, like this: <code className="font-semibold">{`{{c1::your answer}}`}</code>.</span>
                             </p>
                         </div>

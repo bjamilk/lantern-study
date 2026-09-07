@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { PhotoIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   BOARD_POST_SUBJECT_MAX,
   COMMUNITY_BOARD_COPY,
@@ -75,7 +75,7 @@ export const BoardComposer: React.FC<BoardComposerProps> = ({
         >
           <Avatar name={authorName} src={authorAvatarUrl} size="xs" localOnly={lowDataMode} />
           <span className="flex-1 truncate">{COMMUNITY_BOARD_COPY.composerPlaceholder}</span>
-          <PhotoIcon className="h-4 w-4 shrink-0" aria-hidden="true" />
+          <AppIcon name="image" size={16} className="shrink-0" />
         </button>
       </div>
     );

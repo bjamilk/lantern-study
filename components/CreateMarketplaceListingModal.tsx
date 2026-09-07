@@ -24,18 +24,8 @@ import ListingClassifier from './marketplace/ListingClassifier';
 import { useToastStore } from '../stores/toastStore';
 import { compressImage } from '../utils/imageCompression';
 import { aiGenerateListingDescription } from '../services/ai';
-import {
-  XMarkIcon,
-  PhotoIcon,
-  MapPinIcon,
-  CurrencyDollarIcon,
-  AcademicCapIcon,
-  BriefcaseIcon,
-  PlusIcon,
-  TrashIcon,
-  SparklesIcon,
-} from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
+import { AppIcon } from './ui/AppIcon';
 
 interface CreateMarketplaceListingModalProps {
   isOpen: boolean;
@@ -650,9 +640,9 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
         <div className="flex items-center justify-between p-6 border-b border-lantern-border">
           <div className="flex items-center">
             {category === 'academic' ? (
-              <AcademicCapIcon className="w-6 h-6 text-lantern-primary mr-3" aria-hidden />
+              <AppIcon name="school" size={24} className="text-lantern-primary mr-3" aria-hidden />
             ) : (
-              <BriefcaseIcon className="w-6 h-6 text-lantern-primary mr-3" aria-hidden />
+              <AppIcon name="briefcase" size={24} className="text-lantern-primary mr-3" aria-hidden />
             )}
             <h2 id="create-listing-title" className="text-xl font-bold text-lantern-text">
               Create {category === 'academic' ? 'Academic' : 'Student Life'} Listing
@@ -665,7 +655,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
             className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200 disabled:opacity-50"
             aria-label="Close create listing dialog"
           >
-            <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" aria-hidden />
+            <AppIcon name="close" size={20} className="text-lantern-text-secondary" aria-hidden />
           </button>
         </div>
 
@@ -873,7 +863,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 className="flex items-center gap-1.5 px-3 py-1 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border disabled:cursor-not-allowed text-white text-xs font-semibold rounded-md transition-colors"
                 title={formData.title.trim() ? 'Generate description with AI' : 'Enter a title first'}
               >
-                <SparklesIcon className="w-3.5 h-3.5" />
+                <AppIcon name="sparkles" size={14} />
                 {isGeneratingDesc ? 'Generating…' : 'AI Generate'}
               </button>
             </div>
@@ -891,7 +881,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label htmlFor="listing-price" className="block text-sm font-semibold text-lantern-text mb-2">
-                <CurrencyDollarIcon className="w-4 h-4 inline mr-1" />
+                <AppIcon name="currency" size={16} className="inline mr-1" />
                 Asking price (₦)
               </label>
               <input
@@ -927,7 +917,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
 
             <div>
               <label htmlFor="listing-campus" className="block text-sm font-semibold text-lantern-text mb-2">
-                <MapPinIcon className="w-4 h-4 inline mr-1" />
+                <AppIcon name="location" size={16} className="inline mr-1" />
                 Campus or city <span className="text-red-500">*</span>
               </label>
               <CampusSearchSelect
@@ -1036,14 +1026,14 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
           {/* Images */}
           <div>
             <label htmlFor="listing-images" className="block text-sm font-semibold text-lantern-text mb-2">
-              <PhotoIcon className="w-4 h-4 inline mr-1" />
+              <AppIcon name="image" size={16} className="inline mr-1" />
               Images
             </label>
             <div className="space-y-3">
               <div className="flex items-center justify-center w-full">
                 <label htmlFor="listing-images" className="flex flex-col items-center justify-center w-full h-32 border-2 border-lantern-border border-dashed rounded-lg cursor-pointer bg-lantern-background-secondary/50 hover:bg-lantern-background-secondary/50 transition-colors duration-200">
                   <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                    <PhotoIcon className="w-8 h-8 mb-3 text-lantern-text-tertiary" />
+                    <AppIcon name="image" size={32} className="mb-3 text-lantern-text-tertiary" />
                     <p className="mb-2 text-sm text-lantern-text-secondary">
                       <span className="font-semibold">Click to upload</span> or drag and drop
                     </p>
@@ -1078,7 +1068,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                         onClick={() => removeImage(index)}
                         className="absolute top-2 right-2 p-1 bg-red-500 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity duration-200"
                       >
-                        <TrashIcon className="w-4 h-4" />
+                        <AppIcon name="trash" size={16} />
                       </button>
                       {uploadingImages && (
                         <div className="absolute inset-0 bg-black bg-opacity-50 rounded-lg flex items-center justify-center">
@@ -1124,7 +1114,7 @@ const CreateMarketplaceListingModal: React.FC<CreateMarketplaceListingModalProps
                 </>
               ) : (
                 <>
-                  <PlusIcon className="w-5 h-5 mr-2" />
+                  <AppIcon name="add" size={20} className="mr-2" />
                   Create Listing
                 </>
               )}

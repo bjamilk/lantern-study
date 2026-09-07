@@ -1,4 +1,5 @@
 import React, { useMemo, useEffect, useRef, useState } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {
   addMonths,
@@ -14,12 +15,6 @@ import {
 } from '@lantern/shared/utils';
 import { fetchUserBudget } from '../services/supabase';
 import { User, Transaction, Budget, TransactionType, SavingsGoal, STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES, FinancialTip } from '../types';
-import {
-  CreditCardIcon, ArrowUpIcon, ArrowDownIcon, PlusCircleIcon,
-  Cog6ToothIcon, TrashIcon, WalletIcon, BanknotesIcon,
-  ChartBarIcon, LightBulbIcon, FunnelIcon, ArrowTrendingUpIcon,
-  TrophyIcon, UserGroupIcon, ArrowPathIcon, SparklesIcon,
-} from '@heroicons/react/24/outline';
 import type { Chart as ChartType } from 'chart.js';
 import { useBudgetStore } from '../stores/budgetStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
@@ -377,10 +372,10 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
   };
 
   const tabs: { key: BudgetTab; label: string; icon: React.ReactNode }[] = [
-    { key: 'overview', label: 'Overview', icon: <ChartBarIcon className="w-4 h-4" /> },
-    { key: 'transactions', label: 'Transactions', icon: <BanknotesIcon className="w-4 h-4" /> },
-    { key: 'goals', label: 'Goals', icon: <TrophyIcon className="w-4 h-4" /> },
-    { key: 'wallet', label: 'Study wallet', icon: <SparklesIcon className="w-4 h-4" /> },
+    { key: 'overview', label: 'Overview', icon: <AppIcon name="bar-chart" size={16} /> },
+    { key: 'transactions', label: 'Transactions', icon: <AppIcon name="cash" size={16} /> },
+    { key: 'goals', label: 'Goals', icon: <AppIcon name="trophy" size={16} /> },
+    { key: 'wallet', label: 'Study wallet', icon: <AppIcon name="sparkles" size={16} /> },
   ];
 
   return (
@@ -403,7 +398,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
           title="Budget"
           subtitle={monthName}
           accentColor={featureAccents.budget}
-          icon={<WalletIcon className="w-6 h-6" style={{ color: featureAccents.budget }} />}
+          icon={<AppIcon name="wallet" size={24} style={{ color: featureAccents.budget }} />}
           actions={
             <>
               {onOpenRecurring && (
@@ -412,7 +407,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                   onClick={onOpenRecurring}
                   className="h-9 px-3 bg-lantern-surface border border-lantern-border text-lantern-text rounded-lantern text-xs font-medium flex items-center gap-1 hover:border-teal-500/30 transition-colors"
                 >
-                  <ArrowPathIcon className="w-4 h-4" />
+                  <AppIcon name="refresh" size={16} />
                   Recurring
                 </button>
               )}
@@ -421,7 +416,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                 onClick={onOpenSetBudget}
                 className="h-9 px-3 bg-lantern-primary text-white hover:bg-lantern-primary-dark rounded-lantern text-xs font-medium flex items-center gap-1 transition-colors"
               >
-                <Cog6ToothIcon className="w-4 h-4" />
+                <AppIcon name="settings" size={16} />
                 Set budget
               </button>
             </>
@@ -599,7 +594,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                     onClick={onOpenSetBudget}
                     className="mt-3 inline-flex items-center gap-1.5 bg-lantern-primary text-white hover:bg-lantern-primary-dark px-4 py-2.5 rounded-xl text-sm font-semibold shadow-sm transition-colors"
                   >
-                    <Cog6ToothIcon className="w-4 h-4" />
+                    <AppIcon name="settings" size={16} />
                     Set your monthly budget
                   </button>
                 )}
@@ -686,7 +681,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             {/* ── Insights (folded into Overview so the feature reads as one screen) ── */}
             <div className="bg-lantern-surface rounded-2xl p-5 shadow-sm">
               <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
-                <ArrowTrendingUpIcon className="w-5 h-5 text-lantern-primary" /> Spending Summary
+                <AppIcon name="trending-up" size={20} className="text-lantern-primary" /> Spending Summary
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div className="text-center">
@@ -722,7 +717,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
             {/* Financial Tips */}
             <div>
               <h3 className="font-semibold text-lantern-text mb-3 flex items-center gap-2">
-                <LightBulbIcon className="w-5 h-5 text-amber-500" /> Money Tips for Students
+                <AppIcon name="bulb" size={20} className="text-amber-500" /> Money Tips for Students
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {FINANCIAL_TIPS.map(tip => (
@@ -757,10 +752,10 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
               </div>
               <div className="flex gap-2">
                 <button onClick={onOpenAddExpense} className="bg-red-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-red-600">
-                  <ArrowDownIcon className="w-3.5 h-3.5" /> Expense
+                  <AppIcon name="arrow-down" size={14} /> Expense
                 </button>
                 <button onClick={onOpenAddIncome} className="bg-emerald-500 text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-emerald-600">
-                  <ArrowUpIcon className="w-3.5 h-3.5" /> Income
+                  <AppIcon name="arrow-up" size={14} /> Income
                 </button>
               </div>
             </div>
@@ -793,7 +788,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
                             aria-label={`Delete transaction ${t.description}`}
                             className="text-lantern-text-tertiary hover:text-red-500 dark:hover:text-red-400 transition-colors"
                           >
-                            <TrashIcon className="w-4 h-4" />
+                            <AppIcon name="trash" size={16} />
                           </button>
                         </div>
                       </li>
@@ -816,7 +811,7 @@ const BudgetTrackerScreen: React.FC<BudgetTrackerScreenProps> = ({
               <h3 className="text-lg font-semibold text-lantern-text">Savings Goals</h3>
               {onOpenSavingsGoal && (
                 <button onClick={onOpenSavingsGoal} className="bg-lantern-primary text-white px-3 py-1.5 rounded-lg text-xs font-medium flex items-center gap-1 hover:bg-lantern-primary">
-                  <PlusCircleIcon className="w-4 h-4" /> New Goal
+                  <AppIcon name="add-circle" size={16} /> New Goal
                 </button>
               )}
             </div>

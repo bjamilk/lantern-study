@@ -70,6 +70,30 @@ export type StudyStackParamList = {
   NoteEditor: { noteId: string; startRecording?: boolean };
   NoteShareAccept: { token: string };
   /**
+   * The page-by-page walk-through of one document attached to a note.
+   *
+   * On the STUDY stack and pushed from the note, not presented as a modal:
+   * it is a place a student reads in, so it keeps the global bar and carries
+   * its own contextual row (Plan · Ask · Quiz · Done). `pageIndex` is where to
+   * open — a resume, or the plan panel's own row — and is optional because the
+   * first page is the right answer when nobody has said otherwise.
+   */
+  Walkthrough: { noteId: string; attachmentId: string; pageIndex?: number };
+  /**
+   * "Read it to me" — a document read aloud by the phone.
+   *
+   * On the STUDY stack beside the walk-through, and for the same reason: it is
+   * a place a student stays in, so it keeps the global bar. `pageIndex` is the
+   * hand-over from the walk-through — the page you were on is the page the
+   * reading starts at.
+   *
+   * It carries NO contextual row. The three things worth a row here — play,
+   * page, speed — are all inside the player, in reach of the thumb, and two of
+   * them change state continuously; a bottom row whose Play item is out of sync
+   * with the button six inches above it is worse than no row at all.
+   */
+  Narration: { noteId: string; attachmentId: string; pageIndex?: number };
+  /**
    * "+ New test" — the three sources a test can come from (a deck, a note, or
    * the group chat). It lives on the STUDY stack because a test is Study's
    * business: the button used to switch the global tab to Chat, which is the

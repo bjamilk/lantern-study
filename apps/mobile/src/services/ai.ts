@@ -3,6 +3,10 @@
  */
 import { createLanternAI, parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
 import type { AIUsageInfo } from '@lantern/shared';
+import type {
+  FlashcardGenerationDifficulty,
+  FlashcardTypeMix,
+} from '@lantern/shared/flashcards/generationOptions';
 import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
 import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
 import { settleJob } from './jobWatch';
@@ -102,7 +106,32 @@ export const fetchAIUsageDetail = ai.fetchAIUsageDetail;
 // already-charged job as failed. settleJob carries it to the real end.
 export const aiGenerateQuestions: typeof ai.aiGenerateQuestions = (notes, options) =>
   settleJob(() => ai.aiGenerateQuestions(notes, options));
-export const aiGenerateFlashcards: typeof ai.aiGenerateFlashcards = (notes, options) =>
+/**
+ * Options the generation sheet sends, which is more than the shared client
+ * declares today.
+ *
+ * `POST /ai/generate-flashcards` accepts `typeMix`, `clozeCount` and
+ * `difficulty` (apps/api-server/src/routes/ai.ts) and the shared options model
+ * puts them in the request body it plans
+ * (`@lantern/shared/flashcards/generationOptions`), but the shared AI client's
+ * option type still lists only `{ count, style, onJobUpdate }`
+ * (packages/shared/src/api/ai.ts). It spreads whatever else it is given
+ * straight into the JSON body, so widening the type here is enough for mobile
+ * to send them — no shared change, and nothing to undo but this block when the
+ * client declares the fields itself.
+ */
+export type GenerateFlashcardsOptions = NonNullable<
+  Parameters<typeof ai.aiGenerateFlashcards>[1]
+> & {
+  typeMix?: FlashcardTypeMix;
+  clozeCount?: number;
+  difficulty?: FlashcardGenerationDifficulty;
+};
+
+export const aiGenerateFlashcards = (
+  notes: string,
+  options?: GenerateFlashcardsOptions
+): ReturnType<typeof ai.aiGenerateFlashcards> =>
   settleJob(() => ai.aiGenerateFlashcards(notes, options));
 export const aiExplainAnswer: typeof ai.aiExplainAnswer = (...args) =>
   settleJob(() => ai.aiExplainAnswer(...args));

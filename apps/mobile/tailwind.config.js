@@ -51,10 +51,18 @@ module.exports = {
               tint: 'rgb(var(--color-lantern-feature-notes-tint) / <alpha-value>)',
             },
             flashcards: {
+              // DEFAULT keeps the bare legacy class (`text-lantern-feature-flashcards`)
+              // alive for one release; a second bare `flashcards:` key lower down used
+              // to SHADOW this object, so `-ink` / `-tint` never existed for it.
+              DEFAULT: 'rgb(var(--color-lantern-feature-flashcards) / <alpha-value>)',
               ink: 'rgb(var(--color-lantern-feature-flashcards-ink) / <alpha-value>)',
               tint: 'rgb(var(--color-lantern-feature-flashcards-tint) / <alpha-value>)',
             },
             tests: {
+              // DEFAULT keeps the bare legacy class (`text-lantern-feature-tests`)
+              // alive for one release; a second bare `tests:` key lower down used
+              // to SHADOW this object, so `-ink` / `-tint` never existed for it.
+              DEFAULT: 'rgb(var(--color-lantern-feature-tests) / <alpha-value>)',
               ink: 'rgb(var(--color-lantern-feature-tests-ink) / <alpha-value>)',
               tint: 'rgb(var(--color-lantern-feature-tests-tint) / <alpha-value>)',
             },
@@ -67,6 +75,10 @@ module.exports = {
               tint: 'rgb(var(--color-lantern-feature-ai-tint) / <alpha-value>)',
             },
             groups: {
+              // DEFAULT keeps the bare legacy class (`text-lantern-feature-groups`)
+              // alive for one release; a second bare `groups:` key lower down used
+              // to SHADOW this object, so `-ink` / `-tint` never existed for it.
+              DEFAULT: 'rgb(var(--color-lantern-feature-groups) / <alpha-value>)',
               ink: 'rgb(var(--color-lantern-feature-groups-ink) / <alpha-value>)',
               tint: 'rgb(var(--color-lantern-feature-groups-tint) / <alpha-value>)',
             },
@@ -75,6 +87,10 @@ module.exports = {
               tint: 'rgb(var(--color-lantern-feature-campus-tint) / <alpha-value>)',
             },
             budget: {
+              // DEFAULT keeps the bare legacy class (`text-lantern-feature-budget`)
+              // alive for one release; a second bare `budget:` key lower down used
+              // to SHADOW this object, so `-ink` / `-tint` never existed for it.
+              DEFAULT: 'rgb(var(--color-lantern-feature-budget) / <alpha-value>)',
               ink: 'rgb(var(--color-lantern-feature-budget-ink) / <alpha-value>)',
               tint: 'rgb(var(--color-lantern-feature-budget-tint) / <alpha-value>)',
             },
@@ -83,12 +99,8 @@ module.exports = {
             dashboard: 'rgb(var(--color-lantern-feature-dashboard) / <alpha-value>)',
             library: 'rgb(var(--color-lantern-feature-library) / <alpha-value>)',
             admin: 'rgb(var(--color-lantern-feature-admin) / <alpha-value>)',
-            flashcards: 'rgb(var(--color-lantern-feature-flashcards) / <alpha-value>)',
-            groups: 'rgb(var(--color-lantern-feature-groups) / <alpha-value>)',
             marketplace: 'rgb(var(--color-lantern-feature-marketplace) / <alpha-value>)',
             offline: 'rgb(var(--color-lantern-feature-offline) / <alpha-value>)',
-            tests: 'rgb(var(--color-lantern-feature-tests) / <alpha-value>)',
-            budget: 'rgb(var(--color-lantern-feature-budget) / <alpha-value>)',
           },
         },
       },

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import type { GroupChallenge } from '../types';
-import { XMarkIcon, CheckIcon, XCircleIcon, PlayIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import {
   fetchChallenges,
   acceptChallenge,
@@ -104,14 +104,14 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
                 onClick={() => handleAccept(c.id)}
                 className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-success text-white rounded-lg hover:opacity-90 disabled:opacity-50"
               >
-                <CheckIcon className="w-4 h-4" aria-hidden /> Accept
+                <AppIcon name="checkmark" size={16} /> Accept
               </button>
               <button
                 disabled={busy}
                 onClick={() => handleDecline(c.id)}
                 className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-background-secondary rounded-lg hover:opacity-90 disabled:opacity-50"
               >
-                <XCircleIcon className="w-4 h-4" aria-hidden /> Decline
+                <AppIcon name="close-circle" size={16} /> Decline
               </button>
             </>
           )}
@@ -120,7 +120,7 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
               onClick={() => { onPlayChallenge(c.id); onClose(); }}
               className="inline-flex items-center gap-1 min-h-[44px] px-3 py-1.5 text-sm bg-lantern-primary text-white rounded-lg hover:bg-lantern-primary-dark"
             >
-              <PlayIcon className="w-4 h-4" aria-hidden /> Play Duel
+              <AppIcon name="play" size={16} /> Play Duel
             </button>
           )}
           {c.status === 'pending' && !isOpponent && (
@@ -167,7 +167,7 @@ export const ChallengesInboxModal: React.FC<ChallengesInboxModalProps> = ({
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Close challenges inbox"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-lantern-surface">

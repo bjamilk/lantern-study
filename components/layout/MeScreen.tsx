@@ -1,19 +1,5 @@
 import React from 'react';
-import {
-  BanknotesIcon,
-  CloudArrowDownIcon,
-  Cog6ToothIcon,
-  GiftIcon,
-  MoonIcon,
-  SunIcon,
-  SignalIcon,
-  SignalSlashIcon,
-  ArrowLeftOnRectangleIcon,
-  UsersIcon,
-  UserGroupIcon,
-  ChevronRightIcon,
-  AcademicCapIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import { AppMode, type User } from '../../types';
 import { Avatar } from '../ui';
 import { resolveAvatarSrc } from '../../utils/avatar';
@@ -45,13 +31,13 @@ export interface MeScreenProps {
 }
 
 const Row: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
+  icon: AppIconName;
   label: string;
   hint?: string;
   badge?: number;
   onClick: () => void;
   destructive?: boolean;
-}> = ({ icon: Icon, label, hint, badge, onClick, destructive }) => (
+}> = ({ icon, label, hint, badge, onClick, destructive }) => (
   <button
     type="button"
     onClick={onClick}
@@ -59,7 +45,7 @@ const Row: React.FC<{
       destructive ? 'text-red-600 dark:text-red-400' : 'text-lantern-text'
     }`}
   >
-    <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+    <AppIcon name={icon} size={20} className="shrink-0" />
     <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
     {badge != null && badge > 0 ? (
       <span className="rounded-full bg-lantern-error-strong px-2 py-0.5 text-label tracking-normal text-white">
@@ -68,17 +54,17 @@ const Row: React.FC<{
     ) : null}
     {hint ? <span className="text-caption text-lantern-text-secondary">{hint}</span> : null}
     {!destructive ? (
-      <ChevronRightIcon className="h-4 w-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+      <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
     ) : null}
   </button>
 );
 
 const SwitchRow: React.FC<{
-  icon: React.ComponentType<{ className?: string }>;
+  icon: AppIconName;
   label: string;
   checked: boolean;
   onToggle: () => void;
-}> = ({ icon: Icon, label, checked, onToggle }) => (
+}> = ({ icon, label, checked, onToggle }) => (
   <button
     type="button"
     role="switch"
@@ -87,7 +73,7 @@ const SwitchRow: React.FC<{
     onClick={onToggle}
     className="flex w-full items-center gap-3 px-4 text-left transition-colors min-h-[52px] text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
   >
-    <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+    <AppIcon name={icon} size={20} className="shrink-0" />
     <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
     {/* Never colour alone: the knob's position says on/off as well as the fill. */}
     <span
@@ -155,36 +141,36 @@ const MeScreen: React.FC<MeScreenProps> = ({
           onClick={onOpenSettings}
           className="flex w-full items-center gap-3 border-y border-lantern-border bg-lantern-surface px-4 py-3 text-left hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
         >
-          <AcademicCapIcon className="h-5 w-5 shrink-0 text-lantern-text-secondary" aria-hidden="true" />
+          <AppIcon name="school" size={20} className="shrink-0 text-lantern-text-secondary" />
           <span className="min-w-0 flex-1">
             <span className="block text-body font-medium text-lantern-text">Academic details</span>
             <span className="block truncate text-caption text-lantern-text-secondary">
               {academicLine || 'Add your campus, programme and level'}
             </span>
           </span>
-          <ChevronRightIcon className="h-4 w-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+          <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
         </button>
 
         <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
           <Row
-            icon={UserGroupIcon}
+            icon="people"
             label="Teach"
             hint="Classes, roster, join codes"
             onClick={onOpenTeach}
           />
           <Row
-            icon={BanknotesIcon}
+            icon="cash"
             label="Budget"
             onClick={() => onNavigate(AppMode.BUDGET_TRACKER)}
           />
           <Row
-            icon={CloudArrowDownIcon}
+            icon="cloud-download"
             label="Downloads"
             badge={pendingSyncCount}
             onClick={() => onNavigate(AppMode.OFFLINE_MODE)}
           />
           <Row
-            icon={GiftIcon}
+            icon="gift"
             label="Invite friends"
             onClick={() => onNavigate(AppMode.INVITE_FRIENDS)}
           />
@@ -192,13 +178,13 @@ const MeScreen: React.FC<MeScreenProps> = ({
 
         <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
           <SwitchRow
-            icon={theme === 'dark' ? SunIcon : MoonIcon}
+            icon={theme === 'dark' ? 'sunny' : 'moon'}
             label="Dark mode"
             checked={theme === 'dark'}
             onToggle={onToggleTheme}
           />
           <SwitchRow
-            icon={lowDataMode ? SignalSlashIcon : SignalIcon}
+            icon={lowDataMode ? 'cellular-off' : 'cellular'}
             label="Low-data mode"
             checked={lowDataMode}
             onToggle={toggleLowDataMode}
@@ -206,12 +192,12 @@ const MeScreen: React.FC<MeScreenProps> = ({
         </div>
 
         <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
-          <Row icon={Cog6ToothIcon} label="Settings" onClick={onOpenSettings} />
+          <Row icon="settings" label="Settings" onClick={onOpenSettings} />
           {isPlatformAdmin ? (
-            <Row icon={UsersIcon} label="Admin console" onClick={() => onNavigate(AppMode.ADMIN)} />
+            <Row icon="people" label="Admin console" onClick={() => onNavigate(AppMode.ADMIN)} />
           ) : null}
           <Row
-            icon={ArrowLeftOnRectangleIcon}
+            icon="log-out"
             label="Log out"
             destructive
             onClick={onLogout}

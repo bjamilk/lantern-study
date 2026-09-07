@@ -1,12 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  ArrowPathIcon,
-  ClipboardDocumentCheckIcon,
-  ClockIcon,
-  PlayIcon,
-  PlusIcon,
-  TrashIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import type { OfflineSessionBundle, PausedSessionSummary, TestResult } from '../types';
 import { Button, Card, CourseChip, EmptyState, FeatureDisc, ScreenHeader } from './ui';
 import { useAcademicStore } from '../stores/academicStore';
@@ -95,7 +88,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
           />
           {onNewTest && (
             <Button onClick={onNewTest}>
-              <PlusIcon className="w-5 h-5" />
+              <AppIcon name="add" size={20} />
               New test
             </Button>
           )}
@@ -169,7 +162,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                     key={session.id}
                     className="flex items-center gap-3 p-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface"
                   >
-                    <FeatureDisc feature="tests" icon={<ClockIcon className="w-5 h-5" />} />
+                    <FeatureDisc feature="tests" icon={<AppIcon name="time" size={20} />} />
                     <div className="min-w-0 flex-1">
                       <p className="text-body font-semibold text-lantern-text truncate">{session.title}</p>
                       <p className="text-caption text-lantern-text-secondary tabular-nums">
@@ -178,7 +171,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                     </div>
                     {onResumePausedSession && (
                       <Button size="sm" onClick={() => onResumePausedSession(session.id)}>
-                        <PlayIcon className="w-4 h-4" />
+                        <AppIcon name="play" size={16} />
                         Resume
                       </Button>
                     )}
@@ -189,7 +182,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                         aria-label={`Discard ${session.title}`}
                         className="shrink-0 p-2 rounded-lantern text-lantern-text-tertiary hover:text-lantern-error hover:bg-lantern-background-secondary"
                       >
-                        <TrashIcon className="w-4 h-4" aria-hidden="true" />
+                        <AppIcon name="trash" size={16} aria-hidden="true" />
                       </button>
                     )}
                   </div>
@@ -200,7 +193,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                     key={bundle.bundleId}
                     className="flex items-center gap-3 p-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface"
                   >
-                    <FeatureDisc feature="tests" icon={<ClipboardDocumentCheckIcon className="w-5 h-5" />} />
+                    <FeatureDisc feature="tests" icon={<AppIcon name="clipboard-check" size={20} />} />
                     <div className="min-w-0 flex-1">
                       <p className="text-body font-semibold text-lantern-text truncate">
                         {bundle.displayName || bundle.groupName}
@@ -216,7 +209,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                     />
                     {onStartBundle && (
                       <Button size="sm" onClick={() => onStartBundle(bundle.bundleId)}>
-                        <PlayIcon className="w-4 h-4" />
+                        <AppIcon name="play" size={16} />
                         Start
                       </Button>
                     )}
@@ -250,7 +243,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                           onClick={() => onViewResult(result)}
                           className="min-w-0 flex-1 text-left flex items-center gap-3"
                         >
-                          <FeatureDisc feature="tests" icon={<ClipboardDocumentCheckIcon className="w-5 h-5" />} />
+                          <FeatureDisc feature="tests" icon={<AppIcon name="clipboard-check" size={20} />} />
                           <span className="min-w-0 flex-1">
                             <span className="block text-body font-semibold text-lantern-text truncate">{title}</span>
                             <span className="block text-caption text-lantern-text-secondary">
@@ -295,7 +288,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                             onClick={() => onRetakeResult(result)}
                             aria-label={`Retake ${title}`}
                           >
-                            <ArrowPathIcon className="w-4 h-4" aria-hidden="true" />
+                            <AppIcon name="refresh" size={16} aria-hidden="true" />
                             Retake
                           </Button>
                         )}
@@ -314,7 +307,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
             onClick={onNewTest}
             className="inline-flex items-center gap-1.5 text-body font-medium text-lantern-primary-text hover:underline"
           >
-            <ArrowPathIcon className="w-4 h-4" aria-hidden="true" />
+            <AppIcon name="refresh" size={16} aria-hidden="true" />
             Make another test
           </button>
         )}

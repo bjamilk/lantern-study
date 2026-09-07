@@ -1,10 +1,10 @@
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { ClockIcon, MagnifyingGlassIcon, TagIcon } from '@heroicons/react/24/outline';
 import {
   suggestMarketplaceSearch,
   type MarketplaceDepartment,
   type MarketplaceSearchSuggestion,
 } from '@lantern/shared/marketplace';
+import { AppIcon } from '../ui/AppIcon';
 
 interface MarketplaceSearchSuggestProps {
   appliedQuery: string;
@@ -93,7 +93,7 @@ const MarketplaceSearchSuggest: React.FC<MarketplaceSearchSuggestProps> = ({
 
   return (
     <div ref={rootRef} className="relative flex-1 min-w-0 w-full">
-      <MagnifyingGlassIcon className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-lantern-text-tertiary pointer-events-none" />
+      <AppIcon name="search" size={16} className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
       <input
         type="search"
         role="combobox"
@@ -131,11 +131,11 @@ const MarketplaceSearchSuggest: React.FC<MarketplaceSearchSuggestProps> = ({
                 }`}
               >
                 {suggestion.kind === 'recent' ? (
-                  <ClockIcon className="w-4 h-4 mt-0.5 shrink-0 text-lantern-text-tertiary" />
+                  <AppIcon name="time" size={16} className="mt-0.5 shrink-0 text-lantern-text-tertiary" />
                 ) : suggestion.kind === 'type' ? (
-                  <TagIcon className="w-4 h-4 mt-0.5 shrink-0 text-lantern-primary" />
+                  <AppIcon name="pricetag" size={16} className="mt-0.5 shrink-0 text-lantern-primary" />
                 ) : (
-                  <MagnifyingGlassIcon className="w-4 h-4 mt-0.5 shrink-0 text-lantern-text-tertiary" />
+                  <AppIcon name="search" size={16} className="mt-0.5 shrink-0 text-lantern-text-tertiary" />
                 )}
                 <span className="min-w-0">
                   <span className="block font-medium text-lantern-text truncate">{suggestion.label}</span>

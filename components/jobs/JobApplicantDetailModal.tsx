@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { XMarkIcon } from "@heroicons/react/24/outline";
+import { AppIcon } from '../ui/AppIcon';
 import { useModalFocusTrap } from "../../hooks/useModalFocusTrap";
 import {
   JOB_APPLICATION_STATUS_LABELS,
@@ -100,7 +100,7 @@ export function JobApplicantDetailModal({
             aria-label="Close candidate details"
             className="shrink-0 rounded-lg p-1.5 text-lantern-text-tertiary transition hover:bg-lantern-background"
           >
-            <XMarkIcon className="h-5 w-5" aria-hidden />
+            <AppIcon name="close" size={20} aria-hidden />
           </button>
         </header>
 

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { AppIcon } from '../ui/AppIcon';
 import Modal from '../ui/Modal';
-import { ScaleIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import {
   APPEAL_NOTE_MAX_LENGTH,
   LEGAL_PATHS,
@@ -85,7 +85,7 @@ export const AppealListingModal: React.FC<AppealListingModalProps> = ({
       <div className="w-full">
         <div className="flex items-center justify-between gap-3 p-5 border-b border-lantern-border">
           <div className="flex items-center gap-2 min-w-0">
-            <ScaleIcon className="w-5 h-5 text-lantern-primary shrink-0" aria-hidden />
+            <AppIcon name="scale" size={20} className="text-lantern-primary shrink-0" aria-hidden />
             <h3 id="appeal-listing-title" className="text-lg font-bold text-lantern-text truncate">
               Appeal takedown
             </h3>
@@ -97,7 +97,7 @@ export const AppealListingModal: React.FC<AppealListingModalProps> = ({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close appeal form"
           >
-            <XMarkIcon className="w-5 h-5" aria-hidden />
+            <AppIcon name="close" size={20} aria-hidden />
           </button>
         </div>
 

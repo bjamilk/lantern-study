@@ -153,3 +153,83 @@ export function formatBonusAIUses(bonusRemaining: number | null | undefined): st
   if (bonusRemaining <= 0) return null;
   return `+${bonusRemaining} bonus use${bonusRemaining === 1 ? '' : 's'}`;
 }
+
+/* ------------------------------------------------------- read it to me -- */
+
+/**
+ * "Read this to me" — a narration script for an uploaded document.
+ *
+ * There is no video here and no server voice: the server writes a SCRIPT, one
+ * narration segment per page, and the DEVICE speaks it (`speechSynthesis` on
+ * web, `expo-speech` on mobile). So what is being priced is the writing — one
+ * model call per ~4 pages plus one merge pass — not any audio. That is why a
+ * whole deck costs less than three tutor replies.
+ *
+ * Two tiers, because a 6-page handout and a 38-page lecture deck are not the
+ * same amount of writing:
+ *   ≤ 20 pages → 2 AI uses
+ *   21 pages and up → 3 AI uses
+ *
+ * Charged ONCE per document, whatever the student does with it afterwards:
+ * playing it again, skipping pages, or listening offline costs nothing, and a
+ * retry of a run already paid for is not charged again (the script row is
+ * idempotent per attachment, user and version).
+ */
+export const NARRATION_CREDIT_COST = 2;
+
+/** From 21 pages up. Still one action, still charged once. */
+export const NARRATION_LONG_CREDIT_COST = 3;
+
+/** The boundary between the two tiers. */
+export const NARRATION_SHORT_MAX_PAGES = 20;
+
+/**
+ * The most pages one narration run reads.
+ *
+ * A longer document is not refused — it is read up to here and the student is
+ * told where the reading stops, which is what `formatNarrationPrice` prints.
+ * Refusing a 60-page deck outright would leave a student with nothing; reading
+ * the first 40 pages for the same 3 uses leaves them with most of a lecture.
+ */
+export const MAX_NARRATION_PAGES = 40;
+
+/** How many pages this run will actually read, given what the document has. */
+export function narratedPageCount(pageCount: number): number {
+  if (!Number.isFinite(pageCount)) return 0;
+  return Math.max(0, Math.min(MAX_NARRATION_PAGES, Math.floor(pageCount)));
+}
+
+/**
+ * What reading this document aloud costs.
+ *
+ * Total by construction: `aiRateLimitWithCost` reads a cost synchronously and
+ * has no way to handle a thrown refusal, so an unknown or absurd page count
+ * must still price at something chargeable. An unknown count (0, negative,
+ * NaN, Infinity) prices at the cheap tier — the run is refused before it is
+ * charged when there are genuinely no pages, and quoting the expensive tier for
+ * a count we never measured would overcharge a one-page handout.
+ */
+export function getNarrationCreditCost(pageCount: number): number {
+  if (!Number.isFinite(pageCount)) return NARRATION_CREDIT_COST;
+  const pages = Math.floor(pageCount);
+  if (pages <= 0) return NARRATION_CREDIT_COST;
+  const cost =
+    pages <= NARRATION_SHORT_MAX_PAGES ? NARRATION_CREDIT_COST : NARRATION_LONG_CREDIT_COST;
+  return Math.min(MAX_AI_CREDIT_COST, cost);
+}
+
+/**
+ * "3 AI uses — covers up to 40 pages" — the pre-flight line on the Read-aloud
+ * door, where the page count IS known.
+ *
+ * The second half is the honest part: a 120-page book prices at 3 and says so,
+ * rather than letting a student believe the whole book will be read.
+ */
+export function formatNarrationPrice(pageCount: number): string {
+  const covered = narratedPageCount(pageCount);
+  return `${formatCreditCost(getNarrationCreditCost(pageCount))} — covers up to ${covered} page${covered === 1 ? '' : 's'}`;
+}
+
+/** Why a document cannot be read aloud at all, when it cannot. */
+export const NARRATION_NO_PAGES_MESSAGE =
+  'This document has not been split into pages yet, so there is nothing to read aloud.';

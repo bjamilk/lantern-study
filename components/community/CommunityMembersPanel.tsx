@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { MagnifyingGlassIcon, ShieldCheckIcon, StarIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   COMMUNITY_COPY,
   COMMUNITY_MEMBERS_PAGE,
@@ -19,7 +19,7 @@ const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 export const RoleBadge: React.FC<{ role: CommunityRole }> = ({ role }) => {
   const label = communityRoleLabel(role);
   if (!label) return null;
-  const Icon = role === 'owner' ? StarIcon : ShieldCheckIcon;
+  const iconName = role === 'owner' ? 'star' : 'shield-checkmark';
   const tone =
     role === 'owner'
       ? 'text-amber-600 dark:text-amber-400'
@@ -28,7 +28,7 @@ export const RoleBadge: React.FC<{ role: CommunityRole }> = ({ role }) => {
         : 'text-slate-500 dark:text-slate-400';
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${tone}`} title={label}>
-      <Icon className="w-3.5 h-3.5" aria-hidden="true" />
+      <AppIcon name={iconName} size={14} />
       <span className="hidden lg:inline">{label}</span>
       <span className="sr-only lg:hidden">{label}</span>
     </span>
@@ -133,9 +133,10 @@ export const CommunityMembersPanel: React.FC<{ communityId: string }> = ({ commu
   return (
     <div className="space-y-3">
       <form role="search" onSubmit={(e) => e.preventDefault()} className="relative">
-        <MagnifyingGlassIcon
-          className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-lantern-text-secondary"
-          aria-hidden="true"
+        <AppIcon
+          name="search"
+          size={16}
+          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-secondary"
         />
         <input
           type="search"

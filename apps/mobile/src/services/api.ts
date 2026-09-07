@@ -202,7 +202,22 @@ export interface DeckWithCardsRequest {
   deckId?: string;
   name: string;
   description?: string;
-  cards: Array<{ front: string; back: string }>;
+  /**
+   * The route normalises every field below
+   * (apps/api-server/src/services/deckWithCards.ts `validateDeckCards`), so a
+   * cloze card imported from Anki keeps its type and its `{{c1::…}}` text
+   * instead of arriving as a BASIC card with the syntax showing on its face.
+   * This used to read `{ front: string; back: string }`, which is narrower
+   * than the endpoint and silently dropped the rest.
+   */
+  cards: Array<{
+    type?: 'BASIC' | 'CLOZE' | 'IMAGE_OCCLUSION';
+    front?: string;
+    back?: string;
+    clozeText?: string;
+    imageUrl?: string;
+    tags?: string[];
+  }>;
 }
 
 export interface DeckWithCardsResponse {

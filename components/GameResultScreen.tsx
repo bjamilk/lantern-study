@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { GameSession, User } from '../types';
-import { ArrowPathIcon, ArrowLeftOnRectangleIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { gameAudio } from '../utils/audio';
 
 interface GameResultScreenProps {
@@ -269,14 +269,14 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
             onClick={() => onRematch(opponent)}
             className="w-full sm:w-auto px-6 py-3.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150"
           >
-            <ArrowPathIcon className="w-5 h-5 mr-2" />
+            <AppIcon name="refresh" size={20} className="mr-2" />
             Rematch
           </button>
           <button
             onClick={onExit}
             className="w-full sm:w-auto px-6 py-3.5 bg-lantern-border hover:bg-lantern-border text-white rounded-xl flex items-center justify-center font-bold text-lg shadow-md hover:shadow-lg transform hover:-translate-y-0.5 transition-all duration-150"
           >
-            <ArrowLeftOnRectangleIcon className="w-5 h-5 mr-2" />
+            <AppIcon name="log-out" size={20} className="mr-2" />
             Exit Game
           </button>
         </div>

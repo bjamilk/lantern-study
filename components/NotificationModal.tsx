@@ -1,10 +1,6 @@
 import React from "react";
 import { AppNotification } from "../types";
-import {
-  XMarkIcon,
-  BellIcon,
-  EnvelopeOpenIcon,
-} from "@heroicons/react/24/outline";
+import { AppIcon } from "./ui/AppIcon";
 import { Button, NotificationRow } from "./ui";
 import Modal from "./ui/Modal";
 import {
@@ -94,7 +90,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
           id="notification-modal-title"
           className="text-xl font-semibold text-lantern-text flex items-center gap-2"
         >
-          <BellIcon className="w-6 h-6 text-lantern-primary" aria-hidden />
+          <AppIcon name="notifications" size={24} className="text-lantern-primary" />
           Notifications
         </h2>
         <button
@@ -103,7 +99,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-tertiary hover:text-lantern-text rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Close notifications"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} />
         </button>
       </div>
 
@@ -114,7 +110,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
           onClick={onMarkAllAsRead}
           className="gap-1 min-h-[44px]"
         >
-          <EnvelopeOpenIcon className="w-4 h-4" aria-hidden />
+          <AppIcon name="mail-open" size={16} />
           Mark all as read
         </Button>
       </div>
@@ -149,7 +145,7 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
         ) : (
           <div className="text-center py-16 px-6">
             <div className="w-14 h-14 mx-auto rounded-full bg-lantern-primary-background flex items-center justify-center">
-              <BellIcon className="w-7 h-7 text-lantern-primary" aria-hidden />
+              <AppIcon name="notifications" size={28} className="text-lantern-primary" />
             </div>
             <p className="mt-4 text-sm font-medium text-lantern-text">
               No notifications yet

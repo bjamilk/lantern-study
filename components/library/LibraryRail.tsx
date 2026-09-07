@@ -1,20 +1,4 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  AcademicCapIcon,
-  AdjustmentsHorizontalIcon,
-  ArchiveBoxIcon,
-  ArrowPathIcon,
-  BuildingStorefrontIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  ClipboardDocumentCheckIcon,
-  CloudArrowDownIcon,
-  DocumentTextIcon,
-  EllipsisHorizontalIcon,
-  InboxIcon,
-  RectangleStackIcon,
-  ShoppingBagIcon,
-} from '@heroicons/react/24/outline';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import type { LibraryCourseCounts, LibraryCourseNode } from '../../types';
 import { useLibraryStore } from '../../stores/libraryStore';
@@ -29,6 +13,7 @@ import {
 import { ManageOutlineModal } from '../academic/ManageOutlineModal';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
 import type { LibraryTab } from '../LibraryScreen';
+import { AppIcon } from '../ui/AppIcon';
 
 export interface LibraryRailProps {
   /** Current course filter: uuid | 'null' (unfiled) | null (all). */
@@ -234,7 +219,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               <Icon className="h-3 w-3" aria-hidden />
               {n}
               {key === 'bundles' && counts.purchasedPacks ? (
-                <ShoppingBagIcon className="h-3 w-3 ml-0.5" aria-hidden />
+                <AppIcon name="bag" size={12} className="ml-0.5" aria-hidden />
               ) : null}
             </button>
           );
@@ -327,9 +312,9 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 }`}
               >
                 {topicsOpen ? (
-                  <ChevronDownIcon className="h-3.5 w-3.5" aria-hidden />
+                  <AppIcon name="chevron-down" size={14} aria-hidden />
                 ) : (
-                  <ChevronRightIcon className="h-3.5 w-3.5" aria-hidden />
+                  <AppIcon name="chevron-forward" size={14} aria-hidden />
                 )}
               </button>
             ) : null}
@@ -364,18 +349,18 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                       : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60'
                   }`}
                 >
-                  <EllipsisHorizontalIcon className="h-4 w-4" aria-hidden />
+                  <AppIcon name="ellipsis-horizontal" size={16} aria-hidden />
                 </MenuTrigger>
                 <MenuContent align="end">
                   <MenuItem
-                    icon={<AdjustmentsHorizontalIcon className="h-5 w-5" aria-hidden />}
+                    icon={<AppIcon name="options" size={20} aria-hidden />}
                     onSelect={() => setManageCourse({ id: node.course.id, label: courseLabel })}
                   >
                     {COURSE_TOPIC_COPY.manageTitle}
                   </MenuItem>
                   {onCreateStudyPack ? (
                     <MenuItem
-                      icon={<BuildingStorefrontIcon className="h-5 w-5" aria-hidden />}
+                      icon={<AppIcon name="storefront" size={20} aria-hidden />}
                       onSelect={() => onCreateStudyPack(node.course.id, courseLabel)}
                     >
                       Create a study pack
@@ -420,7 +405,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             }`}
           >
             <span className="flex items-center gap-2">
-              <AcademicCapIcon className="h-4 w-4 shrink-0" aria-hidden />
+              <AppIcon name="school" size={16} className="shrink-0" aria-hidden />
               <span className="font-semibold">All items</span>
               {overview && countsTotal(tree.totals) === 0 ? renderEmptyMarker(allSelected, 'ml-auto') : null}
             </span>
@@ -445,7 +430,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             onClick={() => void loadOverview({ force: true })}
             className="mt-1 inline-flex items-center gap-1 font-medium underline-offset-2 hover:underline"
           >
-            <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden /> Retry
+            <AppIcon name="refresh" size={14} aria-hidden /> Retry
           </button>
         </div>
       ) : null}
@@ -491,11 +476,11 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 className="w-full flex items-center gap-1 px-2 mb-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary hover:text-lantern-text"
               >
                 {pastOpen ? (
-                  <ChevronDownIcon className="h-3.5 w-3.5" aria-hidden />
+                  <AppIcon name="chevron-down" size={14} aria-hidden />
                 ) : (
-                  <ChevronRightIcon className="h-3.5 w-3.5" aria-hidden />
+                  <AppIcon name="chevron-forward" size={14} aria-hidden />
                 )}
-                <ArchiveBoxIcon className="h-3.5 w-3.5" aria-hidden />
+                <AppIcon name="archive" size={14} aria-hidden />
                 Past semesters
                 <span className="ml-auto font-normal normal-case tracking-normal">
                   {tree.past.reduce((n, y) => n + y.courses.length, 0)}
@@ -528,7 +513,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               title="Items not filed under any course"
             >
               <span className="flex items-center gap-2">
-                <InboxIcon className="h-4 w-4 shrink-0" aria-hidden />
+                <AppIcon name="inbox" size={16} className="shrink-0" aria-hidden />
                 <span className="font-semibold">Unfiled</span>
                 {countsTotal(tree.unfiled) === 0 ? renderEmptyMarker(unfiledSelected, 'ml-auto') : null}
               </span>

@@ -1,16 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import {
-  AcademicCapIcon,
-  CheckBadgeIcon,
-  EllipsisHorizontalIcon,
-  HomeIcon,
-  LinkIcon,
-  PlusIcon,
-  SpeakerWaveIcon,
-  UsersIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   COMMUNITY_COPY,
   communityHeaderLine,
@@ -130,7 +120,7 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
           <h2 className="flex items-center gap-1 text-sm font-bold text-lantern-text">
             <span className="truncate">{name}</span>
             {detail?.is_official ? (
-              <CheckBadgeIcon className="h-4 w-4 shrink-0 text-lantern-primary" aria-label="Official community" />
+              <AppIcon name="badge-check" size={16} className="shrink-0 text-lantern-primary" aria-label="Official community" />
             ) : null}
           </h2>
           {headerLine ? (
@@ -145,32 +135,32 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
                 title="Community options"
                 className="flex h-9 w-9 items-center justify-center rounded-md text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
               >
-                <EllipsisHorizontalIcon className="w-5 h-5" aria-hidden="true" />
+                <AppIcon name="ellipsis-horizontal" size={20} />
               </MenuTrigger>
               <MenuContent>
                 {detail.visibility === 'public' ? (
                   <MenuItem
                     onSelect={() => void copyInvite()}
-                    icon={<LinkIcon className="w-4 h-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                    icon={<AppIcon name="link" size={16} className="text-lantern-text-tertiary" />}
                   >
                     {COMMUNITY_COPY.invite}
                   </MenuItem>
                 ) : null}
                 <MenuItem
                   onSelect={() => actions?.onCreateBoard()}
-                  icon={<PlusIcon className="w-4 h-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                  icon={<AppIcon name="add" size={16} className="text-lantern-text-tertiary" />}
                 >
                   {COMMUNITY_COPY.createBoard}
                 </MenuItem>
                 <MenuItem
                   onSelect={() => actions?.onStartStudyGroup()}
-                  icon={<AcademicCapIcon className="w-4 h-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                  icon={<AppIcon name="school" size={16} className="text-lantern-text-tertiary" />}
                 >
                   {COMMUNITY_COPY.startStudyGroup}
                 </MenuItem>
                 <MenuItem
                   onSelect={() => actions?.onStartRoom()}
-                  icon={<SpeakerWaveIcon className="w-4 h-4 text-lantern-text-tertiary" aria-hidden="true" />}
+                  icon={<AppIcon name="volume-medium" size={16} className="text-lantern-text-tertiary" />}
                 >
                   {COMMUNITY_COPY.startRoom}
                 </MenuItem>
@@ -184,7 +174,7 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
             title="Close community"
             aria-label="Close community"
           >
-            <XMarkIcon className="w-4 h-4" aria-hidden="true" />
+            <AppIcon name="close" size={16} />
           </button>
         </div>
       </div>
@@ -197,7 +187,7 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
             aria-current={homeSelected ? 'page' : undefined}
             className={`${rowClass} ${homeSelected ? 'bg-lantern-primary-background text-lantern-primary' : ''}`}
           >
-            <HomeIcon className="w-4 h-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+            <AppIcon name="home" size={16} className="shrink-0 text-lantern-text-tertiary" />
             Home
           </button>
         </div>
@@ -237,7 +227,7 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
             onClick={() => actions?.onOpenMembers()}
             className={rowClass}
           >
-            <UsersIcon className="w-4 h-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+            <AppIcon name="people" size={16} className="shrink-0 text-lantern-text-tertiary" />
             <span className="truncate">Members · {memberCount.toLocaleString()}</span>
           </button>
         </div>

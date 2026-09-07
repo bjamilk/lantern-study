@@ -1,11 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import {
-  ArrowLeftIcon,
-  ChatBubbleLeftRightIcon,
-  ClipboardDocumentCheckIcon,
-  DocumentTextIcon,
-  RectangleStackIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { Button, Card, FeatureDisc, Select } from './ui';
 import {
   MAX_QUESTION_COUNT,
@@ -48,9 +42,9 @@ export interface TestBuilderScreenProps {
 }
 
 const SOURCE_ICON: Record<TestSourceKind, React.ReactNode> = {
-  deck: <RectangleStackIcon className="w-5 h-5" />,
-  note: <DocumentTextIcon className="w-5 h-5" />,
-  group: <ChatBubbleLeftRightIcon className="w-5 h-5" />,
+  deck: <AppIcon name="albums" size={20} />,
+  note: <AppIcon name="document-text" size={20} />,
+  group: <AppIcon name="chatbubbles" size={20} />,
 };
 
 /**
@@ -151,7 +145,7 @@ export const TestBuilderScreen: React.FC<TestBuilderScreenProps> = ({
               aria-label="Back to Tests"
               className="shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lantern text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary"
             >
-              <ArrowLeftIcon className="w-5 h-5" aria-hidden="true" />
+              <AppIcon name="arrow-back" size={20} aria-hidden="true" />
             </button>
             <div className="min-w-0">
               <h1 className="text-title text-lantern-text">New test</h1>
@@ -381,10 +375,8 @@ export const TestBuilderScreen: React.FC<TestBuilderScreenProps> = ({
       <div className="shrink-0 border-t border-lantern-border bg-lantern-surface px-4 md:px-6 lg:px-8 py-3">
         <div className="w-full max-w-3xl mx-auto flex flex-col sm:flex-row sm:items-center gap-3">
           <div className="min-w-0 flex-1 flex items-start gap-2">
-            <ClipboardDocumentCheckIcon
-              className="w-5 h-5 shrink-0 mt-0.5 text-lantern-feature-tests-ink"
-              aria-hidden="true"
-            />
+            <AppIcon name="clipboard-check" size={20} className="shrink-0 mt-0.5 text-lantern-feature-tests-ink"
+              aria-hidden="true" />
             <p className="text-caption text-lantern-text-secondary">
               {busyLabel && isBusy ? busyLabel : summary}
               {!validity.canStart && validity.blocker ? ` ${validity.blocker}` : ''}

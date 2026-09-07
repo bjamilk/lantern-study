@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './AppIcon';
 
 export type ToastType = 'success' | 'error' | 'info';
 
@@ -52,7 +52,7 @@ export const ToastBanner: React.FC<ToastBannerProps> = ({
         className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-2 opacity-80 hover:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
         aria-label="Dismiss notification"
       >
-        <XMarkIcon className="h-4 w-4" />
+        <AppIcon name="close" size={16} />
       </button>
     </div>
   );

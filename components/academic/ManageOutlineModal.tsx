@@ -1,13 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
-  CheckIcon,
-  PencilSquareIcon,
-  TrashIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
-import {
   COURSE_TOPIC_COPY,
   TOPIC_TITLE_MAX,
   formatDeleteTopicTitle,
@@ -31,6 +23,7 @@ import {
   unmatchedTagSubtitle,
   type UnmatchedTag,
 } from '@lantern/shared/learning/readinessCard';
+import { AppIcon } from '../ui/AppIcon';
 
 export interface ManageOutlineModalProps {
   isOpen: boolean;
@@ -307,7 +300,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
             aria-label="Close"
             className="shrink-0 rounded-lg p-1 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
           >
-            <XMarkIcon className="w-5 h-5" aria-hidden />
+            <AppIcon name="close" size={20} aria-hidden />
           </button>
         </div>
 
@@ -390,7 +383,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                         aria-label={`Move ${topic.title} up (currently ${position})`}
                         className="grid place-items-center min-w-[24px] min-h-[24px] rounded text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-30 disabled:hover:bg-transparent"
                       >
-                        <ArrowUpIcon className="w-4 h-4" aria-hidden />
+                        <AppIcon name="arrow-up" size={16} aria-hidden />
                       </button>
                       <button
                         type="button"
@@ -399,7 +392,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                         aria-label={`Move ${topic.title} down (currently ${position})`}
                         className="grid place-items-center min-w-[24px] min-h-[24px] rounded text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-30 disabled:hover:bg-transparent"
                       >
-                        <ArrowDownIcon className="w-4 h-4" aria-hidden />
+                        <AppIcon name="arrow-down" size={16} aria-hidden />
                       </button>
                     </div>
 
@@ -430,7 +423,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                           aria-label={`Save ${topic.title}`}
                           className="shrink-0 rounded p-1 text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
                         >
-                          <CheckIcon className="w-4 h-4" aria-hidden />
+                          <AppIcon name="checkmark" size={16} aria-hidden />
                         </button>
                         <button
                           type="button"
@@ -439,7 +432,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                           aria-label={COURSE_TOPIC_COPY.deleteCancel}
                           className="shrink-0 rounded p-1 text-lantern-text-secondary hover:bg-lantern-background-secondary disabled:opacity-50"
                         >
-                          <XMarkIcon className="w-4 h-4" aria-hidden />
+                          <AppIcon name="close" size={16} aria-hidden />
                         </button>
                       </div>
                     ) : (
@@ -454,7 +447,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                           aria-label={`${COURSE_TOPIC_COPY.rename}: ${topic.title}`}
                           className="shrink-0 rounded p-1 text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-50"
                         >
-                          <PencilSquareIcon className="w-4 h-4" aria-hidden />
+                          <AppIcon name="create" size={16} aria-hidden />
                         </button>
                         <button
                           type="button"
@@ -466,7 +459,7 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
                           aria-label={`${COURSE_TOPIC_COPY.delete}: ${topic.title}`}
                           className="shrink-0 rounded p-1 text-lantern-text-secondary hover:text-red-600 dark:hover:text-red-400 hover:bg-lantern-background-secondary disabled:opacity-50"
                         >
-                          <TrashIcon className="w-4 h-4" aria-hidden />
+                          <AppIcon name="trash" size={16} aria-hidden />
                         </button>
                       </>
                     )}

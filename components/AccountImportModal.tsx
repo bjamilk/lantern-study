@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { ACCOUNT_EXPORT_COPY, isSignedExportV2 } from '@lantern/shared';
 import { Button, Input } from './ui';
-import { CloudArrowUpIcon, XCircleIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 export interface AccountImportModalProps {
@@ -115,7 +115,7 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-50"
             aria-label="Close import backup dialog"
           >
-            <XCircleIcon className="w-6 h-6 text-lantern-text-secondary" aria-hidden />
+            <AppIcon name="close-circle" size={24} className="text-lantern-text-secondary" aria-hidden />
           </button>
         </div>
 
@@ -136,7 +136,7 @@ export const AccountImportModal: React.FC<AccountImportModalProps> = ({
           disabled={loading}
           className="w-full min-h-[44px]"
         >
-          <CloudArrowUpIcon className="w-5 h-5 mr-2" aria-hidden />
+          <AppIcon name="cloud-upload" size={20} className="mr-2" aria-hidden />
           {fileName ? fileName : 'Choose backup file (.json)'}
         </Button>
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { MicrophoneIcon, PhotoIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   BOARD_BOOKMARKS_PAGE_SIZE,
   COMMUNITY_BOARD_COPY,
@@ -100,7 +100,7 @@ export const SavedPostsPanel: React.FC<SavedPostsPanelProps> = ({ onClose, onOpe
             aria-label={`Close ${COMMUNITY_BOARD_COPY.savedPosts}`}
             className="flex h-11 w-11 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           >
-            <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+            <AppIcon name="close" size={20} />
           </button>
         </div>
 
@@ -149,9 +149,9 @@ export const SavedPostsPanel: React.FC<SavedPostsPanelProps> = ({ onClose, onOpe
                       {hasPhoto || hasAudio ? (
                         <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-lantern-text-tertiary">
                           {hasPhoto ? (
-                            <PhotoIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                            <AppIcon name="image" size={14} />
                           ) : (
-                            <MicrophoneIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                            <AppIcon name="mic" size={14} />
                           )}
                           {hasPhoto
                             ? COMMUNITY_BOARD_COPY.photoTapToLoad

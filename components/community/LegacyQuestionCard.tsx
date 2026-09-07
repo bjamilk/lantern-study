@@ -1,5 +1,5 @@
 import React from 'react';
-import { AcademicCapIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   COMMUNITY_BOARD_COPY,
   boardPostAccessibilityLabel,
@@ -48,7 +48,7 @@ export const LegacyQuestionCard: React.FC<LegacyQuestionCardProps> = ({
       </div>
 
       <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-lantern-background-secondary px-2.5 py-1 text-[11px] font-semibold text-lantern-text-secondary">
-        <AcademicCapIcon className="h-3.5 w-3.5" aria-hidden="true" />
+        <AppIcon name="school" size={14} />
         {COMMUNITY_BOARD_COPY.legacyQuestion}
       </p>
 

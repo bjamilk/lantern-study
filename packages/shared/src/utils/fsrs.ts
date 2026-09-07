@@ -23,6 +23,49 @@ export interface FsrsCalculationOptions {
   maxInterval?: number;
 }
 
+/**
+ * The state a card starts life in: seeded stability and difficulty, no
+ * schedule yet.
+ *
+ * `nextReviewDate` is deliberately empty rather than "now". A card with a date
+ * is a card the scheduler has already seen, and `isNewFlashcard` reads exactly
+ * that field to decide whether the daily new-card budget applies — so stamping
+ * an import with today's date would dump 200 cards into one review queue and
+ * bypass the budget entirely. Empty means "never scheduled": the card counts
+ * as new, is offered through the new-card budget, and its first review takes
+ * the initial branch of {@link calculateFsrsData} (Again 1d / Hard 1d /
+ * Good 3d / Easy 5d) exactly like a freshly generated card.
+ */
+export function createInitialFsrsData(): SrsData {
+  return {
+    interval: 0,
+    easeFactor: INITIAL_STABILITY,
+    repetitions: 0,
+    nextReviewDate: '',
+    failedAttempts: 0,
+    isLeech: false,
+    scheduler: 'fsrs',
+    difficulty: INITIAL_DIFFICULTY,
+    stability: INITIAL_STABILITY,
+  };
+}
+
+/**
+ * A card that carries FSRS seeds but has never been graded.
+ *
+ * Needed because `normalizeSrsData` fills `interval` and `repetitions` with 0
+ * for any blob that has *some* schedule field, which would otherwise push a
+ * seeded-but-unreviewed card down the "already reviewed" path and schedule its
+ * first Hard at 3 days instead of 1. A genuinely reviewed card always has an
+ * interval of at least 1 (every branch clamps) or a review date, so this cannot
+ * catch one.
+ */
+function isNeverReviewed(data: SrsData): boolean {
+  return (
+    !data.nextReviewDate && !((data.repetitions ?? 0) > 0) && !((data.interval ?? 0) > 0)
+  );
+}
+
 /** Calculate next review using FSRS-inspired scheduling */
 export function calculateFsrsData(
   current: SrsData | undefined,
@@ -34,7 +77,12 @@ export function calculateFsrsData(
   const grade = ratingToGrade(rating);
   current = normalizeSrsData(current) ?? current;
 
-  if (!current || current.repetitions === undefined || current.interval === undefined) {
+  if (
+    !current ||
+    current.repetitions === undefined ||
+    current.interval === undefined ||
+    isNeverReviewed(current)
+  ) {
     const interval = grade === 1 ? 1 : grade === 2 ? 1 : grade === 3 ? 3 : 5;
     const next = new Date(today);
     next.setDate(today.getDate() + interval);

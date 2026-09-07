@@ -9,6 +9,7 @@ import {
   mergeExtractionTexts,
 } from './noteFiles';
 import { runNoteOcrJob, shouldAutoEnqueueOcr } from './noteOcr';
+import { persistPagesFromPdfBuffer } from './notePages';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { logger } from '../utils/logger';
 
@@ -93,6 +94,15 @@ export async function runPresentationPreviewJob(
       contentType: 'application/pdf',
     });
     const previewUrl = await supabaseService.createSignedNoteFileUrl(previewStoragePath);
+
+    // Page model (walk-through): the Gotenberg PDF is the only paginable view
+    // of a deck, so this is the moment slides become pages. Best effort — the
+    // preview and the extracted text are this job's real output and neither
+    // depends on the page rows.
+    await persistPagesFromPdfBuffer(supabaseService, attachmentId, pdfBuffer, {
+      noteId,
+      source: 'presentation_preview',
+    });
 
     const shouldOcr = shouldAutoEnqueueOcr(extractionStatus);
     const finalMeta: Record<string, unknown> = {

@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { useToastStore } from '../stores/toastStore';
 import { TransactionType, Transaction, STUDENT_EXPENSE_CATEGORIES, STUDENT_INCOME_CATEGORIES } from '../types';
-import { XMarkIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 type TxKind = 'expense' | 'income';
@@ -94,7 +94,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           aria-label="Close add transaction dialog"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
 

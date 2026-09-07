@@ -464,9 +464,26 @@ describe('planServerSettle — settling from the server when the runner is gone'
 
   it('is done with the persisted savedRef when the client already saved', () => {
     const saved = job({ serverJobId: 's1', status: 'running', savedRef: { type: 'deck', id: 'd9' }, savedCount: 10 });
+    // The COUNT settles with the artefact. Without it the notification fell
+    // back to what was requested, and a five-question test was announced as
+    // a "10-question test ready" (build 168).
     expect(planServerSettle(saved, { status: 'completed' })).toEqual({
       status: 'done',
       artifact: { type: 'deck', id: 'd9' },
+      resultCount: 10,
+    });
+  });
+
+  it('counts the server result when this device never saved one itself', () => {
+    const plan = planServerSettle(resumed, {
+      status: 'completed',
+      artifact: { type: 'test', id: 't1' },
+      result: { session: { questions: [1, 2, 3, 4, 5] } },
+    });
+    expect(plan).toEqual({
+      status: 'done',
+      artifact: { type: 'test', id: 't1' },
+      resultCount: 5,
     });
   });
 

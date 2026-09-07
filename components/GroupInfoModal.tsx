@@ -1,19 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { Group, User } from '../types';
-import { CameraIcon, PhotoIcon, XCircleIcon, CheckCircleIcon, ArrowUpOnSquareIcon, ShieldCheckIcon, UserPlusIcon, UserMinusIcon, ArchiveBoxIcon, TrashIcon, EnvelopeIcon, ChatBubbleLeftRightIcon, ArrowUpTrayIcon, ArrowDownTrayIcon, ArrowRightOnRectangleIcon } from '@heroicons/react/24/outline';
-import { SparklesIcon } from '@heroicons/react/24/solid';
 import { compressImage } from '../utils/imageCompression';
 import GroupInviteLinkPanel from './GroupInviteLinkPanel';
 import { buildGroupInviteLink } from '../utils/groupInvite';
 import Modal from './ui/Modal';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
 import ReportContentModal from './moderation/ReportContentModal';
-import { FlagIcon } from '@heroicons/react/24/outline';
 import GroupDiscoverabilityFields, {
   type GroupDiscoveryValue,
 } from './discover/GroupDiscoverabilityFields';
 import { isCommunityBoard } from '@lantern/shared/network';
+import { AppIcon } from './ui/AppIcon';
 
 
 interface GroupInfoModalProps {
@@ -231,7 +229,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                             />
                             <div className="flex-grow">
                                 <button type="button" onClick={() => avatarFileRef.current?.click()} className="w-full sm:w-auto mb-2 px-3 py-1.5 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 hover:bg-blue-200 dark:hover:bg-blue-900/60 border border-lantern-primary/30 dark:border-blue-700 rounded-md shadow-sm flex items-center justify-center">
-                                    <ArrowUpOnSquareIcon className="w-4 h-4 mr-1.5" />
+                                    <AppIcon name="share" size={16} className="mr-1.5" />
                                     {selectedAvatarFile ? 'Change Image' : 'Upload Image'}
                                 </button>
                                 <input type="file" ref={avatarFileRef} onChange={handleAvatarFileChange} accept="image/*" className="hidden" />
@@ -241,10 +239,10 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                         <p className="text-xs text-lantern-text-secondary truncate">Preview: <span className="font-medium">{selectedAvatarFile.name}</span></p>
                                         <div className="flex items-center space-x-2">
                                             <button type="button" onClick={handleSaveAvatar} className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-700 border border-transparent rounded-md shadow-sm flex items-center">
-                                                <CheckCircleIcon className="w-4 h-4 mr-1.5" /> Save Avatar
+                                                <AppIcon name="checkmark-circle" size={16} className="mr-1.5" /> Save Avatar
                                             </button>
                                             <button type="button" onClick={handleRemoveAvatarPreview} className="p-1.5 text-red-500 hover:text-red-700 rounded-md hover:bg-red-100 dark:hover:bg-red-900/30" title="Cancel image change">
-                                                <XCircleIcon className="w-5 h-5"/>
+                                                <AppIcon name="close-circle" size={20} />
                                             </button>
                                         </div>
                                     </div>
@@ -285,7 +283,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                      )}
                      {isCurrentUserAdmin && !communityOwned && (
                         <div className="p-4 bg-lantern-background dark:bg-lantern-surface-secondary/50 border border-lantern-border dark:border-lantern-border rounded-lg">
-                           <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md text-sm font-medium"><UserPlusIcon className="w-5 h-5 mr-2" />Add or Invite Members</button>
+                           <button onClick={onOpenAddMembersModal} className="w-full flex items-center justify-center px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md text-sm font-medium"><AppIcon name="person-add" size={20} className="mr-2" />Add or Invite Members</button>
                         </div>
                      )}
 
@@ -300,8 +298,8 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                         <span className="text-sm font-medium text-lantern-text dark:text-lantern-text">{member.name}</span>
                                     </div>
                                     <div className="flex space-x-2">
-                                        <button onClick={() => onApproveMember(group.id, member.id)} className="p-1.5 bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 rounded-full hover:bg-green-200 dark:hover:bg-green-700"><CheckCircleIcon className="w-5 h-5"/></button>
-                                        <button onClick={() => onRejectMember(group.id, member.id)} className="p-1.5 bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 rounded-full hover:bg-red-200 dark:hover:bg-red-700"><XCircleIcon className="w-5 h-5"/></button>
+                                        <button onClick={() => onApproveMember(group.id, member.id)} className="p-1.5 bg-green-100 dark:bg-green-800 text-green-700 dark:text-green-200 rounded-full hover:bg-green-200 dark:hover:bg-green-700"><AppIcon name="checkmark-circle" size={20} /></button>
+                                        <button onClick={() => onRejectMember(group.id, member.id)} className="p-1.5 bg-red-100 dark:bg-red-800 text-red-700 dark:text-red-200 rounded-full hover:bg-red-200 dark:hover:bg-red-700"><AppIcon name="close-circle" size={20} /></button>
                                     </div>
                                 </div>
                             ))}
@@ -317,7 +315,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                     <div className="flex items-center">
                                         <img src={member.avatarUrl} alt={member.name} className="w-8 h-8 rounded-full mr-3" onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}/>
                                         <span className="text-sm font-medium text-lantern-text dark:text-lantern-text">{member.name}</span>
-                                        {group.adminIds?.includes(member.id) && <ShieldCheckIcon className="w-4 h-4 text-lantern-primary ml-2" title="Admin"/>}
+                                        {group.adminIds?.includes(member.id) && <AppIcon name="shield-checkmark" size={16} className="text-lantern-primary ml-2" title="Admin" />}
                                         {member.id === currentUser.id && <span className="text-xs text-lantern-text-secondary ml-2">(You)</span>}
                                     </div>
                                     <div className="flex items-center space-x-1">
@@ -329,9 +327,9 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                         {isCurrentUserAdmin && member.id !== currentUser.id && (
                                             <>
                                                 {group.adminIds?.includes(member.id) ? (
-                                                    <button onClick={() => onDemoteAdmin(group.id, member.id)} className="p-1.5 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 rounded-full" title="Demote from Admin"><ArrowDownTrayIcon className="w-5 h-5"/></button>
+                                                    <button onClick={() => onDemoteAdmin(group.id, member.id)} className="p-1.5 text-yellow-600 dark:text-yellow-400 hover:bg-yellow-100 dark:hover:bg-yellow-900/40 rounded-full" title="Demote from Admin"><AppIcon name="download" size={20} /></button>
                                                 ) : (
-                                                    <button onClick={() => onPromoteToAdmin(group.id, member.id)} className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-full" title="Promote to Admin"><ArrowUpTrayIcon className="w-5 h-5"/></button>
+                                                    <button onClick={() => onPromoteToAdmin(group.id, member.id)} className="p-1.5 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/40 rounded-full" title="Promote to Admin"><AppIcon name="upload" size={20} /></button>
                                                 )}
                                                 <button
                                                   type="button"
@@ -339,12 +337,12 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                                                   className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-full"
                                                   title="Remove from group"
                                                 >
-                                                  <UserMinusIcon className="w-5 h-5" />
+                                                  <AppIcon name="person-remove" size={20} />
                                                 </button>
                                             </>
                                         )}
                                         {member.id !== currentUser.id && (
-                                             <button onClick={() => onInitiateDm(member.id)} className="p-1.5 text-lantern-text-secondary dark:text-lantern-text-tertiary hover:bg-lantern-background-secondary dark:hover:bg-lantern-border rounded-full" title="Message"><ChatBubbleLeftRightIcon className="w-5 h-5"/></button>
+                                             <button onClick={() => onInitiateDm(member.id)} className="p-1.5 text-lantern-text-secondary dark:text-lantern-text-tertiary hover:bg-lantern-background-secondary dark:hover:bg-lantern-border rounded-full" title="Message"><AppIcon name="chatbubbles" size={20} /></button>
                                         )}
                                     </div>
                                 </div>
@@ -385,7 +383,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                           onClick={() => setReportOpen(true)}
                           className="w-full flex items-center justify-center p-2 text-sm font-medium text-lantern-text border border-lantern-border rounded-md hover:bg-lantern-background-secondary"
                         >
-                            <FlagIcon className="w-4 h-4 mr-2"/>
+                            <AppIcon name="flag" size={16} className="mr-2" />
                             Report Group…
                         </button>
                     </div>
@@ -406,7 +404,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                               : 'bg-orange-500 hover:bg-orange-600'
                           }`}
                         >
-                            <ArrowRightOnRectangleIcon className="w-4 h-4 mr-2"/>
+                            <AppIcon name="exit" size={16} className="mr-2" />
                             Leave Group
                         </button>
                     </div>
@@ -415,7 +413,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                         <h4 className="font-semibold text-yellow-800 dark:text-yellow-300">Archive Group</h4>
                         <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1 mb-3">Archiving will hide the group from the main list for all members and disable new messages.</p>
                         <button onClick={() => onToggleArchiveGroup(group.id)} className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-yellow-500 hover:bg-yellow-600 rounded-md">
-                            <ArchiveBoxIcon className="w-4 h-4 mr-2"/>
+                            <AppIcon name="archive" size={16} className="mr-2" />
                             {group.isArchived ? 'Unarchive Group' : 'Archive Group'}
                         </button>
                     </div>
@@ -425,7 +423,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
                             <h4 className="font-semibold text-red-700 dark:text-red-300">Delete Group</h4>
                             <p className="text-xs text-red-600 dark:text-red-400 mt-1 mb-3">This action is permanent and will delete the group, all its sub-groups, and all messages for everyone.</p>
                             <button onClick={() => onDeleteGroup(group.id)} className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md">
-                                <TrashIcon className="w-4 h-4 mr-2"/>
+                                <AppIcon name="trash" size={16} className="mr-2" />
                                 Delete Group Permanently
                             </button>
                          </div>
@@ -451,7 +449,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Close group information"
         >
-          <XCircleIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close-circle" size={24} aria-hidden />
         </button>
       </div>
 

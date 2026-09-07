@@ -9,6 +9,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, Text, View } from 'react-native';
 import { useTheme } from '../../theme';
+import { useJobsStore } from '../../stores/jobsStore';
+import type { JobPushAudit } from '../../stores/jobsCore';
 import { AppIcon } from '../ui/AppIcon';
 import {
   fetchPushTokenStatus,
@@ -23,6 +25,8 @@ import {
   describeRegisterOutcome,
   pushDiagnosticRows,
   pushErrorRows,
+  jobPushFailureRows,
+  jobPushFailureDetail,
   pushIdentityRows,
   pushReadiness,
   pushReadinessSummary,
@@ -91,10 +95,23 @@ export function NotificationDeliveryPanel() {
     await check();
   }, [check]);
 
+  // The job sheet shows students one plain sentence when a push fails; the
+  // raw Expo detail (the APNs-credentials string, a DeviceNotRegistered ticket)
+  // belongs here, on the diagnostics panel, where the founder reads it.
+  const latestJobPushAudit = useJobsStore(s => {
+    // Jobs are kept newest-first; the first one whose audit carries a failure
+    // detail is the one worth showing.
+    for (const job of s.jobs) {
+      const audit = (job as { pushAudit?: JobPushAudit }).pushAudit;
+      if (audit && jobPushFailureDetail(audit)) return audit;
+    }
+    return null;
+  });
   const rows = [
     ...pushDiagnosticRows(state),
     ...pushIdentityRows(identity),
     ...pushErrorRows(registerError),
+    ...jobPushFailureRows(latestJobPushAudit),
   ];
   const readiness = pushReadiness(state);
   const blocked = state.permission === 'denied' || state.permission === 'unavailable';

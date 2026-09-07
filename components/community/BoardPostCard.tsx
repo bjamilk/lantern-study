@@ -1,19 +1,5 @@
 import React, { useState } from 'react';
-import {
-  ArrowPathRoundedSquareIcon,
-  BookmarkIcon,
-  ChatBubbleOvalLeftIcon,
-  EllipsisHorizontalIcon,
-  HeartIcon,
-  MicrophoneIcon,
-  PhotoIcon,
-  ShareIcon,
-} from '@heroicons/react/24/outline';
-import {
-  ArrowPathRoundedSquareIcon as RepostSolidIcon,
-  BookmarkIcon as BookmarkSolidIcon,
-  HeartIcon as HeartSolidIcon,
-} from '@heroicons/react/24/solid';
+import { AppIcon } from '../ui/AppIcon';
 import {
   BOARD_ACTION_ROW_ORDER,
   BOARD_FAVORITE_EMOJI,
@@ -91,9 +77,9 @@ const MEDIA_CHIP_CLASS =
 const MediaUnavailable: React.FC<{ label: string; icon: 'photo' | 'audio' }> = ({ label, icon }) => (
   <p className={`${MEDIA_CHIP_CLASS} text-lantern-text-tertiary`}>
     {icon === 'photo' ? (
-      <PhotoIcon className="h-4 w-4" aria-hidden="true" />
+      <AppIcon name="image" size={16} />
     ) : (
-      <MicrophoneIcon className="h-4 w-4" aria-hidden="true" />
+      <AppIcon name="mic" size={16} />
     )}
     {label}
   </p>
@@ -154,14 +140,14 @@ export const BoardPostMedia: React.FC<{
             onClick={() => setShowImage(true)}
             className={`${MEDIA_CHIP_CLASS} hover:bg-lantern-border focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary`}
           >
-            <PhotoIcon className="h-4 w-4" aria-hidden="true" />
+            <AppIcon name="image" size={16} />
             {COMMUNITY_BOARD_COPY.photoTapToLoad}
           </button>
         ) : resolvedImage === null ? (
           <MediaUnavailable label={COMMUNITY_BOARD_COPY.photoUnavailable} icon="photo" />
         ) : resolvedImage === undefined ? (
           <p className={MEDIA_CHIP_CLASS} role="status">
-            <PhotoIcon className="h-4 w-4" aria-hidden="true" />
+            <AppIcon name="image" size={16} />
             {COMMUNITY_BOARD_COPY.photoLoading}
           </p>
         ) : (
@@ -184,14 +170,14 @@ export const BoardPostMedia: React.FC<{
             onClick={() => setShowAudio(true)}
             className={`${MEDIA_CHIP_CLASS} hover:bg-lantern-border focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary`}
           >
-            <MicrophoneIcon className="h-4 w-4" aria-hidden="true" />
+            <AppIcon name="mic" size={16} />
             {COMMUNITY_BOARD_COPY.voiceNote}
           </button>
         ) : resolvedAudio === null ? (
           <MediaUnavailable label={COMMUNITY_BOARD_COPY.voiceNoteUnavailable} icon="audio" />
         ) : resolvedAudio === undefined ? (
           <p className={MEDIA_CHIP_CLASS} role="status">
-            <MicrophoneIcon className="h-4 w-4" aria-hidden="true" />
+            <AppIcon name="mic" size={16} />
             {COMMUNITY_BOARD_COPY.voiceNoteLoading}
           </p>
         ) : (
@@ -257,9 +243,9 @@ const QuotedPost: React.FC<{ quoted: BoardQuotedPost | null }> = ({ quoted }) =>
       {quoted.hasImage || quoted.hasAudio ? (
         <p className="mt-1.5 inline-flex items-center gap-1.5 text-[11px] text-lantern-text-tertiary">
           {quoted.hasImage ? (
-            <PhotoIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <AppIcon name="image" size={14} />
           ) : (
-            <MicrophoneIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            <AppIcon name="mic" size={14} />
           )}
           {quoted.hasImage ? COMMUNITY_BOARD_COPY.photoTapToLoad : COMMUNITY_BOARD_COPY.voiceNote}
         </p>
@@ -366,7 +352,7 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
       */}
       {isRepost ? (
         <p className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold text-lantern-text-tertiary">
-          <ArrowPathRoundedSquareIcon className="h-3.5 w-3.5" aria-hidden="true" />
+          <AppIcon name="repeat" size={14} />
           {COMMUNITY_BOARD_COPY.repostedBy(post.senderName)}
         </p>
       ) : null}
@@ -386,7 +372,7 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
             title="Post options"
             className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           >
-            <EllipsisHorizontalIcon className="h-5 w-5" aria-hidden="true" />
+            <AppIcon name="ellipsis-horizontal" size={20} />
           </MenuTrigger>
           <MenuContent align="end" className="w-56">
             {/* §8 parity rule 7 binds the row ORDER and the rows themselves.
@@ -521,7 +507,7 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
                   aria-label={boardCommentAccessibilityLabel(commentCount)}
                   className={ACTION_BUTTON_CLASS}
                 >
-                  <ChatBubbleOvalLeftIcon className="h-4 w-4" aria-hidden="true" />
+                  <AppIcon name="chatbubble" size={16} />
                   {commentCount > 0 ? commentCount : null}
                 </button>
               );
@@ -537,9 +523,9 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
                   className={ACTION_BUTTON_CLASS}
                 >
                   {post.repostedByMe ? (
-                    <RepostSolidIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+                    <AppIcon name="repeat" size={16} className="text-lantern-primary" />
                   ) : (
-                    <ArrowPathRoundedSquareIcon className="h-4 w-4" aria-hidden="true" />
+                    <AppIcon name="repeat" size={16} />
                   )}
                   {post.repostCount > 0 ? post.repostCount : null}
                 </button>
@@ -563,9 +549,9 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
                   className={ACTION_BUTTON_CLASS}
                 >
                   {favorited ? (
-                    <HeartSolidIcon className="h-4 w-4 text-lantern-error" aria-hidden="true" />
+                    <AppIcon name="heart" size={16} filled className="text-lantern-error" />
                   ) : (
-                    <HeartIcon className="h-4 w-4" aria-hidden="true" />
+                    <AppIcon name="heart" size={16} />
                   )}
                   {favoriteCount > 0 ? favoriteCount : null}
                 </button>
@@ -586,9 +572,9 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
                   className={ACTION_BUTTON_CLASS}
                 >
                   {bookmarked ? (
-                    <BookmarkSolidIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+                    <AppIcon name="bookmark" size={16} filled className="text-lantern-primary" />
                   ) : (
-                    <BookmarkIcon className="h-4 w-4" aria-hidden="true" />
+                    <AppIcon name="bookmark" size={16} />
                   )}
                 </button>
               );
@@ -602,7 +588,7 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
                   aria-label={boardShareAccessibilityLabel()}
                   className={ACTION_BUTTON_CLASS}
                 >
-                  <ShareIcon className="h-4 w-4" aria-hidden="true" />
+                  <AppIcon name="share-social" size={16} />
                 </button>
               );
             default:

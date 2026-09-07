@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AcademicCapIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { Button } from '../ui';
 import { CampusSearchSelect } from '../marketplace/CampusSearchSelect';
 import { fetchInstitutions, updateAcademicProfile } from '../../services/academic';
@@ -148,7 +148,7 @@ export const AcademicIdentityStep: React.FC<AcademicIdentityStepProps> = ({ onSa
     <div className="p-6">
       <div className="flex items-start gap-3 mb-4">
         <div className="w-10 h-10 shrink-0 bg-lantern-primary-background dark:bg-lantern-primary-dark/40 rounded-xl flex items-center justify-center">
-          <AcademicCapIcon className="w-6 h-6 text-lantern-primary" aria-hidden />
+          <AppIcon name="school" size={24} className="text-lantern-primary" aria-hidden />
         </div>
         <div className="min-w-0">
           <h2 id={titleId} className="text-xl font-bold text-lantern-text">
@@ -266,7 +266,7 @@ export const AcademicIdentityStep: React.FC<AcademicIdentityStepProps> = ({ onSa
             className="flex items-start gap-2 text-sm text-lantern-error bg-lantern-error/10 p-3 rounded-lg"
             role="alert"
           >
-            <ExclamationCircleIcon className="w-5 h-5 shrink-0" aria-hidden />
+            <AppIcon name="alert-circle" size={20} className="shrink-0" aria-hidden />
             <span className="min-w-0">{saveError}</span>
           </div>
         ) : null}

@@ -1,13 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  CloudArrowDownIcon,
-  DocumentTextIcon,
-  MagnifyingGlassIcon,
-  RectangleStackIcon,
-  ShoppingBagIcon,
-  Square2StackIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
 import type { LibrarySearchResult } from '../../types';
 import { CourseChip, FeatureDisc } from '../ui';
 import { searchLibrary } from '../../services/library';
@@ -20,6 +11,7 @@ import {
   searchMatchLabel,
   type LibrarySearchGroups,
 } from '../../utils/libraryArchive';
+import { AppIcon } from '../ui/AppIcon';
 
 export const LIBRARY_SEARCH_DEBOUNCE_MS = 300;
 const LIBRARY_SEARCH_LIMIT = 40;
@@ -60,7 +52,7 @@ export const LibrarySearchBox: React.FC<LibrarySearchBoxProps> = ({
       className={`flex items-center gap-2 rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 focus-within:ring-2 focus-within:ring-lantern-primary/40 ${className}`}
       role="search"
     >
-      <MagnifyingGlassIcon className="h-5 w-5 shrink-0 text-lantern-text-secondary" aria-hidden />
+      <AppIcon name="search" size={20} className="shrink-0 text-lantern-text-secondary" aria-hidden />
       <input
         ref={inputRef}
         type="search"
@@ -95,7 +87,7 @@ export const LibrarySearchBox: React.FC<LibrarySearchBoxProps> = ({
           aria-label="Clear search"
           className="shrink-0 rounded-md p-1 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
         >
-          <XMarkIcon className="h-4 w-4" aria-hidden />
+          <AppIcon name="close" size={16} aria-hidden />
         </button>
       ) : null}
     </div>
@@ -231,7 +223,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
 
       {groups && groups.total === 0 && state.status === 'done' ? (
         <div className="rounded-xl border border-dashed border-lantern-border p-6 text-center">
-          <MagnifyingGlassIcon className="mx-auto mb-2 h-8 w-8 text-lantern-text-tertiary" aria-hidden />
+          <AppIcon name="search" size={32} className="mx-auto mb-2 text-lantern-text-tertiary" aria-hidden />
           <p className="text-sm font-medium text-lantern-text">No matches for “{debouncedQuery}”</p>
           <p className="mt-1 text-xs text-lantern-text-secondary">
             {topicId
@@ -256,13 +248,13 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 id="library-search-notes"
                 className="mb-1 flex items-center gap-1.5 px-1 text-label uppercase text-lantern-text-tertiary"
               >
-                <DocumentTextIcon className="h-3.5 w-3.5" aria-hidden /> Notes · {groups.notes.length}
+                <AppIcon name="document-text" size={14} aria-hidden /> Notes · {groups.notes.length}
               </h3>
               <ul className="rounded-xl border border-lantern-border bg-lantern-surface divide-y divide-lantern-border/60">
                 {groups.notes.map((row) => (
                   <li key={`note-${row.id}`}>
                     <button type="button" onClick={() => onOpenNote(row.id)} className={rowClass}>
-                      <FeatureDisc feature="notes" size={32} icon={<DocumentTextIcon className="h-5 w-5" />} />
+                      <FeatureDisc feature="notes" size={32} icon={<AppIcon name="document-text" size={20} />} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className="truncate text-body font-medium text-lantern-text">{row.title || 'Untitled note'}</span>
@@ -284,14 +276,14 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 id="library-search-decks"
                 className="mb-1 flex items-center gap-1.5 px-1 text-label uppercase text-lantern-text-tertiary"
               >
-                <RectangleStackIcon className="h-3.5 w-3.5" aria-hidden /> Flashcards · {groups.decks.length} deck
+                <AppIcon name="albums" size={14} aria-hidden /> Flashcards · {groups.decks.length} deck
                 {groups.decks.length === 1 ? '' : 's'}
               </h3>
               <ul className="space-y-2">
                 {groups.decks.map((group) => (
                   <li key={`deck-${group.deckId}`} className="rounded-xl border border-lantern-border bg-lantern-surface">
                     <button type="button" onClick={() => onOpenDeck(group.deckId)} className={rowClass}>
-                      <FeatureDisc feature="flashcards" size={32} icon={<RectangleStackIcon className="h-5 w-5" />} />
+                      <FeatureDisc feature="flashcards" size={32} icon={<AppIcon name="albums" size={20} />} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className="truncate text-body font-medium text-lantern-text">{group.title || 'Deck'}</span>
@@ -315,7 +307,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                         {group.cards.map((card) => (
                           <li key={`card-${card.id}`} className="border-b border-lantern-border/40 last:border-b-0">
                             <button type="button" onClick={() => onOpenDeck(card.deckId || group.deckId)} className={rowClass}>
-                              <Square2StackIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-feature-flashcards-ink" aria-hidden />
+                              <AppIcon name="copy" size={16} className="mt-0.5 shrink-0 text-lantern-feature-flashcards-ink" aria-hidden />
                               <span className="min-w-0 flex-1">
                                 <span className="block truncate text-body text-lantern-text">{card.title || 'Card'}</span>
                                 {renderSnippet(card)}
@@ -337,19 +329,19 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 id="library-search-bundles"
                 className="mb-1 flex items-center gap-1.5 px-1 text-label uppercase text-lantern-text-tertiary"
               >
-                <CloudArrowDownIcon className="h-3.5 w-3.5" aria-hidden /> Offline bundles · {groups.bundles.length}
+                <AppIcon name="cloud-download" size={14} aria-hidden /> Offline bundles · {groups.bundles.length}
               </h3>
               <ul className="rounded-xl border border-lantern-border bg-lantern-surface divide-y divide-lantern-border/60">
                 {groups.bundles.map((row) => (
                   <li key={`bundle-${row.id}`}>
                     <button type="button" onClick={() => onOpenBundle(row)} className={rowClass}>
-                      <FeatureDisc feature="budget" size={32} icon={<CloudArrowDownIcon className="h-5 w-5" />} />
+                      <FeatureDisc feature="budget" size={32} icon={<AppIcon name="cloud-download" size={20} />} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className="truncate text-body font-medium text-lantern-text">{row.title || 'Bundle'}</span>
                           {isPurchasedBundleId(row.id) ? (
                             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-lantern-accent/10 px-1.5 py-0.5 text-label tracking-normal font-semibold text-lantern-accent">
-                              <ShoppingBagIcon className="h-3 w-3" aria-hidden /> Purchased
+                              <AppIcon name="bag" size={12} aria-hidden /> Purchased
                             </span>
                           ) : null}
                           {courseTag(row)}

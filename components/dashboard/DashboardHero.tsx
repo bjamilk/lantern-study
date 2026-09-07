@@ -1,8 +1,8 @@
 import React from 'react';
-import { FireIcon, SparklesIcon, AcademicCapIcon, PlayIcon } from '@heroicons/react/24/solid';
 import { getStudyAllDueLabel } from '@lantern/shared';
 import { Card, Button, StatPill } from '../ui';
 import type { TestSessionData, StudySessionData } from '../../types';
+import { AppIcon } from '../ui/AppIcon';
 
 interface DashboardHeroProps {
   userName: string;
@@ -72,19 +72,19 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <StatPill label="Streak" value={`${streak}d`} accent="accent" icon={<FireIcon className="w-4 h-4" />} />
-          <StatPill label="Points" value={points.toLocaleString()} accent="primary" icon={<SparklesIcon className="w-4 h-4" />} />
+          <StatPill label="Streak" value={`${streak}d`} accent="accent" icon={<AppIcon name="flame" size={16} filled />} />
+          <StatPill label="Points" value={points.toLocaleString()} accent="primary" icon={<AppIcon name="sparkles" size={16} filled />} />
         </div>
       </div>
 
       <div className="mt-4 flex flex-col sm:flex-row gap-3">
         <Button size="lg" onClick={onPrimaryAction} className="sm:flex-1 sm:max-w-sm">
-          <AcademicCapIcon className="w-5 h-5" />
+          <AppIcon name="school" size={20} />
           {primaryActionLabel}
         </Button>
         {(activeTestSession || activeStudySession) && onResumeSession && (
           <Button variant="accent" size="lg" onClick={onResumeSession}>
-            <PlayIcon className="w-5 h-5" />
+            <AppIcon name="play" size={20} filled />
             Resume session
           </Button>
         )}

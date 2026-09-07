@@ -6,14 +6,7 @@ import {
   type MarketplacePurchase,
 } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
-import {
-  ArrowLeftIcon,
-  ArrowPathIcon,
-  RectangleStackIcon,
-  SparklesIcon,
-  ArrowDownTrayIcon,
-  ShoppingBagIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 interface Props {
   onBack: () => void;
@@ -91,7 +84,7 @@ export const MarketplacePurchasesScreen: React.FC<Props> = ({ onBack, onNavigate
             className="p-2 -ml-2 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors"
             aria-label="Back"
           >
-            <ArrowLeftIcon className="w-5 h-5" />
+            <AppIcon name="arrow-back" size={20} />
           </button>
           <div className="flex-1">
             <h1 className="text-xl sm:text-2xl font-bold text-lantern-text">Your purchases</h1>
@@ -105,7 +98,7 @@ export const MarketplacePurchasesScreen: React.FC<Props> = ({ onBack, onNavigate
             className="p-2 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors disabled:opacity-50"
             aria-label="Refresh"
           >
-            <ArrowPathIcon className={`w-5 h-5 ${loading ? 'animate-spin' : ''}`} />
+            <AppIcon name="refresh" size={20} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
 
@@ -130,7 +123,7 @@ export const MarketplacePurchasesScreen: React.FC<Props> = ({ onBack, onNavigate
           </div>
         ) : purchases.length === 0 ? (
           <div className="rounded-2xl border border-lantern-border bg-lantern-surface p-8 text-center">
-            <ShoppingBagIcon className="w-10 h-10 mx-auto text-lantern-text-tertiary mb-3" />
+            <AppIcon name="bag" size={40} className="mx-auto text-lantern-text-tertiary mb-3" />
             <p className="text-lantern-text font-semibold">No purchases yet</p>
             <p className="text-sm text-lantern-text-secondary mt-1 mb-4">
               Study packs and question banks you buy or download show up here.
@@ -146,14 +139,14 @@ export const MarketplacePurchasesScreen: React.FC<Props> = ({ onBack, onNavigate
           <ul className="space-y-3">
             {purchases.map((p) => {
               const isStudyPack = p.kind === 'study_pack';
-              const Icon = isStudyPack ? RectangleStackIcon : SparklesIcon;
+              const iconName: AppIconName = isStudyPack ? 'albums' : 'sparkles';
               return (
                 <li
                   key={p.listingId}
                   className="rounded-xl border border-lantern-border bg-lantern-surface p-4 flex items-start gap-3"
                 >
                   <div className="mt-0.5 shrink-0 w-9 h-9 rounded-lg bg-lantern-primary-background flex items-center justify-center">
-                    <Icon className="w-5 h-5 text-lantern-primary" />
+                    <AppIcon name={iconName} size={20} className="text-lantern-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -185,7 +178,7 @@ export const MarketplacePurchasesScreen: React.FC<Props> = ({ onBack, onNavigate
                         disabled={updatingId === p.listingId}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lantern-primary hover:bg-lantern-primary-dark disabled:opacity-50 text-white text-xs font-semibold transition-colors"
                       >
-                        <ArrowDownTrayIcon className="w-3.5 h-3.5" />
+                        <AppIcon name="download" size={14} />
                         {updatingId === p.listingId ? 'Updating…' : 'Update'}
                       </button>
                     ) : (

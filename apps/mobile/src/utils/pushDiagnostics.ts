@@ -36,6 +36,68 @@ export const PUSH_SKIP_REASON_COPY: Record<JobPushSkipReason, string> = {
 /** What the sheet says when the server did send one. */
 export const PUSH_SENT_COPY = 'Notified by push ✓';
 
+/**
+ * The ONE thing a student is told when a push did not go out.
+ *
+ * Build 168 showed a finished job's sheet reading "Push failed: Could not find
+ * APNs credentials for com.lanternstudy.app.dev (@bjamilk/lantern-study). You
+ * may need to generate or upload new push credentials." That is a message to
+ * whoever ships the app, shown to someone revising for an exam, and it reads
+ * like their work went missing. Two facts are all that belong here: the
+ * notification did not arrive, and the work is safe.
+ *
+ * The raw text is not deleted — `jobPushFailureDetail` still returns it, for
+ * the Me → Notifications diagnostics panel and for a bug report.
+ */
+export const PUSH_FAILED_STUDENT_COPY =
+  'We could not send a notification to this phone. Your work is saved here.';
+
+/**
+ * The push failures we can actually tell apart.
+ *
+ * Every one of them produces the SAME student sentence — none of them is
+ * something a student can fix from a job sheet. The kind exists so the
+ * diagnostics panel (and a support screenshot) can name the real cause.
+ */
+export type PushFailureKind =
+  | 'apns-credentials'
+  | 'device-not-registered'
+  | 'invalid-credentials'
+  | 'rate-limited'
+  | 'unknown';
+
+/** What each kind means, for the diagnostics panel only. */
+export const PUSH_FAILURE_KIND_COPY: Record<PushFailureKind, string> = {
+  'apns-credentials': 'No Apple push credentials are uploaded for this build.',
+  'device-not-registered': 'This phone\u2019s push token is no longer valid — re-register it.',
+  'invalid-credentials': 'The push credentials for this build were rejected.',
+  'rate-limited': 'Expo was sending too fast and dropped this one.',
+  unknown: 'Expo rejected the notification.',
+};
+
+/**
+ * Classify an Expo push error by the shapes Expo actually returns.
+ *
+ * Expo puts its machine code in `message` for ticket errors and in prose for
+ * credential failures, so both are matched on substrings, case-insensitively.
+ * An unrecognised message is `unknown` rather than a guess.
+ */
+export const classifyPushFailure = (
+  raw: string | null | undefined
+): PushFailureKind => {
+  const text = (raw ?? '').toLowerCase();
+  if (!text.trim()) return 'unknown';
+  if (text.includes('apns') || text.includes('fcm credentials') || text.includes('push credentials')) {
+    return 'apns-credentials';
+  }
+  if (text.includes('devicenotregistered')) return 'device-not-registered';
+  if (text.includes('invalidcredentials')) return 'invalid-credentials';
+  if (text.includes('messagerateexceeded') || text.includes('rate exceeded')) {
+    return 'rate-limited';
+  }
+  return 'unknown';
+};
+
 /** Every ticket Expo rejected, as one message. */
 const ticketError = (audit: JobPushAudit): string | undefined => {
   const failed = (audit.expoTickets ?? []).filter((t) => t.status === 'error');
@@ -54,22 +116,54 @@ const ticketError = (audit: JobPushAudit): string | undefined => {
 export const describeJobPush = (audit: JobPushAudit | null | undefined): string | null => {
   if (!audit || typeof audit.attemptedAt !== 'string') return null;
 
-  if (audit.skippedReason === 'error') {
-    const message = audit.error?.trim() || ticketError(audit);
-    return message ? `Push failed: ${message}` : 'Push failed';
-  }
+  if (audit.skippedReason === 'error') return PUSH_FAILED_STUDENT_COPY;
   if (audit.skippedReason) {
     return `Push skipped: ${PUSH_SKIP_REASON_COPY[audit.skippedReason] ?? audit.skippedReason}`;
   }
 
   // No skip reason: the server tried. Expo can still have rejected it, and a
   // rejected ticket is not a delivery.
-  const rejected = ticketError(audit);
-  if (rejected) return `Push failed: ${rejected}`;
+  if (ticketError(audit)) return PUSH_FAILED_STUDENT_COPY;
   if (audit.tokenCount === 0) {
     return `Push skipped: ${PUSH_SKIP_REASON_COPY.no_token}`;
   }
   return PUSH_SENT_COPY;
+};
+
+/**
+ * The raw failure text, for the diagnostics panel and nothing else.
+ *
+ * `null` when this job's push did not fail. Never rendered on a job sheet:
+ * that is the defect this pair of functions exists to keep fixed.
+ */
+export const jobPushFailureDetail = (
+  audit: JobPushAudit | null | undefined
+): string | null => {
+  if (!audit || typeof audit.attemptedAt !== 'string') return null;
+  const raw = audit.skippedReason === 'error'
+    ? (audit.error?.trim() || ticketError(audit))
+    : ticketError(audit);
+  return raw ?? null;
+};
+
+/**
+ * One diagnostics row naming the real cause, with Expo's own words after it.
+ *
+ * Empty when nothing failed, so the panel can spread it unconditionally.
+ */
+export const jobPushFailureRows = (
+  audit: JobPushAudit | null | undefined
+): PushDiagnosticRow[] => {
+  const raw = jobPushFailureDetail(audit);
+  if (!raw) return [];
+  return [
+    {
+      key: 'push-failure',
+      label: 'Last notification failure',
+      value: `${PUSH_FAILURE_KIND_COPY[classifyPushFailure(raw)]} (${raw})`,
+      state: 'bad',
+    },
+  ];
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -127,7 +221,8 @@ export interface PushDiagnosticRow {
     | 'server-prefs'
     | 'app-identity'
     | 'device-token-type'
-    | 'register-error';
+    | 'register-error'
+    | 'push-failure';
   label: string;
   value: string;
   state: 'ok' | 'bad' | 'unknown';

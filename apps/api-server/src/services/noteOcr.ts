@@ -14,6 +14,7 @@ import {
   mergeExtractionTexts,
 } from './noteFiles';
 import { ocrImageBuffer, ocrPdfPagesFromBuffer } from './pdfPageOcr';
+import { persistPagesAfterPdfOcr } from './notePages';
 import {
   isPerceiveVisionEnabled,
   perceivePageImage,
@@ -218,6 +219,14 @@ export async function runNoteOcrJob(
 
       const layer = await extractPdfTextDetailsFromBuffer(buffer);
       ocrText = mergeExtractionTexts(layer.text, ocrText);
+
+      // Page model (walk-through). Purely additive: the joined `ocrText` above
+      // is what gets written to extracted_text, exactly as before. Failures are
+      // swallowed inside persistPagesAfterPdfOcr — OCR succeeding is the thing
+      // the student paid for and it must not be undone by a page write.
+      await persistPagesAfterPdfOcr(supabaseService, attachmentId, buffer, raster.pages, {
+        noteId,
+      });
     }
 
     const trimmed = (ocrText || '').trim();

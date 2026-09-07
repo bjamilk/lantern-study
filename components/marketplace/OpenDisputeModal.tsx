@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   DISPUTE_CATEGORIES,
   DISPUTE_CATEGORY_LABELS,
@@ -74,7 +74,7 @@ export const OpenDisputeModal: React.FC<OpenDisputeModalProps> = ({
         className="w-full max-w-md rounded-xl border border-lantern-border bg-lantern-background p-5"
       >
         <div className="mb-3 flex items-start gap-2">
-          <ExclamationTriangleIcon className="mt-0.5 h-5 w-5 shrink-0 text-amber-500" aria-hidden="true" />
+          <AppIcon name="warning" size={20} className="mt-0.5 shrink-0 text-amber-500" aria-hidden />
           <div>
             <h2 id="dispute-title" className="text-base font-semibold text-lantern-text">
               Open a dispute

@@ -1,10 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
-import {
-  UserGroupIcon,
-  ShoppingBagIcon,
-  BriefcaseIcon,
-} from '@heroicons/react/24/outline';
 import { CAMPUS_SEGMENTS, type CampusSegment } from '../../utils/appRoutes';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 /**
  * Campus — one destination, three segments (Communities · Shop · Jobs).
@@ -45,10 +41,10 @@ const SEGMENT_LABELS: Record<CampusSegment, string> = {
   jobs: 'Jobs',
 };
 
-const SEGMENT_ICONS: Record<CampusSegment, React.ComponentType<{ className?: string }>> = {
-  communities: UserGroupIcon,
-  shop: ShoppingBagIcon,
-  jobs: BriefcaseIcon,
+const SEGMENT_ICONS: Record<CampusSegment, AppIconName> = {
+  communities: 'people',
+  shop: 'bag',
+  jobs: 'briefcase',
 };
 
 export function visibleCampusSegments(input: {
@@ -92,7 +88,7 @@ const CampusHubScreen: React.FC<CampusHubScreenProps> = ({
         {segments.length > 1 ? (
           <div role="tablist" aria-label="Campus sections" className="flex gap-1 pt-2">
             {segments.map((id) => {
-              const Icon = SEGMENT_ICONS[id];
+              const iconName = SEGMENT_ICONS[id];
               const selected = active === id;
               return (
                 <button
@@ -107,7 +103,7 @@ const CampusHubScreen: React.FC<CampusHubScreenProps> = ({
                       : 'text-lantern-text-secondary hover:text-lantern-text'
                   }`}
                 >
-                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  <AppIcon name={iconName} size={16} aria-hidden={true} />
                   <span>{SEGMENT_LABELS[id]}</span>
                   {selected ? (
                     <span

@@ -38,6 +38,12 @@ import { normalizeSurface, recordLearningEvent } from "../../services/learningEv
 import { buildTrustedCompanionContext } from "../../services/companionContext";
 import { getStudyPackFactoryService } from "../../services/studyPackFactory";
 import {
+  buildNarrationScript,
+  getNarrationBundle,
+  markNarrationFailed,
+  narrationApiPayload,
+} from "../../services/narrationService";
+import {
   ensureConversationTitle,
   parseCompanionUuid,
   resolveConversationForSend,
@@ -158,9 +164,14 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
       return result;
     }
     case "ai.generate.flashcards": {
-      const { notes, count, style } = job.data;
+      const { notes, count, style, typeMix, difficulty } = job.data;
       await progress.stage("generating");
-      const result = await generateFlashcardsFromNotes(notes, { count, style });
+      const result = await generateFlashcardsFromNotes(notes, {
+        count,
+        style,
+        typeMix,
+        difficulty,
+      });
       await recordInference(userId, "generate-flashcards", result);
       await recordGenerationEvent(
         userId,
@@ -343,15 +354,19 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
       return result;
     }
     case "notes.ai.flashcards": {
-      const { content, count, style } = job.data as {
+      const { content, count, style, typeMix, difficulty } = job.data as {
         content: string;
         count?: number;
         style?: string;
+        typeMix?: string;
+        difficulty?: string;
       };
       await progress.stage("generating");
       const result = await generateFlashcardsFromNotes(content, {
         count,
         style: style as "concise" | "detailed" | undefined,
+        typeMix,
+        difficulty,
       });
       await recordInference(userId, "note-flashcards", result);
       await recordGenerationEvent(
@@ -361,6 +376,50 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
         job.data as Record<string, unknown>,
       );
       return result;
+    }
+    case "notes.ai.narration": {
+      const { noteId, attachmentId, version, creditCost, title } = job.data as {
+        noteId: string;
+        attachmentId: string;
+        version?: number;
+        creditCost?: number;
+        title?: string;
+      };
+      if (!noteId || !attachmentId || !userId || !supabaseService) {
+        throw new Error("Narration job requires noteId, attachmentId and a user");
+      }
+      progress.ref({ type: "note", id: noteId, route: `/notes/${noteId}` });
+      try {
+        // Throws on total failure → the worker wrapper refunds the AI charge.
+        await buildNarrationScript(
+          supabaseService,
+          { noteId, attachmentId, userId, version, creditCost, title },
+          {
+            stage: (stage) => progress.stage(stage),
+            percent: (percent) => progress.stage("generating", percent),
+          },
+        );
+        // The job's result is the WHOLE deck, not a summary of it: a client
+        // that waited on this job renders what comes back, and a summary would
+        // leave the player with nothing to speak until it fetched again.
+        const bundle = await getNarrationBundle(supabaseService, {
+          noteId,
+          attachmentId,
+          userId,
+        });
+        return narrationApiPayload(attachmentId, bundle.bundle);
+      } catch (err) {
+        // The row must say "failed" even though the throw is what refunds:
+        // a student who comes back to the screen has to see why, not a
+        // deck stuck at "writing".
+        await markNarrationFailed(supabaseService, {
+          attachmentId,
+          userId,
+          version: version || 1,
+          message: err instanceof Error ? err.message : "The reading could not be written.",
+        });
+        throw err;
+      }
     }
     case "ai.studyPack.generate": {
       const { draftId } = job.data as { draftId: string };

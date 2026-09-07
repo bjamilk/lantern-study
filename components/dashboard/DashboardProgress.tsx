@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 
 interface DashboardProgressProps {
   title?: string;
@@ -24,9 +24,9 @@ export const DashboardProgress: React.FC<DashboardProgressProps> = ({
       >
         <span className="font-semibold text-lantern-text">{title}</span>
         {open ? (
-          <ChevronUpIcon className="w-5 h-5 text-lantern-text-secondary" />
+          <AppIcon name="chevron-up" size={20} className="text-lantern-text-secondary" />
         ) : (
-          <ChevronDownIcon className="w-5 h-5 text-lantern-text-secondary" />
+          <AppIcon name="chevron-down" size={20} className="text-lantern-text-secondary" />
         )}
       </button>
       {open && <div className="px-4 pb-4 space-y-6 border-t border-lantern-border pt-4">{children}</div>}

@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
 import { Group, Message, MessageType, QuestionType, TestConfig, UserQuestionStats, TestPreset, User, QuestionStatus } from '../types';
 import { CoursePicker } from './academic/CoursePicker';
 import { TopicPicker } from './academic/TopicPicker';
-import { QuestionMarkCircleIcon, AcademicCapIcon, XMarkIcon, ClockIcon, ListBulletIcon, TagIcon, CloudArrowDownIcon, ArrowPathIcon, UsersIcon, BookmarkIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { isQuestionTestable } from '../utils/helpers';
 import { featureAccents } from '@lantern/shared/design';
 import {
@@ -438,7 +438,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
     return `Configure Test for "${group.name}"`;
   };
   
-  const Icon = mode === 'test' ? QuestionMarkCircleIcon : AcademicCapIcon;
+  const headerIconName: AppIconName = mode === 'test' ? 'help-circle' : 'school';
 
   const questionAvailabilityHint = (
     <>
@@ -474,11 +474,11 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
             <h2 id="test-config-study-title" className="text-lg sm:text-xl font-semibold text-lantern-text flex items-center min-w-0">
               <span className="text-2xl mr-2 shrink-0">📚</span>
-              <AcademicCapIcon className="w-6 h-6 mr-2 shrink-0" style={{ color: featureAccents.groups }} />
+              <AppIcon name="school" size={24} className="mr-2 shrink-0" style={{ color: featureAccents.groups }} />
               <span className="truncate">Configure Study for "{group.name}"</span>
             </h2>
             <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text shrink-0">
-              <XMarkIcon className="w-6 h-6" />
+              <AppIcon name="close" size={24} />
             </button>
           </div>
 
@@ -526,20 +526,20 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {/* Load Preset */}
             {testPresets.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
-                <label htmlFor="study-preset-select" className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>
+                <label htmlFor="study-preset-select" className="text-sm font-medium text-blue-700 dark:text-blue-300 flex items-center mb-2"><AppIcon name="bookmark" size={20} className="mr-1.5" />Load a Preset</label>
                 <div className="flex gap-2">
                   <select id="study-preset-select" onChange={e => handleApplyPreset(e.target.value)} defaultValue="" className="flex-grow p-2 border border-lantern-primary/30 rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary">
                     <option value="" disabled>Select a preset...</option>
                     {testPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                   </select>
-                  <button type="button" onClick={() => { void confirmDialog({ title: 'Delete preset?', message: 'Are you sure you want to delete this preset?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeletePreset((document.getElementById('study-preset-select') as HTMLSelectElement)?.value); }); }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><TrashIcon className="w-5 h-5"/></button>
+                  <button type="button" onClick={() => { void confirmDialog({ title: 'Delete preset?', message: 'Are you sure you want to delete this preset?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeletePreset((document.getElementById('study-preset-select') as HTMLSelectElement)?.value); }); }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><AppIcon name="trash" size={20} /></button>
                 </div>
               </div>
             )}
 
             <div>
               <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-lantern-text flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5 text-lantern-primary"/>
+                <AppIcon name="list" size={20} className="mr-1.5 text-lantern-primary" />
                 Number of Questions 
                 <span className="ml-1 text-xs text-lantern-text-secondary">{`(${maxQuestions} available)`}</span>
               </label>
@@ -568,7 +568,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {/* Special Learning Modes */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
               <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                <AcademicCapIcon className="w-5 h-5 mr-1.5"/>Special Learning Modes
+                <AppIcon name="school" size={20} className="mr-1.5" />Special Learning Modes
               </h3>
               <div className="space-y-2">
                 <label className="flex items-center">
@@ -592,7 +592,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {availableSubgroups.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
                 <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                  <UsersIcon className="w-5 h-5 mr-1.5"/>Include Sub-groups
+                  <AppIcon name="people" size={20} className="mr-1.5" />Include Sub-groups
                 </h3>
                 <div className="max-h-32 overflow-y-auto space-y-1">
                   <label className="flex items-center p-1 rounded hover:bg-blue-100 dark:hover:bg-blue-800/50">
@@ -615,7 +615,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {/* Filter by Question Type */}
             <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
               <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5"/>Filter by Question Type <span className="text-xs text-lantern-text-secondary ml-1">(leave empty for all types)</span>
+                <AppIcon name="list" size={20} className="mr-1.5" />Filter by Question Type <span className="text-xs text-lantern-text-secondary ml-1">(leave empty for all types)</span>
               </h3>
                 <div className="grid grid-cols-2 gap-2">
                 {TESTABLE_QUESTION_TYPES.map(type => (
@@ -631,7 +631,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {uniqueTagsFromGroup.length > 0 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
                 <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                  <TagIcon className="w-5 h-5 mr-1.5"/>Filter by Tags <span className="text-xs text-lantern-text-secondary ml-1">(leave empty for all tags)</span>
+                  <AppIcon name="pricetag" size={20} className="mr-1.5" />Filter by Tags <span className="text-xs text-lantern-text-secondary ml-1">(leave empty for all tags)</span>
                 </h3>
                 <div className="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
                   {uniqueTagsFromGroup.map(tag => (
@@ -652,7 +652,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {testPresets.length < 5 && (
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-700">
                 <h3 className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-2 flex items-center">
-                  <BookmarkIcon className="w-5 h-5 mr-1.5"/>Save Current Configuration as Preset
+                  <AppIcon name="bookmark" size={20} className="mr-1.5" />Save Current Configuration as Preset
                 </h3>
                 <div className="flex gap-2">
                   <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-lantern-primary/30 rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text focus:ring-lantern-primary focus:border-lantern-primary"/>
@@ -670,8 +670,8 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               disabled={maxQuestions === 0 || numberOfQuestions < 1}
               className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/50 hover:bg-blue-200 dark:hover:bg-blue-900/70 border border-lantern-primary/30 dark:border-blue-700 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isDownloading && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin"/>}
-              <CloudArrowDownIcon className="w-5 h-5 mr-2" />
+              {isDownloading && <AppIcon name="refresh" size={16} className="mr-2 animate-spin" />}
+              <AppIcon name="cloud-download" size={20} className="mr-2" />
               Download for Offline
             </button>
             <div className="flex gap-3 w-full sm:w-auto">
@@ -710,11 +710,11 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
         <div className="flex justify-between items-center mb-4 flex-shrink-0 gap-3">
           <h2 id="test-config-modal-title" className="text-lg sm:text-xl font-semibold text-lantern-text flex items-center min-w-0">
             {mode === 'test' && <span className="text-2xl mr-2 shrink-0">📝</span>}
-            <Icon className="w-6 h-6 mr-2 shrink-0" style={{ color: featureAccents.groups }} />
+            <AppIcon name={headerIconName} size={24} className="mr-2 shrink-0" style={{ color: featureAccents.groups }} />
             <span className="truncate">{mode === 'test' ? `Configure Test for "${group.name}"` : getModalTitle()}</span>
           </h2>
           <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text shrink-0">
-            <XMarkIcon className="w-6 h-6" />
+            <AppIcon name="close" size={24} />
           </button>
         </div>
 
@@ -724,13 +724,13 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           {courseControl}
           {mode !== 'game' && testPresets.length > 0 && (
             <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
-              <label htmlFor="preset-select" className="text-sm font-medium text-lantern-text flex items-center mb-2"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Load a Preset</label>
+              <label htmlFor="preset-select" className="text-sm font-medium text-lantern-text flex items-center mb-2"><AppIcon name="bookmark" size={20} className="mr-1.5" />Load a Preset</label>
               <div className="flex gap-2">
                 <select id="preset-select" onChange={e => handleApplyPreset(e.target.value)} defaultValue="" className="flex-grow p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text">
                   <option value="" disabled>Select a preset...</option>
                   {testPresets.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
-                <button type="button" onClick={() => { void confirmDialog({ title: 'Delete preset?', message: 'Are you sure you want to delete this preset?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeletePreset((document.getElementById('preset-select') as HTMLSelectElement)?.value); }); }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><TrashIcon className="w-5 h-5"/></button>
+                <button type="button" onClick={() => { void confirmDialog({ title: 'Delete preset?', message: 'Are you sure you want to delete this preset?', danger: true, confirmLabel: 'Delete' }).then((ok) => { if (ok) onDeletePreset((document.getElementById('preset-select') as HTMLSelectElement)?.value); }); }} className="p-2 text-red-500 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-md"><AppIcon name="trash" size={20} /></button>
               </div>
             </div>
           )}
@@ -738,7 +738,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label htmlFor="numberOfQuestions" className="block text-sm font-medium text-lantern-text flex items-center">
-                <ListBulletIcon className="w-5 h-5 mr-1.5 text-lantern-text-secondary"/>
+                <AppIcon name="list" size={20} className="mr-1.5 text-lantern-text-secondary" />
                 Number of Questions 
                 <span className="ml-1 text-xs text-lantern-text-secondary">{`(${maxQuestions} available)`}</span>
               </label>
@@ -764,7 +764,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
             {mode === 'test' && (
               <div>
                 <label htmlFor="timerDuration" className="block text-sm font-medium text-lantern-text flex items-center">
-                    <ClockIcon className="w-5 h-5 mr-1.5 text-lantern-text-secondary"/>
+                    <AppIcon name="time" size={20} className="mr-1.5 text-lantern-text-secondary" />
                     Timer (minutes)
                 </label>
                 <input
@@ -815,7 +815,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
           {!useSpacedRepetition && !focusOnNew && mode !== 'game' && availableSubgroups.length > 0 && (
             <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
-                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><UsersIcon className="w-5 h-5 mr-1.5"/>Include Sub-groups</h3>
+                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><AppIcon name="people" size={20} className="mr-1.5" />Include Sub-groups</h3>
                 <div className="max-h-40 overflow-y-auto space-y-1">
                     <label className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50">
                         <input type="checkbox" onChange={handleSelectAllSubgroups} checked={selectedSubgroupIDs.length === availableSubgroups.length && availableSubgroups.length > 0} className="h-4 w-4 rounded text-lantern-primary border-lantern-border"/>
@@ -837,7 +837,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
           {!useSpacedRepetition && !focusOnNew && (
             <>
               <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
-                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><ListBulletIcon className="w-5 h-5 mr-1.5"/>Filter by Question Type</h3>
+                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><AppIcon name="list" size={20} className="mr-1.5" />Filter by Question Type</h3>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {TESTABLE_QUESTION_TYPES.map(type => (
                     <label key={type} className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50">
@@ -850,7 +850,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
               
               {uniqueTagsFromGroup.length > 0 && (
                 <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
-                  <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><TagIcon className="w-5 h-5 mr-1.5"/>Filter by Tags</h3>
+                  <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><AppIcon name="pricetag" size={20} className="mr-1.5" />Filter by Tags</h3>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-32 overflow-y-auto">
                     {uniqueTagsFromGroup.map(tag => (
                       <label key={tag} className="flex items-center p-1 rounded hover:bg-lantern-background-secondary dark:hover:bg-lantern-border/50">
@@ -870,7 +870,7 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
 
           {mode !== 'game' && testPresets.length < 5 && (
             <div className="p-3 bg-lantern-background dark:bg-lantern-surface-secondary/50 rounded-md border dark:border-lantern-border">
-                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><BookmarkIcon className="w-5 h-5 mr-1.5"/>Save Current Configuration as Preset</h3>
+                <h3 className="text-sm font-medium text-lantern-text mb-2 flex items-center"><AppIcon name="bookmark" size={20} className="mr-1.5" />Save Current Configuration as Preset</h3>
                 <div className="flex gap-2">
                   <input type="text" value={presetName} onChange={e => setPresetName(e.target.value)} placeholder="Preset name..." className="flex-grow p-2 border border-lantern-border dark:border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text"/>
                   <button type="button" onClick={handleSaveCurrentAsPreset} disabled={!presetName.trim()} className="px-4 py-2 text-sm font-medium text-white rounded-md disabled:opacity-50 bg-lantern-primary hover:bg-lantern-primary-dark">Save</button>
@@ -888,8 +888,8 @@ export const TestConfigModal: React.FC<TestConfigModalProps> = ({
                 disabled={isSubmitDisabled()}
                 className="w-full sm:w-auto px-4 py-2 text-sm font-medium text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/50 hover:bg-purple-200 dark:hover:bg-purple-900/70 border border-lantern-primary/40 rounded-md flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isDownloading && <ArrowPathIcon className="w-4 h-4 mr-2 animate-spin"/>}
-                <CloudArrowDownIcon className="w-5 h-5 mr-2" />
+                {isDownloading && <AppIcon name="refresh" size={16} className="mr-2 animate-spin" />}
+                <AppIcon name="cloud-download" size={20} className="mr-2" />
                 Download for Offline
               </button>
           )}

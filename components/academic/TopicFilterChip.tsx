@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookmarkIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useLibraryStore } from '../../stores/libraryStore';
 import { useCourseFilterShownAbove } from './CourseChips';
@@ -32,7 +32,7 @@ export const TopicFilterChip: React.FC<{ className?: string }> = ({ className = 
     <span
       className={`inline-flex w-max items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-background-secondary px-2.5 py-1 text-xs font-medium text-lantern-text-secondary ${className}`}
     >
-      <BookmarkIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+      <AppIcon name="bookmark" size={14} className="shrink-0" aria-hidden />
       <span className="truncate max-w-[12rem]">{label}</span>
       <button
         type="button"
@@ -41,7 +41,7 @@ export const TopicFilterChip: React.FC<{ className?: string }> = ({ className = 
         aria-label={`Clear topic filter ${label}`}
         className="rounded-full p-0.5 hover:bg-lantern-surface"
       >
-        <XMarkIcon className="w-3 h-3" aria-hidden />
+        <AppIcon name="close" size={12} aria-hidden />
       </button>
     </span>
   );

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { PlayIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 
 interface YouTubeEmbedProps {
   videoId: string;
@@ -40,7 +40,7 @@ const YouTubeEmbed: React.FC<YouTubeEmbedProps> = ({ videoId, title = 'YouTube v
         />
         <span className="absolute inset-0 flex items-center justify-center bg-black/35 transition-colors group-hover:bg-black/45">
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-red-600 shadow-lg group-hover:bg-red-500">
-            <PlayIcon className="h-7 w-7 text-white translate-x-0.5" />
+            <AppIcon name="play" size={28} filled className="text-white translate-x-0.5" />
           </span>
         </span>
       </button>

@@ -1,9 +1,9 @@
 
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
+import { AppIcon } from './ui/AppIcon';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { OfflineSessionBundle, Deck } from '../types';
-import { CloudArrowDownIcon, ArrowPathIcon, DocumentTextIcon, ArrowUpTrayIcon, ShoppingBagIcon, AcademicCapIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import { syncCopy, featureAccents } from '@lantern/shared/design';
 import { useUIStore } from '../stores/uiStore';
 import { useAuthStore } from '../stores/authStore';
@@ -220,7 +220,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
         title="Offline Activity"
         subtitle="Download test bundles and flashcard decks to study without a connection. Results and reviews sync automatically when you're back online."
         accentColor={featureAccents.offline}
-        icon={<CloudArrowDownIcon className="w-6 h-6" />}
+        icon={<AppIcon name="cloud-download" size={24} />}
         actions={
           <>
             <input
@@ -236,7 +236,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
               className="flex items-center gap-2 px-4 py-2 min-h-[44px] bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lantern text-sm font-medium transition-colors"
               title="Import a shared bundle file (.json)"
             >
-              <ArrowUpTrayIcon className="w-4 h-4" />
+              <AppIcon name="upload" size={16} />
               Import Bundle
             </button>
             <button
@@ -246,7 +246,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
               className="flex items-center gap-2 px-4 py-2 min-h-[44px] border border-lantern-border text-lantern-text hover:border-lantern-primary/40 rounded-lantern text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               title="Re-download question banks you bought on the marketplace"
             >
-              <ShoppingBagIcon className="w-4 h-4" />
+              <AppIcon name="bag" size={16} />
               {restoring ? 'Restoring…' : 'Restore purchases'}
             </button>
           </>
@@ -276,7 +276,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
           className="mb-4 flex flex-wrap items-center gap-2 rounded-lantern border border-lantern-border bg-lantern-surface px-3 py-2 text-sm"
           role="status"
         >
-          <AcademicCapIcon className="w-4 h-4 text-lantern-primary shrink-0" aria-hidden />
+          <AppIcon name="school" size={16} className="text-lantern-primary shrink-0" aria-hidden />
           <span className="text-lantern-text-secondary">Showing</span>
           <span className="font-semibold text-lantern-text truncate">
             {courseFilterId === UNFILED_COURSE_ID ? 'unfiled bundles' : filterCourse ? courseLabel(filterCourse) : 'one course'}
@@ -296,7 +296,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
             onClick={() => setCourseFilter(null)}
             className="ml-auto inline-flex items-center gap-1 rounded-full border border-lantern-border px-2 py-0.5 text-xs font-medium text-lantern-text hover:bg-lantern-background-secondary"
           >
-            <XMarkIcon className="w-3 h-3" aria-hidden /> Show all
+            <AppIcon name="close" size={12} aria-hidden /> Show all
           </button>
         </div>
       ) : null}
@@ -318,7 +318,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                   disabled={!isOnline}
                   className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
-                  <ArrowPathIcon className="w-5 h-5 mr-2" />
+                  <AppIcon name="refresh" size={20} className="mr-2" />
                   Sync Test Results
                 </button>
               </div>
@@ -334,7 +334,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
                   disabled={!isOnline}
                   className="px-4 py-2 min-h-[44px] bg-lantern-success hover:opacity-90 text-white rounded-lantern flex items-center text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-opacity"
                 >
-                  <ArrowPathIcon className="w-5 h-5 mr-2" />
+                  <AppIcon name="refresh" size={20} className="mr-2" />
                   Sync Flashcard Reviews
                 </button>
               </div>
@@ -369,7 +369,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
         <h2 className="text-lg font-semibold mb-3 text-lantern-text">Downloaded Test Bundles</h2>
         {courseFilterId && visibleBundles.length === 0 && offlineBundles.length > 0 ? (
           <div className="text-center py-10 bg-lantern-surface border border-lantern-border rounded-lantern-xl shadow-lantern">
-            <DocumentTextIcon className="w-16 h-16 text-lantern-text-tertiary mx-auto mb-4" />
+            <AppIcon name="document-text" size={64} className="text-lantern-text-tertiary mx-auto mb-4" />
             <p className="text-lantern-text-secondary">
               {courseFilterId === UNFILED_COURSE_ID
                 ? 'Every downloaded bundle is filed under a course.'

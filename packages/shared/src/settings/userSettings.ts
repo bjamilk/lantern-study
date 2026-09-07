@@ -1,6 +1,10 @@
 /**
  * Canonical user settings schema shared between web and mobile.
  */
+import {
+  DEFAULT_FLASHCARD_GENERATION_OPTIONS,
+  type FlashcardTypeMix,
+} from '../flashcards/generationOptions';
 
 export interface NotificationSettings {
   pushEnabled: boolean;
@@ -91,6 +95,19 @@ export interface MarketplaceSettings {
   campus_other?: string | null;
 }
 
+/**
+ * Last-used flashcard generation options.
+ *
+ * Remembered because the options sheet is opened on the way to something else:
+ * a student who always wants 30 mixed cards should not re-pick them every run.
+ * Only the two choices that change the request live here — difficulty is a
+ * per-run steer, not a preference.
+ */
+export interface FlashcardGenerationSettings {
+  count: number;
+  typeMix: FlashcardTypeMix;
+}
+
 /** First-time / returning-user coach tips + getting-started checklist progress. */
 export interface FeatureTipsSettings {
   version: number;
@@ -110,6 +127,7 @@ export interface UserSettings {
   sync: SyncSettings;
   marketplace?: MarketplaceSettings;
   featureTips?: FeatureTipsSettings;
+  flashcardGeneration?: FlashcardGenerationSettings;
   version: number;
   updatedAt: string;
 }
@@ -196,6 +214,10 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     dontShowAgain: false,
     checklistDismissed: false,
     checklist: {},
+  },
+  flashcardGeneration: {
+    count: DEFAULT_FLASHCARD_GENERATION_OPTIONS.count,
+    typeMix: DEFAULT_FLASHCARD_GENERATION_OPTIONS.typeMix,
   },
   version: 1,
   updatedAt: new Date().toISOString(),

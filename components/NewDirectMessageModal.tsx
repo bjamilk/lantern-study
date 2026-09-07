@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '../types';
-import { XCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { normalizeUserSearchQuery } from '@lantern/shared';
 import { searchUsers } from '../services/supabase';
 import Modal from './ui/Modal';
+import { AppIcon } from './ui/AppIcon';
 
 interface SearchResult {
   id: string;
@@ -82,13 +82,13 @@ const NewDirectMessageModal: React.FC<NewDirectMessageModalProps> = ({ isOpen, o
         <div className="flex justify-between items-center mb-4 flex-shrink-0">
           <h2 id="new-dm-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">New Message</h2>
           <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text">
-            <XCircleIcon className="w-6 h-6" />
+            <AppIcon name="close-circle" size={24} />
           </button>
         </div>
         
         <div className="relative mb-3 flex-shrink-0">
           <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <MagnifyingGlassIcon className="h-5 w-5 text-lantern-text-tertiary" />
+            <AppIcon name="search" size={20} className="text-lantern-text-tertiary" />
           </div>
           <input
             type="search"

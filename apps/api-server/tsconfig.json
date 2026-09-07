@@ -11,6 +11,8 @@
       "@lantern/shared/utils/server": ["../../packages/shared/dist/utils/server"],
       "@lantern/shared/utils": ["../../packages/shared/dist/utils/index"],
       "@lantern/shared/utils/*": ["../../packages/shared/dist/utils/*"],
+      "@lantern/shared/flashcards": ["../../packages/shared/dist/flashcards/index"],
+      "@lantern/shared/flashcards/*": ["../../packages/shared/dist/flashcards/*"],
       "@lantern/shared/settings": ["../../packages/shared/dist/settings/index"],
       "@lantern/shared/settings/*": ["../../packages/shared/dist/settings/*"],
       "@lantern/shared/marketplace": ["../../packages/shared/dist/marketplace/index"],
@@ -22,6 +24,8 @@
       "@lantern/shared/jobs/*": ["../../packages/shared/dist/jobs/*"],
       "@lantern/shared/analytics": ["../../packages/shared/dist/analytics/index"],
       "@lantern/shared/moderation": ["../../packages/shared/dist/moderation/index"],
+      "@lantern/shared/notes": ["../../packages/shared/dist/notes/index"],
+      "@lantern/shared/notes/*": ["../../packages/shared/dist/notes/*"],
       "@lantern/shared/types": ["../../packages/shared/dist/types/index"],
       "@lantern/shared/accountLifecycle": ["../../packages/shared/dist/accountLifecycle"],
       "@lantern/shared/contactForm": ["../../packages/shared/dist/contactForm"]

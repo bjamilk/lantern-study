@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { useToastStore } from '../stores/toastStore';
 import { Budget, STUDENT_INCOME_CATEGORIES } from '../types';
 import { summarizeBudgetPlan } from '@lantern/shared/utils';
-import { XMarkIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 interface SetBudgetModalProps {
@@ -92,7 +92,7 @@ const SetBudgetModal: React.FC<SetBudgetModalProps> = ({ isOpen, onClose, onSubm
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           aria-label="Close budget dialog"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
       <form onSubmit={handleSubmit} className="space-y-4">

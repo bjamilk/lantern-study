@@ -1,5 +1,5 @@
 import React, { useRef, useState } from "react";
-import { DocumentTextIcon } from "@heroicons/react/24/outline";
+import { AppIcon } from '../ui/AppIcon';
 import {
   JOB_RESUME_ACCEPT_ATTRIBUTE,
   JOB_RESUME_ACCEPT_LABEL,
@@ -52,10 +52,7 @@ export function ResumeUploadField({
 
       {hasResume ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-3 rounded-lg border border-lantern-border bg-lantern-background p-3">
-          <DocumentTextIcon
-            className="h-8 w-8 shrink-0 text-lantern-primary"
-            aria-hidden
-          />
+          <AppIcon name="document-text" size={32} className="shrink-0 text-lantern-primary" aria-hidden />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-lantern-text">
               {profile?.resumeFilename || "Your resume"}
@@ -80,10 +77,7 @@ export function ResumeUploadField({
           onClick={() => inputRef.current?.click()}
           className="mt-1.5 flex w-full flex-col items-center gap-1 rounded-lg border border-dashed border-lantern-border bg-lantern-background px-4 py-6 text-center transition hover:border-lantern-primary/50 disabled:opacity-50"
         >
-          <DocumentTextIcon
-            className="h-7 w-7 text-lantern-text-tertiary"
-            aria-hidden
-          />
+          <AppIcon name="document-text" size={28} className="text-lantern-text-tertiary" aria-hidden />
           <span className="text-sm font-semibold text-lantern-primary">
             {uploading ? "Uploading…" : "Upload your resume"}
           </span>

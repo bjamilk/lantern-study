@@ -407,6 +407,15 @@ class SyncService {
       try {
         switch (op.operation) {
           case 'create':
+            // An IMPORT queues its cards with the deck (services/importedDeck.ts).
+            // Sending only the deck here would create it empty and strand
+            // every card on the device, so the whole thing goes back through
+            // the one atomic endpoint instead.
+            if (Array.isArray(op.data.cards) && op.data.cards.length > 0) {
+              const { replayQueuedImport } = await import('./importedDeck');
+              await replayQueuedImport(op.entityId, op.data as any);
+              break;
+            }
             await api.createDeck(
               op.userId, 
               op.data as { name: string; description?: string }
@@ -424,6 +433,23 @@ class SyncService {
         // Dead connection: rethrow so the queue stops the run without burning
         // one of this operation's retries. `return false` means "server said no".
         if (isTransientSyncError(error)) throw error;
+        // A refused import can never become valid by being sent again — a
+        // rejected card is rejected forever. Drop it and say what the server
+        // said, rather than replaying 200 cards on every reconnect.
+        if (isPermanentSyncError(error)) {
+          const message = syncErrorMessage(
+            error,
+            "These imported cards couldn't be saved to your account."
+          );
+          console.warn('[SyncHandler:deck] Refused by the server — dropping', {
+            entityId: op.entityId,
+            status: syncErrorStatus(error),
+            message,
+          });
+          this.markDeckRefused(message);
+          this.emitStatus();
+          return true;
+        }
         console.error('[SyncHandler:deck] Error:', error);
         return false;
       }
@@ -666,6 +692,25 @@ class SyncService {
       .catch(() => {
         // The operation is dropped either way; failing to annotate it must
         // not resurrect the loop this exists to end.
+      });
+  }
+
+  /**
+   * The server refused a queued deck write for good.
+   *
+   * Surfaced through the same field every other write failure uses, so an
+   * import that never landed is said once rather than never. The local deck is
+   * deliberately left in place: the cards are the student's, and deleting
+   * their only copy because the server disliked one of them would be worse
+   * than an unsynced deck.
+   */
+  private markDeckRefused(message: string): void {
+    void import('../stores/flashcardStore')
+      .then(({ useFlashcardStore }) => {
+        useFlashcardStore.setState({ error: message });
+      })
+      .catch(() => {
+        // The operation is dropped either way.
       });
   }
 

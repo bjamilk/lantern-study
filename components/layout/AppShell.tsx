@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
-import { XMarkIcon, ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon, StopIcon, SparklesIcon, BellIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
@@ -249,7 +249,7 @@ const AppShell: React.FC<AppShellProps> = ({
                                         onClick={() => stopLecture()}
                                         className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/20 hover:bg-white/30 disabled:opacity-50 rounded-lg text-xs sm:text-sm font-semibold"
                                     >
-                                        <StopIcon className="w-4 h-4" />
+                                        <AppIcon name="stop" size={16} />
                                         <span className="hidden sm:inline">
                                           {lectureSeconds < 2 ? `Wait ${2 - lectureSeconds}s` : 'Stop & transcribe'}
                                         </span>
@@ -316,7 +316,7 @@ const AppShell: React.FC<AppShellProps> = ({
                                     : 'text-lantern-text-secondary hover:text-lantern-text'
                             }`}
                         >
-                            <SparklesIcon className="w-6 h-6" aria-hidden="true" />
+                            <AppIcon name="sparkles" size={24} />
                             {aiCredits != null ? (
                                 <span
                                     aria-hidden="true"
@@ -336,7 +336,7 @@ const AppShell: React.FC<AppShellProps> = ({
                             }
                             className="relative flex items-center justify-center min-w-[44px] min-h-[44px] rounded-full text-lantern-text-secondary hover:text-lantern-text transition-colors"
                         >
-                            <BellIcon className="w-6 h-6" aria-hidden="true" />
+                            <AppIcon name="notifications" size={24} />
                             {sidebarProps.unreadNotificationCount > 0 ? (
                                 <span
                                     aria-hidden="true"
@@ -355,7 +355,7 @@ const AppShell: React.FC<AppShellProps> = ({
                         aria-live="polite"
                     >
                         <div className="flex items-center gap-3 min-w-0 max-w-full">
-                            <ArrowPathIcon className="w-5 h-5 text-lantern-primary shrink-0 animate-spin" />
+                            <AppIcon name="refresh" size={20} className="text-lantern-primary shrink-0 animate-spin" />
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-lantern-text truncate">
                                     {importProgress.label}
@@ -387,7 +387,7 @@ const AppShell: React.FC<AppShellProps> = ({
                         aria-live="polite"
                     >
                         <div className="flex items-center gap-3 min-w-0 max-w-full">
-                            <ArrowPathIcon className="w-5 h-5 text-lantern-primary shrink-0 animate-spin" />
+                            <AppIcon name="refresh" size={20} className="text-lantern-primary shrink-0 animate-spin" />
                             <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium text-lantern-text truncate">
                                     {activeUploadJob.label}
@@ -411,9 +411,9 @@ const AppShell: React.FC<AppShellProps> = ({
                         aria-live="polite"
                     >
                         {job.status === 'failed' ? (
-                            <ExclamationCircleIcon className="w-5 h-5 text-red-500 shrink-0" />
+                            <AppIcon name="alert-circle" size={20} className="text-red-500 shrink-0" />
                         ) : (
-                            <CheckCircleIcon className="w-5 h-5 text-emerald-500 shrink-0" />
+                            <AppIcon name="checkmark-circle" size={20} className="text-emerald-500 shrink-0" />
                         )}
                         <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium text-lantern-text truncate">
@@ -430,7 +430,7 @@ const AppShell: React.FC<AppShellProps> = ({
                             className="shrink-0 p-1 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-surface/60 dark:text-lantern-text-tertiary dark:hover:text-lantern-text"
                             aria-label="Dismiss upload notification"
                         >
-                            <XMarkIcon className="w-5 h-5" />
+                            <AppIcon name="close" size={20} />
                         </button>
                     </div>
                 ))}

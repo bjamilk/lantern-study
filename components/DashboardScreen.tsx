@@ -7,18 +7,11 @@ import DailyQuizWidget from './DailyQuizWidget';
 import { DailyGoalsProgress } from './DailyGoalsProgress';
 import SavedSessionsList from './SavedSessionsList';
 import { normalizeUserSettings } from '@lantern/shared/settings';
-import { ChartBarIcon, CalendarDaysIcon, CheckCircleIcon, InformationCircleIcon, UsersIcon, ClockIcon, ArrowLeftIcon, PresentationChartLineIcon, ChevronUpIcon, ChevronDownIcon, FunnelIcon, SparklesIcon, TrophyIcon, RocketLaunchIcon, ClockIcon as ClockOutline, AcademicCapIcon as AcademicCapOutline, TagIcon, PresentationChartBarIcon, ExclamationTriangleIcon, RectangleStackIcon, ShoppingBagIcon, PlusCircleIcon, FireIcon, BoltIcon, BellIcon, XMarkIcon, DocumentTextIcon, PlayIcon } from '@heroicons/react/24/solid';
 import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import type { AIStudyPerformanceData } from '@lantern/shared/api';
 import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow, DoorTile } from './ui';
-import {
-  ArrowDownOnSquareIcon,
-  ClipboardDocumentCheckIcon,
-  MicrophoneIcon,
-  RectangleStackIcon as RectangleStackOutline,
-} from '@heroicons/react/24/outline';
 import { syncCopy } from '@lantern/shared/design';
 import {
   buildActivityMap,
@@ -78,6 +71,7 @@ import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
 import CourseReadinessCard from './CourseReadinessCard';
 import { JoinClassCard } from './classes/JoinClassCard';
 import { ClassWorkCard } from './classes/ClassWorkCard';
+import { AppIcon } from './ui/AppIcon';
 
 /** Dashboard “Questions to review” card. Review/study screens stay available. */
 export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
@@ -118,7 +112,7 @@ const AcademicSetupBanner: React.FC<{ currentUser: User }> = ({ currentUser }) =
       className="bg-lantern-primary-background border-b border-lantern-border px-4 py-2 flex items-center justify-between gap-3 text-body"
     >
       <p className="min-w-0 truncate text-lantern-text">
-        <AcademicCapOutline className="w-4 h-4 inline-block mr-1.5 -mt-0.5 text-lantern-primary-text" aria-hidden />
+        <AppIcon name="school" size={16} className="inline-block mr-1.5 -mt-0.5 text-lantern-primary-text" aria-hidden />
         Finish setting up your profile — add your university and courses.
       </p>
       <div className="flex items-center gap-1 shrink-0">
@@ -135,7 +129,7 @@ const AcademicSetupBanner: React.FC<{ currentUser: User }> = ({ currentUser }) =
           className="p-1.5 rounded-full text-lantern-text-secondary hover:bg-lantern-background-secondary"
           aria-label="Dismiss profile setup reminder"
         >
-          <XMarkIcon className="w-4 h-4" />
+          <AppIcon name="close" size={16} />
         </button>
       </div>
     </div>
@@ -1250,7 +1244,7 @@ export default function DashboardScreen({
             className="flex-shrink-0 p-1.5 rounded-full hover:bg-white/20 transition-colors"
             aria-label="Dismiss bonus notification"
           >
-            <XMarkIcon className="w-4 h-4 text-white" />
+            <AppIcon name="close" size={16} className="text-white" />
           </button>
         </div>
       )}
@@ -1315,7 +1309,7 @@ export default function DashboardScreen({
           {onReviewDueCards && (
             <DoorTile
               feature="flashcards"
-              icon={<RectangleStackOutline className="w-6 h-6" />}
+              icon={<AppIcon name="albums" size={24} />}
               illustration="cards-fan"
               title="Review"
               promise={dueCardsCount > 0 ? 'Cards are ready now' : 'Nothing due — get ahead'}
@@ -1326,7 +1320,7 @@ export default function DashboardScreen({
           {(onOpenImportAndStudy || onNavigateToAITools) && (
             <DoorTile
               feature="notes"
-              icon={<ArrowDownOnSquareIcon className="w-6 h-6" />}
+              icon={<AppIcon name="save" size={24} />}
               illustration="import-tray"
               title="Import"
               promise="PDF or slides into cards"
@@ -1336,7 +1330,7 @@ export default function DashboardScreen({
           {onRecordLecture && (
             <DoorTile
               feature="recording"
-              icon={<MicrophoneIcon className="w-6 h-6" />}
+              icon={<AppIcon name="mic" size={24} />}
               illustration="mic-wave"
               title="Record"
               promise="A lecture becomes a note"
@@ -1346,7 +1340,7 @@ export default function DashboardScreen({
           {onNavigateToTests && (
             <DoorTile
               feature="tests"
-              icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}
+              icon={<AppIcon name="clipboard-check" size={24} />}
               illustration="test-sheet"
               title="Test"
               promise="Find the gaps before the exam"
@@ -1440,25 +1434,25 @@ export default function DashboardScreen({
             {
               label: 'Tests Taken',
               value: totalTestsTakenOverall,
-              icon: <ChartBarIcon className="w-5 h-5 text-lantern-primary-text" />,
+              icon: <AppIcon name="bar-chart" size={20} className="text-lantern-primary-text" />,
               iconBgClass: 'bg-lantern-primary-background',
             },
             {
               label: 'Avg. Time/Q',
               value: overallAverageTimePerQuestion > 0 ? `${overallAverageTimePerQuestion.toFixed(0)}s` : '—',
-              icon: <ClockIcon className="w-5 h-5 text-lantern-accent" />,
+              icon: <AppIcon name="time" size={20} className="text-lantern-accent" />,
               iconBgClass: 'bg-lantern-accent-background',
             },
             {
               label: 'Groups',
               value: groups.length,
-              icon: <UsersIcon className="w-5 h-5 text-lantern-success" />,
+              icon: <AppIcon name="people" size={20} filled className="text-lantern-success" />,
               iconBgClass: 'bg-lantern-success/15',
             },
             {
               label: 'Cards Due',
               value: dueCardsCount,
-              icon: <RectangleStackIcon className="w-5 h-5 text-lantern-warning" />,
+              icon: <AppIcon name="albums" size={20} className="text-lantern-warning" />,
               iconBgClass: 'bg-lantern-warning/15',
             },
           ]}
@@ -1481,7 +1475,7 @@ export default function DashboardScreen({
               </p>
             </div>
             <Button onClick={onResumeSession}>
-              <PlayIcon className="w-4 h-4 mr-1" />
+              <AppIcon name="play" size={16} filled className="mr-1" />
               Resume
             </Button>
           </div>
@@ -1518,14 +1512,14 @@ export default function DashboardScreen({
           <Card padding="md">
             {lowDataMode ? (
               <p className="text-body text-lantern-text-secondary flex items-center gap-2">
-                <SparklesIcon className="w-5 h-5 text-lantern-primary-text shrink-0" />
+                <AppIcon name="sparkles" size={20} filled className="text-lantern-primary-text shrink-0" />
                 {syncCopy.lowDataAiHint}
               </p>
             ) : (
           <>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-                <SparklesIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
+                <AppIcon name="sparkles" size={20} filled className="mr-2 text-lantern-primary-text" />
                 AI Study Coach
               </h2>
               <button
@@ -1598,11 +1592,11 @@ export default function DashboardScreen({
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
           <div className="p-4 md:p-5 border-b border-lantern-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-              <CalendarDaysIcon className="w-5 h-5 mr-2 text-emerald-500" />
+              <AppIcon name="calendar" size={20} className="mr-2 text-emerald-500" />
               Study Activity
             </h2>
             <div className="flex items-center gap-2">
-              <FunnelIcon className="w-4 h-4 text-lantern-text-tertiary" />
+              <AppIcon name="filter" size={16} className="text-lantern-text-tertiary" />
               <select
                 value={selectedTimePeriod}
                 onChange={(e) => setSelectedTimePeriod(e.target.value as TimePeriodOptionValue)}
@@ -1653,10 +1647,10 @@ export default function DashboardScreen({
         <details open className="group">
           <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
             <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-              <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
+              <AppIcon name="trophy" size={20} className="mr-2 text-yellow-500" />
               Achievements &amp; Topic Insights
             </h2>
-            <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open:rotate-180" />
+            <AppIcon name="chevron-down" size={20} className="text-lantern-text-tertiary transition-transform group-open:rotate-180" />
           </summary>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-3">
           
@@ -1664,7 +1658,7 @@ export default function DashboardScreen({
           <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
             <div className="p-4 md:p-5 border-b border-lantern-border">
               <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-                <TrophyIcon className="w-5 h-5 mr-2 text-yellow-500" />
+                <AppIcon name="trophy" size={20} className="mr-2 text-yellow-500" />
                 Achievements
               </h2>
             </div>
@@ -1724,7 +1718,7 @@ export default function DashboardScreen({
           <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
             <div className="p-4 md:p-5 border-b border-lantern-border">
               <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-                <TagIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
+                <AppIcon name="pricetag" size={20} className="mr-2 text-lantern-primary-text" />
                 Topic Insights
               </h2>
             </div>
@@ -1774,10 +1768,10 @@ export default function DashboardScreen({
           <details open className="group">
             <summary className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border p-4 md:p-5 cursor-pointer list-none flex items-center justify-between select-none hover:bg-lantern-background-secondary/60 transition-colors">
               <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-                <ExclamationTriangleIcon className="w-5 h-5 mr-2 text-amber-500" />
+                <AppIcon name="warning" size={20} className="mr-2 text-amber-500" />
                 Questions to Review
               </h2>
-              <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary transition-transform group-open:rotate-180" />
+              <AppIcon name="chevron-down" size={20} className="text-lantern-text-tertiary transition-transform group-open:rotate-180" />
             </summary>
             <div className="divide-y divide-lantern-border mt-3 bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border">
               {troublesomeQuestions.map(q => (
@@ -1801,7 +1795,7 @@ export default function DashboardScreen({
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0">
                 <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-                  <PresentationChartBarIcon className="w-5 h-5 mr-2 text-lantern-primary-text" />
+                  <AppIcon name="easel" size={20} className="mr-2 text-lantern-primary-text" />
                   Group performance
                 </h2>
               </div>
@@ -1812,7 +1806,7 @@ export default function DashboardScreen({
               <div className="flex flex-col sm:flex-row sm:flex-wrap gap-2 sm:items-center min-w-0">
                 <label className="inline-flex items-center gap-1.5 min-w-0">
                   <span className="sr-only">Group performance period</span>
-                  <FunnelIcon className="w-4 h-4 text-lantern-text-tertiary shrink-0" aria-hidden />
+                  <AppIcon name="filter" size={16} className="text-lantern-text-tertiary shrink-0" aria-hidden />
                   <select
                     value={groupPerfPeriod}
                     onChange={(e) => handleGroupPerfPeriodChange(e.target.value as GroupPerformancePeriod)}
@@ -1874,7 +1868,7 @@ export default function DashboardScreen({
 
           {activeGroupChartOptions.length === 0 ? (
             <div className="p-8 text-center">
-              <UsersIcon className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+              <AppIcon name="people" size={48} filled className="text-lantern-text-tertiary mx-auto mb-3" />
               <p className="text-body text-lantern-text-tertiary">
                 {groupPerformanceResults.length === 0
                   ? 'No group tests in this period. Try a wider range or All Time.'
@@ -1962,10 +1956,10 @@ export default function DashboardScreen({
         <div className="bg-lantern-surface/95 rounded-lantern-xl shadow-lantern border border-lantern-border overflow-hidden">
           <button onClick={toggleRecentTestsExpansion} className="w-full flex items-center justify-between p-4 md:p-5 hover:bg-lantern-background-secondary/60 transition-colors" aria-expanded={isRecentTestsExpanded}>
             <h2 className="text-heading font-semibold text-lantern-text flex items-center">
-              <PresentationChartLineIcon className="w-5 h-5 mr-2 text-blue-500" />
+              <AppIcon name="easel" size={20} className="mr-2 text-blue-500" />
               Recent Tests
             </h2>
-            {isRecentTestsExpanded ? <ChevronUpIcon className="w-5 h-5 text-lantern-text-tertiary" /> : <ChevronDownIcon className="w-5 h-5 text-lantern-text-tertiary" />}
+            {isRecentTestsExpanded ? <AppIcon name="chevron-up" size={20} className="text-lantern-text-tertiary" /> : <AppIcon name="chevron-down" size={20} className="text-lantern-text-tertiary" />}
           </button>
           {isRecentTestsExpanded && (
             <div className="border-t border-lantern-border">
@@ -2023,7 +2017,7 @@ export default function DashboardScreen({
                     onClick={() => clearRecentCourse(null)}
                     className="inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
                   >
-                    <XMarkIcon className="w-3 h-3" aria-hidden /> Clear
+                    <AppIcon name="close" size={12} aria-hidden /> Clear
                   </button>
                 </div>
               )}
@@ -2086,7 +2080,7 @@ export default function DashboardScreen({
                             onClick={() => void handleViewRecentAnalysis(result)}
                             className="px-3 py-1.5 bg-lantern-primary-background hover:bg-lantern-primary/15 text-lantern-primary-text rounded-lantern text-caption font-semibold flex items-center gap-1 transition-colors"
                           >
-                            <PresentationChartLineIcon className="w-3.5 h-3.5" />
+                            <AppIcon name="easel" size={14} />
                             Analyze
                           </button>
                         </div>
@@ -2095,7 +2089,7 @@ export default function DashboardScreen({
                   })
                 ) : (
                   <div className="p-8 text-center">
-                    <AcademicCapOutline className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+                    <AppIcon name="school" size={48} className="text-lantern-text-tertiary mx-auto mb-3" />
                     <p className="text-body text-lantern-text-tertiary">
                       No tests taken yet. Start a test from one of your groups!
                     </p>
@@ -2144,8 +2138,8 @@ export default function DashboardScreen({
             <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
               <div className="flex items-center gap-2">
                 {quickActionPicker === 'test'
-                  ? <BoltIcon className="w-5 h-5 text-yellow-500" />
-                  : <AcademicCapOutline className="w-5 h-5 text-emerald-500" />
+                  ? <AppIcon name="flash" size={20} filled className="text-yellow-500" />
+                  : <AppIcon name="school" size={20} className="text-emerald-500" />
                 }
                 <h2 id="quick-action-group-picker-title" className="text-body font-semibold text-lantern-text">
                   Select a group for Quick {quickActionPicker === 'test' ? 'Test' : 'Study'}
@@ -2156,7 +2150,7 @@ export default function DashboardScreen({
                 className="p-1.5 rounded-lantern hover:bg-lantern-background-secondary transition-colors"
                 aria-label="Close"
               >
-                <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" />
+                <AppIcon name="close" size={20} className="text-lantern-text-secondary" />
               </button>
             </div>
 
@@ -2181,7 +2175,7 @@ export default function DashboardScreen({
                       />
                     ) : (
                       <div className="w-9 h-9 rounded-full bg-lantern-primary-background flex items-center justify-center flex-shrink-0">
-                        <UsersIcon className="w-5 h-5 text-lantern-primary-text" />
+                        <AppIcon name="people" size={20} filled className="text-lantern-primary-text" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
@@ -2191,8 +2185,8 @@ export default function DashboardScreen({
                       )}
                     </div>
                     {quickActionPicker === 'test'
-                      ? <BoltIcon className="w-4 h-4 text-yellow-400 flex-shrink-0" />
-                      : <AcademicCapOutline className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                      ? <AppIcon name="flash" size={16} filled className="text-yellow-400 flex-shrink-0" />
+                      : <AppIcon name="school" size={16} className="text-emerald-400 flex-shrink-0" />
                     }
                   </button>
                 ))

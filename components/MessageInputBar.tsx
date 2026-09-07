@@ -1,5 +1,4 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { PaperAirplaneIcon, PlusCircleIcon, MicrophoneIcon, XMarkIcon, PhotoIcon, PencilSquareIcon } from '@heroicons/react/24/solid';
 import {
   buildChatAudioMarkdown,
   chatMessagePreview,
@@ -20,6 +19,7 @@ import {
   resolvePickContentType,
   stripDataUrlPrefix,
 } from '../utils/boardImageUpload';
+import { AppIcon } from './ui/AppIcon';
 
 export type MentionCandidate = {
   id: string;
@@ -537,7 +537,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             className="p-1 text-lantern-text-tertiary hover:text-lantern-text"
             aria-label="Cancel reply"
           >
-            <XMarkIcon className="w-4 h-4" />
+            <AppIcon name="close" size={16} />
           </button>
         </div>
       )}
@@ -559,7 +559,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             className="p-1 text-lantern-text-tertiary hover:text-lantern-text"
             aria-label="Cancel edit"
           >
-            <XMarkIcon className="w-4 h-4" />
+            <AppIcon name="close" size={16} />
           </button>
         </div>
       )}
@@ -606,7 +606,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
       */}
       {attachedImageUrl && (
         <div className="mb-2 flex items-center gap-2 rounded-xl border border-lantern-border bg-lantern-background px-3 py-2">
-          <PhotoIcon className="w-4 h-4 shrink-0 text-lantern-text-secondary" aria-hidden="true" />
+          <AppIcon name="image" size={16} className="shrink-0 text-lantern-text-secondary" aria-hidden="true" />
           <p className="flex-1 min-w-0 truncate text-xs font-medium text-lantern-text" role="status">
             {COMMUNITY_BOARD_COPY.photoAttached}
           </p>
@@ -618,7 +618,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             title={COMMUNITY_BOARD_COPY.removePhoto}
             className="flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           >
-            <XMarkIcon className="w-4 h-4" aria-hidden="true" />
+            <AppIcon name="close" size={16} aria-hidden="true" />
           </button>
         </div>
       )}
@@ -640,7 +640,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                       onClick={() => { setTrayOpen(false); onOpenQuestionModal(); }}
                       className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
                     >
-                      <PencilSquareIcon className="w-4 h-4 text-lantern-primary" />
+                      <AppIcon name="create" size={16} className="text-lantern-primary" />
                       Submit a question
                     </button>
                   )}
@@ -650,7 +650,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                     onClick={() => { setTrayOpen(false); imageInputRef.current?.click(); }}
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
                   >
-                    <PhotoIcon className="w-4 h-4 text-lantern-primary" />
+                    <AppIcon name="image" size={16} className="text-lantern-primary" />
                     Attach photo
                   </button>
                 </div>
@@ -669,7 +669,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
               {isUploadingImage ? (
                 <span className="w-5 h-5 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
               ) : (
-                <PlusCircleIcon className="w-6 h-6" />
+                <AppIcon name="add-circle" size={24} />
               )}
             </button>
             <input
@@ -743,7 +743,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
             aria-label={isRecording ? 'Stop recording' : 'Record voice note'}
             title={isRecording ? 'Stop recording' : 'Voice note (max 2 min)'}
           >
-            <MicrophoneIcon className="w-5 h-5" />
+            <AppIcon name="mic" size={20} filled />
           </button>
         ) : (
           <button
@@ -755,7 +755,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
               editingMessage ? 'Save message changes' : (sendLabel ?? 'Send message')
             }
           >
-            <PaperAirplaneIcon className="w-5 h-5" />
+            <AppIcon name="send" size={20} filled />
           </button>
         )}
       </div>

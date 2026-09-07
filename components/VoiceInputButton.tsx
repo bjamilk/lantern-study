@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MicrophoneIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 
 // Manually define the SpeechRecognition interface for browsers that support it.
 interface SpeechRecognition {
@@ -97,7 +97,7 @@ const VoiceInputButton: React.FC<VoiceInputButtonProps> = ({ onTranscriptUpdate,
             aria-label={isListening ? 'Stop voice input' : 'Start voice input'}
             title={isListening ? 'Stop voice input' : 'Start voice input'}
         >
-            <MicrophoneIcon className="w-5 h-5" />
+            <AppIcon name="mic" size={20} filled />
         </button>
     );
 };

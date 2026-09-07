@@ -4,25 +4,7 @@ import { useToastStore } from '../stores/toastStore';
 import { Deck, Flashcard, FlashcardType } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useRegisterFeatureTip } from './featureTips/FeatureTip';
-import {
-  ArrowUturnLeftIcon,
-  PlayCircleIcon,
-  PlusCircleIcon,
-  PencilIcon,
-  TrashIcon,
-  SparklesIcon,
-  BoltIcon,
-  ArrowPathIcon,
-  ClockIcon,
-  UserGroupIcon,
-  Squares2X2Icon,
-  AcademicCapIcon,
-  ArrowDownTrayIcon,
-  ChevronDownIcon,
-  EllipsisVerticalIcon,
-  FlagIcon,
-  BuildingStorefrontIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import GenerateFlashcardsModal from './GenerateFlashcardsModal';
 import { PublishStudyPackModal } from './marketplace/PublishStudyPackModal';
 import UpdateStudyPackModal from './marketplace/UpdateStudyPackModal';
@@ -57,7 +39,12 @@ interface DeckDetailScreenProps {
   /** "Move to course…" (PUT /decks/:id { courseId }); rejections surface in the dialog. */
   onMoveDeckToCourse?: (deck: Deck, courseId: string | null, topicId: string | null) => void | Promise<void>;
   onDeleteDeck: (deckId: string) => void;
-  onGenerateFlashcards: (deckId: string, notes: string, count: number) => void;
+  onGenerateFlashcards: (
+    deckId: string,
+    notes: string,
+    count: number,
+    options?: { style?: 'concise' | 'detailed' }
+  ) => void;
   isGenerating: boolean;
   onResetStatistics: (deckId: string) => void;
   onExportDeck: (deckId: string, format: 'json' | 'csv') => void;
@@ -184,8 +171,15 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     if (ok) onDeleteDeck(deck.id);
   };
 
-  const handleGenerateSubmit = (notes: string, count: number) => {
-    onGenerateFlashcards(deck.id, notes, count);
+  const handleGenerateSubmit = (
+    notes: string,
+    count: number,
+    options?: { style: 'concise' | 'detailed' }
+  ) => {
+    // The sheet's answer-length choice is the one steer besides count that
+    // `POST /ai/generate-flashcards` reads; dropping it here is what made the
+    // control decorative before.
+    onGenerateFlashcards(deck.id, notes, count, options);
     setIsGenerateModalOpen(false);
   };
 
@@ -248,7 +242,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         onClick={() => onStartReview(deck)}
         className="min-h-[52px] text-base justify-center"
       >
-        <PlayCircleIcon className="w-5 h-5" />
+        <AppIcon name="play-circle" size={20} />
         {studyLabel}
       </Button>
       <p className="text-xs text-lantern-text-secondary px-0.5">
@@ -260,7 +254,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           <PracticeButton
             onClick={() => onStartLearn(deck)}
             disabled={!hasCards}
-            icon={<AcademicCapIcon className="w-5 h-5" />}
+            icon={<AppIcon name="school" size={20} />}
             label={FLASHCARD_MODE_LABELS.quiz.label}
             subtitle={FLASHCARD_MODE_LABELS.quiz.subtitle}
           />
@@ -269,7 +263,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           <PracticeButton
             onClick={() => onStartMatch(deck)}
             disabled={!hasCards}
-            icon={<Squares2X2Icon className="w-5 h-5" />}
+            icon={<AppIcon name="grid" size={20} />}
             label={FLASHCARD_MODE_LABELS.match.label}
             subtitle={FLASHCARD_MODE_LABELS.match.subtitle}
           />
@@ -283,23 +277,21 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-lantern-text hover:bg-lantern-background-secondary"
         >
           More ways to study
-          <ChevronDownIcon
-            className={`w-4 h-4 text-lantern-text-secondary transition-transform ${moreModesOpen ? 'rotate-180' : ''}`}
-          />
+          <AppIcon name="chevron-down" size={16} className={`text-lantern-text-secondary transition-transform ${moreModesOpen ? 'rotate-180' : ''}`} />
         </button>
         {moreModesOpen && (
           <div className="px-3 pb-3 grid grid-cols-1 sm:grid-cols-2 gap-2 border-t border-lantern-border pt-2">
             <PracticeButton
               onClick={() => onStartCram(deck)}
               disabled={!hasCards}
-              icon={<BoltIcon className="w-5 h-5" />}
+              icon={<AppIcon name="flash" size={20} />}
               label={FLASHCARD_MODE_LABELS.speed_run.label}
               subtitle={FLASHCARD_MODE_LABELS.speed_run.subtitle}
             />
             <PracticeButton
               onClick={handleTimedCram}
               disabled={!hasCards}
-              icon={<ClockIcon className="w-5 h-5" />}
+              icon={<AppIcon name="time" size={20} />}
               label={FLASHCARD_MODE_LABELS.timed_drill.label}
               subtitle={FLASHCARD_MODE_LABELS.timed_drill.subtitle}
             />
@@ -338,9 +330,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
             className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-medium text-lantern-text hover:bg-lantern-background-secondary"
           >
             Deck insights
-            <ChevronDownIcon
-              className={`w-4 h-4 text-lantern-text-secondary transition-transform ${insightsOpen ? 'rotate-180' : ''}`}
-            />
+            <AppIcon name="chevron-down" size={16} className={`text-lantern-text-secondary transition-transform ${insightsOpen ? 'rotate-180' : ''}`} />
           </button>
           {insightsOpen && (
             <div className="px-3 pb-3 grid grid-cols-2 gap-3 border-t border-lantern-border pt-3 text-sm text-center">
@@ -374,7 +364,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           onClick={onBack}
           className="flex items-center text-sm font-semibold text-lantern-primary hover:underline mb-4"
         >
-          <ArrowUturnLeftIcon className="w-5 h-5 mr-1.5" />
+          <AppIcon name="arrow-undo" size={20} className="mr-1.5" />
           Back to All Decks
         </button>
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -399,7 +389,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                 className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-lantern-primary/10 px-2.5 py-1 text-xs font-medium text-lantern-primary disabled:cursor-default"
                 title={onMoveDeckToCourse ? 'Move to another course' : undefined}
               >
-                <AcademicCapIcon className="w-3.5 h-3.5" aria-hidden />
+                <AppIcon name="school" size={14} aria-hidden />
                 {deckCourse ? courseLabel(deckCourse) : 'Filed under a course'}
               </button>
             ) : null}
@@ -409,7 +399,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
               aria-label="Manage deck"
               className="inline-flex items-center gap-1.5 rounded-lantern px-3 py-2 text-sm font-medium bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border/40"
             >
-              <EllipsisVerticalIcon className="w-4 h-4" />
+              <AppIcon name="ellipsis-vertical" size={16} />
               Manage deck
             </MenuTrigger>
             <MenuContent align="end">
@@ -419,7 +409,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                 }}
               >
                 <span className="inline-flex items-center gap-2">
-                  <PlusCircleIcon className="w-4 h-4" /> Add card
+                  <AppIcon name="add-circle" size={16} /> Add card
                 </span>
               </MenuItem>
               <MenuItem
@@ -427,43 +417,43 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                 disabled={isGenerating}
               >
                 <span className="inline-flex items-center gap-2">
-                  <SparklesIcon className="w-4 h-4" />
+                  <AppIcon name="sparkles" size={16} />
                   {isGenerating ? 'Generating…' : 'Generate with AI'}
                 </span>
               </MenuItem>
               <MenuItem onSelect={() => onOpenEditDeck(deck)}>
                 <span className="inline-flex items-center gap-2">
-                  <PencilIcon className="w-4 h-4" /> Edit deck
+                  <AppIcon name="pencil" size={16} /> Edit deck
                 </span>
               </MenuItem>
               {onMoveDeckToCourse && (
                 <MenuItem onSelect={() => setIsMoveCourseOpen(true)}>
                   <span className="inline-flex items-center gap-2">
-                    <AcademicCapIcon className="w-4 h-4" /> Move to course…
+                    <AppIcon name="school" size={16} /> Move to course…
                   </span>
                 </MenuItem>
               )}
               {deck.isShared && (
                 <MenuItem onSelect={() => setIsCollaboratorsModalOpen(true)}>
                   <span className="inline-flex items-center gap-2">
-                    <UserGroupIcon className="w-4 h-4" /> Collaborators
+                    <AppIcon name="people" size={16} /> Collaborators
                   </span>
                 </MenuItem>
               )}
               <MenuItem onSelect={() => onExportDeck(deck.id, 'json')}>
                 <span className="inline-flex items-center gap-2">
-                  <ArrowDownTrayIcon className="w-4 h-4" /> Export JSON
+                  <AppIcon name="download" size={16} /> Export JSON
                 </span>
               </MenuItem>
               <MenuItem onSelect={() => onExportDeck(deck.id, 'csv')}>
                 <span className="inline-flex items-center gap-2">
-                  <ArrowDownTrayIcon className="w-4 h-4" /> Export CSV
+                  <AppIcon name="download" size={16} /> Export CSV
                 </span>
               </MenuItem>
               {!isSharedWithMe && cardsInDeck.length > 0 && (
                 <MenuItem onSelect={() => setIsSellOpen(true)}>
                   <span className="inline-flex items-center gap-2">
-                    <BuildingStorefrontIcon className="w-4 h-4" /> Sell as study pack…
+                    <AppIcon name="storefront" size={16} /> Sell as study pack…
                   </span>
                 </MenuItem>
               )}
@@ -474,7 +464,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
               {!isSharedWithMe && cardsInDeck.length > 0 && (
                 <MenuItem onSelect={() => setIsUpdatePackOpen(true)}>
                   <span className="inline-flex items-center gap-2">
-                    <ArrowPathIcon className="w-4 h-4" /> Push update to my study pack…
+                    <AppIcon name="refresh" size={16} /> Push update to my study pack…
                   </span>
                 </MenuItem>
               )}
@@ -491,19 +481,19 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                 }}
               >
                 <span className="inline-flex items-center gap-2">
-                  <ArrowPathIcon className="w-4 h-4" /> Reset progress
+                  <AppIcon name="refresh" size={16} /> Reset progress
                 </span>
               </MenuItem>
               {isSharedWithMe && (
                 <MenuItem onSelect={() => setIsReportOpen(true)}>
                   <span className="inline-flex items-center gap-2">
-                    <FlagIcon className="w-4 h-4" /> Report deck…
+                    <AppIcon name="flag" size={16} /> Report deck…
                   </span>
                 </MenuItem>
               )}
               <MenuItem destructive onSelect={() => void handleDeleteDeckClick()}>
                 <span className="inline-flex items-center gap-2">
-                  <TrashIcon className="w-4 h-4" /> Delete deck
+                  <AppIcon name="trash" size={16} /> Delete deck
                 </span>
               </MenuItem>
             </MenuContent>
@@ -574,16 +564,14 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                             className="p-1.5 text-lantern-primary-light hover:text-lantern-primary rounded-md disabled:opacity-50"
                             title="Enhance with AI"
                           >
-                            <SparklesIcon
-                              className={`w-5 h-5 ${enhancingCardId === card.id ? 'animate-pulse' : ''}`}
-                            />
+                            <AppIcon name="sparkles" size={20} className={enhancingCardId === card.id ? 'animate-pulse' : ''} />
                           </button>
                         )}
                       <button
                         onClick={() => onOpenEditFlashcard(card)}
                         className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary rounded-md"
                       >
-                        <PencilIcon className="w-5 h-5" />
+                        <AppIcon name="pencil" size={20} />
                       </button>
                       <button
                         onClick={() => {
@@ -598,7 +586,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                         }}
                         className="p-1.5 text-lantern-text-secondary hover:text-red-600 rounded-md"
                       >
-                        <TrashIcon className="w-5 h-5" />
+                        <AppIcon name="trash" size={20} />
                       </button>
                     </div>
                   </li>
@@ -632,7 +620,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                     <p className="text-sm font-medium text-lantern-text mb-2">Add cards</p>
                     <div className="flex flex-wrap gap-2">
                       <Button size="sm" onClick={() => onOpenCreateFlashcard(deck.id)}>
-                        <PlusCircleIcon className="w-4 h-4" />
+                        <AppIcon name="add-circle" size={16} />
                         Add manually
                       </Button>
                       <Button
@@ -641,7 +629,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                         disabled={isGenerating}
                         onClick={() => setIsGenerateModalOpen(true)}
                       >
-                        <SparklesIcon className="w-4 h-4" />
+                        <AppIcon name="sparkles" size={16} />
                         Generate with AI
                       </Button>
                     </div>

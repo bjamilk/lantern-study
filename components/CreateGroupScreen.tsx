@@ -2,16 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useToastStore } from '../stores/toastStore';
 import { Course, User, GroupPermissions } from '../types';
 import { CoursePicker } from './academic/CoursePicker';
-import {
-  ArrowLeftIcon,
-  ArrowRightIcon,
-  UsersIcon,
-  CheckIcon,
-  CameraIcon,
-  LockClosedIcon,
-  MagnifyingGlassIcon,
-  CheckCircleIcon,
-} from '@heroicons/react/24/outline';
 import { normalizeUserSearchQuery } from '@lantern/shared';
 import { COMMUNITY_COPY, studyGroupsLiveInChatCopy } from '@lantern/shared/network';
 import { searchUsers } from '../services/supabase';
@@ -21,6 +11,7 @@ import { buildGroupInviteLink } from '../utils/groupInvite';
 import GroupDiscoverabilityFields, {
   type GroupDiscoveryValue,
 } from './discover/GroupDiscoverabilityFields';
+import { AppIcon } from './ui/AppIcon';
 
 interface SearchResult {
   id: string;
@@ -226,7 +217,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
           </div>
         </header>
         <div className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col items-center justify-center">
-          <CheckCircleIcon className="w-16 h-16 text-emerald-500 mb-4" />
+          <AppIcon name="checkmark-circle" size={64} className="text-emerald-500 mb-4" />
           <h2 className="text-lg font-semibold text-lantern-text dark:text-lantern-text mb-2">Share your invite link</h2>
           <p className="text-sm text-lantern-text-secondary mb-6 text-center max-w-md">
             Anyone with this link can request to join. They will choose to accept or decline before joining.
@@ -253,7 +244,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
       <div key="step-select" className="flex flex-col flex-1 min-h-0 h-full bg-lantern-background">
         <header className="bg-lantern-surface shadow-sm p-4 flex items-center shrink-0">
           <button type="button" onClick={onBack} className="p-2 mr-4 rounded-full hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-            <ArrowLeftIcon className="w-6 h-6 text-lantern-text" />
+            <AppIcon name="arrow-back" size={24} className="text-lantern-text" />
           </button>
           <div>
             <h1 className="text-xl font-semibold text-lantern-text dark:text-lantern-text">{screenTitle}</h1>
@@ -266,7 +257,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-4">
           <div className="relative">
             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <MagnifyingGlassIcon className="h-5 w-5 text-lantern-text-tertiary" />
+              <AppIcon name="search" size={20} className="text-lantern-text-tertiary" />
             </div>
             <input
               type="text"
@@ -293,7 +284,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
 
           {!isSearching && !searchError && searchTerm.length >= 2 && searchResults.length === 0 && (
             <div className="text-center py-8">
-              <UsersIcon className="w-12 h-12 mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
+              <AppIcon name="people" size={48} className="mx-auto text-lantern-text-tertiary dark:text-lantern-text-secondary mb-3" />
               <p className="text-sm text-lantern-text-secondary">No users found matching &quot;{searchTerm}&quot;</p>
               <p className="text-xs text-lantern-text-tertiary mt-2 max-w-xs mx-auto">
                 Try their @username, or ask them to set one in Settings if they do not have one yet.
@@ -316,7 +307,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
                         <p className="font-medium text-lantern-text truncate">{user.name}</p>
                         {user.username && <p className="text-sm text-lantern-primary">@{user.username}</p>}
                       </div>
-                      <CheckIcon className="w-5 h-5 text-lantern-primary" />
+                      <AppIcon name="checkmark" size={20} className="text-lantern-primary" />
                     </button>
                   </li>
                 ))}
@@ -367,7 +358,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
           >
             {selectedUserIds.length > 0 ? (
               <>
-                Next <ArrowRightIcon className="w-5 h-5 ml-2" />
+                Next <AppIcon name="arrow-forward" size={20} className="ml-2" />
               </>
             ) : (
               'Skip - Create Group Without Members'
@@ -382,7 +373,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
     <div key="step-details" className="flex flex-col flex-1 min-h-0 h-full bg-lantern-background">
       <header className="bg-lantern-surface shadow-sm p-4 flex items-center shrink-0">
         <button type="button" onClick={() => setStep('select_members')} className="p-2 mr-4 rounded-full hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-          <ArrowLeftIcon className="w-6 h-6 text-lantern-text" />
+          <AppIcon name="arrow-back" size={24} className="text-lantern-text" />
         </button>
         <div>
           <h1 className="text-xl font-semibold text-lantern-text dark:text-lantern-text">Group Details & Permissions</h1>
@@ -399,10 +390,10 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
             {avatarPreview ? (
               <img src={avatarPreview} alt="Group avatar preview" className="w-full h-full object-cover rounded-full" />
             ) : (
-              <UsersIcon className="w-12 h-12 text-lantern-text-tertiary" />
+              <AppIcon name="people" size={48} className="text-lantern-text-tertiary" />
             )}
             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 rounded-full flex items-center justify-center transition-opacity">
-              <CameraIcon className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              <AppIcon name="camera" size={32} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
             </div>
           </button>
           <input type="file" ref={avatarFileRef} onChange={handleAvatarChange} accept="image/*" className="hidden" />
@@ -440,7 +431,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
 
         <div className="max-w-sm mx-auto p-4 bg-lantern-surface rounded-lg shadow-sm">
           <h3 className="font-semibold text-lantern-text flex items-center mb-2">
-            <LockClosedIcon className="w-5 h-5 mr-2 text-lantern-text-secondary" />
+            <AppIcon name="lock-closed" size={20} className="mr-2 text-lantern-text-secondary" />
             Member Permissions
           </h3>
           <div className="divide-y divide-lantern-border">
@@ -466,7 +457,7 @@ const CreateGroupScreen: React.FC<CreateGroupScreenProps> = ({
         >
           {isCreating ? 'Creating…' : (
             <>
-              Create Group <CheckIcon className="w-5 h-5 ml-2" />
+              Create Group <AppIcon name="checkmark" size={20} className="ml-2" />
             </>
           )}
         </button>

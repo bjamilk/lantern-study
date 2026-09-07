@@ -1,7 +1,7 @@
 import React from 'react';
-import { ClockIcon, PlayIcon, TrashIcon } from '@heroicons/react/24/outline';
 import type { PausedSessionSummary } from '../types';
 import { Button, Card } from './ui';
+import { AppIcon } from './ui/AppIcon';
 
 interface SavedSessionsListProps {
   sessions: PausedSessionSummary[];
@@ -36,7 +36,7 @@ const SavedSessionsList: React.FC<SavedSessionsListProps> = ({
     <Card padding={compact ? 'md' : 'lg'}>
       <div className="flex items-center gap-2 mb-3">
         <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600">
-          <ClockIcon className="w-5 h-5" />
+          <AppIcon name="time" size={20} />
         </div>
         <div>
           <h3 className="text-heading text-lantern-text">
@@ -76,11 +76,11 @@ const SavedSessionsList: React.FC<SavedSessionsListProps> = ({
                 onClick={() => onDiscard(session.id)}
                 aria-label={`Discard ${session.title}`}
               >
-                <TrashIcon className="w-4 h-4" />
+                <AppIcon name="trash" size={16} />
                 Discard
               </Button>
               <Button size="sm" variant="accent" onClick={() => onResume(session.id)}>
-                <PlayIcon className="w-4 h-4" />
+                <AppIcon name="play" size={16} />
                 Resume
               </Button>
             </div>

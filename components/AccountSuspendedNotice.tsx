@@ -1,6 +1,6 @@
 import React from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { LEGAL_PATHS, SUPPORT_EMAIL, buildSupportMailtoUrl } from '@lantern/shared';
-import { ExclamationTriangleIcon, NoSymbolIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 import { Button } from './ui';
 import { useAccountSuspensionStore } from '../services/accountSuspension';
@@ -47,7 +47,7 @@ export const AccountSuspendedNotice: React.FC<{ variant: 'modal' | 'banner' }> =
       >
         <div className="w-full">
           <div className="flex items-center gap-2 p-5 border-b border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20">
-            <NoSymbolIcon className="w-6 h-6 text-amber-600 shrink-0" aria-hidden />
+            <AppIcon name="ban" size={24} className="text-amber-600 shrink-0" aria-hidden />
             <h3 id="account-suspended-title" className="text-lg font-bold text-amber-950 dark:text-amber-100">
               {headline}
             </h3>
@@ -92,7 +92,7 @@ export const AccountSuspendedNotice: React.FC<{ variant: 'modal' | 'banner' }> =
       className="mx-4 mt-4 rounded-lg border border-amber-300 bg-amber-50 dark:border-amber-700 dark:bg-amber-900/20 p-4 flex flex-col sm:flex-row sm:items-center gap-3"
     >
       <div className="flex gap-3 flex-1">
-        <ExclamationTriangleIcon className="w-6 h-6 text-amber-600 shrink-0" aria-hidden />
+        <AppIcon name="warning" size={24} className="text-amber-600 shrink-0" aria-hidden />
         <div className="text-sm text-amber-950 dark:text-amber-100">
           <p className="font-semibold">{headline}</p>
           <p className="mt-1 text-amber-900/90 dark:text-amber-200/90">{body}</p>

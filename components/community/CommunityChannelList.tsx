@@ -1,15 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import {
-  AcademicCapIcon,
-  ArrowRightIcon,
-  ChatBubbleLeftRightIcon,
-  ChevronRightIcon,
-  GlobeAltIcon,
-  HashtagIcon,
-  LockClosedIcon,
-  PlusIcon,
-  SpeakerWaveIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import {
   COMMUNITY_COPY,
   COMMUNITY_LOUNGE_CHANNEL_NAME,
@@ -61,14 +51,18 @@ const UnreadPill: React.FC<{ count: number }> = ({ count }) =>
 
 const VisibilityGlyph: React.FC<{ visibility: CommunityChannel['visibility'] }> = ({ visibility }) =>
   visibility === 'community' ? (
-    <LockClosedIcon
-      className="w-3 h-3 shrink-0 text-lantern-text-tertiary"
+    <AppIcon
+      name="lock-closed"
+      size={12}
+      className="shrink-0 text-lantern-text-tertiary"
       aria-label={COMMUNITY_COPY.membersOnly}
       title={COMMUNITY_COPY.membersOnly}
     />
   ) : (
-    <GlobeAltIcon
-      className="w-3 h-3 shrink-0 text-lantern-text-tertiary"
+    <AppIcon
+      name="globe"
+      size={12}
+      className="shrink-0 text-lantern-text-tertiary"
       aria-label="Public"
       title="Public"
     />
@@ -146,9 +140,10 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
               aria-label={`${name}${row.unread > 0 ? `, ${row.unread} unread` : ''}, ${COMMUNITY_COPY.loungeSubtitle}`}
               className={`${ROW} ${selected ? ROW_SELECTED : ''}`}
             >
-              <ChatBubbleLeftRightIcon
-                className="w-4 h-4 shrink-0 text-lantern-text-tertiary"
-                aria-hidden="true"
+              <AppIcon
+                name="chatbubbles"
+                size={16}
+                className="shrink-0 text-lantern-text-tertiary"
               />
               <span className="min-w-0 flex-1">
                 <span className={`block truncate text-sm ${row.unread > 0 ? 'font-bold text-lantern-text' : 'font-medium text-lantern-text'}`}>
@@ -178,7 +173,7 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
                 title={action.label}
                 className="-mr-2 flex h-11 w-11 items-center justify-center rounded-lantern text-lantern-text-tertiary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary md:h-8 md:w-8"
               >
-                <PlusIcon className="w-4 h-4" aria-hidden="true" />
+                <AppIcon name="add" size={16} />
               </button>
             ) : null}
           </li>
@@ -201,7 +196,7 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
               title={subtitle}
               className={`${ROW} ${selected ? ROW_SELECTED : ''} ${board.isMember ? '' : 'opacity-70'}`}
             >
-              <HashtagIcon className="w-4 h-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+              <AppIcon name="hashtag" size={16} className="shrink-0 text-lantern-text-tertiary" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
                   <span className={`truncate text-sm ${row.unread > 0 ? 'font-bold text-lantern-text' : 'font-medium text-lantern-text'}`}>
@@ -230,14 +225,15 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
               title={subtitle}
               className={`${ROW} ${group.isMember ? '' : 'opacity-70'}`}
             >
-              <AcademicCapIcon className="w-4 h-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+              <AppIcon name="school" size={16} className="shrink-0 text-lantern-text-tertiary" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-lantern-text">{group.name}</span>
                 <span className="block truncate text-[11px] text-lantern-text-tertiary">{subtitle}</span>
               </span>
-              <ArrowRightIcon
-                className="ml-auto w-4 h-4 shrink-0 text-lantern-text-tertiary"
-                aria-hidden="true"
+              <AppIcon
+                name="arrow-forward"
+                size={16}
+                className="ml-auto shrink-0 text-lantern-text-tertiary"
               />
             </button>
           </li>
@@ -254,7 +250,7 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
               aria-label={`${room.joined ? 'Open' : 'Join'} ${room.title}, ${subtitle}`}
               className={ROW}
             >
-              <SpeakerWaveIcon className="w-4 h-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+              <AppIcon name="volume-medium" size={16} className="shrink-0 text-lantern-text-tertiary" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-lantern-text">{room.title}</span>
                 <span className="block truncate text-[11px] text-lantern-text-tertiary">{subtitle}</span>
@@ -279,7 +275,7 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
             {onOpenMembers ? (
               <button type="button" onClick={onOpenMembers} className={ROW}>
                 <span className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">{label}</span>
-                <ChevronRightIcon className="ml-auto w-4 h-4 shrink-0 text-lantern-text-tertiary" aria-hidden="true" />
+                <AppIcon name="chevron-forward" size={16} className="ml-auto shrink-0 text-lantern-text-tertiary" />
               </button>
             ) : (
               <span className="block px-3 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">

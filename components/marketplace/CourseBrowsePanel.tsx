@@ -1,12 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import Modal from '../ui/Modal';
 import {
-  AcademicCapIcon,
-  ArrowLeftIcon,
-  MagnifyingGlassIcon,
-  PhotoIcon,
-} from '@heroicons/react/24/outline';
-import {
   COURSE_ANCHOR_COPY,
   courseAnchorLabel,
   courseListingCountLabel,
@@ -18,6 +12,7 @@ import {
   fetchMarketplaceCourses,
   type CourseBrowsePage,
 } from './courseBrowseApi';
+import { AppIcon } from '../ui/AppIcon';
 
 interface CourseBrowsePanelProps {
   isOpen: boolean;
@@ -150,10 +145,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
   const renderIndex = () => (
     <>
       <div className="relative">
-        <MagnifyingGlassIcon
-          className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none"
-          aria-hidden
-        />
+        <AppIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" aria-hidden />
         <input
           type="search"
           value={query}
@@ -225,7 +217,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
         onClick={() => onOpenCourseIndex?.()}
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-lantern-primary min-h-[44px]"
       >
-        <ArrowLeftIcon className="w-4 h-4" aria-hidden />
+        <AppIcon name="arrow-back" size={16} aria-hidden />
         All courses
       </button>
 
@@ -264,7 +256,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
               aria-pressed={showImages}
               className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-lantern-border text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text min-h-[36px]"
             >
-              <PhotoIcon className="w-4 h-4" aria-hidden />
+              <AppIcon name="image" size={16} aria-hidden />
               {showImages ? 'Hide images' : COURSE_ANCHOR_COPY.showImages}
             </button>
           ) : null}
@@ -328,7 +320,7 @@ export const CourseBrowsePanel: React.FC<CourseBrowsePanelProps> = ({
     >
       <div className="w-full">
         <div className="flex items-center gap-2 p-5 border-b border-lantern-border">
-          <AcademicCapIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
+          <AppIcon name="school" size={20} className="text-lantern-primary" aria-hidden />
           <div className="min-w-0">
             <h3 id="course-browse-title" className="text-lg font-bold text-lantern-text">
               {COURSE_ANCHOR_COPY.browseTitle}

@@ -7,11 +7,23 @@ import { MAX_OCR_PDF_PAGES, PDF_OCR_SCALE, PDF_OCR_TIMEOUT_MS } from './noteFile
 
 const nodeRequire = createRequire(__filename);
 
+/** One page as OCR read it. `pageIndex` is 0-based; `text` may be empty. */
+export type PdfOcrPage = {
+  pageIndex: number;
+  text: string;
+};
+
 export type PdfPageOcrResult = {
   text: string;
   pageCount: number;
   ocrPageCount: number;
   capped: boolean;
+  /**
+   * Per-page text, in page order, for every page actually read. The joined
+   * `text` above is unchanged and stays the input to Smart Notes / quiz — this
+   * is the same content with the page boundaries kept instead of discarded.
+   */
+  pages: PdfOcrPage[];
 };
 
 type PdfJsModule = {
@@ -130,6 +142,7 @@ export async function ocrPdfPagesFromBuffer(
 
   const worker = await createTesseractWorker();
   const pageTexts: string[] = [];
+  const pages: PdfOcrPage[] = [];
   let pagesRead = 0;
   let timedOut = false;
 
@@ -173,6 +186,10 @@ export async function ocrPdfPagesFromBuffer(
       } = await worker.recognize(png);
       pagesRead += 1;
       const trimmed = (text || '').trim();
+      // The joined blob keeps skipping empty pages (unchanged behaviour); the
+      // per-page list keeps them, because "page 4 is blank" is a fact the
+      // walk-through needs and a hole in the numbering would be a bug.
+      pages.push({ pageIndex: pageNum - 1, text: trimmed });
       if (trimmed) {
         pageTexts.push(trimmed);
       }
@@ -202,7 +219,94 @@ export async function ocrPdfPagesFromBuffer(
     pageCount,
     ocrPageCount: pagesRead,
     capped: capped || timedOut,
+    pages,
   };
+}
+
+/**
+ * Rasterize PDF pages to WebP-ready PNG buffers, without OCR.
+ *
+ * Same pdfjs + @napi-rs/canvas path the OCR reader uses, split out so the page
+ * model can render a picture of page N on demand. Rendering is the expensive
+ * half of OCR, so this is bounded twice: `maxPages` and a wall-clock budget.
+ * Whatever finished inside the budget is returned — a partial set of page
+ * images is useful (the walk-through shows the pages it has and renders the
+ * rest on the next call), an exception is not.
+ */
+export async function renderPdfPageImages(
+  buffer: Buffer,
+  options?: {
+    /** 0-based page indexes to render. Omit for "from the start". */
+    pageIndexes?: number[];
+    maxPages?: number;
+    timeoutMs?: number;
+    scale?: number;
+  }
+): Promise<{ images: Array<{ pageIndex: number; png: Buffer }>; pageCount: number }> {
+  const maxPages = Math.max(1, options?.maxPages ?? MAX_OCR_PDF_PAGES);
+  const timeoutMs = options?.timeoutMs ?? PDF_OCR_TIMEOUT_MS;
+  // Page images are read on a phone, not fed to Tesseract, so they do not need
+  // the 2.0 OCR scale. 1.5 (~108 DPI) is legible when zoomed and roughly half
+  // the render cost and canvas memory.
+  const scale = options?.scale ?? 1.5;
+  const startedAt = Date.now();
+
+  const { createCanvas } = nodeRequire('@napi-rs/canvas') as {
+    createCanvas: (
+      width: number,
+      height: number
+    ) => {
+      width: number;
+      height: number;
+      getContext: (type: '2d') => unknown;
+      toBuffer: (mime?: string) => Buffer;
+    };
+  };
+
+  const pdfjs = await loadPdfJs();
+  const loadingTask = pdfjs.getDocument({
+    data: new Uint8Array(buffer),
+    useSystemFonts: true,
+    disableWorker: true,
+    isEvalSupported: false,
+  });
+  const pdf = await loadingTask.promise;
+  const pageCount = pdf.numPages || 1;
+
+  const requested = (options?.pageIndexes ?? Array.from({ length: pageCount }, (_, i) => i))
+    .filter((index) => Number.isInteger(index) && index >= 0 && index < pageCount)
+    .sort((a, b) => a - b)
+    .slice(0, maxPages);
+
+  const images: Array<{ pageIndex: number; png: Buffer }> = [];
+  try {
+    for (const pageIndex of requested) {
+      if (Date.now() - startedAt > timeoutMs) {
+        logger.warn('PDF page render budget exhausted; returning what rendered', {
+          rendered: images.length,
+          requested: requested.length,
+          timeoutMs,
+        });
+        break;
+      }
+      const page = await pdf.getPage(pageIndex + 1);
+      const viewport = page.getViewport({ scale });
+      const width = Math.max(1, Math.ceil(viewport.width));
+      const height = Math.max(1, Math.ceil(viewport.height));
+      const canvas = createCanvas(width, height);
+      const canvasContext = canvas.getContext('2d');
+      await page.render({ canvasContext, viewport, canvas }).promise;
+      images.push({ pageIndex, png: canvas.toBuffer('image/png') });
+    }
+  } finally {
+    try {
+      await pdf.destroy?.();
+    } catch {
+      // ignore
+    }
+  }
+
+  return { images, pageCount };
 }
 
 /**

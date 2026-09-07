@@ -1,9 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ArrowPathIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { Illustration } from './ui';
 import {
   MASTERY_BAND_LABELS,
@@ -178,7 +174,7 @@ export const CourseReadinessCard: React.FC<CourseReadinessCardProps> = ({
           className="flex shrink-0 items-center gap-1 px-2.5 py-1.5 rounded-lg text-caption font-medium transition-opacity hover:opacity-80 disabled:opacity-60"
           aria-label="Recompute readiness from your latest tests and reviews"
         >
-          <ArrowPathIcon className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
+          <AppIcon name="refresh" size={14} className={refreshing ? 'animate-spin' : ''} aria-hidden />
           Refresh
         </button>
       </div>
@@ -230,9 +226,9 @@ export const CourseReadinessCard: React.FC<CourseReadinessCardProps> = ({
                       <span className="flex items-center gap-1.5 shrink-0 text-caption text-lantern-text-tertiary">
                         {row.daysLeftLabel}
                         {expanded ? (
-                          <ChevronDownIcon className="w-4 h-4" aria-hidden />
+                          <AppIcon name="chevron-down" size={16} aria-hidden />
                         ) : (
-                          <ChevronRightIcon className="w-4 h-4" aria-hidden />
+                          <AppIcon name="chevron-forward" size={16} aria-hidden />
                         )}
                       </span>
                     </div>

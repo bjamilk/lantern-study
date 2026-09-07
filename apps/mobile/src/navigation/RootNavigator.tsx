@@ -142,7 +142,13 @@ import {
 
 } from '../screens/flashcards';
 
-import { NotesScreen, NoteEditorScreen, NoteShareAcceptScreen } from '../screens/notes';
+import {
+  NotesScreen,
+  NoteEditorScreen,
+  NoteShareAcceptScreen,
+  WalkthroughScreen,
+  NarrationScreen,
+} from '../screens/notes';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { StudyHubScreen } from '../screens/study/StudyHubScreen';
 
@@ -405,6 +411,12 @@ function StudyNavigator() {
       <StudyStack.Screen name="NoteEditor" component={NoteEditorScreen} />
 
       <StudyStack.Screen name="NoteShareAccept" component={NoteShareAcceptScreen} />
+
+      {/* Walk me through: a reading screen, pushed from the note. Not
+          immersive on purpose — it keeps both bars, so the way out is the
+          global bar rather than the pixel it was entered by. */}
+      <StudyStack.Screen name="Walkthrough" component={WalkthroughScreen} />
+      <StudyStack.Screen name="Narration" component={NarrationScreen} />
 
       <StudyStack.Screen name="TestsList" component={TestScreen} />
 

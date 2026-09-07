@@ -58,7 +58,6 @@ import {
   LISTING_APPEAL_STATUS_LABELS,
   canAppealListing,
 } from '@lantern/shared';
-import { ScaleIcon } from '@heroicons/react/24/outline';
 import ReportContentModal from './moderation/ReportContentModal';
 import AppealListingModal from './moderation/AppealListingModal';
 import { usePageSeo } from '../hooks/usePageSeo';
@@ -71,27 +70,7 @@ import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '.
 import MakeOfferModal from './MakeOfferModal';
 import Modal from './ui/Modal';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
-import {
-  ArrowLeftIcon,
-  MagnifyingGlassIcon,
-  MapPinIcon,
-  ClockIcon,
-  StarIcon,
-  ChatBubbleLeftIcon,
-  ShoppingBagIcon,
-  ExclamationTriangleIcon,
-  UserIcon,
-  HeartIcon,
-  ShareIcon,
-  FlagIcon,
-  EyeIcon,
-  CurrencyDollarIcon,
-  PencilSquareIcon,
-  ClipboardDocumentListIcon,
-  CheckBadgeIcon,
-  XMarkIcon
-} from '@heroicons/react/24/outline';
-import { StarIcon as StarSolidIcon, HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 
 interface MarketplaceListingDetailScreenProps {
   listingId: string;
@@ -632,7 +611,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       <div className="flex-1 flex flex-col items-center justify-center bg-lantern-background p-6">
         <div className="text-center">
           <div className="w-16 h-16 bg-lantern-background-secondary rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <ExclamationTriangleIcon className="w-8 h-8 text-lantern-text-tertiary" />
+            <AppIcon name="warning" size={32} className="text-lantern-text-tertiary" />
           </div>
           <h2 className="text-lg font-semibold text-lantern-text mb-1">Listing not found</h2>
           <p className="text-sm text-lantern-text-secondary mb-5 max-w-sm">The listing you're looking for doesn't exist or has been removed.</p>
@@ -640,7 +619,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             onClick={onBack}
             className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center gap-2 mx-auto transition-colors duration-150 text-sm shadow-sm"
           >
-            <ArrowLeftIcon className="w-4 h-4" />
+            <AppIcon name="arrow-back" size={16} />
             Go Back
           </button>
         </div>
@@ -686,7 +665,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             onClick={onBack}
             className="flex items-center gap-1.5 sm:gap-2 text-sm text-lantern-text-secondary hover:text-lantern-text font-medium transition-colors duration-150 px-2 py-1.5 -ml-2 rounded-lg hover:bg-lantern-background-secondary"
           >
-            <ArrowLeftIcon className="w-4 h-4" />
+            <AppIcon name="arrow-back" size={16} />
             <span className="hidden sm:inline">Back to Marketplace</span>
             <span className="sm:hidden">Back</span>
           </button>
@@ -699,9 +678,9 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               aria-label={isFavorited ? 'Remove from favorites' : 'Add to favorites'}
             >
               {isFavorited ? (
-                <HeartSolidIcon className="w-5 h-5 text-red-500" />
+                <AppIcon name="heart" size={20} filled className="text-red-500" />
               ) : (
-                <HeartIcon className="w-5 h-5 text-lantern-text-tertiary" />
+                <AppIcon name="heart" size={20} className="text-lantern-text-tertiary" />
               )}
             </button>
             )}
@@ -723,7 +702,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               className="p-2 rounded-lg text-lantern-text-tertiary hover:text-lantern-text-secondary dark:hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
               aria-label="Share listing"
             >
-              <ShareIcon className="w-5 h-5" />
+              <AppIcon name="share-social" size={20} />
             </button>
             {!guestMode && !isOwner && (
             <button
@@ -731,7 +710,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               className="p-2 rounded-lg text-lantern-text-tertiary hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400"
               aria-label="Report listing"
             >
-              <FlagIcon className="w-5 h-5" />
+              <AppIcon name="flag" size={20} />
             </button>
             )}
           </div>
@@ -777,7 +756,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       onError={(e) => { e.currentTarget.style.display = 'none'; }}
                     />
                     <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-lantern-surface/90 text-[11px] font-medium text-lantern-text opacity-0 group-hover:opacity-100 transition-opacity">
-                      <MagnifyingGlassIcon className="w-3.5 h-3.5" />
+                      <AppIcon name="search" size={14} />
                       Zoom
                     </span>
                   </button>
@@ -788,14 +767,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         className="absolute left-3 top-1/2 transform -translate-y-1/2 p-2 bg-lantern-surface/80 dark:bg-lantern-surface/80 backdrop-blur-sm rounded-xl hover:bg-lantern-surface dark:hover:bg-lantern-surface-secondary transition-colors duration-150 shadow-sm"
                         aria-label="Previous image"
                       >
-                        <ArrowLeftIcon className="w-4 h-4" />
+                        <AppIcon name="arrow-back" size={16} />
                       </button>
                       <button
                         onClick={nextImage}
                         className="absolute right-3 top-1/2 transform -translate-y-1/2 p-2 bg-lantern-surface/80 dark:bg-lantern-surface/80 backdrop-blur-sm rounded-xl hover:bg-lantern-surface dark:hover:bg-lantern-surface-secondary transition-colors duration-150 shadow-sm"
                         aria-label="Next image"
                       >
-                        <ArrowLeftIcon className="w-4 h-4 rotate-180" />
+                        <AppIcon name="arrow-back" size={16} className="rotate-180" />
                       </button>
                       <div className="absolute bottom-3 left-1/2 transform -translate-x-1/2 flex gap-1.5">
                         {listing.images.map((_, index) => (
@@ -815,7 +794,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               ) : (
                 <div className="w-full h-56 sm:h-72 md:h-96 flex items-center justify-center">
                   <div className="text-center">
-                    <ShoppingBagIcon className="w-12 h-12 text-lantern-text-tertiary mx-auto mb-3" />
+                    <AppIcon name="bag" size={48} className="text-lantern-text-tertiary mx-auto mb-3" />
                     <p className="text-sm text-lantern-text-tertiary">No images available</p>
                   </div>
                 </div>
@@ -889,7 +868,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     </span>
                   )}
                   <div className="flex items-center gap-1 text-sm text-lantern-text-secondary">
-                    <StarIcon className="w-4 h-4 text-amber-400 fill-current" />
+                    <AppIcon name="star" size={16} className="text-amber-400 fill-current" />
                     <span className="font-semibold">{averageRating.toFixed(1)}</span>
                     <span className="text-lantern-text-tertiary">({reviews.length})</span>
                   </div>
@@ -900,11 +879,11 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
             {/* Meta Information */}
             <div className="flex flex-wrap gap-2 sm:gap-3 text-xs sm:text-sm text-lantern-text-secondary">
               <span className="flex items-center gap-1 bg-lantern-background-secondary px-2.5 py-1 rounded-lg">
-                <MapPinIcon className="w-3.5 h-3.5" />
+                <AppIcon name="location" size={14} />
                 {listing.location || 'Not specified'}
               </span>
               <span className="flex items-center gap-1 bg-lantern-background-secondary px-2.5 py-1 rounded-lg">
-                <ClockIcon className="w-3.5 h-3.5" />
+                <AppIcon name="time" size={14} />
                 {new Date(listing.created_at).toLocaleDateString()}
               </span>
             </div>
@@ -957,7 +936,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               <h3 className="text-xs font-semibold text-lantern-text-secondary mb-3 uppercase tracking-wide">Seller</h3>
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-lantern-primary-background dark:bg-lantern-primary-dark/30 rounded-xl flex items-center justify-center">
-                  <UserIcon className="w-5 h-5 text-lantern-primary" />
+                  <AppIcon name="person" size={20} className="text-lantern-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-1.5 min-w-0">
@@ -989,7 +968,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <div className="flex items-center gap-2 text-xs text-lantern-text-secondary">
                     {averageRating > 0 && (
                       <span className="flex items-center gap-0.5">
-                        <StarIcon className="w-3 h-3 text-amber-400 fill-current" />
+                        <AppIcon name="star" size={12} className="text-amber-400 fill-current" />
                         {averageRating.toFixed(1)} rating
                       </span>
                     )}
@@ -1000,12 +979,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               {/* Seller since */}
               <div className="mt-2.5 pt-2.5 border-t border-lantern-border/60 dark:border-lantern-border/60 flex items-center gap-3 text-xs text-lantern-text-secondary">
                 <span className="flex items-center gap-1">
-                  <ClockIcon className="w-3 h-3" />
+                  <AppIcon name="time" size={12} />
                   Listed {new Date(listing.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                 </span>
                 {listing.views_count != null && listing.views_count > 0 && (
                   <span className="flex items-center gap-1">
-                    <EyeIcon className="w-3 h-3" />
+                    <AppIcon name="eye" size={12} />
                     {listing.views_count} view{listing.views_count !== 1 ? 's' : ''}
                   </span>
                 )}
@@ -1048,7 +1027,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         onClick={() => setShowAppealForm(true)}
                         className="mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-lantern-primary hover:underline"
                       >
-                        <ScaleIcon className="w-3.5 h-3.5" aria-hidden />
+                        <AppIcon name="scale" size={14} aria-hidden />
                         Appeal this takedown
                       </button>
                     ) : null}
@@ -1059,16 +1038,16 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 {sellerStats && (
                   <div className="flex items-center gap-4 px-3 pb-2 text-xs text-lantern-primary">
                     <span className="flex items-center gap-1">
-                      <ClipboardDocumentListIcon className="w-3.5 h-3.5" />
+                      <AppIcon name="clipboard" size={14} />
                       {sellerStats.totalListings} published
                     </span>
                     <span className="flex items-center gap-1">
-                      <CheckBadgeIcon className="w-3.5 h-3.5" />
+                      <AppIcon name="badge-check" size={14} />
                       {sellerStats.soldCount} sold
                     </span>
                     {negotiationHistory.length > 0 && (
                       <span className="flex items-center gap-1">
-                        <CurrencyDollarIcon className="w-3.5 h-3.5" />
+                        <AppIcon name="currency" size={14} />
                         {negotiationHistory.length} offer events
                       </span>
                     )}
@@ -1082,7 +1061,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       onClick={(e) => { e.stopPropagation(); onNavigate('EditMarketplaceListing', { listing }); }}
                       className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
                     >
-                      <PencilSquareIcon className="w-3.5 h-3.5" />
+                      <AppIcon name="create" size={14} />
                       Edit Listing
                     </button>
                     <button
@@ -1148,7 +1127,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     onClick={handleContactSeller}
                     className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                   >
-                    <ChatBubbleLeftIcon className="w-4 h-4" />
+                    <AppIcon name="chatbubble" size={16} />
                     Contact Seller
                   </button>
                 </div>
@@ -1203,7 +1182,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     disabled={downloadingBank}
                     className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                   >
-                    <CheckBadgeIcon className="w-4 h-4" />
+                    <AppIcon name="badge-check" size={16} />
                     {downloadingBank ? 'Downloading…' : 'Download free'}
                   </button>
                 )}
@@ -1214,7 +1193,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   onClick={handleContactSeller}
                   className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                 >
-                  <ChatBubbleLeftIcon className="w-4 h-4" />
+                  <AppIcon name="chatbubble" size={16} />
                   Contact Seller
                 </button>
               )}
@@ -1301,7 +1280,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     disabled={buyingNow}
                     className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
                   >
-                    <CheckBadgeIcon className="w-4 h-4" />
+                    <AppIcon name="badge-check" size={16} />
                     {buyingNow
                       ? 'Processing Purchase...'
                       : (() => {
@@ -1326,7 +1305,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         disabled={addingToCart || buyingNow}
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-lantern-primary ring-1 ring-lantern-primary/30 hover:bg-lantern-primary-background disabled:opacity-50 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
                       >
-                        <ShoppingBagIcon className="w-4 h-4" />
+                        <AppIcon name="bag" size={16} />
                         {addingToCart
                           ? 'Adding…'
                           : `Add to cart${
@@ -1342,14 +1321,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         }}
                         className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 sm:py-3 bg-lantern-surface text-emerald-700 dark:text-emerald-400 ring-1 ring-emerald-600/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/30 rounded-xl font-semibold transition-colors duration-150 text-xs sm:text-sm"
                       >
-                        <CurrencyDollarIcon className="w-4 h-4" />
+                        <AppIcon name="currency" size={16} />
                         Make an Offer
                       </button>
                     </div>
                   )}
 
                   <p className="flex items-start gap-1.5 text-[11px] sm:text-xs text-lantern-text-secondary px-1">
-                    <CheckBadgeIcon className="w-4 h-4 shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
+                    <AppIcon name="badge-check" size={16} className="shrink-0 text-emerald-600 dark:text-emerald-400" aria-hidden />
                     <span>
                       <span className="font-semibold text-lantern-text">Buyer protection:</span>{' '}
                       {isStudyPack
@@ -1364,7 +1343,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     onClick={handleContactSeller}
                     className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2 sm:py-2.5 text-lantern-text-secondary hover:text-lantern-text ring-1 ring-lantern-border hover:ring-lantern-primary/30 rounded-xl font-medium transition-colors duration-150 text-xs sm:text-sm"
                   >
-                    <ChatBubbleLeftIcon className="w-4 h-4" />
+                    <AppIcon name="chatbubble" size={16} />
                     Ask the seller a question
                   </button>
                 </>
@@ -1568,7 +1547,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 onClick={() => setShowReviewForm(true)}
                 className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center gap-1.5 transition-colors duration-150 text-sm shadow-sm"
               >
-                <StarIcon className="w-4 h-4" />
+                <AppIcon name="star" size={16} />
                 Write Review
               </button>
             ) : !isOwner ? (
@@ -1587,11 +1566,12 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 </p>
                 <div className="flex items-center gap-0.5" aria-hidden>
                   {[...Array(5)].map((_, i) => (
-                    <StarSolidIcon
+                    <AppIcon
                       key={i}
-                      className={`w-4 h-4 ${
-                        i < Math.round(averageRating) ? 'text-amber-400' : 'text-lantern-border'
-                      }`}
+                      name="star"
+                      size={16}
+                      filled
+                      className={i < Math.round(averageRating) ? 'text-amber-400' : 'text-lantern-border'}
                     />
                   ))}
                 </div>
@@ -1660,7 +1640,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   className="flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-lantern-primary/10 text-lantern-primary text-xs font-medium hover:bg-lantern-primary/20 transition-colors"
                 >
                   {reviewStarFilter}-star only
-                  <XMarkIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="close" size={14} />
                 </button>
               )}
             </div>
@@ -1669,7 +1649,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
           {reviews.length === 0 ? (
             <div className="flex flex-col items-center py-10">
               <div className="w-14 h-14 bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-2xl flex items-center justify-center mb-3">
-                <StarIcon className="w-7 h-7 text-lantern-text-tertiary" />
+                <AppIcon name="star" size={28} className="text-lantern-text-tertiary" />
               </div>
               <p className="text-sm text-lantern-text-secondary">
                 {canReview ? 'No reviews yet. Be the first to leave one!' : 'No reviews yet.'}
@@ -1693,25 +1673,26 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 bg-lantern-primary-background dark:bg-lantern-primary-dark/30 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <UserIcon className="w-4 h-4 text-lantern-primary" />
+                        <AppIcon name="person" size={16} className="text-lantern-primary" />
                       </div>
                       <div>
                         <p className="font-semibold text-sm text-lantern-text flex items-center gap-1.5 flex-wrap">
                           {review.reviewer?.name || review.reviewer?.username || 'User'}
                           {review.verifiedPurchase && (
                             <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 text-label tracking-normal font-medium text-emerald-700 dark:text-emerald-300">
-                              <CheckBadgeIcon className="w-3 h-3" aria-hidden />
+                              <AppIcon name="badge-check" size={12} aria-hidden />
                               Verified purchase
                             </span>
                           )}
                         </p>
                         <div className="flex items-center gap-0.5">
                           {[...Array(5)].map((_, i) => (
-                            <StarSolidIcon
+                            <AppIcon
                               key={i}
-                              className={`w-3 h-3 ${
-                                i < review.rating ? 'text-amber-400' : 'text-lantern-text-secondary dark:text-lantern-text-secondary'
-                              }`}
+                              name="star"
+                              size={12}
+                              filled
+                              className={i < review.rating ? 'text-amber-400' : 'text-lantern-text-secondary dark:text-lantern-text-secondary'}
                             />
                           ))}
                         </div>
@@ -1773,7 +1754,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       <img src={item.images[0]} alt={item.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />
+                        <AppIcon name="bag" size={32} className="text-lantern-text-tertiary" />
                       </div>
                     )}
                   </div>
@@ -1782,7 +1763,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     <p className="text-sm font-bold text-lantern-primary mt-0.5">{item.price ? `₦${item.price.toLocaleString()}` : 'Free'}</p>
                     {(item.rating_count ?? 0) > 0 && item.rating_avg != null ? (
                       <p className="mt-0.5 flex items-center gap-0.5 text-[11px] text-lantern-text-tertiary">
-                        <StarSolidIcon className="w-3 h-3 text-amber-400" aria-hidden />
+                        <AppIcon name="star" size={12} filled className="text-amber-400" aria-hidden />
                         {Number(item.rating_avg).toFixed(1)} ({item.rating_count})
                       </p>
                     ) : null}
@@ -1822,7 +1803,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200"
                 aria-label="Close review form"
               >
-                <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
+                <AppIcon name="arrow-back" size={20} className="rotate-45" aria-hidden />
               </button>
             </div>
 
@@ -1840,7 +1821,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         num <= reviewForm.rating ? 'text-yellow-400' : 'text-lantern-text-tertiary'
                       }`}
                     >
-                      <StarSolidIcon className="w-6 h-6" />
+                      <AppIcon name="star" size={24} filled />
                     </button>
                   ))}
                 </div>
@@ -1923,7 +1904,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors duration-200 disabled:opacity-50"
                 aria-label="Close contact form"
               >
-                <ArrowLeftIcon className="w-5 h-5 rotate-45" aria-hidden />
+                <AppIcon name="arrow-back" size={20} className="rotate-45" aria-hidden />
               </button>
             </div>
 
@@ -2002,7 +1983,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                     </>
                   ) : (
                     <>
-                      <ChatBubbleLeftIcon className="w-4 h-4 mr-2" />
+                      <AppIcon name="chatbubble" size={16} className="mr-2" />
                       Send & Start Chat
                     </>
                   )}

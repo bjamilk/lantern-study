@@ -1,15 +1,10 @@
 
 
 import React, { useState, useEffect, useRef } from 'react';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { useToastStore } from '../stores/toastStore';
 import { useUIStore } from '../stores/uiStore';
 import { User } from '../types';
-import { 
-    XCircleIcon, UserCircleIcon, BellIcon, ShieldExclamationIcon, 
-    EyeIcon, EyeSlashIcon, ArrowRightOnRectangleIcon, TrashIcon,
-    CameraIcon, AcademicCapIcon, PaintBrushIcon, LifebuoyIcon,
-    AdjustmentsHorizontalIcon, ShoppingBagIcon, BuildingLibraryIcon, SparklesIcon,
-} from '@heroicons/react/24/outline';
 import { AcademicSettingsSection } from './settings/AcademicSettingsSection';
 import { UsageLimitsSection } from './settings/UsageLimitsSection';
 import { compressImage } from '../utils/imageCompression';
@@ -22,7 +17,6 @@ import usePaystackEnabled from './marketplace/usePaystackEnabled';
 import { fetchMarketplaceCampuses, uploadProfileAvatar } from '../services/supabase';
 import { CampusSearchSelect } from './marketplace/CampusSearchSelect';
 import { isOtherCityCampus } from '@lantern/shared/marketplace';
-import { CloudArrowDownIcon, CloudArrowUpIcon } from '@heroicons/react/24/outline';
 import {
     type UserSettings,
     formatReminderTime,
@@ -289,19 +283,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         onUpdateSettingsCategory('appearance', { lowDataMode: !lowDataMode });
     };
 
-    const navItems: { id: SettingsTab; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-        { id: 'profile', label: 'Profile', icon: UserCircleIcon },
-        { id: 'academic', label: 'Academic', icon: BuildingLibraryIcon },
-        { id: 'notifications', label: 'Notifications', icon: BellIcon },
-        { id: 'study', label: 'Study', icon: AcademicCapIcon },
+    const navItems: { id: SettingsTab; label: string; icon: AppIconName }[] = [
+        { id: 'profile', label: 'Profile', icon: 'person-circle' },
+        { id: 'academic', label: 'Academic', icon: 'institution' },
+        { id: 'notifications', label: 'Notifications', icon: 'notifications' },
+        { id: 'study', label: 'Study', icon: 'school' },
         // "AI uses", not "Credits": one unit, one word, everywhere.
-        { id: 'usage', label: 'AI uses', icon: SparklesIcon },
-        { id: 'appearance', label: 'Appearance', icon: PaintBrushIcon },
-        { id: 'privacy', label: 'Privacy', icon: EyeIcon },
-        { id: 'marketplace', label: 'Marketplace', icon: ShoppingBagIcon },
-        { id: 'dataSync', label: 'Data & Sync', icon: CloudArrowDownIcon },
-        { id: 'support', label: 'Support', icon: LifebuoyIcon },
-        { id: 'account', label: 'Account', icon: ShieldExclamationIcon },
+        { id: 'usage', label: 'AI uses', icon: 'sparkles' },
+        { id: 'appearance', label: 'Appearance', icon: 'brush' },
+        { id: 'privacy', label: 'Privacy', icon: 'eye' },
+        { id: 'marketplace', label: 'Marketplace', icon: 'bag' },
+        { id: 'dataSync', label: 'Data & Sync', icon: 'cloud-download' },
+        { id: 'support', label: 'Support', icon: 'lifebuoy' },
+        { id: 'account', label: 'Account', icon: 'shield-warning' },
     ];
 
     const renderContent = (tab: SettingsTab = activeTab) => {
@@ -318,7 +312,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <Avatar name={currentUser.name} src={avatarPreview || currentUser.avatarUrl} size="xl" />
                             <button type="button" onClick={() => avatarInputRef.current?.click()}
                                 className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" title="Change photo">
-                                <CameraIcon className="w-6 h-6 text-white" />
+                                <AppIcon name="camera" size={24} className="text-white" />
                             </button>
                             <input ref={avatarInputRef} type="file" accept="image/*" className="hidden" onChange={handleAvatarFileChange} />
                         </div>
@@ -362,7 +356,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                             onChange={e => setPasswordData(p => ({ ...p, current: e.target.value }))} required
                                             className="w-full p-2 pr-10 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                                         <button type="button" onClick={() => setShowCurrentPass(s => !s)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary">
-                                            {showCurrentPass ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                                            {showCurrentPass ? <AppIcon name="eye-off" size={20} /> : <AppIcon name="eye" size={20} />}
                                         </button>
                                     </div>
                                 </div>
@@ -373,7 +367,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                             onChange={e => setPasswordData(p => ({ ...p, newPass: e.target.value }))} required
                                             className="w-full p-2 pr-10 border border-lantern-border rounded-md bg-lantern-surface dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text" />
                                         <button type="button" onClick={() => setShowNewPass(s => !s)} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary">
-                                            {showNewPass ? <EyeSlashIcon className="h-5 w-5" /> : <EyeIcon className="h-5 w-5" />}
+                                            {showNewPass ? <AppIcon name="eye-off" size={20} /> : <AppIcon name="eye" size={20} />}
                                         </button>
                                     </div>
                                 </div>
@@ -709,7 +703,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <button onClick={onResetSettings}
                         className="w-full flex items-center justify-center p-3 text-sm font-medium text-orange-700 bg-orange-50 hover:bg-orange-100 rounded-md border border-orange-200 dark:bg-orange-900/30 dark:text-orange-200 dark:border-orange-800">
-                        <AdjustmentsHorizontalIcon className="w-5 h-5 mr-2" />
+                        <AppIcon name="options" size={20} className="mr-2" />
                         Reset settings to defaults
                     </button>
                  </div>
@@ -737,7 +731,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         disabled={exporting || accountActionLoading}
                         className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-lantern-primary bg-lantern-primary-background hover:bg-lantern-primary-background rounded-md border border-lantern-primary/30 dark:bg-lantern-primary-dark/30 dark:text-lantern-primary-light dark:border-lantern-primary/30 disabled:opacity-60"
                      >
-                        <CloudArrowDownIcon className="w-5 h-5 mr-2" />
+                        <AppIcon name="cloud-download" size={20} className="mr-2" />
                          {exporting ? 'Exporting…' : 'Export my data (JSON)'}
                      </button>
                      <button
@@ -746,7 +740,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         disabled={accountActionLoading}
                         className="w-full flex items-center justify-center p-3 mb-3 text-sm font-medium text-teal-700 bg-teal-50 hover:bg-teal-100 rounded-md border border-teal-200 dark:bg-teal-900/30 dark:text-teal-200 dark:border-teal-800"
                      >
-                        <CloudArrowUpIcon className="w-5 h-5 mr-2" />
+                        <AppIcon name="cloud-upload" size={20} className="mr-2" />
                          Import backup
                      </button>
                      <div className="text-xs text-lantern-text-secondary mb-4 space-x-3">
@@ -755,7 +749,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <a href={LEGAL_PATHS.cookies} target="_blank" rel="noopener noreferrer" className="underline">Cookies</a>
                      </div>
                     <button onClick={onLogout} className="w-full flex items-center justify-center p-3 text-sm font-medium text-lantern-text bg-lantern-background-secondary hover:bg-lantern-background-secondary rounded-md border border-lantern-border dark:bg-lantern-surface-secondary dark:text-lantern-text dark:border-lantern-border">
-                        <ArrowRightOnRectangleIcon className="w-5 h-5 mr-2" />
+                        <AppIcon name="exit" size={20} className="mr-2" />
                          Logout
                      </button>
                      <div className="mt-8 p-4 border border-red-500/30 dark:border-red-600/50 bg-red-50 dark:bg-red-900/20 rounded-lg">
@@ -769,7 +763,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             disabled={accountActionLoading}
                             className="w-full flex items-center justify-center p-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-60"
                         >
-                            <TrashIcon className="w-4 h-4 mr-2" />
+                            <AppIcon name="trash" size={16} className="mr-2" />
                             Delete or pause account…
                         </button>
                      </div>
@@ -801,7 +795,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     <div className="flex justify-between items-center mb-2 md:mb-6">
                         <h2 id="settings-modal-title" className="text-xl font-bold text-lantern-text">Settings</h2>
                         <button onClick={onClose} className="md:hidden flex min-h-[44px] min-w-[44px] items-center justify-center text-lantern-text-secondary" aria-label="Close settings">
-                            <XCircleIcon className="w-6 h-6" />
+                            <AppIcon name="close-circle" size={24} />
                         </button>
                     </div>
                     <TabList className="flex space-x-1 md:flex-col md:space-y-1 md:space-x-0 overflow-x-auto pb-2 md:pb-0 md:overflow-x-visible !border-0">
@@ -810,7 +804,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                                 key={item.id}
                                 value={item.id}
                                 index={index}
-                                icon={<item.icon className="w-5 h-5 mr-0 md:mr-1" />}
+                                icon={<AppIcon name={item.icon} size={20} className="mr-0 md:mr-1" />}
                                 className="flex-shrink-0 md:w-full !rounded-lantern justify-start"
                             >
                                 <span className="md:ml-2">{item.label}</span>

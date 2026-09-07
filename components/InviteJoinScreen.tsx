@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { UsersIcon, CheckIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { fetchGroupInvitePreview, joinGroupByInvite, fetchGroups } from '../services/supabase';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
@@ -137,7 +137,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
                   <p className="mt-1 text-sm text-lantern-text-secondary">{preview.description}</p>
                 ) : null}
                 <p className="mt-2 text-xs text-lantern-text-tertiary flex items-center gap-1">
-                  <UsersIcon className="w-4 h-4" />
+                  <AppIcon name="people" size={16} />
                   {preview.memberCount} member{preview.memberCount === 1 ? '' : 's'}
                 </p>
                 {preview.alreadyMember && (
@@ -152,7 +152,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
                   disabled={joining}
                   className="flex-1 py-3 rounded-xl border border-lantern-border text-lantern-text font-semibold flex items-center justify-center gap-2 hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary"
                 >
-                  <XMarkIcon className="w-5 h-5" />
+                  <AppIcon name="close" size={20} />
                   Decline
                 </button>
                 <button
@@ -161,7 +161,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
                   disabled={joining}
                   className="flex-1 py-3 rounded-xl bg-lantern-primary hover:bg-lantern-primary-dark text-white font-semibold flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <CheckIcon className="w-5 h-5" />
+                  <AppIcon name="checkmark" size={20} />
                   {joining ? 'Joining…' : preview.alreadyMember ? 'Open group' : 'Accept'}
                 </button>
               </div>

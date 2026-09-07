@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { type StudyPackContentInput } from '@lantern/shared/marketplace';
 import { RIGHTS_ATTESTATION_TEXT } from '@lantern/shared/moderation';
 import { fetchMyStudyPacks, updateStudyPackContent } from '../../services/supabase';
@@ -99,7 +99,7 @@ export const UpdateStudyPackModal: React.FC<UpdateStudyPackModalProps> = ({
         className="w-full max-w-md rounded-xl border border-lantern-border bg-lantern-background p-5"
       >
         <div className="mb-3 flex items-start gap-2">
-          <ArrowPathIcon className="mt-0.5 h-5 w-5 shrink-0 text-lantern-primary" aria-hidden="true" />
+          <AppIcon name="refresh" size={20} className="mt-0.5 shrink-0 text-lantern-primary" aria-hidden />
           <div>
             <h2 id="update-pack-title" className="text-base font-semibold text-lantern-text">
               Push an update

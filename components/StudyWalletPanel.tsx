@@ -1,7 +1,7 @@
 import React from 'react';
-import { SparklesIcon, ArrowTrendingUpIcon, ShoppingBagIcon, AcademicCapIcon } from '@heroicons/react/24/outline';
 import { useBudgetStore } from '../stores/budgetStore';
 import { TransactionType } from '../types';
+import { AppIcon } from './ui/AppIcon';
 
 const COIN_MILESTONES = [
   { coins: 100, reward: '🎨 Custom Theme Unlock', unlocked: false },
@@ -39,7 +39,7 @@ const StudyWalletPanel: React.FC = () => {
       <div className="bg-gradient-to-r from-lantern-primary to-lantern-primary-dark rounded-2xl px-5 py-5">
         <div>
           <h2 id="study-wallet-heading" className="text-lg font-bold text-white flex items-center gap-2">
-            <SparklesIcon className="w-5 h-5" aria-hidden /> Study Rewards Wallet
+            <AppIcon name="sparkles" size={20} aria-hidden /> Study Rewards Wallet
           </h2>
           <p className="text-white/70 text-xs mt-0.5">Earn coins by studying and saving smart</p>
         </div>
@@ -53,22 +53,22 @@ const StudyWalletPanel: React.FC = () => {
 
       <div className="grid grid-cols-2 gap-3">
         <div className="bg-lantern-surface rounded-xl p-3 text-center border border-lantern-border">
-          <ShoppingBagIcon className="w-5 h-5 mx-auto text-lantern-primary mb-1" aria-hidden />
+          <AppIcon name="bag" size={20} className="mx-auto text-lantern-primary mb-1" aria-hidden />
           <p className="text-xs text-lantern-text-tertiary">Marketplace Spend</p>
           <p className="font-semibold text-sm text-lantern-text">₦{marketplacePurchases.toLocaleString('en-NG')}</p>
         </div>
         <div className="bg-lantern-surface rounded-xl p-3 text-center border border-lantern-border">
-          <ArrowTrendingUpIcon className="w-5 h-5 mx-auto text-lantern-success mb-1" aria-hidden />
+          <AppIcon name="trending-up" size={20} className="mx-auto text-lantern-success mb-1" aria-hidden />
           <p className="text-xs text-lantern-text-tertiary">Marketplace Earned</p>
           <p className="font-semibold text-sm text-lantern-text">₦{marketplaceSales.toLocaleString('en-NG')}</p>
         </div>
         <div className="bg-lantern-surface rounded-xl p-3 text-center border border-lantern-border">
-          <AcademicCapIcon className="w-5 h-5 mx-auto text-amber-500 mb-1" aria-hidden />
+          <AppIcon name="school" size={20} className="mx-auto text-amber-500 mb-1" aria-hidden />
           <p className="text-xs text-lantern-text-tertiary">Goals Completed</p>
           <p className="font-semibold text-sm text-lantern-text">{completedGoals}</p>
         </div>
         <div className="bg-lantern-surface rounded-xl p-3 text-center border border-lantern-border">
-          <SparklesIcon className="w-5 h-5 mx-auto text-lantern-primary mb-1" aria-hidden />
+          <AppIcon name="sparkles" size={20} className="mx-auto text-lantern-primary mb-1" aria-hidden />
           <p className="text-xs text-lantern-text-tertiary">Net This Month</p>
           <p className={`font-semibold text-sm ${monthlyIncome - monthlyExpenses >= 0 ? 'text-lantern-success' : 'text-lantern-error'}`}>
             ₦{(monthlyIncome - monthlyExpenses).toLocaleString('en-NG')}

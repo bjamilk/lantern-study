@@ -268,6 +268,25 @@ interface FlashcardState {
    */
   insertSavedDeck: (deck: Deck, cards: Flashcard[]) => Promise<void>;
   /**
+   * A deck IMPORTED offline: held whole on this device, with its cards, until
+   * one queued `deck` create can write both together.
+   *
+   * Not `createDeck` + `createFlashcard` in a loop. That pair queues a `deck`
+   * create whose server id is never bound back, plus one `flashcard` create
+   * per card aimed at the `temp_deck_…` id — writes the server refuses every
+   * time and `isDoomedTempDeckOp` purges on the next launch. A 200-card import
+   * down that path shows 200 cards, syncs an empty deck, and loses all 200.
+   * The queued operation this writes carries the cards with it, and the deck
+   * handler in services/syncService.ts sends the whole thing to
+   * `POST /decks/with-cards`.
+   */
+  insertImportedDeckLocally: (deck: Deck, cards: Flashcard[]) => Promise<void>;
+  /**
+   * The queued import landed: swap the local `temp_` deck and its cards for
+   * the rows the server issued, keeping the deck in place in the list.
+   */
+  replaceImportedDeck: (tempDeckId: string, deck: Deck, cards: Flashcard[]) => Promise<void>;
+  /**
    * The server has permanently refused this card's queued write.
    *
    * Recorded rather than retried: the operation is dropped from the queue by
@@ -556,6 +575,40 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
       trackDeckCreated(deck.id);
       if (cards.length > 0) trackFirstCardAdded(deck.id);
     }
+  },
+
+  insertImportedDeckLocally: async (deck: Deck, cards: Flashcard[]) => {
+    set(state => {
+      const flashcards = { ...state.flashcards, [deck.id]: cards };
+      const decks = state.decks.some(d => d.id === deck.id)
+        ? state.decks.map(d => (d.id === deck.id ? { ...d, ...deck } : d))
+        : [...state.decks, deck];
+      return { flashcards, decks: enrichDecksWithStats(decks, flashcards) };
+    });
+    await get().saveToStorage();
+    trackDeckCreated(deck.id);
+    if (cards.length > 0) trackFirstCardAdded(deck.id);
+  },
+
+  replaceImportedDeck: async (tempDeckId: string, deck: Deck, cards: Flashcard[]) => {
+    set(state => {
+      const { [tempDeckId]: _dropped, ...rest } = state.flashcards;
+      // Merged, not replaced: the student may have added cards to the deck by
+      // hand while it was still local, and those are not this import's to drop.
+      const byId = new Map((rest[deck.id] || []).map(c => [c.id, c]));
+      for (const card of cards) byId.set(card.id, card);
+      const flashcards = { ...rest, [deck.id]: Array.from(byId.values()) };
+      const withoutTemp = state.decks.filter(d => d.id !== tempDeckId);
+      const decks = withoutTemp.some(d => d.id === deck.id)
+        ? withoutTemp.map(d => (d.id === deck.id ? { ...d, ...deck } : d))
+        : [...withoutTemp, deck];
+      return {
+        flashcards,
+        decks: enrichDecksWithStats(decks, flashcards),
+        currentDeck: state.currentDeck?.id === tempDeckId ? deck : state.currentDeck,
+      };
+    });
+    await get().saveToStorage();
   },
 
   markCardSyncFailed: (cardId: string, message: string) => {

@@ -1,12 +1,11 @@
 import React from 'react';
 import { Group, DMThread, User, ChatItem } from '../types';
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/solid';
-import { ArchiveBoxIcon, UserCircleIcon } from '@heroicons/react/24/outline';
 import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
 import { chatMessagePreview } from '@lantern/shared/utils';
 import { formatUnreadBadgeCount } from '../utils/chatUnread';
+import { AppIcon } from './ui/AppIcon';
 
 // Compact recency label for a conversation row (WhatsApp-style: now / 5m / 3h / 2d / Aug 8).
 const formatRowTime = (input?: string | Date | null): string => {
@@ -136,7 +135,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
           aria-expanded={isExpanded}
           aria-label={isExpanded ? `Collapse ${name}` : `Expand ${name}`}
         >
-          {isExpanded ? <ChevronDownIcon className="w-4 h-4" /> : <ChevronRightIcon className="w-4 h-4" />}
+          {isExpanded ? <AppIcon name="chevron-down" size={16} /> : <AppIcon name="chevron-forward" size={16} />}
         </button>
       )}
       {!hasSubGroups && !isSubGroup && showText && <div className="w-[1.375rem] mr-1.5 flex-shrink-0"></div>}
@@ -181,7 +180,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
                   <p className="text-xs text-lantern-text-secondary truncate">{preview}</p>
                 ) : null}
             </div>
-            {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived"/>}
+            {isArchived && <AppIcon name="archive" size={16} className="text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived" />}
             {unreadCount > 0 && !isArchived && (
                 <span className="ml-2 bg-lantern-error-strong text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                     {formatUnreadBadgeCount(unreadCount)}

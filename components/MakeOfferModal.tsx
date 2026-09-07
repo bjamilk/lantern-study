@@ -1,13 +1,8 @@
 import React, { useState } from 'react';
 import { createOffer } from '../services/supabase';
 import { MarketplaceListing } from '../types';
-import {
-  CurrencyDollarIcon,
-  ClockIcon,
-  XMarkIcon,
-  ChatBubbleLeftIcon,
-} from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
+import { AppIcon } from './ui/AppIcon';
 
 interface MakeOfferModalProps {
   isOpen: boolean;
@@ -67,7 +62,7 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
     >
         <div className="flex items-center justify-between p-6 border-b border-lantern-border">
           <h3 id="make-offer-title" className="text-lg font-bold text-lantern-text flex items-center gap-2">
-            <CurrencyDollarIcon className="w-5 h-5 text-lantern-accent" aria-hidden />
+            <AppIcon name="currency" size={20} className="text-lantern-accent" aria-hidden />
             Make an Offer
           </h3>
           <button
@@ -77,7 +72,7 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg hover:bg-lantern-background-secondary disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close make offer dialog"
           >
-            <XMarkIcon className="w-5 h-5" aria-hidden />
+            <AppIcon name="close" size={20} aria-hidden />
           </button>
         </div>
 
@@ -132,7 +127,7 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
           </div>
 
           <div className="flex items-start gap-2 text-xs text-lantern-text-muted bg-amber-50 dark:bg-amber-900/20 p-3 rounded-lg">
-            <ClockIcon className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" aria-hidden />
+            <AppIcon name="time" size={16} className="text-amber-500 flex-shrink-0 mt-0.5" aria-hidden />
             <span>This offer will expire in <strong>48 hours</strong> if the seller doesn&apos;t respond. You can withdraw it anytime before that.</span>
           </div>
 
@@ -162,7 +157,7 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
                 </>
               ) : (
                 <>
-                  <ChatBubbleLeftIcon className="w-4 h-4" aria-hidden />
+                  <AppIcon name="chatbubble" size={16} aria-hidden />
                   Submit Offer
                 </>
               )}

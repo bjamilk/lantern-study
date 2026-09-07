@@ -1,11 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
-  MagnifyingGlassIcon,
-  CheckBadgeIcon,
-  SparklesIcon,
-} from '@heroicons/react/24/outline';
-import {
   DISCOVER_SECTION_INTRO,
   canAccessDiscoverHub,
   communityKindLabel,
@@ -43,6 +38,7 @@ import { useGroupStore } from '../stores/groupStore';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
 import RequestError from './RequestError';
+import { AppIcon } from './ui/AppIcon';
 
 /**
  * The Discover hub (Phase 3 · L).
@@ -367,10 +363,8 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
               <span className="truncate">{community.name}</span>
               {community.is_official ? (
-                <CheckBadgeIcon
-                  className="h-4 w-4 shrink-0 text-lantern-primary"
-                  aria-label="Official community"
-                />
+                <AppIcon name="badge-check" size={16} className="shrink-0 text-lantern-primary"
+                  aria-label="Official community" />
               ) : null}
               {unread > 0 ? (
                 <span
@@ -433,7 +427,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
               disabled={!presence?.joinCourseId}
               className="inline-flex items-center gap-1.5 rounded-lg bg-lantern-background-secondary px-3 py-1.5 text-xs text-lantern-text-secondary disabled:opacity-60"
             >
-              <SparklesIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+              <AppIcon name="sparkles" size={16} className="text-lantern-primary" aria-hidden="true" />
               {presenceLine}
               {presence?.joinCourseId ? ' · Join room' : ''}
             </button>
@@ -457,10 +451,8 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           className="relative"
           role="search"
         >
-          <MagnifyingGlassIcon
-            className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-lantern-text-secondary"
-            aria-hidden="true"
-          />
+          <AppIcon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-secondary"
+            aria-hidden="true" />
           <input
             type="search"
             value={query}

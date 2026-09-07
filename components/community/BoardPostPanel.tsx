@@ -1,7 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
-import { HeartIcon } from '@heroicons/react/24/outline';
-import { HeartIcon as HeartSolidIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from '../ui/AppIcon';
 import {
   COMMUNITY_BOARD_COPY,
   boardFavoriteAccessibilityLabel,
@@ -36,9 +34,9 @@ const FavoriteButton: React.FC<{
     className="mt-1 inline-flex min-h-[44px] min-w-[44px] items-center justify-center gap-1.5 rounded-lantern px-2.5 text-xs font-medium text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
   >
     {mine ? (
-      <HeartSolidIcon className="h-4 w-4 text-lantern-error" aria-hidden="true" />
+      <AppIcon name="heart" size={16} filled className="text-lantern-error" />
     ) : (
-      <HeartIcon className="h-4 w-4" aria-hidden="true" />
+      <AppIcon name="heart" size={16} />
     )}
     {count > 0 ? count : null}
   </button>
@@ -162,7 +160,7 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
             aria-label="Close comments"
             className="flex h-11 w-11 items-center justify-center rounded-lantern text-lantern-text-secondary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
           >
-            <XMarkIcon className="h-5 w-5" aria-hidden="true" />
+            <AppIcon name="close" size={20} />
           </button>
         </div>
 

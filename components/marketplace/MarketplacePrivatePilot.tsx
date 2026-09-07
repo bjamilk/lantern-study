@@ -1,5 +1,5 @@
 import React from 'react';
-import { LockClosedIcon, ShoppingBagIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { AppMode } from '../../types';
 
 /**
@@ -54,9 +54,9 @@ export const MarketplacePrivatePilot: React.FC<MarketplacePrivatePilotProps> = (
   <div className="flex-1 flex items-center justify-center p-6 bg-lantern-background">
     <div className="max-w-md w-full text-center">
       <div className="mx-auto w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 flex items-center justify-center mb-5 relative">
-        <ShoppingBagIcon className="w-8 h-8 text-lantern-primary" aria-hidden />
+        <AppIcon name="bag" size={32} className="text-lantern-primary" aria-hidden />
         <span className="absolute -bottom-1.5 -right-1.5 w-7 h-7 rounded-full bg-lantern-surface ring-1 ring-lantern-border flex items-center justify-center">
-          <LockClosedIcon className="w-4 h-4 text-lantern-text-secondary" aria-hidden />
+          <AppIcon name="lock-closed" size={16} className="text-lantern-text-secondary" aria-hidden />
         </span>
       </div>
       {checking ? (

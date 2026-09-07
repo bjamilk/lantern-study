@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRightIcon, HomeIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from '../ui/AppIcon';
 
 export interface BreadcrumbItem {
     label: string;
@@ -27,7 +27,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
                 return (
                     <React.Fragment key={index}>
                         {index > 0 && (
-                            <ChevronRightIcon className="w-3.5 h-3.5 text-lantern-text-tertiary flex-shrink-0" />
+                            <AppIcon name="chevron-forward" size={14} className="text-lantern-text-tertiary flex-shrink-0" />
                         )}
                         {isLast ? (
                             <span className="text-lantern-text font-medium truncate">
@@ -38,7 +38,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
                                 onClick={item.onClick}
                                 className="flex items-center gap-1 min-h-[28px] text-lantern-text-secondary hover:text-lantern-primary transition-colors truncate"
                             >
-                                {isFirst && <HomeIcon className="w-3.5 h-3.5 flex-shrink-0" />}
+                                {isFirst && <AppIcon name="home" size={14} className="flex-shrink-0" />}
                                 <span className="truncate">{item.label}</span>
                             </button>
                         )}

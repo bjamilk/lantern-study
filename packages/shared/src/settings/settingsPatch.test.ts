@@ -1,6 +1,7 @@
 import {
   DEFAULT_USER_SETTINGS,
   applySettingsPatch,
+  diffSettingsPatch,
   mergeSettingsPatches,
   subtractSettingsPatch,
   resolveSettingsAfterSync,
@@ -189,5 +190,45 @@ describe('normalizeUserSettings / mergeSettingsCategory', () => {
     expect(next.study.srsNewCardsPerDay).toBe(20);
     expect(next.study.dailyCardGoal).toBe(before.study.dailyCardGoal);
     expect(Date.parse(next.updatedAt)).toBeGreaterThanOrEqual(Date.parse(before.updatedAt));
+  });
+});
+
+describe('remembered flashcard generation options', () => {
+  it('defaults to 20 mixed cards', () => {
+    const settings = normalizeUserSettings({});
+    expect(settings.flashcardGeneration).toEqual({ count: 20, typeMix: 'mixed' });
+  });
+
+  it('remembers the last used count and mix', () => {
+    const next = applySettingsPatch(normalizeUserSettings({}), {
+      flashcardGeneration: { count: 30, typeMix: 'cloze' },
+    });
+    expect(next.flashcardGeneration).toEqual({ count: 30, typeMix: 'cloze' });
+  });
+
+  it('clamps a count the generator would not honour, and rejects an unknown mix', () => {
+    const next = applySettingsPatch(normalizeUserSettings({}), {
+      flashcardGeneration: { count: 500, typeMix: 'sideways' as never },
+    });
+    expect(next.flashcardGeneration).toEqual({ count: 30, typeMix: 'mixed' });
+  });
+
+  it('patches one field without dropping the other', () => {
+    const first = applySettingsPatch(normalizeUserSettings({}), {
+      flashcardGeneration: { count: 10, typeMix: 'basic' },
+    });
+    const second = applySettingsPatch(first, { flashcardGeneration: { count: 30 } });
+    expect(second.flashcardGeneration).toEqual({ count: 30, typeMix: 'basic' });
+  });
+
+  it('travels in a diff so the chosen options actually sync', () => {
+    const before = normalizeUserSettings({});
+    const after = applySettingsPatch(before, {
+      flashcardGeneration: { count: 30, typeMix: 'cloze' },
+    });
+    expect(diffSettingsPatch(before, after).flashcardGeneration).toEqual({
+      count: 30,
+      typeMix: 'cloze',
+    });
   });
 });

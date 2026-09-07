@@ -23,13 +23,21 @@ import {
   AI_CREDIT_COSTS,
   AI_FEATURE_CREDIT_COST,
   LECTURE_TRANSCRIPTION_MINUTES_PER_CREDIT,
+  MAX_NARRATION_PAGES,
+  NARRATION_CREDIT_COST,
+  NARRATION_LONG_CREDIT_COST,
+  NARRATION_SHORT_MAX_PAGES,
   REFERRAL_REWARD_AI_USES,
   SMART_NOTES_CREDIT_COST,
   formatBonusAIUses,
   formatCreditCost,
 } from '../utils/aiCredits';
 import { STUDY_PACK_DRAFT_CREDITS } from '../marketplace/studyPacks';
-import { formatAIResetTime, getAIResetLabel } from '../utils/aiUsage';
+import {
+  DEFAULT_AI_FEATURE_LIMITS,
+  formatAIResetTime,
+  getAIResetLabel,
+} from '../utils/aiUsage';
 
 /** One feature's own daily cap, as the server reports it. */
 export interface AIFeatureUsage {
@@ -145,6 +153,10 @@ interface CostSpec {
  *   explain-answer / study-recommendations / ask-tutor /
  *   enhance-flashcard / generate-listing-description     aiRateLimitForFeature(...)
  *   ai/study-pack/draft                                  aiRateLimitWithCost(STUDY_PACK_DRAFT_CREDITS)
+ *   notes/:id/generate-questions (one page)             aiRateLimitForFeature('generate_questions')
+ *   notes/transcribe-audio featureKey=voice_ask         aiRateLimitForFeature('voice_ask') ← free, capped
+ *   notes/:id/attachments/:id/narration (POST)          aiRateLimitWithCost(getNarrationCreditCost)
+ *   notes/:id/attachments/:id/narration (GET)           no limiter — replaying a paid script is free
  */
 export const AI_COST_SPECS: readonly CostSpec[] = [
   {
@@ -189,6 +201,14 @@ export const AI_COST_SPECS: readonly CostSpec[] = [
     cost: AI_FEATURE_CREDIT_COST,
   },
   {
+    id: 'page_quiz',
+    label: 'Quiz me on a page',
+    detail:
+      'Questions from the one page you are reading. Same price and same daily cap as a whole-note test.',
+    cost: AI_CREDIT_COSTS.generate_questions,
+    featureKey: 'generate_questions',
+  },
+  {
     id: 'tutor',
     label: 'Ask Lantern AI a question',
     detail: 'Each reply in the tutor chat.',
@@ -231,6 +251,16 @@ export const AI_COST_SPECS: readonly CostSpec[] = [
     featureKey: 'listing_description',
   },
   {
+    id: 'narration',
+    label: 'Read a document to me',
+    // Two prices in one row, because the row cannot know the document yet. The
+    // numbers are read from the same constants the server charges, and the
+    // screen that HAS a page count prints the exact figure with
+    // `formatNarrationPrice`.
+    detail: `${NARRATION_CREDIT_COST} for a document up to ${NARRATION_SHORT_MAX_PAGES} pages, ${NARRATION_LONG_CREDIT_COST} above that, up to ${MAX_NARRATION_PAGES} pages. Charged once — listening again, and offline, is free.`,
+    cost: NARRATION_CREDIT_COST,
+  },
+  {
     id: 'study_pack_draft',
     label: 'Turn notes into a study product',
     detail: 'Drafts a whole pack in one go, so it costs the most.',
@@ -269,6 +299,13 @@ export const ZERO_CREDIT_DOORS: readonly AIFreeRow[] = [
     id: 'retry_save',
     label: 'Save AI work that failed to save',
     detail: 'The material is already made and held — saving it again is free.',
+  },
+  {
+    id: 'voice_ask',
+    label: 'Ask about a page by voice',
+    // The cap is read from the same constant the server enforces, so this
+    // sentence cannot promise a number the limiter disagrees with.
+    detail: `Speaking a question costs nothing — up to ${DEFAULT_AI_FEATURE_LIMITS.voice_ask} a day. The answer is the tutor reply, which does cost.`,
   },
   {
     id: 'browse',

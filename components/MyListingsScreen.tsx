@@ -20,27 +20,6 @@ import SellerOnboardingWizard from './marketplace/SellerOnboardingWizard';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
 import SellerInsightsDrawer from './marketplace/SellerInsightsDrawer';
 import { shareShopLink } from '../utils/shareShop';
-import {
-  PlusIcon,
-  PencilIcon,
-  TrashIcon,
-  EyeIcon,
-  HeartIcon,
-  ChatBubbleLeftIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-  ShoppingBagIcon,
-  ChartBarIcon,
-  ArrowLeftIcon,
-  EllipsisVerticalIcon,
-  UserGroupIcon,
-  TicketIcon,
-  GiftIcon,
-  MegaphoneIcon,
-  BuildingStorefrontIcon,
-  ShareIcon,
-  ScaleIcon,
-} from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel, Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from './ui';
 import {
   SUPPORT_EMAIL,
@@ -53,6 +32,7 @@ import {
   marketplaceListingModerationNotice,
 } from '@lantern/shared';
 import AppealListingModal from './moderation/AppealListingModal';
+import { AppIcon } from './ui/AppIcon';
 
 interface MyListingsScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -265,7 +245,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               className="mr-2 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
               aria-label="Back to marketplace"
             >
-              <ArrowLeftIcon className="w-5 h-5 text-lantern-text-secondary" />
+              <AppIcon name="arrow-back" size={20} className="text-lantern-text-secondary" />
             </button>
             <div className="min-w-0">
               <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Selling</h1>
@@ -289,7 +269,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                   className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
                   aria-label="View my shop"
                 >
-                  <BuildingStorefrontIcon className="w-4 h-4" />
+                  <AppIcon name="storefront" size={16} />
                   <span className="hidden sm:inline">My shop</span>
                 </button>
                 <button
@@ -298,7 +278,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                   className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
                   aria-label="Share my shop"
                 >
-                  <ShareIcon className="w-4 h-4" />
+                  <AppIcon name="share-social" size={16} />
                   <span className="hidden md:inline">Share</span>
                 </button>
               </>
@@ -309,7 +289,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               className="h-8 px-2.5 rounded-lg border border-lantern-border bg-lantern-surface text-xs font-medium text-lantern-text-secondary hover:border-lantern-primary/30 inline-flex items-center gap-1"
               aria-label="Open performance insights"
             >
-              <ChartBarIcon className="w-4 h-4" />
+              <AppIcon name="bar-chart" size={16} />
               <span className="hidden sm:inline">Insights</span>
             </button>
             <button
@@ -317,7 +297,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               onClick={() => setShowCategoryPicker(v => !v)}
               className="h-8 px-2.5 sm:px-3 rounded-lg bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold inline-flex items-center gap-1"
             >
-              <PlusIcon className="w-4 h-4" />
+              <AppIcon name="add" size={16} />
               <span className="hidden sm:inline">New listing</span>
               <span className="sm:hidden">New</span>
             </button>
@@ -331,7 +311,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                     className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors text-left"
                   >
                     <div className="w-9 h-9 bg-lantern-primary-background rounded-lg flex items-center justify-center mr-3">
-                      <ShoppingBagIcon className="w-4 h-4 text-lantern-primary" />
+                      <AppIcon name="bag" size={16} className="text-lantern-primary" />
                     </div>
                     <div>
                       <p className="font-medium text-lantern-text text-sm">Academic</p>
@@ -344,7 +324,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                     className="w-full flex items-center px-3 py-3 hover:bg-lantern-background-secondary rounded-lg transition-colors text-left"
                   >
                     <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-900/40 rounded-lg flex items-center justify-center mr-3">
-                      <GiftIcon className="w-4 h-4 text-emerald-600" />
+                      <AppIcon name="gift" size={16} className="text-emerald-600" />
                     </div>
                     <div>
                       <p className="font-medium text-lantern-text text-sm">Student Life</p>
@@ -367,13 +347,13 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               id: 'customers',
               label: 'Customers',
               onSelect: () => onNavigate('SellerCustomers'),
-              icon: <UserGroupIcon className="w-4 h-4" />,
+              icon: <AppIcon name="people" size={16} />,
             },
             {
               id: 'campaign',
               label: 'Campaign',
               onSelect: () => setShowCampaign(true),
-              icon: <MegaphoneIcon className="w-4 h-4" />,
+              icon: <AppIcon name="megaphone" size={16} />,
             },
             {
               id: 'bundle',
@@ -382,19 +362,19 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                 setBundleListings(await fetchMyListings('active'));
                 setShowBundleModal(true);
               },
-              icon: <GiftIcon className="w-4 h-4" />,
+              icon: <AppIcon name="gift" size={16} />,
             },
             {
               id: 'coupons',
               label: 'Coupons',
               onSelect: () => setShowCoupons(true),
-              icon: <TicketIcon className="w-4 h-4" />,
+              icon: <AppIcon name="ticket" size={16} />,
             },
             {
               id: 'insights',
               label: 'Insights & preferences',
               onSelect: () => setShowInsights(true),
-              icon: <ChartBarIcon className="w-4 h-4" />,
+              icon: <AppIcon name="bar-chart" size={16} />,
             },
           ]}
         />
@@ -451,7 +431,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                   </div>
                 ) : listings.length === 0 ? (
                   <div className="text-center py-12">
-                    <ShoppingBagIcon className="w-14 h-14 mx-auto text-lantern-text-tertiary mb-4" />
+                    <AppIcon name="bag" size={56} className="mx-auto text-lantern-text-tertiary mb-4" />
                     <h3 className="text-lg font-semibold text-lantern-text mb-2">No {activeTab} listings</h3>
                     <p className="text-sm text-lantern-text-secondary mb-6">
                       {activeTab === 'active'
@@ -464,7 +444,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                         onClick={() => setShowCategoryPicker(true)}
                         className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg font-semibold inline-flex items-center"
                       >
-                        <PlusIcon className="w-4 h-4 mr-2" />
+                        <AppIcon name="add" size={16} className="mr-2" />
                         New listing
                       </button>
                     ) : null}
@@ -496,7 +476,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                               />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center">
-                                <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />
+                                <AppIcon name="bag" size={32} className="text-lantern-text-tertiary" />
                               </div>
                             )}
                           </button>
@@ -534,15 +514,15 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                   <span>{listing.quantity > 0 ? `${listing.quantity} in stock` : 'Out of stock'}</span>
                                 ) : null}
                                 <span className="inline-flex items-center gap-0.5">
-                                  <EyeIcon className="w-3.5 h-3.5" />
+                                  <AppIcon name="eye" size={14} />
                                   {listing.views_count || 0}
                                 </span>
                                 <span className="inline-flex items-center gap-0.5">
-                                  <HeartIcon className="w-3.5 h-3.5" />
+                                  <AppIcon name="heart" size={14} />
                                   {listing.favorites_count || 0}
                                 </span>
                                 <span className="inline-flex items-center gap-0.5">
-                                  <ChatBubbleLeftIcon className="w-3.5 h-3.5" />
+                                  <AppIcon name="chatbubble" size={14} />
                                   {listing.inquiries_count || 0}
                                 </span>
                               </div>
@@ -596,7 +576,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                   onClick={() => setAppealListing(listing)}
                                   className="inline-flex items-center gap-1 text-[11px] font-semibold text-lantern-primary hover:underline px-1 py-0.5"
                                 >
-                                  <ScaleIcon className="w-3.5 h-3.5" aria-hidden />
+                                  <AppIcon name="scale" size={14} aria-hidden />
                                   Appeal
                                 </button>
                               ) : null}
@@ -609,7 +589,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                 aria-label={`Actions for ${listing.title}`}
                                 className="p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors min-h-[44px] min-w-[44px] flex items-center justify-center shrink-0"
                               >
-                                <EllipsisVerticalIcon className="w-5 h-5 text-lantern-text-secondary" />
+                                <AppIcon name="ellipsis-vertical" size={20} className="text-lantern-text-secondary" />
                               </MenuTrigger>
                               <MenuContent align="end" className="w-48">
                                 {listing.status === 'reserved' && openOrderByListingId[listing.id] ? (
@@ -619,7 +599,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                         orderId: openOrderByListingId[listing.id],
                                       })
                                     }
-                                    icon={<ShoppingBagIcon className="w-4 h-4" />}
+                                    icon={<AppIcon name="bag" size={16} />}
                                   >
                                     Open order
                                   </MenuItem>
@@ -637,7 +617,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                           'info',
                                         )
                                     }
-                                    icon={<XCircleIcon className="w-4 h-4" />}
+                                    icon={<AppIcon name="close-circle" size={16} />}
                                   >
                                     Why can&apos;t I edit this?
                                   </MenuItem>
@@ -652,7 +632,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                       }
                                       setAppealListing(listing);
                                     }}
-                                    icon={<ScaleIcon className="w-4 h-4" />}
+                                    icon={<AppIcon name="scale" size={16} />}
                                     className={canAppealListing(listing) ? 'text-lantern-primary' : 'opacity-60'}
                                   >
                                     {canAppealListing(listing)
@@ -661,14 +641,14 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                   </MenuItem>
                                 ) : null}
                                 {listing.status !== 'reserved' && !isMarketplaceListingModerated(listing.status) ? (
-                                  <MenuItem onSelect={() => handleEdit(listing)} icon={<PencilIcon className="w-4 h-4" />}>
+                                  <MenuItem onSelect={() => handleEdit(listing)} icon={<AppIcon name="pencil" size={16} />}>
                                     Edit Listing
                                   </MenuItem>
                                 ) : null}
                                 {offersStatus(listing.status, 'active') && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'active')}
-                                    icon={<CheckCircleIcon className="w-4 h-4" />}
+                                    icon={<AppIcon name="checkmark-circle" size={16} />}
                                     className="text-green-600"
                                   >
                                     Mark Active
@@ -677,7 +657,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                 {offersStatus(listing.status, 'sold') && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'sold')}
-                                    icon={<ShoppingBagIcon className="w-4 h-4" />}
+                                    icon={<AppIcon name="bag" size={16} />}
                                     className="text-lantern-primary"
                                   >
                                     Mark as Sold
@@ -686,7 +666,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                 {offersStatus(listing.status, 'inactive') && (
                                   <MenuItem
                                     onSelect={() => handleStatusChange(listing.id, 'inactive')}
-                                    icon={<XCircleIcon className="w-4 h-4" />}
+                                    icon={<AppIcon name="close-circle" size={16} />}
                                     className="text-orange-600"
                                   >
                                     Deactivate
@@ -697,7 +677,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                                     <MenuSeparator />
                                     <MenuItem
                                       onSelect={() => handleDelete(listing.id)}
-                                      icon={<TrashIcon className="w-4 h-4" />}
+                                      icon={<AppIcon name="trash" size={16} />}
                                       className="text-red-600"
                                     >
                                       Delete

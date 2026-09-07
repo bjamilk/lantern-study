@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { useTheme } from '../../theme';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { canonicalizeJoinCode, classSubjectLine, isValidJoinCode } from '@lantern/shared/academic';
 import type { ClassJoinPreview } from '@lantern/shared/types';
@@ -13,6 +14,7 @@ interface JoinClassScreenProps {
 }
 
 export default function JoinClassScreen({ navigation, route }: JoinClassScreenProps) {
+  const { colors } = useTheme();
   const bottomPadding = useScreenBottomPadding();
   const initial = canonicalizeJoinCode(route?.params?.code ?? '');
   const [value, setValue] = useState(initial);
@@ -69,6 +71,7 @@ export default function JoinClassScreen({ navigation, route }: JoinClassScreenPr
           autoCorrect={false}
           maxLength={8}
           placeholder="ABC234"
+          placeholderTextColor={colors.textTertiary}
           className="border border-lantern-border rounded-lantern px-3 py-3 font-mono tracking-widest text-title text-lantern-text mb-4"
         />
         {preview ? (

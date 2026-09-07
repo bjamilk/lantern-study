@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
+import { AppIcon } from '../ui/AppIcon';
 import { completeSellerOnboarding } from '../../services/supabase';
 import type { SellerOnboardingStatus } from '../../types';
 import Button from '../ui/Button';
-import { SparklesIcon, RocketLaunchIcon } from '@heroicons/react/24/outline';
 import Modal from '../ui/Modal';
 
 interface SellerOnboardingWizardProps {
@@ -55,7 +55,7 @@ const SellerOnboardingWizard: React.FC<SellerOnboardingWizardProps> = ({
     >
         <div className="p-5 border-b border-lantern-border">
           <div className="flex items-center gap-2">
-            <RocketLaunchIcon className="w-6 h-6 text-lantern-primary" aria-hidden />
+            <AppIcon name="rocket" size={24} className="text-lantern-primary" aria-hidden />
             <h2 id="seller-onboarding-title" className="text-lg font-bold text-lantern-text">Seller setup</h2>
           </div>
           <p className="text-sm text-lantern-text-muted mt-1">
@@ -83,7 +83,7 @@ const SellerOnboardingWizard: React.FC<SellerOnboardingWizardProps> = ({
             </>
           ) : (
             <div className="text-center space-y-3 py-2">
-              <SparklesIcon className="w-10 h-10 mx-auto text-amber-500" aria-hidden />
+              <AppIcon name="sparkles" size={40} className="mx-auto text-amber-500" aria-hidden />
               <p className="font-semibold text-lantern-text">You&apos;re ready to sell</p>
               <p className="text-sm text-lantern-text-muted">
                 Complete setup to unlock <strong>3 free boost credits</strong> for listing visibility.

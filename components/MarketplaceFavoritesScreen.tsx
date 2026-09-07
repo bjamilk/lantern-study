@@ -5,20 +5,7 @@ import { useAuthStore } from '../stores/authStore';
 import { MarketplaceListing } from '../types';
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
-import {
-  ArrowLeftIcon,
-  HeartIcon,
-  ShoppingBagIcon,
-  ExclamationTriangleIcon,
-  ArrowPathIcon,
-  AcademicCapIcon,
-  BriefcaseIcon,
-  HomeIcon,
-  TruckIcon,
-  TicketIcon,
-  SparklesIcon,
-  RectangleStackIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 interface MarketplaceFavoritesScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -26,24 +13,24 @@ interface MarketplaceFavoritesScreenProps {
 }
 
 /** Shared category metadata so favorite cards match the browse grid's chips. */
-const CATEGORY_META: Array<{ id: string; name: string; icon: React.ComponentType<{ className?: string }> }> = [
-  { id: 'textbook_exchange', name: 'Textbooks', icon: AcademicCapIcon },
-  { id: 'pq_bank', name: 'Past Questions', icon: SparklesIcon },
-  { id: 'study_pack', name: 'Study Packs', icon: RectangleStackIcon },
-  { id: 'lecture_notes', name: 'Lecture Notes', icon: BriefcaseIcon },
-  { id: 'project_thesis', name: 'Projects & Thesis', icon: BriefcaseIcon },
-  { id: 'data_collection', name: 'Data Collection', icon: HomeIcon },
-  { id: 'equipment_rental', name: 'Lab Equipment', icon: ShoppingBagIcon },
-  { id: 'accommodation', name: 'Accommodation', icon: HomeIcon },
-  { id: 'travel_transport', name: 'Transportation', icon: TruckIcon },
-  { id: 'personal_goods', name: 'Personal Goods', icon: SparklesIcon },
-  { id: 'aso_ebi', name: 'Fashion', icon: ShoppingBagIcon },
-  { id: 'campus_services', name: 'Campus Services', icon: BriefcaseIcon },
-  { id: 'events_social', name: 'Events & Social', icon: TicketIcon },
+const CATEGORY_META: Array<{ id: string; name: string; icon: AppIconName }> = [
+  { id: 'textbook_exchange', name: 'Textbooks', icon: 'school' },
+  { id: 'pq_bank', name: 'Past Questions', icon: 'sparkles' },
+  { id: 'study_pack', name: 'Study Packs', icon: 'albums' },
+  { id: 'lecture_notes', name: 'Lecture Notes', icon: 'briefcase' },
+  { id: 'project_thesis', name: 'Projects & Thesis', icon: 'briefcase' },
+  { id: 'data_collection', name: 'Data Collection', icon: 'home' },
+  { id: 'equipment_rental', name: 'Lab Equipment', icon: 'bag' },
+  { id: 'accommodation', name: 'Accommodation', icon: 'home' },
+  { id: 'travel_transport', name: 'Transportation', icon: 'truck' },
+  { id: 'personal_goods', name: 'Personal Goods', icon: 'sparkles' },
+  { id: 'aso_ebi', name: 'Fashion', icon: 'bag' },
+  { id: 'campus_services', name: 'Campus Services', icon: 'briefcase' },
+  { id: 'events_social', name: 'Events & Social', icon: 'ticket' },
 ];
 
 const getCategoryIcon = (categoryId: string) =>
-  CATEGORY_META.find((c) => c.id === categoryId)?.icon ?? SparklesIcon;
+  CATEGORY_META.find((c) => c.id === categoryId)?.icon ?? 'sparkles';
 
 const getCategoryName = (categoryId: string) => {
   if (categoryId?.startsWith('custom:')) return categoryId.replace('custom:', '');
@@ -120,7 +107,7 @@ const MarketplaceFavoritesScreen: React.FC<MarketplaceFavoritesScreenProps> = ({
             className="mr-2 p-1.5 sm:p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors flex-shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
             aria-label="Back to marketplace"
           >
-            <ArrowLeftIcon className="w-5 h-5 text-lantern-text-secondary" />
+            <AppIcon name="arrow-back" size={20} className="text-lantern-text-secondary" />
           </button>
           <div className="min-w-0">
             <h1 className="text-lg sm:text-xl font-bold text-lantern-text truncate">Saved</h1>
@@ -159,7 +146,7 @@ const MarketplaceFavoritesScreen: React.FC<MarketplaceFavoritesScreenProps> = ({
         ) : loadError ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-20 h-20 bg-lantern-error/10 rounded-2xl flex items-center justify-center mb-5">
-              <ExclamationTriangleIcon className="w-10 h-10 text-lantern-error" />
+              <AppIcon name="warning" size={40} className="text-lantern-error" />
             </div>
             <h3 className="text-lg font-semibold text-lantern-text mb-2">Couldn't load saved listings</h3>
             <p className="text-sm text-lantern-text-secondary mb-6 max-w-sm">{loadError}</p>
@@ -168,14 +155,14 @@ const MarketplaceFavoritesScreen: React.FC<MarketplaceFavoritesScreenProps> = ({
               onClick={() => void loadFavorites()}
               className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center transition-colors duration-150 text-sm shadow-sm"
             >
-              <ArrowPathIcon className="w-4 h-4 mr-2" />
+              <AppIcon name="refresh" size={16} className="mr-2" />
               Retry
             </button>
           </div>
         ) : listings.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-20 h-20 bg-lantern-background-secondary rounded-2xl flex items-center justify-center mb-5">
-              <HeartIcon className="w-10 h-10 text-lantern-text-tertiary" />
+              <AppIcon name="heart" size={40} className="text-lantern-text-tertiary" />
             </div>
             <h3 className="text-lg font-semibold text-lantern-text mb-2">No saved listings yet</h3>
             <p className="text-sm text-lantern-text-secondary mb-6 max-w-sm">
@@ -186,14 +173,14 @@ const MarketplaceFavoritesScreen: React.FC<MarketplaceFavoritesScreenProps> = ({
               onClick={() => onNavigate('Marketplace')}
               className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-xl font-semibold flex items-center transition-colors duration-150 text-sm shadow-sm"
             >
-              <ShoppingBagIcon className="w-4 h-4 mr-2" />
+              <AppIcon name="bag" size={16} className="mr-2" />
               Browse listings
             </button>
           </div>
         ) : (
           <div className="grid w-full max-w-full grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2 sm:gap-4 md:gap-5">
             {listings.map((listing) => {
-              const IconComponent = getCategoryIcon(listing.category);
+              const iconName = getCategoryIcon(listing.category);
               return (
                 <ListingCard
                   key={listing.id}
@@ -204,7 +191,7 @@ const MarketplaceFavoritesScreen: React.FC<MarketplaceFavoritesScreenProps> = ({
                     (listing.user_id === currentUser.id || listing.seller_id === currentUser.id)
                   }
                   categoryName={getCategoryName(listing.category)}
-                  CategoryIcon={IconComponent}
+                  categoryIcon={iconName}
                   onPress={() => handleListingClick(listing)}
                   onToggleFavorite={(e) => handleUnfavorite(listing.id, e)}
                 />

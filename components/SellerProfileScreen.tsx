@@ -7,20 +7,7 @@ import { normalizeStorageUrl } from '../utils/storageUrl';
 import { shareShopLink } from '../utils/shareShop';
 import EditShopModal from './EditShopModal';
 import ReportContentModal from './moderation/ReportContentModal';
-import {
-  ArrowLeftIcon,
-  StarIcon,
-  ShoppingBagIcon,
-  EyeIcon,
-  ChatBubbleLeftEllipsisIcon,
-  HeartIcon,
-  CheckBadgeIcon,
-  ClockIcon,
-  PencilSquareIcon,
-  ShareIcon,
-  FlagIcon,
-} from '@heroicons/react/24/outline';
-import { StarIcon as StarSolidIcon } from '@heroicons/react/24/solid';
+import { AppIcon } from './ui/AppIcon';
 
 interface SellerProfileScreenProps {
   userId: string;
@@ -71,9 +58,9 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
   const renderStars = (rating: number) => {
     return Array.from({ length: 5 }, (_, i) =>
       i < Math.round(rating) ? (
-        <StarSolidIcon key={i} className="w-4 h-4 text-amber-400" />
+        <AppIcon key={i} name="star" size={16} filled className="text-amber-400" />
       ) : (
-        <StarIcon key={i} className="w-4 h-4 text-lantern-text-tertiary" />
+        <AppIcon key={i} name="star" size={16} className="text-lantern-text-tertiary" />
       )
     );
   };
@@ -134,7 +121,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
             onClick={onBack}
             className="flex items-center gap-1.5 text-white/95 hover:text-white transition-colors bg-black/25 rounded-lg px-2 py-1.5"
           >
-            <ArrowLeftIcon className="w-4 h-4" />
+            <AppIcon name="arrow-back" size={16} />
             <span className="text-sm font-medium">Back</span>
           </button>
           <div className="flex items-center gap-1.5">
@@ -144,7 +131,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                 onClick={() => setEditOpen(true)}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-black/30 text-white text-xs font-semibold"
               >
-                <PencilSquareIcon className="w-3.5 h-3.5" />
+                <AppIcon name="create" size={14} />
                 Edit shop
               </button>
             ) : null}
@@ -153,7 +140,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
               onClick={() => void handleShare()}
               className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-black/30 text-white text-xs font-semibold"
             >
-              <ShareIcon className="w-3.5 h-3.5" />
+              <AppIcon name="share-social" size={14} />
               Share
             </button>
             {!isOwner ? (
@@ -170,7 +157,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                 aria-label="Report this seller"
                 title="Report this seller"
               >
-                <FlagIcon className="w-3.5 h-3.5" />
+                <AppIcon name="flag" size={14} />
                 Report
               </button>
             ) : null}
@@ -192,7 +179,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
               <h1 className="text-xl font-bold text-lantern-text truncate">{shopName}</h1>
               {(profile as any).stats?.isVerified && (
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-300 text-xs font-semibold">
-                  <CheckBadgeIcon className="w-3.5 h-3.5" />
+                  <AppIcon name="badge-check" size={14} />
                   Verified
                 </span>
               )}
@@ -213,7 +200,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
           <p className="text-sm text-lantern-text-secondary mt-2 leading-relaxed">{profile.shop.bio}</p>
         ) : null}
         <p className="text-xs text-lantern-text-tertiary mt-1.5 flex items-center gap-1">
-          <ClockIcon className="w-3 h-3" />
+          <AppIcon name="time" size={12} />
           Member since {memberSince(profile.user.created_at)}
         </p>
       </div>
@@ -249,32 +236,32 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
             {
               label: 'Active',
               value: profile.stats.activeListings ?? 0,
-              icon: ShoppingBagIcon,
+              icon: 'bag' as const,
               color: 'text-lantern-primary bg-lantern-primary-background dark:text-lantern-primary-light',
             },
             {
               label: 'Reviews',
               value: profile.stats.totalReviews ?? 0,
-              icon: StarIcon,
+              icon: 'star' as const,
               color: 'text-amber-600 bg-amber-50 dark:bg-amber-900/30 dark:text-amber-400',
             },
             isOwner
               ? {
                   label: 'Views',
                   value: profile.stats.totalViews ?? 0,
-                  icon: EyeIcon,
+                  icon: 'eye' as const,
                   color: 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 dark:text-emerald-400',
                 }
               : {
                   label: 'Listings',
                   value: profile.stats.activeListings ?? 0,
-                  icon: HeartIcon,
+                  icon: 'heart' as const,
                   color: 'text-rose-600 bg-rose-50 dark:bg-rose-900/30 dark:text-rose-400',
                 },
           ].map((stat) => (
             <div key={stat.label} className="bg-lantern-surface rounded-xl p-3 ring-1 ring-lantern-border/60 text-center">
               <div className={`mx-auto w-8 h-8 rounded-lg flex items-center justify-center mb-1.5 ${stat.color}`}>
-                <stat.icon className="w-4 h-4" />
+                <AppIcon name={stat.icon} size={16} />
               </div>
               <p className="text-lg font-bold text-lantern-text">{Number(stat.value || 0).toLocaleString()}</p>
               <p className="text-xs text-lantern-text-secondary">{stat.label}</p>
@@ -299,7 +286,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
 
         {(profile as any).stats?.isVerified && (
           <div className="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-xl p-3 flex items-center gap-2 text-emerald-800 dark:text-emerald-300">
-            <CheckBadgeIcon className="w-5 h-5" />
+            <AppIcon name="badge-check" size={20} />
             <p className="text-sm font-medium">
               This seller is verified based on consistent sales activity, strong review quality, and listing history.
             </p>
@@ -310,7 +297,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
         {profile.badges.length > 0 && (
           <div>
             <h2 className="text-sm font-semibold text-lantern-text mb-3 flex items-center gap-1.5">
-              <CheckBadgeIcon className="w-4 h-4 text-lantern-primary" />
+              <AppIcon name="badge-check" size={16} className="text-lantern-primary" />
               Marketplace Badges
             </h2>
             <div className="flex flex-wrap gap-2">
@@ -332,7 +319,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
         {profile.recentListings.length > 0 && (
           <div>
             <h2 className="text-sm font-semibold text-lantern-text mb-3 flex items-center gap-1.5">
-              <ShoppingBagIcon className="w-4 h-4 text-emerald-500" />
+              <AppIcon name="bag" size={16} className="text-emerald-500" />
               {isOwner ? 'Shop listings' : 'Active Listings'} ({profile.recentListings.length})
             </h2>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -347,7 +334,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                       <img src={listing.images[0]} alt={listing.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" decoding="async" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
-                        <ShoppingBagIcon className="w-8 h-8 text-lantern-text-tertiary" />
+                        <AppIcon name="bag" size={32} className="text-lantern-text-tertiary" />
                       </div>
                     )}
                     {listing.status === 'reserved' ? (
@@ -380,7 +367,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
         {/* Reviews */}
         <div>
           <h2 className="text-sm font-semibold text-lantern-text mb-3 flex items-center gap-1.5">
-            <StarIcon className="w-4 h-4 text-amber-500" />
+            <AppIcon name="star" size={16} className="text-amber-500" />
             Reviews ({profile.stats.totalReviews})
           </h2>
           {profile.recentReviews.length > 0 ? (
@@ -412,7 +399,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
             </div>
           ) : (
             <div className="bg-lantern-surface rounded-xl p-6 text-center ring-1 ring-lantern-border/60">
-              <StarIcon className="w-8 h-8 mx-auto text-lantern-text-tertiary mb-2" />
+              <AppIcon name="star" size={32} className="mx-auto text-lantern-text-tertiary mb-2" />
               <p className="text-sm text-lantern-text-secondary">No reviews yet</p>
             </div>
           )}

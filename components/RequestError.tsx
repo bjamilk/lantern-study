@@ -17,28 +17,21 @@
  * data, and a request that failed told us nothing about the data.
  */
 import React from 'react';
-import {
-  ArrowPathIcon,
-  ClockIcon,
-  CloudIcon,
-  ExclamationTriangleIcon,
-  LockClosedIcon,
-  QuestionMarkCircleIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import {
   classifyRequestFailure,
   requestFailureCopy,
   type RequestFailureKind,
 } from '@lantern/shared/network';
 
-const KIND_ICON: Record<RequestFailureKind, React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>> = {
-  offline: CloudIcon,
-  timeout: ClockIcon,
-  server: CloudIcon,
-  notFound: QuestionMarkCircleIcon,
-  forbidden: LockClosedIcon,
-  rateLimited: ClockIcon,
-  unknown: ExclamationTriangleIcon,
+const KIND_ICON: Record<RequestFailureKind, AppIconName> = {
+  offline: 'cloud',
+  timeout: 'time',
+  server: 'cloud',
+  notFound: 'help-circle',
+  forbidden: 'lock-closed',
+  rateLimited: 'time',
+  unknown: 'warning',
 };
 
 export interface RequestErrorProps {
@@ -63,7 +56,7 @@ export const RequestError: React.FC<RequestErrorProps> = ({
 }) => {
   const kind = classifyRequestFailure(error);
   const copy = requestFailureCopy(error);
-  const Icon = KIND_ICON[kind];
+  const iconName = KIND_ICON[kind];
   const canRetry = copy.retryLabel != null && !!onRetry;
   const retryLabel = copy.retryLabel ?? 'Try again';
 
@@ -74,7 +67,7 @@ export const RequestError: React.FC<RequestErrorProps> = ({
         className={`flex items-center justify-between gap-3 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-400 ${className ?? ''}`}
       >
         <span className="flex min-w-0 items-center gap-2">
-          <Icon className="h-4 w-4 shrink-0" aria-hidden={true} />
+          <AppIcon name={iconName} size={16} className="shrink-0" aria-hidden={true} />
           <span>
             {copy.title}. {detail ?? copy.body}
           </span>
@@ -86,7 +79,7 @@ export const RequestError: React.FC<RequestErrorProps> = ({
             aria-label={retryLabel}
             className="inline-flex shrink-0 items-center gap-1 text-xs font-medium underline"
           >
-            <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden={true} />
+            <AppIcon name="refresh" size={14} aria-hidden={true} />
             {retryLabel}
           </button>
         ) : null}
@@ -101,7 +94,7 @@ export const RequestError: React.FC<RequestErrorProps> = ({
         variant === 'full' ? 'flex flex-col items-center justify-center' : ''
       } ${className ?? ''}`}
     >
-      <Icon className="mx-auto h-8 w-8 text-lantern-text-secondary" aria-hidden={true} />
+      <AppIcon name={iconName} size={32} className="mx-auto text-lantern-text-secondary" aria-hidden={true} />
       <p className="mt-3 text-sm font-medium text-lantern-text">{copy.title}</p>
       <p className="mt-1 text-xs text-lantern-text-secondary">{detail ?? copy.body}</p>
       {canRetry || onBack ? (
@@ -113,7 +106,7 @@ export const RequestError: React.FC<RequestErrorProps> = ({
               aria-label={retryLabel}
               className="inline-flex items-center gap-1.5 rounded-md bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-lantern-primary-dark"
             >
-              <ArrowPathIcon className="h-3.5 w-3.5" aria-hidden={true} />
+              <AppIcon name="refresh" size={14} aria-hidden={true} />
               {retryLabel}
             </button>
           ) : null}

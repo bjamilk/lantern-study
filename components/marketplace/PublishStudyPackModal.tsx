@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { AppIcon } from '../ui/AppIcon';
 import Modal from '../ui/Modal';
 import { CampusSearchSelect } from './CampusSearchSelect';
 import { publishStudyPack, fetchMarketplaceCampuses, fetchMarketplacePaymentsConfig } from '../../services/supabase';
@@ -15,7 +16,6 @@ import {
   validateCourseAnchor,
   type StudyPackContentInput,
 } from '@lantern/shared/marketplace';
-import { BuildingStorefrontIcon } from '@heroicons/react/24/outline';
 import { CoursePicker } from '../academic/CoursePicker';
 import { TopicPicker } from '../academic/TopicPicker';
 import { RightsAttestationCheckbox } from '../moderation/RightsAttestationCheckbox';
@@ -193,7 +193,7 @@ export const PublishStudyPackModal: React.FC<PublishStudyPackModalProps> = ({
     >
       <div className="w-full">
         <div className="flex items-center gap-2 p-5 border-b border-lantern-border">
-          <BuildingStorefrontIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
+          <AppIcon name="storefront" size={20} className="text-lantern-primary" aria-hidden />
           <h3 id="publish-studypack-title" className="text-lg font-bold text-lantern-text">
             Sell as a Study Pack
           </h3>

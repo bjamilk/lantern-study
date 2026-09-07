@@ -10,6 +10,7 @@ import {
 } from '../stores/lectureRecordingStore';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { LectureTitleSheet } from './lecture/LectureTitleSheet';
+import { lectureFailureLine } from './lecture/lectureStatusCopy';
 
 /**
  * Every button on this bar is the same pill, so the bar's type size is
@@ -117,13 +118,17 @@ export function LectureRecordingBanner() {
         </Text>
         <Text className="text-white/90 text-xs" numberOfLines={2}>
           {status === 'failed'
-            ? // The reason, then the promise. A student who has just lost a
-              // transcription needs to know the audio is still here before
-              // anything else. It does NOT say "nothing was charged": the
-              // server refunds a failed request itself, but a client-side
-              // timeout on a long lecture can fail here while the server is
-              // still working — and this bar cannot see which happened.
-              `${error || 'Could not transcribe.'} The audio is still here — tap Retry.`
+            ? // A plain reason, then the promise. This used to paste the raw
+              // error in front of the sentence with no separator, which on
+              // device read "Network request failed The audio is still here —
+              // tap Retry." The classifier says "No connection." or nothing at
+              // all; the raw text stays in the store for a bug report.
+              //
+              // It still does NOT say "nothing was charged": the server refunds
+              // a failed request itself, but a client-side timeout on a long
+              // lecture can fail here while the server is still working — and
+              // this bar cannot see which happened.
+              lectureFailureLine(error)
             : `${noteTitle || 'Untitled note'} · Tap to return`}
         </Text>
       </Pressable>

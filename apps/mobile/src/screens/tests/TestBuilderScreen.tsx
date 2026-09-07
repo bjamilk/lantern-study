@@ -51,15 +51,17 @@ import { aiGenerateQuestions } from '../../services/ai';
 import { generateNoteQuiz } from '../../services/notes';
 import { trackAIToolUsed } from '../../services/productAnalytics';
 import {
+  MAX_GENERATED_QUESTIONS,
   TEST_BUILDER_SOURCES,
   deckStudyNotes,
   personalTestTitle,
+  planConfirmedGeneration,
+  planPickedTestSource,
   planPreselectedNote,
+  testSourceConfirmCard,
   type TestBuilderSourceId,
+  type TestSourceSelection,
 } from './testAuthoring';
-
-/** How many questions a generated test starts with. The sheet re-cuts it. */
-const GENERATED_QUESTION_COUNT = 10;
 
 /** Cards below this are not enough for the generator to work from. */
 const MIN_DECK_CARDS = 3;
@@ -101,6 +103,15 @@ export default function TestBuilderScreen() {
 
   const [picker, setPicker] = useState<PickerKind>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /**
+   * The source the student has chosen and NOT yet paid for.
+   *
+   * The picker used to generate on the tap of a row: one press on a note's
+   * name took an AI use, with no confirmation and no button that ever said
+   * what it cost. A row now only fills this in; the labelled button below is
+   * the only thing that spends.
+   */
+  const [selection, setSelection] = useState<TestSourceSelection | null>(null);
 
   useEffect(() => {
     if (userId) void fetchDecks(userId).catch(() => undefined);
@@ -176,10 +187,13 @@ export default function TestBuilderScreen() {
         useJobsStore.getState().startJob({
           kind: 'test',
           sourceTitle: deckName,
-          requestedCount: GENERATED_QUESTION_COUNT,
+          // A ceiling, not a promise: the generator writes what the cards
+          // support, so the sheet says "up to" until the save counts one.
+          requestedCount: MAX_GENERATED_QUESTIONS,
+          requestedCountIsMax: true,
           run: async ({ jobId, onServerJob, onStage }) => {
             const { questions } = await aiGenerateQuestions(notesText, {
-              count: GENERATED_QUESTION_COUNT,
+              count: MAX_GENERATED_QUESTIONS,
               subject: deckName,
               onJobUpdate: p => {
                 if (p.jobId) onServerJob(p.jobId);
@@ -219,13 +233,14 @@ export default function TestBuilderScreen() {
       useJobsStore.getState().startJob({
         kind: 'test',
         sourceTitle: noteTitle,
-        requestedCount: GENERATED_QUESTION_COUNT,
+        requestedCount: MAX_GENERATED_QUESTIONS,
+        requestedCountIsMax: true,
         run: async ({ jobId, onServerJob, onStage }) => {
           const { studyGoal } = useStudyGoalsStore.getState();
           const session = await generateNoteQuiz(
             noteId,
             studyGoal,
-            GENERATED_QUESTION_COUNT,
+            MAX_GENERATED_QUESTIONS,
             onServerJob
           );
           if (!session.questions.length) {
@@ -269,6 +284,61 @@ export default function TestBuilderScreen() {
     [requestedNoteId, noteRows]
   );
 
+  /**
+   * The note the student arrived from fills the same confirmation card the
+   * picker fills — one card, one labelled button, one price, whichever door
+   * was used. It never overwrites a source the student has since chosen.
+   */
+  useEffect(() => {
+    if (!preselected || preselected.disabledReason) return;
+    setSelection(current =>
+      current ? current : { kind: 'note', id: preselected.id, title: preselected.title }
+    );
+  }, [preselected]);
+
+  /** Tapping a row of the picker CHOOSES it. Nothing is spent here. */
+  const handlePickRow = useCallback((kind: 'deck' | 'note', row: PickerRow) => {
+    const plan = planPickedTestSource({
+      kind,
+      id: row.id,
+      title: row.title,
+      subtitle: row.subtitle,
+      disabledReason: row.disabledReason,
+    });
+    if (plan.action === 'refuse') {
+      Alert.alert('Cannot use this one', plan.reason);
+      return;
+    }
+    setSelection(plan.selection);
+    setPicker(null);
+  }, []);
+
+  const confirmCard = useMemo(
+    () =>
+      selection
+        ? testSourceConfirmCard(
+            selection,
+            formatCreditCost(AI_CREDIT_COSTS.generate_questions),
+            MAX_GENERATED_QUESTIONS
+          )
+        : null,
+    [selection]
+  );
+
+  /** The one press that costs anything, and it says so on its face. */
+  const handleGenerate = useCallback(() => {
+    const plan = planConfirmedGeneration(selection, {
+      busy: busyId !== null,
+      max: MAX_GENERATED_QUESTIONS,
+    });
+    if (plan.action === 'refuse') {
+      Alert.alert('Nothing to generate yet', plan.reason);
+      return;
+    }
+    if (plan.kind === 'deck') void handleDeckPicked(plan.id, plan.title);
+    else handleNotePicked(plan.id, plan.title);
+  }, [selection, busyId, handleDeckPicked, handleNotePicked]);
+
   const pickerRows = picker === 'deck' ? deckRows : picker === 'note' ? noteRows : [];
   const pickerTitle = picker === 'deck' ? 'Pick a deck' : 'Pick a note';
   const pickerEmpty =
@@ -294,39 +364,58 @@ export default function TestBuilderScreen() {
         contentContainerStyle={[styles.listContent, { paddingBottom: listPadding }]}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={
-          preselected ? (
+          confirmCard ? (
             <View
               style={[styles.preselectCard, { backgroundColor: testsAccent.tint }]}
-              accessibilityLabel={`From this note: ${preselected.title}.${
-                preselected.disabledReason ? ` ${preselected.disabledReason}.` : ''
-              }`}
+              accessibilityLabel={`${confirmCard.eyebrow.toLowerCase()}: ${confirmCard.title}.`}
+              testID="test-builder-selected-source"
+            >
+              <Text style={[styles.preselectEyebrow, { color: testsAccent.ink }]}>
+                {confirmCard.eyebrow}
+              </Text>
+              <Text style={[styles.sourceTitle, { color: colors.text }]} numberOfLines={2}>
+                {confirmCard.title}
+              </Text>
+              {confirmCard.subtitle ? (
+                <Text style={[styles.sourceDescription, { color: colors.textSecondary }]}>
+                  {confirmCard.subtitle}
+                </Text>
+              ) : null}
+              <TouchableOpacity
+                style={[styles.preselectAction, { backgroundColor: colors.primaryFill }]}
+                onPress={handleGenerate}
+                disabled={busyId !== null}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: busyId !== null }}
+                accessibilityLabel={confirmCard.accessibilityLabel}
+                testID="test-builder-generate"
+              >
+                {busyId !== null ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <AppIcon name="sparkles" size={15} color="#ffffff" />
+                )}
+                <Text style={[styles.preselectActionText, { color: '#ffffff' }]}>
+                  {confirmCard.buttonLabel}
+                </Text>
+              </TouchableOpacity>
+              <Text style={[styles.sourceDescription, { color: colors.textSecondary, marginTop: 8 }]}>
+                Or pick another source below.
+              </Text>
+            </View>
+          ) : preselected?.disabledReason ? (
+            <View
+              style={[styles.preselectCard, { backgroundColor: testsAccent.tint }]}
+              accessibilityLabel={`From this note: ${preselected.title}. ${preselected.disabledReason}.`}
               testID="test-builder-preselected-note"
             >
               <Text style={[styles.preselectEyebrow, { color: testsAccent.ink }]}>FROM THIS NOTE</Text>
               <Text style={[styles.sourceTitle, { color: colors.text }]} numberOfLines={2}>
                 {preselected.title}
               </Text>
-              {preselected.disabledReason ? (
-                <Text style={[styles.sourceDescription, { color: colors.textSecondary }]}>
-                  {preselected.disabledReason}
-                </Text>
-              ) : (
-                <TouchableOpacity
-                  style={[styles.preselectAction, { backgroundColor: colors.primaryFill }]}
-                  onPress={() => handleNotePicked(preselected.id, preselected.title)}
-                  activeOpacity={0.8}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Generate ${GENERATED_QUESTION_COUNT} questions from ${preselected.title}. Costs ${formatCreditCost(AI_CREDIT_COSTS.generate_questions)}.`}
-                  testID="test-builder-preselected-generate"
-                >
-                  <AppIcon name="sparkles" size={15} color="#ffffff" />
-                  <Text style={[styles.preselectActionText, { color: "#ffffff" }]}>
-                    Generate {GENERATED_QUESTION_COUNT} questions · {formatCreditCost(AI_CREDIT_COSTS.generate_questions)}
-                  </Text>
-                </TouchableOpacity>
-              )}
-              <Text style={[styles.sourceDescription, { color: colors.textSecondary, marginTop: 8 }]}>
-                Or pick another source below.
+              <Text style={[styles.sourceDescription, { color: colors.textSecondary }]}>
+                {preselected.disabledReason}
               </Text>
             </View>
           ) : null
@@ -414,10 +503,7 @@ export default function TestBuilderScreen() {
                     accessibilityLabel={[item.title, item.disabledReason ?? item.subtitle]
                       .filter(Boolean)
                       .join('. ')}
-                    onPress={() => {
-                      if (picker === 'deck') void handleDeckPicked(item.id, item.title);
-                      else handleNotePicked(item.id, item.title);
-                    }}
+                    onPress={() => handlePickRow(picker === 'deck' ? 'deck' : 'note', item)}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.pickerTitle, { color: colors.text }]} numberOfLines={1}>

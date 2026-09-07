@@ -1,5 +1,4 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
 import {
   describeFeedItem,
   learningConnectionLabel,
@@ -7,6 +6,7 @@ import {
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../services/supabase';
+import { AppIcon } from './ui/AppIcon';
 
 /**
  * The Academic Feed panel (Phase 3 · M).
@@ -106,7 +106,7 @@ export const AcademicFeedPanel: React.FC<AcademicFeedPanelProps> = ({
           className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
           aria-label="Refresh feed"
         >
-          <ArrowPathIcon className="h-4 w-4" aria-hidden="true" />
+          <AppIcon name="refresh" size={16} aria-hidden="true" />
         </button>
       </header>
 

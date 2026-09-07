@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { semesterOptions } from '@lantern/shared/academic';
-import { CheckCircleIcon, ExclamationCircleIcon, UserIcon } from '@heroicons/react/24/outline';
 import { checkUsernameAvailability, updateUsername } from '../services/supabase';
 import { fetchInstitutions, updateAcademicProfile } from '../services/academic';
 import { useAcademicStore } from '../stores/academicStore';
@@ -277,7 +277,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
             </label>
             <div className="relative min-w-0">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <UserIcon className="h-5 w-5 text-lantern-text-muted" aria-hidden />
+                <AppIcon name="person" size={20} className="text-lantern-text-muted" aria-hidden />
               </div>
               <input
                 id="modalFirstName"
@@ -297,7 +297,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
             </label>
             <div className="relative min-w-0">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <UserIcon className="h-5 w-5 text-lantern-text-muted" aria-hidden />
+                <AppIcon name="person" size={20} className="text-lantern-text-muted" aria-hidden />
               </div>
               <input
                 id="modalLastName"
@@ -348,10 +348,10 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
                 </svg>
               )}
               {!hasUsername && !checkingUsername && usernameAvailable === true && (
-                <CheckCircleIcon className="h-5 w-5 text-lantern-success" aria-hidden />
+                <AppIcon name="checkmark-circle" size={20} className="text-lantern-success" aria-hidden />
               )}
               {!hasUsername && !checkingUsername && usernameError && (
-                <ExclamationCircleIcon className="h-5 w-5 text-lantern-error" aria-hidden />
+                <AppIcon name="alert-circle" size={20} className="text-lantern-error" aria-hidden />
               )}
             </div>
           </div>
@@ -460,7 +460,7 @@ const UsernameRequiredModal: React.FC<UsernameRequiredModalProps> = ({
 
         {error && (
           <div className="flex items-center text-sm text-lantern-error bg-lantern-error/10 p-3 rounded-lg" role="alert">
-            <ExclamationCircleIcon className="w-5 h-5 mr-2 flex-shrink-0" aria-hidden />
+            <AppIcon name="alert-circle" size={20} className="mr-2 flex-shrink-0" aria-hidden />
             {error}
           </div>
         )}

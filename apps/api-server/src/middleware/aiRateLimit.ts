@@ -7,7 +7,11 @@ import { Request, Response, NextFunction } from 'express';
 import { getRedisClient, redisKey } from '../services/redisStore';
 import { logger } from '../utils/logger';
 
-import { DEFAULT_AI_DAILY_LIMIT, DEFAULT_AI_FEATURE_LIMITS } from '@lantern/shared/utils/aiUsage';
+import {
+  DEFAULT_AI_DAILY_LIMIT,
+  DEFAULT_AI_FEATURE_LIMITS,
+  isZeroCreditAIFeature,
+} from '@lantern/shared/utils/aiUsage';
 import {
   AI_CREDIT_COSTS,
   AI_FEATURE_CREDIT_COST,
@@ -412,6 +416,12 @@ export async function refundFeatureAiCredit(
   featureKey: string,
   pool: AiUsePool = 'daily'
 ): Promise<void> {
+  // A free feature never took a global credit, so refunding one would MINT an
+  // AI use out of a failed voice question. Only the cap comes back.
+  if (isZeroCreditAIFeature(featureKey)) {
+    await releaseUsage(buildUsageKey(userId, featureKey), AI_FEATURE_CREDIT_COST);
+    return;
+  }
   // Two pools, two refunds. The global half goes back to whichever pool paid
   // it; the per-feature counter is a cap, not a currency, and always resets
   // against the same daily key it was charged on.
@@ -557,7 +567,79 @@ function buildUsageKey(userId: string, featureKey?: string): string {
   return featureKey ? `${userId}:${featureKey}` : userId;
 }
 
+/**
+ * The cap-only limiter, for features the app says cost nothing.
+ *
+ * It enforces the feature's own daily cap and NOTHING else: no global charge,
+ * no bonus spend, no global usage headers. Asking a question out loud is the
+ * same question typed, and the typed one is answered by the tutor the student
+ * already paid for — so the meter must not move, and the badge must not even
+ * be restated, or the student would watch their allowance drop on the one
+ * action the Usage screen lists as free.
+ *
+ * The cap is still refunded when the request does not finish 2xx, exactly as
+ * the paid path refunds credits: a failed transcription must not eat one of
+ * the day's questions.
+ */
+function zeroCreditFeatureLimiter(featureKey: string) {
+  const limit = resolveFeatureLimit(featureKey);
+  return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const userId = (req as any).user?.id;
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    const key = buildUsageKey(userId as string, featureKey);
+
+    const featureResult = await incrementUsage(key, limit);
+    if (!featureResult.allowed) {
+      res.status(429).json({
+        error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
+        feature: featureKey,
+        limit,
+        used: featureResult.count,
+        cost: 0,
+        resetsAt: toResetsAt(featureResult.resetTime),
+      });
+      return;
+    }
+
+    res.on('finish', () => {
+      if (res.statusCode >= 200 && res.statusCode < 300) return;
+      void releaseUsage(key, AI_FEATURE_CREDIT_COST).catch((error) => {
+        logger.warn('Failed to refund a free-feature use for a request that did not succeed', {
+          userId,
+          featureKey,
+          status: res.statusCode,
+          error,
+        });
+      });
+    });
+
+    res.setHeader('X-AI-Feature', featureKey);
+    // Zero, stated rather than omitted: a client reading this header learns the
+    // action was free instead of assuming the default charge of one.
+    res.setHeader(AI_COST_HEADER, '0');
+    res.setHeader('X-AI-Usage-Used', featureResult.count.toString());
+    res.setHeader('X-AI-Usage-Limit', limit.toString());
+    res.setHeader('X-AI-Usage-Resets-At', toResetsAt(featureResult.resetTime));
+
+    // Same restatement as the paid path, for the feature counter only.
+    const sendJson = res.json.bind(res);
+    res.json = ((body?: unknown) => {
+      const succeeded = res.statusCode >= 200 && res.statusCode < 300;
+      if (!succeeded && !res.headersSent) {
+        res.setHeader('X-AI-Usage-Used', Math.max(0, featureResult.count - 1).toString());
+      }
+      return sendJson(body);
+    }) as typeof res.json;
+
+    next();
+  };
+}
+
 export function aiRateLimitForFeature(featureKey: string) {
+  if (isZeroCreditAIFeature(featureKey)) return zeroCreditFeatureLimiter(featureKey);
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const userId = (req as any).user?.id;
     if (!userId) {

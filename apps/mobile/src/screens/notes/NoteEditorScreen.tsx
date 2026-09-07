@@ -55,16 +55,14 @@ import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifact
 import { JobProgressSheet } from '../../components/jobs';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
-import { Body, Button, Caption, Card, FeatureDisc, Heading } from '../../components/ui';
-import type { AppIconName } from '../../components/ui';
-import type { FeatureKey } from '@lantern/shared/design';
+import { Button, Card } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
-import AIUsageBadge from '../../components/AIUsageBadge';
+import { NoteLearnPanel } from '../../components/notes/NoteLearnPanel';
 import { getLatestAIUsage, subscribeToAIUsage } from '../../services/ai';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import {
@@ -72,7 +70,6 @@ import {
   SMART_NOTES_CREDIT_COST,
   formatCreditCost,
 } from '@lantern/shared/utils/aiCredits';
-import { SMART_NOTES_GUIDANCE_MAX_CHARS } from '@lantern/shared/utils/smartNotes';
 import { useAuthStore } from '../../stores/authStore';
 import {
   formatRecordingDuration,
@@ -81,11 +78,16 @@ import {
   useLectureRecordingStore,
 } from '../../stores/lectureRecordingStore';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
+import { recordCardBlockedReason } from '../../components/lecture/lectureStatusCopy';
 import * as ImagePicker from 'expo-image-picker';
 import type { NoteAttachment } from '../../services/notes';
+import { readCachedScript } from '../../services/narration';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
+
+/** Questions asked for from one note; the server may return fewer. Matches the Test builder. */
+const NOTE_TEST_QUESTION_CEILING = 10;
 
 type NavigationProp = {
 
@@ -103,65 +105,6 @@ interface Props {
   route: { params: { noteId: string; startRecording?: boolean } };
 
 }
-
-/**
- * One "Turn into" option: a neutral tile carrying its feature's disc, what it
- * makes, and what it costs.
- *
- * The cost is printed, always, from `formatCreditCost` over the SAME constants
- * the server charges (`aiCredits.ts`) — a number typed in here is how the
- * counter starts lying. A tile whose cost the student cannot cover is disabled
- * and says so, rather than failing at the far end of a spinner.
- */
-function TurnIntoOption({
-  feature,
-  icon,
-  label,
-  cost,
-  hint,
-  disabled,
-  disabledReason,
-  onPress,
-}: {
-  feature: FeatureKey;
-  icon: AppIconName;
-  label: string;
-  /** Printed cost, or null for an action that spends no credit up front. */
-  cost: string | null;
-  hint?: string;
-  disabled?: boolean;
-  disabledReason?: string;
-  onPress: () => void;
-}) {
-  const detail = disabled && disabledReason ? disabledReason : (hint ?? cost ?? '');
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityState={{ disabled: Boolean(disabled) }}
-      accessibilityLabel={[label, detail].filter(Boolean).join('. ')}
-      style={{ minHeight: 64, flexBasis: '48%' }}
-      className={`flex-1 flex-row items-center gap-2.5 p-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface active:opacity-90 ${
-        disabled ? 'opacity-50' : ''
-      }`}
-    >
-      <FeatureDisc feature={feature} icon={icon} size={32} />
-      <View className="flex-1 min-w-0">
-        <Body style={{ fontWeight: '600' }} numberOfLines={1} importantForAccessibility="no">
-          {label}
-        </Body>
-        {detail ? (
-          <Caption tone="secondary" numberOfLines={2} importantForAccessibility="no">
-            {detail}
-          </Caption>
-        ) : null}
-      </View>
-    </Pressable>
-  );
-}
-
-
 
 export function NoteEditorScreen({ navigation, route }: Props) {
 
@@ -196,6 +139,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     lectureNoteId === noteId &&
     (lectureStatus === 'uploading' || lectureStatus === 'transcribing');
   const recordingSeconds = isRecording ? getElapsedRecordingSeconds(lectureStartedAt) : 0;
+  // Why the "Record" tile is unavailable, decided in one tested place. It is
+  // `null` exactly when a new recording may start here.
+  const recordBlockedReason = recordCardBlockedReason({
+    status: lectureStatus,
+    activeNoteId: lectureNoteId,
+    noteId,
+  });
   void lectureTick;
   const pauseAutosaveUntilRef = useRef(0);
   const AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS = 4000;
@@ -312,6 +262,76 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       selectedNote?.attachments?.find((a) => a.type === 'pdf') || presentationAttachment,
     [selectedNote?.attachments, presentationAttachment]
   );
+
+  /**
+   * The attachment "Walk me through" opens, or null when this note has none.
+   *
+   * Only a PDF or a slide deck has pages, and only a deck that has finished
+   * converting has a preview to render them from — `documentAttachment` is
+   * already that test, so the walk-through door and the PDF viewer agree about
+   * what this note is instead of disagreeing on the same screen.
+   */
+  const walkthroughAttachmentId = documentAttachment?.id ?? null;
+
+  /**
+   * How many pages this document has, when anyone has counted them.
+   *
+   * Read off the attachment's own metadata rather than fetched: the "Read it
+   * to me" door only needs it to print the right price band, and asking the
+   * pages route for a number would make opening a note wait on a request it
+   * has no other use for. Unknown counts as 0, and the door quotes the cheap
+   * band against the 40-page cap — never more than the student is charged.
+   */
+  const documentPageCount = (() => {
+    const raw = (documentAttachment?.metadata as { pageCount?: unknown } | undefined)?.pageCount;
+    return typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.trunc(raw)) : 0;
+  })();
+
+  /**
+   * True when this document has already been read aloud once on this device.
+   *
+   * Only the device's own copy is consulted, and deliberately: a note opening
+   * must not wait on the network to decide what a tile says. A script bought
+   * on the web shows as unread here until the reading screen fetches it — the
+   * screen then says "already read" and charges nothing, so the worst this can
+   * do is under-promise.
+   */
+  const [narrationReady, setNarrationReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    if (!walkthroughAttachmentId) {
+      setNarrationReady(false);
+      return;
+    }
+    void readCachedScript(walkthroughAttachmentId).then((cached) => {
+      if (!cancelled) setNarrationReady(Boolean(cached));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [walkthroughAttachmentId]);
+
+  const handleReadAloud = () => {
+    if (!walkthroughAttachmentId) return;
+    // Same stack, same reasoning as the walk-through: a Study screen pushed
+    // onto Study. Nothing is charged by opening it — the reading screen prints
+    // the price and asks.
+    navigation.navigate('Narration', {
+      noteId,
+      attachmentId: walkthroughAttachmentId,
+    });
+  };
+
+  const handleWalkthrough = () => {
+    if (!walkthroughAttachmentId) return;
+    // A plain push on the SAME stack: the walk-through is a Study screen, so
+    // there is no nested navigate here and nothing to forget `initial: false`
+    // on. It keeps both bars and carries its own contextual row.
+    navigation.navigate('Walkthrough', {
+      noteId,
+      attachmentId: walkthroughAttachmentId,
+    });
+  };
 
   // Photo notes read text from several photographs, so the status is the batch's.
   const extractionStatus = isPhotoNoteSource(selectedNote?.sourceType)
@@ -908,12 +928,17 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       // so the progress sheet and the notification call it that.
       kind: 'test',
       sourceTitle: noteTitle,
-      requestedCount: 5,
+      // A ceiling, not a promise: unanswerable questions are dropped before
+      // the save, so the sheet says "up to 10" until the save counts one. Ten
+      // is the same ceiling the Test builder asks for from the same note —
+      // one number for one action, whichever door the student came through.
+      requestedCount: NOTE_TEST_QUESTION_CEILING,
+      requestedCountIsMax: true,
       run: async ({ jobId, onServerJob, onStage }) => {
         await saveNote(noteId, { title: currentTitle, body: currentBody });
 
         const { studyGoal } = useStudyGoalsStore.getState();
-        const session = await generateNoteQuiz(noteId, studyGoal, 5, onServerJob);
+        const session = await generateNoteQuiz(noteId, studyGoal, NOTE_TEST_QUESTION_CEILING, onServerJob);
         if (!session.questions.length) {
           throw new Error('Could not generate a test from this note.');
         }
@@ -1236,82 +1261,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           </View> : null}
 
-          {/* TURN INTO — spec v3 §3.1. The note is a source; these are the
-              four things a student can make out of it, each with the credit it
-              costs printed before the tap rather than discovered after it.
-              Every option routes into the generation path that already exists
-              (jobsStore for flashcards and quizzes, summarizeNote for Smart
-              notes, the lecture store for recording); nothing new generates
-              here — Wave G owns delivery. */}
-          {canEdit ? (
-            <View className="mb-4">
-              <Heading className="mb-0.5">Turn into</Heading>
-              <Caption tone="secondary" className="mb-2">
-                This creates a new thing — your note stays as it is
-              </Caption>
-              <View className="flex-row flex-wrap gap-2">
-                <TurnIntoOption
-                  feature="flashcards"
-                  icon="albums"
-                  label="Flashcards"
-                  cost={formatCreditCost(AI_CREDIT_COSTS.generate_flashcards)}
-                  disabled={isAILoading || !canGenerateStudyMaterials || shortForOneCredit}
-                  disabledReason={
-                    shortForOneCredit
-                      ? 'No credits left today'
-                      : !canGenerateStudyMaterials
-                        ? 'Needs more content in the note'
-                        : undefined
-                  }
-                  onPress={handleGenerateFlashcards}
-                />
-                <TurnIntoOption
-                  feature="tests"
-                  icon="document-text"
-                  label="Test"
-                  cost={formatCreditCost(AI_CREDIT_COSTS.generate_questions)}
-                  disabled={!canGenerateStudyMaterials || shortForOneCredit}
-                  disabledReason={
-                    shortForOneCredit
-                      ? 'No credits left today'
-                      : !canGenerateStudyMaterials
-                        ? 'Needs more content in the note'
-                        : undefined
-                  }
-                  onPress={handleGenerateQuiz}
-                />
-                <TurnIntoOption
-                  feature="ai"
-                  icon="sparkles"
-                  label="Smart notes"
-                  cost={formatCreditCost(SMART_NOTES_CREDIT_COST[smartNotesDepth])}
-                  disabled={summarizing || shortForSmartNote}
-                  disabledReason={shortForSmartNote ? 'Not enough credits left today' : undefined}
-                  onPress={() => void handleSummarize()}
-                />
-                <TurnIntoOption
-                  feature="recording"
-                  icon="mic"
-                  label="Record"
-                  cost={null}
-                  // The exception to the line above, said plainly rather than
-                  // left to be discovered: a recording lands IN this note.
-                  // Nothing is charged to start; the transcript costs a credit
-                  // when you stop.
-                  hint="Records into this note"
-                  disabled={isRecording || transcribing || lectureStatus !== 'idle'}
-                  disabledReason={
-                    isRecording || transcribing
-                      ? 'Recording — controls are above'
-                      : lectureStatus !== 'idle'
-                        ? 'Another note is recording'
-                        : undefined
-                  }
-                  onPress={handleRecordPress}
-                />
-              </View>
-            </View>
-          ) : null}
+          {/* The Learn panel replaces what used to be TWO learn surfaces on
+              this screen: a "Turn into" tile grid here, and a card of small
+              buttons at the bottom offering the same four generations again.
+              One panel now, at the bottom, which is where the contextual row's
+              Learn item has always scrolled — see components/notes/NoteLearnPanel. */}
 
 
           {/* Academic archive: file this note under a course (owner/editor only). */}
@@ -1600,102 +1554,31 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               learnPanelY.current = y;
               setLearnPanelHeight(prev => (prev === height ? prev : height));
             }}
-          ><Card className="border-lantern-border">
-
-            <Text className="text-sm font-semibold text-lantern-text mb-1">
-
-              Learn from this note
-
-            </Text>
-
-            <Text className="text-sm text-lantern-text-secondary mb-3">
-
-              AI tools to turn this note into study materials.
-
-            </Text>
-
-            <TextInput
-              className="w-full px-3 py-2 mb-2 rounded-lg text-sm border border-lantern-border bg-lantern-background text-lantern-text"
-              placeholder='Optional guidance — e.g. "focus on clinical applications"'
-              placeholderTextColor={colors.textTertiary}
-              value={smartNotesGuidance}
-              onChangeText={setSmartNotesGuidance}
-              maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
+          >
+            <NoteLearnPanel
+              guidance={smartNotesGuidance}
+              onGuidanceChange={setSmartNotesGuidance}
+              depth={smartNotesDepth}
+              onDepthChange={setSmartNotesDepth}
+              canGenerate={canGenerateStudyMaterials}
+              shortForOneCredit={shortForOneCredit}
+              shortForSmartNote={shortForSmartNote}
+              isAILoading={isAILoading}
+              summarizing={summarizing}
+              recordBlockedReason={recordBlockedReason}
+              walkthroughAttachmentId={walkthroughAttachmentId}
+              walkthroughPending={extractionStatus === 'ocr_processing'}
+              documentPageCount={documentPageCount}
+              narrationReady={narrationReady}
+              onFlashcards={handleGenerateFlashcards}
+              onTest={handleGenerateQuiz}
+              onSmartNotes={() => void handleSummarize()}
+              onRecord={handleRecordPress}
+              onChat={handleChatWithNote}
+              onWalkthrough={handleWalkthrough}
+              onReadAloud={handleReadAloud}
             />
-
-            <View className="flex-row gap-1 mb-3">
-              {(
-                [
-                  ['concise', 'Concise'],
-                  ['standard', 'Standard'],
-                  ['deep', 'Deep dive'],
-                ] as Array<[typeof smartNotesDepth, string]>
-              ).map(([value, label]) => (
-                <TouchableOpacity
-                  key={value}
-                  onPress={() => setSmartNotesDepth(value)}
-                  className={`flex-1 px-2 py-1.5 rounded-lg border items-center ${
-                    smartNotesDepth === value
-                      ? 'bg-lantern-primary-fill border-lantern-primary'
-                      : 'bg-lantern-background border-lantern-border'
-                  }`}
-                >
-                  <Text
-                    className={`text-xs font-medium ${
-                      smartNotesDepth === value ? 'text-white' : 'text-lantern-text-secondary'
-                    }`}
-                  >
-                    {label} · {SMART_NOTES_CREDIT_COST[value]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View className="flex-row flex-wrap gap-2">
-
-              <Button
-                size="sm"
-                variant="secondary"
-                loading={summarizing}
-                disabled={shortForSmartNote}
-                onPress={() => void handleSummarize()}
-              >
-
-                Smart Note
-
-              </Button>
-
-              <Button size="sm" variant="secondary" onPress={handleChatWithNote}>
-                Chat
-              </Button>
-
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={isAILoading || !canGenerateStudyMaterials || shortForOneCredit}
-                onPress={handleGenerateFlashcards}
-              >
-                Flashcards
-              </Button>
-
-              <Button
-                size="sm"
-                variant="secondary"
-                disabled={!canGenerateStudyMaterials || shortForOneCredit}
-                onPress={handleGenerateQuiz}
-              >
-
-                Test
-
-              </Button>
-
-            </View>
-
-            <View className="mt-3">
-              <AIUsageBadge variant="inline" cost={SMART_NOTES_CREDIT_COST[smartNotesDepth]} />
-            </View>
-
-          </Card></View> : null}
+          </View> : null}
 
         </ScrollView>
 

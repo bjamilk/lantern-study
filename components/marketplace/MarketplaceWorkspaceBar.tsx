@@ -1,19 +1,6 @@
 import React from 'react';
-import {
-  MagnifyingGlassIcon,
-  ShoppingBagIcon,
-  ShoppingCartIcon,
-  ChatBubbleLeftIcon,
-  ReceiptPercentIcon,
-  PlusIcon,
-  HeartIcon,
-  RectangleStackIcon,
-  SparklesIcon,
-  EllipsisHorizontalIcon,
-  BriefcaseIcon,
-  ChartBarIcon,
-} from '@heroicons/react/24/outline';
 import { Menu, MenuTrigger, MenuContent, MenuItem, MenuSeparator } from '../ui';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 export type MarketplaceWorkspaceSection =
   | 'browse'
@@ -67,17 +54,17 @@ type OverflowDest = {
   id: string;
   label: string;
   screen: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: AppIconName;
 };
 
 const OVERFLOW_DESTINATIONS: OverflowDest[] = [
-  { id: 'jobs', label: 'Jobs', screen: 'MarketplaceJobs', icon: BriefcaseIcon },
-  { id: 'orders', label: 'Orders', screen: 'MarketplaceOrders', icon: ReceiptPercentIcon },
-  { id: 'cart', label: 'Cart', screen: 'MarketplaceCart', icon: ShoppingCartIcon },
-  { id: 'purchases', label: 'Purchases', screen: 'MarketplacePurchases', icon: RectangleStackIcon },
-  { id: 'studyProducts', label: 'Study Products', screen: 'StudyProductDrafts', icon: SparklesIcon },
-  { id: 'selling', label: 'Selling', screen: 'MyListings', icon: ShoppingBagIcon },
-  { id: 'inquiries', label: 'Inquiries', screen: 'MarketplaceInquiries', icon: ChatBubbleLeftIcon },
+  { id: 'jobs', label: 'Jobs', screen: 'MarketplaceJobs', icon: 'briefcase' },
+  { id: 'orders', label: 'Orders', screen: 'MarketplaceOrders', icon: 'receipt' },
+  { id: 'cart', label: 'Cart', screen: 'MarketplaceCart', icon: 'cart' },
+  { id: 'purchases', label: 'Purchases', screen: 'MarketplacePurchases', icon: 'albums' },
+  { id: 'studyProducts', label: 'Study Products', screen: 'StudyProductDrafts', icon: 'sparkles' },
+  { id: 'selling', label: 'Selling', screen: 'MyListings', icon: 'bag' },
+  { id: 'inquiries', label: 'Inquiries', screen: 'MarketplaceInquiries', icon: 'chatbubble' },
 ];
 
 /**
@@ -109,7 +96,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
                 id: 'favorites',
                 label: 'Saved',
                 screen: 'MarketplaceFavorites',
-                icon: HeartIcon,
+                icon: 'heart' as const,
               },
             ]
           : []),
@@ -118,14 +105,14 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
   const toolbarMenu = (
     <Menu>
       <MenuTrigger aria-label="More marketplace tools" className={iconBtn}>
-        <EllipsisHorizontalIcon className="w-4 h-4" />
+        <AppIcon name="ellipsis-horizontal" size={16} />
       </MenuTrigger>
       <MenuContent align="end" className="w-56">
         {overflowItems.map((item) => (
           <MenuItem
             key={item.id}
             onSelect={() => onNavigate(item.screen)}
-            icon={<item.icon className="w-4 h-4" />}
+            icon={<AppIcon name={item.icon} size={16} />}
           >
             {item.label}
           </MenuItem>
@@ -133,7 +120,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
         {onPulse ? (
           <MenuItem
             onSelect={onPulse}
-            icon={<ChartBarIcon className="w-4 h-4" />}
+            icon={<AppIcon name="bar-chart" size={16} />}
           >
             {pulseActive ? 'Hide pulse' : 'Marketplace pulse'}
           </MenuItem>
@@ -152,7 +139,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
     moreItems.length > 0 ? (
       <Menu>
         <MenuTrigger aria-label="More marketplace tools" className={iconBtn}>
-          <EllipsisHorizontalIcon className="w-4 h-4" />
+          <AppIcon name="ellipsis-horizontal" size={16} />
         </MenuTrigger>
         <MenuContent align="end" className="w-48">
           {moreItems.map((item) => (
@@ -171,7 +158,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
       className="h-9 min-h-[36px] sm:h-8 px-2.5 sm:px-3 rounded-lg bg-lantern-primary text-white text-xs sm:text-sm font-semibold hover:bg-lantern-primary-dark transition-colors inline-flex items-center gap-1"
       aria-label={primaryLabel}
     >
-      <PlusIcon className="w-3.5 h-3.5" aria-hidden />
+      <AppIcon name="add" size={14} aria-hidden />
       <span className="hidden sm:inline">{primaryLabel}</span>
     </button>
   ) : null;
@@ -185,7 +172,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
       >
         {variant === 'toolbar' ? toolbarMenu : (
           <span className={navBtn(true)}>
-            <MagnifyingGlassIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <AppIcon name="search" size={14} className="shrink-0" aria-hidden />
             <span className="truncate">Browse</span>
           </span>
         )}
@@ -228,7 +215,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           className={navBtn(active === 'browse')}
           aria-current={active === 'browse' ? 'page' : undefined}
         >
-          <MagnifyingGlassIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="search" size={14} className="shrink-0" aria-hidden />
           <span>Goods</span>
         </button>
         <button
@@ -246,7 +233,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'orders' ? 'page' : undefined}
           aria-label="Orders"
         >
-          <ReceiptPercentIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="receipt" size={14} className="shrink-0" aria-hidden />
           <span>Orders</span>
         </button>
         <button
@@ -256,7 +243,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'cart' ? 'page' : undefined}
           aria-label="Cart"
         >
-          <ShoppingCartIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="cart" size={14} className="shrink-0" aria-hidden />
           <span>Cart</span>
         </button>
         <button
@@ -266,7 +253,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'purchases' ? 'page' : undefined}
           aria-label="Purchases"
         >
-          <RectangleStackIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="albums" size={14} className="shrink-0" aria-hidden />
           <span>Purchases</span>
         </button>
         <button
@@ -276,7 +263,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'studyProducts' ? 'page' : undefined}
           aria-label="Study Products"
         >
-          <SparklesIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="sparkles" size={14} className="shrink-0" aria-hidden />
           <span>Study Products</span>
         </button>
         <button
@@ -286,7 +273,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'selling' ? 'page' : undefined}
           aria-label="Selling"
         >
-          <ShoppingBagIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="bag" size={14} className="shrink-0" aria-hidden />
           <span>Selling</span>
         </button>
         <button
@@ -296,7 +283,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
           aria-current={active === 'inquiries' ? 'page' : undefined}
           aria-label="Inquiries"
         >
-          <ChatBubbleLeftIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+          <AppIcon name="chatbubble" size={14} className="shrink-0" aria-hidden />
           <span>Inquiries</span>
         </button>
         {showFavorites ? (
@@ -307,7 +294,7 @@ export const MarketplaceWorkspaceBar: React.FC<MarketplaceWorkspaceBarProps> = (
             aria-current={active === 'favorites' ? 'page' : undefined}
             aria-label="Favorites"
           >
-            <HeartIcon className="w-3.5 h-3.5 shrink-0" aria-hidden />
+            <AppIcon name="heart" size={14} className="shrink-0" aria-hidden />
             <span className="truncate hidden sm:inline">Saved</span>
           </button>
         ) : null}

@@ -38,6 +38,7 @@ import {
 import { handleValidationErrors, validateAIMessage } from '../middleware/validation';
 import { normalizeStudyPerformanceData } from '../services/aiStudyRecommendationInput';
 import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
+import { isFlashcardTypeMix } from '@lantern/shared/flashcards';
 
 const router = Router();
 let supabaseService: SupabaseService;
@@ -163,18 +164,30 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
 router.post('/generate-flashcards', aiRateLimitForFeature('generate_flashcards'), async (req: AuthenticatedRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { notes, count, style } = req.body;
+    // typeMix and difficulty come from the options sheet. The charge does not
+    // move with them — or with `count`: aiRateLimitForFeature has already
+    // taken exactly one AI use for this run, whatever it asks for.
+    const { notes, count, style, typeMix, difficulty } = req.body;
     if (!notes || typeof notes !== 'string' || notes.trim().length < 50) {
       res.status(400).json({ error: 'Notes must be at least 50 characters.' });
+      return;
+    }
+    if (typeMix !== undefined && !isFlashcardTypeMix(typeMix)) {
+      res.status(400).json({ error: 'typeMix must be one of basic, cloze, mixed.' });
       return;
     }
     const surface = surfaceFromRequest(req);
     const outcome = await runSyncOrEnqueue(
       'ai.generate.flashcards',
-      { notes, count, style, surface },
+      { notes, count, style, typeMix, difficulty, surface },
       userId,
       async () => {
-        const generated = await generateFlashcardsFromNotes(notes, { count, style });
+        const generated = await generateFlashcardsFromNotes(notes, {
+          count,
+          style,
+          typeMix,
+          difficulty,
+        });
         await recordInference(req, 'generate-flashcards', generated);
         if (userId && supabaseService) {
           await recordLearningEvent(supabaseService, {

@@ -1,10 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import {
-  BellAlertIcon,
-  BellSlashIcon,
-  BookmarkIcon,
-} from "@heroicons/react/24/outline";
-import { BookmarkIcon as BookmarkSolidIcon } from "@heroicons/react/24/solid";
+import { AppIcon } from './ui/AppIcon';
 import {
   JOBS_BROWSE_SEO,
   JOBS_COMPLIANCE_BANNER,
@@ -644,7 +639,7 @@ export default function JobsBoardScreen({
                     }
                     className="inline-flex items-center gap-1.5 text-sm font-medium text-lantern-primary hover:underline"
                   >
-                    <BellAlertIcon className="h-4 w-4" aria-hidden />
+                    <AppIcon name="notifications-alert" size={16} aria-hidden />
                     Save search &amp; get alerts
                   </button>
                 ) : null}
@@ -731,9 +726,9 @@ export default function JobsBoardScreen({
                           }`}
                         >
                           {saved.notify ? (
-                            <BellAlertIcon className="h-4 w-4" aria-hidden />
+                            <AppIcon name="notifications-alert" size={16} aria-hidden />
                           ) : (
-                            <BellSlashIcon className="h-4 w-4" aria-hidden />
+                            <AppIcon name="notifications-off" size={16} aria-hidden />
                           )}
                         </button>
                         <button
@@ -943,12 +938,9 @@ export default function JobsBoardScreen({
                               className="rounded-lg p-2 text-lantern-text-tertiary transition hover:bg-lantern-primary/10 hover:text-lantern-primary disabled:opacity-50"
                             >
                               {job.isSaved ? (
-                                <BookmarkSolidIcon
-                                  className="h-5 w-5 text-lantern-primary"
-                                  aria-hidden
-                                />
+                                <AppIcon name="bookmark" size={20} filled className="text-lantern-primary" aria-hidden />
                               ) : (
-                                <BookmarkIcon className="h-5 w-5" aria-hidden />
+                                <AppIcon name="bookmark" size={20} aria-hidden />
                               )}
                             </button>
                           </div>

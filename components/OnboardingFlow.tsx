@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { AcademicCapIcon, SparklesIcon, ArrowRightIcon, BookOpenIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { Button } from './ui';
 import Modal from './ui/Modal';
 import { buildStarterDeckPrompt } from '../utils/academicSetup';
@@ -134,7 +134,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
         {step === 'welcome' && (
           <div className="p-8 text-center">
             <div className="w-16 h-16 bg-lantern-primary-background dark:bg-lantern-primary-dark/40 rounded-2xl flex items-center justify-center mx-auto mb-4">
-              <SparklesIcon className="w-8 h-8 text-lantern-primary" />
+              <AppIcon name="sparkles" size={32} className="text-lantern-primary" />
             </div>
             <h2 id="onboarding-title" className="text-2xl font-bold mb-2 text-lantern-text">Welcome to Lantern Study</h2>
             <p className="text-lantern-text-secondary mb-6">
@@ -144,7 +144,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
               onClick={() => setStep(needsAcademicStep ? 'academic' : 'starter')}
               className="w-full mb-2"
             >
-              Get started <ArrowRightIcon className="w-4 h-4 ml-1" />
+              Get started <AppIcon name="arrow-forward" size={16} className="ml-1" />
             </Button>
             {!needsAcademicStep && (
               <button onClick={onSkip} className="text-sm text-lantern-text-tertiary hover:text-lantern-text-secondary">Skip for now</button>
@@ -192,7 +192,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                         : 'border-lantern-border text-lantern-text-secondary'
                     }`}
                   >
-                    <SparklesIcon className="w-4 h-4" /> From my course
+                    <AppIcon name="sparkles" size={16} /> From my course
                   </button>
                   <button
                     type="button"
@@ -205,7 +205,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
                         : 'border-lantern-border text-lantern-text-secondary'
                     }`}
                   >
-                    <BookOpenIcon className="w-4 h-4" /> Paste my notes
+                    <AppIcon name="book-open" size={16} /> Paste my notes
                   </button>
                 </div>
                 {mode === 'seeded' ? (
@@ -240,7 +240,7 @@ export const OnboardingFlow: React.FC<OnboardingFlowProps> = ({
 
         {step === 'done' && (
           <div className="p-8 text-center">
-            <AcademicCapIcon className="w-12 h-12 text-lantern-primary mx-auto mb-4" />
+            <AppIcon name="school" size={48} className="text-lantern-primary mx-auto mb-4" />
             <h2 id="onboarding-title" className="text-xl font-bold mb-2 text-lantern-text">You&apos;re all set!</h2>
             <p className="text-lantern-text-secondary mb-4">
               {generated

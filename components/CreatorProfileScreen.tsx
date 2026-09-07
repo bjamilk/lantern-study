@@ -6,14 +6,7 @@ import {
   type CreatorProfile,
 } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
-import {
-  ArrowLeftIcon,
-  CheckBadgeIcon,
-  AcademicCapIcon,
-  RectangleStackIcon,
-  UsersIcon,
-  StarIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 
 interface Props {
   userId: string;
@@ -91,7 +84,7 @@ export const CreatorProfileScreen: React.FC<Props> = ({ userId, onBack, onNaviga
             className="p-2 -ml-2 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors"
             aria-label="Back"
           >
-            <ArrowLeftIcon className="w-5 h-5" />
+            <AppIcon name="arrow-back" size={20} />
           </button>
           <h1 className="text-lg font-bold text-lantern-text">Creator</h1>
         </div>
@@ -130,7 +123,7 @@ export const CreatorProfileScreen: React.FC<Props> = ({ userId, onBack, onNaviga
                         className="inline-flex items-center gap-1 rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[11px] font-semibold text-lantern-primary"
                         title="Confirmed email and an active payout account"
                       >
-                        <CheckBadgeIcon className="w-3.5 h-3.5" /> Verified
+                        <AppIcon name="badge-check" size={14} /> Verified
                       </span>
                     )}
                     <span className="rounded-full bg-lantern-background-secondary px-2 py-0.5 text-[11px] font-semibold text-lantern-text-secondary">
@@ -142,7 +135,7 @@ export const CreatorProfileScreen: React.FC<Props> = ({ userId, onBack, onNaviga
                   )}
                   {(profile.institution || profile.programme || profile.studyLevel) && (
                     <p className="mt-1 flex items-center gap-1.5 text-sm text-lantern-text-secondary">
-                      <AcademicCapIcon className="w-4 h-4 shrink-0" />
+                      <AppIcon name="school" size={16} className="shrink-0" />
                       <span className="truncate">
                         {[profile.institution, profile.programme, profile.studyLevel ? `${profile.studyLevel}L` : null]
                           .filter(Boolean)
@@ -171,20 +164,20 @@ export const CreatorProfileScreen: React.FC<Props> = ({ userId, onBack, onNaviga
 
               <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {[
-                  { label: 'Packs', value: profile.stats.activePacks, Icon: RectangleStackIcon },
-                  { label: 'Learners helped', value: profile.stats.learnersHelped, Icon: UsersIcon },
+                  { label: 'Packs', value: profile.stats.activePacks, icon: 'albums' as const },
+                  { label: 'Learners helped', value: profile.stats.learnersHelped, icon: 'people' as const },
                   {
                     label: 'Rating',
                     value: profile.stats.reviewCount > 0 ? profile.stats.avgRating.toFixed(1) : '—',
-                    Icon: StarIcon,
+                    icon: 'star' as const,
                   },
-                  { label: 'Followers', value: profile.stats.followerCount, Icon: UsersIcon },
-                ].map(({ label, value, Icon }) => (
+                  { label: 'Followers', value: profile.stats.followerCount, icon: 'people' as const },
+                ].map(({ label, value, icon }) => (
                   <div
                     key={label}
                     className="rounded-xl bg-lantern-background-secondary/60 px-3 py-2.5 text-center"
                   >
-                    <Icon className="w-4 h-4 mx-auto text-lantern-text-tertiary mb-1" />
+                    <AppIcon name={icon} size={16} className="mx-auto text-lantern-text-tertiary mb-1" />
                     <p className="text-base font-bold text-lantern-text tabular-nums">{value}</p>
                     <p className="text-[11px] text-lantern-text-tertiary">{label}</p>
                   </div>

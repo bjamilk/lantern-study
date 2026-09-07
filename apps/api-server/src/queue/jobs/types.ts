@@ -81,7 +81,8 @@ export type AIJobName =
   | "notes.ai.summarize"
   | "notes.ai.quiz"
   | "notes.ai.flashcards"
-  | "ai.studyPack.generate";
+  | "ai.studyPack.generate"
+  | "notes.ai.narration";
 
 export type FileJobName =
   | "deck.importApkg"

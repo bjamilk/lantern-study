@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeftIcon, UserGroupIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import type { StudyRoomDetail } from '@lantern/shared/network';
 import {
   fetchStudyRoom,
@@ -152,7 +152,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
             className="p-2 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
             aria-label="Back"
           >
-            <ArrowLeftIcon className="w-5 h-5" />
+            <AppIcon name="arrow-back" size={20} />
           </button>
           <div className="min-w-0">
             <h1 className="text-xl font-semibold text-lantern-text">
@@ -197,7 +197,7 @@ export const StudyRoomScreen: React.FC<StudyRoomScreenProps> = ({
               ) : (
                 (room.participants ?? []).map((p) => (
                   <li key={p.userId} className="flex items-center gap-3 px-4 py-3">
-                    <UserGroupIcon className="h-4 w-4 text-lantern-text-tertiary" aria-hidden />
+                    <AppIcon name="people" size={16} className="text-lantern-text-tertiary" aria-hidden />
                     <span className="text-sm text-lantern-text">{p.name}</span>
                   </li>
                 ))

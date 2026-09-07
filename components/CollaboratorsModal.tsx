@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
-import { XCircleIcon, PlusIcon, UserIcon, TrashIcon } from '@heroicons/react/24/outline';
 import { DeckCollaborator, User } from '../types';
 import { addDeckCollaborator, fetchDeckCollaborators, searchUsers, removeDeckCollaborator } from '../services/supabase';
 
@@ -13,6 +12,7 @@ interface CollaboratorsModalProps {
 }
 
 import Modal from './ui/Modal';
+import { AppIcon } from './ui/AppIcon';
 
 const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose, deckId, currentUserId }) => {
   const [collaborators, setCollaborators] = useState<DeckCollaborator[]>([]);
@@ -126,7 +126,7 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
     >
         <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
           <h2 id="deck-collaborators-title" className="text-lg font-semibold text-lantern-text flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
+            <AppIcon name="person" size={20} className="text-lantern-primary" aria-hidden />
             Deck Collaborators
           </h2>
           <button
@@ -135,7 +135,7 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close deck collaborators dialog"
           >
-            <XCircleIcon className="w-6 h-6" aria-hidden />
+            <AppIcon name="close-circle" size={24} aria-hidden />
           </button>
         </div>
 
@@ -223,7 +223,7 @@ const CollaboratorsModal: React.FC<CollaboratorsModalProps> = ({ isOpen, onClose
                       title="Remove collaborator"
                       aria-label="Remove collaborator"
                     >
-                      <TrashIcon className="w-5 h-5" aria-hidden />
+                      <AppIcon name="trash" size={20} aria-hidden />
                     </button>
                   )}
                 </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { User } from '../types';
-import { AcademicCapIcon, AtSymbolIcon, LockClosedIcon, UserIcon, EyeIcon, EyeSlashIcon, ExclamationCircleIcon, PhoneIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import type MatterType from 'matter-js';
 import { supabase, fetchUserProfile, createUserProfile, checkUsernameAvailability, setCachedAuthToken, resendSignupConfirmation, sendPasswordResetEmail, verifySignupOtp, getWebAuthRedirectOrigin } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
@@ -700,7 +700,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 {editingVerifyEmail || !email.trim() ? (
                                   <div className="relative min-w-0">
                                     <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                                      <AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" />
+                                      <AppIcon name="at" size={20} className="text-lantern-text-tertiary" />
                                     </div>
                                     <input
                                       id="verifyEmail"
@@ -758,7 +758,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             <div>
                                 <label htmlFor="email" className="sr-only">Email address</label>
                                 <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AppIcon name="at" size={20} className="text-lantern-text-tertiary" /></div>
                                     <input id="email" name="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} title={email} className="w-full min-w-0 pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary text-sm" placeholder="Email address"/>
                                 </div>
                             </div>
@@ -766,9 +766,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                             <div>
                                 <label htmlFor="password" className="sr-only">Password</label>
                                 <div className="relative">
-                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AppIcon name="lock-closed" size={20} className="text-lantern-text-tertiary" /></div>
                                     <input id="password" name="password" type={showPassword ? 'text' : 'password'} autoComplete={isLoginView ? 'current-password' : 'new-password'} required value={password} onChange={(e) => setPassword(e.target.value)} aria-invalid={error ? true : undefined} aria-describedby={error ? 'auth-form-error' : undefined} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Password"/>
-                                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
+                                    <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <AppIcon name="eye-off" size={20} /> : <AppIcon name="eye" size={20} />}</button>
                                 </div>
                                 {!isLoginView && (
                                     <p className="mt-1 text-xs text-lantern-text-tertiary">At least 8 characters.</p>
@@ -779,9 +779,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                                 <div>
                                     <label htmlFor="confirmPassword" className="sr-only">Confirm Password</label>
                                     <div className="relative">
-                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><LockClosedIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AppIcon name="lock-closed" size={20} className="text-lantern-text-tertiary" /></div>
                                         <input id="confirmPassword" name="confirmPassword" type={showPassword ? 'text' : 'password'} autoComplete="new-password" required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} className="w-full pl-10 pr-10 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Confirm Password"/>
-                                        <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <EyeSlashIcon className="h-5 w-5"/> : <EyeIcon className="h-5 w-5"/>}</button>
+                                        <button type="button" onClick={() => setShowPassword(!showPassword)} aria-pressed={showPassword} className="absolute inset-y-0 right-0 pr-3 flex items-center text-lantern-text-tertiary hover:text-lantern-text-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"><span className="sr-only">{showPassword ? 'Hide password' : 'Show password'}</span>{showPassword ? <AppIcon name="eye-off" size={20} /> : <AppIcon name="eye" size={20} />}</button>
                                     </div>
                                 </div>
                             )}
@@ -792,7 +792,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                         <div>
                             <label htmlFor="resetEmail" className="sr-only">Email address</label>
                             <div className="relative">
-                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AtSymbolIcon className="h-5 w-5 text-lantern-text-tertiary" /></div>
+                                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none"><AppIcon name="at" size={20} className="text-lantern-text-tertiary" /></div>
                                 <input id="resetEmail" name="resetEmail" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border border-lantern-border rounded-lg bg-lantern-background dark:bg-lantern-surface-secondary text-lantern-text dark:text-lantern-text placeholder:text-lantern-text-tertiary focus:outline-none focus:ring-2 focus:ring-lantern-primary" placeholder="Email address"/>
                             </div>
                         </div>
@@ -800,21 +800,21 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                     {error && (
                       <div id="auth-form-error" role="alert" className="flex items-center text-sm text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400 p-3 rounded-lg">
-                        <ExclamationCircleIcon className="w-5 h-5 mr-2 flex-shrink-0"/>
+                        <AppIcon name="alert-circle" size={20} className="mr-2 flex-shrink-0" />
                         {error}
                       </div>
                     )}
 
                     {resetEmailSent && (
                         <div className="flex items-center text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-3 rounded-lg">
-                            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0"/>
+                            <AppIcon name="checkmark-circle" size={20} className="mr-2 flex-shrink-0" />
                             If an account exists for this email, a reset link is on its way. Check your inbox and spam folder.
                         </div>
                     )}
 
                     {verifyMessage && (
                         <div className="flex items-center text-sm text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400 p-3 rounded-lg">
-                            <CheckCircleIcon className="w-5 h-5 mr-2 flex-shrink-0"/>
+                            <AppIcon name="checkmark-circle" size={20} className="mr-2 flex-shrink-0" />
                             {verifyMessage}
                         </div>
                     )}

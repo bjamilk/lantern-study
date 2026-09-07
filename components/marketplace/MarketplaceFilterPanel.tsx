@@ -1,6 +1,6 @@
 import React from 'react';
-import { XMarkIcon } from '@heroicons/react/24/outline';
 import { formatCampusLabel, type MarketplaceCampus } from '@lantern/shared';
+import { AppIcon } from '../ui/AppIcon';
 
 /**
  * Item-condition options. Values mirror what the create flow actually writes to
@@ -183,7 +183,7 @@ export const MarketplaceFilterPanel: React.FC<MarketplaceFilterPanelProps> = ({
           onClick={onClearFilters}
           className="text-xs text-lantern-primary hover:text-lantern-primary-dark flex items-center gap-1 transition-colors"
         >
-          <XMarkIcon className="w-3.5 h-3.5" />
+          <AppIcon name="close" size={14} />
           Clear all filters
         </button>
       ) : null}

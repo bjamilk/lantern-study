@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useToastStore } from '../stores/toastStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
-import { ArrowUturnLeftIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { escapeHtml } from '../utils/helpers';
 import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
@@ -552,14 +552,14 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
                 title="Undo last grade (Z)"
                 className="px-5 py-2.5 border border-lantern-border text-lantern-text rounded-md font-semibold hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors inline-flex items-center gap-2"
               >
-                <ArrowUturnLeftIcon className="w-4 h-4" /> Undo last card
+                <AppIcon name="arrow-undo" size={16} /> Undo last card
               </button>
             )}
             <button
               onClick={onEndSession}
               className="px-6 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold transition-colors"
             >
-              <ArrowUturnLeftIcon className="w-5 h-5 mr-2" /> Back to Decks
+              <AppIcon name="arrow-undo" size={20} className="mr-2" /> Back to Decks
             </button>
           </div>
         </div>
@@ -611,7 +611,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
             title={canUndo ? 'Undo last grade (Z)' : 'Nothing to undo'}
             className="px-3 py-1 text-sm font-medium rounded-full border border-lantern-border text-lantern-text disabled:opacity-50 disabled:cursor-not-allowed hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary transition-colors inline-flex items-center gap-1"
           >
-            <ArrowUturnLeftIcon className="w-3.5 h-3.5" /> Undo
+            <AppIcon name="arrow-undo" size={14} /> Undo
           </button>
           <button
             type="button"
@@ -662,7 +662,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
                     }}
                     className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
                   >
-                    <SparklesIcon className="w-3.5 h-3.5" />
+                    <AppIcon name="sparkles" size={14} />
                     Ask Lantern
                   </button>
                 </div>

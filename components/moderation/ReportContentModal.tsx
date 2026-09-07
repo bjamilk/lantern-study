@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
+import { AppIcon } from '../ui/AppIcon';
 import Modal from '../ui/Modal';
-import { FlagIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import {
   CONTENT_REPORT_TARGET_LABELS,
   REPORT_DETAILS_MAX_LENGTH,
@@ -95,7 +95,7 @@ export const ReportContentModal: React.FC<ReportContentModalProps> = ({
       <div className="w-full">
         <div className="flex items-center justify-between gap-3 p-5 border-b border-lantern-border">
           <div className="flex items-center gap-2 min-w-0">
-            <FlagIcon className="w-5 h-5 text-red-500 shrink-0" aria-hidden />
+            <AppIcon name="flag" size={20} className="text-red-500 shrink-0" aria-hidden />
             <h3 id="report-content-title" className="text-lg font-bold text-lantern-text truncate">
               Report {typeLabel.toLowerCase()}
             </h3>
@@ -107,7 +107,7 @@ export const ReportContentModal: React.FC<ReportContentModalProps> = ({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close report form"
           >
-            <XMarkIcon className="w-5 h-5" aria-hidden />
+            <AppIcon name="close" size={20} aria-hidden />
           </button>
         </div>
 

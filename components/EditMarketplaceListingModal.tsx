@@ -21,16 +21,8 @@ import {
 } from '../utils/moderationForms';
 import { compressImage } from '../utils/imageCompression';
 import { MarketplaceListing } from '../types';
-import {
-  XMarkIcon,
-  PhotoIcon,
-  MapPinIcon,
-  CurrencyDollarIcon,
-  DocumentTextIcon,
-  PlusIcon,
-  TrashIcon
-} from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
+import { AppIcon } from './ui/AppIcon';
 
 interface EditMarketplaceListingModalProps {
   isOpen: boolean;
@@ -423,7 +415,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             className="min-h-[44px] min-w-[44px] flex items-center justify-center p-2 hover:bg-lantern-background-secondary rounded-lg transition-colors disabled:opacity-50"
             aria-label="Close edit listing dialog"
           >
-            <XMarkIcon className="w-5 h-5 text-lantern-text-secondary" aria-hidden />
+            <AppIcon name="close" size={20} className="text-lantern-text-secondary" aria-hidden />
           </button>
         </div>
 
@@ -473,7 +465,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-lantern-text mb-2">
-              <DocumentTextIcon className="w-4 h-4 inline mr-2" />
+              <AppIcon name="document-text" size={16} className="inline mr-2" />
               Title *
             </label>
             <input
@@ -504,7 +496,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-medium text-lantern-text mb-2">
-                <CurrencyDollarIcon className="w-4 h-4 inline mr-2" />
+                <AppIcon name="currency" size={16} className="inline mr-2" />
                 Asking price (₦)
               </label>
               <input
@@ -533,7 +525,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
             </div>
             <div>
               <label className="block text-sm font-medium text-lantern-text mb-2">
-                <MapPinIcon className="w-4 h-4 inline mr-2" />
+                <AppIcon name="location" size={16} className="inline mr-2" />
                 Campus or city <span className="text-red-500">*</span>
               </label>
               <CampusSearchSelect
@@ -619,7 +611,7 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
           {/* Images */}
           <div>
             <label className="block text-sm font-medium text-lantern-text mb-2">
-              <PhotoIcon className="w-4 h-4 inline mr-2" />
+              <AppIcon name="image" size={16} className="inline mr-2" />
               Images
             </label>
             <div className="grid grid-cols-3 gap-4">
@@ -636,13 +628,13 @@ const EditMarketplaceListingModal: React.FC<EditMarketplaceListingModalProps> = 
                     onClick={() => removeImage(index)}
                     className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600"
                   >
-                    <TrashIcon className="w-4 h-4" />
+                    <AppIcon name="trash" size={16} />
                   </button>
                 </div>
               ))}
               {formData.images.length < 5 && (
                 <label className="aspect-square rounded-lg border-2 border-dashed border-lantern-border flex flex-col items-center justify-center cursor-pointer hover:border-lantern-primary transition-colors">
-                  <PlusIcon className="w-8 h-8 text-lantern-text-tertiary" />
+                  <AppIcon name="add" size={32} className="text-lantern-text-tertiary" />
                   <span className="text-sm text-lantern-text-secondary mt-1">Add Image</span>
                   <input
                     type="file"

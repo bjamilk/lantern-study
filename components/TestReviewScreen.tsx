@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { TestResult, QuestionType, UserAnswerRecord, Message, TestQuestion, TestConfig, TestSessionData, Group } from '../types';
-import { CheckCircleIcon, XCircleIcon, InformationCircleIcon, ArrowLeftOnRectangleIcon, ChartBarIcon, ArrowPathIcon, AcademicCapIcon, TrophyIcon, CheckBadgeIcon, HandThumbUpIcon, FaceSmileIcon, ArrowTrendingUpIcon, PresentationChartLineIcon } from '@heroicons/react/24/solid';
-import { SparklesIcon } from '@heroicons/react/24/outline';
 import Confetti from './Confetti';
 import TestAnalysisModal from './TestAnalysisModal';
 import AIUsageInline from './AIUsageInline';
@@ -39,7 +38,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         return {
             message: "Perfect Score! Absolutely brilliant!",
             colorClass: "text-yellow-500 dark:text-yellow-400",
-            icon: TrophyIcon,
+            icon: 'trophy' as AppIconName,
             showConfetti: true,
             rank: 'S', rankColor: 'bg-gradient-to-br from-yellow-400 to-amber-500 text-white',
         };
@@ -48,7 +47,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         return {
             message: "Outstanding! Top of the class performance!",
             colorClass: "text-green-500 dark:text-green-400",
-            icon: CheckBadgeIcon,
+            icon: 'badge-check' as AppIconName,
             showConfetti: true,
             rank: 'A', rankColor: 'bg-gradient-to-br from-green-400 to-emerald-600 text-white',
         };
@@ -57,7 +56,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         return {
             message: "Excellent work! You've mastered the material.",
             colorClass: "text-green-500 dark:text-green-400",
-            icon: CheckBadgeIcon,
+            icon: 'badge-check' as AppIconName,
             showConfetti: false,
             rank: 'B', rankColor: 'bg-gradient-to-br from-blue-400 to-blue-600 text-white',
         };
@@ -66,7 +65,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         return {
             message: "Great job! Keep reviewing to solidify your knowledge.",
             colorClass: "text-lantern-primary-text",
-            icon: HandThumbUpIcon,
+            icon: 'thumbs-up' as AppIconName,
             showConfetti: false,
             rank: 'C', rankColor: 'bg-gradient-to-br from-lantern-primary-light to-lantern-primary text-white',
         };
@@ -75,7 +74,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         return {
             message: "Good effort. Consistent practice will make a difference.",
             colorClass: "text-lantern-primary-text",
-            icon: FaceSmileIcon,
+            icon: 'happy' as AppIconName,
             showConfetti: false,
             rank: 'D', rankColor: 'bg-gradient-to-br from-orange-400 to-orange-600 text-white',
         };
@@ -83,7 +82,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
     return {
         message: "Don't be discouraged. Use this as a guide for what to study next.",
         colorClass: "text-red-500 dark:text-red-400",
-        icon: ArrowTrendingUpIcon,
+        icon: 'trending-up' as AppIconName,
         showConfetti: false,
         rank: 'F', rankColor: 'bg-gradient-to-br from-red-400 to-red-600 text-white',
     };
@@ -131,7 +130,6 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
   const failedQuestions = session.questions.filter(
     q => isAnswerRecorded(session.userAnswers[q.id]) && !session.userAnswers[q.id]?.isCorrect
   );
-  const Icon = scoreFeedback.icon;
 
   return (
     <div className="flex-1 flex flex-col p-4 md:p-6 bg-lantern-background text-lantern-text overflow-y-auto relative">
@@ -145,20 +143,20 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                     className="px-3 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 dark:focus:ring-teal-500 focus:ring-offset-2 flex items-center text-body"
                     aria-label="View Dashboard"
                 >
-                    <ChartBarIcon className="w-5 h-5 mr-1.5" /> Dashboard
+                    <AppIcon name="bar-chart" size={20} className="mr-1.5" /> Dashboard
                 </button>
                 <button
                     onClick={onExit}
                     className="px-3 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body"
                     aria-label="Return to Chat"
                 >
-                    <ArrowLeftOnRectangleIcon className="w-5 h-5 mr-1.5" /> Return to Chat
+                    <AppIcon name="log-out" size={20} className="mr-1.5" /> Return to Chat
                 </button>
             </div>
         </div>
         <div className="mt-4 p-4 bg-lantern-surface rounded-lg shadow-md">
             <div className="text-center mb-4 pb-4 border-b border-lantern-border">
-                <Icon className={`w-16 h-16 mx-auto ${scoreFeedback.colorClass}`} />
+                <AppIcon name={scoreFeedback.icon} size={64} className={`mx-auto ${scoreFeedback.colorClass}`} />
                 <p className={`text-title font-bold mt-2 ${scoreFeedback.colorClass}`}>{scoreFeedback.message}</p>
             </div>
             <div className="flex flex-col md:flex-row justify-around items-center space-y-3 md:space-y-0 md:space-x-4">
@@ -202,7 +200,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
             className="flex-1 px-4 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-body font-medium"
             aria-label="Retake this test with similar settings"
           >
-            <ArrowPathIcon className="w-5 h-5 mr-2" />
+            <AppIcon name="refresh" size={20} className="mr-2" />
             Retake Test
           </button>
           <button
@@ -211,7 +209,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
             className="flex-1 px-4 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center justify-center text-body font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             aria-label={`Practice the ${failedQuestions.length} questions you failed`}
           >
-            <AcademicCapIcon className="w-5 h-5 mr-2" />
+            <AppIcon name="school" size={20} className="mr-2" />
             Practice Failed ({failedQuestions.length})
           </button>
            <button
@@ -219,7 +217,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
             className="flex-1 px-4 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 focus:ring-offset-2 flex items-center justify-center text-body font-medium"
             aria-label="View detailed analysis of this test"
           >
-            <PresentationChartLineIcon className="w-5 h-5 mr-2" />
+            <AppIcon name="easel" size={20} className="mr-2" />
             Detailed Analysis
           </button>
         </div>
@@ -248,8 +246,8 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
             <div key={question.id} className="bg-lantern-surface p-4 rounded-lg shadow-md">
               <h2 className="text-heading mb-2 text-lantern-text"> 
                 Question {index + 1}: {isCorrect ? 
-                <CheckCircleIcon className="w-5 h-5 inline-block ml-2 text-green-500 dark:text-green-400" /> : 
-                (wasAnswered ? <XCircleIcon className="w-5 h-5 inline-block ml-2 text-red-500 dark:text-red-400" /> : <InformationCircleIcon className="w-5 h-5 inline-block ml-2 text-yellow-500 dark:text-yellow-400" />)
+                <AppIcon name="checkmark-circle" size={20} className="inline-block ml-2 text-green-500 dark:text-green-400" /> : 
+                (wasAnswered ? <AppIcon name="close-circle" size={20} className="inline-block ml-2 text-red-500 dark:text-red-400" /> : <AppIcon name="information-circle" size={20} className="inline-block ml-2 text-yellow-500 dark:text-yellow-400" />)
                 }
               </h2>
               <p className="text-lantern-text mb-3 whitespace-pre-wrap">{question.questionStem}</p>
@@ -335,7 +333,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                             <div key={prompt.id} className="p-2 border dark:border-lantern-border rounded-md text-body">
                                 <div className="flex flex-col items-start sm:flex-row sm:justify-between sm:items-center gap-1">
                                     <span className="font-medium text-lantern-text">{prompt.text}</span>
-                                    {isMatchCorrect ? <CheckCircleIcon className="w-5 h-5 text-green-500 flex-shrink-0" /> : <XCircleIcon className="w-5 h-5 text-red-500 flex-shrink-0" />}
+                                    {isMatchCorrect ? <AppIcon name="checkmark-circle" size={20} className="text-green-500 flex-shrink-0" /> : <AppIcon name="close-circle" size={20} className="text-red-500 flex-shrink-0" />}
                                 </div>
                                 <div className="pl-0 sm:pl-4 mt-1">
                                     <p>Your answer: <span className={`italic ${isMatchCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}`}>{userAnswerText || <span className="text-lantern-text-secondary">Not answered</span>}</span></p>
@@ -395,7 +393,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
               
               <div className="mt-3 pt-3 border-t border-lantern-border">
                 <h4 className="text-body font-semibold text-lantern-text-secondary flex items-center">
-                    <InformationCircleIcon className="w-5 h-5 mr-1 text-lantern-primary-text" /> Why:
+                    <AppIcon name="information-circle" size={20} className="mr-1 text-lantern-primary-text" /> Why:
                 </h4>
                 {/* Every reviewed question owes a rationale. When there is none
                     the screen says so — an empty paragraph read as a rendering
@@ -423,7 +421,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                   {aiExplanations[index] ? (
                     <div className="p-3 bg-purple-50 dark:bg-purple-900/30 border border-lantern-primary/30 rounded-md">
                       <h4 className="text-body font-semibold text-purple-700 dark:text-purple-300 flex items-center mb-1">
-                        <SparklesIcon className="w-4 h-4 mr-1" /> AI Explanation:
+                        <AppIcon name="sparkles" size={16} className="mr-1" /> AI Explanation:
                       </h4>
                       <p className="text-body text-lantern-text whitespace-pre-wrap">{aiExplanations[index]}</p>
                     </div>
@@ -453,7 +451,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                         disabled={aiExplainLoading[index]}
                         className="flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-lantern-primary-text bg-lantern-primary-background hover:bg-lantern-primary-background border border-lantern-primary/30 rounded-lg transition-colors disabled:opacity-50"
                       >
-                        <SparklesIcon className="w-4 h-4" />
+                        <AppIcon name="sparkles" size={16} />
                         {aiExplainLoading[index] ? 'Explaining...' : 'Explain with AI'}
                       </button>
                       <AIUsageInline className="ml-2" />
@@ -470,7 +468,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
             onClick={onExit}
             className="px-6 py-3 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body mx-auto"
             >
-             <ArrowLeftOnRectangleIcon className="w-5 h-5 mr-2" /> Return to Chat
+             <AppIcon name="log-out" size={20} className="mr-2" /> Return to Chat
             </button>
       </div>
 

@@ -28,6 +28,7 @@ const SETTINGS_CATEGORY_KEYS = [
   'sync',
   'marketplace',
   'featureTips',
+  'flashcardGeneration',
 ] as const;
 
 export function stripPrivilegedSettings(

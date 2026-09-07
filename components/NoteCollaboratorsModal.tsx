@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { confirmDialog } from '../stores/confirmStore';
 import { useToastStore } from '../stores/toastStore';
-import { XCircleIcon, UserIcon, TrashIcon, LinkIcon, ClipboardDocumentIcon } from '@heroicons/react/24/outline';
 import { User } from '../types';
 import { searchUsers } from '../services/supabase';
 import * as notesApi from '../services/notes';
 import Modal from './ui/Modal';
 import { buildNoteSharePath } from '../utils/appRoutes';
+import { AppIcon } from './ui/AppIcon';
 
 interface NoteCollaborator {
   noteId: string;
@@ -198,7 +198,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
     >
         <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
           <h2 id="note-collaborators-title" className="text-lg font-semibold text-lantern-text flex items-center gap-2">
-            <UserIcon className="w-5 h-5 text-lantern-primary" aria-hidden />
+            <AppIcon name="person" size={20} className="text-lantern-primary" aria-hidden />
             Share note
           </h2>
           <button
@@ -207,7 +207,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
             className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-text rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
             aria-label="Close note collaborators dialog"
           >
-            <XCircleIcon className="w-6 h-6" aria-hidden />
+            <AppIcon name="close-circle" size={24} aria-hidden />
           </button>
         </div>
 
@@ -274,7 +274,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
           </div>
 
           <div className="border-t border-lantern-border pt-4">
-            <h3 className="mb-2 text-sm font-semibold text-lantern-text flex items-center gap-2"><LinkIcon className="h-4 w-4" />Share link</h3>
+            <h3 className="mb-2 text-sm font-semibold text-lantern-text flex items-center gap-2"><AppIcon name="link" size={16} />Share link</h3>
             <div className="flex gap-2">
               <select value={linkRole} onChange={(e) => setLinkRole(e.target.value as 'viewer' | 'editor')} className="min-h-[44px] flex-1 rounded-lg border border-lantern-border bg-lantern-surface px-2 text-sm text-lantern-text" aria-label="Share link permission">
                 <option value="viewer">Viewer link</option>
@@ -288,8 +288,8 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
               {shareLinks.length === 0 ? <p className="text-xs text-lantern-text-muted">No active share links.</p> : shareLinks.map((link) => (
                 <div key={link.id} className="flex items-center gap-2 rounded-lg bg-lantern-background-secondary p-2">
                   <span className="flex-1 text-xs capitalize text-lantern-text">{link.role} link{link.expiresAt ? ` · expires ${new Date(link.expiresAt).toLocaleDateString()}` : ''}</span>
-                  {link.token && <button type="button" onClick={() => void copyShareUrl(link.token!)} className="min-h-[36px] min-w-[36px] text-lantern-primary" aria-label="Copy share link"><ClipboardDocumentIcon className="mx-auto h-4 w-4" /></button>}
-                  <button type="button" onClick={() => void handleRevokeLink(link.id)} className="min-h-[36px] min-w-[36px] text-lantern-error" aria-label="Revoke share link"><TrashIcon className="mx-auto h-4 w-4" /></button>
+                  {link.token && <button type="button" onClick={() => void copyShareUrl(link.token!)} className="min-h-[36px] min-w-[36px] text-lantern-primary" aria-label="Copy share link"><AppIcon name="clipboard-copy" size={16} className="mx-auto" /></button>}
+                  <button type="button" onClick={() => void handleRevokeLink(link.id)} className="min-h-[36px] min-w-[36px] text-lantern-error" aria-label="Revoke share link"><AppIcon name="trash" size={16} className="mx-auto" /></button>
                 </div>
               ))}
             </div>
@@ -316,7 +316,7 @@ const NoteCollaboratorsModal: React.FC<NoteCollaboratorsModalProps> = ({
                         <option value="editor">Editor</option>
                       </select>
                       <button type="button" onClick={() => void handleRemove(collab.userId)} className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-error hover:opacity-80 rounded-lg" title="Remove collaborator" aria-label="Remove collaborator">
-                        <TrashIcon className="w-5 h-5" aria-hidden />
+                        <AppIcon name="trash" size={20} aria-hidden />
                       </button>
                     </div>
                   )}

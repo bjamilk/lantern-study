@@ -1,11 +1,6 @@
 import React, { useState } from 'react';
-import {
-  ClipboardDocumentIcon,
-  ArrowUpOnSquareIcon,
-  CheckIcon,
-  LinkIcon,
-} from '@heroicons/react/24/outline';
 import { useToastStore } from '../stores/toastStore';
+import { AppIcon } from './ui/AppIcon';
 
 interface GroupInviteLinkPanelProps {
   inviteLink: string;
@@ -64,7 +59,7 @@ const GroupInviteLinkPanel: React.FC<GroupInviteLinkPanelProps> = ({
       }`}
     >
       <div className="flex items-center gap-2">
-        <LinkIcon className="w-4 h-4 text-lantern-primary shrink-0" />
+        <AppIcon name="link" size={16} className="text-lantern-primary shrink-0" />
         <h3 className="text-sm font-semibold text-lantern-primary-dark dark:text-lantern-primary-light">
           Invite link
         </h3>
@@ -88,12 +83,12 @@ const GroupInviteLinkPanel: React.FC<GroupInviteLinkPanelProps> = ({
         >
           {copied ? (
             <>
-              <CheckIcon className="w-4 h-4" />
+              <AppIcon name="checkmark" size={16} />
               Copied
             </>
           ) : (
             <>
-              <ClipboardDocumentIcon className="w-4 h-4" />
+              <AppIcon name="clipboard-copy" size={16} />
               Copy link
             </>
           )}
@@ -103,7 +98,7 @@ const GroupInviteLinkPanel: React.FC<GroupInviteLinkPanelProps> = ({
           onClick={() => void handleShare()}
           className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-lantern-primary dark:text-lantern-primary-light bg-lantern-surface hover:bg-lantern-primary-background dark:hover:bg-lantern-surface-secondary border border-lantern-primary/30 dark:border-lantern-border rounded-md"
         >
-          <ArrowUpOnSquareIcon className="w-4 h-4" />
+          <AppIcon name="share" size={16} />
           {canNativeShare ? 'Share' : 'Copy to share'}
         </button>
       </div>

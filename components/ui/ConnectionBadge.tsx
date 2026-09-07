@@ -1,10 +1,5 @@
 import React from 'react';
-import {
-  SignalIcon,
-  WifiIcon,
-  ArrowPathIcon,
-  ClockIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon, type AppIconName } from './AppIcon';
 import { getConnectionStatus, type ConnectionStatusInput } from '@lantern/shared/design';
 
 interface ConnectionBadgeProps {
@@ -17,12 +12,12 @@ interface ConnectionBadgeProps {
   className?: string;
 }
 
-const iconMap = {
-  wifi: WifiIcon,
-  'wifi-off': SignalIcon,
-  sync: ArrowPathIcon,
-  signal: SignalIcon,
-  clock: ClockIcon,
+const iconMap: Record<string, AppIconName> = {
+  wifi: 'wifi',
+  'wifi-off': 'cellular',
+  sync: 'refresh',
+  signal: 'cellular',
+  clock: 'time',
 };
 
 const stateStyles: Record<string, string> = {
@@ -50,7 +45,7 @@ export const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({
     lastSyncedAt,
   };
   const status = getConnectionStatus(input);
-  const Icon = iconMap[status.icon];
+  const iconName = iconMap[status.icon];
 
   return (
     <div
@@ -58,7 +53,11 @@ export const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({
       aria-live="polite"
       className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${stateStyles[status.state]} ${className}`}
     >
-      <Icon className={`w-3.5 h-3.5 shrink-0 ${status.state === 'syncing' ? 'animate-spin' : ''}`} aria-hidden />
+      <AppIcon
+        name={iconName}
+        size={14}
+        className={`shrink-0 ${status.state === 'syncing' ? 'animate-spin' : ''}`}
+      />
       <span>{compact ? status.shortLabel : status.label}</span>
     </div>
   );

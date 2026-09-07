@@ -1,10 +1,10 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { XCircleIcon } from '@heroicons/react/24/outline';
 import { Course, Group } from '../types'; // Import Group type
 import Modal from './ui/Modal';
 import { CoursePicker } from './academic/CoursePicker';
+import { AppIcon } from './ui/AppIcon';
 
 interface CreateGroupModalProps {
   isOpen: boolean;
@@ -74,7 +74,7 @@ const CreateGroupModal: React.FC<CreateGroupModalProps> = ({
         <div className="flex justify-between items-center mb-4">
           <h2 id="create-group-modal-title" className="text-xl font-semibold text-lantern-text dark:text-lantern-text">{modalTitle}</h2>
           <button onClick={onClose} className="text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary dark:hover:text-lantern-text" aria-label="Close modal">
-            <XCircleIcon className="w-6 h-6" />
+            <AppIcon name="close-circle" size={24} />
           </button>
         </div>
         {parentPath.length > 0 && (

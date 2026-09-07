@@ -13,10 +13,10 @@ import {
 } from '../services/supabase';
 import { MarketplaceOrder } from '../types';
 import { useAuthStore } from '../stores/authStore';
-import { ArrowLeftIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
 import OrderReceipt from './marketplace/OrderReceipt';
 import OpenDisputeModal from './marketplace/OpenDisputeModal';
+import { AppIcon } from './ui/AppIcon';
 
 interface MarketplaceOrderDetailScreenProps {
   orderId: string;
@@ -238,7 +238,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
       />
       <div className="flex items-center gap-3 p-4 border-b border-lantern-border bg-lantern-surface dark:bg-lantern-surface">
         <button type="button" onClick={onBack} className="p-2 rounded-lg hover:bg-lantern-background-secondary dark:hover:bg-lantern-surface-secondary">
-          <ArrowLeftIcon className="w-5 h-5" />
+          <AppIcon name="arrow-back" size={20} />
         </button>
         <h1 className="text-lg font-semibold flex-1 truncate">{order.listing?.title || 'Order'}</h1>
       </div>
@@ -541,7 +541,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         {order.status === 'completed' && (
           <div className="p-4 rounded-xl bg-lantern-surface dark:bg-lantern-surface border border-lantern-border space-y-3">
             <h2 className="font-semibold flex items-center gap-2">
-              <CheckCircleIcon className="w-5 h-5 text-green-500" />
+              <AppIcon name="checkmark-circle" size={20} className="text-green-500" />
               Transaction receipt
             </h2>
             <p className="text-sm text-lantern-text-secondary dark:text-lantern-text-tertiary">

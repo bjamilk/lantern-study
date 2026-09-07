@@ -18,6 +18,12 @@ import {
   type SmartNotesDepth,
 } from '@lantern/shared/utils/smartNotes';
 import { EXAM_FORMAT_LABELS, isExamFormat, type ExamFormat } from '@lantern/shared/types';
+import {
+  isFlashcardTypeMix,
+  planClozeCount,
+  type FlashcardTypeMix,
+} from '@lantern/shared/flashcards';
+import { normalizeFlashcardCount } from '@lantern/shared/utils/flashcardGeneration';
 export { SMART_NOTES_GUIDANCE_MAX_CHARS };
 export type { SmartNotesDepth };
 export type { ExamFormat };
@@ -96,7 +102,7 @@ function parseOpenAiUsage(data: Record<string, any>): AiUsage | undefined {
   };
 }
 
-interface ChatOptions {
+export interface ChatOptions {
   temperature?: number;
   maxTokens?: number;
   jsonOutput?: boolean;
@@ -735,7 +741,13 @@ function recordDailyTokenUsage(provider: string, usage: AiUsage | undefined): vo
   dailyTokenTotals.byProvider.set(provider, row);
 }
 
-async function chatCompletion(
+/**
+ * Exported so a service that owns its own prompts (narrationService) can reach
+ * the provider fallback chain without re-implementing it. Everything about
+ * cost, cooldowns, usage logging and the mock fallback lives here; a caller
+ * that went straight to a provider would lose all of it.
+ */
+export async function chatCompletion(
   systemPrompt: string,
   userPrompt: string,
   options: ChatOptions = {}
@@ -879,7 +891,8 @@ async function chatCompletion(
 
 // ─── JSON Extraction ────────────────────────────────────────
 
-function extractJSON(text: string): any {
+/** Exported for services that own their own prompts (narrationService). */
+export function extractJSON(text: string): any {
   try {
     return JSON.parse(text);
   } catch {
@@ -1221,7 +1234,8 @@ function clozePrompt(clozeText: string): string {
  * that live inside a sentence (dates, mechanisms, named steps), and worse for
  * everything else — so the deck wants a mix, not a mode. Rather than asking
  * the student to pick a card type they have no way to evaluate, the generator
- * asks the model for roughly {@link CLOZE_TARGET_RATIO} cloze and maps
+ * asks the model for the mix `planClozeCount` decides (roughly
+ * {@link CLOZE_TARGET_RATIO} cloze unless the student picked a mix) and maps
  * whatever comes back.
  *
  * The mapping is strict on purpose: a card the model *labelled* cloze but did
@@ -1432,13 +1446,27 @@ Return ONLY valid JSON: {"questions":[{"text":"the essay question","rubric":"- p
 
 export async function generateFlashcardsFromNotes(
   notes: string,
-  options: { count?: number; style?: 'concise' | 'detailed' } = {}
+  options: {
+    count?: number;
+    style?: 'concise' | 'detailed';
+    /** basic | cloze | mixed — the sheet's type mix. Defaults to mixed. */
+    typeMix?: string;
+    difficulty?: string;
+  } = {}
 ): Promise<{ flashcards: GeneratedFlashcard[]; provider: string; usage?: AiUsage }> {
   const { count = 15, style = 'concise' } = options;
-  const adjustedCount = Math.min(Math.max(count, 10), 20);
+  // Same clamp the clients apply, from the same constant: a sheet that offers
+  // 30 must not silently get 20 back.
+  const adjustedCount = normalizeFlashcardCount(Math.round(Number(count) || 0));
+  const typeMix: FlashcardTypeMix = isFlashcardTypeMix(options.typeMix) ? options.typeMix : 'mixed';
+  const difficulty =
+    options.difficulty === 'easy' || options.difficulty === 'medium' || options.difficulty === 'hard'
+      ? options.difficulty
+      : undefined;
   const source = notes.substring(0, 6000);
 
-  const clozeCount = Math.max(1, Math.round(adjustedCount * CLOZE_TARGET_RATIO));
+  // One mix rule, shared with the sheet that promised it.
+  const clozeCount = planClozeCount(adjustedCount, typeMix);
 
   return withAiResponseCache(
     'generate_flashcards',
@@ -1446,17 +1474,31 @@ export async function generateFlashcardsFromNotes(
     // promptVersion is part of the key because the prompt below changed: without
     // it, decks cached in the last 7 days would replay with zero cloze cards and
     // the feature would look broken for exactly the notes people use most.
-    { count: adjustedCount, style, promptVersion: 'cloze-1' },
+    // typeMix and difficulty ride in the key for the same reason: a cached
+    // all-basic deck must never be replayed for someone who asked for cloze.
+    { count: adjustedCount, style, typeMix, difficulty, promptVersion: 'cloze-2' },
     async () => {
+      const mixInstruction =
+        typeMix === 'basic'
+          ? `Every card must be "basic". Do not produce any cloze cards.`
+          : typeMix === 'cloze'
+            ? `Every one of the ${adjustedCount} cards must be "cloze".`
+            : `Exactly ${clozeCount} of the ${adjustedCount} cards must be "cloze"; the rest are "basic".`;
+      const difficultyInstruction =
+        difficulty === 'easy'
+          ? '\nKeep the cards introductory: core terms and plain definitions.'
+          : difficulty === 'hard'
+            ? '\nMake the cards demanding: application, comparison and edge cases rather than recall of single terms.'
+            : '';
       const systemPrompt = `You are an expert educator creating flashcards for spaced repetition.
 Generate exactly ${adjustedCount} flashcards.
-${style === 'concise' ? 'Brief, memorable answers.' : 'Detailed with examples.'}
+${style === 'concise' ? 'Brief, memorable answers.' : 'Detailed with examples.'}${difficultyInstruction}
 
 Card types — every card has "cardType":
 - "basic": a term/question on the front, the answer on the back.
 - "cloze": a full sentence from the material with the key words hidden, written in "clozeText" using Anki syntax, e.g. "Photosynthesis converts light energy into {{c1::chemical energy}} stored as {{c2::glucose}}."
 
-Exactly ${clozeCount} of the ${adjustedCount} cards must be "cloze"; the rest are "basic".
+${mixInstruction}
 Use cloze for facts that only make sense inside a sentence (definitions in context, mechanisms, sequences, dates, named steps).
 Use basic for standalone terms, comparisons and "why" questions.
 Cloze rules: hide 1-2 short spans per sentence, never a whole clause; the sentence must still read as a sentence with the hidden words removed; still fill "front" (the sentence with blanks) and "back" (the hidden words).
@@ -1473,7 +1515,18 @@ Return ONLY valid JSON: {"flashcards":[{"cardType":"basic","front":"term","back"
       const cards = parsed.flashcards || parsed;
       if (!Array.isArray(cards)) throw new Error('Invalid response format');
 
-      const mappedCards = cards.slice(0, adjustedCount).map(normalizeGeneratedFlashcard);
+      const mappedCards = cards
+        .slice(0, adjustedCount)
+        .map(normalizeGeneratedFlashcard)
+        // "Basic only" has to mean it. A model that ignores the instruction
+        // and returns a deletion would otherwise hand back cloze cards to a
+        // student who explicitly asked for none; front/back are already
+        // rebuilt from the deletion, so the downgraded card still reviews.
+        .map((card: GeneratedFlashcard) =>
+          typeMix === 'basic' && card.cardType === 'cloze'
+            ? { ...card, cardType: 'basic' as const, clozeText: undefined }
+            : card
+        );
 
       // A card with a blank side cannot be reviewed — it saves and syncs as a
       // real card and shows up empty in study sessions.
@@ -1796,6 +1849,18 @@ export interface CompanionContext {
   noteContext?: string;
   noteTitle?: string;
   noteId?: string;
+  /**
+   * Page scope, when the student is walking through a document.
+   *
+   * When these are set, `noteContext` is that ONE page and nothing else — not
+   * the note, not the class corpus. That is what makes the grounding badge
+   * true on a page: an answer marked "from your notes" came from the page the
+   * student is looking at, and a blank page leaves `noteContext` empty, which
+   * the existing clamp already turns into "answered from general knowledge".
+   */
+  attachmentId?: string;
+  /** 0-based, matching `note_attachment_pages.page_index`. */
+  pageIndex?: number;
   classId?: string;
   studyGoal?: string;
   /** Study mode for this turn. Sanitized server-side; defaults to 'explain'. */
@@ -1874,6 +1939,13 @@ export async function companionChat(
     noteTitle,
     studyGoal,
   } = context;
+  // A page scope is a fact about WHERE the excerpts came from, so it only
+  // means anything when there are excerpts. It never changes the grounding
+  // decision — that stays with the clamp below.
+  const pageIndex =
+    typeof context.pageIndex === 'number' && Number.isFinite(context.pageIndex) && context.pageIndex >= 0
+      ? Math.floor(context.pageIndex)
+      : null;
   const mode = normalizeCompanionMode(context.mode);
 
   const clarity = assessCompanionMessageClarity(userMessage, history);
@@ -1924,8 +1996,11 @@ export async function companionChat(
     currentScreen ? `Current screen: ${sanitizeUntrusted(currentScreen, 60)}` : '',
     activeSessionSummary ? `Active session: ${sanitizeUntrusted(activeSessionSummary, 200)}` : '',
     noteTitle ? `Active note title: ${sanitizeUntrusted(noteTitle, 120)}` : '',
+    pageIndex !== null ? `The student is reading page ${pageIndex + 1} of this document.` : '',
     hasNoteExcerpts
-      ? `The excerpts below are the parts of that note that best match this question (excerpt numbers are positions in the full note, which has ${noteSelection.totalChunks} parts).`
+      ? pageIndex !== null
+        ? `The excerpts below come from page ${pageIndex + 1} ONLY, and are the parts of that page that best match this question. Nothing from the rest of the document is in front of you.`
+        : `The excerpts below are the parts of that note that best match this question (excerpt numbers are positions in the full note, which has ${noteSelection.totalChunks} parts).`
       : '',
     noteExcerptBlock,
   ].filter(Boolean).join('\n');
@@ -1950,7 +2025,11 @@ ${contextBlock ? `Here is what you know about this student right now:\n${context
 ${hasNoteExcerpts
   ? `Answering from the note (critical):
 - Prefer the excerpts above. When the excerpts contain the answer, use their wording and say which excerpt it came from.
-- The excerpts are only part of the note. If they do not contain the answer, say so plainly ("your note doesn't cover this, but…") before answering from general knowledge.
+- The excerpts are only part of the note. If they do not contain the answer, say so plainly ("your note doesn't cover this, but…") before answering from general knowledge.${
+  pageIndex !== null
+    ? `\n- You are only being shown page ${pageIndex + 1}. If the answer is not on it, say "this page doesn't cover that" rather than guessing what another page says.`
+    : ''
+}
 - Never state something as being "in your notes" unless it is in the excerpts above.
 
 Before any ACTIONS line, end your reply with one line saying where the answer came from, exactly one of:
@@ -2432,11 +2511,33 @@ async function generateSmartNoteContentUncached(
   }
 }
 
+/** What a caller gets when it asks for no particular number. */
+export const DAILY_QUIZ_DEFAULT_QUESTIONS = 5;
+
+/**
+ * The most questions one daily-quiz generation will write.
+ *
+ * This used to be 5, and it was applied SILENTLY: the mobile test builder asks
+ * for 10, the sheet said "10-question test · Writing 10 questions" throughout,
+ * and five arrived — the clamp was the whole reason, not the note's length or
+ * the student's credits. Ten is what the clients ask for, so ten is what the
+ * ceiling allows; a request above it is still clamped rather than refused, and
+ * every client surface says "up to" because the model writes what the material
+ * supports and unanswerable questions are dropped before saving.
+ */
+export const DAILY_QUIZ_MAX_QUESTIONS = 10;
+
+export function clampDailyQuizCount(count?: number): number {
+  const asked = typeof count === 'number' && Number.isFinite(count) ? Math.round(count) : NaN;
+  if (!Number.isFinite(asked) || asked <= 0) return DAILY_QUIZ_DEFAULT_QUESTIONS;
+  return Math.min(asked, DAILY_QUIZ_MAX_QUESTIONS);
+}
+
 export async function generateDailyQuiz(
   content: string,
   options: { count?: number; studyGoal?: string } = {}
 ): Promise<{ questions: GeneratedQuestion[]; provider: string; usage?: AiUsage }> {
-  const count = Math.min(options.count ?? 5, 5);
+  const count = clampDailyQuizCount(options.count);
   const source = content.substring(0, 6000);
   return withAiResponseCache(
     'daily_quiz',

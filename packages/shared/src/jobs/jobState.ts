@@ -21,6 +21,7 @@ export type JobKind =
   | 'recommendations'
   | 'enhance'
   | 'study_pack'
+  | 'narration'
   | 'import'
   | 'ocr'
   | 'transcript'
@@ -227,6 +228,8 @@ export function jobKindFromName(name: string | undefined): JobKind {
       return 'recommendations';
     case 'ai.studyPack.generate':
       return 'study_pack';
+    case 'notes.ai.narration':
+      return 'narration';
     case 'deck.importApkg':
       return 'import';
     case 'notes.ocr.extract':

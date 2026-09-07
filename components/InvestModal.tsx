@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
-import { XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { useBudgetStore } from '../stores/budgetStore';
 import Modal from './ui/Modal';
 import {
@@ -140,7 +140,7 @@ const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onClose, cu
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white disabled:opacity-50"
           aria-label="Close savings goals"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
 

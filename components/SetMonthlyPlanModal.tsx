@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { AppIcon } from './ui/AppIcon';
 import { Budget, STUDENT_EXPENSE_CATEGORIES } from '../types';
-import { PlusIcon, TrashIcon, XMarkIcon } from '@heroicons/react/24/outline';
 import Modal from './ui/Modal';
 
 interface SetMonthlyPlanModalProps {
@@ -80,7 +80,7 @@ const SetMonthlyPlanModal: React.FC<SetMonthlyPlanModalProps> = ({ isOpen, onClo
           className="min-h-[44px] min-w-[44px] flex items-center justify-center text-white/70 hover:text-white rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
           aria-label="Close category budgets"
         >
-          <XMarkIcon className="w-6 h-6" aria-hidden />
+          <AppIcon name="close" size={24} aria-hidden />
         </button>
       </div>
 
@@ -142,7 +142,7 @@ const SetMonthlyPlanModal: React.FC<SetMonthlyPlanModalProps> = ({ isOpen, onClo
                   className="min-h-[44px] min-w-[44px] flex items-center justify-center text-lantern-text-muted hover:text-lantern-error rounded-lg"
                   aria-label={`Remove ${cat.label}`}
                 >
-                  <TrashIcon className="w-4 h-4" aria-hidden />
+                  <AppIcon name="trash" size={16} aria-hidden />
                 </button>
               </div>
             );
@@ -171,7 +171,7 @@ const SetMonthlyPlanModal: React.FC<SetMonthlyPlanModalProps> = ({ isOpen, onClo
                 onClick={() => setShowAdd(true)}
                 className="w-full min-h-[44px] py-2 border-2 border-dashed border-lantern-border rounded-xl text-sm text-lantern-text-muted hover:border-lantern-primary hover:text-lantern-primary flex items-center justify-center gap-1 transition-colors"
               >
-                <PlusIcon className="w-4 h-4" aria-hidden /> Add Category
+                <AppIcon name="add" size={16} aria-hidden /> Add Category
               </button>
             )}
           </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
-import { ChevronDownIcon, MagnifyingGlassIcon, PlusIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import type { Course } from '../../types';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useAuthStore } from '../../stores/authStore';
@@ -126,10 +126,8 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
           <span className={`truncate ${selected ? 'text-lantern-text' : 'text-lantern-text-secondary'}`}>
             {selected ? courseLabel(selected) : selectedId ? 'Course selected' : placeholder}
           </span>
-          <ChevronDownIcon
-            className={`w-4 h-4 shrink-0 text-lantern-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
-            aria-hidden
-          />
+          <AppIcon name="chevron-down" size={16} className={`shrink-0 text-lantern-text-secondary transition-transform ${open ? 'rotate-180' : ''}`}
+            aria-hidden />
         </button>
         {clearable && selectedId && !disabled ? (
           <button
@@ -138,7 +136,7 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
             aria-label="Clear course"
             className={`shrink-0 ${compact ? 'px-2' : 'px-3'} rounded-lg border border-lantern-border text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary`}
           >
-            <XMarkIcon className="w-4 h-4" aria-hidden />
+            <AppIcon name="close" size={16} aria-hidden />
           </button>
         ) : null}
       </div>
@@ -150,7 +148,7 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
           role="presentation"
         >
           <div className="relative border-b border-lantern-border">
-            <MagnifyingGlassIcon className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
+            <AppIcon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-lantern-text-tertiary pointer-events-none" />
             <input
               type="search"
               value={query}
@@ -205,7 +203,7 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
                   disabled={creating}
                   className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-sm font-medium rounded-md text-lantern-primary hover:bg-lantern-primary/10 disabled:opacity-50"
                 >
-                  <PlusIcon className="w-4 h-4" aria-hidden />
+                  <AppIcon name="add" size={16} aria-hidden />
                   {creating ? 'Adding…' : `Add ‘${offer.code}’`}
                 </button>
               </li>

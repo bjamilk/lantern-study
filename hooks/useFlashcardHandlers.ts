@@ -213,7 +213,12 @@ export function useFlashcardHandlers() {
         }
     }, [currentUser, updateFlashcards]);
 
-    const handleGenerateFlashcards = useCallback(async (deckId: string, notes: string, count: number) => {
+    const handleGenerateFlashcards = useCallback(async (
+        deckId: string,
+        notes: string,
+        count: number,
+        options?: { style?: 'concise' | 'detailed' }
+    ) => {
         if (!currentUser) return;
         const cardCount = normalizeFlashcardCount(count);
         setIsGeneratingFlashcards(true);
@@ -222,7 +227,10 @@ export function useFlashcardHandlers() {
 
             // ── Try AI generation first ────────────────────────────────
             try {
-                const { flashcards: aiCards } = await aiGenerateFlashcards(notes, { count: cardCount });
+                const { flashcards: aiCards } = await aiGenerateFlashcards(notes, {
+                    count: cardCount,
+                    ...(options?.style ? { style: options.style } : {}),
+                });
                 cardsToCreate = aiCards.map(c => ({ front: c.front, back: c.back }));
             } catch {
                 // AI unavailable → fall back to regex parsing

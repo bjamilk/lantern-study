@@ -3,12 +3,15 @@ import {
   AI_CREDIT_COSTS,
   MAX_AI_CREDIT_COST,
   MAX_LECTURE_TRANSCRIPTION_MS,
+  MAX_NARRATION_PAGES,
   REFERRAL_BONUS_AI_USES,
   REFERRAL_BONUS_AI_USES_CAP,
   REFERRAL_REWARD_AI_USES,
   LECTURE_TRANSCRIPTION_MINUTES_PER_CREDIT,
   LECTURE_TRANSCRIPTION_PRICE_RULE,
   getLectureTranscriptionCost,
+  getNarrationCreditCost,
+  formatNarrationPrice,
   getSmartNotesCreditCost,
   formatBonusAIUses,
   formatCreditCost,
@@ -123,5 +126,49 @@ describe('formatBonusAIUses', () => {
     expect(formatBonusAIUses(REFERRAL_REWARD_AI_USES)).toBe(
       `+${REFERRAL_REWARD_AI_USES} bonus uses`
     );
+  });
+});
+
+describe('getNarrationCreditCost', () => {
+  it('charges the first tier for anything up to twenty pages', () => {
+    expect(getNarrationCreditCost(1)).toBe(2);
+    expect(getNarrationCreditCost(20)).toBe(2);
+  });
+
+  it('charges the second tier from twenty-one pages', () => {
+    expect(getNarrationCreditCost(21)).toBe(3);
+    expect(getNarrationCreditCost(MAX_NARRATION_PAGES)).toBe(3);
+  });
+
+  it('never quotes zero for a request that will be charged', () => {
+    expect(getNarrationCreditCost(0)).toBe(2);
+    expect(getNarrationCreditCost(-4)).toBe(2);
+    expect(getNarrationCreditCost(Number.NaN)).toBe(2);
+  });
+
+  it('clamps past the page ceiling instead of climbing forever', () => {
+    expect(getNarrationCreditCost(MAX_NARRATION_PAGES + 500)).toBe(3);
+    expect(getNarrationCreditCost(Number.POSITIVE_INFINITY)).toBe(2);
+  });
+
+  it('stays inside the per-request bound', () => {
+    expect(getNarrationCreditCost(999)).toBeLessThanOrEqual(MAX_AI_CREDIT_COST);
+  });
+});
+
+describe('formatNarrationPrice', () => {
+  it('prints the price and the page ceiling it buys', () => {
+    expect(formatNarrationPrice(12)).toBe('2 AI uses — covers up to 12 pages');
+    expect(formatNarrationPrice(30)).toBe('3 AI uses — covers up to 30 pages');
+  });
+
+  it('tells a long document where the reading stops', () => {
+    expect(formatNarrationPrice(120)).toBe(
+      `3 AI uses — covers up to ${MAX_NARRATION_PAGES} pages`
+    );
+  });
+
+  it('uses the singular for a one-page handout', () => {
+    expect(formatNarrationPrice(1)).toBe('2 AI uses — covers up to 1 page');
   });
 });

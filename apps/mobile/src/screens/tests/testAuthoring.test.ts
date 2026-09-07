@@ -9,7 +9,12 @@ import {
   personalTestTitle,
   planPreselectedNote,
   planAttemptRow,
+  planConfirmedGeneration,
+  planPickedTestSource,
   planRetake,
+  questionRequestLabel,
+  testSourceConfirmCard,
+  MAX_GENERATED_QUESTIONS,
 } from './testAuthoring';
 
 describe('planRetake', () => {
@@ -364,5 +369,92 @@ describe('planPreselectedNote', () => {
 
   it('returns nothing for a note that is not in the list', () => {
     expect(planPreselectedNote('gone', rows)).toBeNull();
+  });
+});
+
+
+describe('picking a source never spends', () => {
+  it('a tapped row only selects it', () => {
+    expect(planPickedTestSource({ kind: 'note', id: 'note-1', title: 'SDOH' })).toEqual({
+      action: 'confirm',
+      selection: { kind: 'note', id: 'note-1', title: 'SDOH', subtitle: undefined },
+    });
+  });
+
+  it('carries the row subtitle onto the confirmation card', () => {
+    const plan = planPickedTestSource({
+      kind: 'deck',
+      id: 'deck-1',
+      title: 'Pharmacology',
+      subtitle: '24 cards',
+    });
+    expect(plan).toEqual({
+      action: 'confirm',
+      selection: { kind: 'deck', id: 'deck-1', title: 'Pharmacology', subtitle: '24 cards' },
+    });
+  });
+
+  it('refuses a row that cannot be used, in that row own words', () => {
+    expect(
+      planPickedTestSource({
+        kind: 'note',
+        id: 'note-2',
+        title: 'Stub',
+        disabledReason: 'Needs more content',
+      })
+    ).toEqual({ action: 'refuse', reason: 'Needs more content' });
+  });
+
+  it('names an untitled source rather than confirming a blank card', () => {
+    const plan = planPickedTestSource({ kind: 'note', id: 'note-3', title: '  ' });
+    expect(plan.action === 'confirm' && plan.selection.title).toBe('This note');
+  });
+});
+
+describe('the confirmation card', () => {
+  const selection = { kind: 'note', id: 'note-1', title: 'SDOH' } as const;
+
+  it('names the price on the button itself', () => {
+    const card = testSourceConfirmCard(selection, '1 AI use');
+    expect(card.eyebrow).toBe('FROM THIS NOTE');
+    expect(card.buttonLabel).toBe('Generate up to 10 questions · 1 AI use');
+    expect(card.accessibilityLabel).toContain('1 AI use');
+  });
+
+  it('says which kind of source was chosen', () => {
+    expect(
+      testSourceConfirmCard({ kind: 'deck', id: 'd1', title: 'Pharm' }, '1 AI use').eyebrow
+    ).toBe('FROM THIS DECK');
+  });
+
+  it('never promises an exact number of questions', () => {
+    expect(testSourceConfirmCard(selection, '1 AI use').buttonLabel).not.toMatch(/Generate 10 /);
+    expect(questionRequestLabel(MAX_GENERATED_QUESTIONS)).toBe('up to 10 questions');
+    expect(questionRequestLabel(1)).toBe('up to 1 question');
+  });
+});
+
+describe('planConfirmedGeneration', () => {
+  const selection = { kind: 'note', id: 'note-1', title: 'SDOH' } as const;
+
+  it('is the only plan that generates, and it asks for a ceiling', () => {
+    expect(planConfirmedGeneration(selection)).toEqual({
+      action: 'generate',
+      kind: 'note',
+      id: 'note-1',
+      title: 'SDOH',
+      requestedCount: MAX_GENERATED_QUESTIONS,
+    });
+  });
+
+  it('refuses with nothing chosen', () => {
+    expect(planConfirmedGeneration(null).action).toBe('refuse');
+  });
+
+  it('refuses a second press while a job is already starting', () => {
+    expect(planConfirmedGeneration(selection, { busy: true })).toEqual({
+      action: 'refuse',
+      reason: 'This is already starting.',
+    });
   });
 });

@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { fetchCourseReadiness } from '../../services/api';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
-import { Card } from '../ui';
+import { Card, useFeatureAccent } from '../ui';
+import { smallTextInk } from '../ui/FeatureDisc';
 import { AppIcon } from '../ui/AppIcon';
+import { useTheme } from '../../theme';
 import { tabularNums } from '../../design/typeScale';
 import { clampProgressPercent } from './progressBar';
 import {
@@ -93,6 +95,23 @@ type LoadState =
 
 export function CourseReadinessCard() {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
+  // Build 169, dark mode: the chips and the action button were painted with
+  // `text-lantern-feature-tests-ink` / `bg-lantern-feature-tests-tint`, and
+  // NEITHER CLASS EXISTS. `tailwind.config.js` declares `lantern.feature`
+  // with `tests` twice — the `{ ink, tint }` pair first, then a deprecated
+  // legacy string — and the second wins, so the pair keys are never
+  // generated. An unknown Tailwind colour is silently dropped, which left the
+  // labels at React Native's default BLACK on a transparent chip: invisible
+  // on dark, and accidentally legible on light, which is why it shipped.
+  // Same defect for `flashcards`, `groups` and `budget` in that config.
+  //
+  // The pair is taken from the tokens instead, per theme, so this card no
+  // longer depends on that config resolving at all.
+  const accent = useFeatureAccent('tests');
+  const { isDark, colors } = useTheme();
+  // The chip label is the 11px `label` step, so it goes through the
+  // small-text ink like every other sub-12px feature label (FeatureDisc.tsx).
+  const chipInk = smallTextInk('tests', accent, isDark);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,7 +181,7 @@ export function CourseReadinessCard() {
                 <AppIcon
                   name="chevron-forward"
                   size={12}
-                  color="#94a3b8"
+                  color={colors.textTertiary}
                   importantForAccessibility="no"
                 />
               </View>
@@ -207,10 +226,12 @@ export function CourseReadinessCard() {
                 {row.weakestChips.map((chip) => (
                   <View
                     key={chip}
-                    className="rounded-full bg-lantern-feature-tests-tint px-2 py-0.5"
+                    className="rounded-full px-2 py-0.5"
+                    style={{ backgroundColor: accent.tint }}
                   >
                     <Text
-                      className="text-label font-medium text-lantern-feature-tests-ink"
+                      className="text-label font-medium"
+                      style={{ color: chipInk }}
                       numberOfLines={1}
                     >
                       {chip}
@@ -225,9 +246,10 @@ export function CourseReadinessCard() {
               hitSlop={6}
               accessibilityRole="button"
               accessibilityLabel={row.nextAction.accessibilityLabel}
-              className="mt-2 self-start rounded-lg bg-lantern-feature-tests-tint px-3 py-1.5"
+              className="mt-2 self-start rounded-lg px-3 py-1.5"
+              style={{ backgroundColor: accent.tint }}
             >
-              <Text className="text-caption font-semibold text-lantern-feature-tests-ink">
+              <Text className="text-caption font-semibold" style={{ color: accent.ink }}>
                 {row.nextAction.label}
               </Text>
             </Pressable>

@@ -136,6 +136,109 @@ export async function extractPdfTextFromBuffer(buffer: Buffer): Promise<string> 
   return text;
 }
 
+export type PdfPageText = {
+  /** 0-based. */
+  pageIndex: number;
+  text: string;
+};
+
+/**
+ * Per-page text layer of a PDF, for the page model.
+ *
+ * `extractPdfTextDetailsFromBuffer` (pdf-parse) returns the whole document as
+ * one string and that stays the input to Smart Notes and quiz generation —
+ * nothing about it changes. This is a second, page-aware read of the SAME text
+ * layer via pdfjs `getTextContent`, so a text PDF gets page boundaries without
+ * paying for OCR. A scanned PDF has no text layer and comes back with empty
+ * pages; the OCR path fills those in.
+ *
+ * Never throws: a PDF the text layer cannot be read from returns no pages, and
+ * the caller degrades to "this document has not been split into pages".
+ */
+export async function extractPdfPageTextsFromBuffer(
+  buffer: Buffer,
+  options?: { maxPages?: number }
+): Promise<{ pages: PdfPageText[]; pageCount: number }> {
+  const maxPages = Math.max(1, options?.maxPages ?? MAX_OCR_PDF_PAGES);
+  try {
+    // pdfjs-dist 5.x is ESM-only under legacy/build. No worker: the text layer
+    // is cheap to read on the main thread and a worker file resolution failure
+    // must not take the page model down with it.
+    const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
+      getDocument: (src: {
+        data: Uint8Array;
+        useSystemFonts?: boolean;
+        disableWorker?: boolean;
+        isEvalSupported?: boolean;
+      }) => {
+        promise: Promise<{
+          numPages: number;
+          getPage: (pageNumber: number) => Promise<{
+            getTextContent: () => Promise<{
+              items: Array<{ str?: string; hasEOL?: boolean }>;
+            }>;
+          }>;
+          destroy?: () => Promise<void> | void;
+        }>;
+      };
+    };
+
+    const pdf = await pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      useSystemFonts: true,
+      disableWorker: true,
+      isEvalSupported: false,
+    }).promise;
+
+    const pageCount = pdf.numPages || 1;
+    const pagesToRead = Math.min(pageCount, maxPages);
+    const pages: PdfPageText[] = [];
+
+    try {
+      for (let pageNum = 1; pageNum <= pagesToRead; pageNum++) {
+        try {
+          const page = await pdf.getPage(pageNum);
+          const content = await page.getTextContent();
+          // pdfjs emits one item per text run and marks the end of a visual
+          // line with hasEOL. Keeping those line breaks is what lets the plan
+          // panel find a heading — joining everything with spaces would erase
+          // every slide title into the paragraph after it.
+          let text = '';
+          for (const item of content.items || []) {
+            const str = typeof item.str === 'string' ? item.str : '';
+            text += str;
+            text += item.hasEOL ? '\n' : ' ';
+          }
+          pages.push({
+            pageIndex: pageNum - 1,
+            text: text.replace(/[ \t]+\n/g, '\n').trim(),
+          });
+        } catch (pageErr) {
+          // One unreadable page must not lose the other twenty-nine.
+          logger.warn('PDF page text extraction failed for one page', {
+            pageNum,
+            error: pageErr instanceof Error ? pageErr.message : String(pageErr),
+          });
+          pages.push({ pageIndex: pageNum - 1, text: '' });
+        }
+      }
+    } finally {
+      try {
+        await pdf.destroy?.();
+      } catch {
+        // ignore
+      }
+    }
+
+    return { pages, pageCount };
+  } catch (err) {
+    logger.warn('PDF per-page text extraction failed', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return { pages: [], pageCount: 0 };
+  }
+}
+
 async function astToPlainText(ast: {
   toText?: () => string;
   to?: (format: string) => Promise<{ value: string | Uint8Array }>;

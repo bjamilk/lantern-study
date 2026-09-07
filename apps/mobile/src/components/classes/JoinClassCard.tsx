@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 import { canonicalizeJoinCode, isValidJoinCode } from '@lantern/shared/academic';
+import { useTheme } from '../../theme';
 import { Button, Card } from '../ui';
 import { joinClassByCode } from '../../services/api';
 
@@ -13,6 +14,7 @@ export function JoinClassCard({ onJoined }: JoinClassCardProps) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState<string | null>(null);
+  const { colors } = useTheme();
 
   return (
     <Card className="mb-3">
@@ -25,6 +27,13 @@ export function JoinClassCard({ onJoined }: JoinClassCardProps) {
           value={code}
           onChangeText={(value) => setCode(canonicalizeJoinCode(value))}
           placeholder="ABC234"
+          // Stated, not inherited. With no colour of our own, Android paints
+          // the hint with the ACTIVITY's textColorHint, which follows the OS
+          // night mode rather than the app's theme: after switching the app
+          // from dark to light the hint stayed near-white on a white field and
+          // the example code vanished (build 168, shots 41 vs 01). A token
+          // from our own palette cannot drift away from our own surface.
+          placeholderTextColor={colors.textTertiary}
           autoCapitalize="characters"
           autoCorrect={false}
           maxLength={8}

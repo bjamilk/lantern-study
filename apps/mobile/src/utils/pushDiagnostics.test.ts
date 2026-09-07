@@ -4,8 +4,12 @@
  */
 import type { JobPushAudit } from '../stores/jobsCore';
 import {
+  PUSH_FAILED_STUDENT_COPY,
   PUSH_SENT_COPY,
+  classifyPushFailure,
   describeJobPush,
+  jobPushFailureDetail,
+  jobPushFailureRows,
   describeRegisterOutcome,
   maskToken,
   identityMatches,
@@ -49,11 +53,16 @@ describe('describeJobPush', () => {
     }
   });
 
-  it('names the failure when the server says push failed', () => {
-    expect(describeJobPush(audit({ skippedReason: 'error', error: 'Expo timed out' }))).toBe(
-      'Push failed: Expo timed out'
-    );
-    expect(describeJobPush(audit({ skippedReason: 'error' }))).toBe('Push failed');
+  it('says one plain sentence when the push failed, never the raw reason', () => {
+    // The build 168 defect: this exact string reached a student's job sheet.
+    const apns =
+      'Could not find APNs credentials for com.lanternstudy.app.dev ' +
+      '(@bjamilk/lantern-study). You may need to generate or upload new push credentials.';
+    const line = describeJobPush(audit({ skippedReason: 'error', error: apns }));
+    expect(line).toBe(PUSH_FAILED_STUDENT_COPY);
+    expect(line).not.toContain('APNs');
+    expect(line).not.toContain('com.lanternstudy');
+    expect(describeJobPush(audit({ skippedReason: 'error' }))).toBe(PUSH_FAILED_STUDENT_COPY);
   });
 
   it('counts an Expo rejection as a failure, not a delivery', () => {
@@ -63,7 +72,8 @@ describe('describeJobPush', () => {
         expoTickets: [{ status: 'error', message: 'DeviceNotRegistered' }],
       })
     );
-    expect(line).toBe('Push failed: DeviceNotRegistered');
+    expect(line).toBe(PUSH_FAILED_STUDENT_COPY);
+    expect(line).not.toContain('DeviceNotRegistered');
   });
 
   it('does not claim delivery when nothing was sent to', () => {
@@ -275,5 +285,60 @@ describe('pushErrorRows', () => {
     const [row] = pushErrorRows('Default FirebaseApp is not initialized');
     expect(row.value).toBe('Default FirebaseApp is not initialized');
     expect(row.state).toBe('bad');
+  });
+});
+
+describe('classifyPushFailure', () => {
+  it('names every Expo failure shape we have seen', () => {
+    expect(
+      classifyPushFailure(
+        'Could not find APNs credentials for com.lanternstudy.app.dev (@bjamilk/lantern-study). ' +
+          'You may need to generate or upload new push credentials.'
+      )
+    ).toBe('apns-credentials');
+    expect(classifyPushFailure('DeviceNotRegistered')).toBe('device-not-registered');
+    expect(classifyPushFailure('InvalidCredentials')).toBe('invalid-credentials');
+    expect(classifyPushFailure('MessageRateExceeded')).toBe('rate-limited');
+  });
+
+  it('is case-insensitive, because these arrive from three different layers', () => {
+    expect(classifyPushFailure('devicenotregistered')).toBe('device-not-registered');
+    expect(classifyPushFailure('MESSAGERATEEXCEEDED')).toBe('rate-limited');
+  });
+
+  it('guesses nothing when it does not recognise the message', () => {
+    expect(classifyPushFailure('502 Bad Gateway')).toBe('unknown');
+    expect(classifyPushFailure('')).toBe('unknown');
+    expect(classifyPushFailure(null)).toBe('unknown');
+    expect(classifyPushFailure(undefined)).toBe('unknown');
+  });
+});
+
+describe('jobPushFailureDetail', () => {
+  it('keeps the raw text for the diagnostics panel', () => {
+    expect(jobPushFailureDetail(audit({ skippedReason: 'error', error: 'APNs missing' }))).toBe(
+      'APNs missing'
+    );
+    expect(
+      jobPushFailureDetail(
+        audit({ tokenCount: 1, expoTickets: [{ status: 'error', message: 'DeviceNotRegistered' }] })
+      )
+    ).toBe('DeviceNotRegistered');
+  });
+
+  it('is null when nothing failed', () => {
+    expect(jobPushFailureDetail(audit({ tokenCount: 1 }))).toBeNull();
+    expect(jobPushFailureDetail(null)).toBeNull();
+  });
+
+  it('yields one diagnostics row that names the cause AND keeps the words', () => {
+    const rows = jobPushFailureRows(
+      audit({ skippedReason: 'error', error: 'Could not find APNs credentials' })
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].state).toBe('bad');
+    expect(rows[0].value).toContain('Apple push credentials');
+    expect(rows[0].value).toContain('Could not find APNs credentials');
+    expect(jobPushFailureRows(audit({ tokenCount: 1 }))).toEqual([]);
   });
 });

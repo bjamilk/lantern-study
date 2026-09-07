@@ -1,16 +1,4 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  AcademicCapIcon,
-  ArrowLeftIcon,
-  ChevronDoubleLeftIcon,
-  ChevronDoubleRightIcon,
-  ChevronDownIcon,
-  ChevronUpIcon,
-  DocumentTextIcon,
-  MagnifyingGlassIcon,
-  RectangleStackIcon,
-  XMarkIcon,
-} from '@heroicons/react/24/outline';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
 import { featureAccents } from '@lantern/shared/design';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
@@ -32,6 +20,7 @@ import { LibraryRail } from './library/LibraryRail';
 import { LibraryPanelSearchProvider } from './library/libraryPanelSearch';
 import { LibrarySearchBox, LibrarySearchResults } from './library/LibrarySearch';
 import { ClassOfficialMaterials } from './classes/ClassOfficialMaterials';
+import { AppIcon } from './ui/AppIcon';
 
 export type LibraryTab = 'notes' | 'flashcards';
 
@@ -232,7 +221,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               beside the title for free. */}
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <h1 className="flex shrink-0 items-center gap-2 text-title text-lantern-text">
-              <RectangleStackIcon className="h-5 w-5 text-lantern-feature-library" aria-hidden />
+              <AppIcon name="albums" size={20} className="text-lantern-feature-library" aria-hidden />
               Library
             </h1>
             {/* From md, where the rail — and the badges carrying these totals — can be collapsed. */}
@@ -257,13 +246,13 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 {/* A disclosure, not a second read-out of the filter: whatever is
                     selected, the scope row below says so and can clear it. */}
                 <span className="inline-flex items-center gap-2 min-w-0">
-                  <AcademicCapIcon className="h-4 w-4 shrink-0 text-lantern-primary-text" aria-hidden />
+                  <AppIcon name="school" size={16} className="shrink-0 text-lantern-primary-text" aria-hidden />
                   <span className="truncate">Browse by course</span>
                 </span>
                 {railOpen ? (
-                  <ChevronUpIcon className="h-4 w-4 shrink-0" aria-hidden />
+                  <AppIcon name="chevron-up" size={16} className="shrink-0" aria-hidden />
                 ) : (
-                  <ChevronDownIcon className="h-4 w-4 shrink-0" aria-hidden />
+                  <AppIcon name="chevron-down" size={16} className="shrink-0" aria-hidden />
                 )}
               </button>
             ) : null}
@@ -330,7 +319,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     onClick={() => handleSelectCourse(null)}
                     className="inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
                   >
-                    <XMarkIcon className="h-3 w-3" aria-hidden /> Clear
+                    <AppIcon name="close" size={12} aria-hidden /> Clear
                   </button>
                 </>
               ) : null}
@@ -341,7 +330,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     onClick={() => setSearchEverything(false)}
                     className="inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-2 py-0.5 font-medium text-lantern-text hover:bg-lantern-background-secondary"
                   >
-                    <ArrowLeftIcon className="h-3 w-3" aria-hidden /> Back to {tab === 'notes' ? 'notes' : 'flashcards'}
+                    <AppIcon name="arrow-back" size={12} aria-hidden /> Back to {tab === 'notes' ? 'notes' : 'flashcards'}
                   </button>
                 ) : canSearchEverything ? (
                   <button
@@ -350,7 +339,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     className="inline-flex items-center gap-1 rounded-full border border-lantern-primary/30 bg-lantern-primary/5 px-2 py-0.5 font-medium text-lantern-primary-text hover:bg-lantern-primary/10"
                     title="Search decks, cards and offline bundles as well — this drops the folder and Archived filters"
                   >
-                    <MagnifyingGlassIcon className="h-3 w-3" aria-hidden /> Search everything
+                    <AppIcon name="search" size={12} aria-hidden /> Search everything
                   </button>
                 ) : (
                   // One character filters the list below just fine; only the
@@ -395,9 +384,9 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     title="Show courses"
                     className="flex w-full min-h-[44px] items-center justify-center rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
                   >
-                    <ChevronDoubleRightIcon className="h-4 w-4" aria-hidden />
+                    <AppIcon name="chevrons-forward" size={16} aria-hidden />
                   </button>
-                  <AcademicCapIcon className="h-5 w-5 text-lantern-text-tertiary" aria-hidden />
+                  <AppIcon name="school" size={20} className="text-lantern-text-tertiary" aria-hidden />
                 </>
               ) : (
                 <>
@@ -414,7 +403,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                       title="Hide courses"
                       className="rounded-lg p-1.5 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
                     >
-                      <ChevronDoubleLeftIcon className="h-4 w-4" aria-hidden />
+                      <AppIcon name="chevrons-back" size={16} aria-hidden />
                     </button>
                   </div>
                   {rail(false)}

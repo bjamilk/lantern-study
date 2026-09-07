@@ -6,16 +6,7 @@ import { fetchDecks } from '../services/supabase';
 import { CourseChips, useCourseFilterShownAbove } from './academic/CourseChips';
 import { TopicFilterChip } from './academic/TopicFilterChip';
 import { useLibraryPanelSearch } from './library/libraryPanelSearch';
-import {
-  RectangleStackIcon,
-  PlusCircleIcon,
-  AcademicCapIcon,
-  CloudArrowDownIcon,
-  CloudArrowUpIcon,
-  EllipsisVerticalIcon,
-  ExclamationTriangleIcon,
-  MagnifyingGlassIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import { isCardDue, getDeckListStatsLine, getStudyCtaLabel, getStudyAllDueLabel } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
@@ -23,6 +14,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useLibraryStore } from '../stores/libraryStore';
 import { UNFILED_COURSE_ID, matchesCourseFilter, matchesTopicFilter } from '../utils/libraryArchive';
 import { MoveToCourseModal } from './academic/MoveToCourseModal';
+import { ImportCardsModal } from './flashcards/ImportCardsModal';
 import { SkeletonCard, ScreenHeader, Button, EmptyState, Menu, MenuTrigger, MenuContent, MenuItem } from './ui';
 
 interface FlashcardsScreenProps {
@@ -97,6 +89,8 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   const [courseDeckIds, setCourseDeckIds] = useState<Set<string> | null>(null);
   const [courseFilterLoading, setCourseFilterLoading] = useState(false);
   const [movingDeck, setMovingDeck] = useState<Deck | null>(null);
+  // The zero-credit door: text export in, cards out, no AI use spent.
+  const [importCardsOpen, setImportCardsOpen] = useState(false);
   const [deckMenuId, setDeckMenuId] = useState<string | null>(null);
   useEffect(() => {
     if (!courseFilterId || !currentUserId) {
@@ -209,24 +203,25 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
     <div className="flex flex-wrap items-center gap-2">
       {onStartStudy && totalDueCount > 0 && (
         <Button variant="accent" size="sm" onClick={onStartStudy}>
-          <AcademicCapIcon className="w-4 h-4" />
+          <AppIcon name="school" size={16} />
           {getStudyAllDueLabel(totalDueCount)}
         </Button>
       )}
       <Button size="sm" onClick={onOpenCreateDeck}>
-        <PlusCircleIcon className="w-4 h-4" />
+        <AppIcon name="add-circle" size={16} />
         New deck
       </Button>
       <Menu open={menuOpen} onOpenChange={setMenuOpen}>
         <MenuTrigger aria-label="More actions" className="inline-flex items-center justify-center rounded-lantern px-3 py-2 text-sm font-medium bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border/40">
-          <EllipsisVerticalIcon className="w-4 h-4" />
+          <AppIcon name="ellipsis-vertical" size={16} />
         </MenuTrigger>
         <MenuContent align="end">
           <MenuItem onSelect={onOpenCreateFlashcard}>New card</MenuItem>
           <MenuItem onSelect={handleAIGenerate} disabled={lowDataMode}>
             {lowDataMode ? 'AI Generate (Wi‑Fi)' : 'AI Generate'}
           </MenuItem>
-          <MenuItem onSelect={() => importInputRef.current?.click()}>Import deck</MenuItem>
+          <MenuItem onSelect={() => setImportCardsOpen(true)}>Import cards (free)</MenuItem>
+          <MenuItem onSelect={() => importInputRef.current?.click()}>Import deck file</MenuItem>
         </MenuContent>
       </Menu>
         <input
@@ -250,7 +245,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           <ScreenHeader
             title="Flashcard Decks"
             subtitle={`${validDecks.length} deck${validDecks.length !== 1 ? 's' : ''} · ${flashcards.length} card${flashcards.length !== 1 ? 's' : ''} total`}
-            icon={<RectangleStackIcon className="w-6 h-6" />}
+            icon={<AppIcon name="albums" size={24} />}
             actions={headerActions}
           />
         </div>
@@ -285,13 +280,13 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           // Ahead of the course-filter and first-run empty states: with a query
           // typed, "No decks yet" would read as if the decks had vanished.
           <EmptyState
-            icon={<MagnifyingGlassIcon className="w-8 h-8" />}
+            icon={<AppIcon name="search" size={32} />}
             title={`No decks match “${panelSearch}”`}
             description="This searches the deck names and the cards saved on this device. “Search everything” above also covers your notes and offline bundles."
           />
         ) : courseFilterId && visibleDecks.length === 0 ? (
           <EmptyState
-            icon={<RectangleStackIcon className="w-8 h-8" />}
+            icon={<AppIcon name="albums" size={32} />}
             title={courseFilterId === UNFILED_COURSE_ID ? 'No unfiled decks' : 'No decks for this course yet'}
             description={
               courseFilterId === UNFILED_COURSE_ID
@@ -311,7 +306,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
               className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-sm text-amber-800 dark:text-amber-200"
             >
               <span className="flex items-center gap-2 min-w-0">
-                <ExclamationTriangleIcon className="w-4 h-4 flex-shrink-0" aria-hidden />
+                <AppIcon name="warning" size={16} className="flex-shrink-0" aria-hidden />
                 Couldn&apos;t refresh your decks — showing what&apos;s saved on this device.
               </span>
               {retryDeckBootstrap && (
@@ -335,7 +330,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                     onClick={() => onSelectDeck(deck)}
                   >
                     <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <RectangleStackIcon className="w-5 h-5 text-white/90 flex-shrink-0" />
+                      <AppIcon name="albums" size={20} className="text-white/90 flex-shrink-0" />
                       <h2 className="text-sm font-bold text-white truncate drop-shadow-sm">{deck.name}</h2>
                       {deck.isShared && (
                         <span className="text-label font-bold uppercase tracking-wide text-white/90 bg-white/20 px-1.5 py-0.5 rounded flex-shrink-0">
@@ -351,9 +346,9 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                         title={isDeckOffline(deck.id) ? 'Remove from offline' : 'Save for offline'}
                       >
                         {isDeckOffline(deck.id) ? (
-                          <CloudArrowUpIcon className="w-4 h-4" />
+                          <AppIcon name="cloud-upload" size={16} />
                         ) : (
-                          <CloudArrowDownIcon className="w-4 h-4" />
+                          <AppIcon name="cloud-download" size={16} />
                         )}
                       </button>
                       {onMoveDeckToCourse ? (
@@ -366,12 +361,12 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                               aria-label={`Deck options for ${deck.name}`}
                               className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors inline-flex items-center justify-center"
                             >
-                              <EllipsisVerticalIcon className="w-4 h-4" />
+                              <AppIcon name="ellipsis-vertical" size={16} />
                             </MenuTrigger>
                             <MenuContent align="end" className="w-48">
                               <MenuItem onSelect={() => setMovingDeck(deck)}>
                                 <span className="inline-flex items-center gap-2">
-                                  <AcademicCapIcon className="w-4 h-4" /> Move to course…
+                                  <AppIcon name="school" size={16} /> Move to course…
                                 </span>
                               </MenuItem>
                             </MenuContent>
@@ -401,7 +396,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                           onStudyDeck(deck);
                         }}
                       >
-                        <AcademicCapIcon className="w-4 h-4" />
+                        <AppIcon name="school" size={16} />
                         {getStudyCtaLabel(dueCards, totalCards)}
                       </Button>
                     )}
@@ -416,7 +411,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
             role="alert"
             className="max-w-md mx-auto mt-8 rounded-2xl border border-lantern-border bg-lantern-surface p-6 text-center space-y-3"
           >
-            <ExclamationTriangleIcon className="w-8 h-8 mx-auto text-amber-500" aria-hidden />
+            <AppIcon name="warning" size={32} className="mx-auto text-amber-500" aria-hidden />
             <p className="font-semibold text-lantern-text">Couldn&apos;t load your decks</p>
             <p className="text-sm text-lantern-text-secondary">{deckLoadError}</p>
             {retryDeckBootstrap && (
@@ -427,16 +422,24 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           </div>
         ) : (
           <EmptyState
-            icon={<RectangleStackIcon className="w-8 h-8" />}
+            icon={<AppIcon name="albums" size={32} />}
             title="No flashcard decks yet"
             description="Create a deck to start adding flashcards and supercharge your learning."
             actionLabel="Create your first deck"
             onAction={onOpenCreateDeck}
-            secondaryActionLabel="Import deck"
-            onSecondaryAction={() => importInputRef.current?.click()}
+            secondaryActionLabel="Import cards (free)"
+            onSecondaryAction={() => setImportCardsOpen(true)}
           />
         )}
       </div>
+      <ImportCardsModal
+        isOpen={importCardsOpen}
+        onClose={() => setImportCardsOpen(false)}
+        onImported={(deckId) => {
+          const deck = useFlashcardStore.getState().decks.find((d) => d.id === deckId);
+          if (deck) onSelectDeck(deck);
+        }}
+      />
       {onMoveDeckToCourse ? (
         <MoveToCourseModal
           isOpen={Boolean(movingDeck)}

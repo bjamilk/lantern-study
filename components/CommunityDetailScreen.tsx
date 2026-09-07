@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckBadgeIcon, LinkIcon, SparklesIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 import {
   COMMUNITY_COPY,
   canAccessDiscoverHub,
@@ -232,8 +232,10 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                   {detail.name}
                 </h1>
                 {detail.is_official && (
-                  <CheckBadgeIcon
-                    className="mt-1.5 h-5 w-5 shrink-0 text-lantern-primary"
+                  <AppIcon
+                    name="badge-check"
+                    size={20}
+                    className="mt-1.5 shrink-0 text-lantern-primary"
                     aria-label="Official community"
                   />
                 )}
@@ -264,7 +266,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
               ) : null}
               {studyLine ? (
                 <p className="inline-flex items-center gap-1.5 text-xs text-lantern-text-secondary">
-                  <SparklesIcon className="h-4 w-4 text-lantern-primary" aria-hidden="true" />
+                  <AppIcon name="sparkles" size={16} className="text-lantern-primary" />
                   {studyLine}
                 </p>
               ) : null}
@@ -287,7 +289,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                     onClick={() => void copyInvite()}
                     className="inline-flex h-9 min-h-[44px] items-center gap-1.5 rounded-lg bg-lantern-primary/10 px-4 text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/20 sm:min-h-[36px]"
                   >
-                    <LinkIcon className="h-4 w-4" aria-hidden="true" />
+                    <AppIcon name="link" size={16} />
                     {COMMUNITY_COPY.invite}
                   </button>
                 ) : null}

@@ -23,9 +23,23 @@ import {
 } from '../../stores/jobsCore';
 import { describeJobPush, type PushReadiness } from '../../utils/pushDiagnostics';
 
-/** The three stages every generator moves through, in the student's words. */
-export const jobStages = (kind: JobKind, count?: number): string[] => {
-  const many = (noun: string) => (count && count > 0 ? `Writing ${count} ${noun}` : `Writing your ${noun}`);
+/**
+ * The three stages every generator moves through, in the student's words.
+ *
+ * `atMost` is what the count MEANS. A question generator asks for ten and
+ * writes what the material supports, so a checklist that ticks "Writing 10
+ * questions" over work that will save five is a promise the sheet cannot keep
+ * — build 168 made exactly that promise. With `atMost` the step says "up to".
+ */
+export const jobStages = (
+  kind: JobKind,
+  count?: number,
+  options: { atMost?: boolean } = {}
+): string[] => {
+  const many = (noun: string) =>
+    count && count > 0
+      ? `Writing ${options.atMost ? 'up to ' : ''}${count} ${noun}`
+      : `Writing your ${noun}`;
   switch (kind) {
     case 'flashcards':
       return ['Reading your notes', many('cards'), 'Saving to your deck'];
@@ -35,6 +49,11 @@ export const jobStages = (kind: JobKind, count?: number): string[] => {
       return ['Reading your material', many('questions'), 'Saving your test'];
     case 'summary':
       return ['Reading your notes', 'Writing the summary', 'Saving to the note'];
+    case 'narration':
+      // Never "Recording" or "Making the audio": nothing is recorded and there
+      // is no audio file. What is being made is a script, and the phone reads
+      // it. A student who was promised a recording would go looking for one.
+      return ['Reading your pages', 'Writing what to say', 'Saving the reading'];
     case 'import':
     default:
       return ['Reading your pages', 'Making study materials', 'Saving to your library'];
@@ -53,11 +72,38 @@ export const jobArtefactLabel = (kind: JobKind, count?: number): string => {
       return n ? `${n}-question test` : 'Your test';
     case 'summary':
       return 'Your summary';
+    case 'narration':
+      return n ? `A reading of ${n} page${n === 1 ? '' : 's'}` : 'Your reading';
     case 'import':
     default:
       return 'Your study materials';
   }
 };
+
+/** This job's checklist, honouring whether its count is a ceiling. */
+export const jobStagesFor = (job: TrackedJob): string[] =>
+  jobStages(job.kind, job.requestedCount, { atMost: job.requestedCountIsMax });
+
+/**
+ * What a FINISHED job is called.
+ *
+ * Only the saved count is ever stated. A done job whose count nobody recorded
+ * says "Your test" rather than borrowing the number that was requested: build
+ * 168 saved five questions and announced a "10-question test ready", which is
+ * the requested count leaking into a sentence about what exists.
+ */
+export const jobDoneLabel = (job: TrackedJob): string =>
+  jobArtefactLabel(job.kind, job.resultCount ?? job.savedCount);
+
+/**
+ * The headline while a job is still running.
+ *
+ * A ceiling is never spoken as a count here: the artefact has no size yet, so
+ * the headline names the thing and its source ("Your test · SDOH") and the
+ * checklist carries the "up to N" (`jobStages`).
+ */
+export const jobRunningHeadline = (job: TrackedJob): string =>
+  `${jobArtefactLabel(job.kind, job.requestedCountIsMax ? undefined : job.requestedCount)} · ${job.sourceTitle}`;
 
 /**
  * Which stage a server-supplied fraction is inside.
@@ -157,7 +203,7 @@ export interface JobProgressContext {
  */
 export const jobProgressView = (
   job: TrackedJob,
-  stages: string[] = jobStages(job.kind, job.requestedCount)
+  stages: string[] = jobStagesFor(job)
 ): JobProgressView => {
   const count = stages.length;
   const fraction =
@@ -318,12 +364,12 @@ export const jobSheetState = (
   budgetMs: number = JOB_TIME_BUDGET_MS,
   context: JobSheetContext = {}
 ): JobSheetState => {
-  const stages = jobStages(job.kind, job.requestedCount);
+  const stages = jobStagesFor(job);
   const elapsed = Math.max(0, now - job.startedAt);
   const elapsedLabel = formatElapsed(elapsed);
 
   if (job.status === 'done') {
-    const label = jobArtefactLabel(job.kind, job.resultCount ?? job.requestedCount);
+    const label = jobDoneLabel(job);
     const ref = jobResultRef(job);
     return {
       headline: `${label} ready`,
@@ -413,7 +459,7 @@ export const jobSheetState = (
   // No news is described as no news. The clock does not stand in for it.
   const waitingCopy = context.offline ? WAITING_FOR_CONNECTION_COPY : STILL_WORKING_COPY;
   return {
-    headline: `${jobArtefactLabel(job.kind, job.requestedCount)} · ${job.sourceTitle}`,
+    headline: jobRunningHeadline(job),
     detail: overBudget ? OVER_BUDGET_COPY : progress.waiting ? waitingCopy : progress.stage,
     stages,
     stageIndex: progress.stageIndex,
@@ -556,7 +602,7 @@ export interface JobNotification {
  */
 export const jobNotification = (job: TrackedJob): JobNotification | null => {
   if (job.status === 'done') {
-    const label = jobArtefactLabel(job.kind, job.resultCount ?? job.requestedCount);
+    const label = jobDoneLabel(job);
     const ref = jobResultRef(job);
     return {
       title: `${label} ready · ${job.sourceTitle}`,

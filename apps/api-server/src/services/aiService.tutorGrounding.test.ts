@@ -236,3 +236,48 @@ describe('study modes', () => {
     expect(systemPrompts[0]).toContain('Land Use Act');
   });
 });
+
+/**
+ * A page-scoped turn. The walk-through hands the tutor ONE page as the whole
+ * note context, so the honesty rules above apply unchanged — these pin the two
+ * halves that would otherwise drift: the model is told which page it is
+ * looking at (so it can say "this page doesn't cover that" instead of guessing
+ * at page 8), and a blank page produces no excerpts and therefore no claim.
+ */
+describe('explaining one page', () => {
+  const PAGE = 'Page seven covers oxidative phosphorylation in the inner mitochondrial membrane. '.repeat(4);
+
+  it('tells the model which page it can see, and marks the answer as from the notes', async () => {
+    mockGroq('It happens in the inner membrane.\nSOURCE:notes');
+
+    const result = await companionChat('Where does this happen?', [], {
+      noteTitle: 'Cell respiration',
+      noteContext: PAGE,
+      pageIndex: 6,
+    });
+
+    const prompt = systemPrompts[0];
+    expect(prompt).toContain('page 7');
+    expect(prompt).toContain('only being shown page 7');
+    expect(result.grounding).toBe('notes');
+    expect(result.groundedExcerpts).toBeGreaterThan(0);
+  });
+
+  it('claims nothing on a blank page', async () => {
+    // A page with no readable text reaches here as an empty context. Nothing
+    // was put in front of the model, so nothing may be badged as read — the
+    // clamp does this without a page-specific rule.
+    mockGroq('Generally, that happens in the mitochondria.\nSOURCE:notes');
+
+    const result = await companionChat('Where does this happen?', [], {
+      noteTitle: 'Cell respiration',
+      noteContext: '',
+      pageIndex: 3,
+    });
+
+    expect(result.grounding).toBe('general');
+    expect(result.groundingLabel).toBe(COMPANION_GROUNDING_LABELS.general);
+    expect(result.groundedExcerpts).toBe(0);
+    expect(result.groundedExcerptIndexes).toEqual([]);
+  });
+});

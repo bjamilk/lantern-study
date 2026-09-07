@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { ChevronDownIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import {
   isTaxonomyLeaf,
   taxonomyForest,
   type MarketplaceDepartment,
   type TaxonomyTreeNode,
 } from '@lantern/shared/marketplace';
+import { AppIcon } from '../ui/AppIcon';
 
 interface MarketplaceBrowseTreeProps {
   department: MarketplaceDepartment;
@@ -36,7 +36,7 @@ const TreeBranch: React.FC<{
             onClick={() => setOpen((value) => !value)}
             className="p-1 rounded text-lantern-text-tertiary hover:text-lantern-text"
           >
-            {open ? <ChevronDownIcon className="w-3.5 h-3.5" /> : <ChevronRightIcon className="w-3.5 h-3.5" />}
+            {open ? <AppIcon name="chevron-down" size={14} /> : <AppIcon name="chevron-forward" size={14} />}
           </button>
         ) : (
           <span className="w-5" />

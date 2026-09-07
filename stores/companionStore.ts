@@ -72,7 +72,14 @@ interface CompanionState {
   toggle: () => void;
   pendingMessage: string | null;
   setPendingMessage: (msg: string | null) => void;
-  openWithMessage: (msg: string) => void;
+  /**
+   * Open the drawer and queue one message. `context` rides with THAT send
+   * only (a walk-through's page scope, say) and is dropped afterwards, so the
+   * next question the student types is not silently scoped to page 7.
+   */
+  openWithMessage: (msg: string, context?: Partial<CompanionUserContext>) => void;
+  /** One-shot context for the queued message. Consumed by the next send. */
+  pendingMessageContext: Partial<CompanionUserContext> | null;
   pendingAssistantMessage: string | null;
   setPendingAssistantMessage: (msg: string | null) => void;
   openWithAssistantMessage: (msg: string) => void;
@@ -138,6 +145,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isStreaming: false,
   error: null,
   pendingMessage: null,
+  pendingMessageContext: null,
   pendingAssistantMessage: null,
   activeNoteContext: typeof localStorage !== 'undefined' ? readPersistedNoteContext() : null,
   activeConversationId: typeof localStorage !== 'undefined' ? readPersistedConversationId() : null,
@@ -152,9 +160,13 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
    * already loaded — spending an AI credit while the panel was still loading,
    * without the user typing anything.
    */
-  close: () => set({ isOpen: false, pendingMessage: null }),
+  close: () => set({ isOpen: false, pendingMessage: null, pendingMessageContext: null }),
   toggle: () =>
-    set(s => (s.isOpen ? { isOpen: false, pendingMessage: null } : { isOpen: true })),
+    set(s =>
+      s.isOpen
+        ? { isOpen: false, pendingMessage: null, pendingMessageContext: null }
+        : { isOpen: true }
+    ),
   clearError: () => set({ error: null }),
   deleteConversation: async (conversationId: string) => {
     try {
@@ -176,7 +188,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     return msg;
   },
   setPendingMessage: (msg) => set({ pendingMessage: msg }),
-  openWithMessage: (msg) => set({ isOpen: true, pendingMessage: msg }),
+  openWithMessage: (msg, context) =>
+    set({ isOpen: true, pendingMessage: msg, pendingMessageContext: context ?? null }),
   setPendingAssistantMessage: (msg) => set({ pendingAssistantMessage: msg }),
   openWithAssistantMessage: (msg) => set({ isOpen: true, pendingAssistantMessage: msg }),
   injectAssistantMessage: (content: string) => {
@@ -331,7 +344,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   sendMessage: async (text: string, context?: CompanionUserContext) => {
-    const mergedContext = mergeThreadContext(get, context);
+    const oneShot = get().pendingMessageContext;
+    if (oneShot) set({ pendingMessageContext: null });
+    const mergedContext = mergeThreadContext(get, oneShot ? { ...oneShot, ...context } : context);
 
     const tempUserMsg: CompanionMessage = {
       id: `tmp-user-${Date.now()}`,
@@ -375,7 +390,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
-    const mergedContext = mergeThreadContext(get, context);
+    const oneShot = get().pendingMessageContext;
+    if (oneShot) set({ pendingMessageContext: null });
+    const mergedContext = mergeThreadContext(get, oneShot ? { ...oneShot, ...context } : context);
 
     const tempUserMsg: CompanionMessage = {
       id: `tmp-user-${Date.now()}`,

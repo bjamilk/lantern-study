@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ExclamationTriangleIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { AppIcon } from '../ui/AppIcon';
 import { marketplaceComplianceBanner } from '@lantern/shared';
 import usePaystackEnabled from './usePaystackEnabled';
 
@@ -53,7 +53,7 @@ const MarketplaceComplianceBanner: React.FC<MarketplaceComplianceBannerProps> = 
       className={`flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100 ${className}`}
       role="note"
     >
-      <ExclamationTriangleIcon className="w-4 h-4 shrink-0 mt-0.5" aria-hidden />
+      <AppIcon name="warning" size={16} className="shrink-0 mt-0.5" aria-hidden />
       <p className="min-w-0 flex-1">{marketplaceComplianceBanner(paystackEnabled)}</p>
       <button
         type="button"
@@ -61,7 +61,7 @@ const MarketplaceComplianceBanner: React.FC<MarketplaceComplianceBannerProps> = 
         aria-label="Dismiss marketplace notice"
         className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-md text-amber-800 hover:bg-amber-100 dark:text-amber-100 dark:hover:bg-amber-900/50"
       >
-        <XMarkIcon className="h-4 w-4" aria-hidden />
+        <AppIcon name="close" size={16} aria-hidden />
       </button>
     </div>
   );

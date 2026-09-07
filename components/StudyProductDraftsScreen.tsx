@@ -11,14 +11,7 @@ import * as notesApi from '../services/notes';
 import { PublishStudyPackModal } from './marketplace/PublishStudyPackModal';
 import { useToastStore } from '../stores/toastStore';
 import { summarizeStudyPackCounts, STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
-import {
-  ArrowLeftIcon,
-  SparklesIcon,
-  TrashIcon,
-  ArrowPathIcon,
-  BuildingStorefrontIcon,
-  ExclamationTriangleIcon,
-} from '@heroicons/react/24/outline';
+import { AppIcon } from './ui/AppIcon';
 
 /** A source handed in by an entry point ("Turn this into a Study Product"). */
 export interface StudyProductDraftSource {
@@ -132,11 +125,11 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
             className="p-2 -ml-2 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors"
             aria-label="Back"
           >
-            <ArrowLeftIcon className="w-5 h-5" />
+            <AppIcon name="arrow-back" size={20} />
           </button>
           <div className="flex-1">
             <h1 className="text-xl sm:text-2xl font-bold text-lantern-text flex items-center gap-2">
-              <SparklesIcon className="w-6 h-6 text-lantern-primary" />
+              <AppIcon name="sparkles" size={24} className="text-lantern-primary" />
               Study Products
             </h1>
             <p className="text-sm text-lantern-text-secondary">
@@ -148,7 +141,7 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
             className="p-2 rounded-lg text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors"
             aria-label="Refresh"
           >
-            <ArrowPathIcon className="w-5 h-5" />
+            <AppIcon name="refresh" size={20} />
           </button>
         </div>
 
@@ -173,7 +166,7 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
           </div>
         ) : drafts.length === 0 ? (
           <div className="mt-6 rounded-2xl border border-lantern-border bg-lantern-surface p-8 text-center">
-            <SparklesIcon className="w-10 h-10 mx-auto text-lantern-text-tertiary mb-3" />
+            <AppIcon name="sparkles" size={40} className="mx-auto text-lantern-text-tertiary mb-3" />
             <p className="text-lantern-text font-semibold">No study products yet</p>
             <p className="text-sm text-lantern-text-secondary mt-1">
               Open a note and press <span className="font-semibold">Sell</span>, or pick a course in
@@ -196,11 +189,11 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
                 >
                   <div className="mt-0.5 shrink-0 w-9 h-9 rounded-lg bg-lantern-primary-background flex items-center justify-center">
                     {pending ? (
-                      <ArrowPathIcon className="w-5 h-5 text-lantern-primary animate-spin" />
+                      <AppIcon name="refresh" size={20} className="text-lantern-primary animate-spin" />
                     ) : d.status === 'failed' ? (
-                      <ExclamationTriangleIcon className="w-5 h-5 text-lantern-error" />
+                      <AppIcon name="warning" size={20} className="text-lantern-error" />
                     ) : (
-                      <SparklesIcon className="w-5 h-5 text-lantern-primary" />
+                      <AppIcon name="sparkles" size={20} className="text-lantern-primary" />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -221,7 +214,7 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
                         onClick={() => void handleReview(d.id)}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-lantern-primary hover:bg-lantern-primary-dark text-white text-xs font-semibold transition-colors"
                       >
-                        <BuildingStorefrontIcon className="w-3.5 h-3.5" />
+                        <AppIcon name="storefront" size={14} />
                         Review &amp; sell
                       </button>
                     )}
@@ -230,7 +223,7 @@ export const StudyProductDraftsScreen: React.FC<Props> = ({
                       className="p-1.5 rounded-lg text-lantern-text-tertiary hover:text-lantern-error hover:bg-lantern-error/5 transition-colors"
                       aria-label="Delete draft"
                     >
-                      <TrashIcon className="w-4 h-4" />
+                      <AppIcon name="trash" size={16} />
                     </button>
                   </div>
                 </li>

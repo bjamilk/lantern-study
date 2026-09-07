@@ -134,6 +134,12 @@ export interface StartJobSpec {
   sourceTitle: string;
   requestedCount?: number;
   /**
+   * True when `requestedCount` is the most the generator will write, not a
+   * count it can promise. The sheet then says "up to N", and states a plain
+   * number only once the save has counted one.
+   */
+  requestedCountIsMax?: boolean;
+  /**
    * Whether to open the progress sheet. Default true.
    *
    * Set false where the entry point already has its own visible confirmation
@@ -563,6 +569,7 @@ export const useJobsStore = create<JobsState>((set, get) => {
         kind: spec.kind,
         sourceTitle: spec.sourceTitle,
         requestedCount: spec.requestedCount,
+        requestedCountIsMax: spec.requestedCountIsMax,
         now,
       });
       const watch = spec.watch !== false;

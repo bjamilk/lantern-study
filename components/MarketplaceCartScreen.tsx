@@ -14,9 +14,9 @@ import {
   koboToNaira,
 } from '@lantern/shared/marketplace';
 import { resolveListingDisplayPrice } from '@lantern/shared/utils';
-import { ArrowLeftIcon, ShoppingCartIcon, TrashIcon } from '@heroicons/react/24/outline';
 import Button from './ui/Button';
 import { useToastStore } from '../stores/toastStore';
+import { AppIcon } from './ui/AppIcon';
 
 interface MarketplaceCartScreenProps {
   onBack: () => void;
@@ -165,7 +165,7 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
           onClick={onBack}
           className="p-2 rounded-lg hover:bg-lantern-background-secondary"
         >
-          <ArrowLeftIcon className="w-5 h-5" />
+          <AppIcon name="arrow-back" size={20} />
         </button>
         <h1 className="text-lg font-semibold flex-1">Cart</h1>
       </div>
@@ -174,7 +174,7 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
         {loading && <p className="text-sm text-lantern-text-secondary">Loading cart…</p>}
         {!loading && items.length === 0 && (
           <div className="text-center py-12 text-lantern-text-secondary">
-            <ShoppingCartIcon className="w-12 h-12 mx-auto mb-2 opacity-40" />
+            <AppIcon name="cart" size={48} className="mx-auto mb-2 opacity-40" />
             <p>Your cart is empty</p>
             <Button className="mt-4" size="sm" onClick={() => onNavigate('Marketplace')}>
               Browse marketplace
@@ -252,7 +252,7 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
                   className="p-2 rounded-lg text-lantern-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
                   aria-label="Remove from cart"
                 >
-                  <TrashIcon className="w-5 h-5" />
+                  <AppIcon name="trash" size={20} />
                 </button>
               </div>
             </div>

@@ -1,17 +1,7 @@
 import React from 'react';
 import { OfflineSessionBundle } from '../../types';
-import {
-  ArrowDownTrayIcon,
-  PlayIcon,
-  BookOpenIcon,
-  TrashIcon,
-  PencilIcon,
-  CheckIcon,
-  XMarkIcon,
-  BuildingStorefrontIcon,
-  ArrowPathIcon,
-} from '@heroicons/react/24/outline';
 import { featureAccents } from '@lantern/shared/design';
+import { AppIcon } from '../ui/AppIcon';
 
 interface OfflineBundleCardProps {
   bundle: OfflineSessionBundle;
@@ -72,10 +62,10 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
             className="flex-1 min-w-0 px-2 py-1 text-base font-semibold border border-lantern-border rounded-lantern bg-lantern-background text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
           />
           <button type="button" onClick={onCommitRename} className="p-1 text-lantern-success" title="Save name">
-            <CheckIcon className="w-5 h-5" />
+            <AppIcon name="checkmark" size={20} />
           </button>
           <button type="button" onClick={onCancelEdit} className="p-1 text-lantern-text-tertiary" title="Cancel">
-            <XMarkIcon className="w-5 h-5" />
+            <AppIcon name="close" size={20} />
           </button>
         </div>
       ) : (
@@ -97,7 +87,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
             className="flex-shrink-0 p-1 text-lantern-text-tertiary hover:text-lantern-primary rounded"
             title="Rename bundle"
           >
-            <PencilIcon className="w-4 h-4" />
+            <AppIcon name="pencil" size={16} />
           </button>
         </div>
       )}
@@ -128,7 +118,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
           className="px-3 py-2 min-h-[44px] bg-lantern-accent-background text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 rounded-lantern text-sm flex items-center transition-colors hover:border-amber-500 disabled:opacity-50"
           title="A newer version of this question bank is available"
         >
-          <ArrowPathIcon className={`w-4 h-4 mr-1.5 ${updating ? 'animate-spin' : ''}`} />
+          <AppIcon name="refresh" size={16} className={`mr-1.5 ${updating ? 'animate-spin' : ''}`} />
           {updating ? 'Updating…' : 'Update'}
         </button>
       ) : null}
@@ -139,7 +129,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
           className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-primary-background rounded-lantern transition-colors"
           title="Publish to marketplace"
         >
-          <BuildingStorefrontIcon className="w-5 h-5" />
+          <AppIcon name="storefront" size={20} />
         </button>
       ) : null}
       {/* Purchased banks are someone else's product — no export/re-sharing. */}
@@ -150,7 +140,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
           className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-primary-background rounded-lantern transition-colors"
           title="Export bundle"
         >
-          <ArrowDownTrayIcon className="w-5 h-5" />
+          <AppIcon name="download" size={20} />
         </button>
       ) : null}
       <button
@@ -159,7 +149,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
         className="px-3 py-2 min-h-[44px] border border-lantern-primary text-lantern-primary hover:bg-lantern-primary-background rounded-lantern text-sm flex items-center transition-colors"
         title="Study these questions without scoring"
       >
-        <BookOpenIcon className="w-4 h-4 mr-1.5" />
+        <AppIcon name="book-open" size={16} className="mr-1.5" />
         Study
       </button>
       <button
@@ -168,7 +158,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
         className="px-3 py-2 min-h-[44px] bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lantern text-sm flex items-center transition-colors"
         title="Start offline test"
       >
-        <PlayIcon className="w-4 h-4 mr-1.5" />
+        <AppIcon name="play" size={16} className="mr-1.5" />
         Start Test
       </button>
       <button
@@ -177,7 +167,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
         className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-error hover:bg-lantern-error/10 rounded-lantern transition-colors"
         title="Delete bundle"
       >
-        <TrashIcon className="w-5 h-5" />
+        <AppIcon name="trash" size={20} />
       </button>
     </div>
   </div>
