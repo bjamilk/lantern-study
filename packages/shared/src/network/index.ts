@@ -11,8 +11,15 @@
 // L — Communities and discovery
 // ---------------------------------------------------------------------------
 
-export const COMMUNITY_KINDS = ['institution', 'programme', 'level', 'course', 'topic'] as const;
-export type CommunityKind = (typeof COMMUNITY_KINDS)[number];
+/**
+ * Kinds, the gate, roles, mutes, invites and ranking live in
+ * ./communityGovernance so `communityLabels.ts` can read them without a
+ * circular import back through this barrel. Re-exported here because every
+ * existing caller imports from `@lantern/shared/network`.
+ */
+export * from './communityGovernance';
+import type { CommunityKind } from './communityGovernance';
+export type { CommunityKind };
 
 export interface Community {
   id: string;
@@ -28,6 +35,16 @@ export interface Community {
   visibility: 'public' | 'private';
   is_official: boolean;
   member_count: number;
+  /** Ranking tiebreak (own campus > member count > NEWEST). Absent on older payloads. */
+  created_at?: string | null;
+  /**
+   * Event communities only (`kind = 'event'`), and null on every other kind.
+   * `undefined` = the 20260908120000 migration is not applied yet, which is a
+   * different thing from "this event has no end time".
+   */
+  starts_at?: string | null;
+  ends_at?: string | null;
+  location?: string | null;
 }
 
 export interface MyCommunity extends Community {
@@ -59,6 +76,15 @@ export interface CommunityDetail extends Community {
   viewerRole: CommunityRole | null;
   /** 0 for non-members (and when degraded). */
   onlineCount: number;
+  /**
+   * The viewer's own mute (`community_members.muted_until`). A muted member
+   * READS everything and cannot post — the composer is disabled with
+   * `COMMUNITY_MODERATION_COPY.mutedTitle`, never hidden, so the student is
+   * told what happened. `undefined` pre-migration.
+   */
+  viewerMutedUntil?: string | null;
+  /** True when the viewer may create invite codes / change roles here. */
+  viewerCanModerate?: boolean;
 }
 
 export interface DiscoverGroup {
@@ -106,15 +132,6 @@ export const DISCOVER_SECTION_INTRO: Record<'communities' | 'groups' | 'people' 
 
 export const DISCOVER_COMING_SOON_TITLE = 'Discover';
 export const DISCOVER_COMING_SOON_BODY = 'Coming soon!';
-
-/**
- * The Discover hub (communities, groups, people, Start a room) is platform-admin
- * only until campus rooms ship. Marketplace as a standalone destination is not
- * gated by this.
- */
-export function canAccessDiscoverHub(isPlatformAdmin: boolean): boolean {
-  return isPlatformAdmin === true;
-}
 
 /**
  * Auto-derived campus rooms come back on the next profile save, so the honest

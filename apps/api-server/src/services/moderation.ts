@@ -279,6 +279,28 @@ export class ModerationService {
         if (!row) return base;
         return { ...base, exists: true, title: row.title, status: row.status, ownerId: row.poster_user_id };
       }
+      // A board post is an ordinary `messages` row; the target type exists so
+      // the queue can tell a community board apart from a group chat without
+      // a second reports table.
+      case 'community_post': {
+        const row = await one('messages', 'id, text, subject, sender_id, group_id, removed_at');
+        if (!row) return base;
+        return {
+          ...base,
+          exists: true,
+          title: row.subject || snippet(row.text),
+          status: row.removed_at ? 'removed' : 'active',
+          ownerId: row.sender_id,
+        };
+      }
+      // The reported MEMBER is a profile; which community they were reported
+      // in rides in the report's `details`, because content_reports.target_id
+      // is one uuid and the person is the thing being acted on.
+      case 'community_member': {
+        const row = await one('profiles', 'id, name, username');
+        if (!row) return base;
+        return { ...base, exists: true, title: row.username || row.name, ownerId: row.id, ownerName: row.name };
+      }
       default:
         return base;
     }
@@ -312,7 +334,12 @@ export class ModerationService {
     if (!target.exists) {
       throw moderationError(`${CONTENT_REPORT_TARGET_LABELS[targetType]} not found`, 404);
     }
-    if (targetType === 'user' && target.ownerId === input.reporterId) {
+    // Self-reports cost a moderator a queue item and achieve nothing. Both
+    // person-shaped targets are covered: `community_member` is a profile too.
+    if (
+      (targetType === 'user' || targetType === 'community_member' || targetType === 'community_post') &&
+      target.ownerId === input.reporterId
+    ) {
       throw moderationError('You cannot report yourself', 400);
     }
 
@@ -500,6 +527,23 @@ export class ModerationService {
             put({ type, id: row.id, exists: true, title: row.title, status: row.status, ownerId: row.poster_user_id });
           }
           break;
+        case 'community_post':
+          for (const row of await fetchMany('messages', 'id, text, subject, sender_id, removed_at', ids)) {
+            put({
+              type,
+              id: row.id,
+              exists: true,
+              title: row.subject || snippet(row.text),
+              status: row.removed_at ? 'removed' : 'active',
+              ownerId: row.sender_id,
+            });
+          }
+          break;
+        case 'community_member':
+          for (const row of await fetchMany('profiles', 'id, name, username', ids)) {
+            put({ type, id: row.id, exists: true, title: row.username || row.name, ownerId: row.id, ownerName: row.name });
+          }
+          break;
       }
     }
 
@@ -672,6 +716,23 @@ export class ModerationService {
       }
       case 'group': {
         const { error } = await this.db.from('groups').update({ is_archived: true }).eq('id', targetId);
+        if (error) throw error;
+        break;
+      }
+      case 'community_post': {
+        // The SAME soft removal a community moderator applies, so the board
+        // renders one tombstone whichever path removed the post. `pinned_at`
+        // is cleared too: a tombstone at the top of a board is worse than no
+        // pin at all. `removed_reason` may not exist yet (20260908120000 is
+        // hand-applied), so it is retried without.
+        const patch = { removed_at: nowIso, removed_by: ctx.actorId, pinned_at: null, pinned_by: null };
+        let { error } = await this.db
+          .from('messages')
+          .update({ ...patch, removed_reason: ctx.reason.slice(0, 300) })
+          .eq('id', targetId);
+        if (error && (error.code === '42703' || error.code === 'PGRST204')) {
+          ({ error } = await this.db.from('messages').update(patch).eq('id', targetId));
+        }
         if (error) throw error;
         break;
       }
@@ -1117,6 +1178,10 @@ function targetLink(targetType: ContentReportTargetType, targetId: string): stri
       return `group:${targetId}`;
     case 'job_posting':
       return `job:${targetId}`;
+    case 'community_post':
+      return `community_post:${targetId}`;
+    case 'community_member':
+      return `profile:${targetId}`;
     default:
       return undefined;
   }

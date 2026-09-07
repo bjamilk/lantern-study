@@ -3,18 +3,15 @@
  * Kept in their own module so `communityServer.ts` can use them without a
  * circular import through `./index`.
  */
-import type { CommunityKind } from './index';
+import { communityKindMeta, isCommunityKind, type CommunityKind } from './communityGovernance';
 
-const COMMUNITY_KIND_LABELS: Record<CommunityKind, string> = {
-  institution: 'Campus',
-  programme: 'Programme',
-  level: 'Year',
-  course: 'Course',
-  topic: 'Interest',
-};
-
+/**
+ * One label per kind, taken from `communityKindMeta` so the label a card shows
+ * and the label a filter chip shows can never drift. Unknown kinds (a row
+ * written by a newer API than this client) read 'Community'.
+ */
 export function communityKindLabel(kind: CommunityKind | string): string {
-  return COMMUNITY_KIND_LABELS[kind as CommunityKind] ?? 'Community';
+  return isCommunityKind(kind) ? communityKindMeta(kind).label : 'Community';
 }
 
 /** "1,204 members" / "1 member" — used identically on both clients. */

@@ -239,7 +239,14 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
       /at least 50 characters/i.test(json.error)
         ? 'Not enough study content yet. Add notes or wait for slide/PDF text extraction to finish.'
         : json.error || `AI request failed (${response.status})`;
-    throw new Error(message);
+    // The status rides along so callers can say something true without
+    // reading the server's sentence: `requestFailureSentence` turns a 429 into
+    // "That was a lot of tries at once" instead of showing whatever the API
+    // wrote. Screens that still render `message` are unchanged.
+    const error = new Error(message) as Error & { status?: number; body?: unknown };
+    error.status = response.status;
+    error.body = json;
+    throw error;
   }
 
   if (hadFeatureQuota) void forceRefreshAIUsage();

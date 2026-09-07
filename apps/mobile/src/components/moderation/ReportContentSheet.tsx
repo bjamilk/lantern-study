@@ -50,6 +50,11 @@ const TITLE_BY_TARGET: Record<ContentReportTargetType, string> = {
   group: 'Report group',
   message: 'Report message',
   dm_message: 'Report message',
+  // The community lane's two targets (shared CONTENT_REPORT_TARGET_TYPES).
+  // A board post is reported as a POST rather than as a "message": the word
+  // the reporter reads has to match the thing they are looking at.
+  community_post: 'Report post',
+  community_member: 'Report member',
   job_posting: 'Report job posting',
 };
 

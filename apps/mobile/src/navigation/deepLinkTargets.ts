@@ -8,6 +8,7 @@
  */
 import { parseDeepLink } from '@lantern/shared/linking';
 import { toTab } from './nestedTab';
+import { parseCommunityCode, parseInviteCode } from '../screens/discover/joinByCodeModel';
 
 /**
  * Map legacy / notification links into navigation state.
@@ -70,6 +71,52 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
       return { screen: 'MeTab', params: { screen: 'BudgetHome', initial: false } as any };
     case 'join':
       return { screen: 'JoinClass', params: { code: parsed.id } } as any;
+    case 'discover': {
+      // `lanternstudy://discover/join/<code>` and `…/discover/c/<slug>` — the
+      // two shapes a community link arrives in. `parseDeepLink` splits
+      // `<type>/<id>` generically, so the code is `extra`-less and the raw URL
+      // is re-read by `parseCommunityCode`, which is also what the Join sheet
+      // and web use: one link cannot mean two things across three doors.
+      /**
+       * A one-time INVITE CODE goes to the Join sheet, which REDEEMS it —
+       * `/discover/join/ABCD2345` used to be read as a slug (lowercased) and
+       * pushed straight to a community page that 404s, because until this wave
+       * a "code" could only ever be a slug. The sheet still falls back to the
+       * slug lookup for an ambiguous string, so a public community whose slug
+       * happens to look like a code is not lost.
+       */
+      const code = parseInviteCode(url);
+      if (code) {
+        return {
+          screen: 'CampusTab',
+          params: {
+            screen: 'Campus',
+            params: { segment: 'communities', joinCode: code, at: Date.now() },
+          } as any,
+        };
+      }
+      const slug = parseCommunityCode(url);
+      if (slug) {
+        return {
+          screen: 'CampusTab',
+          params: { screen: 'CommunityDetail', params: { slug }, initial: false } as any,
+        };
+      }
+      // A code we cannot resolve to a community opens the Communities segment
+      // with the Join sheet prefilled — never a dead end, and never a silent
+      // drop, which is what a `return null` here would be.
+      return {
+        screen: 'CampusTab',
+        params: {
+          screen: 'Campus',
+          params: {
+            segment: 'communities',
+            joinCode: parsed.id === 'join' ? '' : parsed.id,
+            at: Date.now(),
+          },
+        } as any,
+      };
+    }
     case 'test':
       // A generated test opens as the test itself; the bare `test` link (no
       // id) is the older "go to my tests" form and still lands on the list.

@@ -114,7 +114,13 @@ export type ContextualScreenAction =
   /** Make questions from THIS page (one AI use). */
   | 'walkthroughQuiz'
   /** Mark the page on screen done, or undo that. */
-  | 'walkthroughDone';
+  | 'walkthroughDone'
+  /** Open the community's one live chat (its `General` lounge). */
+  | 'communityChat'
+  /** Jump to the community's BOARDS section. */
+  | 'communityBoards'
+  /** Jump to the community's STUDY ROOMS section. */
+  | 'communityRooms';
 
 export interface ContextualBarItem {
   /** Stable id, for keys and for tests; not shown to anyone. */
@@ -377,6 +383,75 @@ const WALKTHROUGH_BAR: ContextualBarSpec = {
 };
 
 /**
+ * The community row: Chat · Boards · Rooms · Members.
+ *
+ * The spec names it "Board · Channels · Members · Rooms"; these are the same
+ * four doors under the names this app already uses for them. "Channels" is the
+ * community's ONE live chat — founder decision 1 (2026-09-02) keeps the lounge
+ * a chat and renders it as `General`, so calling it Chat is what the student
+ * sees on the row above it. Boards and Rooms are the two sections of the
+ * community page below that.
+ *
+ * Three of the four are `screenAction`s and one is a route, and that split is
+ * forced by where the things actually live: Boards and Rooms are SECTIONS of
+ * `CommunityDetail`, not screens, and the lounge is a group whose id the
+ * registry cannot know (it is minted on first use by `POST /communities/:id/
+ * lounge`). Members is a real CampusStack route, and `CommunityDetail`'s own
+ * `slug` param is exactly what it needs — hence `paramsFrom`/`requires`, so a
+ * press before the community has loaded is `unavailable` rather than a push
+ * onto a roster for nothing.
+ *
+ * Keyed on `CommunityDetail` ALONE. `CommunityChannel` is deliberately absent:
+ * inside a channel chat the row would sit under the composer and above the
+ * keyboard, and the spec hides it there. `CommunityMembers`, `CommunityPost`
+ * and the board are rooms reached BY this row and carry their own back arrow;
+ * keying them would put three screen actions on screens that do not register
+ * them, which is a row of dead buttons.
+ *
+ * Accent `campus` for the same reason the deck and note rows declare one: the
+ * student is standing on the community, never on one of its four doors.
+ */
+const COMMUNITY_BAR: ContextualBarSpec = {
+  stack: 'CampusTab',
+  accent: 'campus',
+  items: [
+    {
+      id: 'chat',
+      label: 'Chat',
+      icon: 'chatbubbles',
+      feature: 'groups',
+      target: { kind: 'screenAction', action: 'communityChat' },
+    },
+    {
+      id: 'boards',
+      label: 'Boards',
+      icon: 'list',
+      feature: 'campus',
+      target: { kind: 'screenAction', action: 'communityBoards' },
+    },
+    {
+      id: 'rooms',
+      label: 'Rooms',
+      icon: 'people',
+      feature: 'campus',
+      target: { kind: 'screenAction', action: 'communityRooms' },
+    },
+    {
+      id: 'members',
+      label: 'Members',
+      icon: 'person',
+      feature: 'campus',
+      target: {
+        kind: 'route',
+        route: 'CommunityMembers',
+        paramsFrom: ['slug'],
+        requires: ['slug'],
+      },
+    },
+  ],
+};
+
+/**
  * The Shop row: Browse · Cart · You, §7.2's third registry.
  *
  * Shop lives on the CAMPUS stack — `MarketTab` in the spec table is the retired
@@ -470,6 +545,10 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
   CourseListings: SHOP_BAR,
   Cart: SHOP_BAR,
   ShopAccount: SHOP_BAR,
+
+  // The community page. Only this key — see COMMUNITY_BAR's header for why the
+  // roster, the board and a channel chat carry no row.
+  CommunityDetail: COMMUNITY_BAR,
 };
 
 /**

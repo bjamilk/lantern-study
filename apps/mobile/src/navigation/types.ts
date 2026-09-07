@@ -236,9 +236,22 @@ export type MarketStackParamList = {
       }
     | undefined;
   CommunityDetail: { slug: string };
+  /**
+   * Start a community. On the CAMPUS stack with every other community screen
+   * (founder rule §0a), so Back returns to the Communities segment.
+   * `code` prefills the join sheet when a `discover/join/<code>` deep link
+   * could not resolve the code to a community on its own.
+   */
+  CreateCommunity: { code?: string } | undefined;
   // Founder rule (spec §0a): a community's channels, rooms and roster live on
   // THIS stack, never on the Chat tab, so back always returns to the community.
   CommunityMembers: { slug: string; communityId?: string; name?: string };
+  /**
+   * Roles, mutes and invite links for one community (Wave 8). On the CAMPUS
+   * stack beside the roster for the same reason: back returns to the
+   * community, and nothing about a community is ever reached by nesting.
+   */
+  CommunityManage: { slug: string; communityId?: string; name?: string };
   /**
    * One community room. The route name is unchanged so deep links and every
    * existing navigation param keep working: the screen routes the community's
@@ -362,6 +375,12 @@ export type CampusStackParamList = {
     | {
         segment?: import("../screens/campus/campusSegments").CampusSegment;
         at?: number;
+        /**
+         * A `discover/join/<code>` deep link whose code did not resolve to a
+         * community on its own: the Communities segment opens its Join sheet
+         * with this in the box rather than dropping the link.
+         */
+        joinCode?: string;
       }
     | undefined;
 } & MarketStackParamList &

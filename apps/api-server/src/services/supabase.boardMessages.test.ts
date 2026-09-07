@@ -79,6 +79,9 @@ function makeSelf(options: {
   setSchemaCapabilities({
     groupCommunitySurface: true,
     messageBoardColumns: boardColumns,
+    // The mute read is a real query on a post-migration database; this
+    // harness scripts every step, so the capability is pinned off.
+    communityMemberMute: false,
   });
 
   const calls: Call[] = [];

@@ -29,13 +29,21 @@ import {
   userShowsOnlineStatus,
 } from '@lantern/shared/settings';
 import {
+  COMMUNITY_EVENT_LOCATION_MAX,
+  COMMUNITY_KINDS,
+  canAccessDiscoverHub,
+  communityKindMeta,
   communityPageGroupVisibilities,
+  isCreatableCommunityKind,
+  normalizeCommunitySearch,
+  rankDiscoverCommunities,
   resolveCommunityRole,
   resolveGroupDiscovery,
   sortCommunityChannels,
   sortCommunityStudyGroups,
   type CommunityChannel,
   type CommunityChannels,
+  type CommunityKind,
   type CommunityMember,
   type CommunityMembersPage,
   type CommunityRole,
@@ -43,8 +51,13 @@ import {
 } from '@lantern/shared/network';
 import {
   groupColumns,
+  hasCommunityEventFields,
+  hasCommunityMemberMute,
   hasGroupCommunitySurface,
   isMissingColumnError,
+  isMissingSchemaError,
+  markCommunityEventFieldsMissing,
+  markCommunityMemberMuteMissing,
   markGroupCommunitySurfaceMissing,
 } from './schemaCapabilities';
 
@@ -87,8 +100,11 @@ export function decodeMembersCursor(cursor: string): { joinedAt: string; userId:
   return { joinedAt, userId };
 }
 
-export const COMMUNITY_KINDS = ['institution', 'programme', 'level', 'course', 'topic'] as const;
-export type CommunityKind = (typeof COMMUNITY_KINDS)[number];
+// COMMUNITY_KINDS and CommunityKind now live in @lantern/shared/network
+// (communityGovernance.ts) so the CHECK constraint, both clients and this
+// service cannot drift. Re-exported because callers import them from here.
+export { COMMUNITY_KINDS };
+export type { CommunityKind };
 
 /** Discovery pages are small and cached; these bound every list this service serves. */
 export const DISCOVER_LIMIT_DEFAULT = 20;
@@ -161,13 +177,20 @@ export interface DiscoverGroup {
 }
 
 const COMMUNITY_COLUMNS =
-  'id, kind, slug, name, description, institution_id, programme, study_level, course_id, tags, visibility, is_official, member_count';
+  'id, kind, slug, name, description, institution_id, programme, study_level, course_id, tags, visibility, is_official, member_count, created_at';
+/**
+ * Event columns (20260908120000). Named separately because every select that
+ * uses them must be able to retry without them: this repo hand-applies
+ * migrations, so an API that only knows how to ask for `starts_at` is an API
+ * that 500s on the production database until someone runs the SQL.
+ */
+const COMMUNITY_EVENT_COLUMNS = 'starts_at, ends_at, location';
 /**
  * The detail page's extra columns. `lounge_group_id` only exists once
  * 20260829170000 is applied — every select that names it goes through
  * selectCommunity(), which retries without it on 42703.
  */
-const COMMUNITY_COLUMNS_FULL = `${COMMUNITY_COLUMNS}, lounge_group_id, created_by`;
+const COMMUNITY_COLUMNS_FULL = `${COMMUNITY_COLUMNS}, lounge_group_id, created_by, ${COMMUNITY_EVENT_COLUMNS}`;
 
 /** GET /communities/:slug — CommunityDetail on the wire. */
 export type CommunityDetailRow = CommunityRow & {
@@ -177,7 +200,11 @@ export type CommunityDetailRow = CommunityRow & {
   source: 'auto' | 'joined' | null;
   viewerRole: CommunityRole | null;
   onlineCount: number;
-};
+  /** The viewer's own live mute. undefined = the migration is not applied. */
+  viewerMutedUntil?: string | null;
+  /** May the viewer pin, remove, mute, invite here? */
+  viewerCanModerate: boolean;
+} & Partial<{ starts_at: string | null; ends_at: string | null; location: string | null }>;
 
 type GroupChannelRow = {
   id: string;
@@ -203,7 +230,12 @@ const GROUP_CHANNEL_COLUMNS =
  */
 const BOARD_SURFACE_FILTER = 'community_surface.is.null,community_surface.eq.board';
 
-type MembershipRow = { source: 'auto' | 'joined' | null; role: string | null };
+type MembershipRow = {
+  source: 'auto' | 'joined' | null;
+  role: string | null;
+  /** `community_members.muted_until`; undefined pre-20260908120000. */
+  mutedUntil?: string | null;
+};
 
 export class CommunitiesService {
   constructor(private supabaseService: SupabaseService) {}
@@ -244,10 +276,15 @@ export class CommunitiesService {
     if (!error) return (data as unknown as T | null) ?? null;
     if ((error as { code?: string }).code !== '42703') throw error;
 
+    // Every column added by a migration that may not be applied here. The
+    // retry strips ALL of them, not just the one Postgres happened to name
+    // first: 42703 reports one missing column, and re-running once per
+    // missing column would take a full round trip each.
+    const OPTIONAL = ['lounge_group_id', 'starts_at', 'ends_at', 'location'];
     const fallback = columns
       .split(',')
       .map((c) => c.trim())
-      .filter((c) => c && c !== 'lounge_group_id')
+      .filter((c) => c && !OPTIONAL.includes(c))
       .join(', ');
     const retry = await run(fallback);
     if (retry.error) throw retry.error;
@@ -255,23 +292,40 @@ export class CommunitiesService {
     return { ...(retry.data as unknown as T), lounge_group_id: null } as T;
   }
 
-  /** The viewer's active membership row, or null. */
+  /**
+   * The viewer's active membership row, or null.
+   *
+   * `muted_until` rides along: the community page has to disable the composer
+   * with an explanation, and a second round trip to learn that would show the
+   * student a working composer that then refuses their post.
+   */
   private async viewerMembership(
     viewerId: string,
     communityId: string
   ): Promise<MembershipRow | null> {
-    const { data } = await this.db
-      .from('community_members')
-      .select('user_id, source, role')
-      .eq('community_id', communityId)
-      .eq('user_id', viewerId)
-      .is('opted_out_at', null)
-      .maybeSingle();
+    const withMute = await hasCommunityMemberMute(this.db);
+    const read = (columns: string) =>
+      this.db
+        .from('community_members')
+        .select(columns)
+        .eq('community_id', communityId)
+        .eq('user_id', viewerId)
+        .is('opted_out_at', null)
+        .maybeSingle();
+
+    let { data, error } = await read(
+      withMute ? 'user_id, source, role, muted_until' : 'user_id, source, role'
+    );
+    if (error && withMute && isMissingSchemaError(error)) {
+      markCommunityMemberMuteMissing();
+      ({ data, error } = await read('user_id, source, role'));
+    }
     if (!data) return null;
-    const raw = data as { source?: string | null; role?: string | null };
+    const raw = data as { source?: string | null; role?: string | null; muted_until?: string | null };
     return {
       source: raw.source === 'auto' || raw.source === 'joined' ? raw.source : null,
       role: raw.role ?? null,
+      mutedUntil: raw.muted_until ?? null,
     };
   }
 
@@ -601,24 +655,29 @@ export class CommunitiesService {
     viewerId: string,
     opts: { q?: string; kind?: string; institutionId?: string; courseId?: string; limit?: number } = {}
   ): Promise<CommunityRow[]> {
+    const { institutionId: profileInstitution } = await this.assertCanAccessCommunities(viewerId);
     const limit = this.clampLimit(opts.limit);
-    let institutionId = opts.institutionId;
-    if (!institutionId) {
-      const { data: me } = await this.db
-        .from('profiles')
-        .select('institution_id')
-        .eq('id', viewerId)
-        .maybeSingle();
-      institutionId = (me as any)?.institution_id || undefined;
-    }
+    const institutionId = opts.institutionId || profileInstitution || undefined;
 
-    const build = (scoped: boolean) => {
+    // Free text is searched over name AND description: a student looking for
+    // "past questions" finds the room that says so in its blurb, not only the
+    // one that happens to be named it. Wildcards and PostgREST's filter
+    // separators are stripped in shared so the same term means the same thing
+    // on both clients.
+    const search = normalizeCommunitySearch(opts.q);
+    const withEvents = await hasCommunityEventFields(this.db);
+
+    const build = (scoped: boolean, includeEvents: boolean) => {
       let q = this.db
         .from('communities')
-        .select(COMMUNITY_COLUMNS)
+        .select(includeEvents ? `${COMMUNITY_COLUMNS}, ${COMMUNITY_EVENT_COLUMNS}` : COMMUNITY_COLUMNS)
         .eq('visibility', 'public')
+        // A private community is never discoverable, by definition — it is
+        // joinable only by code, so listing it here would defeat the point.
         .order('member_count', { ascending: false })
-        .limit(limit);
+        // Over-fetch so the pure ranking below has something to rank: sorting
+        // AFTER a limit of 20 only reorders whichever 20 the database picked.
+        .limit(Math.min(DISCOVER_LIMIT_MAX * 3, limit * 3));
       if (scoped && institutionId && UUID_RE.test(institutionId)) {
         q = q.or(`institution_id.eq.${institutionId},institution_id.is.null`);
       }
@@ -626,20 +685,33 @@ export class CommunitiesService {
         q = q.eq('kind', opts.kind);
       }
       if (opts.courseId && UUID_RE.test(opts.courseId)) q = q.eq('course_id', opts.courseId);
-      if (opts.q && opts.q.trim()) {
-        q = q.ilike('name', `%${opts.q.trim().replace(/[%_]/g, '')}%`);
+      if (search) {
+        q = q.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
       }
       return q;
     };
 
-    const { data, error } = await build(true);
-    if (error) throw error;
-    if (data && data.length > 0) return data as unknown as CommunityRow[];
+    const run = async (scoped: boolean): Promise<CommunityRow[]> => {
+      let { data, error } = await build(scoped, withEvents);
+      if (error && withEvents && isMissingSchemaError(error)) {
+        markCommunityEventFieldsMissing();
+        ({ data, error } = await build(scoped, false));
+      }
+      if (error) throw error;
+      return (data || []) as unknown as CommunityRow[];
+    };
 
+    let rows = await run(true);
     // Nothing on campus — widen rather than show an empty Discover tab.
-    const { data: global, error: globalError } = await build(false);
-    if (globalError) throw globalError;
-    return (global || []) as unknown as CommunityRow[];
+    if (rows.length === 0) rows = await run(false);
+
+    // Own campus > member count > newest, with event rooms soonest-first
+    // among themselves. Ranking is a PURE shared helper so the order a
+    // student sees on the phone is the order they see on the web.
+    return rankDiscoverCommunities(rows as any, { institutionId: institutionId ?? null }).slice(
+      0,
+      limit
+    ) as unknown as CommunityRow[];
   }
 
   async getBySlug(viewerId: string, slug: string): Promise<CommunityDetailRow> {
@@ -658,14 +730,18 @@ export class CommunitiesService {
       throw Object.assign(new PublicError('Community not found'), { statusCode: 404 });
     }
     const createdBy = created_by ?? null;
+    const viewerRole = membership ? resolveCommunityRole(membership.role, viewerId, createdBy) : null;
     return {
       ...(community as CommunityRow),
       lounge_group_id: lounge_group_id ?? null,
       created_by: createdBy,
       isMember,
       source: membership?.source ?? null,
-      viewerRole: membership ? resolveCommunityRole(membership.role, viewerId, createdBy) : null,
+      viewerRole,
       onlineCount: isMember ? await this.countOnline(community.id) : 0,
+      viewerMutedUntil: membership?.mutedUntil ?? null,
+      viewerCanModerate:
+        viewerRole === 'owner' || viewerRole === 'admin' || viewerRole === 'moderator',
     };
   }
 
@@ -940,20 +1016,89 @@ export class CommunitiesService {
   }
 
   /**
-   * Create a horizontal (topic) community — the only kind a person can make.
+   * The GATE, enforced server-side.
    *
-   * Without this there is no code path anywhere that creates a non-derived
-   * community, so the join/leave machinery had nothing to act on and the
-   * Communities tab could only ever show the four auto-derived campus scopes.
+   * `canAccessDiscoverHub` is the SAME pure rule both clients call, but a
+   * client flag is not a gate: a request that reaches this API with a forged
+   * or stale flag has to be refused here. Founder decision 1 — open to every
+   * signed-in student with an academic profile (institution + programme), and
+   * members POST.
    *
-   * institution/programme/level/course communities stay derived: they are
-   * minted by ensure_scope_community from the academic profile, and letting a
-   * client mint one would fork the canonical row that scope depends on.
+   * A platform admin always passes, which is what keeps the auto-derived
+   * campus rooms moderatable before anyone has filled in a profile.
    */
-  async createTopicCommunity(
+  async assertCanAccessCommunities(userId: string): Promise<{ institutionId: string | null }> {
+    const { data, error } = await this.db
+      .from('profiles')
+      .select('id, institution_id, programme')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) throw error;
+    const profile = (data ?? {}) as {
+      institution_id?: string | null;
+      programme?: string | null;
+    };
+    // Platform-admin is NOT a profiles column: it is the `platform_admins`
+    // table plus an auth app_metadata flag. Only asked when the academic
+    // profile is not enough, so the common path stays one query.
+    const academicallyAllowed = canAccessDiscoverHub({
+      institutionId: profile.institution_id ?? null,
+      programme: profile.programme ?? null,
+    });
+    const allowed =
+      academicallyAllowed ||
+      (await this.supabaseService.isPlatformAdmin(userId).catch(() => false));
+    if (!allowed) {
+      throw Object.assign(
+        new PublicError(
+          'Add your university and programme to your profile to open Communities'
+        ),
+        { statusCode: 403 }
+      );
+    }
+    return { institutionId: profile.institution_id ?? null };
+  }
+
+  /**
+   * Create a community.
+   *
+   * Any student past the gate may create ANY social kind — interest, club,
+   * hostel, event, faith, sports, general, topic (founder decision 2:
+   * communities go beyond academic discussion, with the same moderation
+   * everywhere).
+   *
+   * institution/programme/level/course stay DERIVED: they are minted by
+   * `ensure_scope_community` from the academic profile, and letting a client
+   * mint one would fork the canonical row that auto-membership and campus
+   * scoping both depend on. A student-made community is NEVER `is_official`.
+   *
+   * A `private` community is joinable only by invite code — `join()` refuses
+   * it and `joinByCode` is the only way in.
+   */
+  async createCommunity(
     userId: string,
-    input: { name?: string; description?: string; tags?: string[] }
+    input: {
+      name?: string;
+      description?: string;
+      tags?: string[];
+      kind?: string;
+      visibility?: string;
+      startsAt?: string | null;
+      endsAt?: string | null;
+      location?: string | null;
+    }
   ): Promise<CommunityRow> {
+    await this.assertCanAccessCommunities(userId);
+
+    const kind = input?.kind ?? 'topic';
+    if (!isCreatableCommunityKind(kind)) {
+      // Naming an academic kind is a different mistake from naming nonsense,
+      // and the message has to say which so the client can act on it.
+      throw (COMMUNITY_KINDS as readonly string[]).includes(String(kind))
+        ? new PublicError('Campus, programme, year and course rooms are made from your profile')
+        : new PublicError('Pick a community type');
+    }
+
     const name = String(input?.name ?? '').trim();
     if (name.length < 3 || name.length > 60) {
       throw new PublicError('Community name must be 3-60 characters');
@@ -962,35 +1107,76 @@ export class CommunitiesService {
     const tags = Array.isArray(input?.tags)
       ? [...new Set(input.tags.map((t) => String(t).trim().toLowerCase()).filter(Boolean))].slice(0, 8)
       : [];
+    const visibility = input?.visibility === 'private' ? 'private' : 'public';
 
-    const slug =
-      'topic-' +
-      name
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '')
-        .slice(0, 48);
-    if (slug.length < 8) throw new PublicError('Please use a more descriptive name');
+    // The slug keeps the `topic-` prefix for `topic` so every community
+    // created before today keeps its URL shape; new kinds get their own.
+    const stem = name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+    if (stem.length < 3) throw new PublicError('Please use a more descriptive name');
+    const slug = `${kind}-${stem}`;
 
-    const { data, error } = await this.db
-      .from('communities')
-      .insert({
-        kind: 'topic',
-        slug,
-        name,
-        description,
-        tags,
-        visibility: 'public',
-        // Never is_official: that badge is for derived campus scopes.
-        is_official: false,
-        created_by: userId,
-      })
-      .select(COMMUNITY_COLUMNS)
-      .single();
+    const meta = communityKindMeta(kind);
+    const eventFields = meta.timed ? this.normalizeEventFields(input) : null;
+    const withEvents = !!eventFields && (await hasCommunityEventFields(this.db));
 
+    // `asKind` is only ever `kind` or, on a pre-migration database, 'topic':
+    // see the 23514 branch below. The requested kind then rides as a tag so
+    // both clients still file the room under the chip the student chose.
+    const insert = (includeEvents: boolean, asKind: string = kind) =>
+      this.db
+        .from('communities')
+        .insert({
+          kind: asKind,
+          slug: asKind === kind ? slug : `${asKind}-${stem}`,
+          name,
+          description,
+          tags: asKind === kind ? tags : [...new Set([kind, ...tags])].slice(0, 8),
+          visibility,
+          // Never is_official: that badge is for derived campus scopes.
+          is_official: false,
+          created_by: userId,
+          ...(includeEvents && eventFields ? eventFields : {}),
+        })
+        .select(COMMUNITY_COLUMNS)
+        .single();
+
+    let { data, error } = await insert(withEvents);
+    if (error && withEvents && isMissingSchemaError(error)) {
+      // Pre-migration: create the event community WITHOUT its schedule rather
+      // than refusing it. The room is the point; the date is an attribute the
+      // owner can add once the migration lands.
+      markCommunityEventFieldsMissing();
+      ({ data, error } = await insert(false));
+    }
+    if (error && (error as { code?: string }).code === '23514' && kind !== 'topic') {
+      // The kind CHECK still lists the old five: 20260908120000 is not applied
+      // here yet. The room is the point and the kind is its label, so file it
+      // as `topic` with the requested kind as a tag — which is exactly what
+      // both clients read back (`effectiveCommunityKind`, `communityBadgeLabel`)
+      // to give the room its real chip — rather than refusing a hostel room
+      // until someone runs the SQL. Once applied, the same request writes the
+      // real kind with no client change.
+      logger.warn('communities.kind CHECK refused a social kind; filing as topic', {
+        kind,
+        userId,
+      });
+      ({ data, error } = await insert(withEvents, 'topic'));
+    }
     if (error) {
       if ((error as { code?: string }).code === '23505') {
         throw new PublicError('A community with that name already exists');
+      }
+      if ((error as { code?: string }).code === '23514') {
+        // A CHECK the fallback above could not route around (a `topic`
+        // refused, or a column constraint). Say so instead of 500ing.
+        throw Object.assign(
+          new PublicError('That kind of community is not available yet'),
+          { statusCode: 503 }
+        );
       }
       throw error;
     }
@@ -1008,8 +1194,47 @@ export class CommunitiesService {
     return community;
   }
 
+  /**
+   * @deprecated Use `createCommunity`. Kept one release so an older client
+   * posting no `kind` still creates the interest room it asked for.
+   */
+  async createTopicCommunity(
+    userId: string,
+    input: { name?: string; description?: string; tags?: string[] }
+  ): Promise<CommunityRow> {
+    return this.createCommunity(userId, { ...input, kind: 'topic' });
+  }
+
+  /**
+   * Event schedule, validated. An end before its start is silently dropped
+   * rather than saved: a room that claims to end before it begins renders as
+   * "already over" everywhere, forever.
+   */
+  private normalizeEventFields(input: {
+    startsAt?: string | null;
+    endsAt?: string | null;
+    location?: string | null;
+  }): { starts_at: string | null; ends_at: string | null; location: string | null } {
+    const iso = (raw: unknown): string | null => {
+      if (typeof raw !== 'string' || !raw.trim()) return null;
+      const ts = Date.parse(raw);
+      return Number.isFinite(ts) ? new Date(ts).toISOString() : null;
+    };
+    const startsAt = iso(input.startsAt);
+    let endsAt = iso(input.endsAt);
+    if (startsAt && endsAt && Date.parse(endsAt) <= Date.parse(startsAt)) endsAt = null;
+    const location =
+      typeof input.location === 'string' && input.location.trim()
+        ? input.location.trim().slice(0, COMMUNITY_EVENT_LOCATION_MAX)
+        : null;
+    return { starts_at: startsAt, ends_at: endsAt, location };
+  }
+
   async join(userId: string, communityId: string): Promise<{ joined: true }> {
     this.assertUuid(communityId, 'community id');
+    // The gate, server-side. A client flag is not a gate: this is the write
+    // that makes someone a member, so it is the one that has to be sure.
+    await this.assertCanAccessCommunities(userId);
     const { data: community, error } = await this.db
       .from('communities')
       .select('id, visibility, name')
@@ -1083,6 +1308,10 @@ export class CommunitiesService {
    * from the last RAW row, before privacy filtering, so a page may come back
    * shorter than `limit` while `nextCursor` is still set — clients keep paging
    * until it is null.
+   *
+   * A moderator's page additionally carries each member's `mutedUntil` (null
+   * when they are not muted) so the manage panel can offer Mute/Unmute without
+   * a second request per row. Nobody else is told who is muted.
    */
   async listMembers(
     viewerId: string,
@@ -1092,7 +1321,7 @@ export class CommunitiesService {
     this.assertUuid(communityId, 'community id');
     const { data: mine } = await this.db
       .from('community_members')
-      .select('user_id, source')
+      .select('user_id, source, role')
       .eq('community_id', communityId)
       .eq('user_id', viewerId)
       .is('opted_out_at', null)
@@ -1113,22 +1342,56 @@ export class CommunitiesService {
     );
     const createdBy = community?.created_by ?? null;
 
-    let query = this.db
-      .from('community_members')
-      .select(
-        'user_id, source, role, joined_at, profiles!inner(id, name, avatar_url, programme, settings, last_seen_at)'
-      )
-      .eq('community_id', communityId)
-      .is('opted_out_at', null);
-    if (cursor) {
-      query = query.or(
-        `joined_at.gt.${cursor.joinedAt},and(joined_at.eq.${cursor.joinedAt},user_id.gt.${cursor.userId})`
-      );
+    // MUTE STATE IS MODERATOR-ONLY. `muted_until` says a named person was
+    // punished, so it goes out only to someone who could have done it —
+    // owner/admin/moderator, or a platform admin, which is the only moderation
+    // an auto-derived campus room with no owner ever gets. Everyone else's
+    // roster simply has no `mutedUntil` key.
+    const viewerRole = resolveCommunityRole(
+      (mine as { role?: string | null }).role ?? null,
+      viewerId,
+      createdBy
+    );
+    const viewerIsPlatformAdmin = await this.supabaseService
+      .isPlatformAdmin(viewerId)
+      .catch(() => false);
+    const viewerModerates =
+      viewerIsPlatformAdmin ||
+      viewerRole === 'owner' ||
+      viewerRole === 'admin' ||
+      viewerRole === 'moderator';
+    // Feature-detected: `muted_until` only exists once 20260908120000 is
+    // hand-applied, and the roster must not 500 on a database without it.
+    const wantsMute = viewerModerates && (await hasCommunityMemberMute(this.db).catch(() => false));
+
+    const rosterColumns = (withMute: boolean) =>
+      `user_id, source, role, joined_at${withMute ? ', muted_until' : ''}, profiles!inner(id, name, avatar_url, programme, settings, last_seen_at)`;
+    const runRoster = (withMute: boolean) => {
+      let query = this.db
+        .from('community_members')
+        .select(rosterColumns(withMute))
+        .eq('community_id', communityId)
+        .is('opted_out_at', null);
+      if (cursor) {
+        query = query.or(
+          `joined_at.gt.${cursor.joinedAt},and(joined_at.eq.${cursor.joinedAt},user_id.gt.${cursor.userId})`
+        );
+      }
+      return query
+        .order('joined_at', { ascending: true })
+        .order('user_id', { ascending: true })
+        .limit(limit);
+    };
+
+    // Layer 2 of the capability contract: the probe can race a migration, so a
+    // 42703 here retries once without the column rather than throwing.
+    let muteSelected = wantsMute;
+    let { data, error } = await runRoster(wantsMute);
+    if (error && wantsMute && isMissingSchemaError(error)) {
+      markCommunityMemberMuteMissing();
+      muteSelected = false;
+      ({ data, error } = await runRoster(false));
     }
-    const { data, error } = await query
-      .order('joined_at', { ascending: true })
-      .order('user_id', { ascending: true })
-      .limit(limit);
     if (error) throw error;
     const rawRows = (data || []) as any[];
     const last = rawRows.length === limit ? rawRows[rawRows.length - 1] : null;
@@ -1172,6 +1435,9 @@ export class CommunitiesService {
           joinedAt: String(r.joined_at ?? ''),
           onlineStatus: resolvePublicOnlineStatus(p.settings, p.last_seen_at ?? null),
         };
+        // Only ever attached for a moderator, and only when the column is
+        // really there — `undefined` means "not told", never "not muted".
+        if (muteSelected) row.mutedUntil = r.muted_until ?? null;
         return row;
       })
       .filter(Boolean) as CommunityMember[];
@@ -1188,6 +1454,7 @@ export class CommunitiesService {
     viewerId: string,
     opts: { q?: string; communityId?: string; courseId?: string; limit?: number } = {}
   ): Promise<DiscoverGroup[]> {
+    await this.assertCanAccessCommunities(viewerId);
     const limit = this.clampLimit(opts.limit);
     const cacheKey = `groups:discover:${viewerId}:${opts.communityId || '-'}:${
       opts.courseId || '-'
@@ -1276,6 +1543,7 @@ export class CommunitiesService {
       followerCount: number;
     }>
   > {
+    await this.assertCanAccessCommunities(viewerId);
     const limit = this.clampLimit(opts.limit);
     const { data, error } = await this.db
       .from('creator_stats')

@@ -2,8 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppIcon } from './ui/AppIcon';
 import {
   COMMUNITY_COPY,
-  canAccessDiscoverHub,
   communityHeaderLine,
+  communityKindLabel,
   communityMembershipAction,
   communityOnlineCount,
   presenceLabel,
@@ -11,6 +11,7 @@ import {
 } from '@lantern/shared/network';
 import { fetchStudyPresence, joinCommunity, leaveCommunity } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { useAuthStore } from '../stores/authStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useToastStore } from '../stores/toastStore';
@@ -18,8 +19,11 @@ import { useUIStore } from '../stores/uiStore';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
 import RequestError from './RequestError';
 import CommunityChannelList from './community/CommunityChannelList';
+import ManageCommunityPanel from './community/ManageCommunityPanel';
 import CommunityMembersPanel from './community/CommunityMembersPanel';
 import CommunityTile from './community/CommunityTile';
+import { canOpenCommunities } from './community/communityAccess';
+import { communityBadgeLabel } from './community/createCommunityPlan';
 import {
   copyCommunityInvite,
   useCommunityListActions,
@@ -54,6 +58,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   const lowDataMode = useUIStore((s) => s.lowDataMode);
   const groups = useGroupStore((s) => s.groups);
   const showToast = useToastStore((s) => s.showToast);
+  const currentUserId = useAuthStore((s) => s.currentUser?.id ?? null);
 
   const [loading, setLoading] = useState(!detail);
   // `loadError` is "this community did not arrive" — with nothing on screen
@@ -240,9 +245,16 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                   />
                 )}
               </div>
-              <p className="text-xs text-lantern-text-tertiary">
-                {communityHeaderLine(detail.kind, memberCount, onlineShown)}
-              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                {/* The kind badge: a hostel, a fellowship and a rag week all
+                    say "Topic" without it. */}
+                <span className="rounded-full bg-lantern-feature-campus-tint px-2 py-0.5 text-label font-semibold text-lantern-feature-campus-ink">
+                  {communityBadgeLabel(detail.kind, detail.tags, communityKindLabel)}
+                </span>
+                <p className="text-xs text-lantern-text-tertiary">
+                  {communityHeaderLine(detail.kind, memberCount, onlineShown)}
+                </p>
+              </div>
               {description ? (
                 <div>
                   <p
@@ -324,12 +336,16 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
             )}
           </section>
 
+          {/* Roles, mutes and invite links — mounted only for somebody the
+              shared rules say can use one of them. */}
+          <ManageCommunityPanel detail={detail} onChanged={() => invalidate(detail.id)} />
+
           <section id="community-members" aria-label="Members" className="scroll-mt-4 space-y-2">
             <h2 className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
               {COMMUNITY_COPY.sectionMembers} · {memberCount.toLocaleString()}
             </h2>
             {detail.isMember ? (
-              <CommunityMembersPanel communityId={detail.id} />
+              <CommunityMembersPanel communityId={detail.id} viewerId={currentUserId} />
             ) : (
               <p className="text-xs text-lantern-text-secondary">{COMMUNITY_COPY.joinToSeeMembers}</p>
             )}
@@ -342,7 +358,8 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
 
 export const CommunityDetailScreen: React.FC<CommunityDetailScreenProps> = (props) => {
   const isPlatformAdmin = usePlatformAdmin();
-  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+  const currentUser = useAuthStore((s) => s.currentUser);
+  if (!canOpenCommunities({ isPlatformAdmin, user: currentUser })) {
     return (
       <DiscoverComingSoon
         onBack={() => {

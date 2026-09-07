@@ -2,8 +2,10 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
   DISCOVER_SECTION_INTRO,
-  canAccessDiscoverHub,
+  SOCIAL_COMMUNITY_KINDS,
   communityKindLabel,
+  communityKindMeta,
+  normalizeCommunitySearch,
   communityMembershipAction,
   communityUnreadTotal,
   formatCommunityUnread,
@@ -14,6 +16,7 @@ import {
   studyRoomTimeLeftLabel,
   trustLabel,
   type Community,
+  type CommunityKind,
   type DiscoverGroup,
   type DiscoverPerson,
   type MyCommunity,
@@ -21,7 +24,6 @@ import {
   type StudyRoomListItem,
 } from '@lantern/shared/network';
 import {
-  createCommunity,
   discoverCommunities,
   discoverGroups,
   discoverPeople,
@@ -33,12 +35,17 @@ import {
   listStudyRooms,
 } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { useAuthStore } from '../stores/authStore';
 import { Illustration } from './ui';
 import { useGroupStore } from '../stores/groupStore';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
 import RequestError from './RequestError';
 import { AppIcon } from './ui/AppIcon';
+import CreateCommunityModal from './community/CreateCommunityModal';
+import JoinByCodeModal from './community/JoinByCodeModal';
+import { canOpenCommunities } from './community/communityAccess';
+import { communityBadgeLabel } from './community/createCommunityPlan';
 
 /**
  * The Discover hub (Phase 3 · L).
@@ -58,6 +65,9 @@ import { AppIcon } from './ui/AppIcon';
 export interface DiscoverScreenProps {
   onNavigate: (screen: string, params?: Record<string, unknown>) => void;
   initialSection?: DiscoverSection;
+  /** `/discover/new` and `/discover/join/:code` open a modal over the hub. */
+  initialAction?: 'create' | 'join';
+  initialCode?: string | null;
 }
 
 type Status = 'idle' | 'loading' | 'error';
@@ -94,9 +104,31 @@ const EmptyState: React.FC<{
   </div>
 );
 
+/** One kind filter. A pressed chip is the current filter; tapping it clears. */
+const KindChip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
+  active,
+  onClick,
+  children,
+}) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={active}
+    className={`min-h-[36px] rounded-full px-3 text-xs font-semibold ${
+      active
+        ? 'bg-lantern-feature-campus-ink text-white'
+        : 'bg-lantern-background-secondary text-lantern-text-secondary hover:text-lantern-text'
+    }`}
+  >
+    {children}
+  </button>
+);
+
 const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   onNavigate,
   initialSection,
+  initialAction,
+  initialCode,
 }) => {
   // Same rule as mobile: never open on a section that is switched off.
   const [section, setSection] = useState<DiscoverSection>(() =>
@@ -105,16 +137,22 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       : (defaultDiscoverSection() as DiscoverSection),
   );
   const [query, setQuery] = useState('');
+  /**
+   * The Find filter: one community kind, or every kind. It is a SERVER filter
+   * (`GET /discover/communities?kind=`), not a client one — filtering the page
+   * we happened to be handed would quietly hide rooms that exist, and the
+   * ranking the server applies is per-query.
+   */
+  const [kind, setKind] = useState<CommunityKind | null>(null);
   const [status, setStatus] = useState<Status>('idle');
-  // Three different things used to share one `error` string: a list that did
-  // not arrive, an action that did not happen, and a form that was filled in
-  // wrong. They are separated now — only the first may decide whether the list
-  // below is a list, an empty state or a failure state.
+  // Two different things used to share one `error` string: a list that did not
+  // arrive and an action that did not happen. They are separated — only the
+  // first may decide whether the list below is a list, an empty state or a
+  // failure state. Form validation lives inside the modals that own the forms.
   const [loadError, setLoadError] = useState<unknown>(null);
   const [actionFailure, setActionFailure] = useState<{ error: unknown; detail: string } | null>(
     null,
   );
-  const [formError, setFormError] = useState<string | null>(null);
 
   const [mine, setMine] = useState<MyCommunity[]>([]);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -125,16 +163,17 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   // "Closes in Xh" ticks once a minute while the Room tab is open.
   const [now, setNow] = useState(() => Date.now());
   const [pendingId, setPendingId] = useState<string | null>(null);
-  const [creatingCommunity, setCreatingCommunity] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newDescription, setNewDescription] = useState('');
-  const [createBusy, setCreateBusy] = useState(false);
+  // Both modals open from the URL ON MOUNT only (`/discover/new`,
+  // `/discover/join/:code`). Reading the prop on every render instead would
+  // slam the modal shut the moment the path normalised back to /campus.
+  const [creatingCommunity, setCreatingCommunity] = useState(initialAction === 'create');
+  const [joiningByCode, setJoiningByCode] = useState(initialAction === 'join');
 
   const myById = useMemo(() => new Map(mine.map((c) => [c.id, c])), [mine]);
   const myIds = useMemo(() => new Set(mine.map((c) => c.id)), [mine]);
 
   const load = useCallback(
-    async (target: DiscoverSection, q: string) => {
+    async (target: DiscoverSection, q: string, communityKind: CommunityKind | null = null) => {
       // The marketplace tab is a navigation, not a fetch.
       if (target === 'marketplace') return;
       setStatus('loading');
@@ -142,7 +181,12 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       try {
         if (target === 'communities') {
           const [discovered, own] = await Promise.all([
-            discoverCommunities({ q: q || undefined }),
+            // `%` and `_` are PostgREST wildcards and `,` terminates a filter,
+            // so the term goes through the shared cleaner before it is a query.
+            discoverCommunities({
+              q: normalizeCommunitySearch(q) ?? undefined,
+              kind: communityKind ?? undefined,
+            }),
             fetchMyCommunities(),
           ]);
           setCommunities(discovered);
@@ -168,11 +212,12 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   );
 
   useEffect(() => {
-    void load(section, query);
+    void load(section, query, kind);
     // `query` is applied through the explicit search submit below, not on every
-    // keystroke — re-running this on each character would hammer the API.
+    // keystroke — re-running this on each character would hammer the API. The
+    // kind chips DO refetch on click: one tap is the whole interaction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section, load]);
+  }, [section, kind, load]);
 
   // The Room tab is "what is open right now": refetch when the tab regains
   // visibility (coming back from a room) and tick the countdown once a minute.
@@ -209,13 +254,21 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     error: loadError,
     itemCount:
       section === 'communities'
-        ? communities.length + mine.length
+        // Under a kind filter only the filtered list counts: "you belong to
+        // three rooms" says nothing about whether any CLUB was found, and
+        // counting them here is what turns an empty filter into a page that
+        // silently claims everything is fine.
+        ? kind
+          ? communities.length
+          : communities.length + mine.length
         : section === 'groups'
           ? groups.length
           : section === 'rooms'
             ? visibleRooms.length
             : people.length,
-    query,
+    // A kind filter is a search by another name: with no rooms of that kind
+    // the honest answer is "nothing matches", never "there is nothing here".
+    query: query || (section === 'communities' && kind ? communityKindMeta(kind).label : ''),
   });
 
   useEffect(() => {
@@ -298,40 +351,14 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     }
   };
 
-  const submitCommunity = async (event: React.FormEvent) => {
-    event.preventDefault();
-    const name = newName.trim();
-    if (name.length < 3) {
-      // A form-validation problem, not a request failure: it keeps its own
-      // plain sentence rather than borrowing the network vocabulary.
-      setFormError('Name a community in at least 3 characters');
-      return;
-    }
-    setCreateBusy(true);
-    setFormError(null);
-    setActionFailure(null);
-    try {
-      const created = await createCommunity({
-        name,
-        description: newDescription.trim() || undefined,
-      });
-      setNewName('');
-      setNewDescription('');
-      setCreatingCommunity(false);
-      setMine((prev) => [
-        { ...created, role: 'admin', source: 'joined' } as MyCommunity,
-        ...prev.filter((c) => c.id !== created.id),
-      ]);
-      setCommunities((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
-      onNavigate('CommunityDetail', { slug: created.slug });
-    } catch (err) {
-      setActionFailure({
-        error: err,
-        detail: 'The community wasn’t created. Check your connection and try again.',
-      });
-    } finally {
-      setCreateBusy(false);
-    }
+  /** Started from the modal — list it, own it, and open it. */
+  const handleCommunityCreated = (created: Community) => {
+    setMine((prev) => [
+      { ...created, role: 'admin', source: 'joined' } as MyCommunity,
+      ...prev.filter((c) => c.id !== created.id),
+    ]);
+    setCommunities((prev) => [created, ...prev.filter((c) => c.id !== created.id)]);
+    onNavigate('CommunityDetail', { slug: created.slug });
   };
 
   const presenceLine = presenceLabel(presence);
@@ -376,7 +403,9 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
               ) : null}
             </h2>
             <p className="text-xs text-lantern-text-secondary">
-              {communityKindLabel(community.kind)} · {memberCountLabel(community.member_count)}
+              {/* The purpose, not "Topic" for every student-made room. */}
+              {communityBadgeLabel(community.kind, community.tags, communityKindLabel)} ·{' '}
+              {memberCountLabel(community.member_count)}
               {isMember ? ' · Yours' : ''}
             </p>
             {community.description ? (
@@ -446,7 +475,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           onSubmit={(event) => {
             event.preventDefault();
             // Rooms filter locally as you type; a submit there has nothing to fetch.
-            if (section !== 'rooms') void load(section, query);
+            if (section !== 'rooms') void load(section, query, kind);
           }}
           className="relative"
           role="search"
@@ -478,6 +507,23 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             className="w-full rounded-lg border border-lantern-border bg-lantern-background py-2 pl-9 pr-3 text-sm text-lantern-text placeholder:text-lantern-text-secondary focus:border-lantern-primary focus:outline-none"
           />
         </form>
+
+        {/* Communities go beyond study: a club, a hostel, an event, a faith
+            group. The chips are the only way a student finds those without
+            already knowing the name. Academic kinds are NOT offered — they are
+            derived from a profile and everyone is already in their own. */}
+        {section === 'communities' ? (
+          <div role="group" aria-label="Filter communities by kind" className="flex flex-wrap gap-1.5">
+            <KindChip active={kind === null} onClick={() => setKind(null)}>
+              All
+            </KindChip>
+            {SOCIAL_COMMUNITY_KINDS.filter((k) => k !== 'topic').map((k) => (
+              <KindChip key={k} active={kind === k} onClick={() => setKind(kind === k ? null : k)}>
+                {communityKindMeta(k).label}
+              </KindChip>
+            ))}
+          </div>
+        ) : null}
       </header>
 
       {/* The thing you just tapped did not happen. Never blanks the lists. */}
@@ -490,18 +536,12 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         />
       )}
 
-      {formError && (
-        <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-          {formError}
-        </p>
-      )}
-
       {/* A refresh failed on top of rows we already have: keep the rows. */}
       {listState === 'stale' && (
         <RequestError
           variant="banner"
           error={loadError}
-          onRetry={() => void load(section, query)}
+          onRetry={() => void load(section, query, kind)}
         />
       )}
 
@@ -517,7 +557,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         <RequestError
           variant="full"
           error={loadError}
-          onRetry={() => void load(section, query)}
+          onRetry={() => void load(section, query, kind)}
         />
       )}
 
@@ -526,48 +566,21 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           <div className="flex flex-wrap items-center justify-end gap-2">
             <button
               type="button"
-              onClick={() => setCreatingCommunity((open) => !open)}
-              className="text-xs font-semibold text-lantern-primary hover:underline"
+              onClick={() => setJoiningByCode(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text"
             >
-              {creatingCommunity ? 'Cancel' : 'Start an interest community'}
+              <AppIcon name="link" size={16} aria-hidden="true" />
+              Join with a link
+            </button>
+            <button
+              type="button"
+              onClick={() => setCreatingCommunity(true)}
+              className="inline-flex items-center gap-1.5 text-xs font-semibold text-lantern-primary hover:underline"
+            >
+              <AppIcon name="add" size={16} aria-hidden="true" />
+              Start a community
             </button>
           </div>
-          {creatingCommunity ? (
-            <form
-              onSubmit={(event) => void submitCommunity(event)}
-              className="rounded-xl border border-lantern-border bg-lantern-background p-3 space-y-2"
-            >
-              <p className="text-xs text-lantern-text-secondary">
-                Interest communities are for topics anyone can join — campus rooms still come from
-                your university and courses.
-              </p>
-              <input
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                placeholder="Name (e.g. Past questions)"
-                aria-label="Community name"
-                className="w-full rounded-md border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text"
-                required
-                minLength={3}
-                maxLength={60}
-              />
-              <textarea
-                value={newDescription}
-                onChange={(event) => setNewDescription(event.target.value)}
-                placeholder="Optional description"
-                aria-label="Community description"
-                rows={2}
-                className="w-full rounded-md border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text"
-              />
-              <button
-                type="submit"
-                disabled={createBusy}
-                className="rounded-md bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-60"
-              >
-                {createBusy ? 'Creating…' : 'Create community'}
-              </button>
-            </form>
-          ) : null}
 
           {/* Campus coaching card (§5.7 Campus): one violet panel, shown only
               while the student has joined nothing. It is not an empty state —
@@ -595,10 +608,10 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 {listState === 'noMatch' ? (
                   <EmptyState
                     title="No communities match that search"
-                    hint="Try another name, or start an interest community for the topic you study."
+                    hint="Try another name, or start a community — a course, a club, a hostel, a week of events."
                     actions={[
                       {
-                        label: 'Start an interest community',
+                        label: 'Start a community',
                         onClick: () => setCreatingCommunity(true),
                         primary: true,
                       },
@@ -607,7 +620,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 ) : (
                   <EmptyState
                     title="No communities yet"
-                    hint="Add your university and courses so campus rooms can appear — or start an interest community for a topic you study."
+                    hint="Add your university and courses so campus rooms can appear — or start one yourself: a course, a club, a hostel, a week of events."
                     actions={[
                       {
                         label: 'Set university & courses',
@@ -615,7 +628,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                         primary: true,
                       },
                       {
-                        label: 'Start an interest community',
+                        label: 'Start a community',
                         onClick: () => setCreatingCommunity(true),
                       },
                     ]}
@@ -817,13 +830,26 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           })}
         </section>
       )}
+
+      <CreateCommunityModal
+        isOpen={creatingCommunity}
+        onClose={() => setCreatingCommunity(false)}
+        onCreated={handleCommunityCreated}
+      />
+      <JoinByCodeModal
+        isOpen={joiningByCode}
+        onClose={() => setJoiningByCode(false)}
+        initialCode={initialCode ?? null}
+        onJoined={(community) => onNavigate('CommunityDetail', { slug: community.slug })}
+      />
     </div>
   );
 };
 
 export const DiscoverScreen: React.FC<DiscoverScreenProps> = (props) => {
   const isPlatformAdmin = usePlatformAdmin();
-  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+  const currentUser = useAuthStore((s) => s.currentUser);
+  if (!canOpenCommunities({ isPlatformAdmin, user: currentUser })) {
     return <DiscoverComingSoon onBack={() => props.onNavigate('Dashboard')} />;
   }
   return <DiscoverHub {...props} />;

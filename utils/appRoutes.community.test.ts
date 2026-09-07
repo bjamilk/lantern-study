@@ -55,3 +55,40 @@ describe('community server routes', () => {
     });
   });
 });
+
+describe('the community modals that have URLs', () => {
+  it('parses /discover/new onto the Communities surface with the create modal', () => {
+    const route = parseAppRoute('/discover/new');
+    expect(route.mode).toBe(AppMode.DISCOVER);
+    expect(route.params.communityAction).toBe('create');
+    expect(route.params.campusSegment).toBe('communities');
+    // No redirect: a redirect to /campus would strip the action before the
+    // screen ever saw it.
+    expect(route.redirect).toBeUndefined();
+  });
+
+  it('parses an invite link into the join modal, carrying the code', () => {
+    const route = parseAppRoute('/discover/join/unilag-pharmacy');
+    expect(route.mode).toBe(AppMode.DISCOVER);
+    expect(route.params.communityAction).toBe('join');
+    expect(route.params.communityCode).toBe('unilag-pharmacy');
+  });
+
+  it('opens the box with no code rather than bouncing a mangled link', () => {
+    const route = parseAppRoute('/discover/join');
+    expect(route.params.communityAction).toBe('join');
+    expect(route.params.communityCode).toBeUndefined();
+  });
+
+  it('round-trips both through buildAppPath', () => {
+    expect(buildAppPath(AppMode.DISCOVER, { communityAction: 'create' })).toBe('/discover/new');
+    expect(buildAppPath(AppMode.DISCOVER, { communityAction: 'join', communityCode: 'chess-club' })).toBe(
+      '/discover/join/chess-club'
+    );
+    expect(buildAppPath(AppMode.DISCOVER, {})).toBe('/campus');
+  });
+
+  it('still routes a community slug that begins with the same letters', () => {
+    expect(parseAppRoute('/discover/c/new-students').params.slug).toBe('new-students');
+  });
+});

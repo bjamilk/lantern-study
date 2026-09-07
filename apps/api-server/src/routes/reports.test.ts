@@ -17,6 +17,8 @@ jest.mock('../services/adminAudit', () => ({
 
 const LISTING = '11111111-1111-4111-8111-111111111111';
 const REPORTER = '22222222-2222-4222-8222-222222222222';
+const OTHER = '33333333-3333-4333-8333-333333333333';
+const POST = '44444444-4444-4444-8444-444444444444';
 
 async function runValidators(body: Record<string, unknown>) {
   const req = { body } as any;
@@ -175,6 +177,42 @@ describe('ModerationService.createReport', () => {
     await expect(
       service(db).createReport({ reporterId: REPORTER, targetType: 'user', targetId: REPORTER, reason: 'spam' }),
     ).rejects.toMatchObject({ statusCode: 400, message: /yourself/ });
+  });
+
+  it('accepts the two community targets through the SAME queue', async () => {
+    const db = makeDb((op) =>
+      op.table === 'messages'
+        ? { data: { id: POST, text: 'Timetable is out', subject: null, sender_id: OTHER, removed_at: null } }
+        : { data: { id: 'r1', status: 'pending' } },
+    );
+    await expect(
+      service(db).createReport({
+        reporterId: REPORTER,
+        targetType: 'community_post',
+        targetId: POST,
+        reason: 'leaked_exam',
+      }),
+    ).resolves.toMatchObject({ status: 'pending' });
+    const insert = db.ops.find((o) => o.kind === 'insert');
+    expect(insert?.table).toBe('content_reports');
+    expect((insert?.payload as Record<string, unknown>).target_type).toBe('community_post');
+  });
+
+  it('refuses reporting your OWN board post', async () => {
+    const db = makeDb((op) =>
+      op.table === 'messages'
+        ? { data: { id: POST, text: 'mine', subject: null, sender_id: REPORTER, removed_at: null } }
+        : { data: null },
+    );
+    await expect(
+      service(db).createReport({
+        reporterId: REPORTER,
+        targetType: 'community_post',
+        targetId: POST,
+        reason: 'spam',
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: /yourself/ });
+    expect(db.ops.some((o) => o.kind === 'insert')).toBe(false);
   });
 });
 

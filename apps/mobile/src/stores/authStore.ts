@@ -10,7 +10,7 @@ import {
   signUpWithEmail, 
   signOut as supabaseSignOut,
   onAuthStateChange,
-  getSession 
+  readStoredSession,
 } from '../services/supabase';
 import { ensureUserProfile } from '../services/ensureUserProfile';
 import { fetchUserProfile } from '../services/api';
@@ -25,6 +25,14 @@ import {
   pendingQbankScoresKey,
 } from '../utils/pendingQuestionBankScoresScope';
 import { planSignOutKeyRemoval } from './signOutStorageKeys';
+import {
+  planSessionRestore,
+  restoreRetryDelayMs,
+  type SessionRestoreNetworkResult,
+  type SessionState,
+} from './sessionRestore';
+import { classifyRefreshError } from '../services/authFailure';
+import { useUIStore } from './uiStore';
 
 /**
  * Who ended the session.
@@ -58,6 +66,13 @@ interface AuthState {
   academicProfile: AcademicProfile | null;
   isLoading: boolean;
   isInitialized: boolean;
+  /**
+   * Whether the session in `session` has been confirmed with the auth server
+   * on this launch. `restoring` means the app is running on the session read
+   * from disk while a refresh retries in the background — fully usable, and
+   * NEVER a reason to render the sign-in route. See stores/sessionRestore.ts.
+   */
+  sessionState: SessionState;
   isPasswordRecovery: boolean;
   error: string | null;
 
@@ -74,6 +89,129 @@ interface AuthState {
   setAcademicProfile: (profile: AcademicProfile | null) => void;
 }
 
+/** How long the boot refresh may take before we fall back to the stored session. */
+const BOOT_REFRESH_TIMEOUT_MS = 8_000;
+const BOOT_TIMEOUT_MARKER = 'auth-init-timeout';
+
+/** Fallback display name so a restoring boot greets the student, not "User". */
+function displayNameFromUser(user: User): string | null {
+  const metadataName = user.user_metadata?.name;
+  if (typeof metadataName === 'string' && metadataName.trim()) return metadataName.trim();
+  return user.email?.split('@')[0] ?? null;
+}
+
+/**
+ * One boot refresh attempt, reduced to the four outcomes the planner speaks.
+ *
+ * Nothing here may throw: every failure has to become a `SessionRestoreNetworkResult`,
+ * because the alternative — an exception escaping into `initialize`'s catch —
+ * is exactly the path that used to leave `session` null and sign a student out.
+ */
+async function attemptBootRefresh(): Promise<{
+  networkResult: SessionRestoreNetworkResult;
+  session: Session | null;
+}> {
+  try {
+    const result = await Promise.race([
+      supabase.auth.refreshSession(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(BOOT_TIMEOUT_MARKER)), BOOT_REFRESH_TIMEOUT_MS)
+      ),
+    ]);
+
+    if (result.error) {
+      return {
+        networkResult: classifyRefreshError(result.error) === 'invalid' ? 'refused' : 'offline',
+        session: null,
+      };
+    }
+    if (result.data.session) {
+      return { networkResult: 'ok', session: result.data.session };
+    }
+    // No session and no error proves nothing; treat it as a failed transport.
+    return { networkResult: 'offline', session: null };
+  } catch (error) {
+    if (error instanceof Error && error.message === BOOT_TIMEOUT_MARKER) {
+      return { networkResult: 'timeout', session: null };
+    }
+    return {
+      networkResult: classifyRefreshError(error) === 'invalid' ? 'refused' : 'offline',
+      session: null,
+    };
+  }
+}
+
+/**
+ * Background retry for a `restoring` boot. Module state, single-flight: a
+ * second `initialize()` (Fast Refresh, a remount from the font-scale key)
+ * must not stack a second backoff ladder.
+ */
+let restoreRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let restoreRetryAttempt = 0;
+
+/**
+ * Bumped every time the session ends or changes hands (signOut, SIGNED_OUT,
+ * and every explicit sign-in). The app is now interactive while the boot
+ * refresh is still in flight, so a student can tap Sign out at 3 s and have
+ * the refresh land at 7 s. A refresh that started under an older epoch
+ * describes a session that no longer exists and must not be written back into
+ * the store — that would resurrect the account they just signed out of (or
+ * null out the one they just signed in to).
+ */
+let sessionEpoch = 0;
+
+export function cancelSessionRestoreRetry(): void {
+  if (restoreRetryTimer) clearTimeout(restoreRetryTimer);
+  restoreRetryTimer = null;
+  restoreRetryAttempt = 0;
+}
+
+/**
+ * Retry the refresh until it succeeds or gotrue positively refuses it.
+ *
+ * Deliberately does NOT touch `user`/`session` on failure: the whole point is
+ * that the app keeps running on the stored session, so realtime and auto-sync
+ * — which key off `user?.id` — never see a null and never tear down.
+ */
+function scheduleSessionRestoreRetry(
+  set: (partial: Partial<AuthState>) => void,
+  get: () => AuthState
+): void {
+  if (restoreRetryTimer) return;
+  restoreRetryAttempt += 1;
+  restoreRetryTimer = setTimeout(async () => {
+    restoreRetryTimer = null;
+    if (get().sessionState !== 'restoring') {
+      cancelSessionRestoreRetry();
+      return;
+    }
+
+    const epoch = sessionEpoch;
+    const { networkResult, session } = await attemptBootRefresh();
+
+    // Up to 8 s passed. If the session ended meanwhile (sign-out, SIGNED_OUT)
+    // or a TOKEN_REFRESHED already confirmed it, this result is stale: apply
+    // nothing, and do not cancel a ladder a newer initialize() may own.
+    if (epoch !== sessionEpoch || get().sessionState !== 'restoring') return;
+
+    if (networkResult === 'ok' && session) {
+      cancelSessionRestoreRetry();
+      useUIStore.getState().setAuthOffline(false);
+      set({ user: session.user, session, sessionState: 'authenticated' });
+      void get().refreshProfileName(session.user.id);
+      return;
+    }
+
+    if (networkResult === 'refused') {
+      cancelSessionRestoreRetry();
+      void get().signOut({ reason: 'revoked' });
+      return;
+    }
+
+    scheduleSessionRestoreRetry(set, get);
+  }, restoreRetryDelayMs(restoreRetryAttempt));
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   session: null,
@@ -82,6 +220,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   academicProfile: null,
   isLoading: false,
   isInitialized: false,
+  sessionState: 'signed-out',
   isPasswordRecovery: false,
   error: null,
 
@@ -106,60 +245,108 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   initialize: async () => {
     try {
       set({ isLoading: true });
+      cancelSessionRestoreRetry();
 
-      // Refresh session if present, otherwise load current session.
-      // Guard with a timeout so a stalled auth call can't hang app boot forever.
-      let session = null;
-      try {
-        session = await Promise.race([
-          (async () => {
-            const { data: refreshData } = await supabase.auth.refreshSession();
-            return refreshData.session ?? (await getSession());
-          })(),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('auth-init-timeout')), 8000)
-          ),
-        ]);
-      } catch (e) {
-        console.warn('[Auth] session restore timed out/failed, continuing unauthenticated:', String(e));
-        // Transient stall (e.g. QUIC hang to Supabase on emulators): leave the
-        // persisted session untouched and retry in the background. A slow
-        // network must never become a logout. When the retry succeeds the
-        // onAuthStateChange listener below restores the authenticated state.
-        setTimeout(() => {
-          void supabase.auth.refreshSession().catch(() => {});
-        }, 10000);
-      }
+      // Step 1 — what is on this handset, read WITHOUT the network.
+      // `supabase.auth.getSession()` cannot answer this: auth-js refreshes
+      // inside it once the access token is past its expiry margin, which is
+      // the very call that stalls here.
+      const stored = await readStoredSession();
 
-      if (session) {
-        let profileName: string | null = null;
-        let profileFirstName: string | null = null;
-        let academicProfile: AcademicProfile | null = null;
-        try {
-          const profile = await ensureUserProfile(session.user);
-          profileName = profile.displayName;
-          profileFirstName = profile.firstName ?? null;
-          academicProfile = profile.academic ?? null;
-        } catch (profileError) {
-          console.warn('[Auth] Failed to ensure user profile:', profileError);
-        }
-
+      // Step 2 — render the app on the stored session IMMEDIATELY.
+      //
+      // This is the fix. The old code waited up to 8 s and then, on timeout,
+      // continued with a null session: the navigator swapped to "Sign in to
+      // continue", every realtime channel tore down, the theme fell back to
+      // light and the avatar to initials — a convincing fake of a signed-out
+      // student, undone ~15 s later when the refresh finally landed. A stored
+      // session is enough to draw the real app; the refresh only decides
+      // whether the token gets renewed or the session is genuinely dead.
+      if (stored) {
+        // A remount (font-scale key, Fast Refresh) calls initialize() again
+        // on a session this launch may already have confirmed. Don't downgrade
+        // what the store knows about the SAME account: the real display name
+        // and 'authenticated' stay until the refresh below says otherwise.
+        const current = get();
+        const sameAccount = current.user?.id === stored.user.id;
         set({
-          user: session.user,
-          session,
-          profileName,
-          profileFirstName,
-          academicProfile,
+          user: stored.user,
+          session: stored,
+          profileName:
+            sameAccount && current.profileName
+              ? current.profileName
+              : displayNameFromUser(stored.user),
+          sessionState:
+            sameAccount && current.sessionState === 'authenticated' ? 'authenticated' : 'restoring',
           isInitialized: true,
           isLoading: false,
         });
-      } else {
+      }
+
+      // Step 3 — try to refresh, then apply the pure rule.
+      const epoch = sessionEpoch;
+      const { networkResult, session: refreshed } = await attemptBootRefresh();
+      const plan = planSessionRestore({
+        networkResult,
+        storedSession: stored ? 'present' : 'absent',
+      });
+
+      if (epoch !== sessionEpoch) {
+        // The app was live on the stored session for those seconds and the
+        // student signed out (or in as someone else) meanwhile. This result
+        // describes a session that no longer exists; writing it would put
+        // the signed-out account straight back on screen.
+        console.warn(`[Auth] session changed while the boot refresh was in flight; ignoring its ${networkResult}`);
+      } else if (plan.signOut === 'revoked') {
+        console.warn('[Auth] the auth server refused the stored session; signing out');
+        await get().signOut({ reason: 'revoked' });
+        set({ sessionState: 'signed-out', isInitialized: true, isLoading: false });
+      } else if (plan.route === 'sign-in') {
         set({
           user: null,
           session: null,
           profileName: null,
           profileFirstName: null,
           academicProfile: null,
+          sessionState: 'signed-out',
+          isInitialized: true,
+          isLoading: false,
+        });
+      } else if (plan.useStoredSession && stored) {
+        // Timeout or offline with a session on disk: stay on it and keep
+        // trying. One quiet line in the shell — the existing offline
+        // indicator, which also retries the moment NetInfo says the link
+        // is back.
+        console.warn(
+          `[Auth] session restore ${networkResult}; running on the stored session and retrying`
+        );
+        useUIStore.getState().setAuthOffline(true);
+        set({ sessionState: 'restoring', isInitialized: true, isLoading: false });
+        scheduleSessionRestoreRetry(set, get);
+      } else {
+        const session = refreshed;
+        let profileName: string | null = session ? displayNameFromUser(session.user) : null;
+        let profileFirstName: string | null = null;
+        let academicProfile: AcademicProfile | null = null;
+        if (session) {
+          try {
+            const profile = await ensureUserProfile(session.user);
+            profileName = profile.displayName;
+            profileFirstName = profile.firstName ?? null;
+            academicProfile = profile.academic ?? null;
+          } catch (profileError) {
+            console.warn('[Auth] Failed to ensure user profile:', profileError);
+          }
+        }
+
+        useUIStore.getState().setAuthOffline(false);
+        set({
+          user: session?.user ?? null,
+          session: session ?? null,
+          profileName,
+          profileFirstName,
+          academicProfile,
+          sessionState: session ? 'authenticated' : 'signed-out',
           isInitialized: true,
           isLoading: false,
         });
@@ -177,16 +364,32 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         }
 
         if (event === 'SIGNED_OUT') {
-          set({ user: null, session: null, profileName: null, profileFirstName: null, academicProfile: null, isPasswordRecovery: false });
+          cancelSessionRestoreRetry();
+          sessionEpoch += 1;
+          set({ user: null, session: null, profileName: null, profileFirstName: null, academicProfile: null, isPasswordRecovery: false, sessionState: 'signed-out' });
           return;
         }
-        
+
         if (session) {
+          // A NEW access token means the auth server answered, so this is also
+          // how a `restoring` boot ends when a refresh finally lands. An
+          // INITIAL_SESSION carrying the same token we are already restoring on
+          // proves nothing — auth-js emits it straight from storage — so it
+          // must not clear the notice or stop the retry ladder.
+          const previous = get().session;
+          const confirmed =
+            get().sessionState !== 'restoring' ||
+            session.access_token !== previous?.access_token;
+          if (confirmed) {
+            cancelSessionRestoreRetry();
+            useUIStore.getState().setAuthOffline(false);
+          }
+          const sessionState: SessionState = confirmed ? 'authenticated' : 'restoring';
           if (get().isPasswordRecovery) {
-            set({ user: session.user, session });
+            set({ user: session.user, session, sessionState });
             return;
           }
-          set({ user: session.user, session });
+          set({ user: session.user, session, sessionState });
           void get().refreshProfileName(session.user.id);
         } else {
           // Null session on anything other than an explicit SIGNED_OUT (handled
@@ -238,8 +441,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         profileName,
         profileFirstName,
         academicProfile,
+        sessionState: session ? 'authenticated' : 'signed-out',
         isLoading: false,
       });
+      sessionEpoch += 1;
     } catch (error: any) {
       console.error('Sign in failed:', error);
       const message = error.message || 'Failed to sign in';
@@ -266,8 +471,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         profileName: profile.displayName,
         profileFirstName: profile.firstName ?? null,
         academicProfile: profile.academic ?? null,
+        sessionState: session ? 'authenticated' : 'signed-out',
         isLoading: false,
       });
+      sessionEpoch += 1;
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Failed to sign in with Google';
@@ -290,8 +497,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         profileName: profile.displayName,
         profileFirstName: profile.firstName ?? null,
         academicProfile: profile.academic ?? null,
+        sessionState: session ? 'authenticated' : 'signed-out',
         isLoading: false,
       });
+      sessionEpoch += 1;
     } catch (error: unknown) {
       const message =
         error instanceof Error ? error.message : 'Failed to sign in with Apple';
@@ -330,8 +539,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         profileName,
         profileFirstName,
         academicProfile,
+        sessionState: session ? 'authenticated' : 'signed-out',
         isLoading: false,
       });
+      sessionEpoch += 1;
     } catch (error: any) {
       console.error('Sign up failed:', error);
       set({ 
@@ -344,6 +555,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   
   signOut: async (opts) => {
     const reason: SignOutReason = opts?.reason ?? 'user';
+    // Nothing may resurrect a session the student (or the server) has ended:
+    // stop the ladder, and stamp the epoch so any refresh still in flight is
+    // discarded when it lands.
+    cancelSessionRestoreRetry();
+    sessionEpoch += 1;
     set({ isLoading: true, error: null });
     const userId = get().user?.id;
     let remoteError: any = null;
@@ -473,6 +689,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       profileName: null,
       profileFirstName: null,
       academicProfile: null,
+      sessionState: 'signed-out',
       isLoading: false,
     });
 

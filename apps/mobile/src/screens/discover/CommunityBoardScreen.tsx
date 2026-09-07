@@ -5,6 +5,7 @@ import {
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  Modal,
   Pressable,
   RefreshControl,
   Share,
@@ -23,11 +24,12 @@ import {
   boardDisplayName,
   boardRepostRefusalCopy,
   boardSharePayload,
-  canPinOnBoard,
   canRepostBoardPost,
   isBoardFavorited,
   studyGroupNameFromPost,
   validateBoardSubject,
+  COMMUNITY_MODERATION_COPY,
+  type BoardPostKind,
   type CommunityRole,
 } from '@lantern/shared/network';
 import {
@@ -38,6 +40,7 @@ import {
   type ChatMuteDurationId,
 } from '@lantern/shared/utils';
 import * as api from '../../services/api';
+import { removeCommunityPost } from '../../services/api';
 import { uploadChatImage } from '../../services/chatImageUpload';
 import { importLocalBookmarksOnce } from '../../services/bookmarkImport';
 import { useAuthStore } from '../../stores';
@@ -58,6 +61,12 @@ import {
 } from '../../utils/boardPosts';
 import { applyReactionLocally } from '@lantern/shared/chat';
 import { AppIcon } from '../../components/ui/AppIcon';
+import {
+  boardPostActions,
+  buildBoardComposerModel,
+  resolveComposerKind,
+} from './boardComposerModel';
+import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 
 export type BoardNavigation = {
   goBack: () => void;
@@ -75,6 +84,14 @@ type Params = {
 };
 
 const TOP_THRESHOLD_PX = 80;
+
+/**
+ * A moderator's soft removal, as distinct from the author's own Delete. The
+ * shared board copy has no word for it: `COMMUNITY_MODERATION_COPY` names the
+ * TOMBSTONE ("Removed by a moderator") and the reason placeholder, which are
+ * what the reader sees afterwards; this is the moderator's own menu row.
+ */
+const REMOVE_POST_LABEL = 'Remove post';
 
 /** `@username` mentions in the body → the user ids the API notifies. */
 function resolveMentionedUserIds(
@@ -171,6 +188,12 @@ export function CommunityBoardScreen({
   const communityName = route.params.communityName ?? detail?.name ?? null;
   const viewerRole: CommunityRole | null =
     (communityId ? channelsById[communityId]?.viewer.role : null) ?? detail?.viewerRole ?? null;
+  /**
+   * A platform admin moderates every community — the only moderation an
+   * auto-derived campus room with no owner gets. Passed into the SHARED rules
+   * so the card offers exactly what `communityModeration.removePost` allows.
+   */
+  const isPlatformAdmin = usePlatformAdmin();
 
   const group = useMemo(() => groups.find((g) => g.id === groupId), [groups, groupId]);
   const displayName = boardDisplayName({ isLounge: false, name: group?.name || groupName || 'Board' });
@@ -196,6 +219,16 @@ export function CommunityBoardScreen({
   const [shareTarget, setShareTarget] = useState<Message | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [newPostCount, setNewPostCount] = useState(0);
+  /**
+   * What the next post IS. Held here rather than in the composer so a kind the
+   * viewer may no longer post (a demoted moderator with `announcement`
+   * selected) can be dropped by `resolveComposerKind` on the next render.
+   */
+  const [postKind, setPostKind] = useState<BoardPostKind>('discussion');
+  /** A moderator's soft removal, which carries a reason. */
+  const [removeTarget, setRemoveTarget] = useState<Message | null>(null);
+  const [removeReason, setRemoveReason] = useState('');
+  const [removeBusy, setRemoveBusy] = useState(false);
   const [chatMuted, setChatMuted] = useState(false);
   const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
@@ -228,11 +261,42 @@ export function CommunityBoardScreen({
   }, [allPosts, searchQuery]);
 
   const memberCount = group?.memberCount ?? group?.members?.length ?? 0;
-  const canPin = canPinOnBoard({
-    role: viewerRole,
-    adminIds: group?.adminIds ?? [],
-    userId: user?.id ?? '',
-  });
+
+  /**
+   * The composer's permissions, from the SHARED rules — `canPostOnBoard` and
+   * `canPostBoardKind` via `buildBoardComposerModel`. This replaces the old
+   * `canPinOnBoard` + local admin-list check: a board's own `adminIds` are not
+   * the community's moderators, and the API decides from the community role,
+   * so the two used to disagree on exactly the accounts that matter.
+   */
+  const composer = useMemo(
+    () =>
+      buildBoardComposerModel({
+        role: viewerRole,
+        isMember: !!group,
+        mutedUntil: detail?.viewerMutedUntil ?? null,
+      }),
+    [viewerRole, group, detail?.viewerMutedUntil]
+  );
+  const selectedKind = resolveComposerKind(postKind, composer);
+
+  /** One post's actions, always from `boardPostRules`. */
+  const actionsFor = useCallback(
+    (post: Message) =>
+      boardPostActions(viewerRole, {
+        // The pin endpoint credits a board's own admins as well as the
+        // community's moderators; removal and announcements do not.
+        boardAdmin: !!user?.id && !!group?.adminIds?.includes(user.id),
+        isPlatformAdmin,
+        senderId: post.senderId,
+        viewerId: user?.id ?? '',
+        postKind: post.postKind ?? null,
+        pinnedAt: post.pinnedAt ?? null,
+        removedAt: post.removedAt ?? (post.isRemoved ? post.createdAt : null),
+        mutedUntil: detail?.viewerMutedUntil ?? null,
+      }),
+    [viewerRole, isPlatformAdmin, user?.id, group?.adminIds, detail?.viewerMutedUntil]
+  );
 
   const mentionCandidates = useMemo(() => {
     const roster = group?.members ?? [];
@@ -393,6 +457,10 @@ export function CommunityBoardScreen({
         // ONE row: the title, the body and the photo, on `messages.image_url`.
         // Attaching used to post the photo as its own separate message.
         imageUrl: attachedImageUrl,
+        // Dropped (not rejected) by a pre-migration API, and re-checked there:
+        // `announcement` from a plain member is a 403, which is why the picker
+        // never offers it to one.
+        postKind: selectedKind,
       });
       setText('');
       setSubject('');
@@ -418,6 +486,7 @@ export function CommunityBoardScreen({
     mentionCandidates,
     scrollToTop,
     attachedImageUrl,
+    selectedKind,
   ]);
 
   const sendMediaMarkdown = useCallback(
@@ -839,6 +908,54 @@ export function CommunityBoardScreen({
     ]
   );
 
+  /**
+   * The moderator's soft removal. The card STAYS, as a tombstone carrying the
+   * reason — a reader who already saw the post is told what happened instead
+   * of watching it vanish — so the local row is patched rather than dropped.
+   *
+   * The reason is optional: demanding one would make the fastest possible
+   * takedown the slowest, and the shared cap
+   * (`COMMUNITY_MUTE_REASON_MAX`-style trimming) is applied server-side.
+   */
+  const confirmRemovePost = useCallback(async () => {
+    const target = removeTarget;
+    if (!target || !communityId || removeBusy) return;
+    setRemoveBusy(true);
+    try {
+      const reason = removeReason.trim();
+      const result = await removeCommunityPost(communityId, target.id, {
+        ...(reason ? { reason } : {}),
+      });
+      patchMessageInState(target.id, {
+        removedAt: result.removedAt,
+        isRemoved: true,
+        text: '',
+        ...(reason ? { removedReason: reason } : {}),
+      });
+      if (pinnedPost?.id === target.id) clearPinned(groupId);
+      setRemoveTarget(null);
+      setRemoveReason('');
+    } catch (error) {
+      useToastStore
+        .getState()
+        .showToast(
+          error instanceof Error && error.message ? error.message : 'Could not remove that post',
+          'error'
+        );
+    } finally {
+      setRemoveBusy(false);
+    }
+  }, [
+    removeTarget,
+    communityId,
+    removeBusy,
+    removeReason,
+    patchMessageInState,
+    pinnedPost?.id,
+    clearPinned,
+    groupId,
+  ]);
+
   const postMenuItems: ActionSheetItem[] = useMemo(() => {
     const target = postMenuTarget;
     if (!target) return [];
@@ -873,10 +990,11 @@ export function CommunityBoardScreen({
         },
       });
     }
-    // Reporting your own post is not a thing anywhere else in the product
-    // (`MessageItem.tsx`, `GroupChatScreen`'s long-press menu) and web's board
-    // card already hides it — §8 parity rule 7 makes the row order binding.
-    if (target.senderId !== user?.id) {
+    // Every permission below comes from `boardPostRules` — the same helper the
+    // API decides with. Reporting your own post is refused there (it only ever
+    // costs a moderator a queue item), as is anything on a removed post.
+    const rules = actionsFor(target);
+    if (rules.canReport) {
       items.push({
         label: COMMUNITY_BOARD_COPY.reportPost,
         icon: 'flag',
@@ -943,13 +1061,35 @@ export function CommunityBoardScreen({
         },
       });
     }
-    if (canPin) {
-      const isPinned = pinnedPost?.id === target.id;
+    // `canPin` and `canUnpin` are never both true, so this is one row whose
+    // WORD comes from the rules rather than from what the board happens to
+    // hold. A pin also has to reflect the post's own `pinned_at`, not only
+    // "is this the board's one pinned post".
+    if (rules.canPin || rules.canUnpin) {
+      const isPinned = rules.canUnpin || pinnedPost?.id === target.id;
       items.push({
         label: isPinned ? COMMUNITY_BOARD_COPY.unpin : COMMUNITY_BOARD_COPY.pin,
         icon: 'pin',
         disabled: pinBusy,
         onPress: () => void setPin(groupId, target.id, !isPinned),
+      });
+    }
+    /**
+     * A MODERATOR taking down someone else's post: a soft removal that carries
+     * a reason (`DELETE /communities/:id/posts/:postId`). The author's own
+     * Delete above stays on the message endpoint — one is moderation, with an
+     * audit trail and a tombstone the reader can understand; the other is a
+     * person changing their mind.
+     */
+    if (rules.canModerateRemove && communityId) {
+      items.push({
+        label: REMOVE_POST_LABEL,
+        icon: 'trash',
+        destructive: true,
+        onPress: () => {
+          setRemoveReason('');
+          setRemoveTarget(target);
+        },
       });
     }
     items.push({
@@ -963,7 +1103,8 @@ export function CommunityBoardScreen({
     starredIds,
     user?.id,
     groupId,
-    canPin,
+    actionsFor,
+    communityId,
     pinnedPost?.id,
     pinBusy,
     setPin,
@@ -1107,7 +1248,7 @@ export function CommunityBoardScreen({
       {pinnedPost ? (
         <PinnedBanner
           post={pinnedPost}
-          canUnpin={canPin}
+          canUnpin={actionsFor(pinnedPost).canUnpin || actionsFor(pinnedPost).canPin}
           busy={pinBusy}
           onPress={() => openComments(pinnedPost)}
           onUnpin={() => void setPin(groupId, pinnedPost.id, false)}
@@ -1217,7 +1358,25 @@ export function CommunityBoardScreen({
             setText('');
             setAttachedImageUrl(null);
           }}
+          postKind={selectedKind}
+          postKinds={composer.kinds}
+          onChangePostKind={setPostKind}
         />
+        {/* A refusal is SAID, never left as a composer that silently does
+            nothing: a muted member reads the whole board and is told a
+            moderator can lift it. */}
+        {/* Only once the group has actually loaded: `group` is undefined for a
+            moment on a cold open, and telling a member "Join this community to
+            post" while their own membership is still being fetched is worse
+            than saying nothing. */}
+        {group && composer.refusal ? (
+          <Text
+            accessibilityLiveRegion="polite"
+            className="px-4 pb-2 text-caption text-lantern-text-secondary"
+          >
+            {composer.refusal}
+          </Text>
+        ) : null}
       </KeyboardAvoidingView>
 
       <ActionSheet
@@ -1284,6 +1443,60 @@ export function CommunityBoardScreen({
         onUndo={() => void confirmUndoRepost()}
         onClose={() => setRepostTarget(null)}
       />
+
+      {/* Removal carries a REASON, so it cannot be an Alert: `Alert.prompt`
+          is iOS-only and this app's students are on Android. */}
+      <Modal
+        visible={!!removeTarget}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRemoveTarget(null)}
+      >
+        <Pressable
+          onPress={() => setRemoveTarget(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          className="flex-1 bg-black/40"
+        />
+        <View className="absolute inset-x-4 top-1/3 rounded-2xl bg-lantern-surface p-4">
+          <Text className="text-heading font-semibold text-lantern-text">{REMOVE_POST_LABEL}</Text>
+          <Text className="mt-1 text-caption text-lantern-text-secondary">
+            {COMMUNITY_MODERATION_COPY.removedByModerator}
+          </Text>
+          <TextInput
+            value={removeReason}
+            onChangeText={setRemoveReason}
+            placeholder={COMMUNITY_MODERATION_COPY.removeReasonPlaceholder}
+            placeholderTextColor="#94a3b8"
+            multiline
+            accessibilityLabel={COMMUNITY_MODERATION_COPY.removeReasonPlaceholder}
+            className="mt-3 min-h-[64px] rounded-xl border border-lantern-border px-3 py-2 text-body text-lantern-text"
+          />
+          <View className="mt-3 flex-row justify-end gap-2">
+            <Pressable
+              onPress={() => setRemoveTarget(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel"
+              className="min-h-[44px] justify-center px-4"
+            >
+              <Text className="text-body font-semibold text-lantern-text-secondary">Cancel</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => void confirmRemovePost()}
+              disabled={removeBusy}
+              accessibilityRole="button"
+              accessibilityLabel={REMOVE_POST_LABEL}
+              accessibilityState={{ disabled: removeBusy, busy: removeBusy }}
+              className="min-h-[44px] justify-center rounded-xl bg-lantern-error px-4"
+              style={{ opacity: removeBusy ? 0.6 : 1 }}
+            >
+              <Text className="text-body font-semibold text-white">
+                {removeBusy ? COMMUNITY_BOARD_COPY.posting : REMOVE_POST_LABEL}
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
 
       <ReportContentSheet
         visible={!!reportTarget}

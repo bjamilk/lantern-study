@@ -256,7 +256,9 @@ const GatedSellerCustomers = withMarketplaceGate(SellerCustomersScreen);
 const GatedSellerPayout = withMarketplaceGate(SellerPayoutScreen);
 import {
   CommunityDetailScreen,
+  CreateCommunityScreen,
   CommunityMembersScreen,
+  CommunityManageScreen,
   CommunityChannelScreen,
   CommunityPostScreen,
   SavedPostsScreen,
@@ -530,9 +532,17 @@ function CampusNavigator() {
 
       <CampusStack.Screen name="CommunityDetail" component={CommunityDetailScreen} />
 
+      {/* Start a community. On this stack for the same reason the roster is:
+          back returns to Campus → Communities, and the Campus tab stays lit. */}
+      <CampusStack.Screen name="CreateCommunity" component={CreateCommunityScreen} />
+
       {/* Founder rule (spec §0a): a community's roster, channels and "new
           channel" flow stay on this stack so back returns to the community. */}
       <CampusStack.Screen name="CommunityMembers" component={CommunityMembersScreen} />
+
+      {/* Roles, mutes and invite links. The screen itself re-asks the shared
+          rules per row, so reaching it by name grants nothing. */}
+      <CampusStack.Screen name="CommunityManage" component={CommunityManageScreen} />
 
       <CampusStack.Screen name="CommunityChannel" component={CommunityChannelScreen} />
 

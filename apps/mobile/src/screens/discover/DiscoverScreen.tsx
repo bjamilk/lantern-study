@@ -9,7 +9,6 @@ import {
 } from '@lantern/shared/network';
 import {
   DISCOVER_SECTION_INTRO,
-  canAccessDiscoverHub,
   communityKindLabel,
   communityMembershipAction,
   communityUnreadTotal,
@@ -37,7 +36,7 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
-import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { useCommunityAccess } from '../../hooks/useCommunityAccess';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 
 import { DiscoverWorkspaceBar, type DiscoverSection } from './DiscoverWorkspaceBar';
@@ -798,8 +797,12 @@ export function DiscoverScreen({
   navigation: NavigationProp;
   route?: { params?: { section?: Section; at?: number } };
 }) {
-  const isPlatformAdmin = usePlatformAdmin();
-  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+  // The OBJECT form of the gate, via the hook: Communities are open to every
+  // signed-in student with an institution and a programme (founder decision,
+  // 2026-09-07). The boolean form this used to pass means "platform admin?"
+  // and nothing else, which kept every student out.
+  const { canSee } = useCommunityAccess();
+  if (!canSee) {
     return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
   }
   return <DiscoverHub navigation={navigation} route={route} />;

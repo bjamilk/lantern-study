@@ -58,22 +58,33 @@ import {
   boardQuoteSnippet,
   boardRepostClientId,
   boardRepostOriginalId,
+  BOARD_POST_KIND_DEFAULT,
+  COMMUNITY_MODERATION_COPY,
   canPinOnBoard,
+  canPostBoardKind,
   isBoardImageUrlAllowed,
   isBoardRepostRow,
   isCommunityBoard,
+  isCommunityMemberMuted,
+  normalizeBoardPostKind,
   resolveCommunityRole,
   resolveGroupDiscovery,
   type BoardBookmarkEntry,
+  type BoardPostKind,
   type BoardQuotedPost,
+  type CommunityRole,
 } from "@lantern/shared/network";
 import {
   groupColumns,
+  hasCommunityMemberMute,
   hasGroupCommunitySurface,
   hasMessageBoardColumns,
+  hasMessagePostKind,
   isMissingColumnError,
+  markCommunityMemberMuteMissing,
   markGroupCommunitySurfaceMissing,
   markMessageBoardColumnsMissing,
+  markMessagePostKindMissing,
   markMessageReactionsColumnMissing,
   messageColumns,
   reactionColumns,
@@ -757,6 +768,51 @@ export function mapTestListRow(session: any, lean: boolean): any {
   };
 }
 
+/**
+ * A live community mute (20260908120000) blocks EVERY write into that
+ * community — a board post, a board comment, a repost, the lounge and every
+ * text channel — because all of them arrive at `sendMessage` /
+ * `createBoardRepost` with a `communityId` from `resolveBoardContext`.
+ * Reading is never blocked. Zero queries while the migration is unapplied,
+ * one membership read after it.
+ *
+ * A module-level function, not a method: the board test harnesses call the
+ * prototype on a bare object, and a check that a harness can forget to stub
+ * is a check that is silently missing in the test.
+ *
+ * Throws a 403 with the same copy both clients show on a disabled composer,
+ * so a stale client that still lets a muted member type gets the same
+ * sentence the fresh one shows up front.
+ */
+async function assertNotMutedInCommunity(
+  db: unknown,
+  userId: string,
+  communityId: string | null,
+): Promise<void> {
+  if (!communityId) return;
+  if (!(await hasCommunityMemberMute(db))) return;
+  const { data, error } = await (db as any)
+    .from("community_members")
+    .select("muted_until")
+    .eq("community_id", communityId)
+    .eq("user_id", userId)
+    .is("opted_out_at", null)
+    .maybeSingle();
+  if (error) {
+    if (isMissingColumnError(error)) {
+      markCommunityMemberMuteMissing();
+      return;
+    }
+    throw error;
+  }
+  const mutedUntil = (data as { muted_until?: string | null } | null)?.muted_until ?? null;
+  if (isCommunityMemberMuted(mutedUntil)) {
+    throw Object.assign(new Error(COMMUNITY_MODERATION_COPY.mutedTitle), {
+      statusCode: 403,
+    });
+  }
+}
+
 export class SupabaseService {
   private supabase;
   private supabaseUrl: string;
@@ -1215,6 +1271,14 @@ export class SupabaseService {
       subject: isRemoved ? null : (msg.subject ?? undefined),
       pinnedAt: msg.pinned_at ?? msg.pinnedAt ?? undefined,
       pinnedBy: msg.pinned_by ?? msg.pinnedBy ?? undefined,
+      // Board post kinds (20260908120000). Absent — not null — pre-migration;
+      // `normalizeBoardPostKind` reads both as 'discussion'. The removal
+      // reason SURVIVES a removal on purpose: it is the tombstone's whole
+      // point, unlike the title and body, which are stripped.
+      postKind: msg.post_kind ?? msg.postKind ?? undefined,
+      removedReason: msg.removed_reason ?? msg.removedReason ?? undefined,
+      answeredMessageId:
+        msg.answered_message_id ?? msg.answeredMessageId ?? undefined,
       replyToMessageId:
         msg.reply_to_message_id || msg.replyToMessageId || undefined,
       mentionedUserIds:
@@ -10281,6 +10345,43 @@ export class SupabaseService {
    * Cached briefly under a key `invalidateGroupCache` does NOT match: every
    * send resolves this, and every send also invalidates the group cache.
    */
+  /**
+   * One member's role INSIDE a community, resolved the same way every other
+   * surface resolves it (`communities.created_by` wins, then the membership
+   * row). Kept here so the send path can ask "may this person announce?"
+   * without importing the communities service and creating a cycle.
+   */
+  private async resolveCommunityRoleFor(
+    userId: string,
+    communityId: string | null,
+    createdBy: string | null,
+  ): Promise<CommunityRole | null> {
+    if (!communityId) return null;
+    try {
+      const { data } = await (this.supabase as any)
+        .from("community_members")
+        .select("role")
+        .eq("community_id", communityId)
+        .eq("user_id", userId)
+        .is("opted_out_at", null)
+        .maybeSingle();
+      if (!data) return null;
+      return resolveCommunityRole(
+        (data as { role?: string | null }).role ?? null,
+        userId,
+        createdBy,
+      );
+    } catch (err) {
+      // Fail CLOSED: an unresolvable role is not a moderator, so the worst
+      // case is an announcement refused, never one forged.
+      logger.warn("resolveCommunityRoleFor failed, treating as member", {
+        err,
+        communityId,
+      });
+      return null;
+    }
+  }
+
   private async resolveBoardContext(groupId: string): Promise<{
     isBoard: boolean;
     communityId: string | null;
@@ -10483,6 +10584,13 @@ export class SupabaseService {
        * stops a board's photo column being written from a chat send.
        */
       imageUrl?: string | null;
+      /**
+       * What a board post IS: discussion | question | announcement | event
+       * (20260908120000). Ignored off a board, dropped (not rejected)
+       * pre-migration, and REFUSED with a 403 when the sender may not post
+       * that kind — `announcement` is moderators-only.
+       */
+      postKind?: string | null;
     },
   ): Promise<any> {
     let messageData: any;
@@ -10511,6 +10619,10 @@ export class SupabaseService {
         : undefined;
 
     const board = await this.resolveBoardContext(groupId);
+    // A muted member reads everything and writes nothing — on the board, in
+    // the lounge and in every channel. Checked before any parsing so a mute
+    // cannot be sidestepped by the shape of the payload.
+    await assertNotMutedInCommunity(this.supabase, userId, board.communityId);
 
     /**
      * The whole safety property of a board (spec §3.4): a post whose body
@@ -10706,6 +10818,41 @@ export class SupabaseService {
           ? options.subject.trim().slice(0, BOARD_POST_SUBJECT_MAX)
           : null;
       const withSubject = !!subject && (await hasMessageBoardColumns(this.supabase));
+
+      /**
+       * The post's kind. Only meaningful on a board — a group chat message
+       * has no kind, and writing one there would put a badge on a chat
+       * bubble. An `announcement` is moderators-only and pins itself, so the
+       * role is resolved here (the one query it costs is paid only by the
+       * rare announcement), and the cap is enforced after the insert.
+       */
+      const requestedKind = board.isBoard
+        ? normalizeBoardPostKind(options?.postKind)
+        : BOARD_POST_KIND_DEFAULT;
+      let postKind: BoardPostKind = requestedKind;
+      if (requestedKind === "announcement") {
+        const role = await this.resolveCommunityRoleFor(
+          userId,
+          board.communityId,
+          board.communityCreatedBy,
+        );
+        if (!canPostBoardKind(role, "announcement")) {
+          throw Object.assign(
+            new Error(COMMUNITY_MODERATION_COPY.restrictedKind),
+            { statusCode: 403 },
+          );
+        }
+      }
+      const withPostKind =
+        board.isBoard &&
+        postKind !== BOARD_POST_KIND_DEFAULT &&
+        (await hasMessagePostKind(this.supabase));
+      if (!withPostKind) postKind = BOARD_POST_KIND_DEFAULT;
+      // An announcement pins itself. Pre-migration `withPostKind` is false, so
+      // it degrades to an ordinary post rather than an unlabelled pin that
+      // nothing can find again.
+      const announcementPin =
+        withPostKind && requestedKind === "announcement" ? new Date().toISOString() : null;
       /**
        * `image_url` is written on BOARDS ONLY this phase: group chat and DMs
        * keep sending a photo as its own markdown message, and widening that
@@ -10724,7 +10871,7 @@ export class SupabaseService {
         })
           ? options.imageUrl
           : null;
-      const insertText = (includeSubject: boolean) =>
+      const insertText = (includeSubject: boolean, includeKind: boolean) =>
         (this.supabase as any)
           .from("messages")
           .insert({
@@ -10732,15 +10879,28 @@ export class SupabaseService {
             type: "TEXT",
             text: content,
             ...(includeSubject ? { subject } : {}),
+            ...(includeKind
+              ? {
+                  post_kind: postKind,
+                  ...(announcementPin
+                    ? { pinned_at: announcementPin, pinned_by: userId }
+                    : {}),
+                }
+              : {}),
             ...(attachedImageUrl ? { image_url: attachedImageUrl } : {}),
           })
           .select()
           .single();
 
-      let { data, error } = await insertText(withSubject);
+      let { data, error } = await insertText(withSubject, withPostKind);
+      if (error && withPostKind && isMissingColumnError(error)) {
+        // 20260908120000 is not applied: keep the post, drop the kind.
+        markMessagePostKindMissing();
+        ({ data, error } = await insertText(withSubject, false));
+      }
       if (error && withSubject && isMissingColumnError(error)) {
         markMessageBoardColumnsMissing();
-        ({ data, error } = await insertText(false));
+        ({ data, error } = await insertText(false, false));
       }
 
       if (error) {
@@ -11394,6 +11554,8 @@ export class SupabaseService {
 
     const board = await this.resolveBoardContext(groupId);
     if (!board.isBoard) return { status: "not_board" };
+    // A repost is a write into the community too.
+    await assertNotMutedInCommunity(this.supabase, userId, board.communityId);
 
     const { data: original, error: originalError } = await this.supabase
       .from("messages")

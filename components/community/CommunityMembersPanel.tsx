@@ -11,7 +11,8 @@ import {
 import { fetchCommunityMembers } from '../../services/supabase';
 import { useUIStore } from '../../stores/uiStore';
 import { resolveAvatarSrc } from '../../utils/avatar';
-import { Avatar } from '../ui';
+import { Avatar, Menu, MenuContent, MenuItem, MenuTrigger } from '../ui';
+import ReportContentModal from '../moderation/ReportContentModal';
 
 const EMPTY_IDS: ReadonlySet<string> = new Set<string>();
 
@@ -35,11 +36,14 @@ export const RoleBadge: React.FC<{ role: CommunityRole }> = ({ role }) => {
   );
 };
 
-const MemberRow: React.FC<{ member: CommunityMember; online: boolean; lowDataMode: boolean }> = ({
-  member,
-  online,
-  lowDataMode,
-}) => (
+const MemberRow: React.FC<{
+  member: CommunityMember;
+  online: boolean;
+  lowDataMode: boolean;
+  onReport: (member: CommunityMember) => void;
+  /** The viewer — you cannot report yourself, and the API refuses it anyway. */
+  isSelf: boolean;
+}> = ({ member, online, lowDataMode, onReport, isSelf }) => (
   <li className="flex min-h-[44px] items-center gap-3 px-3 py-1.5">
     <span className="relative shrink-0">
       <Avatar
@@ -67,6 +71,29 @@ const MemberRow: React.FC<{ member: CommunityMember; online: boolean; lowDataMod
         <span className="block truncate text-[11px] text-lantern-text-tertiary">{member.programme}</span>
       ) : null}
     </span>
+    {/* Offered to EVERY member, not only moderators: the person being
+        harassed is usually not one. Moderators additionally get roles and
+        mutes in the Manage panel — this row stays the same for them, because
+        reporting and muting are different acts. */}
+    {isSelf ? null : (
+      <Menu>
+        <MenuTrigger
+          aria-label={`Options for ${member.name}`}
+          title={`Options for ${member.name}`}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-lantern-text-tertiary hover:bg-lantern-background-secondary hover:text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary"
+        >
+          <AppIcon name="ellipsis-horizontal" size={16} />
+        </MenuTrigger>
+        <MenuContent>
+          <MenuItem
+            onSelect={() => onReport(member)}
+            icon={<AppIcon name="flag" size={16} className="text-lantern-text-tertiary" />}
+          >
+            Report {member.name}
+          </MenuItem>
+        </MenuContent>
+      </Menu>
+    )}
   </li>
 );
 
@@ -76,7 +103,10 @@ const MemberRow: React.FC<{ member: CommunityMember; online: boolean; lowDataMod
  * live presence set only ever raises someone into Online; hidden members
  * never get a dot).
  */
-export const CommunityMembersPanel: React.FC<{ communityId: string }> = ({ communityId }) => {
+export const CommunityMembersPanel: React.FC<{ communityId: string; viewerId?: string | null }> = ({
+  communityId,
+  viewerId,
+}) => {
   const lowDataMode = useUIStore((s) => s.lowDataMode);
   const presence = useUIStore((s) => s.communityPresence);
   const [members, setMembers] = useState<CommunityMember[]>([]);
@@ -84,6 +114,15 @@ export const CommunityMembersPanel: React.FC<{ communityId: string }> = ({ commu
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  /**
+   * Reported as a `community_member`. The moderation service resolves that
+   * target through `profiles` exactly as it resolves a `user`, so the report
+   * reaches the same queue — but it arrives labelled as something that
+   * happened INSIDE a community, which is the context a moderator needs and
+   * which a bare `user` report threw away. (It was `user` while
+   * `resolveTarget` had no case for `community_member`; Wave 8 added one.)
+   */
+  const [reportTarget, setReportTarget] = useState<CommunityMember | null>(null);
 
   const loadPage = useCallback(
     async (cursor?: string) => {
@@ -161,7 +200,14 @@ export const CommunityMembersPanel: React.FC<{ communityId: string }> = ({ commu
           </h3>
           <ul className="divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-background">
             {online.map((m) => (
-              <MemberRow key={m.id} member={m} online lowDataMode={lowDataMode} />
+              <MemberRow
+                key={m.id}
+                member={m}
+                online
+                lowDataMode={lowDataMode}
+                isSelf={!!viewerId && m.id === viewerId}
+                onReport={setReportTarget}
+              />
             ))}
           </ul>
         </div>
@@ -175,7 +221,14 @@ export const CommunityMembersPanel: React.FC<{ communityId: string }> = ({ commu
           {offline.length > 0 ? (
             <ul className="divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-background">
               {offline.map((m) => (
-                <MemberRow key={m.id} member={m} online={false} lowDataMode={lowDataMode} />
+                <MemberRow
+                  key={m.id}
+                  member={m}
+                  online={false}
+                  lowDataMode={lowDataMode}
+                  isSelf={!!viewerId && m.id === viewerId}
+                  onReport={setReportTarget}
+                />
               ))}
             </ul>
           ) : (
@@ -199,6 +252,14 @@ export const CommunityMembersPanel: React.FC<{ communityId: string }> = ({ commu
           Load more
         </button>
       ) : null}
+
+      <ReportContentModal
+        isOpen={!!reportTarget}
+        onClose={() => setReportTarget(null)}
+        targetType="community_member"
+        targetId={reportTarget?.id ?? ''}
+        targetLabel={reportTarget?.name ?? null}
+      />
     </div>
   );
 };

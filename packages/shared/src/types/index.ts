@@ -557,6 +557,16 @@ export interface Message {
   pinnedAt?: string | null;
   /** Who pinned it (profiles.id). */
   pinnedBy?: string | null;
+  /**
+   * What a board post IS (`messages.post_kind`): discussion | question |
+   * announcement | event. Undefined pre-20260908120000 and on legacy rows —
+   * both read as 'discussion' through `normalizeBoardPostKind`.
+   */
+  postKind?: string | null;
+  /** Why a moderator removed this post. Shown with the tombstone. */
+  removedReason?: string | null;
+  /** The accepted answer on a `question` post (a comment's message id). */
+  answeredMessageId?: string | null;
 }
 
 export type ChatItem = (Group & { chatType: 'group' }) | (DMThread & { chatType: 'dm' });
@@ -1346,7 +1356,11 @@ export type ContentReportTargetType =
   | 'group'
   | 'message'
   | 'dm_message'
-  | 'job_posting';
+  | 'job_posting'
+  /** A post or comment on a community board (`messages` with a board group). */
+  | 'community_post'
+  /** A member of a community, reported to that community's moderators. */
+  | 'community_member';
 
 export type ContentReportReason =
   | 'scam'

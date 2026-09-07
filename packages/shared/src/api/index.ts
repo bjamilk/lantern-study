@@ -8,7 +8,18 @@ export {
   marketplaceListingsCache,
   marketplaceCategoryAnalyticsCache,
 } from './marketplaceCache';
-export { createApiEndpoints, isQuestionStatEligible, type LanternApiEndpoints } from './endpoints';
+export {
+  createApiEndpoints,
+  isQuestionStatEligible,
+  isNotEnabledError,
+  COMMUNITY_NOT_ENABLED_CODE,
+  COMMUNITY_NOT_ENABLED_COPY,
+  type BoardMessageRow,
+  type CommunityInviteCreated,
+  type CommunityInviteSummary,
+  type LanternApiEndpoints,
+  type NotEnabledError,
+} from './endpoints';
 export {
   createAIClient,
   type AIClientConfig,

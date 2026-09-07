@@ -12,12 +12,18 @@ import {
   boardPostDeepLinkPath,
   boardRepostRefusalCopy,
   boardSharePayload,
+  BOARD_ANNOUNCEMENT_PIN_MAX,
+  COMMUNITY_MODERATION_COPY,
+  boardPostKindMeta,
+  boardPostRules,
   canPinOnBoard,
   canRepostBoardPost,
+  normalizeBoardPostKind,
   pinnedPostAccessibilityLabel,
   studyGroupNameFromPost,
   type BoardBookmarkEntry,
   type BoardPost,
+  type BoardPostKind,
   type CommunityRole,
 } from '@lantern/shared/network';
 import { memberCountLabel } from '@lantern/shared/network';
@@ -48,6 +54,8 @@ import {
   undoBoardRepost,
   unmuteGroupChat,
 } from '../../services/supabase';
+import { removeCommunityPost } from '../../services/apiEndpoints';
+import { manageCommunityErrorCopy } from './manageCommunity';
 import { mergeBoardPosts, mergeRealtimeBoardPost, toBoardPost } from '../../utils/boardPosts';
 import {
   bookmarkImportPayload,
@@ -60,6 +68,7 @@ import {
 import { parseAppRoute } from '../../utils/appRoutes';
 import { confirmDialog } from '../../stores/confirmStore';
 import { useAuthStore } from '../../stores/authStore';
+import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useCommunityStore } from '../../stores/communityStore';
 import { useGroupStore } from '../../stores/groupStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -81,6 +90,8 @@ interface PendingBoardPost {
   text: string;
   replyToMessageId?: string;
   mentionedUserIds?: string[];
+  /** What the post is. A retry must not quietly demote an announcement. */
+  postKind: BoardPostKind;
   failed: boolean;
 }
 
@@ -123,11 +134,28 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
   onStartStudyGroup,
 }) => {
   const currentUser = useAuthStore((s) => s.currentUser);
+  /**
+   * A platform admin moderates every community — the only moderation an
+   * auto-derived campus room with no owner gets. Fed into the SHARED matrix so
+   * this card offers exactly what `communityModeration.removePost` allows, and
+   * nothing more: pinning is decided by `canPinOnBoard` and does not widen.
+   */
+  const isPlatformAdmin = usePlatformAdmin();
   const lowDataMode = useUIStore((s) => s.lowDataMode);
   const groups = useGroupStore((s) => s.groups);
   const showToast = useToastStore((s) => s.showToast);
   const invalidateCommunity = useCommunityStore((s) => s.invalidate);
   const payload = useCommunityStore((s) => s.channelsById[communityId]);
+  /**
+   * The viewer's own community mute. It is NOT the group-chat mute above —
+   * that one is "don't notify me", this one is "you may not post here" — and
+   * it is `undefined` until the community detail has been read (and
+   * pre-migration), which reads as "not muted", the safe default: the server
+   * refuses the post either way.
+   */
+  const viewerMutedUntil = useCommunityStore(
+    (s) => s.detailBySlug[communitySlug]?.viewerMutedUntil ?? null
+  );
 
   const group = useMemo(() => groups.find((g) => g.id === groupId), [groups, groupId]);
   const board = useMemo(
@@ -181,6 +209,15 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
    * is optimistic rendering plus an in-place retry, not an offline outbox.
    */
   const [pendingPosts, setPendingPosts] = useState<PendingBoardPost[]>([]);
+  /**
+   * What each loaded post IS. It is kept beside the posts rather than on them
+   * because `BoardPost` has no `postKind` field: the shared model is written
+   * once for both clients and widening it is not this lane's to do. The map is
+   * fed from the RAW rows, which carry `postKind` / `post_kind` after the
+   * 20260908120000 migration and neither before it — an unknown id normalises
+   * to `discussion`, which is exactly what a legacy row is.
+   */
+  const [postKinds, setPostKinds] = useState<Record<string, BoardPostKind>>({});
 
   const listTopRef = useRef<HTMLDivElement>(null);
   const commentsOpenerRef = useRef<HTMLElement | null>(null);
@@ -300,15 +337,29 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
     };
   }, [openPostId, groupId, posts, linkedPost?.id]);
 
+  /** Remember what each raw row says it is; unknown rows are discussions. */
+  const rememberKinds = useCallback((rows: any[]) => {
+    setPostKinds((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        const id = String(row?.id ?? '');
+        if (!id) continue;
+        next[id] = normalizeBoardPostKind(row?.postKind ?? row?.post_kind);
+      }
+      return next;
+    });
+  }, []);
+
   const loadPage = useCallback(
     async (nextPage: number, replace: boolean) => {
       const rows = await fetchBoardPosts(groupId, { page: nextPage, limit: pageSize });
+      rememberKinds(Array.isArray(rows) ? rows : []);
       const mapped = (Array.isArray(rows) ? rows : []).map((row: any) => toBoardPost(row, groupId));
       setHasMore(mapped.length >= pageSize);
       setPosts((prev) => (replace ? mergeBoardPosts([], mapped) : mergeBoardPosts(prev, mapped)));
       setPage(nextPage);
     },
-    [groupId, pageSize]
+    [groupId, pageSize, rememberKinds]
   );
 
   // First page + the pin. The pin is its own request because it can be older
@@ -400,6 +451,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
         (payloadRow) => {
           const row = payloadRow.new as Record<string, any>;
           if (row.thread_root_id) return;
+          rememberKinds([row]);
           const mapped = toBoardPost(row, groupId);
           // A realtime row is the raw `messages` record: it carries `reactions`
           // (REPLICA IDENTITY FULL) but none of the hydration the API adds, so
@@ -421,7 +473,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [groupId, lowDataMode, userId]);
+  }, [groupId, lowDataMode, userId, rememberKinds]);
 
   const mentionCandidates = useMemo(() => {
     const members = (group?.members ?? [])
@@ -465,6 +517,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
           replyToMessageId: entry.replyToMessageId,
           mentionedUserIds: entry.mentionedUserIds,
           subject: entry.post.subject,
+          postKind: entry.postKind,
           // The title, the body and the one photo go up as ONE row — a retry
           // re-sends the same photo rather than uploading it again.
           imageUrl: entry.post.imageUrl,
@@ -491,7 +544,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
 
   const handlePost = async (
     text: string,
-    options: SendMessageOptions & { subject: string | null }
+    options: SendMessageOptions & { subject: string | null; postKind: BoardPostKind }
   ) => {
     if (!userId) return;
     const clientMessageId =
@@ -529,8 +582,10 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
       text,
       replyToMessageId: options.replyToMessageId,
       mentionedUserIds: options.mentionedUserIds,
+      postKind: options.postKind,
       failed: false,
     };
+    setPostKinds((prev) => ({ ...prev, [clientMessageId]: options.postKind }));
     setPendingPosts((prev) => [entry, ...prev]);
     listTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     await deliverPost(entry);
@@ -604,6 +659,34 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not edit that post', 'error');
+    }
+  };
+
+  /**
+   * A MODERATOR removing somebody else's post — a soft removal that leaves the
+   * card in place carrying "Removed by a moderator", so a reader who already
+   * saw the post is told what happened instead of watching it vanish. The
+   * author's own delete stays `handleDeletePost` below: different act,
+   * different endpoint, different words.
+   */
+  const handleRemovePost = async (post: BoardPost) => {
+    const ok = await confirmDialog({
+      title: 'Remove this post?',
+      message: `${COMMUNITY_MODERATION_COPY.removedByModerator}. Everyone keeps seeing the card, with the reason.`,
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
+    try {
+      const result = await removeCommunityPost(communityId, post.id);
+      setPosts((prev) =>
+        prev.map((item) =>
+          item.id === post.id ? { ...item, removedAt: result.removedAt, text: '' } : item
+        )
+      );
+      if (pinned?.id === post.id) setPinned(null);
+    } catch (err) {
+      showToast(manageCommunityErrorCopy(err, 'Could not remove that post'), 'error');
     }
   };
 
@@ -883,13 +966,33 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
 
   const visiblePosts = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return posts;
-    return posts.filter(
-      (post) =>
-        (post.subject || '').toLowerCase().includes(term) ||
-        (post.text || '').toLowerCase().includes(term)
-    );
-  }, [posts, search]);
+    const matched = term
+      ? posts.filter(
+          (post) =>
+            (post.subject || '').toLowerCase().includes(term) ||
+            (post.text || '').toLowerCase().includes(term)
+        )
+      : posts;
+
+    /**
+     * Announcements sit on top — that is what a moderator posts one FOR. At
+     * most `BOARD_ANNOUNCEMENT_PIN_MAX` of them: a board whose whole first
+     * screen is announcements has no top left for the conversation, which is
+     * the failure mode an unbounded list of pins has. The rest fall back into
+     * the timeline in their own place, so nothing is hidden. A removed
+     * announcement stops being one — the tombstone belongs where it happened.
+     */
+    const announcements: BoardPost[] = [];
+    const rest: BoardPost[] = [];
+    for (const post of matched) {
+      const isAnnouncement =
+        !post.removedAt &&
+        postKinds[post.id] === 'announcement' &&
+        announcements.length < BOARD_ANNOUNCEMENT_PIN_MAX;
+      (isAnnouncement ? announcements : rest).push(post);
+    }
+    return announcements.length ? [...announcements, ...rest] : matched;
+  }, [posts, search, postKinds]);
 
   // An unconfirmed post is never hidden by a search: it is the viewer's own
   // work in flight, and losing sight of it is exactly the failure this fixes.
@@ -1014,6 +1117,24 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
         }
         onEdit={(text) => handleEditPost(post, text)}
         onDelete={() => void handleDeletePost(post)}
+        // Every card decision comes from the ONE shared matrix, asked about
+        // this post and this viewer — never from a role test written here.
+        canRemoveAsModerator={
+          boardPostRules(viewerRole, {
+            isPlatformAdmin,
+            senderId: post.senderId,
+            viewerId: userId,
+            postKind: postKinds[post.id],
+            pinnedAt: post.pinnedAt,
+            removedAt: post.removedAt,
+          }).canRemove && post.senderId !== userId
+        }
+        onRemoveAsModerator={() => void handleRemovePost(post)}
+        postKindLabel={
+          postKinds[post.id] && postKinds[post.id] !== 'discussion'
+            ? boardPostKindMeta(postKinds[post.id]).label
+            : null
+        }
         onTogglePin={() => void handleTogglePin(post)}
         onStartStudyGroup={() => onStartStudyGroup(studyGroupNameFromPost(post), true)}
       />
@@ -1231,6 +1352,11 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
           authorAvatarUrl={currentUser?.avatarUrl}
           lowDataMode={lowDataMode}
           mentionCandidates={mentionCandidates}
+          // Which kinds this viewer may post, and whether they may post at
+          // all, are the shared rules' call — see BoardComposer.
+          viewerRole={viewerRole}
+          isMember
+          mutedUntil={viewerMutedUntil}
           onPost={handlePost}
         />
       </div>

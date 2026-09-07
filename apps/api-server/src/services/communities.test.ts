@@ -13,6 +13,7 @@ import { CommunitiesService } from './communities';
 const VIEWER = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 const COMMUNITY = '33333333-3333-4333-8333-333333333333';
+const INSTITUTION = '99999999-9999-4999-8999-999999999999';
 
 type Row = Record<string, unknown>;
 
@@ -22,13 +23,24 @@ type Row = Record<string, unknown>;
  * the roster once (limit). Every maybeSingle answers with the membership
  * shape; the community read simply sees no created_by, which is 'member'.
  */
-function makeService(opts: { viewerSource?: string | null; roster: Row[] }) {
+function makeService(opts: {
+  viewerSource?: string | null;
+  /** The viewer's own `community_members.role`, for the moderator-only fields. */
+  viewerRole?: string | null;
+  isPlatformAdmin?: boolean;
+  roster: Row[];
+}) {
   const writes: Array<{ table: string; op: string; payload: unknown }> = [];
+  /** Every column list this service asked for, so a test can assert one was NOT asked for. */
+  const selects: Array<{ table: string; columns: string }> = [];
   const db: any = {
     from(table: string) {
       const api: any = {};
       const self = () => api;
-      api.select = self;
+      api.select = (columns?: string) => {
+        if (typeof columns === 'string') selects.push({ table, columns });
+        return api;
+      };
       api.eq = self;
       api.is = self;
       api.in = self;
@@ -38,7 +50,16 @@ function makeService(opts: { viewerSource?: string | null; roster: Row[] }) {
       api.order = self;
       api.maybeSingle = () =>
         Promise.resolve({
-          data: opts.viewerSource ? { user_id: VIEWER, source: opts.viewerSource } : null,
+          data:
+            // The `profiles` read is the community GATE
+            // (assertCanAccessCommunities): every write path checks that the
+            // caller has an institution AND a programme before it runs, so
+            // the double has to answer it or every test 403s.
+            table === 'profiles'
+              ? { id: VIEWER, institution_id: INSTITUTION, programme: 'MBBS' }
+              : opts.viewerSource
+                ? { user_id: VIEWER, source: opts.viewerSource, role: opts.viewerRole ?? null }
+                : null,
           error: null,
         });
       api.limit = () => Promise.resolve({ data: opts.roster, error: null });
@@ -66,13 +87,20 @@ function makeService(opts: { viewerSource?: string | null; roster: Row[] }) {
   const service = new CommunitiesService({
     getClient: () => db,
     listBlockedUserIds: async () => [],
+    isPlatformAdmin: async () => opts.isPlatformAdmin === true,
   } as never);
-  return { service, writes };
+  return { service, writes, selects };
 }
 
-const member = (id: string, source: string, visibility?: string): Row => ({
+const member = (
+  id: string,
+  source: string,
+  visibility?: string,
+  mutedUntil?: string | null
+): Row => ({
   user_id: id,
   source,
+  ...(mutedUntil === undefined ? {} : { muted_until: mutedUntil }),
   profiles: {
     id,
     name: `User ${id.slice(0, 4)}`,
@@ -145,6 +173,77 @@ describe('listMembers privacy', () => {
   });
 });
 
+/**
+ * `muted_until` says a NAMED PERSON was punished. It goes to someone who could
+ * have done the punishing and to nobody else — otherwise the roster quietly
+ * publishes every mute in the community to the whole community.
+ */
+describe('listMembers mute state', () => {
+  const MUTED_UNTIL = '2099-01-01T00:00:00Z';
+  const rosterSelect = (selects: Array<{ table: string; columns: string }>) =>
+    selects.find((s) => s.columns.includes('profiles!inner'))?.columns ?? '';
+
+  it('a moderator sees mutedUntil on every row, null for a member who is not muted', async () => {
+    const { service, selects } = makeService({
+      viewerSource: 'joined',
+      viewerRole: 'moderator',
+      roster: [member(OTHER, 'joined', 'public', MUTED_UNTIL), member(VIEWER, 'joined', 'public')],
+    });
+    const { members } = await service.listMembers(VIEWER, COMMUNITY);
+    expect(rosterSelect(selects)).toContain('muted_until');
+    expect(members.map((m) => m.mutedUntil)).toEqual([MUTED_UNTIL, null]);
+  });
+
+  it('a plain member is not told who is muted — the column is never even selected', async () => {
+    const { service, selects } = makeService({
+      viewerSource: 'joined',
+      viewerRole: 'member',
+      roster: [member(OTHER, 'joined', 'public', MUTED_UNTIL)],
+    });
+    const { members } = await service.listMembers(VIEWER, COMMUNITY);
+    expect(rosterSelect(selects)).not.toContain('muted_until');
+    expect(members[0]).not.toHaveProperty('mutedUntil');
+  });
+
+  it('a platform admin with no community role is told, because they are the only moderation an auto room has', async () => {
+    const { service } = makeService({
+      viewerSource: 'auto',
+      viewerRole: 'member',
+      isPlatformAdmin: true,
+      roster: [member(OTHER, 'auto', 'public', MUTED_UNTIL)],
+    });
+    const { members } = await service.listMembers(VIEWER, COMMUNITY);
+    expect(members[0].mutedUntil).toBe(MUTED_UNTIL);
+  });
+
+  it('an admin is told, and an unmuted member reads as null rather than absent', async () => {
+    const { service } = makeService({
+      viewerSource: 'joined',
+      viewerRole: 'admin',
+      roster: [member(OTHER, 'joined', 'public', null)],
+    });
+    expect((await service.listMembers(VIEWER, COMMUNITY)).members[0].mutedUntil).toBeNull();
+  });
+});
+
+/**
+ * The detail payload is what the community screen resolves its KIND from, and
+ * a tag-derived kind needs the tags in the same response — a second request to
+ * learn what the room is means the header renders as "Community" first and
+ * changes under the reader. Both columns are in COMMUNITY_COLUMNS today; this
+ * pins them there, because the fallback path in `selectCommunity` trims
+ * columns by name and a careless addition to OPTIONAL would drop one silently.
+ */
+describe('getBySlug payload', () => {
+  it('asks for kind AND tags', async () => {
+    const { service, selects } = makeService({ viewerSource: 'joined', roster: [] });
+    await service.getBySlug(VIEWER, 'campus-unilag');
+    const columns = selects.find((s) => s.table === 'communities')?.columns ?? '';
+    expect(columns).toContain('kind');
+    expect(columns).toContain('tags');
+  });
+});
+
 describe('leave semantics', () => {
   it('records an opt-out for an AUTO membership instead of deleting it', async () => {
     // A DELETE would be undone by the next profile save, because
@@ -186,6 +285,136 @@ describe('createTopicCommunity', () => {
     expect(insert.is_official).toBe(false);
     const join = writes.find((w) => w.op === 'upsert')?.payload as Row;
     expect(join.source).toBe('joined');
+  });
+});
+
+describe('createCommunity — the campus-life kinds', () => {
+  const roster = (kind: string): Row[] => [
+    { id: COMMUNITY, kind, slug: `${kind}-law-society`, name: 'Law Society' },
+  ];
+
+  it.each(['interest', 'club', 'hostel', 'faith', 'sports', 'general', 'event'])(
+    'lets a student create a %s community, never official',
+    async (kind) => {
+      const { service, writes } = makeService({ viewerSource: 'joined', roster: roster(kind) });
+      await service.createCommunity(VIEWER, { name: 'Law Society', kind });
+      const insert = writes.find((w) => w.op === 'insert')?.payload as Row;
+      expect(insert.kind).toBe(kind);
+      expect(insert.is_official).toBe(false);
+      expect(insert.created_by).toBe(VIEWER);
+      expect(insert.slug).toBe(`${kind}-law-society`);
+    },
+  );
+
+  it('refuses an academic kind — those are derived from the profile, not minted', async () => {
+    const { service, writes } = makeService({ viewerSource: 'joined', roster: roster('course') });
+    await expect(
+      service.createCommunity(VIEWER, { name: 'Pharmacology', kind: 'course' }),
+    ).rejects.toThrow(/made from your profile/);
+    expect(writes.some((w) => w.op === 'insert')).toBe(false);
+  });
+
+  it('refuses a kind that does not exist', async () => {
+    const { service } = makeService({ viewerSource: 'joined', roster: roster('quidditch') });
+    await expect(
+      service.createCommunity(VIEWER, { name: 'Quidditch', kind: 'quidditch' }),
+    ).rejects.toThrow(/community type/);
+  });
+
+  it('carries an event schedule, and drops an end before its start', async () => {
+    const { service, writes } = makeService({ viewerSource: 'joined', roster: roster('event') });
+    await service.createCommunity(VIEWER, {
+      name: 'Rag Week',
+      kind: 'event',
+      startsAt: '2026-10-01T09:00:00Z',
+      endsAt: '2026-09-30T09:00:00Z',
+      location: 'Main Auditorium',
+    });
+    const insert = writes.find((w) => w.op === 'insert')?.payload as Row;
+    expect(insert.starts_at).toBe('2026-10-01T09:00:00.000Z');
+    expect(insert.ends_at).toBeNull();
+    expect(insert.location).toBe('Main Auditorium');
+  });
+
+  it('never writes a schedule onto a kind that is not an event', async () => {
+    const { service, writes } = makeService({ viewerSource: 'joined', roster: roster('club') });
+    await service.createCommunity(VIEWER, {
+      name: 'Law Society',
+      kind: 'club',
+      startsAt: '2026-10-01T09:00:00Z',
+    });
+    const insert = writes.find((w) => w.op === 'insert')?.payload as Row;
+    expect(insert.starts_at).toBeUndefined();
+  });
+
+  it('makes a private community, which join() then refuses (code only)', async () => {
+    const { service, writes } = makeService({ viewerSource: 'joined', roster: roster('club') });
+    await service.createCommunity(VIEWER, {
+      name: 'Law Society',
+      kind: 'club',
+      visibility: 'private',
+    });
+    expect((writes.find((w) => w.op === 'insert')?.payload as Row).visibility).toBe('private');
+  });
+});
+
+describe('the community gate (assertCanAccessCommunities)', () => {
+  /** A profile with no programme: the gate has to refuse, not 500. */
+  function makeGatedService(profile: Row | null) {
+    const db: any = {
+      from() {
+        const api: any = {};
+        const self = () => api;
+        for (const m of ['select', 'eq', 'is', 'in', 'or', 'order', 'limit']) api[m] = self;
+        api.maybeSingle = () => Promise.resolve({ data: profile, error: null });
+        return api;
+      },
+      rpc: () => Promise.resolve({ data: null, error: null }),
+    };
+    return new CommunitiesService({
+      getClient: () => db,
+      listBlockedUserIds: async () => [],
+      isPlatformAdmin: async () => false,
+    } as never);
+  }
+
+  it('refuses a half-filled academic profile with 403, not 500', async () => {
+    const service = makeGatedService({ id: VIEWER, institution_id: INSTITUTION, programme: null });
+    await expect(service.assertCanAccessCommunities(VIEWER)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+
+  it('lets a student with institution AND programme through', async () => {
+    const service = makeGatedService({
+      id: VIEWER,
+      institution_id: INSTITUTION,
+      programme: 'MBBS',
+    });
+    await expect(service.assertCanAccessCommunities(VIEWER)).resolves.toEqual({
+      institutionId: INSTITUTION,
+    });
+  });
+
+  it('lets a platform admin through with no academic profile at all', async () => {
+    const db: any = {
+      from() {
+        const api: any = {};
+        const self = () => api;
+        for (const m of ['select', 'eq', 'is', 'in', 'or', 'order', 'limit']) api[m] = self;
+        api.maybeSingle = () => Promise.resolve({ data: { id: VIEWER }, error: null });
+        return api;
+      },
+      rpc: () => Promise.resolve({ data: null, error: null }),
+    };
+    const service = new CommunitiesService({
+      getClient: () => db,
+      listBlockedUserIds: async () => [],
+      isPlatformAdmin: async () => true,
+    } as never);
+    await expect(service.assertCanAccessCommunities(VIEWER)).resolves.toEqual({
+      institutionId: null,
+    });
   });
 });
 
@@ -250,6 +479,7 @@ describe('joinDiscoverableGroup', () => {
     const service = new CommunitiesService({
       getClient: () => db,
       listBlockedUserIds: async () => [],
+      isPlatformAdmin: async () => false,
     } as never);
     return { service, writes };
   }

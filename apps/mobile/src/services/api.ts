@@ -482,6 +482,19 @@ export const {
   joinCommunity,
   leaveCommunity,
   createCommunity,
+  // Wave 8 · community governance. Every one of these is re-decided
+  // server-side from the same shared rules the screens call, and the mute /
+  // invite / join-by-code wrappers answer a typed NOT_ENABLED failure until
+  // migration 20260908120000 is hand-applied — branch on `isNotEnabledError`,
+  // never on a status code or a server string.
+  setCommunityMemberRole,
+  muteCommunityMember,
+  unmuteCommunityMember,
+  removeCommunityPost,
+  createCommunityInvite,
+  listCommunityInvites,
+  revokeCommunityInvite,
+  joinCommunityByCode,
   joinDiscoverableGroup,
   discoverCommunities,
   discoverGroups,

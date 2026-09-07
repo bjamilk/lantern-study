@@ -155,7 +155,13 @@ describe('capability probes', () => {
 
 describe('column list helpers', () => {
   it('append rather than rebuild, and are a no-op when the columns are absent', async () => {
-    setSchemaCapabilities({ groupCommunitySurface: true, messageBoardColumns: true });
+    // messagePostKind is a SEPARATE migration (20260908120000): a database
+    // with board columns but no post kinds is a real, shipped state.
+    setSchemaCapabilities({
+      groupCommunitySurface: true,
+      messageBoardColumns: true,
+      messagePostKind: false,
+    });
     const db = {};
     await expect(groupColumns(db, 'id, name, community_id')).resolves.toBe(
       'id, name, community_id, community_surface',
@@ -164,13 +170,25 @@ describe('column list helpers', () => {
       'id, text, subject, pinned_at, pinned_by',
     );
 
-    setSchemaCapabilities({ groupCommunitySurface: false, messageBoardColumns: false });
+    // Both migrations applied: the post-kind columns ride on the end.
+    setSchemaCapabilities({ messagePostKind: true });
+    await expect(messageColumns(db, 'id, text')).resolves.toBe(
+      'id, text, subject, pinned_at, pinned_by, post_kind, removed_reason, answered_message_id',
+    );
+
+    setSchemaCapabilities({
+      groupCommunitySurface: false,
+      messageBoardColumns: false,
+      messagePostKind: false,
+    });
     await expect(groupColumns(db, 'id, name, community_id')).resolves.toBe('id, name, community_id');
+    // No board columns at all means no post-kind columns either, whatever the
+    // later migration says: post_kind is meaningless without a board.
     await expect(messageColumns(db, 'id, text')).resolves.toBe('id, text');
   });
 
   it('tolerates the multi-line select strings the message queries use', async () => {
-    setSchemaCapabilities({ messageBoardColumns: true });
+    setSchemaCapabilities({ messageBoardColumns: true, messagePostKind: false });
     const base = `
       id,
       text,

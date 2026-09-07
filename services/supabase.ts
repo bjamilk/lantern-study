@@ -1103,6 +1103,15 @@ export const sendMessage = async (
      * (`isBoardImageUrlAllowed`), so chat and DMs are unaffected.
      */
     imageUrl?: string | null;
+    /**
+     * What the post IS on a community board — discussion, question,
+     * announcement, event (`BOARD_POST_KINDS`). Ignored off a board and
+     * DROPPED, not rejected, before the 20260908120000 migration, so a board
+     * posts identically either side of it. The server re-checks who may post
+     * a restricted kind (403), so the composer hiding "Announcement" is a
+     * courtesy and never the gate.
+     */
+    postKind?: string | null;
   }
 ) => {
   const body = JSON.stringify({
@@ -1111,6 +1120,7 @@ export const sendMessage = async (
     clientMessageId,
     replyToMessageId: options?.replyToMessageId,
     mentionedUserIds: options?.mentionedUserIds,
+    ...(options?.postKind ? { postKind: options.postKind } : {}),
     // Board post title (spec §3.4). Dropped server-side — not rejected —
     // before the 20260903120000 migration; validate with `validateBoardSubject`.
     ...(options?.subject !== undefined ? { subject: options.subject } : {}),
@@ -5467,7 +5477,7 @@ export const leaveCommunity = (communityId: string) =>
     'Could not leave this community'
   );
 
-export const createCommunity = (body: { name: string; description?: string; tags?: string[] }) =>
+export const createCommunity = (body: { name: string; description?: string; tags?: string[]; kind?: string }) =>
   networkWrite<Community>(
     '/communities',
     'POST',

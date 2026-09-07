@@ -5,7 +5,7 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
-import type { BoardQuotedPost } from '@lantern/shared/network';
+import { isBoardPostKind, type BoardPostKind, type BoardQuotedPost } from '@lantern/shared/network';
 import { boardActionFields } from '../utils/boardMessageFields';
 import {
   chatMessagePreview,
@@ -164,6 +164,15 @@ export interface Message {
   isRemoved?: boolean;
   /** Board post title (messages.subject). Absent before the boards migration. */
   subject?: string | null;
+  /**
+   * What a BOARD post is — discussion / question / announcement / event
+   * (`messages.post_kind`, migration 20260908120000). Absent on a chat row and
+   * on every row written before that migration; `normalizeBoardPostKind` reads
+   * an absent value as a discussion, which is what those legacy rows are.
+   */
+  postKind?: string | null;
+  /** Why a moderator took this post down (`messages.removed_reason`). */
+  removedReason?: string | null;
   /** Server-side board pin — one per board, everyone sees it. */
   pinnedAt?: string | null;
   pinnedBy?: string | null;
@@ -366,6 +375,14 @@ interface GroupState {
        * exactly what trap 6 forbids.
        */
       imageUrl?: string | null;
+      /**
+       * A board post's KIND (`messages.post_kind`). Ignored on a group chat,
+       * dropped rather than rejected pre-20260908120000, and 403 when the
+       * sender may not post it — decide with `canPostOnBoard` from
+       * `@lantern/shared/network` first, so the control is hidden rather than
+       * the request refused.
+       */
+      postKind?: BoardPostKind;
     }
     /**
      * Resolves with the outcome instead of throwing for offline sends: a send
@@ -601,6 +618,11 @@ export function mapApiMessage(m: any, groupId: string, roster?: GroupMember[]): 
     isRemoved,
     reactions: m.reactions && typeof m.reactions === 'object' ? m.reactions : {},
     subject: m.subject ?? null,
+    postKind: m.post_kind ?? m.postKind ?? null,
+    // The tombstone's reason. Kept even though `text` is blanked above: the
+    // whole point of a SOFT removal is that a reader who saw the post is told
+    // what happened instead of watching it vanish.
+    removedReason: m.removed_reason ?? m.removedReason ?? null,
     pinnedAt: m.pinned_at ?? m.pinnedAt ?? null,
     pinnedBy: m.pinned_by ?? m.pinnedBy ?? null,
     upvotes: m.upvotes ?? 0,
@@ -1121,6 +1143,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       subject?: string | null;
       plainText?: boolean;
       imageUrl?: string | null;
+      postKind?: BoardPostKind;
     }
   ) => {
     const releaseSendSlot = await acquireSendSlot(sendChainByGroup, groupId);
@@ -1199,6 +1222,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       type: isQuestion ? 'question' : 'text',
       createdAt: new Date().toISOString(),
       subject: options?.subject ?? null,
+      // The optimistic card must already read as an announcement, or a
+      // moderator's post jumps from the middle of the list to the top a
+      // second later.
+      postKind: options?.postKind ?? null,
       questionStem,
       questionStatus: isQuestion ? 'PENDING' : undefined,
       questionType: parsed.questionType || parsed.question_type,
@@ -1259,6 +1286,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         mentionedUserIds: options?.mentionedUserIds,
         ...(options?.subject ? { subject: options.subject } : {}),
         ...(options?.imageUrl ? { imageUrl: options.imageUrl } : {}),
+        ...(options?.postKind ? { postKind: options.postKind } : {}),
       });
       const serverMessage = mapApiMessage(serverPayload, groupId);
       set((state) => {
@@ -1310,6 +1338,10 @@ export const useGroupStore = create<GroupState>((set, get) => ({
             // strand an object in storage that no row points at.
             subject: options?.subject ?? null,
             imageUrl: options?.imageUrl ?? null,
+            // Carried for the same reason as the title: a queued announcement
+            // that flushes as a discussion is silent work loss, and the
+            // student never sees the send that dropped it.
+            postKind: options?.postKind ?? null,
           }, senderId)
           .catch(() => undefined);
       }
@@ -2646,6 +2678,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
     mentionedUserIds?: string[];
     subject?: string | null;
     imageUrl?: string | null;
+    postKind?: string | null;
   };
   try {
     if (data.kind === 'group' && data.groupId) {
@@ -2656,6 +2689,10 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
         mentionedUserIds: data.mentionedUserIds,
         ...(data.subject ? { subject: data.subject } : {}),
         ...(data.imageUrl ? { imageUrl: data.imageUrl } : {}),
+        // A queued announcement flushes as an announcement. The value is
+        // re-validated against the shared vocabulary because it has been
+        // through AsyncStorage since it was chosen.
+        ...(isBoardPostKind(data.postKind) ? { postKind: data.postKind } : {}),
       });
       const server = mapApiMessage(payload, data.groupId);
       useGroupStore.setState((state) => ({

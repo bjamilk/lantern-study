@@ -834,3 +834,87 @@ describe('params pass-through, in general', () => {
     expect(offenders.join('\n')).toBe('');
   });
 });
+
+describe('the community row', () => {
+  const communityBar = (): ContextualBarSpec => barFor('CommunityDetail');
+
+  it('offers the four doors of a community, in order', () => {
+    expect(communityBar().items.map(item => item.id)).toEqual([
+      'chat',
+      'boards',
+      'rooms',
+      'members',
+    ]);
+  });
+
+  it('carries the campus accent, because the student stands on the community', () => {
+    // Not on one of its four doors — same reason the deck and note rows
+    // declare an accent instead of deriving one.
+    expect(accentForRoute('CommunityDetail')).toBe('campus');
+    expect(activeItem('CommunityDetail')).toBeNull();
+  });
+
+  it('takes Members to the roster for the community you are looking at', () => {
+    expect(
+      planContextualPress({
+        focusedRoute: 'CommunityDetail',
+        item: itemById(communityBar(), 'members'),
+        focusedParams: { slug: 'unilag-medicine' },
+      })
+    ).toEqual({
+      kind: 'navigate',
+      route: 'CommunityMembers',
+      params: { slug: 'unilag-medicine' },
+    });
+  });
+
+  it('does nothing rather than opening a roster for nothing', () => {
+    // Before the community has loaded there is no slug to carry.
+    expect(
+      planContextualPress({
+        focusedRoute: 'CommunityDetail',
+        item: itemById(communityBar(), 'members'),
+        focusedParams: {},
+      })
+    ).toEqual({ kind: 'unavailable' });
+  });
+
+  it('asks the screen for the three doors that are not screens', () => {
+    // The lounge's group id is minted on first use, and Boards/Rooms are
+    // sections of the community page — none of the three is a route.
+    for (const [id, action] of [
+      ['chat', 'communityChat'],
+      ['boards', 'communityBoards'],
+      ['rooms', 'communityRooms'],
+    ] as const) {
+      expect(
+        planContextualPress({
+          focusedRoute: 'CommunityDetail',
+          item: itemById(communityBar(), id),
+        })
+      ).toEqual({ kind: 'screenAction', action });
+    }
+  });
+
+  it('hides the row inside a channel chat and on the rooms the row leads to', () => {
+    // Inside a chat the row would sit between the composer and the keyboard;
+    // the roster, a post and a board carry their own back arrow and do not
+    // register the screen actions, so a row there would be dead buttons.
+    for (const route of ['CommunityChannel', 'CommunityMembers', 'CommunityPost', 'SavedPosts']) {
+      expect(specForRoute(route)).toBeNull();
+    }
+  });
+
+  it('registers the community screen actions in the screen itself (source scan)', () => {
+    // The registry names an action; only the screen can run it. A row item
+    // whose handler nobody registers is a button that does nothing.
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../screens/discover/CommunityDetailScreen.tsx'),
+      'utf8'
+    );
+    expect(source).toContain("useScreenActions('CommunityDetail'");
+    for (const action of ['communityChat', 'communityBoards', 'communityRooms']) {
+      expect(source).toContain(action);
+    }
+  });
+});

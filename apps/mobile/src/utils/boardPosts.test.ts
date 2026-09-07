@@ -292,3 +292,73 @@ describe('splitBoardBody', () => {
     expect(splitBoardBody(undefined).body).toBe('');
   });
 });
+
+describe('selectBoardPosts — announcements', () => {
+  const post = (over: Partial<Message> & { id: string; createdAt: string }): Message =>
+    ({
+      groupId: 'g1',
+      senderId: 'u1',
+      senderName: 'Ada',
+      text: 'body',
+      type: 'text',
+      ...over,
+    }) as Message;
+
+  it('pins an announcement above newer discussions', () => {
+    const posts = selectBoardPosts([
+      post({ id: 'old-announcement', createdAt: '2026-09-01T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'new-discussion', createdAt: '2026-09-08T09:00:00Z' }),
+      post({ id: 'older-discussion', createdAt: '2026-09-07T09:00:00Z', postKind: 'discussion' }),
+    ]);
+    expect(posts.map((p) => p.id)).toEqual([
+      'old-announcement',
+      'new-discussion',
+      'older-discussion',
+    ]);
+  });
+
+  it('keeps announcements newest-first among themselves', () => {
+    const posts = selectBoardPosts([
+      post({ id: 'a1', createdAt: '2026-09-01T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'a2', createdAt: '2026-09-05T09:00:00Z', postKind: 'announcement' }),
+    ]);
+    expect(posts.map((p) => p.id)).toEqual(['a2', 'a1']);
+  });
+
+  it('lets a removed announcement fall back into the ordinary run', () => {
+    const posts = selectBoardPosts([
+      post({
+        id: 'removed',
+        createdAt: '2026-09-01T09:00:00Z',
+        postKind: 'announcement',
+        removedAt: '2026-09-02T09:00:00Z',
+      }),
+      post({ id: 'live', createdAt: '2026-09-08T09:00:00Z' }),
+    ]);
+    expect(posts.map((p) => p.id)).toEqual(['live', 'removed']);
+  });
+
+  it('treats a legacy row with no kind as a discussion', () => {
+    const posts = selectBoardPosts([
+      post({ id: 'legacy', createdAt: '2026-09-08T09:00:00Z' }),
+      post({ id: 'announcement', createdAt: '2026-09-01T09:00:00Z', postKind: 'announcement' }),
+    ]);
+    expect(posts[0]!.id).toBe('announcement');
+  });
+
+  it('floats at most BOARD_ANNOUNCEMENT_PIN_MAX announcements, the rest fall back in place', () => {
+    // The server unpins the oldest announcement past the cap but leaves its
+    // kind as `announcement`; web caps its list the same way. Five
+    // announcements must not bury the conversation on the phone.
+    const posts = selectBoardPosts([
+      post({ id: 'a1', createdAt: '2026-09-01T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'a2', createdAt: '2026-09-02T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'a3', createdAt: '2026-09-03T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'a4', createdAt: '2026-09-04T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'a5', createdAt: '2026-09-05T09:00:00Z', postKind: 'announcement' }),
+      post({ id: 'd-new', createdAt: '2026-09-08T09:00:00Z' }),
+      post({ id: 'd-old', createdAt: '2026-08-30T09:00:00Z' }),
+    ]);
+    expect(posts.map((p) => p.id)).toEqual(['a5', 'a4', 'a3', 'd-new', 'a2', 'a1', 'd-old']);
+  });
+});

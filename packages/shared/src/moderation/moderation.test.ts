@@ -141,7 +141,17 @@ describe('takedown → appeal state machine', () => {
 describe('admin action vocabulary', () => {
   it('lists the five v1 actions and the auto-removable targets', () => {
     expect(ADMIN_REPORT_ACTIONS).toEqual(['dismiss', 'under_review', 'warn', 'remove_content', 'strike']);
-    expect(REMOVE_CONTENT_SUPPORTED_TARGETS).toEqual(['listing', 'question_bank', 'note', 'deck', 'group']);
+    // `community_post` joined the list with community governance: a board
+    // post is removed by the SAME soft removal a community moderator applies,
+    // so the admin queue needs no separate tool for it.
+    expect(REMOVE_CONTENT_SUPPORTED_TARGETS).toEqual([
+      'listing',
+      'question_bank',
+      'note',
+      'deck',
+      'group',
+      'community_post',
+    ]);
     for (const t of ['message', 'dm_message', 'user', 'job_posting'] as const) {
       expect(REMOVE_CONTENT_SUPPORTED_TARGETS).not.toContain(t);
     }

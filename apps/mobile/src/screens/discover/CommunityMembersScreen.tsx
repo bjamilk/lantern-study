@@ -10,22 +10,23 @@ import {
 import {
   COMMUNITY_COPY,
   COMMUNITY_MEMBERS_PAGE,
-  canAccessDiscoverHub,
   isMemberOnline,
   shouldSubscribeCommunityPresence,
   splitMembers,
   type CommunityMember,
 } from '@lantern/shared/network';
 import { fetchCommunityMembers } from '../../services/api';
+import { useAuthStore } from '../../stores/authStore';
 import { isForbiddenError } from '../../services/accountSuspension';
 import { useCommunityStore } from '../../stores/communityStore';
 import { useCommunityPresence } from '../../hooks/useCommunityPresence';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
-import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { useCommunityAccess } from '../../hooks/useCommunityAccess';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { BackButton } from '../../components/ui';
+import { ActionSheet, BackButton } from '../../components/ui';
 import { MemberRow } from '../../components/community';
+import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 import { AppIcon } from '../../components/ui/AppIcon';
 
@@ -55,6 +56,7 @@ function CommunityMembersList({
   const listBottomPadding = useScreenBottomPadding();
   const { lowDataMode } = useLowDataMode();
   const { onScroll: chromeOnScroll } = useChrome();
+  const viewerId = useAuthStore((s) => s.user?.id);
   const detail = useCommunityStore((s) => s.detailBySlug[slug]);
   const loadCommunity = useCommunityStore((s) => s.loadCommunity);
 
@@ -67,6 +69,18 @@ function CommunityMembersList({
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  /**
+   * Reporting a member is `community_member` — the shared target type, with
+   * the shared reason list. It is deliberately open to every member (a report
+   * is not moderation), and never offered on the reader's own row: a report
+   * against yourself only costs a moderator a queue item.
+   */
+  const [reportTarget, setReportTarget] = useState<CommunityMember | null>(null);
+  /**
+   * Tapping a row opens the sheet rather than the report form itself: a
+   * single tap that files a report is a report filed by accident.
+   */
+  const [menuTarget, setMenuTarget] = useState<CommunityMember | null>(null);
 
   // A deep link only carries the slug: resolve the community first (also
   // gives us isMember / member_count for the presence gate below).
@@ -193,13 +207,27 @@ function CommunityMembersList({
               {section.title}
             </Text>
           )}
-          renderItem={({ item }) => (
-            <MemberRow
-              member={item}
-              online={isMemberOnline(item, onlineIds)}
-              lowDataMode={lowDataMode}
-            />
-          )}
+          renderItem={({ item }) =>
+            item.id === viewerId ? (
+              <MemberRow
+                member={item}
+                online={isMemberOnline(item, onlineIds)}
+                lowDataMode={lowDataMode}
+              />
+            ) : (
+              <Pressable
+                onPress={() => setMenuTarget(item)}
+                accessibilityRole="button"
+                accessibilityLabel={`${item.name}. More actions`}
+              >
+                <MemberRow
+                  member={item}
+                  online={isMemberOnline(item, onlineIds)}
+                  lowDataMode={lowDataMode}
+                />
+              </Pressable>
+            )
+          }
           ListEmptyComponent={
             error ? null : (
               <Text className="mx-4 mt-3 text-sm text-lantern-text-tertiary">
@@ -227,6 +255,31 @@ function CommunityMembersList({
           }
         />
       )}
+
+      <ActionSheet
+        visible={!!menuTarget}
+        title={menuTarget?.name}
+        items={[
+          {
+            label: 'Report member',
+            icon: 'flag' as const,
+            onPress: () => {
+              const member = menuTarget;
+              setMenuTarget(null);
+              setReportTarget(member);
+            },
+          },
+        ]}
+        onClose={() => setMenuTarget(null)}
+      />
+
+      <ReportContentSheet
+        visible={!!reportTarget}
+        targetType="community_member"
+        targetId={reportTarget?.id ?? ''}
+        targetLabel={reportTarget?.name}
+        onClose={() => setReportTarget(null)}
+      />
     </Screen>
   );
 }
@@ -238,8 +291,12 @@ export function CommunityMembersScreen({
   navigation: NavigationProp;
   route: { params: Params };
 }) {
-  const isPlatformAdmin = usePlatformAdmin();
-  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+  // The OBJECT form of the gate, via the hook: Communities are open to every
+  // signed-in student with an institution and a programme (founder decision,
+  // 2026-09-07). The boolean form this used to pass means "platform admin?"
+  // and nothing else, which kept every student out.
+  const { canSee } = useCommunityAccess();
+  if (!canSee) {
     return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
   }
   return <CommunityMembersList navigation={navigation} route={route} />;

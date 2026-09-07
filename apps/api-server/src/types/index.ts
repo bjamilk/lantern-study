@@ -161,6 +161,16 @@ export interface Message {
   pinnedAt?: string | null;
   pinnedBy?: string | null;
   /**
+   * What a board post IS (20260908120000): discussion | question |
+   * announcement | event. Absent pre-migration and on legacy rows; both read
+   * as 'discussion' through `normalizeBoardPostKind`. NO poll this wave.
+   */
+  postKind?: string | null;
+  /** Why a moderator removed this post — the tombstone's text. */
+  removedReason?: string | null;
+  /** The accepted answer on a `question` post (a comment's message id). */
+  answeredMessageId?: string | null;
+  /**
    * Denormalised emoji counts kept by `sync_message_reaction_counts`
    * (20260830120000): `{ "👍": 3 }`. `{}` when there are none, or when the
    * migration has not been hand-applied yet.

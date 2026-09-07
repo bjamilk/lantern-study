@@ -46,6 +46,7 @@ import {
 } from '@lantern/shared/utils/chatMute';
 import { readDmHistoryClearedAt } from '@lantern/shared/utils/dmHistoryCutoff';
 import { recordLearningEvent, surfaceFromRequest } from '../services/learningEvents';
+import { getCommunityModerationService } from '../services/communityModeration';
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/jpg'];
 const ALLOWED_AUDIO_TYPES = [
@@ -852,7 +853,7 @@ router.post(
     if (!userId) return;
 
     const { groupId } = req.params;
-    const { content, clientMessageId, replyToMessageId, mentionedUserIds, subject, imageUrl } =
+    const { content, clientMessageId, replyToMessageId, mentionedUserIds, subject, imageUrl, postKind } =
       req.body;
 
     logger.debug('Sending message to group', { groupId, content: content.substring(0, 100), userId, clientMessageId });
@@ -893,7 +894,32 @@ router.post(
       // Board post title. Length-checked by validateSendMessage; dropped
       // (never rejected) while the 20260903120000 migration is unapplied.
       subject: typeof subject === 'string' ? subject : undefined,
+      // What the post IS (20260908120000). Ignored off a board, dropped
+      // pre-migration, and 403 when the sender may not post that kind —
+      // `announcement` is moderators-only, re-checked in the service because
+      // a kind allowed only by a client is not a permission.
+      postKind: typeof postKind === 'string' ? postKind : undefined,
     });
+
+    /**
+     * An announcement pins itself, and at most BOARD_ANNOUNCEMENT_PIN_MAX are
+     * pinned across the WHOLE community — the oldest unpins. Per-community,
+     * not per-board: three boards each holding three pinned announcements is
+     * nine banners on one community page, which is where the cap has to bite.
+     *
+     * Deliberately AFTER the insert and deliberately fail-soft: an
+     * announcement that posted but could not unpin an older one is cosmetic,
+     * while throwing here would lose a post that is already written.
+     */
+    if (
+      typeof postKind === 'string' &&
+      postKind === 'announcement' &&
+      (group as { communityId?: string | null })?.communityId
+    ) {
+      await getCommunityModerationService(supabaseService)
+        .enforceAnnouncementCap((group as { communityId: string }).communityId)
+        .catch(() => []);
+    }
 
     // Invalidate message caches for this group
     await cacheService.deletePattern(`messages:group:${groupId}:*`);

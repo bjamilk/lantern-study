@@ -1,6 +1,8 @@
 import { parseChatAudioUrl, parseChatImageUrl } from '@lantern/shared/utils';
 import {
+  BOARD_ANNOUNCEMENT_PIN_MAX,
   boardFavoriteCount,
+  boardPostKindMeta,
   boardRepostOriginalId,
   isBoardRepostRow,
   type BoardPost,
@@ -30,13 +32,38 @@ const createdMs = (m: Pick<Message, 'createdAt'>): number => {
   return Number.isFinite(ms) ? ms : 0;
 };
 
-/** Roots only, newest first — the board opens at the top and never auto-scrolls. */
+/**
+ * Roots only, ANNOUNCEMENTS first and then newest first — the board opens at
+ * the top and never auto-scrolls.
+ *
+ * An announcement is pinned by what it IS (`boardPostKindMeta(...).
+ * pinnedByDefault`), not by a moderator remembering to pin it, which is the
+ * whole reason the kind exists. A REMOVED announcement drops back into the
+ * ordinary run: a tombstone holding the top of the board is the failure mode
+ * the shipped pin already had once.
+ *
+ * At most `BOARD_ANNOUNCEMENT_PIN_MAX` of them float, newest first — the same
+ * ceiling the API enforces on pins and web applies to its list. The kind
+ * survives the server's unpin (`post_kind` stays `announcement` when
+ * `pinned_at` is cleared), so floating EVERY announcement would grow into a
+ * board whose top is permanently spent; the older ones fall back into the
+ * timeline in their own place, so nothing is hidden.
+ */
 export function selectBoardPosts(messages: readonly Message[] | undefined): Message[] {
   if (!messages || messages.length === 0) return [];
-  return messages
+  const announced = (m: Message): boolean =>
+    !m.removedAt && !m.isRemoved && boardPostKindMeta(m.postKind ?? '').pinnedByDefault;
+  const roots = messages
     .filter((m) => !isBoardComment(m))
     .slice()
     .sort((a, b) => createdMs(b) - createdMs(a));
+  const floated: Message[] = [];
+  const rest: Message[] = [];
+  for (const m of roots) {
+    if (announced(m) && floated.length < BOARD_ANNOUNCEMENT_PIN_MAX) floated.push(m);
+    else rest.push(m);
+  }
+  return floated.length ? [...floated, ...rest] : roots;
 }
 
 /** One post's comments, oldest first — a flat list, never a nested tree. */

@@ -11,8 +11,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
-  canAccessDiscoverHub,
-  communityKindLabel,
   communityMembershipAction,
   memberCountLabel,
   resolveListState,
@@ -22,7 +20,8 @@ import {
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { RequestError } from '../../components/RequestError';
 import { useTheme } from '../../theme';
-import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { useCommunityAccess } from '../../hooks/useCommunityAccess';
+import { useAuthStore } from '../../stores/authStore';
 import { useCommunityStore } from '../../stores/communityStore';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { discoverCommunities, joinCommunity } from '../../services/api';
@@ -39,7 +38,17 @@ import {
 } from './campusSegments';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { FeatureDisc, Illustration, useFeatureAccent } from '../../components/ui';
-import { communityRowIcon } from './communityRowIcon';
+import { smallTextInk } from '../../components/ui/FeatureDisc';
+import {
+  COMMUNITY_CHIPS,
+  buildCommunityHub,
+  communityCardMeta,
+  communityChipLabel,
+  type CommunityChip,
+} from './communityHubModel';
+import { JoinByCodeSheet } from '../discover/JoinByCodeSheet';
+import { JOIN_BY_CODE_TITLE } from '../discover/joinByCodeModel';
+import { planCommunityDiscovery } from './communityDiscoveryPlan';
 
 interface NavigationProp {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -52,7 +61,7 @@ interface NavigationProp {
 
 interface Props {
   navigation: NavigationProp;
-  route?: { params?: { segment?: CampusSegment; at?: number } };
+  route?: { params?: { segment?: CampusSegment; at?: number; joinCode?: string } };
 }
 
 /** 44px minimum touch target — NativeWind inlines rem at 14, so px literals. */
@@ -94,7 +103,7 @@ function SegmentBar({
           >
             <Text
               numberOfLines={1}
-              className={`text-sm ${
+              className={`text-body ${
                 selected
                   ? 'font-bold text-lantern-primary-text'
                   : 'font-medium text-lantern-text-secondary'
@@ -129,16 +138,27 @@ function SegmentBar({
  * boards, posts and the roster are unchanged — they live on CampusStack now,
  * so the Campus tab stays lit all the way down.
  */
-function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
-  const { colors } = useTheme();
-  // Violet is the Campus family. It appears exactly twice on this panel: on
-  // the row discs, and on the one coaching card below.
+function CommunitiesPanel({
+  navigation,
+  joinCode,
+}: {
+  navigation: NavigationProp;
+  /** From `discover/join/<code>` when the code did not resolve on its own. */
+  joinCode?: string;
+}) {
+  const { colors, isDark } = useTheme();
+  // Violet is the Campus family. Social rooms carry the `groups` ink instead,
+  // which is what `communityCardMeta` returns — one hue per KIND OF ROOM, not
+  // one hue per row.
   const campusAccent = useFeatureAccent('campus');
   const listBottomPadding = useScreenBottomPadding();
   const myCommunities = useCommunityStore((s) => s.myCommunities);
   const loadMine = useCommunityStore((s) => s.loadMine);
+  const academicProfile = useAuthStore((s) => s.academicProfile);
+  const { canCreate } = useCommunityAccess();
 
   const [query, setQuery] = useState('');
+  const [chip, setChip] = useState<CommunityChip>('all');
   const [results, setResults] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -154,16 +174,36 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
   // Whatever the search box held when `results` were last filled. Used so a
   // stale list is never labelled as the answer to a newer query.
   const [loadedQuery, setLoadedQuery] = useState('');
+  // A deep link that arrives while Campus is already open must still raise the
+  // sheet, so the request is adopted rather than read once at mount.
+  const [joinSheetOpen, setJoinSheetOpen] = useState(joinCode !== undefined);
+  useEffect(() => {
+    if (joinCode !== undefined) setJoinSheetOpen(true);
+  }, [joinCode]);
 
+  /**
+   * One search. The CHIP is part of the request now (`planCommunityDiscovery`)
+   * rather than a filter applied to whatever 30 rows the server happened to
+   * send: "Hostel" used to show an empty list while the campus had twenty
+   * hostel rooms past the page.
+   *
+   * A kind-scoped query that answers ZERO rows is retried once without the
+   * kind — on a database without the kinds migration every student-made room
+   * is still filed as `topic`, and the tag-reading `matchesChip` in
+   * `communityHubModel` is what narrows it then. That is a floor, not the
+   * default: once rows carry a real kind the first query answers.
+   */
   const load = useCallback(
-    async (q: string, options?: { silent?: boolean }) => {
+    async (q: string, forChip: CommunityChip, options?: { silent?: boolean }) => {
       if (!options?.silent) setLoading(true);
       setError(null);
+      const plan = planCommunityDiscovery({ chip: forChip, query: q });
       try {
-        const [, discovered] = await Promise.all([
-          loadMine(true),
-          discoverCommunities(q ? { q, limit: 30 } : { limit: 30 }),
-        ]);
+        const [, first] = await Promise.all([loadMine(true), discoverCommunities(plan.params)]);
+        const discovered =
+          first.length === 0 && plan.fallback
+            ? await discoverCommunities(plan.fallback)
+            : first;
         setResults(discovered);
         setLoadedQuery(q);
       } catch (e) {
@@ -178,21 +218,14 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
     [loadMine]
   );
 
+  // First paint, and every chip change: the chip is a QUERY, so changing it
+  // has to ask the server again rather than re-filter a stale page.
   useEffect(() => {
-    void load('');
-  }, [load]);
-
-  const mineIds = useMemo(
-    () => new Set(myCommunities.map((community) => community.id)),
-    [myCommunities]
-  );
-
-  // Anything already joined is shown in "Your communities"; repeating it under
-  // Discover would be the same room behind two rows.
-  const discoverable = useMemo(
-    () => results.filter((community) => !mineIds.has(community.id)),
-    [results, mineIds]
-  );
+    void load(query, chip, { silent: true });
+    // `query` is deliberately absent: the search box re-runs on submit, and
+    // re-querying per keystroke is not what this list is for.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load, chip]);
 
   /**
    * The shared rule decides what this panel shows: a failure with rows already
@@ -203,16 +236,30 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
   const listState = resolveListState({
     loading,
     error,
-    itemCount: myCommunities.length + discoverable.length,
+    itemCount: myCommunities.length + results.length,
     query: loadedQuery,
   });
 
   /**
    * A load that failed tells us nothing about the data, so neither "nothing to
-   * join yet" nor "no match" may be rendered on the back of one. Kept as a
-   * boolean so it reads the same wherever it is used.
+   * join yet" nor "no match" may be rendered on the back of one.
    */
   const listUnknown = listState === 'failed' || listState === 'stale';
+
+  // Sections, chips and ranking are decided in one pure place so mobile jest
+  // can hold them — this render never sorts or filters a community itself.
+  const hub = useMemo(
+    () =>
+      buildCommunityHub({
+        mine: myCommunities,
+        discovered: results,
+        chip,
+        loadedQuery,
+        institutionId: academicProfile?.institutionId ?? null,
+        unknown: listUnknown,
+      }),
+    [myCommunities, results, chip, loadedQuery, academicProfile, listUnknown]
+  );
 
   const open = useCallback(
     (slug: string) => navigation.navigate('CommunityDetail', { slug }),
@@ -241,6 +288,7 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
       joined,
       (community as MyCommunity).source ?? null
     );
+    const meta = communityCardMeta(community);
     const busy = pendingId === community.id;
     return (
       <Pressable
@@ -248,30 +296,29 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
         onPress={() => (joined ? open(community.slug) : void join(community))}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel={`${community.name}, ${communityKindLabel(community.kind)}, ${memberCountLabel(
+        accessibilityLabel={`${community.name}, ${meta.label}, ${memberCountLabel(
           community.member_count
         )}. ${joined ? 'Open' : 'Join'}`}
         style={{ minHeight: 56 }}
         className="flex-row items-center gap-3 px-4 py-3 border-b border-lantern-border"
       >
-        {/* Violet is the Campus family, and the GLYPH is what says which kind
-            of room this is — a course, a campus, an interest. The indigo
-            square this replaced was the app's primary colour used as
-            decoration, identical on every row. */}
-        <FeatureDisc feature="campus" icon={communityRowIcon(community.kind)} size={40} />
+        {/* The GLYPH and its ink say which kind of room this is — a course, a
+            hostel, a fellowship — and both come from the shared kind meta, so
+            a room reads the same here, on web and in the API. */}
+        <FeatureDisc feature={meta.ink} icon={meta.icon} size={40} />
         <View className="flex-1 min-w-0">
-          <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
+          <Text className="text-body font-semibold text-lantern-text" numberOfLines={1}>
             {community.name}
           </Text>
-          <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>
-            {communityKindLabel(community.kind)} · {memberCountLabel(community.member_count)}
+          <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
+            {meta.label} · {memberCountLabel(community.member_count)}
           </Text>
         </View>
         {busy ? (
           <ActivityIndicator size="small" color={colors.primaryText} />
         ) : (
           <Text
-            className={`text-xs font-semibold px-2 py-1.5 ${
+            className={`text-caption font-semibold px-2 py-1.5 ${
               joined ? 'text-lantern-text-secondary' : 'text-lantern-primary-text'
             }`}
           >
@@ -282,6 +329,68 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
     );
   };
 
+  /** The two doors: start a room, or join a private one with a link. */
+  const doors = (
+    <View className="flex-row gap-3 px-4 pt-3">
+      {canCreate ? (
+        <Pressable
+          onPress={() => navigation.navigate('CreateCommunity')}
+          accessibilityRole="button"
+          accessibilityLabel="Start a community"
+          style={{ minHeight: 56 }}
+          className="flex-1 flex-row items-center gap-3 rounded-2xl border border-lantern-border px-3 py-2"
+        >
+          <FeatureDisc feature="campus" icon="add" size={32} />
+          <Text className="flex-1 text-body font-semibold text-lantern-text" numberOfLines={2}>
+            Start a community
+          </Text>
+        </Pressable>
+      ) : null}
+      <Pressable
+        onPress={() => setJoinSheetOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={JOIN_BY_CODE_TITLE}
+        style={{ minHeight: 56 }}
+        className="flex-1 flex-row items-center gap-3 rounded-2xl border border-lantern-border px-3 py-2"
+      >
+        <FeatureDisc feature="groups" icon="link" size={32} />
+        <Text className="flex-1 text-body font-semibold text-lantern-text" numberOfLines={2}>
+          {JOIN_BY_CODE_TITLE}
+        </Text>
+      </Pressable>
+    </View>
+  );
+
+  const chips = (
+    <View className="flex-row flex-wrap gap-2 px-4 pt-3">
+      {COMMUNITY_CHIPS.map((value) => {
+        const selected = value === chip;
+        return (
+          <Pressable
+            key={value}
+            onPress={() => setChip(value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            accessibilityLabel={`${communityChipLabel(value)} communities`}
+            style={{
+              minHeight: 32,
+              backgroundColor: selected ? campusAccent.tint : 'transparent',
+              borderColor: selected ? campusAccent.ink : colors.border,
+            }}
+            className="rounded-full border px-3 py-1.5"
+          >
+            <Text
+              style={{ color: selected ? smallTextInk('campus', campusAccent, isDark) : colors.textSecondary }}
+              className="text-caption font-semibold"
+            >
+              {communityChipLabel(value)}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
   return (
     <Screen bottom="none" keyboard>
       <View className="mx-4 mt-2 mb-1 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
@@ -289,17 +398,17 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
         <TextInput
           value={query}
           onChangeText={setQuery}
-          onSubmitEditing={() => void load(query)}
+          onSubmitEditing={() => void load(query, chip)}
           returnKeyType="search"
           placeholder="Search communities"
           placeholderTextColor={colors.inputPlaceholder}
           accessibilityLabel="Search communities"
-          className="flex-1 ml-2 py-2 text-sm text-lantern-text"
+          className="flex-1 ml-2 py-2 text-body text-lantern-text"
         />
       </View>
 
       {joinError ? (
-        <Text className="px-4 py-2 text-xs text-lantern-error" accessibilityLiveRegion="polite">
+        <Text className="px-4 py-2 text-caption text-lantern-error" accessibilityLiveRegion="polite">
           {joinError}
         </Text>
       ) : null}
@@ -311,10 +420,10 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
       ) : listState === 'failed' ? (
         // Nothing cached to fall back on: the whole panel says what happened
         // and offers the one action that can help.
-        <RequestError error={error} onRetry={() => void load(query)} />
+        <RequestError error={error} onRetry={() => void load(query, chip)} />
       ) : (
         <FlatList
-          data={discoverable}
+          data={hub.find}
           keyExtractor={(item) => item.id}
           renderItem={({ item }) => renderRow(item, false)}
           keyboardShouldPersistTaps="handled"
@@ -324,7 +433,7 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
               refreshing={refreshing}
               onRefresh={() => {
                 setRefreshing(true);
-                void load(query, { silent: true });
+                void load(query, chip, { silent: true });
               }}
               tintColor={colors.primaryText}
             />
@@ -336,32 +445,25 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
                 <RequestError
                   error={error}
                   variant="banner"
-                  onRetry={() => void load(query)}
+                  onRetry={() => void load(query, chip)}
                   detail="Showing the communities saved on this device."
                 />
               ) : null}
-              {/* Nothing joined yet: ONE violet coaching card (spec v3 §5.7),
-                  which says what a room is FOR rather than that the list is
-                  empty. Never drawn on the back of a failed load — the banner
-                  above has already said what really happened, and "you have
-                  joined nothing" would be a claim we cannot make.
-                  So it is CORRECTLY absent for a student who has joined
-                  anything — the build 166 pass did not find it because that
-                  account is in six communities (shots24/23-campus.png). */}
-              {!listUnknown && myCommunities.length === 0 ? (
+              {doors}
+              {chips}
+              {/* Nothing joined yet and nothing filtered away: ONE violet
+                  coaching card (spec v3 §5.7) that says what a room is FOR
+                  rather than that the list is empty. `showEmptyIllustration`
+                  is the only thing that may draw the campus-hall picture, so
+                  it can never appear over a "no hostels here" chip or on the
+                  back of a failed load. */}
+              {hub.showEmptyIllustration ? (
                 <View
                   style={{ backgroundColor: campusAccent.tint }}
                   className="mx-4 mt-3 mb-1 rounded-2xl p-4"
                   accessibilityRole="summary"
                 >
                   <View className="flex-row items-center gap-3 mb-2">
-                    {/* The picture REPLACES the disc rather than joining it:
-                        this card is a door into rooms, and a 32 dp disc plus a
-                        56 dp illustration is two marks saying the same thing.
-                        `variant="surface"` because the card is a full campus
-                        tint panel — the asset's authored tint ground would be
-                        invisible on it. It adds no tint of its own either way,
-                        so the card's chromatic cost is unchanged. */}
                     <Illustration
                       name="campus-hall"
                       feature="campus"
@@ -378,34 +480,38 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
                   <Text className="text-caption text-lantern-text">
                     Join the room for a course you are taking: members mark which past
                     questions are real, and what they verify is what shows up in your
-                    tests.
+                    tests. Clubs, hostels, events and teams live here too — start one
+                    if it does not exist yet.
                   </Text>
                 </View>
               ) : null}
 
-              {myCommunities.length > 0 ? (
+              {hub.mine.length > 0 ? (
                 <>
-                  <Text className="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
+                  <Text className="px-4 pt-3 pb-1 text-caption font-semibold uppercase text-lantern-text-tertiary">
                     Your communities
                   </Text>
-                  {myCommunities.map((community) => renderRow(community, true))}
-                  <Text className="px-4 pt-4 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">
-                    Discover
-                  </Text>
+                  {hub.mine.map((community) => renderRow(community, true))}
                 </>
+              ) : null}
+              {hub.find.length > 0 ? (
+                <Text className="px-4 pt-4 pb-1 text-caption font-semibold uppercase text-lantern-text-tertiary">
+                  Find a community
+                </Text>
               ) : null}
             </View>
           }
           ListEmptyComponent={
             // Never claim "nothing to join" on the back of a request that
             // failed — the banner above has already said what really happened.
-            listUnknown ? null : listState === 'noMatch' ? (
-              <Text className="mx-4 mt-3 text-xs text-lantern-text-tertiary">
-                No communities match “{loadedQuery.trim()}”. Try a different word, or clear the
-                search to see everything open to you.
+            hub.empty === 'unknown' || hub.mine.length > 0 ? null : hub.empty === 'noMatch' ? (
+              <Text className="mx-4 mt-3 text-caption text-lantern-text-tertiary">
+                {loadedQuery.trim()
+                  ? `No communities match “${loadedQuery.trim()}” under ${communityChipLabel(chip)}. Try a different word, or tap All.`
+                  : `No ${communityChipLabel(chip)} communities yet. Start one, or tap All to see everything open to you.`}
               </Text>
             ) : (
-              <Text className="mx-4 mt-3 text-xs text-lantern-text-tertiary">
+              <Text className="mx-4 mt-3 text-caption text-lantern-text-tertiary">
                 No other communities to join yet. Yours are made from your university,
                 programme and courses — add them in Me → Academic details.
               </Text>
@@ -413,6 +519,20 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
           }
         />
       )}
+
+      <JoinByCodeSheet
+        visible={joinSheetOpen}
+        initialCode={joinCode}
+        onClose={() => setJoinSheetOpen(false)}
+        onResolved={(slug, joined) => {
+          setJoinSheetOpen(false);
+          // A redeemed CODE has already joined the room, so the membership
+          // list is stale the moment the sheet closes; a resolved LINK joined
+          // nothing and needs no refetch.
+          if (joined) void loadMine(true).catch(() => undefined);
+          open(slug);
+        }}
+      />
     </Screen>
   );
 }
@@ -426,10 +546,10 @@ function CampusEmpty() {
         <View className="w-16 h-16 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center justify-center mb-5">
           <AppIcon name="business" size={30} color={colors.textSecondary} />
         </View>
-        <Text className="text-lg font-bold text-lantern-text text-center mb-2">
+        <Text className="text-title font-bold text-lantern-text text-center mb-2">
           Campus is opening university by university
         </Text>
-        <Text className="text-sm text-lantern-text-secondary text-center">
+        <Text className="text-body text-lantern-text-secondary text-center">
           Communities, the Shop and Jobs land here the moment they reach your account.
           Everything else in Lantern is yours to use in the meantime.
         </Text>
@@ -450,7 +570,7 @@ function CampusEmpty() {
 export function CampusScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
-  const isPlatformAdmin = usePlatformAdmin();
+  const { canSee: canSeeCommunities } = useCommunityAccess();
   const marketplaceAccess = useMarketplaceStore((s) => s.marketplaceAccess);
   const checkMarketplaceAccess = useMarketplaceStore((s) => s.checkMarketplaceAccess);
 
@@ -463,11 +583,13 @@ export function CampusScreen({ navigation, route }: Props) {
   const segments = useMemo(
     () =>
       resolveCampusSegments({
-        canSeeCommunities:
-          canAccessDiscoverHub(isPlatformAdmin) && isDiscoverSectionEnabled('communities'),
+        // The OBJECT form of the shared gate (via useCommunityAccess): every
+        // signed-in student with an institution and a programme sees
+        // Communities, not platform admins alone.
+        canSeeCommunities: canSeeCommunities && isDiscoverSectionEnabled('communities'),
         marketplaceAccess,
       }),
-    [isPlatformAdmin, marketplaceAccess]
+    [canSeeCommunities, marketplaceAccess]
   );
 
   const [picked, setPicked] = useState<CampusSegment | null>(null);
@@ -521,7 +643,7 @@ export function CampusScreen({ navigation, route }: Props) {
 
   const panel =
     active === 'communities' ? (
-      <CommunitiesPanel navigation={navigation} />
+      <CommunitiesPanel navigation={navigation} joinCode={route?.params?.joinCode} />
     ) : active === 'shop' ? (
       <GatedShop navigation={navigation} />
     ) : (

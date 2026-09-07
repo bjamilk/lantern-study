@@ -113,7 +113,7 @@ function sendHarness(isBoard: boolean) {
 }
 
 beforeEach(() => {
-  setSchemaCapabilities({ messageBoardColumns: true, messageReactionsColumn: true });
+  setSchemaCapabilities({ messageBoardColumns: true, messageReactionsColumn: true, communityMemberMute: false });
 });
 
 describe('the shared board-image ACL rule', () => {

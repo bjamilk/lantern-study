@@ -74,6 +74,9 @@ function makeDb(script: Step[], unread: Record<string, number> = {}) {
   const service = new CommunitiesService({
     getClient: () => db,
     listBlockedUserIds: async () => [],
+    // listMembers asks whether the caller is a platform admin before it
+    // decides whether to attach moderator-only mute state to the roster.
+    isPlatformAdmin: async () => false,
     getAllGroupUnreadCounts: async () => unread,
   } as never);
   return { service, queries, script };
@@ -115,7 +118,13 @@ beforeEach(() => {
   listRooms.mockClear();
   // The capability probe is a real query; presetting it keeps the scripted
   // database deterministic. Individual tests flip it to pin the degrade.
-  setSchemaCapabilities({ groupCommunitySurface: true, messageBoardColumns: true });
+  setSchemaCapabilities({
+    groupCommunitySurface: true,
+    messageBoardColumns: true,
+    // viewerMembership now reads `muted_until`, so its capability probe is a
+    // real query too — preset it or it consumes a scripted step.
+    communityMemberMute: false,
+  });
 });
 
 describe('listChannels', () => {
@@ -260,7 +269,7 @@ describe('listChannels', () => {
   });
 
   it('pre-migration (42703 on community_surface): every community group is a board, studyGroups empty, no throw', async () => {
-    setSchemaCapabilities({ groupCommunitySurface: true });
+    setSchemaCapabilities({ groupCommunitySurface: true, communityMemberMute: false });
     const { service, queries } = makeDb([
       { table: 'communities', result: { data: communityRow() } },
       { table: 'community_members', result: { data: { user_id: VIEWER, source: 'joined', role: 'member' } } },
@@ -289,7 +298,7 @@ describe('listChannels', () => {
   });
 
   it('pre-migration, resolved by the probe: no surface filter and no study-group query at all', async () => {
-    setSchemaCapabilities({ groupCommunitySurface: false });
+    setSchemaCapabilities({ groupCommunitySurface: false, communityMemberMute: false });
     const { service, queries } = makeDb([
       { table: 'communities', result: { data: communityRow() } },
       { table: 'community_members', result: { data: { user_id: VIEWER, source: 'joined', role: 'member' } } },

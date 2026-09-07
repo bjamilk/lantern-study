@@ -42,7 +42,15 @@ export type AdminAuditAction =
   | 'user_suspend'
   | 'user_unsuspend'
   | 'listing_appeal_upheld'
-  | 'listing_appeal_reversed';
+  | 'listing_appeal_reversed'
+  // Community governance (20260908120000) — the SAME audit log every other
+  // moderation action writes. There is one moderation stack.
+  | 'community_role_set'
+  | 'community_member_mute'
+  | 'community_member_unmute'
+  | 'community_post_remove'
+  | 'community_invite_create'
+  | 'community_invite_revoke';
 
 export async function logAdminAction(
   supabaseService: SupabaseService,

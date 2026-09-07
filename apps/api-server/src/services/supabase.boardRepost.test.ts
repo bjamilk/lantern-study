@@ -33,6 +33,7 @@ jest.mock('../utils/logger', () => ({
 
 import { SupabaseService } from './supabase';
 import { boardRepostClientId } from '@lantern/shared/network';
+import { setSchemaCapabilities } from './schemaCapabilities';
 
 const GROUP = '44444444-4444-4444-8444-444444444444';
 const OTHER_GROUP = '55555555-5555-4555-8555-555555555555';
@@ -171,6 +172,13 @@ function repostHarness(options: {
 }
 
 describe('createBoardRepost', () => {
+  beforeEach(() => {
+    // The harness's `self` carries no capability probe, and every query it
+    // sees is scripted — pin the mute column off so the repost path asks no
+    // membership question here.
+    setSchemaCapabilities({ communityMemberMute: false });
+  });
+
   it('writes exactly the row shape the unique index needs', async () => {
     const h = repostHarness({});
     const result = await h.repost('still the one');

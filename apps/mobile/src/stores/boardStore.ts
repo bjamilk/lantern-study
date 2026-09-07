@@ -4,6 +4,7 @@ import {
   boardPageSize,
   boardQuoteSnippet,
   boardRepostRefusalCopy,
+  type BoardPostKind,
   type BoardQuotedPost,
 } from '@lantern/shared/network';
 import * as api from '../services/api';
@@ -75,6 +76,12 @@ interface BoardState {
       mentionedUserIds?: string[];
       /** One photo, carried on `messages.image_url` — the post is ONE row (§5.2). */
       imageUrl?: string | null;
+      /**
+       * What this post IS (`messages.post_kind`). Only kinds the composer was
+       * allowed to offer reach here — `canPostOnBoard` decides that, and the
+       * API re-decides it.
+       */
+      postKind?: BoardPostKind;
     }
   ) => Promise<void>;
   commentOnPost: (
@@ -336,6 +343,7 @@ export const useBoardStore = create<BoardState>((set, get) => ({
       subject: input.subject ?? null,
       mentionedUserIds: input.mentionedUserIds,
       imageUrl: input.imageUrl ?? null,
+      ...(input.postKind ? { postKind: input.postKind } : {}),
       // A board post is never a question, even when the body starts with `{`
       // (§3.4): the same guarantee the API makes, made on the client too.
       plainText: true,

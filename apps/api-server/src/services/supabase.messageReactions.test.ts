@@ -69,6 +69,8 @@ describe('getGroupThread', () => {
     setSchemaCapabilities({
       messageBoardColumns: true,
       messageReactionsColumn: reactionsColumn,
+      // Forced so the post-kind probe never becomes selects[0].
+      messagePostKind: false,
     });
 
     const selects: string[] = [];
@@ -130,6 +132,7 @@ describe('getDirectMessages', () => {
     setSchemaCapabilities({
       messageBoardColumns: true,
       messageReactionsColumn: reactionsColumn,
+      messagePostKind: false,
     });
 
     const selects: string[] = [];

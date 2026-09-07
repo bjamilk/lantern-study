@@ -48,6 +48,9 @@ function makeSelf(
   setSchemaCapabilities({
     messageBoardColumns: boardColumns,
     messageReactionsColumn: reactionsColumn,
+    // 20260908120000 (post kinds) is a third, independent probe — forced for
+    // the same reason as the two above.
+    messagePostKind: false,
   });
 
   const selects: string[] = [];

@@ -16,6 +16,7 @@ import {
 } from '../services/communities';
 import { cacheService } from '../services/cache';
 import { getStudyPresenceService } from '../services/studyPresence';
+import { getCommunityModerationService } from '../services/communityModeration';
 import { PublicError } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -108,9 +109,181 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
-      const body = (req.body ?? {}) as { name?: string; description?: string; tags?: string[] };
-      const data = await getCommunitiesService(supabaseService).createTopicCommunity(userId, body);
+      const body = (req.body ?? {}) as {
+        name?: string;
+        description?: string;
+        tags?: string[];
+        kind?: string;
+        visibility?: string;
+        startsAt?: string | null;
+        endsAt?: string | null;
+        location?: string | null;
+      };
+      const data = await getCommunitiesService(supabaseService).createCommunity(userId, body);
       res.status(201).json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// POST /api/v1/communities/join-by-code — the ONLY way into a private
+// community.
+//
+// Registered before `/:slug` and before every `/:communityId/...` pattern:
+// Express matches in registration order, and a community whose slug were
+// literally "join-by-code" would otherwise swallow it.
+//
+// Every refusal answers the SAME string with the same status, so this
+// endpoint cannot become an oracle for which codes are real or which private
+// communities exist.
+router.post(
+  '/join-by-code',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      await getCommunitiesService(supabaseService).assertCanAccessCommunities(userId);
+      const data = await getCommunityModerationService(supabaseService).joinByCode(
+        userId,
+        (req.body ?? {}).code
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// GET /api/v1/communities/:communityId/invites — moderators only
+router.get(
+  '/:communityId/invites',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getCommunityModerationService(supabaseService).listInvites(
+        userId,
+        req.params.communityId
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// POST /api/v1/communities/:communityId/invites { expiresInMs?, maxUses? }
+router.post(
+  '/:communityId/invites',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const body = (req.body ?? {}) as { expiresInMs?: unknown; maxUses?: unknown };
+      const data = await getCommunityModerationService(supabaseService).createInvite(
+        userId,
+        req.params.communityId,
+        body
+      );
+      res.status(201).json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// DELETE /api/v1/communities/:communityId/invites/:code
+router.delete(
+  '/:communityId/invites/:code',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const data = await getCommunityModerationService(supabaseService).revokeInvite(
+        userId,
+        req.params.communityId,
+        req.params.code
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// POST /api/v1/communities/:communityId/members/:userId/role { role }
+//
+// Owner-only (or a platform admin — the only moderation an auto-derived
+// campus room has, because it has no owner).
+router.post(
+  '/:communityId/members/:userId/role',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const actorId = requireAuthUserId(req, res);
+    if (!actorId) return;
+    try {
+      const data = await getCommunityModerationService(supabaseService).setMemberRole(
+        actorId,
+        req.params.communityId,
+        req.params.userId,
+        (req.body ?? {}).role
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// POST /api/v1/communities/:communityId/members/:userId/mute { duration?, reason? }
+//
+// Omitting `duration` UNMUTES. There is no permanent mute: a muted member
+// reads everything and cannot post, and a mute nobody lifts is a ban with no
+// appeal — bans belong to the Phase 1 · E suspension machinery.
+router.post(
+  '/:communityId/members/:userId/mute',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const actorId = requireAuthUserId(req, res);
+    if (!actorId) return;
+    try {
+      const body = (req.body ?? {}) as { duration?: unknown; reason?: unknown };
+      const data = await getCommunityModerationService(supabaseService).muteMember(
+        actorId,
+        req.params.communityId,
+        req.params.userId,
+        body
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
+// DELETE /api/v1/communities/:communityId/posts/:postId { reason? }
+//
+// A SOFT removal (removed_at / removed_by / removed_reason). The card stays
+// as a tombstone, so a reader who saw the post is told what happened.
+router.delete(
+  '/:communityId/posts/:postId',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const actorId = requireAuthUserId(req, res);
+    if (!actorId) return;
+    try {
+      const data = await getCommunityModerationService(supabaseService).removePost(
+        actorId,
+        req.params.communityId,
+        req.params.postId,
+        (req.body ?? {}).reason
+      );
+      res.json({ success: true, data });
     } catch (err) {
       handle(err, res);
     }
@@ -134,7 +307,8 @@ router.get(
 );
 
 // GET /api/v1/communities/:communityId/members?limit&cursor — the roster,
-// keyset-paged (CommunityMembersPage). Members only.
+// keyset-paged (CommunityMembersPage). Members only. A caller who may moderate
+// also gets each member's `mutedUntil`; nobody else is told who is muted.
 router.get(
   '/:communityId/members',
   authMiddleware,
@@ -241,14 +415,19 @@ discoverRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getCommunitiesService(supabaseService).discoverCommunities(userId, {
-      q: str(req.query.q),
-      kind: str(req.query.kind),
-      institutionId: str(req.query.institutionId),
-      courseId: str(req.query.courseId),
-      limit: req.query.limit ? Number(req.query.limit) : undefined,
-    });
-    res.json({ success: true, data });
+    try {
+      const data = await getCommunitiesService(supabaseService).discoverCommunities(userId, {
+        q: str(req.query.q),
+        kind: str(req.query.kind),
+        institutionId: str(req.query.institutionId),
+        courseId: str(req.query.courseId),
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      // The gate refuses with a PublicError 403; anything else is a 500.
+      handle(err, res);
+    }
   })
 );
 
@@ -258,13 +437,18 @@ discoverRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getCommunitiesService(supabaseService).discoverGroups(userId, {
-      q: str(req.query.q),
-      communityId: str(req.query.communityId),
-      courseId: str(req.query.courseId),
-      limit: req.query.limit ? Number(req.query.limit) : undefined,
-    });
-    res.json({ success: true, data });
+    try {
+      const data = await getCommunitiesService(supabaseService).discoverGroups(userId, {
+        q: str(req.query.q),
+        communityId: str(req.query.communityId),
+        courseId: str(req.query.courseId),
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      // The gate refuses with a PublicError 403; anything else is a 500.
+      handle(err, res);
+    }
   })
 );
 
@@ -292,13 +476,18 @@ discoverRouter.get(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
-    const data = await getCommunitiesService(supabaseService).discoverPeople(userId, {
-      q: str(req.query.q),
-      institutionId: str(req.query.institutionId),
-      courseId: str(req.query.courseId),
-      limit: req.query.limit ? Number(req.query.limit) : undefined,
-    });
-    res.json({ success: true, data });
+    try {
+      const data = await getCommunitiesService(supabaseService).discoverPeople(userId, {
+        q: str(req.query.q),
+        institutionId: str(req.query.institutionId),
+        courseId: str(req.query.courseId),
+        limit: req.query.limit ? Number(req.query.limit) : undefined,
+      });
+      res.json({ success: true, data });
+    } catch (err) {
+      // The gate refuses with a PublicError 403; anything else is a 500.
+      handle(err, res);
+    }
   })
 );
 

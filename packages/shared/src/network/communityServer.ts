@@ -93,6 +93,19 @@ export interface CommunityMember {
   source: 'auto' | 'joined';
   joinedAt: string;
   onlineStatus: OnlineStatus;
+  /**
+   * `community_members.muted_until` — the raw instant, or null when this
+   * member is not muted. Ask `isCommunityMemberMuted` rather than reading it:
+   * an expired mute is still a timestamp.
+   *
+   * PRESENT ONLY FOR MODERATORS. The API attaches it when the caller may
+   * moderate this community (owner/admin/moderator/platform admin) and omits
+   * it otherwise, so the roster does not publish who is muted to everyone in
+   * the room. It is also absent on a database where the mute migration has
+   * not been hand-applied yet — `undefined` means "not told", which is why
+   * this is optional and not `string | null`.
+   */
+  mutedUntil?: string | null;
 }
 
 export interface CommunityMembersPage {

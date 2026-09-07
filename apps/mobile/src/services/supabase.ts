@@ -8,6 +8,7 @@
  * return localhost URLs which are unreachable from a physical device.
  */
 import { createClient } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ExpoSecureStoreAdapter } from './secureStorage';
 import 'react-native-url-polyfill/auto';
@@ -238,6 +239,57 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     },
   },
 });
+
+/**
+ * The key auth-js persists the session under. supabase-js derives it from the
+ * project ref (`sb-<ref>-auth-token`) and we do not override `storageKey`, so
+ * this must be derived the same way — see SupabaseClient's `defaultStorageKey`.
+ */
+export const AUTH_STORAGE_KEY = `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
+
+/**
+ * Read the persisted session WITHOUT touching the network.
+ *
+ * `supabase.auth.getSession()` cannot be used for this: in auth-js 2.86 its
+ * `__loadSession` calls `_callRefreshToken` whenever the stored access token is
+ * past its expiry margin, so on a cold start with a stale token it makes the
+ * very network call whose failure we are trying to survive.
+ *
+ * Reading the storage key directly is the only way to answer "does this
+ * handset hold a session?" before the radio is involved. No `userStorage` is
+ * configured, so auth-js writes the whole session object — user included —
+ * under this one key.
+ *
+ * Never throws: an unreadable, missing or malformed entry is simply "no
+ * stored session", which routes to sign-in the way a fresh install does.
+ */
+export const readStoredSession = async (): Promise<Session | null> => {
+  try {
+    const raw = await authStorage.getItem(AUTH_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as
+      | (Partial<Session> & { currentSession?: Partial<Session> })
+      | null;
+    // `currentSession` is the gotrue-js v1 envelope; harmless to accept.
+    const session = (parsed?.currentSession ?? parsed) as Partial<Session> | null;
+    // Mirror auth-js's `_isValidSession` (access_token, refresh_token AND
+    // expires_at) so "present" here never disagrees with what auth-js will
+    // accept from the same key — plus the user we render on.
+    if (
+      !session ||
+      typeof session.access_token !== 'string' ||
+      typeof session.refresh_token !== 'string' ||
+      !('expires_at' in session) ||
+      !session.user?.id
+    ) {
+      return null;
+    }
+    return session as Session;
+  } catch (error) {
+    console.warn('[Auth] could not read the stored session:', error);
+    return null;
+  }
+};
 
 // Helper to get current session
 export const getSession = async () => {

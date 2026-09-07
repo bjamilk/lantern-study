@@ -3,8 +3,10 @@ import { Pressable, Text, View } from 'react-native';
 import {
   COMMUNITY_BOARD_COPY,
   boardPostAccessibilityLabel,
+  boardPostKindMeta,
   boardRelativeTime,
   canRepostBoardPost,
+  normalizeBoardPostKind,
 } from '@lantern/shared/network';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { MentionText } from '../chat/ChatMessageBody';
@@ -18,6 +20,7 @@ import { BoardQuotedPost } from './BoardQuotedPost';
 import { LegacyQuestionCard } from './LegacyQuestionCard';
 import type { Message } from '../../stores/groupStore';
 import { AppIcon } from '../ui/AppIcon';
+import type { AppIconName } from '../ui/appIconMap';
 
 /**
  * One card on a board (§4.2).
@@ -96,6 +99,16 @@ export function BoardPostCard({
   const replyCount = typeof post.replyCount === 'number' ? post.replyCount : 0;
   const isRemoved = !!post.isRemoved || !!post.removedAt;
   const isRepost = isBoardRepost(post);
+  /**
+   * What this post IS. Legacy rows carry no `post_kind` and normalise to a
+   * discussion, which is what they are; only the kinds that CHANGE how a post
+   * should be read get a badge, so an ordinary discussion is not decorated
+   * with a label saying it is ordinary.
+   */
+  const kind = normalizeBoardPostKind(post.postKind);
+  const kindMeta = boardPostKindMeta(kind);
+  const showKind = !isRepost && !isRemoved && kind !== 'discussion';
+  const announcement = kind === 'announcement';
 
   /**
    * `messages.image_url` is the FIRST encoding, not a third one: a post made
@@ -230,10 +243,45 @@ export function BoardPostCard({
         </Pressable>
       </View>
 
+      {showKind ? (
+        <View
+          accessible
+          accessibilityLabel={kindMeta.label}
+          className={`mt-2 self-start flex-row items-center gap-1.5 rounded-full px-2 py-0.5 ${
+            announcement ? 'bg-lantern-primary-background' : 'bg-lantern-background-secondary'
+          }`}
+        >
+          {/* The announcement ink is the campus/primary one, and it is carried
+              by the GLYPH and the WORD together — a colour alone would say
+              nothing to a reader who cannot see it (§9.2). */}
+          <AppIcon
+            name={kindMeta.icon as AppIconName}
+            size={12}
+            color={announcement ? colors.primaryText : '#94a3b8'}
+          />
+          <Text
+            className={`text-label ${
+              announcement ? 'text-lantern-primary-text' : 'text-lantern-text-tertiary'
+            }`}
+          >
+            {kindMeta.label}
+          </Text>
+        </View>
+      ) : null}
+
       {isRemoved ? (
-        <Text className="mt-2 text-[14px] italic text-lantern-text-tertiary">
-          {COMMUNITY_BOARD_COPY.postRemoved}
-        </Text>
+        <>
+          <Text className="mt-2 text-[14px] italic text-lantern-text-tertiary">
+            {COMMUNITY_BOARD_COPY.postRemoved}
+          </Text>
+          {/* A SOFT removal exists so a reader who saw the post is told what
+              happened; the moderator's reason is the part that says it. */}
+          {post.removedReason ? (
+            <Text className="mt-1 text-caption text-lantern-text-tertiary">
+              {post.removedReason}
+            </Text>
+          ) : null}
+        </>
       ) : isRepost ? (
         /*
           A repost renders the ORIGINAL as a text-only embed with a media CHIP,

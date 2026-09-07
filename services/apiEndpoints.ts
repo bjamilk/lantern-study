@@ -354,3 +354,37 @@ export async function requestNarrationScript(
   }
   return normalizeNarrationResult(attachmentId, body);
 }
+
+// ---------------------------------------------------------------------------
+// Community moderation (Wave 8 — roles, mutes, soft removals, invite codes)
+//
+// These come from the SHARED endpoints for one reason web's hand-written fetch
+// layer cannot give: the typed NOT_ENABLED failure. The mute and invite routes
+// answer 503 until the 20260908120000 migration is hand-applied on a
+// deployment, and the wrapper maps that one status to a `NotEnabledError` the
+// panel can branch on (`isNotEnabledError`) to say "Not switched on for this
+// campus yet". A hand-written copy here would show the server's raw wording to
+// a moderator who can do nothing about it — which is what the old copy did.
+//
+// Every one of them is re-decided server-side from the same pure rules in
+// `@lantern/shared/network` that `components/community/manageCommunity.ts`
+// calls, so hiding a control is a courtesy and never the gate.
+// ---------------------------------------------------------------------------
+
+/** Promote or demote a member. Owner (or platform admin) only; never NOT_ENABLED. */
+export const setCommunityMemberRole = endpoints.setCommunityMemberRole;
+/** Mute for one of `COMMUNITY_MUTE_DURATIONS`. A muted member still reads everything. */
+export const muteCommunityMember = endpoints.muteCommunityMember;
+/** Lift a mute — the same route with no duration. */
+export const unmuteCommunityMember = endpoints.unmuteCommunityMember;
+/** Soft-remove a board post; the card stays as a tombstone carrying the reason. */
+export const removeCommunityPost = endpoints.removeCommunityPost;
+export const createCommunityInvite = endpoints.createCommunityInvite;
+export const listCommunityInvites = endpoints.listCommunityInvites;
+export const revokeCommunityInvite = endpoints.revokeCommunityInvite;
+/**
+ * Redeem an invite code. Every refusal is ONE 404 with `INVITE_REFUSAL_COPY` —
+ * show it as-is; distinguishing "expired" from "never existed" would make this
+ * an oracle for which codes are real.
+ */
+export const joinCommunityByCode = endpoints.joinCommunityByCode;

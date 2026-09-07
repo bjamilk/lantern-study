@@ -29,6 +29,8 @@ export const CONTENT_REPORT_TARGET_TYPES: readonly ContentReportTargetType[] = [
   'message',
   'dm_message',
   'job_posting',
+  'community_post',
+  'community_member',
 ];
 
 export function isContentReportTargetType(value: unknown): value is ContentReportTargetType {
@@ -82,6 +84,8 @@ export const CONTENT_REPORT_TARGET_LABELS: Record<ContentReportTargetType, strin
   message: 'Group message',
   dm_message: 'Direct message',
   job_posting: 'Job posting',
+  community_post: 'Community post',
+  community_member: 'Community member',
 };
 
 const REASONS_BY_TARGET: Record<ContentReportTargetType, readonly ContentReportReason[]> = {
@@ -115,6 +119,19 @@ const REASONS_BY_TARGET: Record<ContentReportTargetType, readonly ContentReportR
   dm_message: ['harassment', 'spam', 'inappropriate', 'scam', 'other'],
   // Mirrors JOB_REPORT_REASONS (../jobs/trust.ts) so old jobs clients keep working.
   job_posting: ['scam', 'spam', 'inappropriate', 'discriminatory', 'other'],
+  // Community boards carry the same reasons a group message does, plus the
+  // academic-integrity pair a study community actually needs.
+  community_post: [
+    'harassment',
+    'spam',
+    'inappropriate',
+    'scam',
+    'leaked_exam',
+    'plagiarism',
+    'discriminatory',
+    'other',
+  ],
+  community_member: ['harassment', 'spam', 'scam', 'inappropriate', 'discriminatory', 'other'],
 };
 
 /** Reasons a reporter may pick for a given target (drives the report modal + API validation). */
@@ -165,6 +182,10 @@ export const REMOVE_CONTENT_SUPPORTED_TARGETS: readonly ContentReportTargetType[
   'note',
   'deck',
   'group',
+  // A board post is removed from the report queue by the SAME soft removal a
+  // community moderator applies (messages.removed_at / removed_by /
+  // removed_reason), so the admin queue does not need a separate tool.
+  'community_post',
 ];
 
 // ─── Rights attestation ────────────────────────────────────────────────────

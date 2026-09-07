@@ -17,9 +17,13 @@ import type {
 } from "../marketplace/studyPacks";
 import type { MarketplaceCourseSummary } from "../marketplace/courseAnchor";
 import type {
+  AssignableCommunityRole,
+  BoardPostKind,
   Community,
   CommunityChannels,
+  CommunityMuteDurationId,
   CommunityDetail,
+  CommunityKind,
   CommunityMembersPage,
   CourseClassSignal,
   CourseReadiness,
@@ -109,7 +113,112 @@ export type BoardMessageRow = {
   image_url?: string | null;
   question_stem?: string | null;
   client_message_id?: string | null;
+  /**
+   * Board post kinds (20260908120000). The API maps rows to camelCase, so the
+   * camelCase field is the one that actually arrives; the snake_case twin is
+   * kept for rows read straight from Supabase realtime. ABSENT — not null —
+   * before the migration, which `normalizeBoardPostKind` reads as
+   * 'discussion'.
+   */
+  postKind?: string | null;
+  post_kind?: string | null;
+  /**
+   * Why a moderator removed the post. Survives the removal on purpose: it is
+   * the tombstone's whole point, unlike the title and body, which are
+   * stripped.
+   */
+  removedReason?: string | null;
+  removed_reason?: string | null;
+  removed_by?: string | null;
+  /** The accepted answer on a `question` post. */
+  answeredMessageId?: string | null;
+  answered_message_id?: string | null;
 };
+
+// ---------------------------------------------------------------------------
+// Pre-migration degradation — the typed NOT_ENABLED failure
+// ---------------------------------------------------------------------------
+
+/**
+ * Community moderation ships BEFORE the 20260908120000 migration is
+ * hand-applied. Every mute/invite route feature-detects and answers 503 with
+ * a plain reason rather than 500, so a moderator on a pre-migration database
+ * is told the tool is not switched on yet — nobody is silently un-muted.
+ *
+ * A raw 503 reaching a screen renders as a generic failure ("Request failed",
+ * "Muting is not available yet"), which reads like a bug. Mapping it here,
+ * once, means both clients branch on ONE typed thing instead of sniffing
+ * status codes or matching server strings.
+ */
+export const COMMUNITY_NOT_ENABLED_CODE = 'NOT_ENABLED';
+
+/** What a client shows when the tool is not switched on yet. */
+export const COMMUNITY_NOT_ENABLED_COPY = 'Not switched on for this campus yet';
+
+export interface NotEnabledError extends Error {
+  code: typeof COMMUNITY_NOT_ENABLED_CODE;
+  status: 503;
+  notEnabled: true;
+  /** What the server actually said, for logs — never for a student to read. */
+  serverMessage?: string;
+}
+
+/** True for the 503 a pre-migration API answers. */
+export function isNotEnabledError(error: unknown): error is NotEnabledError {
+  return (
+    !!error &&
+    typeof error === 'object' &&
+    (error as { notEnabled?: unknown }).notEnabled === true
+  );
+}
+
+/**
+ * Map a 503 to the typed failure and leave everything else exactly as it was.
+ * Only 503: a 500 is a real fault and must keep looking like one, and the
+ * offline 401 must reach the auth handling untouched.
+ */
+function asNotEnabledError(error: unknown): unknown {
+  if (isNotEnabledError(error)) return error;
+  if (!error || typeof error !== 'object') return error;
+  if ((error as { status?: unknown }).status !== 503) return error;
+
+  const mapped = new Error(COMMUNITY_NOT_ENABLED_COPY) as NotEnabledError;
+  mapped.code = COMMUNITY_NOT_ENABLED_CODE;
+  mapped.status = 503;
+  mapped.notEnabled = true;
+  const serverMessage = (error as { message?: unknown }).message;
+  if (typeof serverMessage === 'string' && serverMessage) {
+    mapped.serverMessage = serverMessage;
+  }
+  return mapped;
+}
+
+/** Run a request with the 503 → NOT_ENABLED mapping applied. */
+function withNotEnabled<T>(run: () => Promise<T>): Promise<T> {
+  return run().catch((error: unknown) => {
+    throw asNotEnabledError(error);
+  });
+}
+
+/** One live invite link, as the moderator's list renders it. */
+export interface CommunityInviteSummary {
+  code: string;
+  /** ISO instant, or null when the link never expires. */
+  expiresAt: string | null;
+  /** Null when uses are unlimited. */
+  maxUses: number | null;
+  uses: number;
+  createdAt: string;
+  createdBy: string | null;
+}
+
+/** A freshly minted invite. Expiry and cap are always resolved server-side. */
+export interface CommunityInviteCreated {
+  code: string;
+  expiresAt: string;
+  maxUses: number;
+  uses: number;
+}
 
 type ChatMessageMutationPayload = {
   id: string;
@@ -1081,6 +1190,15 @@ export function createApiEndpoints(client: ApiClient) {
          * `validateBoardSubject` from `@lantern/shared/network` first.
          */
         subject?: string | null;
+        /**
+         * What a BOARD post is: discussion / question / announcement / event
+         * (20260908120000). Ignored on a group chat, dropped (not rejected)
+         * pre-migration, and 403 when the sender may not post that kind —
+         * `announcement` is moderators-only. Decide with `canPostOnBoard`
+         * from `@lantern/shared/network` before sending, so the control is
+         * hidden rather than the request refused.
+         */
+        postKind?: BoardPostKind;
         type?: "TEXT" | "QUESTION";
         questionType?: string;
         questionStem?: string;
@@ -1098,6 +1216,7 @@ export function createApiEndpoints(client: ApiClient) {
           sender_id: string;
           content?: string;
           subject?: string | null;
+          postKind?: string | null;
           type: "TEXT" | "QUESTION";
           created_at: string;
           updated_at: string;
@@ -3415,8 +3534,197 @@ export function createApiEndpoints(client: ApiClient) {
     leaveCommunity: (communityId: string) =>
       apiRequest<{ left: true }>(`/communities/${communityId}/join`, { method: 'DELETE' }, 10000),
 
-    /** Horizontal (topic) communities — the only kind a person can create. */
-    createCommunity: (body: { name: string; description?: string; tags?: string[] }) =>
+    // -----------------------------------------------------------------
+    // Community moderation (Wave 8 · roles, mutes, removals, invites)
+    //
+    // Every one of these is re-decided server-side from the SAME pure rules
+    // in `@lantern/shared/network` (communityGovernance.ts) that the clients
+    // call — `canAssignCommunityRole`, `canModerateCommunityMember`,
+    // `boardPostRules`. A client hides the control; the API refuses the
+    // request. Never gate one of these on a locally computed role.
+    //
+    // The mute and invite routes 503 until the 20260908120000 migration is
+    // hand-applied. Those wrappers map that to a typed NOT_ENABLED failure —
+    // branch on `isNotEnabledError` and show `COMMUNITY_NOT_ENABLED_COPY`,
+    // never a raw error string.
+    // -----------------------------------------------------------------
+
+    /**
+     * Set a member's role. OWNER ONLY (or a platform admin, which is the only
+     * moderation an auto-derived campus room has). Available pre-migration —
+     * roles predate 20260908120000, so this one never answers NOT_ENABLED.
+     *
+     * 403 when `canAssignCommunityRole` refuses, 404 when the target has left.
+     */
+    setCommunityMemberRole: (
+      communityId: string,
+      userId: string,
+      role: AssignableCommunityRole,
+    ) =>
+      apiRequest<{ userId: string; role: AssignableCommunityRole }>(
+        `/communities/${encodeURIComponent(communityId)}/members/${encodeURIComponent(userId)}/role`,
+        { method: 'POST', body: JSON.stringify({ role }) },
+        10000,
+      ),
+
+    /**
+     * Mute a member for one of COMMUNITY_MUTE_DURATIONS. A muted member reads
+     * the whole community and cannot post — muting is not a ban, and there is
+     * deliberately no permanent option.
+     *
+     * `reason` is stored for the audit log and capped server-side at
+     * COMMUNITY_MUTE_REASON_MAX. NOT_ENABLED pre-migration.
+     */
+    muteCommunityMember: (
+      communityId: string,
+      userId: string,
+      options: { duration: CommunityMuteDurationId; reason?: string },
+    ) =>
+      withNotEnabled(() =>
+        apiRequest<{ userId: string; mutedUntil: string | null }>(
+          `/communities/${encodeURIComponent(communityId)}/members/${encodeURIComponent(userId)}/mute`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              duration: options.duration,
+              ...(options.reason ? { reason: options.reason } : {}),
+            }),
+          },
+          10000,
+        ),
+      ),
+
+    /**
+     * Lift a mute. The SAME route with no duration — an omitted duration
+     * unmutes, so there is no second endpoint to keep in step. Resolves with
+     * `mutedUntil: null`. NOT_ENABLED pre-migration.
+     */
+    unmuteCommunityMember: (communityId: string, userId: string, reason?: string) =>
+      withNotEnabled(() =>
+        apiRequest<{ userId: string; mutedUntil: string | null }>(
+          `/communities/${encodeURIComponent(communityId)}/members/${encodeURIComponent(userId)}/mute`,
+          {
+            method: 'POST',
+            body: JSON.stringify(reason ? { reason } : {}),
+          },
+          10000,
+        ),
+      ),
+
+    /**
+     * SOFT-remove a board post. The card stays as a tombstone carrying the
+     * reason, so a reader who already saw the post is told what happened
+     * instead of watching it vanish. A moderator removes anyone's post; an
+     * author removes their own — decide with `boardPostRules`.
+     *
+     * Removing an already-removed post resolves with its original
+     * `removedAt` rather than failing, so a double tap is harmless. A post in
+     * another community answers 404, exactly as a post that does not exist.
+     */
+    removeCommunityPost: (
+      communityId: string,
+      postId: string,
+      options: { reason?: string } = {},
+    ) =>
+      apiRequest<{ id: string; removedAt: string }>(
+        `/communities/${encodeURIComponent(communityId)}/posts/${encodeURIComponent(postId)}`,
+        {
+          method: 'DELETE',
+          body: JSON.stringify(options.reason ? { reason: options.reason } : {}),
+        },
+        10000,
+      ),
+
+    /**
+     * Mint an invite link. Moderators only, at most
+     * COMMUNITY_INVITE_ACTIVE_MAX live at once (409 past that — revoke one).
+     *
+     * `expiresInHours` is the CLIENT unit; the API takes milliseconds, so the
+     * conversion happens here once rather than in two screens. Both fields are
+     * clamped server-side (COMMUNITY_INVITE_TTL_MS_MAX,
+     * COMMUNITY_INVITE_MAX_USES_LIMIT), so an out-of-range value is corrected,
+     * never refused. NOT_ENABLED pre-migration.
+     */
+    createCommunityInvite: (
+      communityId: string,
+      options: { expiresInHours?: number; maxUses?: number } = {},
+    ) => {
+      const body: { expiresInMs?: number; maxUses?: number } = {};
+      if (typeof options.expiresInHours === 'number' && options.expiresInHours > 0) {
+        body.expiresInMs = Math.floor(options.expiresInHours * 60 * 60 * 1000);
+      }
+      if (typeof options.maxUses === 'number' && options.maxUses > 0) {
+        body.maxUses = Math.floor(options.maxUses);
+      }
+      return withNotEnabled(() =>
+        apiRequest<CommunityInviteCreated>(
+          `/communities/${encodeURIComponent(communityId)}/invites`,
+          { method: 'POST', body: JSON.stringify(body) },
+          10000,
+        ),
+      );
+    },
+
+    /**
+     * The community's live invite links, newest first. Moderators only;
+     * revoked links are never returned. Build the shareable URL with
+     * `communityInviteUrl` from `@lantern/shared/network`. NOT_ENABLED
+     * pre-migration.
+     */
+    listCommunityInvites: (communityId: string) =>
+      withNotEnabled(() =>
+        apiRequest<CommunityInviteSummary[]>(
+          `/communities/${encodeURIComponent(communityId)}/invites`,
+          {},
+          10000,
+        ),
+      ),
+
+    /** Revoke one invite link. Moderators only. NOT_ENABLED pre-migration. */
+    revokeCommunityInvite: (communityId: string, code: string) =>
+      withNotEnabled(() =>
+        apiRequest<{ revoked: true }>(
+          `/communities/${encodeURIComponent(communityId)}/invites/${encodeURIComponent(code)}`,
+          { method: 'DELETE' },
+          10000,
+        ),
+      ),
+
+    /**
+     * Redeem an invite code — the ONLY way into a private community.
+     *
+     * Every refusal (unknown, expired, exhausted, revoked, malformed) answers
+     * the SAME 404 with INVITE_REFUSAL_COPY, so this cannot become an oracle
+     * for which codes are real. Show that message as-is; do not try to explain
+     * which of the four it was. Normalise the typed code with
+     * `normalizeInviteCode` first so an obviously malformed guess never leaves
+     * the device. NOT_ENABLED pre-migration.
+     */
+    joinCommunityByCode: (code: string) =>
+      withNotEnabled(() =>
+        apiRequest<{ joined: true; communityId: string; slug: string; name: string }>(
+          '/communities/join-by-code',
+          { method: 'POST', body: JSON.stringify({ code }) },
+          10000,
+        ),
+      ),
+
+    /**
+     * Start a community. `kind` is any social kind (interest, club, hostel,
+     * event, faith, sports, general, topic); academic kinds are derived and
+     * refused. Pre-20260908120000 the API files the room as `topic` with the
+     * kind as a tag rather than refusing it.
+     */
+    createCommunity: (body: {
+      name: string;
+      description?: string;
+      tags?: string[];
+      kind?: string;
+      visibility?: 'public' | 'private';
+      startsAt?: string | null;
+      endsAt?: string | null;
+      location?: string | null;
+    }) =>
       apiRequest<Community>('/communities', {
         method: 'POST',
         body: JSON.stringify(body),
@@ -3433,8 +3741,24 @@ export function createApiEndpoints(client: ApiClient) {
         10000
       ),
 
+    /**
+     * Browse communities. `kind` is one of COMMUNITY_KINDS and `q` free text —
+     * clean it with `normalizeCommunitySearch` from `@lantern/shared/network`
+     * first, because `%` and `_` are PostgREST wildcards. Results arrive
+     * already ranked (own campus > members > newest, events soonest-first);
+     * re-sorting them on a client would break that.
+     *
+     * 403 when the caller has no academic profile — `canAccessDiscoverHub`
+     * decides that, on both sides.
+     */
     discoverCommunities: (
-      params: { q?: string; kind?: string; institutionId?: string; courseId?: string; limit?: number } = {}
+      params: {
+        q?: string;
+        kind?: CommunityKind | string;
+        institutionId?: string;
+        courseId?: string;
+        limit?: number;
+      } = {}
     ) => {
       const qs = new URLSearchParams();
       if (params.q) qs.set('q', params.q);

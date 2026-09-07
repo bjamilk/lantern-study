@@ -186,6 +186,15 @@ export interface AppRouteParams {
   postId?: string;
   programme?: string;
   roomId?: string;
+  /**
+   * `/discover/new` (start a community) and `/discover/join/:code` (join with
+   * an invite link) — two modals on the Communities surface that are worth a
+   * URL, because both are things one student sends another. They resolve to
+   * `AppMode.DISCOVER` and open over it; the code is the community slug the
+   * invite link carries (see components/community/joinByCode.ts).
+   */
+  communityAction?: 'create' | 'join';
+  communityCode?: string;
   /** Which Library tab `/library/:libraryTab` names. Absent on bare `/library`. */
   libraryTab?: LibraryTabParam;
   /** Budget Wallet tab — `/budget/wallet`. Other budget tabs stay on `/budget`. */
@@ -284,6 +293,14 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
     // Campus, three segments. `/discover`, `/marketplace` and
     // `/marketplace/jobs` still parse (and redirect here) so old links live.
     case AppMode.DISCOVER:
+      // The two community modals keep their own URLs so an invite link and a
+      // "start a community" link can be sent to someone.
+      if (params.communityAction === 'create') return '/discover/new';
+      if (params.communityAction === 'join') {
+        return params.communityCode
+          ? `/discover/join/${encodeURIComponent(params.communityCode)}`
+          : '/discover/join';
+      }
       return '/campus';
     case AppMode.COMMUNITY_DETAIL:
       // A channel opened from the community stays on the community's own
@@ -512,6 +529,28 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   // Old entry points. They still PARSE (so a guest, or a client that never
   // reloads, lands somewhere real) and carry a redirect to the Campus segment
   // that replaced them.
+  // Registered before `/discover` and `/discover/c/`: both are more specific
+  // than the bare hub and neither can be a community slug.
+  if (path === '/discover/new') {
+    return {
+      mode: AppMode.DISCOVER,
+      params: { campusSegment: 'communities', communityAction: 'create' },
+    };
+  }
+  if (path === '/discover/join' || path.startsWith('/discover/join/')) {
+    const code = decodeURIComponent(path.slice('/discover/join/'.length).split('/')[0] || '');
+    return {
+      mode: AppMode.DISCOVER,
+      params: {
+        campusSegment: 'communities',
+        communityAction: 'join',
+        // An empty code still opens the box — the reader can paste the link
+        // there, which is better than bouncing them to a hub with no
+        // explanation of why their link did nothing.
+        ...(code ? { communityCode: code } : {}),
+      },
+    };
+  }
   if (path === '/discover') {
     return {
       mode: AppMode.DISCOVER,

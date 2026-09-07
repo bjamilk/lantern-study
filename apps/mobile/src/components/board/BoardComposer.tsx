@@ -11,13 +11,16 @@ import {
 import {
   BOARD_POST_SUBJECT_MAX,
   COMMUNITY_BOARD_COPY,
+  boardPostKindMeta,
   validateBoardSubject,
+  type BoardPostKind,
 } from '@lantern/shared/network';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
 import { ChatComposer, type MentionCandidate } from '../chat/ChatComposer';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { AppIcon } from '../ui/AppIcon';
+import type { AppIconName } from '../ui/appIconMap';
 
 /**
  * The board's docked composer (§4.1 region 6).
@@ -47,6 +50,9 @@ export function BoardComposer({
   onSendAudioMarkdown,
   editing,
   onCancelEdit,
+  postKind,
+  postKinds,
+  onChangePostKind,
 }: {
   groupId: string;
   avatarUrl?: string | null;
@@ -77,6 +83,16 @@ export function BoardComposer({
   /** Editing an existing post keeps the composer open and swaps the action. */
   editing?: { id: string; text: string } | null;
   onCancelEdit?: () => void;
+  /** The kind this post will be written as. */
+  postKind?: BoardPostKind;
+  /**
+   * The kinds this viewer may post, from `buildBoardComposerModel` — which
+   * reads `canPostOnBoard`. Never a hardcoded list: `announcement` is
+   * moderators-only and the API refuses it with a 403, so offering it to a
+   * member would be a control that only ever fails.
+   */
+  postKinds?: readonly BoardPostKind[];
+  onChangePostKind?: (kind: BoardPostKind) => void;
 }) {
   const { colors } = useTheme();
   const [expanded, setExpanded] = useState(false);
@@ -141,8 +157,55 @@ export function BoardComposer({
     );
   }
 
+  /**
+   * One kind is not a choice, and editing never changes a post's kind — the
+   * edit endpoint updates `text` and `edited_at` only, so a picker there would
+   * silently discard what it looked like it set.
+   */
+  const kinds = editing ? [] : (postKinds ?? []);
+  const selectedKind = postKind ?? 'discussion';
+
   return (
     <View className="border-t border-lantern-border bg-lantern-background">
+      {kinds.length > 1 ? (
+        <View className="flex-row flex-wrap gap-2 px-3 pt-2" accessibilityRole="radiogroup">
+          {kinds.map((kind) => {
+            const meta = boardPostKindMeta(kind);
+            const selected = kind === selectedKind;
+            return (
+              <Pressable
+                key={kind}
+                onPress={() => onChangePostKind?.(kind)}
+                accessibilityRole="radio"
+                accessibilityState={{ selected, checked: selected }}
+                accessibilityLabel={meta.label}
+                style={{ minHeight: 32 }}
+                className={`flex-row items-center gap-1.5 rounded-full border px-3 ${
+                  selected
+                    ? 'border-lantern-primary bg-lantern-primary-background'
+                    : 'border-lantern-border'
+                }`}
+              >
+                {/* The glyph AND the word — never colour alone (§9.2). */}
+                <AppIcon
+                  name={meta.icon as AppIconName}
+                  size={13}
+                  color={selected ? colors.primaryText : '#94a3b8'}
+                />
+                <Text
+                  className={`text-caption ${
+                    selected
+                      ? 'font-semibold text-lantern-primary-text'
+                      : 'text-lantern-text-secondary'
+                  }`}
+                >
+                  {meta.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
+      ) : null}
       <View className="flex-row items-center px-3 pt-2">
         {editing ? null : (
         <TextInput

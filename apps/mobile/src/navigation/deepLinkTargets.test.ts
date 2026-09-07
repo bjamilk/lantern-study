@@ -59,3 +59,24 @@ describe('resolveDeepLinkNavigation', () => {
     expect(resolveDeepLinkNavigation('not a url')).toBeNull();
   });
 });
+
+describe('community invite links', () => {
+  it('sends a one-time invite code to the Join sheet, which redeems it', () => {
+    const target = resolveDeepLinkNavigation('lanternstudy://discover/join/ABCD2345') as unknown as {
+      screen: string;
+      params: { screen: string; params: { segment: string; joinCode: string } };
+    };
+    expect(target.screen).toBe('CampusTab');
+    expect(target.params.screen).toBe('Campus');
+    expect(target.params.params.segment).toBe('communities');
+    expect(target.params.params.joinCode).toBe('ABCD2345');
+  });
+
+  it('still opens a community link on the community itself', () => {
+    const target = resolveDeepLinkNavigation(
+      'lanternstudy://discover/c/unilag-medicine'
+    ) as unknown as { screen: string; params: { screen: string; params: { slug: string } } };
+    expect(target.params.screen).toBe('CommunityDetail');
+    expect(target.params.params.slug).toBe('unilag-medicine');
+  });
+});

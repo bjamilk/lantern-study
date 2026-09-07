@@ -66,6 +66,14 @@ export interface BoardPostCardProps {
   onReport: () => void;
   onEdit: (text: string) => Promise<void> | void;
   onDelete: () => void;
+  /**
+   * May this viewer remove somebody ELSE's post? Decided by `boardPostRules`
+   * in the parent and passed in — a card never tests a role itself.
+   */
+  canRemoveAsModerator?: boolean;
+  onRemoveAsModerator?: () => void;
+  /** "Announcement" / "Question" / "Event"; null for a plain discussion. */
+  postKindLabel?: string | null;
   onTogglePin: () => void;
   onStartStudyGroup: () => void;
 }
@@ -284,6 +292,9 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
   onReport,
   onEdit,
   onDelete,
+  canRemoveAsModerator = false,
+  onRemoveAsModerator,
+  postKindLabel = null,
   onTogglePin,
   onStartStudyGroup,
 }) => {
@@ -360,7 +371,16 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
       <div className="flex items-start gap-2">
         <Avatar name={post.senderName} src={post.senderAvatarUrl} size="sm" localOnly={lowDataMode} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-lantern-text">{post.senderName}</p>
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
+            <span className="truncate">{post.senderName}</span>
+            {/* What the post is, in a word — an announcement that looked like
+                every other post was an announcement nobody read. */}
+            {postKindLabel ? (
+              <span className="shrink-0 rounded-full bg-lantern-feature-campus-tint px-2 py-0.5 text-label font-medium text-lantern-feature-campus-ink">
+                {postKindLabel}
+              </span>
+            ) : null}
+          </p>
           <p className="text-[11px] text-lantern-text-tertiary">
             {when}
             {post.editedAt ? ' · edited' : ''}
@@ -408,6 +428,13 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
             {isOwn && canDelete ? (
               <MenuItem destructive onSelect={onDelete}>
                 {COMMUNITY_BOARD_COPY.deletePost}
+              </MenuItem>
+            ) : null}
+            {/* A moderator removing somebody else's post. Worded as "Remove",
+                not "Delete": the card stays, carrying the reason. */}
+            {!isOwn && canRemoveAsModerator && onRemoveAsModerator ? (
+              <MenuItem destructive onSelect={onRemoveAsModerator}>
+                Remove post
               </MenuItem>
             ) : null}
             {canPin ? (

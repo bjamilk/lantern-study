@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
+import * as Clipboard from 'expo-clipboard';
 import {
   ActivityIndicator,
   Alert,
@@ -16,11 +17,8 @@ import {
   boardDisplayName,
   boardSubtitle,
   buildCommunityChannelRows,
-  canAccessDiscoverHub,
-  communityHeaderLine,
   communityMembershipAction,
   communityOnlineCount,
-  communityShareUrl,
   presenceLabel,
   requestFailureSentence,
   shouldSubscribeCommunityPresence,
@@ -38,18 +36,27 @@ import {
 } from '../../services/api';
 import { useGroupStore } from '../../stores/groupStore';
 import { useAuthStore } from '../../stores';
+import { useToastStore } from '../../stores/toastStore';
 import { RequestError } from '../../components/RequestError';
 import { useCommunityStore } from '../../stores/communityStore';
 import { useCommunityPresence } from '../../hooks/useCommunityPresence';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
+import { useCommunityAccess } from '../../hooks/useCommunityAccess';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useChrome } from '../../components/layout/ChromeContext';
-import { Screen, useScreenBottomPadding } from '../../components/layout';
-import { ActionSheet, BackButton, type ActionSheetItem } from '../../components/ui';
-import { ResolvedAvatar } from '../../components/ResolvedAvatar';
+import { Screen, useScreenActions, useScreenBottomPadding } from '../../components/layout';
+import { ActionSheet, BackButton, FeatureDisc, type ActionSheetItem } from '../../components/ui';
 import { ChannelRow, RoomRow, StudyGroupRow } from '../../components/community';
 import { toChannelOverlayGroups } from '../../utils/communityOverlay';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
+import { communityHeaderMeta } from '../campus/communityHubModel';
+import {
+  INVITE_LINK_UNAVAILABLE,
+  INVITE_SHARE_LABEL,
+  communityInviteLink,
+  inviteCopyOutcome,
+} from './communityInviteModel';
+import { MANAGE_COPY, resolveManageAccess } from './communityManageModel';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
@@ -58,15 +65,6 @@ type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
   getParent?: () => { navigate: (screen: string, params?: Record<string, unknown>) => void } | undefined;
-};
-
-/** Tile ring per community kind — the one visual cue that a course room is not a campus room. */
-const KIND_RING: Record<string, string> = {
-  institution: '#0ea5e9',
-  programme: '#8b5cf6',
-  level: '#f59e0b',
-  course: '#6366f1',
-  topic: '#ec4899',
 };
 
 const ROOM_TICK_MS = 60_000;
@@ -92,6 +90,7 @@ function CommunityServer({
 }) {
   const { slug } = route.params;
   const userId = useAuthStore((s) => s.user?.id);
+  const isPlatformAdmin = usePlatformAdmin();
   const { lowDataMode } = useLowDataMode();
   const { onScroll: chromeOnScroll } = useChrome();
   // CommunityDetail is not immersive, so the absolute bottom tab bar overlays
@@ -125,6 +124,8 @@ function CommunityServer({
   const [menuOpen, setMenuOpen] = useState(false);
   const [presence, setPresence] = useState<PresenceSnapshot | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  /** For the contextual row's Boards / Rooms jumps; see `useScreenActions`. */
+  const listRef = useRef<FlatList<CommunityChannelRow>>(null);
 
   const load = useCallback(async () => {
     setLoadError(null);
@@ -383,6 +384,9 @@ function CommunityServer({
     }
   };
 
+  const showToast = (message: string, tone: 'success' | 'error' = 'success') =>
+    useToastStore.getState().showToast(message, tone);
+
   const startRoom = () => {
     if (!community) return;
     navigation.navigate('StudyRoom', {
@@ -392,31 +396,113 @@ function CommunityServer({
     });
   };
 
-  const shareInvite = async () => {
-    if (!community) return;
+  /**
+   * "Copy invite link" now COPIES. It used to open the share sheet, so a
+   * student who dismissed the chooser was left with an empty clipboard and no
+   * message. The write is awaited, its result decides the toast, and a failed
+   * write puts the link itself in that toast so the link is never lost.
+   */
+  const copyInvite = async () => {
+    const link = communityInviteLink(community?.slug);
+    if (!link) {
+      showToast(INVITE_LINK_UNAVAILABLE, 'error');
+      return;
+    }
+    let copied = false;
     try {
-      await Share.share({ message: communityShareUrl(community.slug) });
+      // expo-clipboard resolves `false` when the platform refused the write;
+      // a throw is the same outcome for the student.
+      copied = (await Clipboard.setStringAsync(link)) !== false;
+    } catch {
+      copied = false;
+    }
+    const outcome = inviteCopyOutcome(copied, link);
+    showToast(outcome.message, outcome.tone);
+  };
+
+  const shareInvite = async () => {
+    const link = communityInviteLink(community?.slug);
+    if (!link) {
+      showToast(INVITE_LINK_UNAVAILABLE, 'error');
+      return;
+    }
+    try {
+      await Share.share({ message: link });
     } catch {
       // The share sheet was dismissed or is unavailable; nothing to surface.
     }
   };
 
+  /**
+   * Who manages this room. Decided by the SHARED rules
+   * (`canAssignCommunityRole` / `canModerateCommunityMember` via
+   * `resolveManageAccess`) from the viewer's own role — never from a locally
+   * computed one — and re-decided by the API on every request the screen it
+   * opens can make.
+   */
+  const manageAccess = useMemo(
+    () =>
+      resolveManageAccess({
+        id: userId ?? '',
+        role: community?.viewerRole ?? null,
+        isPlatformAdmin,
+      }),
+    [userId, community?.viewerRole, isPlatformAdmin]
+  );
+
+  const openManage = () => {
+    if (!community) return;
+    navigation.navigate('CommunityManage', {
+      slug: community.slug,
+      communityId: community.id,
+      name: community.name,
+    });
+  };
+
   const menuItems: ActionSheetItem[] = useMemo(() => {
     if (!community?.isMember) return [];
     const items: ActionSheetItem[] = [];
-    // Private communities have no invite in phase 1 (§6) — same rule as web.
+    // Private communities have no public link to share; an invite CODE for one
+    // is minted on the manage screen, which is where the permission for it is.
     if (community.visibility === 'public') {
-      items.push({ label: COMMUNITY_COPY.invite, icon: 'link', onPress: () => void shareInvite() });
+      items.push(
+        { label: COMMUNITY_COPY.invite, icon: 'link', onPress: () => void copyInvite() },
+        { label: INVITE_SHARE_LABEL, icon: 'share-social', onPress: () => void shareInvite() }
+      );
     }
     items.push(
       { label: COMMUNITY_COPY.createBoard, icon: 'add-circle', onPress: createBoard },
       { label: COMMUNITY_COPY.startStudyGroup, icon: 'people', onPress: startStudyGroup },
       { label: COMMUNITY_COPY.startRoom, icon: 'volume-medium', onPress: startRoom }
     );
+    if (manageAccess.canManage) {
+      items.push({
+        label: MANAGE_COPY.title,
+        icon: 'shield-checkmark',
+        onPress: openManage,
+      });
+    }
     return items;
     // Handlers close over `community` and `navigation`, both stable per render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [community?.isMember, community?.id, community?.visibility]);
+  }, [
+    community?.isMember,
+    community?.id,
+    community?.slug,
+    community?.visibility,
+    manageAccess.canManage,
+  ]);
+
+  /**
+   * Label, glyph, ink and the counted line — one resolver, shared with the
+   * Campus list card. Before a community arrives there is nothing to describe,
+   * so the neutral `general` meta stands in rather than a hard-coded hue.
+   */
+  const headerMeta = communityHeaderMeta(
+    community ?? { kind: 'general', tags: [] },
+    community?.member_count ?? 0,
+    onlineCount
+  );
 
   const presenceLine = presenceLabel(presence);
   const membershipLabel = community
@@ -533,6 +619,39 @@ function CommunityServer({
     }
   };
 
+  /**
+   * The contextual row's three screen actions (navigation/contextualBars.ts,
+   * COMMUNITY_BAR). Boards and Rooms are SECTIONS of this list rather than
+   * screens, so the row asks this screen to move to them; Chat opens the one
+   * live lounge, whose group id is minted on first use and therefore cannot be
+   * a route param.
+   *
+   * `sectionIndex` searches the SHARED row model, so a section that is absent
+   * for this viewer (a guest sees no rooms) yields no handler at all and the
+   * row's press is a no-op instead of a scroll to the wrong place.
+   */
+  const sectionIndex = useCallback(
+    (title: string) => rows.findIndex((row) => row.kind === 'section' && row.title === title),
+    [rows]
+  );
+
+  const scrollToSection = useCallback((index: number) => {
+    if (index < 0) return;
+    // `viewPosition: 0` puts the heading at the top; the failure handler is
+    // required because the list is windowed and the target may be unmeasured.
+    listRef.current?.scrollToIndex({ index, viewPosition: 0, animated: true });
+  }, []);
+
+  const boardsIndex = sectionIndex(COMMUNITY_COPY.sectionBoards);
+  const roomsIndex = sectionIndex(COMMUNITY_COPY.sectionRooms);
+
+  useScreenActions('CommunityDetail', {
+    // Named by what they DO, not by the row item's id.
+    communityChat: community ? () => void openLounge() : undefined,
+    communityBoards: boardsIndex >= 0 ? () => scrollToSection(boardsIndex) : undefined,
+    communityRooms: roomsIndex >= 0 ? () => scrollToSection(roomsIndex) : undefined,
+  });
+
   const keyExtractor = (item: CommunityChannelRow, index: number) => {
     switch (item.kind) {
       case 'lounge':
@@ -571,16 +690,10 @@ function CommunityServer({
     <Screen bottom="none">
       <View className="flex-row items-center h-[56px] pr-2 border-b border-lantern-border">
         <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
-        <View
-          className="rounded-full"
-          style={{
-            padding: 2,
-            borderWidth: 2,
-            borderColor: KIND_RING[community?.kind ?? ''] ?? '#6366f1',
-          }}
-        >
-          <ResolvedAvatar name={community?.name ?? 'Community'} size={36} decorative />
-        </View>
+        {/* The glyph and its ink come from the SAME resolver the Campus list
+            card uses (`communityHeaderMeta` → `communityCardMeta`), so a
+            tag-derived hostel room shows the house here too. */}
+        <FeatureDisc feature={headerMeta.ink} icon={headerMeta.icon} size={40} />
         <View className="flex-1 min-w-0 ml-2 flex-row items-center">
           <Text className="text-lg font-semibold text-lantern-text shrink" numberOfLines={1}>
             {community?.name ?? 'Community'}
@@ -648,8 +761,17 @@ function CommunityServer({
 
       {community ? (
         <FlatList
+          ref={listRef}
           data={rows}
           keyExtractor={keyExtractor}
+          // A windowed list cannot scroll to a row it has not measured; land
+          // on the nearest measured offset rather than throwing.
+          onScrollToIndexFailed={({ averageItemLength, index }) =>
+            listRef.current?.scrollToOffset({
+              offset: averageItemLength * index,
+              animated: true,
+            })
+          }
           renderItem={renderRow}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
@@ -658,7 +780,7 @@ function CommunityServer({
           ListHeaderComponent={
             <View className="px-4 pt-4 pb-1 border-b border-lantern-border">
               <Text className="text-xs text-lantern-text-tertiary">
-                {communityHeaderLine(community.kind, community.member_count, onlineCount)}
+                {headerMeta.line}
               </Text>
               {community.description ? (
                 <Pressable
@@ -741,8 +863,12 @@ export function CommunityDetailScreen({
   navigation: NavigationProp;
   route: { params: { slug: string } };
 }) {
-  const isPlatformAdmin = usePlatformAdmin();
-  if (!canAccessDiscoverHub(isPlatformAdmin)) {
+  // The OBJECT form of the gate, via the hook: Communities are open to every
+  // signed-in student with an institution and a programme (founder decision,
+  // 2026-09-07). The boolean form this used to pass means "platform admin?"
+  // and nothing else, which kept every student out.
+  const { canSee } = useCommunityAccess();
+  if (!canSee) {
     return <DiscoverComingSoon onBack={() => navigation.goBack()} />;
   }
   return <CommunityServer navigation={navigation} route={route} />;

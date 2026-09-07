@@ -40,7 +40,8 @@ import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
 import { fetchTestSessionById, fetchNotifications, fetchDecks, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
 import { saveGeneratedDeck } from './services/jobArtifacts';
 import { useCommunityStore } from './stores/communityStore';
-import { COMMUNITY_COPY, canAccessDiscoverHub, studyGroupAnnouncement } from '@lantern/shared/network';
+import { COMMUNITY_COPY, studyGroupAnnouncement } from '@lantern/shared/network';
+import { canOpenCommunities } from './components/community/communityAccess';
 import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
 import type { CommunityNavigate } from './components/community/communityNavigation';
@@ -1497,11 +1498,12 @@ export const App: React.FC = () => {
     // derived further up, before the `/study/tests/:testId` effect that reads
     // them: a `const` read in that effect's dependency list before its own
     // declaration is a TDZ ReferenceError on every render.
-    const communitiesSegmentOpen = canAccessDiscoverHub(isPlatformAdmin);
+    const communitiesSegmentOpen = canOpenCommunities({ isPlatformAdmin, user: currentUser });
     /**
-     * Where the Campus tab lands. Never a closed segment: Communities is
-     * admin-only until campus rooms ship and Shop is a private pilot, so an
-     * ordinary student's Campus opens on Jobs rather than on an apology.
+     * Where the Campus tab lands. Never a closed segment: Communities needs
+     * an institution and a programme on the profile and Shop is a private
+     * pilot, so a student who has neither opens on Jobs rather than on an
+     * apology.
      */
     const campusEntrySegment: CampusSegment = communitiesSegmentOpen
         ? 'communities'
@@ -2707,6 +2709,11 @@ export const App: React.FC = () => {
                 // `/discover` and `/discover/c/:slug` stay routable either way.
                 return <DiscoverScreen
                     initialSection={discoverSection === 'marketplace' ? 'communities' : discoverSection}
+                    // `/discover/new` and `/discover/join/:code` open a modal
+                    // over the hub — the two community actions one student
+                    // sends another, so both are links.
+                    initialAction={standaloneRoute.params.communityAction}
+                    initialCode={standaloneRoute.params.communityCode ?? null}
                     onNavigate={(screen, params) => {
                         if (screen === 'Marketplace') {
                             setAppMode(AppMode.MARKETPLACE);
@@ -3053,7 +3060,7 @@ export const App: React.FC = () => {
             <CampusHubScreen
                 segment={segment}
                 onSelectSegment={selectCampusSegment}
-                communitiesOpen={canAccessDiscoverHub(isPlatformAdmin)}
+                communitiesOpen={communitiesSegmentOpen}
                 shopOpen={marketplaceAccess}
             >
                 {screen}
