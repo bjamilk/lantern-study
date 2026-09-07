@@ -44,6 +44,126 @@ export interface AiJobTarget {
   label: string;
 }
 
+/**
+ * Where a finished job's output actually landed, as the SERVER names it.
+ *
+ * `target` is a route the client guessed when the job started ("/flashcards");
+ * `resultRef` is the artefact itself, recorded the moment the save landed and
+ * persisted with the record. A reload can therefore reopen the exact deck or
+ * test, and the same reference is the save-once guard: a job that has one is
+ * never allowed to write a second artefact.
+ */
+export interface AiJobResultRef {
+  type: 'deck' | 'test' | 'note' | 'quiz';
+  id: string;
+  /** In-app route, e.g. `/flashcards/deck/abc`. Always starts with `/`. */
+  route: string;
+  /** Deck/test name, for the Open button and the notification. */
+  name?: string;
+}
+
+/** One generated card, in the only two fields every generator produces. */
+export interface GeneratedCard {
+  front: string;
+  back: string;
+}
+
+/**
+ * Generated material waiting to be written to the library.
+ *
+ * Serialisable by construction — it is persisted with the job record and read
+ * back after a reload, so nothing here may be a function or a class. Its whole
+ * purpose is that generating costs a credit and saving does not: a save that
+ * failed (offline, a 500, the tab closing between the two) can be finished
+ * later without paying for the generation again.
+ */
+export type PendingAiSave =
+  | {
+      kind: 'deck';
+      deckName: string;
+      description?: string;
+      /** Save into a deck the student already has, instead of making one. */
+      deckId?: string;
+      /** File the deck under a course/topic, as the door that opened it promised. */
+      courseId?: string | null;
+      topicId?: string | null;
+      cards: GeneratedCard[];
+    }
+  | {
+      kind: 'test';
+      title: string;
+      sourceNoteId?: string;
+      questions: unknown[];
+    };
+
+/** What the panel says when a reload finds generated work that never saved. */
+export const UNSAVED_GENERATION_ERROR =
+  "We made this but hadn't saved it to your library yet.";
+
+/** Routes for each artefact type this client knows how to open. */
+export function routeForResultRef(
+  type: AiJobResultRef['type'],
+  id: string
+): string | undefined {
+  switch (type) {
+    case 'deck':
+      return id ? `/flashcards/deck/${encodeURIComponent(id)}` : '/flashcards';
+    case 'note':
+      return id ? `/notes/${encodeURIComponent(id)}` : '/notes';
+    case 'test':
+    case 'quiz':
+      // Personal tests have no per-id route on web; the Tests home lists them
+      // under "Available Tests", which is where the student can start one.
+      return '/tests';
+    default:
+      return undefined;
+  }
+}
+
+const RESULT_REF_LABEL: Record<AiJobResultRef['type'], string> = {
+  deck: 'Open deck',
+  note: 'Open note',
+  test: 'Open test',
+  quiz: 'Open test',
+};
+
+/**
+ * The click target for a finished job, derived from the artefact the server
+ * (or the save) actually produced — never from the guess made at start time.
+ *
+ * An unroutable or id-less reference yields `undefined` rather than a button
+ * that would land the student on a list and call it "Open deck".
+ */
+export function targetForResultRef(
+  ref: AiJobResultRef | undefined
+): AiJobTarget | undefined {
+  if (!ref || !ref.id) return undefined;
+  const path = ref.route || routeForResultRef(ref.type, ref.id);
+  if (!path || !path.startsWith('/')) return undefined;
+  return { path, label: RESULT_REF_LABEL[ref.type] ?? 'Open' };
+}
+
+/**
+ * Normalise a server `resultRef` (shared JobResultRef) into one this client
+ * can route to. Types web has no screen for yield `undefined`.
+ */
+export function toAiJobResultRef(raw: unknown): AiJobResultRef | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const ref = raw as { type?: unknown; id?: unknown; route?: unknown; name?: unknown };
+  const type = ref.type;
+  if (type !== 'deck' && type !== 'test' && type !== 'note' && type !== 'quiz') return undefined;
+  const id = typeof ref.id === 'string' ? ref.id : '';
+  if (!id) return undefined;
+  // A server-supplied route is only trusted when it is an in-app path.
+  const serverRoute =
+    typeof ref.route === 'string' && ref.route.startsWith('/') && !ref.route.startsWith('//')
+      ? ref.route
+      : undefined;
+  const route = serverRoute ?? routeForResultRef(type, id);
+  if (!route) return undefined;
+  return { type, id, route, name: typeof ref.name === 'string' ? ref.name : undefined };
+}
+
 export interface AiJob {
   id: string;
   /** Owner. Selectors filter by this so a shared device never leaks titles. */
@@ -68,8 +188,25 @@ export interface AiJob {
   creditCost: number;
   error?: string;
   target?: AiJobTarget;
-  /** Server job id when the 202 path exposed one. Reserved for reattach. */
-  jobId?: string;
+  /**
+   * The server's job id, from the 202. Without it a reload has nothing to ask
+   * about and every in-flight job could only ever be called orphaned.
+   */
+  serverJobId?: string;
+  /** The server's machine stage word (`reading` | `generating` | `saving` …). */
+  serverStage?: string;
+  /** The server's monotonic 0..100. The ONLY thing that moves the bar. */
+  serverPercent?: number;
+  /**
+   * Where this job's output landed. Set when the write finishes — earlier than
+   * `status: 'succeeded'` and surviving everything after it — so it is both the
+   * Open target and the save-once guard.
+   */
+  resultRef?: AiJobResultRef;
+  /** How many cards/questions that save actually persisted. */
+  savedCount?: number;
+  /** What the AI produced, held until it is safely in the library. */
+  pendingSave?: PendingAiSave;
   dismissed: boolean;
   /** Set once the browser notification for this job has fired. */
   notified: boolean;
@@ -79,9 +216,6 @@ export interface AiJob {
 export const AI_JOB_BUDGET_MS = 90_000;
 /** Each "Keep waiting" buys another budget window. */
 export const AI_JOB_KEEP_WAITING_MS = 90_000;
-/** Time constant for within-stage progress creep. */
-const STAGE_EXPECT_MS = 12_000;
-
 /** How long a completed result stays on the panel before retiring itself. */
 export const SUCCESS_VISIBLE_MS = 2 * 60 * 1000;
 
@@ -135,20 +269,32 @@ export function isJobRunning(job: AiJob): boolean {
 }
 
 /**
- * Percent for the progress bar.
+ * Percent for the progress bar — from the server, or from a stage that really
+ * happened. Never from the clock.
  *
- * Monotonic and honest-ish: it advances a full step per completed stage, and
- * creeps asymptotically inside the current stage so a slow model still looks
- * alive without the bar ever reaching 100 before the work actually lands.
+ * The old bar crept asymptotically inside each stage on a timer, so a request
+ * that had not moved for a minute still showed a bar sliding towards 90%, and
+ * a tab with no network at all looked like work in progress. Progress is now
+ * reported: the server's monotonic `percent` when there is one, otherwise the
+ * floor of the stage the client has actually observed. Between reports the bar
+ * holds still, which is the truth.
  */
-export function computeJobPercent(job: AiJob, now: number): number {
+export function computeJobPercent(job: AiJob, _now?: number): number {
   if (job.status === 'succeeded') return 100;
   const stageCount = Math.max(1, job.stages.length);
+  // The floor of the current stage, plus nothing: a stage that has started is
+  // the last thing we can honestly claim has happened.
   const base = clamp(job.stageIndex, 0, stageCount - 1) / stageCount;
-  const span = 1 / stageCount;
-  const stageElapsed = Math.max(0, now - job.stageStartedAt);
-  const creep = 1 - Math.exp(-stageElapsed / STAGE_EXPECT_MS);
-  return clamp(Math.round((base + span * creep) * 100), 1, 99);
+  const stageFloor = Math.round(base * 100);
+  // The server's percent is taken, but never below a stage this client has
+  // already observed: the client reports "Writing flashcards" (stage 1 of 3,
+  // 33%) BEFORE the request goes out, and the server's first poll answers
+  // `queued` at 0 — which used to rewind the bar to 1% for a second.
+  const serverPercent =
+    typeof job.serverPercent === 'number' && Number.isFinite(job.serverPercent)
+      ? Math.round(job.serverPercent)
+      : 0;
+  return clamp(Math.max(stageFloor, serverPercent), 1, 99);
 }
 
 export function computeJobElapsedMs(job: AiJob, now: number): number {
@@ -184,25 +330,120 @@ export function pruneJobs(jobs: AiJob[], now: number): AiJob[] {
     .slice(0, MAX_JOBS);
 }
 
+/** Is there generated material on this job that never reached the library? */
+export function hasUnsavedGeneration(job: AiJob | undefined): boolean {
+  return Boolean(job?.pendingSave) && !job?.resultRef;
+}
+
 /**
- * A reload drops the in-memory promise, so a job that was running can no
- * longer be observed from this tab. It is NOT lost — the server keeps working
- * and the artefact appears in the library — so it becomes `orphaned` with a
- * truthful label, never `failed`.
+ * What "Try again" should actually do.
+ *
+ * Regenerating spends a second credit and makes the student wait again for
+ * cards the AI has already written. A job that generated something and failed
+ * on the way to the library only ever needs the second half repeating.
  */
-export function reconcileOrphanedJobs(jobs: AiJob[], now: number): AiJob[] {
-  let changed = false;
+export type AiRetryPlan = 'save' | 'generate' | 'none';
+
+export function planRetry(job: AiJob | undefined): AiRetryPlan {
+  if (!job) return 'none';
+  if (job.resultRef) return 'none';
+  return job.pendingSave ? 'save' : 'generate';
+}
+
+/** What a reload should do with what was persisted. */
+export interface AiResumePlan {
+  /** The list as it should now be held in memory. */
+  jobs: AiJob[];
+  /** Client ids whose server job should be polled again. */
+  resume: string[];
+  /** Client ids that hold generated material still waiting to be saved. */
+  unsaved: string[];
+  /** Client ids there is genuinely nothing left to ask about. */
+  orphaned: string[];
+}
+
+/**
+ * A reload drops the in-memory promise — but not the job.
+ *
+ * Before this, every running job was flatly marked `orphaned`: the panel said
+ * "this tab lost track of it, check your library", the Open button pointed at
+ * a list, and a deck the server had already finished was never claimed. Three
+ * different situations were being collapsed into one:
+ *
+ *  1. Generated material sat unsaved on the record. Nothing is missing and the
+ *     student is one button away from having it, at no further charge — so it
+ *     is `failed` with copy that says exactly that, and `planRetry` returns
+ *     `save`.
+ *  2. The job carries a server id. The server can still be asked how it ended,
+ *     so it stays `running` and is handed to `resumeAiJobs` to be watched.
+ *  3. Neither. There is nothing left to ask, and claiming failure would be a
+ *     lie — that is the one case that is really `orphaned`.
+ */
+export function planResume(jobs: AiJob[], now: number): AiResumePlan {
+  const resume: string[] = [];
+  const unsaved: string[] = [];
+  const orphaned: string[] = [];
   const next = jobs.map((job) => {
     if (!isJobRunning(job)) return job;
-    changed = true;
-    return {
-      ...job,
-      status: 'orphaned' as const,
-      updatedAt: now,
-      finishedAt: now,
-    };
+    // Generated material outranks a poll: the work is in this browser, and
+    // asking the server about it cannot put it in the library.
+    if (hasUnsavedGeneration(job)) {
+      unsaved.push(job.id);
+      return {
+        ...job,
+        status: 'failed' as const,
+        error: UNSAVED_GENERATION_ERROR,
+        updatedAt: now,
+        finishedAt: now,
+      };
+    }
+    if (job.serverJobId) {
+      resume.push(job.id);
+      return job;
+    }
+    orphaned.push(job.id);
+    return { ...job, status: 'orphaned' as const, updatedAt: now, finishedAt: now };
   });
-  return changed ? next : jobs;
+  return { jobs: next, resume, unsaved, orphaned };
+}
+
+/**
+ * What a server snapshot means for a job whose runner is gone (a resumed watch
+ * after a reload).
+ *
+ * The server's `done` is not the whole story for work the CLIENT files: the
+ * promise that would have written the deck died with the old page, so unless
+ * the job already recorded a save, or the server itself points at an artefact,
+ * nothing is in the library. That is `orphaned` — "check your library" — never
+ * `succeeded`, which would put an Open button on a deck that does not exist.
+ *
+ * Returns `null` while the job is still moving.
+ */
+export function planServerSettle(
+  job: AiJob,
+  snapshot: { stage?: string; percent?: number; resultRef?: unknown; error?: string }
+): Partial<AiJob> | null {
+  const stage = snapshot.stage;
+  if (stage === 'done') {
+    const ref = job.resultRef ?? toAiJobResultRef(snapshot.resultRef);
+    if (ref) {
+      return {
+        status: 'succeeded',
+        resultRef: ref,
+        target: targetForResultRef(ref),
+        error: undefined,
+        pendingSave: undefined,
+      };
+    }
+    if (hasUnsavedGeneration(job)) {
+      return { status: 'failed', error: UNSAVED_GENERATION_ERROR };
+    }
+    return { status: 'orphaned', error: undefined };
+  }
+  if (stage === 'failed' || stage === 'timed_out') {
+    return { status: 'failed', error: snapshot.error || 'That did not finish.' };
+  }
+  return null;
 }
 
 export function getJobsForUser(jobs: AiJob[], userId: string | null | undefined): AiJob[] {
@@ -259,9 +500,24 @@ interface AiJobState {
   tick: number;
   startJob: (input: StartAiJobInput) => string;
   advanceStage: (id: string, stageIndex: number) => void;
-  attachJobId: (id: string, jobId: string) => void;
+  /** Record the server's job id from the 202, so a reload can reattach. */
+  attachServerJob: (id: string, serverJobId: string) => void;
+  /** Record a server progress report. The only thing that moves the bar. */
+  reportServerProgress: (id: string, snapshot: { stage?: string; percent?: number }) => void;
+  /** Hold generated material on the record, BEFORE the save is attempted. */
+  recordPendingSave: (id: string, pending: PendingAiSave) => void;
+  /**
+   * Claim the single save for this job. Returns the reference already
+   * recorded when there is one, so a second attempt never mints a second
+   * artefact; otherwise records this one and returns null.
+   */
+  claimSave: (id: string, ref: AiJobResultRef, count: number) => AiJobResultRef | null;
+  /** The reference this job already saved, if any. */
+  savedRefFor: (id: string) => { ref: AiJobResultRef; count: number } | null;
   succeedJob: (id: string, target?: AiJobTarget) => void;
   failJob: (id: string, error: string) => void;
+  /** The server could not say how it ended and there is nothing left to ask. */
+  orphanJob: (id: string) => void;
   keepWaiting: (id: string) => void;
   markNotified: (id: string) => void;
   dismissJob: (id: string) => void;
@@ -275,7 +531,7 @@ function patch(jobs: AiJob[], id: string, update: Partial<AiJob>): AiJob[] {
 
 export const useAiJobStore = create<AiJobState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       jobs: [],
       tick: 0,
 
@@ -315,7 +571,49 @@ export const useAiJobStore = create<AiJobState>()(
         }));
       },
 
-      attachJobId: (id, jobId) => set((state) => ({ jobs: patch(state.jobs, id, { jobId }) })),
+      attachServerJob: (id, serverJobId) =>
+        set((state) => ({ jobs: patch(state.jobs, id, { serverJobId }) })),
+
+      reportServerProgress: (id, snapshot) =>
+        set((state) => ({
+          jobs: state.jobs.map((job) => {
+            if (job.id !== id || !isJobRunning(job)) return job;
+            // Monotonic: a late poll must never rewind the bar.
+            const percent =
+              typeof snapshot.percent === 'number' && Number.isFinite(snapshot.percent)
+                ? Math.max(snapshot.percent, job.serverPercent ?? 0)
+                : job.serverPercent;
+            if (percent === job.serverPercent && snapshot.stage === job.serverStage) return job;
+            return {
+              ...job,
+              serverStage: snapshot.stage ?? job.serverStage,
+              serverPercent: percent,
+              updatedAt: Date.now(),
+            };
+          }),
+        })),
+
+      recordPendingSave: (id, pending) =>
+        set((state) => ({ jobs: patch(state.jobs, id, { pendingSave: pending }) })),
+
+      claimSave: (id, ref, count) => {
+        const existing = get().jobs.find((job) => job.id === id)?.resultRef;
+        if (existing) return existing;
+        set((state) => ({
+          jobs: patch(state.jobs, id, {
+            resultRef: ref,
+            savedCount: count,
+            target: targetForResultRef(ref),
+            pendingSave: undefined,
+          }),
+        }));
+        return null;
+      },
+
+      savedRefFor: (id) => {
+        const job = get().jobs.find((j) => j.id === id);
+        return job?.resultRef ? { ref: job.resultRef, count: job.savedCount ?? 0 } : null;
+      },
 
       succeedJob: (id, target) => {
         const now = Date.now();
@@ -327,7 +625,11 @@ export const useAiJobStore = create<AiJobState>()(
                   status: 'succeeded' as const,
                   stageIndex: Math.max(0, job.stages.length - 1),
                   error: undefined,
-                  target: target ?? job.target,
+                  // The artefact the save actually produced outranks the route
+                  // guessed when the job started ("/flashcards"), which is what
+                  // used to land Open on a list instead of the new deck.
+                  target: targetForResultRef(job.resultRef) ?? target ?? job.target,
+                  pendingSave: undefined,
                   finishedAt: now,
                   updatedAt: now,
                 }
@@ -342,6 +644,17 @@ export const useAiJobStore = create<AiJobState>()(
           jobs: state.jobs.map((job) =>
             job.id === id
               ? { ...job, status: 'failed' as const, error, finishedAt: now, updatedAt: now }
+              : job
+          ),
+        }));
+      },
+
+      orphanJob: (id) => {
+        const now = Date.now();
+        set((state) => ({
+          jobs: state.jobs.map((job) =>
+            job.id === id && isJobRunning(job)
+              ? { ...job, status: 'orphaned' as const, finishedAt: now, updatedAt: now }
               : job
           ),
         }));
@@ -378,7 +691,10 @@ export const useAiJobStore = create<AiJobState>()(
       onRehydrateStorage: () => (state) => {
         if (!state) return;
         const now = Date.now();
-        state.jobs = pruneJobs(reconcileOrphanedJobs(state.jobs, now), now);
+        // Non-terminal jobs are settled from the SERVER, not from the fact of
+        // a reload: `planResume` keeps the ones that can be reattached alive,
+        // and `resumeAiJobs` (aiJobRunner) then watches them.
+        state.jobs = pruneJobs(planResume(state.jobs, now).jobs, now);
       },
     }
   )

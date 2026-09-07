@@ -13,10 +13,11 @@ import { useCompanionStore } from '../stores/companionStore';
 import { useAppNavigation } from './useAppNavigation';
 import { runNoteFileImport, runNoteYoutubeImport } from '../utils/runNoteFileImport';
 import { runNoteImagesImport } from '../utils/runNoteImagesImport';
-import { AppMode, FlashcardType } from '../types';
+import { AppMode } from '../types';
 import * as notesApi from '../services/notes';
 import { aiGenerateQuestions } from '../services/ai';
-import { createDeck, createFlashcard, deleteDeck, fetchAllFlashcards } from '../services/supabase';
+import { saveGeneratedDeck, saveGeneratedTest } from '../services/jobArtifacts';
+import type { AiJobHooks } from '../stores/aiJobRunner';
 import { trackQuestProgress } from '../services/questProgress';
 import { trackNoteCreated } from '../services/productAnalytics';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
@@ -206,10 +207,26 @@ export function useNoteHandlers(currentUserId?: string) {
     [selectedNote, cancelAutoSave, saveNote, loadNote]
   );
 
+  /**
+   * Generate a deck from a note, and file it in ONE server request.
+   *
+   * The old flow made the deck client-side — `POST /decks`, then a
+   * `POST /flashcards` per card — so a dropped connection halfway left a deck
+   * announcing ten cards over six, and a run that failed entirely left an empty
+   * "From: …" shell whenever the compensating delete also failed. Nothing is
+   * created until the cards exist, the save is the atomic
+   * `POST /decks/with-cards` keyed on the job id, and nothing is written
+   * locally until the server has answered.
+   *
+   * `hooks` comes from the AI job runner: its `clientJobId` is the idempotency
+   * key, so retrying the save replays the first write rather than making a
+   * second deck.
+   */
   const handleCreateFlashcardDeckFromNote = useCallback(
     async (
       count: number = 10,
-      editorState?: { title?: string; body?: string }
+      editorState?: { title?: string; body?: string },
+      hooks?: AiJobHooks
     ) => {
       if (!selectedNote || !currentUserId) return null;
       cancelAutoSave();
@@ -223,58 +240,44 @@ export function useNoteHandlers(currentUserId?: string) {
       }
 
       const cardCount = normalizeFlashcardCount(count);
-      const { flashcards: generated } = await notesApi.generateFlashcardsFromNote(note.id, {
-        count: cardCount,
-      });
+      const { flashcards: generated } = await notesApi.generateFlashcardsFromNote(
+        note.id,
+        { count: cardCount },
+        hooks && {
+          onServerJob: hooks.onServerJob,
+          onServerProgress: hooks.onServerProgress,
+        }
+      );
       if (!generated?.length) {
         throw new Error('Could not generate flashcards from this note.');
       }
 
       const deckName = `From: ${note.title || 'Untitled Note'}`.slice(0, 80);
-      const deck = await createDeck(
-        {
-          name: deckName,
-          description: `Generated from note: ${note.title || 'Untitled Note'}`,
-        },
-        currentUserId
-      );
 
-      // Per-card creates can partially fail; settle them all so cards that DID
-      // save server-side are never stranded in a deck the store doesn't know about.
-      const results = await Promise.allSettled(
-        generated.map((card) =>
-          createFlashcard({
-            deckId: deck.id,
-            type: FlashcardType.BASIC,
-            front: card.front,
-            back: card.back,
-            userId: currentUserId,
-          })
-        )
-      );
-      const savedCount = results.filter((r) => r.status === 'fulfilled').length;
+      // No job to key the save on (a signed-out or untracked call site): the
+      // request is still atomic, keyed on the note and this attempt.
+      const saveKey = hooks?.clientJobId || `note-${note.id}-${Date.now()}`;
+      const saved = await saveGeneratedDeck({
+        jobId: saveKey,
+        userId: currentUserId,
+        deckName,
+        description: `Generated from note: ${note.title || 'Untitled Note'}`,
+        cards: generated.map((card) => ({ front: card.front, back: card.back })),
+      });
 
-      if (savedCount === 0) {
-        // Nothing made it: remove the just-created empty deck (best effort) so a
-        // stranded shell doesn't appear after reload, then surface a real failure.
-        try {
-          await deleteDeck(deck.id);
-        } catch {
-          // Best effort only — an empty deck may remain if this also fails.
-        }
-        const firstFailure = results.find(
-          (r): r is PromiseRejectedResult => r.status === 'rejected'
-        )?.reason;
-        throw firstFailure instanceof Error
-          ? firstFailure
-          : new Error('Could not save the generated flashcards.');
-      }
+      const deck = useFlashcardStore
+        .getState()
+        .decks.find((d) => d.id === saved.ref.id) ?? {
+        id: saved.ref.id,
+        name: saved.ref.name || deckName,
+      };
 
-      const flashcardStore = useFlashcardStore.getState();
-      flashcardStore.updateDecks((prev) => [...prev, deck]);
-      flashcardStore.setFlashcards(await fetchAllFlashcards(undefined, currentUserId));
-
-      return { deck, count: generated.length, savedCount };
+      return {
+        deck,
+        ref: saved.ref,
+        count: generated.length,
+        savedCount: saved.saved,
+      };
     },
     [selectedNote, currentUserId, cancelAutoSave, saveNote, loadNote]
   );
@@ -331,8 +334,24 @@ export function useNoteHandlers(currentUserId?: string) {
     [studyGoal, setDailyQuiz, selectedNote]
   );
 
+  /**
+   * Generate a note's quiz — and file it as a test the student can actually
+   * find again.
+   *
+   * The quiz itself lives on the note, which is right for the panel under the
+   * editor. It was also the whole of the delivery: nothing was written to the
+   * Tests list, so a finished job could only ever send the student back to the
+   * note, and a reload had nothing to point at. It is now also saved through
+   * `POST /tests/personal` with `sourceJobId`, which is what lets the SERVER
+   * stamp the test onto the job record — so the job knows which test it became
+   * and Open lands on it.
+   *
+   * A failed test save is not a failed quiz: the questions are on the note and
+   * on the job record, so the run keeps its result and the save can be finished
+   * later at no further charge.
+   */
   const handleStartNoteQuiz = useCallback(
-    async (editorState?: { title?: string; body?: string }) => {
+    async (editorState?: { title?: string; body?: string }, hooks?: AiJobHooks) => {
       if (!selectedNote) return null;
       cancelAutoSave();
       if (editorState) {
@@ -343,9 +362,27 @@ export function useNoteHandlers(currentUserId?: string) {
       if (!note || !hasEnoughNoteStudyContent(note)) {
         throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
-      const session = await notesApi.generateNoteQuiz(note.id, studyGoal, 5);
+      const session = await notesApi.generateNoteQuiz(
+        note.id,
+        studyGoal,
+        5,
+        hooks && {
+          onServerJob: hooks.onServerJob,
+          onServerProgress: hooks.onServerProgress,
+        }
+      );
       const withTitle = { ...session, sourceNoteTitle: note.title };
       setDailyQuiz(withTitle);
+
+      const questions = Array.isArray(session?.questions) ? session.questions : [];
+      if (hooks?.clientJobId && questions.length > 0) {
+        await saveGeneratedTest({
+          jobId: hooks.clientJobId,
+          title: `Quiz: ${note.title || 'Untitled Note'}`.slice(0, 120),
+          sourceNoteId: note.id,
+          questions,
+        });
+      }
       return withTitle;
     },
     [selectedNote, studyGoal, setDailyQuiz, cancelAutoSave, saveNote, loadNote]

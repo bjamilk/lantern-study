@@ -46,7 +46,16 @@ export {
 } from './screenInsets';
 
 export { BOTTOM_TAB_BAR_CONTENT_HEIGHT, BottomTabBar, useTabBarClearance } from './BottomTabBar';
-export { ChromeProvider, useChrome } from './ChromeContext';
+export { ChromeProvider, useChrome, useScrollToTopRequest } from './ChromeContext';
+export {
+  CONTEXTUAL_BAR_ANIMATION_MS,
+  CONTEXTUAL_BAR_CONTENT_HEIGHT,
+  contextualBarClearance,
+  contextualBarHeight,
+  contextualBarTransitionMs,
+  resolveContextualSpec,
+  shouldAnimateContextualBar,
+} from './contextualBarLayout';
 // TopBar is deliberately NOT re-exported here. This barrel is imported by
 // ~100 screens; TopBar pulls in the AI-usage service and the auth store, and
 // dragging those into every screen's module graph invites an import cycle.

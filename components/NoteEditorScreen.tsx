@@ -26,7 +26,7 @@ import {
 } from '@heroicons/react/24/outline';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
-import { runAiJob } from '../stores/aiJobRunner';
+import { runAiJob, type AiJobHooks } from '../stores/aiJobRunner';
 import { useAiJobUserId } from '../hooks/useAiJobs';
 import {
   SMART_NOTES_CREDIT_COST,
@@ -75,8 +75,14 @@ interface NoteEditorScreenProps {
     options?: import('@lantern/shared/utils/smartNotes').SmartNotesRequestOptions
   ) => Promise<string | void>;
   onChatWithNote: () => void;
-  onGenerateFlashcards: (editorState?: { title?: string; body?: string }) => Promise<void>;
-  onGenerateQuiz: (editorState?: { title?: string; body?: string }) => Promise<void>;
+  onGenerateFlashcards: (
+    editorState?: { title?: string; body?: string },
+    hooks?: AiJobHooks
+  ) => Promise<void>;
+  onGenerateQuiz: (
+    editorState?: { title?: string; body?: string },
+    hooks?: AiJobHooks
+  ) => Promise<void>;
   studyGoal?: StudyGoalMode;
   dailyQuiz?: DailyQuizSession | null;
   dailyQuizProgress?: number;
@@ -275,11 +281,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         title: title || note.title || 'Untitled note',
         stages: ['Reading your note', 'Writing flashcards', 'Saving your deck'],
         creditCost: AI_CREDIT_COSTS.generate_flashcards,
+        // A fallback only — the save replaces this with the new deck's route.
         target: { path: '/flashcards', label: 'Open flashcards' },
       },
-      async (report) => {
+      async (report, hooks) => {
         report(1);
-        const result = await onGenerateFlashcards({ title, body });
+        // The hooks carry the job id the save is keyed on and the server job id
+        // a reload reattaches to. Without them the deck is filed under a fresh
+        // key each time and the run is unrecoverable after a refresh.
+        const result = await onGenerateFlashcards({ title, body }, hooks);
         report(2);
         return result;
       }
@@ -293,13 +303,15 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         userId: aiJobUserId,
         kind: 'quiz',
         title: title || note.title || 'Untitled note',
-        stages: ['Reading your note', 'Writing questions', 'Preparing your quiz'],
+        stages: ['Reading your note', 'Writing questions', 'Saving your test'],
         creditCost: AI_CREDIT_COSTS.generate_questions,
+        // A guess, and only a fallback: the save records the test's own route
+        // the moment it lands, and that is what Open uses.
         target: { path: `/notes/${note.id}`, label: 'Open note' },
       },
-      async (report) => {
+      async (report, hooks) => {
         report(1);
-        const result = await onGenerateQuiz({ title, body });
+        const result = await onGenerateQuiz({ title, body }, hooks);
         report(2);
         return result;
       }

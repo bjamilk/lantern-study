@@ -133,11 +133,17 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
           creditCost,
           target: { path: `/notes/${note.id}`, label: 'Open note' },
         },
-        (report) =>
-          runGenerators(note, (stage) => {
-            const index = stageNames.indexOf(stage);
-            if (index >= 0) report(index);
-          })
+        (report, hooks) =>
+          runGenerators(
+            note,
+            (stage) => {
+              const index = stageNames.indexOf(stage);
+              if (index >= 0) report(index);
+            },
+            // The job id is the deck save's idempotency key, so a retried save
+            // replays the first write instead of making a second deck.
+            hooks
+          )
       );
 
       if (!backgroundedRef.current) {

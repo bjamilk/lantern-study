@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -55,7 +55,7 @@ import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
-import { useChrome } from '../../components/layout/ChromeContext';
+import { useChrome, useScrollToTopRequest } from '../../components/layout/ChromeContext';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import * as ImagePicker from 'expo-image-picker';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -254,6 +254,10 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const { onScroll: chromeOnScroll } = useChrome();
+  // The contextual row's re-tap (spec v3 §7.2): pressing Library while on
+  // Library sends this list back to the top rather than re-navigating.
+  const listRef = useRef<FlatList>(null);
+  useScrollToTopRequest(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
   const {
     folders,
     notes,
@@ -1481,6 +1485,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
           data={filteredNotes}

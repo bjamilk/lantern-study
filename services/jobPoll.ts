@@ -25,14 +25,32 @@ const jobs = createJobClient({
 
 export { JobStillRunningError, isJobStillRunningError } from '@lantern/shared/jobs/jobClient';
 
+/** What a server progress report tells the caller. Stage and percent, verbatim. */
+export interface ApiJobProgress {
+  stage?: string;
+  /** The server's monotonic 0..100. */
+  percent?: number;
+}
+
 export async function pollApiJob<T>(
   jobId: string,
-  options?: { timeoutMs?: number; intervalMs?: number }
+  options?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    /**
+     * Called on every poll with what the SERVER said. This is the only source
+     * the progress bar has: without it the panel can do nothing but guess from
+     * a clock, which is what made a stalled request look like it was moving.
+     */
+    onProgress?: (progress: ApiJobProgress) => void;
+  }
 ): Promise<T> {
   const deadline = Date.now() + (options?.timeoutMs ?? JOB_STALE_TIMEOUT_MS);
 
   for (;;) {
-    const outcome = await jobs.watchJob<T>(jobId);
+    const outcome = await jobs.watchJob<T>(jobId, (update) =>
+      options?.onProgress?.({ stage: update.stage, percent: update.percent })
+    );
     if (outcome.status === 'done') {
       if (outcome.result === undefined) throw new Error('AI job completed without a result.');
       return outcome.result;

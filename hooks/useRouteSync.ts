@@ -18,7 +18,19 @@ import { hydrateAppRoute } from './useRouteHydration';
 export function useRouteSync() {
   const location = useLocation();
   const navigate = useNavigate();
-  const currentUser = useAuthStore((s) => s.currentUser);
+  /**
+   * Route hydration keys on the OWNER, not on the user object.
+   *
+   * `currentUser` is replaced wholesale by every gamification sync, settings
+   * write, avatar change and admin-flag refresh. The hydration effect below
+   * depends on it, so each of those re-ran the effect and re-hydrated the
+   * current route — and `/notes` hydrates by firing `loadFolders()` and
+   * `loadNotes()`. Opening Notes therefore made roughly ten identical
+   * GET /notes + GET /notes/folders pairs while the same student sat still.
+   * The id changes exactly when the person does, which is what this effect
+   * actually cares about.
+   */
+  const currentUserId = useAuthStore((s) => s.currentUser?.id ?? null);
   const [routeHydrating, setRouteHydrating] = useState(false);
   const hydratingRef = useRef(false);
   const postLoginHandled = useRef(false);
@@ -29,18 +41,18 @@ export function useRouteSync() {
   }, [navigate]);
 
   useEffect(() => {
-    if (!currentUser || postLoginHandled.current) return;
+    if (!currentUserId || postLoginHandled.current) return;
     const redirect = consumePostLoginRedirect();
     if (redirect && redirect !== location.pathname) {
       postLoginHandled.current = true;
       navigate(redirect, { replace: true });
     }
-  }, [currentUser, location.pathname, navigate]);
+  }, [currentUserId, location.pathname, navigate]);
 
   useEffect(() => {
     const parsed = parseAppRoute(location.pathname);
 
-    if (location.pathname === '/' && currentUser) {
+    if (location.pathname === '/' && currentUserId) {
       navigate('/dashboard', { replace: true });
       return;
     }
@@ -54,27 +66,27 @@ export function useRouteSync() {
     // and it must not disturb the mode the student came from, so Back returns
     // them to the screen they left.
     if (parsed.standalone) {
-      if (!currentUser) {
+      if (!currentUserId) {
         storePostLoginRedirect(location.pathname + location.search);
       }
       return;
     }
 
     if (isAuthAppPath(location.pathname)) {
-      if (currentUser) {
+      if (currentUserId) {
         navigate('/dashboard', { replace: true });
       }
       return;
     }
 
     if (parsed.redirect) {
-      if (currentUser) {
+      if (currentUserId) {
         navigate(parsed.redirect, { replace: true });
       }
       return;
     }
 
-    if (!currentUser) {
+    if (!currentUserId) {
       if (!isPublicAppPath(location.pathname) && parsed.mode) {
         storePostLoginRedirect(location.pathname + location.search);
       }
@@ -123,7 +135,7 @@ export function useRouteSync() {
     return () => {
       cancelled = true;
     };
-  }, [location.pathname, currentUser, navigate]);
+  }, [location.pathname, currentUserId, navigate]);
 
   return { routeHydrating: routeHydrating || hydratingRef.current };
 }

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,7 +27,7 @@ import { JobProgressSheet } from '../../components/jobs';
 import { COURSE_TOPIC_COPY, FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
-import { useChrome } from '../../components/layout/ChromeContext';
+import { useChrome, useScrollToTopRequest } from '../../components/layout/ChromeContext';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
@@ -180,6 +180,10 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
   const { colors } = useTheme();
   const tabBarClearance = useTabBarClearance(embedded ? 16 : 8);
   const { onScroll: chromeOnScroll } = useChrome();
+  // The contextual row's re-tap (spec v3 §7.2): pressing Flashcards while on
+  // Flashcards sends this list back to the top rather than re-navigating.
+  const listRef = useRef<FlatList>(null);
+  useScrollToTopRequest(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
   const user = useAuthStore(s => s.user);
   const {
     decks,
@@ -595,6 +599,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         </View>
       ) : (
         <FlatList
+          ref={listRef}
           onScroll={chromeOnScroll}
           scrollEventThrottle={16}
           data={visibleDecks}

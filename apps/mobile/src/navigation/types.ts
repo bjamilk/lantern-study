@@ -362,7 +362,12 @@ export type MainTabParamList = {
  * bar away. Scrolling does not; a keyboard opening does not; focusing a search
  * box does not; a screen borrowing the top row does not.
  */
-const IMMERSIVE_SCREENS = new Set([
+/**
+ * The immersive list itself, as an array, so a pure module can read it —
+ * navigation/contextualBars.ts subtracts these routes from its registry, and
+ * its tests assert that no session route ever carries a contextual row.
+ */
+export const IMMERSIVE_ROUTE_NAMES = [
   "FlashcardReview",
   "CramSession",
   "MatchStudy",
@@ -379,9 +384,30 @@ const IMMERSIVE_SCREENS = new Set([
   // A community room — the lounge chat or a board — on the Market stack.
   "CommunityChannel",
   "CommunityPost",
-]);
+] as const;
+
+const IMMERSIVE_SCREENS = new Set<string>(IMMERSIVE_ROUTE_NAMES);
 
 export function shouldHideTabBar(routeName: string | undefined): boolean {
   if (!routeName) return false;
   return IMMERSIVE_SCREENS.has(routeName);
 }
+
+/**
+ * Every route name that can be the focused route inside a tab's stack.
+ *
+ * The union, not one stack's keys: chrome that keys off "where am I" —
+ * navigation/contextualBars.ts is the first — has to name routes from any of
+ * them, and a typo in a route name is otherwise invisible until a navigate is
+ * silently dropped in a release build.
+ */
+export type RouteName =
+  | keyof HomeStackParamList
+  | keyof StudyStackParamList
+  | keyof ChatStackParamList
+  | keyof CampusStackParamList
+  | keyof MeStackParamList
+  | keyof MainTabParamList;
+
+/** The Study stack's own routes — the only stack with a contextual row today. */
+export type StudyRouteName = keyof StudyStackParamList;

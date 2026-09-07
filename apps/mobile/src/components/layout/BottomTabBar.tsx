@@ -4,6 +4,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge } from '../ui';
 import { useTheme } from '../../theme';
 import { TAB_BAR_CONTENT_HEIGHT, tabBarClearance } from './screenInsets';
+import { useChrome } from './ChromeContext';
+import { CONTEXTUAL_BAR_CONTENT_HEIGHT, contextualBarClearance } from './contextualBarLayout';
 import { BOTTOM_TABS, TAB_LABELS, type BottomTabKey, type TabKey } from './tabRouting';
 // Which glyph each destination draws, and why the current one is FILLED
 // rather than merely tinted: see tabIcons.ts, which is pure and unit-tested.
@@ -24,6 +26,18 @@ interface Props {
   onTabPress: (tab: BottomTabKey) => void;
   dueCardsCount?: number;
   unreadChatCount?: number;
+  /**
+   * The contextual row (spec v3 §7.2), drawn directly above the five tabs and
+   * INSIDE this bar's own absolutely-positioned container.
+   *
+   * A slot rather than an import so the composition stays with the one caller
+   * that mounts the bar (RootNavigator's CustomTabBar, which also owns the
+   * navigation the row needs), and so this component keeps knowing nothing
+   * about the registry. One container, not two, because two would need their
+   * heights added up by hand in three places and would drift the first time
+   * one of them changed.
+   */
+  above?: React.ReactNode;
 }
 
 function TabButton({
@@ -100,7 +114,19 @@ export const BOTTOM_TAB_BAR_CONTENT_HEIGHT = TAB_BAR_CONTENT_HEIGHT;
  */
 export function useTabBarClearance(extra = 16): number {
   const insets = useSafeAreaInsets();
-  return tabBarClearance(insets.bottom, extra);
+  const { contextual } = useChrome();
+  // The contextual row is 44 dp of chrome that did not exist when this hook
+  // was written, and a list that clears only the tab bar hides its last row
+  // behind it. Additive and unconditional: 0 when the focused route has no
+  // row, which is every route outside the registry. (The offline-box saga is
+  // the standing reminder that a clipped last row is a row the student cannot
+  // reach — and that `overflow-hidden` on a flex column zeroes min-height, so
+  // the fix is padding here plus `shrink-0` there, never a fixed height.)
+  return contextualBarClearance({
+    base: tabBarClearance(insets.bottom, extra),
+    contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
+    present: contextual !== null,
+  });
 }
 
 /**
@@ -122,6 +148,7 @@ export function BottomTabBar({
   onTabPress,
   dueCardsCount = 0,
   unreadChatCount = 0,
+  above,
 }: Props) {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
@@ -141,7 +168,7 @@ export function BottomTabBar({
 
   return (
     <View
-      className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border pt-2 flex-row"
+      className="absolute bottom-0 left-0 right-0 bg-lantern-surface border-t border-lantern-border"
       style={{
         paddingBottom: bottomPad,
         paddingHorizontal: 0,
@@ -154,16 +181,22 @@ export function BottomTabBar({
         elevation: 12,
       }}
     >
-      {tabs.map(tab => (
-        <TabButton
-          key={tab.key}
-          tab={tab}
-          active={activeTab === tab.key}
-          onPress={() => onTabPress(tab.key)}
-          activeColor={colors.tabBarActive}
-          inactiveColor={colors.tabBarInactive}
-        />
-      ))}
+      {/* Above the five, inside the same container: the row grows this bar
+          rather than floating over the screen, so there is one height to
+          clear and the five destinations never move. */}
+      {above}
+      <View className="flex-row pt-2">
+        {tabs.map(tab => (
+          <TabButton
+            key={tab.key}
+            tab={tab}
+            active={activeTab === tab.key}
+            onPress={() => onTabPress(tab.key)}
+            activeColor={colors.tabBarActive}
+            inactiveColor={colors.tabBarInactive}
+          />
+        ))}
+      </View>
     </View>
   );
 }

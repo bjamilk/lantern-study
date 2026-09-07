@@ -23,10 +23,12 @@ import { useVisibleAiJobs, type AiJobView } from '../../hooks/useAiJobs';
 import { useAiJobStore } from '../../stores/aiJobStore';
 import {
   canRetryAiJob,
+  isSaveRetry,
   navigateToAiJobTarget,
   retryAiJob,
   startAiJobNotificationRouting,
 } from '../../stores/aiJobRunner';
+import { resumeAiJobs } from '../../stores/aiJobResume';
 
 /**
  * The Wave-T feature accent for AI. These live only as CSS custom properties
@@ -46,6 +48,9 @@ const AiJobRow: React.FC<{ view: AiJobView }> = ({ view }) => {
   const succeeded = job.status === 'succeeded';
   const orphaned = job.status === 'orphaned';
   const retryable = !running && canRetryAiJob(job.id);
+  // A held save costs nothing to finish — the generation is already paid for —
+  // so the button must not warn about credits it is not going to spend.
+  const savingRetry = retryable && isSaveRetry(job.id);
 
   return (
     <li className="p-3 border-b border-lantern-border last:border-b-0">
@@ -142,8 +147,14 @@ const AiJobRow: React.FC<{ view: AiJobView }> = ({ view }) => {
               className="mt-2 px-2.5 py-1 rounded-lg text-caption font-medium border border-lantern-border text-lantern-text"
             >
               <ArrowPathIcon className="w-3.5 h-3.5 inline-block mr-1 align-[-2px]" />
-              Try again (costs {job.creditCost}{' '}
-              {job.creditCost === 1 ? 'credit' : 'credits'})
+              {savingRetry ? (
+                'Save to your library (no extra credits)'
+              ) : (
+                <>
+                  Try again (costs {job.creditCost}{' '}
+                  {job.creditCost === 1 ? 'credit' : 'credits'})
+                </>
+              )}
             </button>
           )}
         </div>
@@ -172,6 +183,11 @@ export const AiJobProgressPanel: React.FC = () => {
   // App mounts this once, so this is the app's single subscription to
   // service-worker notification clicks for AI jobs.
   useEffect(() => startAiJobNotificationRouting(), []);
+
+  // …and the one place that reattaches to work the last page left running.
+  useEffect(() => {
+    resumeAiJobs();
+  }, []);
 
   if (views.length === 0) return null;
 

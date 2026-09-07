@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Test Screen
 // ===========================================
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,7 +13,7 @@ import {
   Modal,
   Alert,
 } from 'react-native';
-import { Screen, useScreenBottomPadding, useScreenInsets } from '../../components/layout';
+import { Screen, useScreenBottomPadding, useScreenInsets, useScrollToTopRequest } from '../../components/layout';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
 import { matchesCourseFilter, matchesTopicFilter, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
@@ -98,6 +98,11 @@ export default function TestScreen() {
   // bar, which is 102px at minimum and ~118px with Android 3-button nav — so
   // the last test card was 2-18px short of clearing it.
   const listPadding = useScreenBottomPadding();
+  // The contextual row's re-tap (spec v3 §7.2): pressing Tests while on Tests
+  // sends whichever list is showing back to the top. One ref serves both
+  // FlatLists because only one is mounted at a time (they are keyed).
+  const listRef = useRef<FlatList>(null);
+  useScrollToTopRequest(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
   const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
 
   const visibleAttempts = useMemo(() => {
@@ -635,6 +640,7 @@ export default function TestScreen() {
       {activeTab === 'tests' ? (
         <FlatList
           key="tests-list"
+          ref={listRef}
           data={tests}
           keyExtractor={(item) => item.id}
           renderItem={renderTestItem}
@@ -653,6 +659,7 @@ export default function TestScreen() {
       ) : (
         <FlatList
           key="history-list"
+          ref={listRef}
           data={visibleAttempts}
           keyExtractor={(item) => item.id}
           renderItem={renderAttemptItem}

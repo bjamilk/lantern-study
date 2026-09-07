@@ -4,6 +4,18 @@ import { mergeNoteComments } from '@lantern/shared';
 import * as notesApi from '../services/notes';
 
 let loadNoteSeq = 0;
+
+/**
+ * In-flight list requests, shared between callers.
+ *
+ * Opening Notes fires several asks for the same two lists at once (route
+ * hydration, the screen, `navigateToNotes`), and each used to be its own GET.
+ * Holding the promise means they all await one request; it is released as soon
+ * as that request settles, so a later, genuinely new ask still refetches.
+ */
+let foldersInFlight: Promise<void> | null = null;
+let notesInFlight: Promise<void> | null = null;
+let notesInFlightKey: string | null = null;
 const saveChains = new Map<string, Promise<unknown>>();
 const saveGenerations = new Map<string, number>();
 
@@ -103,16 +115,40 @@ export const useNotesStore = create<NotesState>((set, get) => ({
   setSaving: (isSaving) => set({ isSaving }),
   setError: (error) => set({ error }),
 
+  /**
+   * The folder list, fetched once per burst.
+   *
+   * Several things ask for it at the same moment on a Notes open — route
+   * hydration, the screen itself, a navigation helper — and each was a
+   * separate GET. The in-flight promise is shared instead: callers all await
+   * the same request, and a genuinely later call still refetches.
+   */
   loadFolders: async () => {
-    try {
-      const folders = await notesApi.fetchNoteFolders();
-      set({ folders });
-    } catch (e: any) {
-      set({ error: e.message });
-    }
+    if (foldersInFlight) return foldersInFlight;
+    foldersInFlight = (async () => {
+      try {
+        const folders = await notesApi.fetchNoteFolders();
+        set({ folders });
+      } catch (e: any) {
+        set({ error: e.message });
+      } finally {
+        foldersInFlight = null;
+      }
+    })();
+    return foldersInFlight;
   },
 
   loadNotes: async (options) => {
+    // Same dedupe, keyed on the filter: two callers asking for the same list at
+    // the same moment share one request, while a different course/topic (or an
+    // explicit override) is a different question and gets its own.
+    const key = JSON.stringify([
+      options && 'courseId' in options ? options.courseId : get().courseFilterId,
+      options && 'topicId' in options ? options.topicId : get().topicFilterId,
+      options?.folderId ?? null,
+    ]);
+    if (notesInFlight && notesInFlightKey === key) return notesInFlight;
+
     set({ isLoading: true, error: null });
     // The course chip is sticky: callers that just say loadNotes() keep the
     // filter the user picked; an explicit courseId (or null) overrides it.
@@ -120,19 +156,29 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const topicId = options && 'topicId' in options ? options.topicId : get().topicFilterId;
     const requestedCourse = get().courseFilterId;
     const requestedTopic = get().topicFilterId;
-    try {
-      const notes = await notesApi.fetchNotes({
-        ...options,
-        courseId: courseId || undefined,
-        topicId: topicId || undefined,
-      });
-      // A chip change mid-flight wins; drop the stale response. Both halves are
-      // compared — the course often stays put while only the topic moves.
-      if (get().courseFilterId !== requestedCourse || get().topicFilterId !== requestedTopic) return;
-      set({ notes, isLoading: false });
-    } catch (e: any) {
-      set({ error: e.message, isLoading: false });
-    }
+
+    notesInFlightKey = key;
+    notesInFlight = (async () => {
+      try {
+        const notes = await notesApi.fetchNotes({
+          ...options,
+          courseId: courseId || undefined,
+          topicId: topicId || undefined,
+        });
+        // A chip change mid-flight wins; drop the stale response. Both halves
+        // are compared — the course often stays put while only the topic moves.
+        if (get().courseFilterId !== requestedCourse || get().topicFilterId !== requestedTopic) {
+          return;
+        }
+        set({ notes, isLoading: false });
+      } catch (e: any) {
+        set({ error: e.message, isLoading: false });
+      } finally {
+        notesInFlight = null;
+        notesInFlightKey = null;
+      }
+    })();
+    return notesInFlight;
   },
 
   loadNote: async (noteId) => {

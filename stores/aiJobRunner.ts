@@ -18,11 +18,13 @@
 import {
   useAiJobStore,
   SUCCESS_VISIBLE_MS,
+  planRetry,
   type AiJobKind,
   type AiJobTarget,
   type StartAiJobInput,
 } from './aiJobStore';
 import { isJobStillRunningError } from '@lantern/shared/jobs/jobClient';
+import { retrySaveJob } from '../services/jobArtifacts';
 import { appNavigate } from '../utils/appNavigation';
 import {
   getWebNotificationPermission,
@@ -33,6 +35,20 @@ import {
 
 /** Reports that the job has moved on to stage `index`. */
 export type StageReporter = (index: number) => void;
+
+/**
+ * What a generator is handed so its work can outlive this tab.
+ *
+ * `clientJobId` is the idempotency key every save is made under — the same id
+ * the store keys the job on — so a retried save replays the first write rather
+ * than creating a second deck. `onServerJob` records the id from the 202,
+ * which is the only thing that lets a reload ask how the run ended.
+ */
+export interface AiJobHooks {
+  clientJobId: string;
+  onServerJob: (serverJobId: string) => void;
+  onServerProgress: (snapshot: { stage?: string; percent?: number }) => void;
+}
 
 export interface RunAiJobInput extends Omit<StartAiJobInput, 'userId'> {
   userId: string;
@@ -76,6 +92,15 @@ function stopTicker(): void {
   if (tickHandle === null) return;
   clearInterval(tickHandle);
   tickHandle = null;
+}
+
+/**
+ * Start the clock for a job this process did not launch — a run resumed after
+ * a reload. Without it the panel's elapsed time sits frozen at the moment the
+ * page loaded while the job really is still going.
+ */
+export function ensureAiJobTicker(): void {
+  ensureTicker();
 }
 
 /** Test/teardown helper. */
@@ -163,6 +188,9 @@ function notifyDone(jobId: string): void {
 const retryRegistry = new Map<string, () => Promise<unknown>>();
 
 export function canRetryAiJob(id: string): boolean {
+  // A held save is retryable even after a reload: the material is on the
+  // record, not in a closure this page no longer has.
+  if (planRetry(useAiJobStore.getState().jobs.find((j) => j.id === id)) === 'save') return true;
   return retryRegistry.has(id);
 }
 
@@ -172,6 +200,12 @@ export function canRetryAiJob(id: string): boolean {
  * job's promise, or null when the closure is gone (post-reload).
  */
 export function retryAiJob(id: string): Promise<unknown> | null {
+  // Retry the SAVE, not the generation, whenever the material still exists.
+  // The AI call has already happened and has already been charged; only the
+  // write to the library failed, and repeating that costs nothing.
+  if (planRetry(useAiJobStore.getState().jobs.find((j) => j.id === id)) === 'save') {
+    return retrySaveJob(id).catch(() => undefined);
+  }
   const again = retryRegistry.get(id);
   if (!again) return null;
   retryRegistry.delete(id);
@@ -179,9 +213,14 @@ export function retryAiJob(id: string): Promise<unknown> | null {
   return again().catch(() => undefined);
 }
 
+/** True when Try again would finish a save rather than buy a new generation. */
+export function isSaveRetry(id: string): boolean {
+  return planRetry(useAiJobStore.getState().jobs.find((j) => j.id === id)) === 'save';
+}
+
 export async function runAiJob<T>(
   input: RunAiJobInput,
-  executor: (report: StageReporter) => Promise<T>,
+  executor: (report: StageReporter, hooks: AiJobHooks) => Promise<T>,
   extras: RunAiJobExtras<T> = {}
 ): Promise<T> {
   const store = useAiJobStore.getState();
@@ -194,8 +233,18 @@ export async function runAiJob<T>(
     useAiJobStore.getState().advanceStage(id, index);
   };
 
+  const hooks: AiJobHooks = {
+    clientJobId: id,
+    onServerJob: (serverJobId) => {
+      useAiJobStore.getState().attachServerJob(id, serverJobId);
+    },
+    onServerProgress: (snapshot) => {
+      useAiJobStore.getState().reportServerProgress(id, snapshot);
+    },
+  };
+
   try {
-    const result = await executor(report);
+    const result = await executor(report, hooks);
     const target = extras.resolveTarget?.(result) ?? input.target;
     useAiJobStore.getState().succeedJob(id, target);
     notifyDone(id);

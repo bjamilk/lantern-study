@@ -47,6 +47,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { planTabPress, planTabRootReset, TAB_STACK_ROOT_ROUTE } from './tabPressBehavior';
 
 import { BottomTabBar } from '../components/layout/BottomTabBar';
+import { ContextualBar } from '../components/layout/ContextualBar';
 import {
   TAB_ROUTE_BY_KEY,
   resolveActiveTab,
@@ -734,9 +735,28 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   // The top bar lives outside the tab navigator; this is the one place that
   // knows the focused route, so publish it into the chrome context.
+  /**
+   * The focused route name, with the one gap `getFocusedRouteNameFromRoute`
+   * leaves filled in.
+   *
+   * That helper returns `undefined` while a lazy tab's child navigator has no
+   * state yet — which is exactly the first frame after you tap Study. `undefined`
+   * means "no row" to the registry, so the strip would pop in a frame late on
+   * every cold entry to the tab. A stack with no state is showing its declared
+   * `initialRouteName` (TAB_STACK_ROOT_ROUTE feeds both), so that is the honest
+   * answer for that frame rather than a guess.
+   */
+  const focusedRoute =
+    focused ?? TAB_STACK_ROOT_ROUTE[currentRoute as keyof typeof TAB_STACK_ROOT_ROUTE];
+
   useEffect(() => {
-    setTabState({ activeTab, immersive: hideBar });
-  }, [activeTab, hideBar, setTabState]);
+    // `focused` joins the publication: the contextual row (spec v3 §7.2) is a
+    // property of the FOCUSED ROUTE, exactly as `immersive` is, and this is
+    // still the one component in the app that knows what that route is. It
+    // is a plain route name — the registry, not this component, decides
+    // whether it carries a row.
+    setTabState({ activeTab, immersive: hideBar, focusedRoute });
+  }, [activeTab, hideBar, focusedRoute, setTabState]);
 
   const dueCardsCount = useMemo(
 
@@ -802,6 +822,33 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
    *
    * The decisions are in navigation/tabPressBehavior.ts, where they are tested.
    */
+  /**
+   * Navigate to a route INSIDE the currently focused tab's stack.
+   *
+   * Deliberately not `navigation.navigate('StudyTab', { screen })`: that is the
+   * nested form `nestedNavigateLint` polices, and it rebuilds the child stack
+   * from params (dropping the tab's own root) unless `initial: false` rides
+   * along. Dispatching a plain `navigate` AT the child navigator — the same
+   * `target` trick the re-tap repair above uses — pushes onto the stack that is
+   * already there, root intact, so hardware Back keeps popping to StudyHub and
+   * round-4 invariants 1 and 3 are untouched.
+   *
+   * Before the child navigator has rehydrated there is no key to aim at; the
+   * row is only ever visible on a route that stack is already showing, so that
+   * case cannot arise in practice and is a no-op if it ever does.
+   */
+  const navigateWithinFocusedStack = useCallback(
+    (route: string, params?: Record<string, unknown>) => {
+      const target = state.routes[state.index]?.state?.key as string | undefined;
+      if (!target) return;
+      navigation.dispatch({
+        ...CommonActions.navigate({ name: route, params }),
+        target,
+      });
+    },
+    [navigation, state]
+  );
+
   const navigateTab = (tab: BottomTabKey) => {
 
     const routeName = TAB_ROUTE_BY_KEY[tab];
@@ -867,6 +914,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
           dueCardsCount={dueCardsCount}
 
           unreadChatCount={unreadChatCount}
+
+          above={<ContextualBar onNavigate={navigateWithinFocusedStack} />}
 
         />
 

@@ -9,13 +9,13 @@ import {
 } from '@lantern/shared';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
-import { createDeck, createFlashcard, fetchAllFlashcards } from '../services/supabase';
+import { saveGeneratedDeck } from '../services/jobArtifacts';
+import type { AiJobHooks } from '../stores/aiJobRunner';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useNotesStore } from '../stores/notesStore';
 import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
-import { FlashcardType } from '../types';
 import type { DailyQuizSession, Deck, NoteAttachment, StudyNote } from '../types';
 
 export interface ImportAndStudyResult {
@@ -96,7 +96,9 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
   const runStudyGenerators = useCallback(
     async (
       incoming: NoteWithAttachments,
-      onStage: StudyGeneratorStageReporter = () => {}
+      onStage: StudyGeneratorStageReporter = () => {},
+      /** From the AI job runner: the id the deck save is keyed on. */
+      hooks?: AiJobHooks
     ): Promise<ImportAndStudyResult> => {
       onStage('extract');
       const note = await refreshNoteAfterOcr(incoming);
@@ -189,58 +191,30 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
             );
           } else {
             const deckName = `From: ${note.title || 'Untitled Note'}`.slice(0, 80);
-            let deck: Deck | null = null;
             try {
-              deck = await createDeck(
-                {
-                  name: deckName,
-                  description: `Generated from note: ${note.title || 'Untitled Note'}`,
-                },
-                userId
-              );
-            } catch {
+              // One atomic request, keyed on the job. The old loop — create the
+              // deck, then push cards one at a time — is what produced decks
+              // reporting ten cards over six, and empty "From: …" shells when
+              // the deck landed and every card did not.
+              const saved = await saveGeneratedDeck({
+                jobId: hooks?.clientJobId || `import-${note.id}-${Date.now()}`,
+                userId,
+                deckName,
+                description: `Generated from note: ${note.title || 'Untitled Note'}`,
+                cards: generated.map((card) => ({ front: card.front, back: card.back })),
+              });
+              savedFlashcardCount = saved.saved;
+              savedDeck =
+                useFlashcardStore.getState().decks.find((d) => d.id === saved.ref.id) ??
+                ({ id: saved.ref.id, name: saved.ref.name || deckName } as Deck);
+            } catch (error) {
+              // Nothing was written: the request is all-or-nothing, so there is
+              // no half-saved deck to warn about and no shell to clean up.
               warnings.push(
-                `Generated ${generated.length} flashcards but could not create a deck to save them. You can retry from the note.`
+                error instanceof Error && error.message
+                  ? error.message
+                  : `Generated ${generated.length} flashcards but could not save them. You can retry from the note.`
               );
-            }
-
-            if (deck) {
-              let saved = 0;
-              for (const card of generated) {
-                try {
-                  await createFlashcard({
-                    deckId: deck.id,
-                    type: FlashcardType.BASIC,
-                    front: card.front,
-                    back: card.back,
-                    userId,
-                  });
-                  saved += 1;
-                } catch {
-                  // Counted below via "Saved N of M".
-                }
-              }
-
-              if (saved > 0) {
-                savedFlashcardCount = saved;
-                savedDeck = deck;
-                const flashcardStore = useFlashcardStore.getState();
-                flashcardStore.updateDecks((prev) => [...prev, deck as Deck]);
-                try {
-                  flashcardStore.setFlashcards(await fetchAllFlashcards(undefined, userId));
-                } catch {
-                  // Deck is registered; cards will appear on the next flashcard refresh.
-                }
-                if (saved < generated.length) {
-                  warnings.push(
-                    `Saved ${saved} of ${generated.length} flashcards to "${deck.name || deckName}".`
-                  );
-                }
-              } else {
-                warnings.push(
-                  `Generated ${generated.length} flashcards but none could be saved. You can retry from the note.`
-                );
-              }
             }
           }
         }

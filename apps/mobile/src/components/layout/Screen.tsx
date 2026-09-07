@@ -5,6 +5,10 @@ import { initialWindowMetrics, useSafeAreaInsets } from 'react-native-safe-area-
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../chat/composerKeyboardBehavior';
 import { useChrome } from './ChromeContext';
 import {
+  CONTEXTUAL_BAR_CONTENT_HEIGHT,
+  contextualBarClearance,
+} from './contextualBarLayout';
+import {
   resolveBottomClearance,
   resolveEdgePadding,
   fallbackInsets,
@@ -121,12 +125,21 @@ export function useScreenBottomPadding({
 }: ScreenBottomOptions = {}): number {
   const insets = useScreenInsets();
   const tabBarPresent = useTabBarPresent();
-  return resolveBottomClearance({
+  const { contextual } = useChrome();
+  const base = resolveBottomClearance({
     mode: bottom,
     bottomInset: insets.bottom,
     tabBarPresent,
     extra: bottomExtra,
     cookieNoticeInset,
+  });
+  // The contextual row (spec v3 §7.2) is 44 dp of chrome above the tab bar.
+  // It only exists where the tab bar does, so it is added on exactly the modes
+  // that already pay for the bar — a `safe` or `none` screen has neither.
+  return contextualBarClearance({
+    base,
+    contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
+    present: contextual !== null && (bottom === 'tabBar' || (bottom === 'auto' && tabBarPresent)),
   });
 }
 

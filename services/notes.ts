@@ -117,6 +117,18 @@ async function notesUploadRequest<T>(
   });
 }
 
+/**
+ * What a caller needs to keep a queued generation after this page is gone.
+ *
+ * `onServerJob` receives the id from the 202 — the only handle a reload has on
+ * a run that is still going — and `onServerProgress` carries the server's own
+ * stage and percent, which is the only honest source for a progress bar.
+ */
+export interface NoteJobHooks {
+  onServerJob?: (jobId: string) => void;
+  onServerProgress?: (progress: { stage?: string; percent?: number }) => void;
+}
+
 async function notesLongRequest<T>(
   path: string,
   options?: {
@@ -126,7 +138,7 @@ async function notesLongRequest<T>(
     processingLabel?: string;
     timeoutMs?: number;
     signal?: AbortSignal;
-  }
+  } & NoteJobHooks
 ): Promise<T> {
   const headers = await getAuthHeaders();
   const method = options?.method ?? 'POST';
@@ -177,7 +189,10 @@ async function notesLongRequest<T>(
         applyAIUsageFromXhr(xhr);
       }
       if (xhr.status === 202 && typeof data.jobId === 'string') {
-        void pollApiJob<T>(data.jobId)
+        // Handed over BEFORE the watch starts: a reload one second later still
+        // knows which server job to reattach to.
+        options?.onServerJob?.(data.jobId);
+        void pollApiJob<T>(data.jobId, { onProgress: options?.onServerProgress })
           .then(resolve)
           .catch(reject);
         return;
@@ -265,13 +280,15 @@ async function notesRequest<T>(
 
 async function notesAiRequest<T>(
   path: string,
-  body: Record<string, unknown> = {}
+  body: Record<string, unknown> = {},
+  hooks?: NoteJobHooks
 ): Promise<T> {
   return notesLongRequest<T>(path, {
     method: 'POST',
     body,
     processingLabel: 'Generating with AI…',
     timeoutMs: 120_000,
+    ...hooks,
   });
 }
 
@@ -532,9 +549,10 @@ export async function summarizeNote(
 
 export async function generateFlashcardsFromNote(
   noteId: string,
-  options?: { count?: number; style?: 'concise' | 'detailed' }
+  options?: { count?: number; style?: 'concise' | 'detailed' },
+  hooks?: NoteJobHooks
 ): Promise<{ flashcards: Array<{ front: string; back: string; mnemonic?: string; example?: string }>; provider: string }> {
-  return notesAiRequest(`/${noteId}/generate-flashcards`, options || {});
+  return notesAiRequest(`/${noteId}/generate-flashcards`, options || {}, hooks);
 }
 
 export async function reextractNoteText(
@@ -712,9 +730,10 @@ export async function getNoteQuiz(noteId: string): Promise<DailyQuizSession | nu
 export async function generateNoteQuiz(
   noteId: string,
   studyGoal?: StudyGoalMode,
-  count?: number
+  count?: number,
+  hooks?: NoteJobHooks
 ): Promise<DailyQuizSession> {
-  return notesAiRequest<DailyQuizSession>(`/${noteId}/quiz`, { studyGoal, count });
+  return notesAiRequest<DailyQuizSession>(`/${noteId}/quiz`, { studyGoal, count }, hooks);
 }
 
 export async function updateNoteQuiz(

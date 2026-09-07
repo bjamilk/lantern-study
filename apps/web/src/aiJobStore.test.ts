@@ -40,8 +40,14 @@ import {
   getCurrentStageLabel,
   getVisibleJobs,
   isJobOverBudget,
+  hasUnsavedGeneration,
+  planResume,
+  planRetry,
+  planServerSettle,
   pruneJobs,
-  reconcileOrphanedJobs,
+  targetForResultRef,
+  toAiJobResultRef,
+  UNSAVED_GENERATION_ERROR,
   useAiJobStore,
   type AiJob,
 } from '../../../stores/aiJobStore';
@@ -86,13 +92,33 @@ describe('computeJobPercent', () => {
     expect(computeJobPercent(job, job.startedAt + 5_000)).toBe(100);
   });
 
-  it('advances monotonically as time passes within a stage', () => {
+  it('does NOT advance on the clock alone — an idle job holds still', () => {
+    // The bar used to creep on a timer, so a request that had not moved for a
+    // minute (or a tab with no network at all) still looked like work happening.
     const job = makeJob();
     const a = computeJobPercent(job, job.startedAt + 1_000);
-    const b = computeJobPercent(job, job.startedAt + 5_000);
-    const c = computeJobPercent(job, job.startedAt + 20_000);
-    expect(a).toBeLessThan(b);
-    expect(b).toBeLessThan(c);
+    const b = computeJobPercent(job, job.startedAt + 60_000);
+    expect(b).toBe(a);
+  });
+
+  it('reports the percent the SERVER gave it', () => {
+    const job = makeJob({ serverPercent: 45, serverStage: 'generating' });
+    expect(computeJobPercent(job, job.startedAt)).toBe(45);
+  });
+
+  it('never lets a server percent claim the work is finished', () => {
+    const job = makeJob({ serverPercent: 100 });
+    expect(computeJobPercent(job, job.startedAt)).toBe(99);
+  });
+
+  it('never rewinds below a stage the client already observed', () => {
+    // The client reports "Writing" (stage 1 of 3) before the request goes out;
+    // the server's first poll answers `queued` at 0%. The bar must hold at the
+    // stage floor rather than drop to 1% and climb back.
+    const job = makeJob({ stageIndex: 1, serverPercent: 0 });
+    expect(computeJobPercent(job, job.startedAt)).toBe(33);
+    const later = makeJob({ stageIndex: 1, serverPercent: 45 });
+    expect(computeJobPercent(later, later.startedAt)).toBe(45);
   });
 
   it('jumps forward when the job moves to a later stage', () => {
@@ -107,6 +133,34 @@ describe('computeJobPercent', () => {
   it('treats a single-stage job as one full span', () => {
     const job = makeJob({ stages: ['Working'], stageIndex: 0 });
     expect(computeJobPercent(job, job.startedAt + 60_000)).toBeLessThanOrEqual(99);
+  });
+});
+
+describe('reportServerProgress', () => {
+  it('never rewinds the bar when a late poll comes back low', () => {
+    const id = useAiJobStore.getState().startJob({
+      userId: USER,
+      kind: 'flashcards',
+      title: 'Cell biology',
+      stages: ['A', 'B'],
+      creditCost: 1,
+    });
+    useAiJobStore.getState().reportServerProgress(id, { stage: 'generating', percent: 60 });
+    useAiJobStore.getState().reportServerProgress(id, { stage: 'generating', percent: 15 });
+    expect(useAiJobStore.getState().jobs[0]!.serverPercent).toBe(60);
+  });
+
+  it('ignores progress for work that already finished', () => {
+    const id = useAiJobStore.getState().startJob({
+      userId: USER,
+      kind: 'flashcards',
+      title: 'Cell biology',
+      stages: ['A', 'B'],
+      creditCost: 1,
+    });
+    useAiJobStore.getState().failJob(id, 'nope');
+    useAiJobStore.getState().reportServerProgress(id, { stage: 'generating', percent: 60 });
+    expect(useAiJobStore.getState().jobs[0]!.serverPercent).toBeUndefined();
   });
 });
 
@@ -183,22 +237,213 @@ describe('budget and keep waiting', () => {
   });
 });
 
-describe('reconcileOrphanedJobs', () => {
-  it('marks work that survived a reload as orphaned, never failed', () => {
-    const jobs = [makeJob({ status: 'running' })];
-    const job = reconcileOrphanedJobs(jobs, 2_000_000)[0]!;
-    expect(job.status).toBe('orphaned');
-    expect(job.error).toBeUndefined();
+describe('planResume (what a reload does with what was persisted)', () => {
+  it('keeps a job with a server id running, and asks for it to be watched', () => {
+    // The whole point of persisting the server's job id: the run can still be
+    // asked how it ended, so calling it lost would be a lie.
+    const plan = planResume([makeJob({ serverJobId: 'srv-1' })], 2_000_000);
+    expect(plan.jobs[0]!.status).toBe('running');
+    expect(plan.resume).toEqual(['job-1']);
+    expect(plan.orphaned).toEqual([]);
+  });
+
+  it('orphans a job there is genuinely nothing left to ask about', () => {
+    const plan = planResume([makeJob()], 2_000_000);
+    expect(plan.jobs[0]!.status).toBe('orphaned');
+    expect(plan.jobs[0]!.error).toBeUndefined();
+    expect(plan.orphaned).toEqual(['job-1']);
   });
 
   it('says the work is still running rather than lost', () => {
-    const job = reconcileOrphanedJobs([makeJob()], 2_000_000)[0]!;
+    const job = planResume([makeJob()], 2_000_000).jobs[0]!;
     expect(getCurrentStageLabel(job)).toMatch(/still running/i);
+  });
+
+  it('reports generated-but-unsaved work as finishable, not as a loss', () => {
+    // The cards exist in this browser and are already paid for. The student is
+    // one button away from having them, so it must not read as a lost run.
+    const plan = planResume(
+      [
+        makeJob({
+          serverJobId: 'srv-1',
+          pendingSave: { kind: 'deck', deckName: 'From: SDOH', cards: [{ front: 'a', back: 'b' }] },
+        }),
+      ],
+      2_000_000
+    );
+    expect(plan.jobs[0]!.status).toBe('failed');
+    expect(plan.jobs[0]!.error).toBe(UNSAVED_GENERATION_ERROR);
+    expect(plan.unsaved).toEqual(['job-1']);
+    // …and it is NOT polled: asking the server cannot put the cards in the library.
+    expect(plan.resume).toEqual([]);
   });
 
   it('leaves already-finished jobs untouched', () => {
     const done = makeJob({ status: 'succeeded', finishedAt: 1_500_000 });
-    expect(reconcileOrphanedJobs([done], 2_000_000)[0]).toBe(done);
+    expect(planResume([done], 2_000_000).jobs[0]).toBe(done);
+  });
+});
+
+describe('planRetry (what Try again should cost)', () => {
+  it('retries the SAVE when the material is still on the record', () => {
+    const job = makeJob({
+      status: 'failed',
+      pendingSave: { kind: 'deck', deckName: 'From: SDOH', cards: [{ front: 'a', back: 'b' }] },
+    });
+    expect(hasUnsavedGeneration(job)).toBe(true);
+    expect(planRetry(job)).toBe('save');
+  });
+
+  it('retries the generation when nothing was produced', () => {
+    expect(planRetry(makeJob({ status: 'failed' }))).toBe('generate');
+  });
+
+  it('refuses to retry a job whose output is already in the library', () => {
+    const job = makeJob({
+      status: 'failed',
+      resultRef: { type: 'deck', id: 'deck-9', route: '/flashcards/deck/deck-9' },
+      pendingSave: { kind: 'deck', deckName: 'x', cards: [{ front: 'a', back: 'b' }] },
+    });
+    expect(planRetry(job)).toBe('none');
+    expect(hasUnsavedGeneration(job)).toBe(false);
+  });
+});
+
+describe('resultRef (where Open actually lands)', () => {
+  it('opens the new deck, not the deck list', () => {
+    const target = targetForResultRef({
+      type: 'deck',
+      id: 'deck-9',
+      route: '/flashcards/deck/deck-9',
+    });
+    expect(target).toEqual({ path: '/flashcards/deck/deck-9', label: 'Open deck' });
+  });
+
+  it('routes a saved test to the Tests list, where it can be started', () => {
+    expect(targetForResultRef({ type: 'test', id: 't-1', route: '/tests' })?.path).toBe('/tests');
+  });
+
+  it('offers no button at all for a reference it cannot open', () => {
+    expect(targetForResultRef(undefined)).toBeUndefined();
+    expect(targetForResultRef({ type: 'deck', id: '', route: '/flashcards' })).toBeUndefined();
+  });
+
+  it('derives the route when the server sent none', () => {
+    expect(toAiJobResultRef({ type: 'deck', id: 'd1' })?.route).toBe('/flashcards/deck/d1');
+  });
+
+  it('never follows a server route off this origin', () => {
+    const ref = toAiJobResultRef({ type: 'deck', id: 'd1', route: '//evil.example/x' });
+    expect(ref?.route).toBe('/flashcards/deck/d1');
+  });
+
+  it('ignores an artefact type this client has no screen for', () => {
+    expect(toAiJobResultRef({ type: 'studyPack', id: 'p1' })).toBeUndefined();
+  });
+});
+
+describe('planServerSettle (settling from the server after a reload)', () => {
+  it('claims the artefact the server points at', () => {
+    const patch = planServerSettle(makeJob({ serverJobId: 's1' }), {
+      stage: 'done',
+      resultRef: { type: 'deck', id: 'deck-9' },
+    });
+    expect(patch).toMatchObject({ status: 'succeeded' });
+    expect(patch!.target).toEqual({ path: '/flashcards/deck/deck-9', label: 'Open deck' });
+  });
+
+  it('never reports "done" as success when nothing reached the library', () => {
+    // The promise that would have written the deck died with the old page. An
+    // Open button here would point at a deck that does not exist.
+    const patch = planServerSettle(makeJob({ serverJobId: 's1' }), { stage: 'done' });
+    expect(patch).toEqual({ status: 'orphaned', error: undefined });
+  });
+
+  it('prefers a save this client already made over the server reference', () => {
+    const job = makeJob({
+      serverJobId: 's1',
+      resultRef: { type: 'deck', id: 'mine', route: '/flashcards/deck/mine' },
+    });
+    const patch = planServerSettle(job, { stage: 'done', resultRef: { type: 'deck', id: 'other' } });
+    expect(patch!.resultRef!.id).toBe('mine');
+  });
+
+  it('offers the held save rather than calling a finished generation lost', () => {
+    const job = makeJob({
+      serverJobId: 's1',
+      pendingSave: { kind: 'deck', deckName: 'x', cards: [{ front: 'a', back: 'b' }] },
+    });
+    expect(planServerSettle(job, { stage: 'done' })).toEqual({
+      status: 'failed',
+      error: UNSAVED_GENERATION_ERROR,
+    });
+  });
+
+  it('carries the server\'s own failure message through', () => {
+    const patch = planServerSettle(makeJob({ serverJobId: 's1' }), {
+      stage: 'failed',
+      error: 'The model refused this note.',
+    });
+    expect(patch).toEqual({ status: 'failed', error: 'The model refused this note.' });
+  });
+
+  it('settles nothing while the job is still moving', () => {
+    expect(planServerSettle(makeJob({ serverJobId: 's1' }), { stage: 'generating' })).toBeNull();
+  });
+});
+
+describe('claimSave (save-once, per job)', () => {
+  it('refuses a second artefact for the same job', () => {
+    const id = useAiJobStore.getState().startJob({
+      userId: USER,
+      kind: 'flashcards',
+      title: 'Cell biology',
+      stages: ['A'],
+      creditCost: 1,
+    });
+    const first = { type: 'deck' as const, id: 'deck-1', route: '/flashcards/deck/deck-1' };
+    expect(useAiJobStore.getState().claimSave(id, first, 10)).toBeNull();
+    const second = { type: 'deck' as const, id: 'deck-2', route: '/flashcards/deck/deck-2' };
+    expect(useAiJobStore.getState().claimSave(id, second, 10)).toEqual(first);
+    expect(useAiJobStore.getState().jobs[0]!.resultRef).toEqual(first);
+  });
+
+  it('clears the held material once the save has landed', () => {
+    const id = useAiJobStore.getState().startJob({
+      userId: USER,
+      kind: 'flashcards',
+      title: 'Cell biology',
+      stages: ['A'],
+      creditCost: 1,
+    });
+    useAiJobStore.getState().recordPendingSave(id, {
+      kind: 'deck',
+      deckName: 'From: SDOH',
+      cards: [{ front: 'a', back: 'b' }],
+    });
+    useAiJobStore
+      .getState()
+      .claimSave(id, { type: 'deck', id: 'deck-1', route: '/flashcards/deck/deck-1' }, 1);
+    expect(useAiJobStore.getState().jobs[0]!.pendingSave).toBeUndefined();
+  });
+
+  it('opens the deck it saved, not the route guessed when it started', () => {
+    const id = useAiJobStore.getState().startJob({
+      userId: USER,
+      kind: 'flashcards',
+      title: 'Cell biology',
+      stages: ['A'],
+      creditCost: 1,
+      target: { path: '/flashcards', label: 'Open flashcards' },
+    });
+    useAiJobStore
+      .getState()
+      .claimSave(id, { type: 'deck', id: 'deck-1', route: '/flashcards/deck/deck-1' }, 10);
+    useAiJobStore.getState().succeedJob(id);
+    expect(useAiJobStore.getState().jobs[0]!.target).toEqual({
+      path: '/flashcards/deck/deck-1',
+      label: 'Open deck',
+    });
   });
 });
 
