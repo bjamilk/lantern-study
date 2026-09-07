@@ -11,6 +11,7 @@ import {
   aiRateLimitWithCost,
   applyGlobalUsageHeaders,
   chargeAiCredits,
+  chargeAiCreditsDetailed,
   refundAiCredits,
   refundFeatureAiCredit,
   NOTE_OCR_CREDIT_COST,
@@ -54,7 +55,7 @@ import {
   transcribeAudioBase64,
   transcribeAudioBuffer,
 } from '../services/aiService';
-import { runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
+import { type AiJobCharge, runNoteAiSync, runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted, stampAiChargeOnJob, aiChargeFromRes } from '../queue/respondAsync';
 import { isVersionConflictError } from '../utils/versionConflict';
 import { runPresentationPreviewJob } from '../services/presentationPreview';
@@ -406,8 +407,9 @@ async function startNoteOcrJob(params: {
   userId: string;
   buffer?: Buffer;
   /** AI credits reserved by the calling request; stamped on the job record at
-      enqueue so a permanently failed OCR job refunds them (race-free). */
-  charge?: { credits: number; featureKey?: string };
+      enqueue so a permanently failed OCR job refunds them (race-free) — to the
+      pool that paid, which is why this is the full `AiJobCharge`. */
+  charge?: AiJobCharge;
 }): Promise<{ mode: 'sync' | 'async'; jobId?: string }> {
   const payload = {
     noteId: params.noteId,
@@ -2701,16 +2703,21 @@ router.post(
     }
 
     if (NOTE_OCR_CREDIT_COST > 0) {
-      const denied = await chargeAiCredits(userId, NOTE_OCR_CREDIT_COST);
-      if (denied) {
-        res.status(429).json(denied);
+      const charged = await chargeAiCreditsDetailed(userId, NOTE_OCR_CREDIT_COST);
+      if (!charged.ok) {
+        res.status(429).json(charged.denial);
         return;
       }
       await applyGlobalUsageHeaders(res, userId);
       // chargeAiCredits is not middleware, so nothing else records this
       // reservation — without it a permanently failed OCR job (the costliest
-      // charge) kept the user's credits.
-      (res.locals as Record<string, unknown>).aiCharge = { credits: NOTE_OCR_CREDIT_COST };
+      // charge) kept the user's credits. `pool` rides along so that refund
+      // goes back to the balance that paid: a bonus use refunded into the
+      // daily counter would expire at midnight.
+      (res.locals as Record<string, unknown>).aiCharge = {
+        credits: NOTE_OCR_CREDIT_COST,
+        pool: charged.pool,
+      };
     }
 
     const fileName =

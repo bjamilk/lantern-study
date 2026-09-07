@@ -143,6 +143,7 @@ export async function fetchAIUsageDetail(): Promise<AIUsageSnapshot> {
     limit?: number;
     resetsAt?: string;
     features?: Array<{ feature?: string; used?: number; limit?: number }>;
+    bonusRemaining?: number;
   };
   const used = Number(data.used) || 0;
   const limit = Number(data.limit) || 0;
@@ -163,6 +164,12 @@ export async function fetchAIUsageDetail(): Promise<AIUsageSnapshot> {
             limit: Number(row.limit) || 0,
           }))
       : undefined,
+    // Same rule as `features`: undefined when the server did not say, so the
+    // panel hides the bonus line rather than printing a zero it never measured.
+    bonusRemaining:
+      typeof data.bonusRemaining === 'number' && Number.isFinite(data.bonusRemaining)
+        ? data.bonusRemaining
+        : undefined,
   };
 }
 

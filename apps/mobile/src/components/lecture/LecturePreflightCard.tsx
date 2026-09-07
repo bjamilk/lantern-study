@@ -21,7 +21,7 @@ import { Body, Caption, Label } from '../ui/Text';
 import { useNetworkStatus } from '../../hooks';
 import { hasLectureForegroundService } from '../../../modules/lecture-recording-service';
 import {
-  getElapsedRecordingSeconds,
+  getSessionElapsedMs,
   useLectureRecordingStore,
 } from '../../stores/lectureRecordingStore';
 import {
@@ -50,6 +50,8 @@ export function LecturePreflightCard() {
   const refreshMicPermission = useLectureRecordingStore((s) => s.refreshMicPermission);
   const status = useLectureRecordingStore((s) => s.status);
   const startedAt = useLectureRecordingStore((s) => s.startedAt);
+  const pausedAt = useLectureRecordingStore((s) => s.pausedAt);
+  const pausedTotalMs = useLectureRecordingStore((s) => s.pausedTotalMs);
   // The store already ticks once a second while recording; reading it here is
   // what moves the running cost estimate and the remaining-length row without
   // a second timer.
@@ -68,7 +70,7 @@ export function LecturePreflightCard() {
   // minute rather than jittering every second.
   const elapsedMs =
     status === 'recording'
-      ? Math.floor(getElapsedRecordingSeconds(startedAt) / 60) * 60_000
+      ? Math.floor(getSessionElapsedMs({ startedAt, pausedAt, pausedTotalMs }) / 60_000) * 60_000
       : 0;
 
   const rows = preflightRows({

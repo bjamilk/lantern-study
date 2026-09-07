@@ -325,3 +325,51 @@ describe('what the API reports about the pool', () => {
     expect(bonus.get(userId)).toBe(3);
   });
 });
+
+describe('a refusal names the two pools separately', () => {
+  const userId = 'two-pool-refusal-user';
+
+  beforeEach(async () => {
+    bonus.reset();
+    await resetAIUsageForUser(userId);
+  });
+
+  it('never quotes a summed figure the student cannot spend on this request', async () => {
+    // 2 left today, 2 banked, a 3-use action: neither pool can pay, and a
+    // sentence saying "you have 4 left" would claim they can.
+    const charged = await chargeAiCreditsDetailed(userId, LIMIT - 2);
+    expect(charged.ok).toBe(true);
+    bonus.set(userId, 2);
+
+    const res = mockRes();
+    await run(aiRateLimitWithCost(() => 3, { label: 'Transcribing this recording' }), res, {
+      user: { id: userId },
+      body: {},
+    });
+
+    expect(res.statusCode).toBe(429);
+    const body = res.body as { error: string; remaining: number; bonusRemaining: number };
+    expect(body.error).toContain('needs 3 AI uses');
+    expect(body.error).toContain('2 left today and 2 banked');
+    expect(body.error).not.toContain('4 left');
+    // The total is still reported as data for a client that wants to show it.
+    expect(body).toMatchObject({ remaining: 4, bonusRemaining: 2 });
+    // Nothing moved in either pool.
+    expect(bonus.get(userId)).toBe(2);
+  });
+
+  it('leaves the banked half out of the sentence when there is none', async () => {
+    await chargeAiCreditsDetailed(userId, LIMIT - 1);
+
+    const res = mockRes();
+    await run(aiRateLimitWithCost(() => 3, { label: 'Deep dive Smart Notes' }), res, {
+      user: { id: userId },
+      body: {},
+    });
+
+    expect(res.statusCode).toBe(429);
+    const body = res.body as { error: string };
+    expect(body.error).toContain('1 left today');
+    expect(body.error).not.toContain('banked');
+  });
+});

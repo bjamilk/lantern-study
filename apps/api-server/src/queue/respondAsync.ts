@@ -15,8 +15,8 @@ export function aiChargeFromRes(res: Response): AiJobCharge | undefined {
  * handler that answers 202 with a jobId without using sendAsyncJobAccepted.
  */
 export function stampAiChargeOnJob(res: Response, jobId: string): void {
-  const charge = (res.locals as { aiCharge?: { credits: number; featureKey?: string } }).aiCharge;
-  if (charge && charge.credits > 0) {
+  const charge = aiChargeFromRes(res);
+  if (charge) {
     void attachJobCharge(jobId, charge).catch(() => {
       /* best-effort: without the stamp the job simply can't auto-refund */
     });

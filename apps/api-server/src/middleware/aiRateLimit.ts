@@ -201,6 +201,20 @@ async function releaseGlobalAllowance(
   await releaseUsage(userId, cost);
 }
 
+/**
+ * "2 left today and 2 banked" — what a refusal quotes.
+ *
+ * The two pools are named separately because a single charge is paid from
+ * ONE of them: adding them up would quote a figure the student cannot spend
+ * on the very request being refused. The banked half is only mentioned when
+ * there is one.
+ */
+function describeRemaining(result: Pick<GlobalCharge, 'count' | 'bonusRemaining'>): string {
+  const dailyLeft = Math.max(0, AI_DAILY_LIMIT - result.count);
+  const banked = Math.max(0, Math.floor(result.bonusRemaining));
+  return banked > 0 ? `${dailyLeft} left today and ${banked} banked` : `${dailyLeft} left today`;
+}
+
 /** Banked bonus uses and the cap they are banked against, for GET /ai/usage. */
 export async function getAIBonusUsage(
   userId: string
@@ -360,13 +374,12 @@ export async function chargeAiCreditsDetailed(
 
   const result = await chargeGlobalAllowance(userId, credits);
   if (!result.allowed) {
-    const remaining = Math.max(0, AI_DAILY_LIMIT - result.count) + result.bonusRemaining;
     return {
       ok: false,
       denial: {
         error:
           credits > 1
-            ? `Daily AI limit reached. ${label} needs ${credits} AI uses — you have ${remaining} left today.`
+            ? `Daily AI limit reached. ${label} needs ${credits} AI uses — you have ${describeRemaining(result)}.`
             : 'Daily AI limit reached. Try again tomorrow.',
         limit: AI_DAILY_LIMIT,
         used: result.count,
@@ -451,14 +464,17 @@ export function aiRateLimitWithCost(
     setBonusHeader(res, result.bonusRemaining);
 
     if (!result.allowed) {
-      // What the student can actually spend: the day's remainder PLUS anything
-      // banked. Quoting only the daily remainder would tell someone with 6
-      // bonus uses that they have 0 left, which is not true.
+      // `remaining` is the day's remainder PLUS anything banked, so a client
+      // can show a total. The SENTENCE keeps the two apart: a charge is paid
+      // from one pool, never split, so "you have 4 left" for 2 daily + 2
+      // banked would tell a student they can afford the 3 they were just
+      // refused. Quoting only the daily remainder would be the opposite lie —
+      // someone with 6 banked uses told they have 0.
       const remaining = Math.max(0, AI_DAILY_LIMIT - result.count) + result.bonusRemaining;
       res.status(429).json({
         error:
           cost > 1
-            ? `${label} needs ${cost} AI uses — you have ${remaining} left today.`
+            ? `${label} needs ${cost} AI uses — you have ${describeRemaining(result)}.`
             : 'Daily AI limit reached. Try again tomorrow.',
         limit: AI_DAILY_LIMIT,
         used: result.count,

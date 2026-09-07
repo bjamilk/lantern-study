@@ -22,6 +22,10 @@ import {
   planRecordingNotification,
   type NotificationStatus,
 } from '../components/lecture/lectureNotification';
+import {
+  elapsedRecordingMs,
+  pausedTotalAfterResume,
+} from '../components/lecture/recordingClock';
 
 /**
  * `naming` sits between the recorder stopping and the upload starting: the
@@ -58,6 +62,9 @@ const MAX_RECORDING_MS = maxLectureRecordingMs();
 type RecordingHandle = {
   stopAndUnloadAsync: () => Promise<void>;
   getURI: () => string | null;
+  /** `expo-av` resumes into the SAME file, which is what makes Resume append. */
+  pauseAsync: () => Promise<unknown>;
+  startAsync: () => Promise<unknown>;
 };
 
 type ExpoAudioModule = typeof import('expo-av').Audio;
@@ -81,12 +88,20 @@ interface LectureRecordingState {
   pendingTitleSuggestion: string | null;
   /** True while `status === 'failed'` and the audio is still on disk. */
   canRetryTranscription: boolean;
+  /** When the current pause began, or `null` while actually recording. */
+  pausedAt: number | null;
+  /** Milliseconds spent paused across the whole session. Never billed. */
+  pausedTotalMs: number;
 
   start: (noteId: string, noteTitle: string, options?: { currentBody?: string }) => Promise<void>;
   /** Stop the recorder and open the title sheet. Nothing is uploaded yet. */
   stopForTitle: (options?: { currentBody?: string }) => Promise<void>;
   /** Accept the sheet's title (empty keeps the suggestion) and transcribe. */
   confirmTitleAndTranscribe: (typedTitle?: string) => Promise<void>;
+  /** Stop capturing without ending the lecture. The file stays open. */
+  pauseRecording: () => Promise<void>;
+  /** Carry on into the SAME file, so the lecture is one recording, not two. */
+  resumeRecording: () => Promise<void>;
   /** Upload the held recording again. Spends nothing until the upload lands. */
   retryTranscription: () => Promise<void>;
   /** Read the OS microphone permission without asking for it. */
@@ -233,6 +248,8 @@ function resetSession(
     meterDb: null,
     pendingTitleSuggestion: null,
     canRetryTranscription: false,
+    pausedAt: null,
+    pausedTotalMs: 0,
     ...extras,
   });
 }
@@ -251,9 +268,29 @@ function currentTitleForNote(noteId: string, fallback: string | null): string {
   return (live ?? fallback ?? '').trim();
 }
 
+/**
+ * Kept for the call sites that only have a `startedAt`. Prefer
+ * `getSessionElapsedMs`, which also subtracts paused time — a paused lecture
+ * that kept billing would charge for the coffee break.
+ */
 export function getElapsedRecordingSeconds(startedAt: number | null): number {
   if (!startedAt) return 0;
   return Math.max(0, Math.floor((Date.now() - startedAt) / 1000));
+}
+
+/** Recorded milliseconds, pauses excluded. What the price and size read. */
+export function getSessionElapsedMs(
+  state: Pick<LectureRecordingState, 'startedAt' | 'pausedAt' | 'pausedTotalMs'>,
+  now: number = Date.now()
+): number {
+  return elapsedRecordingMs(
+    {
+      startedAt: state.startedAt,
+      pausedTotalMs: state.pausedTotalMs,
+      pausedAt: state.pausedAt,
+    },
+    now
+  );
 }
 
 export function formatRecordingDuration(totalSeconds: number): string {
@@ -273,6 +310,8 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
   meterDb: null,
   pendingTitleSuggestion: null,
   canRetryTranscription: false,
+  pausedAt: null,
+  pausedTotalMs: 0,
 
   setCurrentBodyProvider: (provider) => {
     session.currentBodyProvider = provider;
@@ -376,7 +415,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         // Stop ourselves at the cap rather than let the server refuse the
         // upload after the lecture is over. The audio is kept and named as
         // usual — this ends the recording, it does not throw it away.
-        if (get().status === 'recording' && Date.now() - startedAt >= MAX_RECORDING_MS) {
+        if (get().status === 'recording' && getSessionElapsedMs(get()) >= MAX_RECORDING_MS) {
           useToastStore
             .getState()
             .showToast('Recording reached the longest a lecture can be. Name it to transcribe.', 'info');
@@ -397,6 +436,8 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         error: null,
         tick: startedAt,
         canRetryTranscription: false,
+        pausedAt: null,
+        pausedTotalMs: 0,
       });
       // After the state is set, so the notification's text is the title the
       // banner is showing.
@@ -481,7 +522,10 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
     const rec = session.recording;
     if (!rec) return;
 
-    const elapsed = Date.now() - (startedAt ?? 0);
+    // Recorded time, not wall time: a lecture paused for ten minutes is not
+    // ten minutes of audio and must not be priced or sized as if it were.
+    const elapsed = getSessionElapsedMs(get());
+    void startedAt;
     if (elapsed < MIN_LECTURE_RECORD_MS) {
       useToastStore
         .getState()
@@ -557,6 +601,49 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
     }
 
     await runTranscription(set, get);
+  },
+
+  /**
+   * Pause, rather than stop.
+   *
+   * `expo-av` resumes into the same file, so a lecture interrupted by a phone
+   * call or a walk to the next room stays ONE recording — the alternative is
+   * two half-lectures and two charges. The notification and the wake lock stay
+   * up: the session still owns the microphone.
+   */
+  pauseRecording: async () => {
+    const { status, pausedAt } = get();
+    if (status !== 'recording' || pausedAt) return;
+    const rec = session.recording;
+    if (!rec?.pauseAsync) return;
+    try {
+      await rec.pauseAsync();
+      set({ pausedAt: Date.now(), meterDb: null, tick: Date.now() });
+    } catch {
+      useToastStore.getState().showToast('Could not pause. Still recording.', 'info');
+    }
+  },
+
+  /** Carry on into the same file. The paused stretch is never billed. */
+  resumeRecording: async () => {
+    const { status, pausedAt, pausedTotalMs } = get();
+    if (status !== 'recording' || !pausedAt) return;
+    const rec = session.recording;
+    if (!rec?.startAsync) return;
+    try {
+      await rec.startAsync();
+      set({
+        pausedAt: null,
+        pausedTotalMs: pausedTotalAfterResume(pausedTotalMs, pausedAt),
+        tick: Date.now(),
+      });
+    } catch {
+      // The recorder would not restart. Say so plainly and leave the session
+      // paused with its audio intact rather than pretending it resumed.
+      useToastStore
+        .getState()
+        .showToast('Could not resume. Stop to keep what you have already recorded.', 'error');
+    }
   },
 
   /**
@@ -667,9 +754,14 @@ async function runTranscription(
     await resetAudioMode();
     resetSession(set);
   } catch (e: unknown) {
-    session.abort = null;
-    if (e instanceof Error && e.name === 'AbortError') {
-      // `cancelTranscription` has already decided what state to be in.
+    // Only this attempt's controller may be cleared: a Discard followed by a
+    // fresh recording can have installed a new one before this rejection lands.
+    if (session.abort === abortController) session.abort = null;
+    if (abortController.signal.aborted || (e instanceof Error && e.name === 'AbortError')) {
+      // `cancelTranscription` or `discard` has already decided what state to
+      // be in. Checking the signal, not just the error's name, means a network
+      // error surfacing after the abort cannot drag a reset session back into
+      // `failed` with no file behind it.
       return;
     }
     const message = e instanceof Error ? e.message : 'Could not transcribe audio';

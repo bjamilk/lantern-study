@@ -17,6 +17,7 @@
 jest.mock('../middleware/aiRateLimit', () => ({
   ...jest.requireActual('../middleware/aiRateLimit'),
   chargeAiCredits: jest.fn(),
+  chargeAiCreditsDetailed: jest.fn(),
   refundFeatureAiCredit: jest.fn(async () => {}),
   applyGlobalUsageHeaders: jest.fn(async () => {}),
 }));
@@ -52,7 +53,12 @@ import router, {
   initializeNotesRoutes,
   lectureTranscriptionCostFromRequest,
 } from './notes';
-import { chargeAiCredits, refundFeatureAiCredit } from '../middleware/aiRateLimit';
+import {
+  chargeAiCredits,
+  chargeAiCreditsDetailed,
+  NOTE_OCR_CREDIT_COST,
+  refundFeatureAiCredit,
+} from '../middleware/aiRateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { generateDailyQuiz } from '../services/aiService';
 import { SupabaseService } from '../services/supabase';
@@ -355,5 +361,113 @@ describe('what a transcription request costs', () => {
     // durationMs is a claim from the request body, not a measurement.
     expect(lectureTranscriptionCostFromRequest({ body: { durationMs: min(60 * 48) } })).toBe(10);
     expect(lectureTranscriptionCostFromRequest({ body: { durationMs: -min(30) } })).toBe(1);
+  });
+});
+
+/**
+ * Manual OCR (POST /:noteId/ocr) charges outside the middleware, so it has to
+ * stamp its own reservation on the job — and the stamp must say which POOL
+ * paid. A bonus use refunded into the daily counter expires at midnight: the
+ * student would lose an earned use to a job that failed on the server.
+ */
+async function runOcrRoute(req: any) {
+  const layer = (router as any).stack.find(
+    (l: any) => l.route?.path === '/:noteId/ocr' && l.route?.methods?.post,
+  );
+  if (!layer) throw new Error('route POST /:noteId/ocr not found');
+  const handlers = layer.route.stack.map((s: any) => s.handle);
+  const handler = handlers[handlers.length - 1] as (req: any, res: any, next: any) => void;
+
+  const res: any = { statusCode: 200, body: undefined, locals: {}, setHeader: jest.fn() };
+  const settled = new Promise<void>((resolve, reject) => {
+    res.status = (code: number) => {
+      res.statusCode = code;
+      return res;
+    };
+    res.json = (body: unknown) => {
+      res.body = body;
+      resolve();
+      return res;
+    };
+    handler(req, res, (err: unknown) => reject(err));
+    setTimeout(() => reject(new Error('route never responded')), 2000).unref?.();
+  });
+
+  await settled;
+  return res;
+}
+
+describe('POST /:noteId/ocr stamps the paying pool on the job charge', () => {
+  const PDF_NOTE = { id: 'note-1', title: 'Scan', body: '', sourceType: 'pdf' };
+  const PDF_ATTACHMENT = {
+    id: 'att-1',
+    type: 'pdf',
+    fileName: 'scan.pdf',
+    metadata: { storagePath: 'u1/notes/scan.pdf', extractionStatus: 'needs_ocr' },
+  };
+
+  function initOcrSupabase() {
+    const supabase: any = {
+      getNote: jest.fn(async () => PDF_NOTE),
+      getNoteAttachments: jest.fn(async () => [PDF_ATTACHMENT]),
+      updateNoteAttachment: jest.fn(async () => ({ ...PDF_ATTACHMENT })),
+    };
+    initializeNotesRoutes(supabase, {
+      get: jest.fn(async () => null),
+      set: jest.fn(async () => {}),
+    } as any);
+    return supabase;
+  }
+
+  const request = () => ({ params: { noteId: 'note-1' }, body: {}, user: { id: 'u1' } });
+
+  it('forwards pool:bonus to the enqueue when the bonus pool paid', async () => {
+    if (NOTE_OCR_CREDIT_COST <= 0) return; // OCR disabled by env: nothing to stamp
+    initOcrSupabase();
+    (chargeAiCreditsDetailed as jest.Mock).mockResolvedValue({
+      ok: true,
+      pool: 'bonus',
+      credits: NOTE_OCR_CREDIT_COST,
+    });
+    (runSyncOrEnqueue as jest.Mock).mockResolvedValue({ mode: 'async', jobId: 'job-1' });
+
+    const res = await runOcrRoute(request());
+
+    expect(res.statusCode).toBe(202);
+    expect(runSyncOrEnqueue).toHaveBeenCalledWith(
+      'notes.ocr.extract',
+      expect.objectContaining({ noteId: 'note-1', attachmentId: 'att-1', sourceKind: 'pdf' }),
+      'u1',
+      expect.any(Function),
+      { credits: NOTE_OCR_CREDIT_COST, pool: 'bonus' }
+    );
+  });
+
+  it('forwards pool:daily when the daily allowance paid', async () => {
+    if (NOTE_OCR_CREDIT_COST <= 0) return;
+    initOcrSupabase();
+    (chargeAiCreditsDetailed as jest.Mock).mockResolvedValue({
+      ok: true,
+      pool: 'daily',
+      credits: NOTE_OCR_CREDIT_COST,
+    });
+    (runSyncOrEnqueue as jest.Mock).mockResolvedValue({ mode: 'async', jobId: 'job-2' });
+
+    await runOcrRoute(request());
+
+    const charge = (runSyncOrEnqueue as jest.Mock).mock.calls[0][4];
+    expect(charge).toEqual({ credits: NOTE_OCR_CREDIT_COST, pool: 'daily' });
+  });
+
+  it('refuses with the denial payload and starts no job when neither pool can pay', async () => {
+    if (NOTE_OCR_CREDIT_COST <= 0) return;
+    initOcrSupabase();
+    (chargeAiCreditsDetailed as jest.Mock).mockResolvedValue({ ok: false, denial: DENIED });
+
+    const res = await runOcrRoute(request());
+
+    expect(res.statusCode).toBe(429);
+    expect(res.body).toEqual(DENIED);
+    expect(runSyncOrEnqueue).not.toHaveBeenCalled();
   });
 });

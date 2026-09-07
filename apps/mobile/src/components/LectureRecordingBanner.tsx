@@ -4,7 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import {
   formatRecordingDuration,
-  getElapsedRecordingSeconds,
+  getSessionElapsedMs,
   MIN_MOBILE_LECTURE_RECORD_MS,
   useLectureRecordingStore,
 } from '../stores/lectureRecordingStore';
@@ -62,12 +62,20 @@ export function LectureRecordingBanner() {
   const discard = useLectureRecordingStore((s) => s.discard);
   const cancelTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
   const retryTranscription = useLectureRecordingStore((s) => s.retryTranscription);
+  const pauseRecording = useLectureRecordingStore((s) => s.pauseRecording);
+  const resumeRecording = useLectureRecordingStore((s) => s.resumeRecording);
+  const pausedAt = useLectureRecordingStore((s) => s.pausedAt);
+  const pausedTotalMs = useLectureRecordingStore((s) => s.pausedTotalMs);
   const error = useLectureRecordingStore((s) => s.error);
 
   if (status === 'idle' || !noteId) return null;
   void tick;
 
-  const seconds = status === 'recording' ? getElapsedRecordingSeconds(startedAt) : 0;
+  // Recorded seconds, pauses excluded — the same number the price is based on.
+  const seconds =
+    status === 'recording'
+      ? Math.floor(getSessionElapsedMs({ startedAt, pausedAt, pausedTotalMs }) / 1000)
+      : 0;
   const canStop = seconds * 1000 >= MIN_MOBILE_LECTURE_RECORD_MS;
 
   const openNote = () => {
@@ -84,7 +92,7 @@ export function LectureRecordingBanner() {
 
   const statusLabel =
     status === 'recording'
-      ? `Recording ${formatRecordingDuration(seconds)}`
+      ? `${pausedAt ? 'Paused' : 'Recording'} ${formatRecordingDuration(seconds)}`
       : status === 'naming'
         ? 'Recording stopped — name it'
         : status === 'failed'
@@ -111,13 +119,23 @@ export function LectureRecordingBanner() {
           {status === 'failed'
             ? // The reason, then the promise. A student who has just lost a
               // transcription needs to know the audio is still here before
-              // anything else.
-              `${error || 'Could not transcribe.'} Nothing was charged.`
+              // anything else. It does NOT say "nothing was charged": the
+              // server refunds a failed request itself, but a client-side
+              // timeout on a long lecture can fail here while the server is
+              // still working — and this bar cannot see which happened.
+              `${error || 'Could not transcribe.'} The audio is still here — tap Retry.`
             : `${noteTitle || 'Untitled note'} · Tap to return`}
         </Text>
       </Pressable>
       {status === 'recording' ? (
         <>
+          {/* Resume appends into the same file, so an interrupted lecture
+              stays one recording — and one charge. */}
+          <BannerButton
+            icon={pausedAt ? 'play' : 'pause'}
+            onPress={() => void (pausedAt ? resumeRecording() : pauseRecording())}
+            label={pausedAt ? 'Resume' : 'Pause'}
+          />
           <BannerButton
             disabled={!canStop}
             onPress={() => void stopForTitle()}
