@@ -80,6 +80,7 @@ import {
   MIN_MOBILE_LECTURE_RECORD_MS,
   useLectureRecordingStore,
 } from '../../stores/lectureRecordingStore';
+import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
 import * as ImagePicker from 'expo-image-picker';
 import type { NoteAttachment } from '../../services/notes';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -185,7 +186,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
   const lectureTick = useLectureRecordingStore((s) => s.tick);
   const startLectureRecording = useLectureRecordingStore((s) => s.start);
-  const stopLectureRecording = useLectureRecordingStore((s) => s.stopAndTranscribe);
+  const stopLectureRecording = useLectureRecordingStore((s) => s.stopForTitle);
+  const lectureStoreTitle = useLectureRecordingStore((s) => s.noteTitle);
   const discardLectureRecording = useLectureRecordingStore((s) => s.discard);
   const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
@@ -594,6 +596,32 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     }
     prevTranscribingRef.current = transcribing;
   }, [transcribing, lectureStatus, noteId]);
+
+  /**
+   * While the title sheet is open the lecture store owns this note's title.
+   * Autosave here would write the pre-rename title straight back over it, and
+   * the sheet can stay open for as long as it takes to type, which is longer
+   * than the 4 s post-transcript pause. So the pause is renewed for as long as
+   * the sheet lives.
+   */
+  useEffect(() => {
+    if (lectureNoteId !== noteId || lectureStatus !== 'naming') return;
+    cancelPendingSave();
+    pauseAutosaveUntilRef.current = Date.now() + 5000;
+    const timer = setInterval(() => {
+      pauseAutosaveUntilRef.current = Date.now() + 5000;
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [lectureStatus, lectureNoteId, noteId, cancelPendingSave]);
+
+  // Adopt the title the sheet just saved, so the field does not sit on the
+  // old one and race the next autosave.
+  useEffect(() => {
+    if (lectureNoteId !== noteId) return;
+    if (lectureStatus !== 'uploading' && lectureStatus !== 'transcribing') return;
+    if (!lectureStoreTitle || lectureStoreTitle === title) return;
+    setTitle(lectureStoreTitle);
+  }, [lectureStoreTitle, lectureStatus, lectureNoteId, noteId, title]);
 
   // Leave NoteEditor while recording: continue (keep session) or discard.
   useEffect(() => {
@@ -1150,6 +1178,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </Card>
           ) : null}
 
+          {/* The pre-flight card. It sits above the controls while the mic is
+              live on THIS note, so the three things that decide whether the
+              transcript is any good — permission, level, connection — are
+              readings on screen rather than assumptions. */}
+          {isRecording ? <View className="mb-3"><LecturePreflightCard /></View> : null}
+
           {/* The live recording controls. They appear only once a session on
               THIS note is running: the door into recording is the "Turn into"
               row below, so an idle note no longer shows two ways in. */}
@@ -1176,7 +1210,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                   : 'Transcribing...'
                 : recordingSeconds < 2
                   ? `Wait ${2 - recordingSeconds}s`
-                  : 'Stop & transcribe'}
+                  : 'Stop & name'}
 
             </Button>
 
@@ -1474,7 +1508,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                   }}
                   disabled={runningOcr}
                 >
-                  {runningOcr ? 'Running OCR…' : 'Run OCR (local)'}
+                  {runningOcr
+                    ? 'Running OCR…'
+                    : `Run OCR · ${formatCreditCost(AI_CREDIT_COSTS.note_ocr)}`}
                 </Button>
               ) : null}
             </View>

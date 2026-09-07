@@ -1,3 +1,8 @@
+import {
+  LECTURE_AUDIO_BITS_PER_SECOND,
+  LECTURE_AUDIO_CHANNELS,
+  LECTURE_AUDIO_SAMPLE_RATE_HZ,
+} from '@lantern/shared/utils/lectureAudio';
 import { create } from 'zustand';
 import * as notesApi from '../services/notes';
 import {
@@ -246,7 +251,10 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
-          channelCount: 1,
+          channelCount: LECTURE_AUDIO_CHANNELS,
+          // A hint, not a guarantee — browsers are free to ignore it. The
+          // bitrate above is what actually bounds the file size.
+          sampleRate: LECTURE_AUDIO_SAMPLE_RATE_HZ,
         },
       });
       session.mediaStream = stream;
@@ -260,9 +268,17 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         typeof MediaRecorder.isTypeSupported === 'function'
           ? mimeCandidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
           : '';
+      // Speech, not music. The browser's default Opus bitrate is roughly
+      // four times what a transcript needs, and the server refuses anything
+      // over 25 MB — a long lecture was recorded in full and then rejected at
+      // the upload. Both platforms now record at the same rate, so a lecture
+      // that fits on the phone fits here. See @lantern/shared/utils/lectureAudio.
+      const recorderOptions: MediaRecorderOptions = {
+        audioBitsPerSecond: LECTURE_AUDIO_BITS_PER_SECOND,
+      };
       const recorder = supportedMime
-        ? new MediaRecorder(stream, { mimeType: supportedMime })
-        : new MediaRecorder(stream);
+        ? new MediaRecorder(stream, { ...recorderOptions, mimeType: supportedMime })
+        : new MediaRecorder(stream, recorderOptions);
       const recordingMime = recorder.mimeType || supportedMime || 'audio/webm';
       session.recordingMime = recordingMime;
 

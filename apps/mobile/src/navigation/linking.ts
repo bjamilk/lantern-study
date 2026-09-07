@@ -110,6 +110,7 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
         },
       },
       Settings: 'settings',
+      JoinClass: 'join/:code?',
       EditProfile: 'profile/edit',
       Offline: 'offline',
     },

@@ -9,6 +9,10 @@ export type RootStackParamList = {
   EditProfile: undefined;
   /** Academic identity + "My courses" management (Settings → Academic). */
   AcademicSettings: undefined;
+  /** Join a lecturer’s class by hall code — no LMS required. */
+  JoinClass: { code?: string } | undefined;
+  /** Me → AI uses: the allowance, every action's price, the doors at zero. */
+  UsageLimits: undefined;
   InviteFriends: undefined;
   BlockedUsers: undefined;
   /** Library tree → Offline filtered to a course (`'null'` = unfiled bundles). */

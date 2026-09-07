@@ -102,7 +102,7 @@ describe('aiRateLimitWithCost', () => {
     expect(body.cost).toBe(3);
     expect(body.remaining).toBe(2);
     expect(body.used).toBe(18);
-    expect(body.error).toContain('needs 3 AI credits');
+    expect(body.error).toContain('needs 3 AI uses');
     // 429 still carries global headers so the client badge self-corrects.
     expect(res.headers['x-ai-global-usage-used']).toBe('18');
     expect((await getAIUsage(userId)).used).toBe(18);

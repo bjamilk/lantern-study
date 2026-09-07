@@ -1,3 +1,4 @@
+import { canonicalizeJoinCode } from '@lantern/shared/academic';
 import { AppMode } from '../types';
 
 export type LibraryTabParam = 'notes' | 'flashcards';
@@ -197,6 +198,8 @@ export interface AppRouteParams {
   courseId?: string;
   /** One personal test: `/study/tests/:testId`. */
   testId?: string;
+  /** Join-class code on `/join/:code`. */
+  joinCode?: string;
 }
 
 export interface ParsedAppRoute {
@@ -214,7 +217,7 @@ export interface ParsedAppRoute {
    * use. `useRouteSync` must leave these alone: they are neither a mode to
    * hydrate nor an unknown path to bounce to the dashboard.
    */
-  standalone?: 'me' | 'test-builder' | 'test-detail';
+  standalone?: 'me' | 'test-builder' | 'test-detail' | 'teach' | 'join';
 }
 
 /** The single capture group of `pattern`, decoded — `null` when it is absent. */
@@ -428,6 +431,20 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/game') return { mode: AppMode.GAME_ACTIVE, params: {} };
   if (path === '/game/results') return { mode: AppMode.GAME_RESULTS, params: {} };
   if (path === ME_PATH) return { mode: null, params: {}, standalone: 'me' };
+  // Lecturer portal and class join are real destinations with no AppMode —
+  // App.tsx renders them outside the student shell. useRouteSync must not
+  // bounce them to the dashboard.
+  if (path === '/teach' || path.startsWith('/teach/')) {
+    return { mode: null, params: {}, standalone: 'teach' };
+  }
+  const joinCode = segment(path, /^\/join\/([^/]+)$/);
+  if (joinCode) {
+    return {
+      mode: null,
+      params: { joinCode: canonicalizeJoinCode(joinCode) },
+      standalone: 'join',
+    };
+  }
   // Campus segments come before the `/campus/:slug` SEO page: `shop` and `jobs`
   // are reserved words in this namespace, never institution slugs.
   if (path === '/campus') {

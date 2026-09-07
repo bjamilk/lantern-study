@@ -10,6 +10,7 @@ import {
   SignalSlashIcon,
   ArrowLeftOnRectangleIcon,
   UsersIcon,
+  UserGroupIcon,
   ChevronRightIcon,
   AcademicCapIcon,
 } from '@heroicons/react/24/outline';
@@ -37,6 +38,7 @@ export interface MeScreenProps {
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onNavigate: (mode: AppMode) => void;
+  onOpenTeach: () => void;
   onOpenSettings: () => void;
   onLogout: () => void;
   pendingSyncCount?: number;
@@ -111,6 +113,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
   theme,
   onToggleTheme,
   onNavigate,
+  onOpenTeach,
   onOpenSettings,
   onLogout,
   pendingSyncCount = 0,
@@ -163,6 +166,12 @@ const MeScreen: React.FC<MeScreenProps> = ({
         </button>
 
         <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
+          <Row
+            icon={UserGroupIcon}
+            label="Teach"
+            hint="Classes, roster, join codes"
+            onClick={onOpenTeach}
+          />
           <Row
             icon={BanknotesIcon}
             label="Budget"

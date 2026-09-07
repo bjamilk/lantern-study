@@ -7,6 +7,7 @@ describe('the Me tab', () => {
   it('carries exactly the rows the shell moved onto it, in order', () => {
     expect(meRowIds(sections())).toEqual([
       'academic',
+      'joinClass',
       'budget',
       'downloads',
       'credits',
@@ -65,11 +66,21 @@ describe('the Me tab', () => {
     expect(accented.map((row) => row.feature)).toEqual(['budget', 'ai']);
   });
 
-  it('makes Credits a readout, never a door', () => {
+  it('makes AI uses a door, now that Usage & limits exists', () => {
+    // It was a readout for exactly as long as there was nothing behind it.
     const credits = sections()
       .flatMap((section) => section.rows)
       .find((row) => row.id === 'credits');
-    expect(credits?.kind).toBe('readout');
+    expect(credits?.kind).toBe('link');
+  });
+
+  it('calls the AI allowance "AI uses" — the same word the badge uses', () => {
+    // One unit, one word. "Credits" here and "AI uses" in the badge read as
+    // two different currencies for the same thing.
+    const credits = sections()
+      .flatMap((section) => section.rows)
+      .find((row) => row.id === 'credits');
+    expect(credits?.label).toBe('AI uses');
   });
 
   it('says what Downloads costs before the tap', () => {

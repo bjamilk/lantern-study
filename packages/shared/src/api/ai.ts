@@ -7,6 +7,7 @@ import type {
   CompanionUserContext,
 } from '../types';
 import { DEFAULT_AI_DAILY_LIMIT } from '../utils/aiUsage';
+import type { AIUsageSnapshot } from '../ai/aiUsageView';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 import {
   JobStillRunningError,
@@ -241,6 +242,55 @@ export function createAIClient(config: AIClientConfig) {
         });
 
       return usageInFlight;
+    },
+
+    /**
+     * The full usage payload, including each feature's own daily cap.
+     *
+     * `fetchAIUsage` deliberately keeps only the four fields the badge needs
+     * and caches them; the Usage & limits screen needs the per-feature rows as
+     * well and is opened rarely, so it reads straight through. The global
+     * counts still go to `notifyUsage`, so opening the screen also corrects
+     * the badge — which is how a student checks that the counter is honest.
+     */
+    fetchAIUsageDetail: async (): Promise<AIUsageSnapshot> => {
+      const headers = await config.getAuthHeaders();
+      const res = await fetch(`${config.getBaseUrl()}/api/v1/ai/usage`, { headers });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = (await res.json()) as {
+        used?: number;
+        limit?: number;
+        resetsAt?: string;
+        features?: Array<{ feature?: string; used?: number; limit?: number }>;
+        bonusRemaining?: number;
+      };
+      const used = Number(data.used) || 0;
+      const limit = Number(data.limit) || 0;
+      notifyUsage({ used, limit, remaining: Math.max(0, limit - used), resetsAt: data.resetsAt || '' });
+      return {
+        used,
+        limit,
+        resetsAt: data.resetsAt || '',
+        // Absent on a server that predates the per-feature rows. Undefined,
+        // not [] — the screen must be able to tell "no caps reported" from
+        // "no caps exist" and say nothing rather than claim nothing.
+        features: Array.isArray(data.features)
+          ? data.features
+              .filter((row) => row && typeof row.feature === 'string')
+              .map((row) => ({
+                feature: String(row.feature),
+                used: Number(row.used) || 0,
+                limit: Number(row.limit) || 0,
+              }))
+          : undefined,
+        // Same rule as `features`: undefined when the server did not say, so
+        // the screen hides the bonus line rather than printing a zero it
+        // never measured.
+        bonusRemaining:
+          typeof data.bonusRemaining === 'number' && Number.isFinite(data.bonusRemaining)
+            ? data.bonusRemaining
+            : undefined,
+      };
     },
 
     aiGenerateQuestions: (

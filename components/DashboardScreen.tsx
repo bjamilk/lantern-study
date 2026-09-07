@@ -76,6 +76,8 @@ import {
 } from '../utils/onboardingAcademic';
 import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
 import CourseReadinessCard from './CourseReadinessCard';
+import { JoinClassCard } from './classes/JoinClassCard';
+import { ClassWorkCard } from './classes/ClassWorkCard';
 
 /** Dashboard “Questions to review” card. Review/study screens stay available. */
 export const SHOW_DASHBOARD_QUESTIONS_TO_REVIEW = false;
@@ -1284,6 +1286,11 @@ export default function DashboardScreen({
           answer to "am I ready?", so it goes where that question is asked. */}
       <div className="px-4 md:px-8 mt-4 w-full">
         <CourseReadinessCard />
+      </div>
+
+      <div className="px-4 md:px-8 mt-4 w-full flex flex-col gap-3">
+        <JoinClassCard />
+        <ClassWorkCard />
       </div>
 
       {/* ═══════════════ DOORS ═══════════════ */}

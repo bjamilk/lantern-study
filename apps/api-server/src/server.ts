@@ -54,6 +54,7 @@ import paystackWebhookRoutes, { initializePaystackWebhookRoutes } from './routes
 import sitemapRoutes from './routes/sitemap';
 import { marketplaceGeoMiddleware } from './middleware/marketplaceGeo';
 import aiRoutes, { initializeAIRoutes } from './routes/ai';
+import { initializeAiBonusUses } from './services/aiBonusUses';
 import offlineBundlesRoutes, { initializeOfflineBundlesRoutes } from './routes/offlineBundles';
 import adminRoutes, { initializeAdminRoutes } from './routes/admin';
 import aiCompanionRoutes, { initializeAICompanionRoutes } from './routes/aiCompanion';
@@ -86,6 +87,8 @@ import campusRoutes, { initializeCampusRoutes } from './routes/campuses';
 // Phase 1 A (deferred, now built) — course topics
 import courseTopicRoutes, { initializeCourseTopicRoutes } from './routes/courseTopics';
 import studyRoomRoutes, { initializeStudyRoomRoutes } from './routes/studyRooms';
+import classRoutes, { initializeClassRoutes } from './routes/classes';
+import institutionStaffRoutes, { initializeInstitutionStaffRoutes } from './routes/institutionStaff';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -179,6 +182,7 @@ async function initializeServices() {
     initializeAdminRoutes(supabaseService, cacheService);
     initializeAICompanionRoutes(supabaseService);
     initializeAIRoutes(supabaseService);
+    initializeAiBonusUses(supabaseService);
     initializeNotesRoutes(supabaseService, cacheService);
     initializeChallengeRoutes(supabaseService, cacheService);
     initializeAuthRoutes(supabaseService, cacheService);
@@ -196,6 +200,8 @@ async function initializeServices() {
     initializeCampusRoutes(supabaseService, cacheService);
     initializeCourseTopicRoutes(supabaseService);
     initializeStudyRoomRoutes(supabaseService);
+    initializeClassRoutes(supabaseService);
+    initializeInstitutionStaffRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -408,6 +414,8 @@ async function startServer() {
     app.use('/api/v1/creators', creatorRoutes);
     app.use('/api/v1/communities', communityRoutes);
     app.use('/api/v1/study-rooms', studyRoomRoutes);
+    app.use('/api/v1/classes', classRoutes);
+    app.use('/api/v1', institutionStaffRoutes);
     app.use('/api/v1/discover', discoverRouter);
     app.use('/api/v1/feed', feedRoutes);
     app.use('/api/v1/mastery', masteryRouter);

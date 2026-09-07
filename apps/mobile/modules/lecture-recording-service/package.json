@@ -1,0 +1,7 @@
+{
+  "name": "lecture-recording-service",
+  "version": "1.0.0",
+  "description": "Android foreground service that keeps a lecture recording alive with the screen off.",
+  "main": "index.ts",
+  "private": true
+}

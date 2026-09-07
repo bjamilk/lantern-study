@@ -52,7 +52,16 @@ export interface JobRecord {
   /** AI credits reserved by the request that enqueued this job — refunded if
       the job permanently fails (a 202 is a 2xx, so the middleware's own
       non-2xx auto-refund can never fire for async work). */
-  charge?: { credits: number; featureKey?: string };
+  charge?: {
+    credits: number;
+    featureKey?: string;
+    /**
+     * Which allowance paid: the daily counter or the banked bonus pool.
+     * Absent on records written before bonus uses existed — those were all
+     * daily, and are refunded as such.
+     */
+    pool?: 'daily' | 'bonus';
+  };
   /** What was charged and what has been handed back. */
   credit?: JobCredit;
   /** Set once the failure refund has been issued, so retries can't double-refund. */

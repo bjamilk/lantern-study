@@ -566,6 +566,12 @@ export const {
   updateMyCourse,
   removeMyCourse,
   archiveSemester,
+  // Classes: join-by-code, assigned work, official lecturer materials
+  joinClassByCode,
+  previewClassByCode,
+  fetchMyClassWork,
+  completeClassAssignment,
+  fetchOfficialClassMaterials,
   // Library archive: course tree + cross-artefact search (contract §1 / §3)
   fetchLibraryOverview,
   searchLibrary,

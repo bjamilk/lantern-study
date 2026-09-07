@@ -9,6 +9,7 @@ import {
   xhrHeaderReader,
   type AIStudyPerformanceData,
 } from '@lantern/shared/api';
+import type { AIUsageSnapshot } from '@lantern/shared/ai';
 import type {
   CompanionAction,
   CompanionConversation,
@@ -123,6 +124,46 @@ async function fetchAIUsageFromApi(): Promise<AIUsageInfo> {
   updateUsage(usage);
   _usageLastFetchAt = Date.now();
   return usage;
+}
+
+/**
+ * The full usage payload — global counts plus each feature's own daily cap.
+ *
+ * Read by the Usage & limits screen only, which is opened rarely, so it goes
+ * straight to the server rather than through the badge's TTL cache. It still
+ * publishes the global counts to every subscriber, so opening that screen
+ * re-syncs the sidebar badge with what the server actually holds.
+ */
+export async function fetchAIUsageDetail(): Promise<AIUsageSnapshot> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${API_BASE_URL}/api/v1/ai/usage`, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = (await res.json()) as {
+    used?: number;
+    limit?: number;
+    resetsAt?: string;
+    features?: Array<{ feature?: string; used?: number; limit?: number }>;
+  };
+  const used = Number(data.used) || 0;
+  const limit = Number(data.limit) || 0;
+  updateUsage({ used, limit, remaining: Math.max(0, limit - used), resetsAt: data.resetsAt || '' });
+  _usageLastFetchAt = Date.now();
+  return {
+    used,
+    limit,
+    resetsAt: data.resetsAt || '',
+    // Undefined, not [], on a server that predates the per-feature rows: the
+    // screen must be able to say nothing rather than claim there are no caps.
+    features: Array.isArray(data.features)
+      ? data.features
+          .filter((row) => row && typeof row.feature === 'string')
+          .map((row) => ({
+            feature: String(row.feature),
+            used: Number(row.used) || 0,
+            limit: Number(row.limit) || 0,
+          }))
+      : undefined,
+  };
 }
 
 export async function fetchAIUsage(_userId?: string): Promise<AIUsageInfo> {

@@ -42,6 +42,17 @@ import type {
   ContentReportStatus,
   ContentReportTargetType,
   Course,
+  ClassAnalytics,
+  ClassAssignment,
+  ClassAssignmentProgress,
+  ClassGenerateResult,
+  ClassJoinPreview,
+  ClassMaterial,
+  ClassMember,
+  ClassSection,
+  InstitutionClassAnalytics,
+  InstitutionStaff,
+  LmsConnectorStatus,
   LibraryOverview,
   LibrarySearchResult,
   LibrarySearchType,
@@ -4485,6 +4496,158 @@ export function createApiEndpoints(client: ApiClient) {
         method: "POST",
         body: JSON.stringify({ academicYear }),
       }),
+
+    setCourseCanonical: (courseId: string, isCanonical: boolean) =>
+      apiRequest<Course>(`/courses/${encodeURIComponent(courseId)}/canonical`, {
+        method: "PATCH",
+        body: JSON.stringify({ isCanonical }),
+      }),
+
+    // ========== CLASSES (/api/v1/classes) ==========
+    fetchMyClasses: (role?: "instructor" | "student" | "all") => {
+      const params = new URLSearchParams();
+      if (role && role !== "all") params.set("role", role);
+      const qs = params.toString();
+      return apiRequest<ClassSection[]>(`/classes${qs ? `?${qs}` : ""}`);
+    },
+    createClass: (input: {
+      courseId: string;
+      title?: string;
+      academicYear?: string;
+      semester?: 1 | 2 | null;
+    }) =>
+      apiRequest<ClassSection>("/classes", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    previewClassByCode: (code: string) =>
+      apiRequest<ClassJoinPreview>(`/classes/preview?code=${encodeURIComponent(code)}`),
+    joinClassByCode: (code: string) =>
+      apiRequest<ClassSection>("/classes/join", {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      }),
+    fetchClass: (classId: string) =>
+      apiRequest<ClassSection>(`/classes/${encodeURIComponent(classId)}`),
+    patchClass: (
+      classId: string,
+      patch: { title?: string; semester?: 1 | 2 | null; archived?: boolean },
+    ) =>
+      apiRequest<ClassSection>(`/classes/${encodeURIComponent(classId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    fetchClassRoster: (classId: string) =>
+      apiRequest<{ members: ClassMember[] }>(
+        `/classes/${encodeURIComponent(classId)}/roster`,
+      ),
+    addClassMember: (classId: string, input: { username: string; role?: "ta" | "student" }) =>
+      apiRequest<ClassMember>(`/classes/${encodeURIComponent(classId)}/members`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    patchClassMember: (
+      classId: string,
+      userId: string,
+      patch: { role?: "instructor" | "ta" | "student"; status?: "active" | "removed" },
+    ) =>
+      apiRequest<ClassMember>(
+        `/classes/${encodeURIComponent(classId)}/members/${encodeURIComponent(userId)}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      ),
+    rotateClassJoinCode: (classId: string) =>
+      apiRequest<{ joinCode: string }>(`/classes/${encodeURIComponent(classId)}/rotate-code`, {
+        method: "POST",
+      }),
+    fetchClassMaterials: (classId: string) =>
+      apiRequest<ClassMaterial[]>(`/classes/${encodeURIComponent(classId)}/materials`),
+    addClassMaterial: (
+      classId: string,
+      input: { noteId?: string; title?: string; body?: string; kind?: ClassMaterial["kind"] },
+    ) =>
+      apiRequest<ClassMaterial>(`/classes/${encodeURIComponent(classId)}/materials`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    publishClassMaterial: (classId: string, materialId: string) =>
+      apiRequest<ClassMaterial>(
+        `/classes/${encodeURIComponent(classId)}/materials/${encodeURIComponent(materialId)}/publish`,
+        { method: "POST" },
+      ),
+    unpublishClassMaterial: (classId: string, materialId: string) =>
+      apiRequest<ClassMaterial>(
+        `/classes/${encodeURIComponent(classId)}/materials/${encodeURIComponent(materialId)}/unpublish`,
+        { method: "POST" },
+      ),
+    deleteClassMaterial: (classId: string, materialId: string) =>
+      apiRequest<{ success: boolean }>(
+        `/classes/${encodeURIComponent(classId)}/materials/${encodeURIComponent(materialId)}`,
+        { method: "DELETE" },
+      ),
+    generateClassContent: (
+      classId: string,
+      input: { kind: "quiz" | "flashcards" | "outline"; count?: number },
+    ) =>
+      apiRequest<ClassGenerateResult>(`/classes/${encodeURIComponent(classId)}/generate`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    fetchClassAssignments: (classId: string) =>
+      apiRequest<ClassAssignment[]>(`/classes/${encodeURIComponent(classId)}/assignments`),
+    createClassAssignment: (
+      classId: string,
+      input: {
+        title: string;
+        kind: ClassAssignment["kind"];
+        dueAt?: string | null;
+        noteId?: string;
+        deckId?: string;
+        payload?: ClassAssignment["payload"];
+      },
+    ) =>
+      apiRequest<ClassAssignment>(`/classes/${encodeURIComponent(classId)}/assignments`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    completeClassAssignment: (classId: string, assignmentId: string, input: { score?: number } = {}) =>
+      apiRequest<ClassAssignmentProgress>(
+        `/classes/${encodeURIComponent(classId)}/assignments/${encodeURIComponent(assignmentId)}/complete`,
+        { method: "POST", body: JSON.stringify(input) },
+      ),
+    fetchClassAnalytics: (classId: string) =>
+      apiRequest<ClassAnalytics>(`/classes/${encodeURIComponent(classId)}/analytics`),
+    fetchMyClassWork: () => apiRequest<ClassAssignment[]>("/classes/work"),
+    fetchOfficialClassMaterials: (courseId?: string | null) => {
+      const params = new URLSearchParams();
+      if (courseId) params.set("courseId", courseId);
+      const qs = params.toString();
+      return apiRequest<ClassMaterial[]>(`/classes/official-materials${qs ? `?${qs}` : ""}`);
+    },
+    fetchMyInstitutionStaff: () => apiRequest<InstitutionStaff[]>("/staff/me"),
+    fetchInstitutionStaff: (institutionId: string) =>
+      apiRequest<InstitutionStaff[]>(`/institutions/${encodeURIComponent(institutionId)}/staff`),
+    addInstitutionStaff: (
+      institutionId: string,
+      input: { userId: string; role: InstitutionStaff["role"] },
+    ) =>
+      apiRequest<InstitutionStaff>(`/institutions/${encodeURIComponent(institutionId)}/staff`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    patchInstitutionStaff: (
+      institutionId: string,
+      userId: string,
+      patch: { role?: InstitutionStaff["role"]; status?: "active" | "revoked" },
+    ) =>
+      apiRequest<InstitutionStaff>(
+        `/institutions/${encodeURIComponent(institutionId)}/staff/${encodeURIComponent(userId)}`,
+        { method: "PATCH", body: JSON.stringify(patch) },
+      ),
+    fetchInstitutionAnalytics: (institutionId: string) =>
+      apiRequest<InstitutionClassAnalytics>(
+        `/institutions/${encodeURIComponent(institutionId)}/analytics`,
+      ),
+    fetchLmsConnectors: () => apiRequest<LmsConnectorStatus>("/lms/connectors"),
 
     // ========== CONCEPTS (/api/v1/concepts) ==========
     // Thin clients for the knowledge-network vocabulary (Phase 1 · C). The

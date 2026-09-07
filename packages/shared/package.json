@@ -107,6 +107,12 @@
       "require": "./dist/utils/*.js",
       "default": "./src/utils/*.ts"
     },
+    "./ai": {
+      "types": "./src/ai/index.ts",
+      "import": "./src/ai/index.ts",
+      "require": "./dist/ai/index.js",
+      "default": "./src/ai/index.ts"
+    },
     "./marketplace": {
       "types": "./src/marketplace/index.ts",
       "import": "./src/marketplace/index.ts",

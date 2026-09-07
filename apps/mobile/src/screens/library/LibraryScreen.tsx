@@ -28,6 +28,7 @@ import {
   UNFILED_COURSE_ID,
 } from '../../utils/libraryArchive';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
+import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
 
 import { toTab } from '../../navigation/nestedTab';
 
@@ -371,6 +372,12 @@ export function LibraryScreen({ navigation, route }: Props) {
             ) : null}
           </View>
         ) : null}
+
+        <ClassOfficialMaterials
+          courseId={
+            courseFilter?.id && courseFilter.id !== UNFILED_COURSE_ID ? courseFilter.id : null
+          }
+        />
 
         {/* Only while something is typed: the way out to decks, cards and
             bundles, and the way back. One line, and only then. */}

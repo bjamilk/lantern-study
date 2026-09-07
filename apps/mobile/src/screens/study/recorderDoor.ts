@@ -8,6 +8,9 @@
  * rather than an inline template literal in two screens.
  */
 
+import { LECTURE_TRANSCRIPTION_PRICE_RULE } from '@lantern/shared/utils/aiCredits';
+import { lectureCapacityLine } from '@lantern/shared/utils/lectureAudio';
+
 const MONTHS = [
   'Jan',
   'Feb',
@@ -51,17 +54,30 @@ export interface RecorderDoorPrompt {
   cancelLabel: string;
   /** The note title to create, identical to the one quoted in the message. */
   noteTitle: string;
+  /**
+   * The price rule, in one line, before anything is recorded.
+   *
+   * Transcription is charged by length, so "1 AI use" would be a lie for
+   * anything over a quarter of an hour. The door is the last place the
+   * student can decide not to spend, so it is where the rule belongs — and it
+   * comes from `aiCredits.ts` rather than being written out here.
+   */
+  priceLine: string;
 }
 
 export function recorderDoorPrompt(now: Date = new Date()): RecorderDoorPrompt {
   const noteTitle = newLectureNoteTitle(now);
+  // Recording is free; transcribing is the charge, and its size depends on
+  // how long the lecture runs. Both sentences are derived, never typed.
+  const priceLine = `Recording is free. ${LECTURE_TRANSCRIPTION_PRICE_RULE} ${lectureCapacityLine()}`;
   return {
     title: 'Start a lecture note?',
     // The name is quoted so the student knows what will be in their library.
-    message: `We'll create "${noteTitle}" and start recording straight away.`,
+    message: `We'll create "${noteTitle}" and start recording straight away.\n\n${priceLine}`,
     confirmLabel: 'Start',
     cancelLabel: 'Cancel',
     noteTitle,
+    priceLine,
   };
 }
 

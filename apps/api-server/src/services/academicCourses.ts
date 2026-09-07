@@ -623,6 +623,40 @@ export class AcademicCoursesService {
     await getCommunitiesService(this.supabaseService).refreshAutoMemberships(userId);
   }
 
+  /**
+   * Upsert a single active enrolment without touching the rest of the year.
+   * Used when a student joins a lecturer's class (docs/phase-teach-portal-contract.md).
+   */
+  async ensureEnrolment(
+    userId: string,
+    courseId: string,
+    academicYear?: unknown,
+    semester?: 1 | 2 | null
+  ): Promise<UserCourseRecord | null> {
+    if (!isUuid(courseId)) throw new PublicError('courseId must be a valid course id');
+    const year = this.resolveAcademicYear(academicYear);
+    const row: Record<string, unknown> = {
+      user_id: userId,
+      course_id: courseId,
+      academic_year: year,
+      status: 'active',
+    };
+    if (semester === 1 || semester === 2) row.semester = semester;
+
+    const { error } = await this.db.from('user_courses').upsert(row, {
+      onConflict: 'user_id,course_id,academic_year',
+    });
+    if (error) {
+      if (isMissingRelationError(error)) {
+        throw new PublicError('Courses are not available yet — please try again later');
+      }
+      throw error;
+    }
+    await this.syncCommunities(userId);
+    const mapped = mapUserCourseRow(await this.findEnrolment(userId, courseId, year));
+    return mapped;
+  }
+
   async removeUserCourse(userId: string, courseId: string, academicYear?: unknown): Promise<boolean> {
     if (!isUuid(courseId)) throw new PublicError('courseId must be a valid course id');
     const year =

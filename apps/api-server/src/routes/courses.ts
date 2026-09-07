@@ -17,6 +17,7 @@ import {
   MAX_COURSE_SEARCH_LIMIT,
   getAcademicCoursesService,
 } from '../services/academicCourses';
+import { getClassSectionsService } from '../services/classSections';
 
 const router = Router();
 
@@ -103,6 +104,34 @@ router.post(
     } catch (err: any) {
       if (err instanceof PublicError) {
         return res.status(400).json({ success: false, error: err.message });
+      }
+      throw err;
+    }
+  })
+);
+
+// PATCH /api/v1/courses/:courseId/canonical — campus staff / platform admin
+router.patch(
+  '/:courseId/canonical',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    try {
+      const isCanonical = Boolean(req.body?.isCanonical);
+      const course = await getClassSectionsService(supabaseService).setCourseCanonical(
+        userId,
+        String(req.params.courseId),
+        isCanonical,
+        req.user
+      );
+      res.json({ success: true, data: course });
+    } catch (err: any) {
+      if (err instanceof PublicError) {
+        const code = typeof (err as { statusCode?: number }).statusCode === 'number'
+          ? (err as { statusCode: number }).statusCode
+          : 400;
+        return res.status(code).json({ success: false, error: err.message });
       }
       throw err;
     }

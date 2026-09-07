@@ -1796,6 +1796,7 @@ export interface CompanionContext {
   noteContext?: string;
   noteTitle?: string;
   noteId?: string;
+  classId?: string;
   studyGoal?: string;
   /** Study mode for this turn. Sanitized server-side; defaults to 'explain'. */
   mode?: CompanionMode;

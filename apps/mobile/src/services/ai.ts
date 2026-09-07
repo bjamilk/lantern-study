@@ -88,6 +88,12 @@ export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () =
 }
 
 export const fetchAIUsage = ai.fetchAIUsage;
+/**
+ * The full usage payload — global counts plus each feature's own daily cap.
+ * Read by the Usage & limits screen only; it also republishes the global
+ * counts to `subscribeToAIUsage`, so opening that screen re-syncs the badge.
+ */
+export const fetchAIUsageDetail = ai.fetchAIUsageDetail;
 
 // Every generator below may answer 202 in production (BullMQ is on). The
 // shared client watches such a job for 90 s and then throws

@@ -8,7 +8,43 @@ import {
   MIN_MOBILE_LECTURE_RECORD_MS,
   useLectureRecordingStore,
 } from '../stores/lectureRecordingStore';
-import { AppIcon } from './ui/AppIcon';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
+import { LectureTitleSheet } from './lecture/LectureTitleSheet';
+
+/**
+ * Every button on this bar is the same pill, so the bar's type size is
+ * written once. It was seven copies of `text-xs font-semibold` before, which
+ * is how a bar drifts into three slightly different button sizes.
+ */
+function BannerButton({
+  label,
+  onPress,
+  icon,
+  tone = 'light',
+  disabled,
+}: {
+  label: string;
+  onPress: () => void;
+  icon?: AppIconName;
+  tone?: 'light' | 'dark';
+  disabled?: boolean;
+}) {
+  const background = tone === 'light' ? 'bg-white/20 active:bg-white/30' : 'bg-black/20 active:bg-black/30';
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      className={`flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg ${background} ${
+        disabled ? 'opacity-50' : ''
+      }`}
+    >
+      {icon ? <AppIcon name={icon} size={14} color="#fff" /> : null}
+      <Text className="text-white text-xs font-semibold">{label}</Text>
+    </Pressable>
+  );
+}
 
 /**
  * Sticky global bar while a lecture recording/transcription session is active.
@@ -22,9 +58,11 @@ export function LectureRecordingBanner() {
   const noteTitle = useLectureRecordingStore((s) => s.noteTitle);
   const startedAt = useLectureRecordingStore((s) => s.startedAt);
   const tick = useLectureRecordingStore((s) => s.tick);
-  const stopAndTranscribe = useLectureRecordingStore((s) => s.stopAndTranscribe);
+  const stopForTitle = useLectureRecordingStore((s) => s.stopForTitle);
   const discard = useLectureRecordingStore((s) => s.discard);
   const cancelTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
+  const retryTranscription = useLectureRecordingStore((s) => s.retryTranscription);
+  const error = useLectureRecordingStore((s) => s.error);
 
   if (status === 'idle' || !noteId) return null;
   void tick;
@@ -47,9 +85,13 @@ export function LectureRecordingBanner() {
   const statusLabel =
     status === 'recording'
       ? `Recording ${formatRecordingDuration(seconds)}`
-      : status === 'uploading'
-        ? 'Uploading lecture…'
-        : 'Transcribing lecture…';
+      : status === 'naming'
+        ? 'Recording stopped — name it'
+        : status === 'failed'
+          ? 'Transcription failed — the recording is safe'
+          : status === 'uploading'
+            ? 'Uploading lecture…'
+            : 'Transcribing lecture…';
 
   return (
     <View
@@ -65,39 +107,39 @@ export function LectureRecordingBanner() {
         <Text className="text-white text-sm font-semibold" numberOfLines={1}>
           {statusLabel}
         </Text>
-        <Text className="text-white/90 text-xs" numberOfLines={1}>
-          {noteTitle || 'Untitled note'} · Tap to return
+        <Text className="text-white/90 text-xs" numberOfLines={2}>
+          {status === 'failed'
+            ? // The reason, then the promise. A student who has just lost a
+              // transcription needs to know the audio is still here before
+              // anything else.
+              `${error || 'Could not transcribe.'} Nothing was charged.`
+            : `${noteTitle || 'Untitled note'} · Tap to return`}
         </Text>
       </Pressable>
       {status === 'recording' ? (
         <>
-          <Pressable
+          <BannerButton
             disabled={!canStop}
-            onPress={() => void stopAndTranscribe()}
-            className={`flex-row items-center gap-1 px-2.5 py-1.5 rounded-lg bg-white/20 ${
-              canStop ? 'active:bg-white/30' : 'opacity-50'
-            }`}
-          >
-            <AppIcon name="stop" size={14} color="#fff" />
-            <Text className="text-white text-xs font-semibold">
-              {canStop ? 'Stop' : `${Math.max(0, 2 - seconds)}s`}
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => void discard()}
-            className="px-2.5 py-1.5 rounded-lg bg-black/20 active:bg-black/30"
-          >
-            <Text className="text-white text-xs font-semibold">Discard</Text>
-          </Pressable>
+            onPress={() => void stopForTitle()}
+            icon="stop"
+            label={canStop ? 'Stop' : `${Math.max(0, 2 - seconds)}s`}
+          />
+          <BannerButton tone="dark" onPress={() => void discard()} label="Discard" />
+        </>
+      ) : status === 'naming' ? null : status === 'failed' ? (
+        <>
+          {/* Retrying spends nothing until the upload actually lands, so this
+              is a free second attempt rather than a second charge. */}
+          <BannerButton icon="refresh" onPress={() => void retryTranscription()} label="Retry" />
+          {/* The only button in the app that deletes a recording. */}
+          <BannerButton tone="dark" onPress={() => void discard()} label="Discard" />
         </>
       ) : (
-        <Pressable
-          onPress={() => cancelTranscription()}
-          className="px-2.5 py-1.5 rounded-lg bg-black/20 active:bg-black/30"
-        >
-          <Text className="text-white text-xs font-semibold">Cancel</Text>
-        </Pressable>
+        <BannerButton tone="dark" onPress={() => cancelTranscription()} label="Cancel" />
       )}
+      {/* Mounted from the banner, not the editor: the stop that opens it can
+          come from any screen. */}
+      <LectureTitleSheet />
     </View>
   );
 }

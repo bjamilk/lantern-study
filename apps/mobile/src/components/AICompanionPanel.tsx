@@ -19,6 +19,7 @@ import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageBadge from './AIUsageBadge';
+import { AI_FEATURE_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
 import { navigate as navigateFromRef } from '../navigation/navigationRef';
 import { toTab } from '../navigation/nestedTab';
 import { submitCompanionFeedback } from '../services/ai';
@@ -572,7 +573,7 @@ export function AICompanionPanel({ context }: Props) {
           <AIDisclaimer compact textColor="#64748b" linkColor="#c45c26" />
           {/* Chat spends daily AI credits; the floating badge is hidden while
               the panel is open, so show the countdown here instead. */}
-          <AIUsageBadge variant="inline" />
+          <AIUsageBadge variant="inline" cost={AI_FEATURE_CREDIT_COST} />
         </View>
 
         {showHistoryList ? (

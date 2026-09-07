@@ -68,6 +68,8 @@ export function resolveDeepLinkNavigation(url: string): { screen: string; params
       return { screen: 'CampusTab', params: { screen: 'Campus', params: { segment: 'shop' } } as any };
     case 'budget':
       return { screen: 'MeTab', params: { screen: 'BudgetHome', initial: false } as any };
+    case 'join':
+      return { screen: 'JoinClass', params: { code: parsed.id } } as any;
     case 'test':
       // A generated test opens as the test itself; the bare `test` link (no
       // id) is the older "go to my tests" form and still lands on the list.

@@ -47,6 +47,13 @@ describe('resolveDeepLinkNavigation', () => {
     });
   });
 
+  it('opens a class join code on the JoinClass modal', () => {
+    expect(resolveDeepLinkNavigation('lanternstudy://join/ABC234')).toEqual({
+      screen: 'JoinClass',
+      params: { code: 'ABC234' },
+    });
+  });
+
   it('refuses to invent a target for a link it does not know', () => {
     expect(resolveDeepLinkNavigation('lanternstudy://sausages/3')).toBeNull();
     expect(resolveDeepLinkNavigation('not a url')).toBeNull();

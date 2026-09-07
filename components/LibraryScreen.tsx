@@ -31,6 +31,7 @@ import { CourseFilterShownAboveProvider } from './academic/CourseChips';
 import { LibraryRail } from './library/LibraryRail';
 import { LibraryPanelSearchProvider } from './library/libraryPanelSearch';
 import { LibrarySearchBox, LibrarySearchResults } from './library/LibrarySearch';
+import { ClassOfficialMaterials } from './classes/ClassOfficialMaterials';
 
 export type LibraryTab = 'notes' | 'flashcards';
 
@@ -423,6 +424,15 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           ) : null}
 
           <div className="flex-1 min-h-0 min-w-0 flex flex-col">
+            {!searchEverything ? (
+              <div className="px-4 pt-3 shrink-0">
+                <ClassOfficialMaterials
+                  courseId={
+                    courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : null
+                  }
+                />
+              </div>
+            ) : null}
             {searchEverything ? (
               <LibrarySearchResults
                 query={query}

@@ -122,6 +122,8 @@ const JobEmployerScreen = lazyWithRetry(() => import('./components/JobEmployerSc
 const JobEmployerPipelineScreen = lazyWithRetry(() => import('./components/JobEmployerPipelineScreen'));
 const JobCompanyScreen = lazyWithRetry(() => import('./components/JobCompanyScreen'));
 const AdminScreen = lazyWithRetry(() => import('./components/AdminScreen'));
+const TeachApp = lazyWithRetry(() => import('./components/teach/TeachApp'));
+const JoinClassPage = lazyWithRetry(() => import('./components/teach/JoinClassPage'));
 const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
 import NoteEditorScreen from './components/NoteEditorScreen';
 const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
@@ -1105,6 +1107,9 @@ export const App: React.FC = () => {
      */
     const normalizedPath = location.pathname.replace(/\/$/, '');
     const onMePath = normalizedPath === ME_PATH;
+    const standaloneRoute = parseAppRoute(location.pathname);
+    const onTeachPath = standaloneRoute.standalone === 'teach';
+    const joinCode = standaloneRoute.standalone === 'join' ? standaloneRoute.params.joinCode ?? '' : null;
     /**
      * The two Tests routes that render from the PATH rather than from an
      * AppMode — the same shape `/me` uses. A builder page and one particular
@@ -1422,6 +1427,27 @@ export const App: React.FC = () => {
     const noteSharePathMatch = location.pathname.match(/^\/notes\/share\/([^/]+)$/);
     if (noteSharePathMatch) {
         return <NoteShareAcceptScreen token={decodeURIComponent(noteSharePathMatch[1])} />;
+    }
+
+    // Isolated lecturer portal — no student AppShell, campus, marketplace, or
+    // gamification chrome (docs/phase-teach-portal-contract.md §5).
+    if (onTeachPath) {
+        return (
+            <ErrorBoundary>
+                <Suspense fallback={<AppContentLoadingFallback />}>
+                    <TeachApp onLeave={() => navigateToPath('/dashboard')} />
+                </Suspense>
+            </ErrorBoundary>
+        );
+    }
+    if (joinCode !== null) {
+        return (
+            <ErrorBoundary>
+                <Suspense fallback={<AppContentLoadingFallback />}>
+                    <JoinClassPage code={joinCode} onJoined={() => navigateToPath('/dashboard')} />
+                </Suspense>
+            </ErrorBoundary>
+        );
     }
 
     /**
@@ -2938,6 +2964,7 @@ export const App: React.FC = () => {
                     theme={theme}
                     onToggleTheme={toggleTheme}
                     onNavigate={(mode) => navigateTo(mode)}
+                    onOpenTeach={() => navigateToPath('/teach')}
                     onOpenSettings={() => openModal('settings')}
                     onLogout={handleLogoutAndRedirect}
                     pendingSyncCount={pendingSyncResults.length + pendingFlashcardReviews.length}
@@ -3373,7 +3400,10 @@ export const App: React.FC = () => {
             onDeleteAccountImmediate={handleDeleteAccountImmediate}
             onImportAccount={handleImportAccount}
             onExportAccount={handleExportAccount}
-            onResetSettings={handleResetSettings} />
+            onResetSettings={handleResetSettings}
+            // The Usage & limits tab's at-zero step: earn AI uses by inviting
+            // someone, never buy them.
+            onNavigateToInvite={() => { closeModal('settings'); navigateTo(AppMode.INVITE_FRIENDS); }} />
         </ErrorBoundary>
     );
 };

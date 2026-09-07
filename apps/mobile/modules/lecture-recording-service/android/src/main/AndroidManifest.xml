@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <!--
+    Android kills a backgrounded process's microphone within seconds unless a
+    foreground service of type `microphone` is running. This is the whole
+    reason the module exists: without the declaration below, a lecture stops
+    recording the moment the screen goes off, silently, and the student finds
+    out an hour later.
+  -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+  <application>
+    <service
+      android:name=".LectureRecordingService"
+      android:enabled="true"
+      android:exported="false"
+      android:stopWithTask="true"
+      android:foregroundServiceType="microphone" />
+  </application>
+</manifest>

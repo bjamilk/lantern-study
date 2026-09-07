@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
 } from 'react-native';
 import { getAIResetLabel, formatAIResetTime } from '@lantern/shared/utils';
+import { formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import {
   subscribeToAIUsage,
   fetchAIUsage,
@@ -121,7 +122,7 @@ export default function AIUsageBadge({
           <View style={styles.modalHeader}>
             <View style={styles.cardHeader}>
               <AppIcon name="sparkles" size={20} color={colors.primaryText} />
-              <Text style={[styles.cardTitle, { color: colors.text }]}>AI Requests</Text>
+              <Text style={[styles.cardTitle, { color: colors.text }]}>AI uses</Text>
             </View>
             <TouchableOpacity onPress={closeDetail} hitSlop={12} accessibilityLabel="Close">
               <AppIcon name="close" size={22} color={colors.textSecondary} />
@@ -133,7 +134,7 @@ export default function AIUsageBadge({
               {usage.remaining} / {usage.limit}
             </Text>
             <Text style={[styles.modalCountSubtitle, { color: colors.textSecondary }]}>
-              AI requests remaining
+              AI uses left today
             </Text>
           </View>
 
@@ -190,8 +191,11 @@ export default function AIUsageBadge({
     return (
       <Text style={[styles.inlineText, { color: statusColor }]}>
         {usage.remaining}/{usage.limit} AI uses left
+        {/* The price goes through formatCreditCost like every other button's
+            does — a local pluralisation here is how "credit" and "AI use"
+            became two names for one unit. */}
         {cost != null
-          ? ` · costs ${cost} credit${cost === 1 ? '' : 's'}${shortOfCredits ? ' — not enough' : ''}`
+          ? ` · costs ${formatCreditCost(cost)}${shortOfCredits ? ' — not enough' : ''}`
           : ''}{' '}
         · {resetLabel}
       </Text>
@@ -203,7 +207,7 @@ export default function AIUsageBadge({
       <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
         <View style={styles.cardHeader}>
           <AppIcon name="sparkles" size={20} color={colors.primaryText} />
-          <Text style={[styles.cardTitle, { color: colors.text }]}>AI Usage</Text>
+          <Text style={[styles.cardTitle, { color: colors.text }]}>AI uses</Text>
         </View>
 
         <View style={styles.progressBarContainer}>
@@ -218,7 +222,7 @@ export default function AIUsageBadge({
         </View>
 
         <Text style={[styles.cardUsageText, { color: colors.textSecondary }]}>
-          {usage.remaining} of {usage.limit} uses remaining
+          {usage.remaining} of {usage.limit} AI uses left today
         </Text>
 
         <Text style={[styles.cardResetText, { color: colors.textSecondary }]}>

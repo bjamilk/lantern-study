@@ -933,6 +933,22 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="people"
+              iconColor="#0d9488"
+              title="Join a class"
+              subtitle="Enter the code from your lecturer — no LMS needed"
+              onPress={() => navigation.navigate('JoinClass' as never)}
+            />
+            <SettingItem
+              colors={colors}
+              icon="school"
+              iconColor="#4f46e5"
+              title="Teach classes"
+              subtitle="Open the lecturer portal on the web"
+              onPress={() => void Linking.openURL('https://lanternstudy.com/teach')}
+            />
+            <SettingItem
+              colors={colors}
               icon="gift"
               iconColor="#f59e0b"
               title="Invite friends"

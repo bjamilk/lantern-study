@@ -17,12 +17,27 @@ import type { SupabaseService } from './supabase';
 import { getWalletService, type WalletService } from './walletService';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
+import { grantBonusUses } from './aiBonusUses';
+import {
+  REFERRAL_BONUS_AI_USES,
+  REFERRAL_BONUS_AI_USES_CAP,
+} from '@lantern/shared/utils/aiCredits';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Coins granted to each side once the referee activates. */
 export const REFERRAL_REWARD_REFERRER = 200;
 export const REFERRAL_REWARD_REFEREE = 100;
+
+/**
+ * Bonus AI uses granted to each side at the same moment as the coins.
+ *
+ * Read from shared, not typed here: the Usage & limits screen prints this
+ * number as the offer, and the two must be the same number or the offer is a
+ * lie. The founder's decision is that this — not a Paystack top-up — is what a
+ * student at zero AI uses is shown.
+ */
+export const REFERRAL_BONUS_AI_USES_EACH = REFERRAL_BONUS_AI_USES;
 
 /** A referral that has not activated within this window is not worth chasing. */
 export const REFERRAL_QUALIFY_WINDOW_DAYS = 45;
@@ -201,7 +216,16 @@ export class ReferralsService {
       const now = new Date().toISOString();
       // The award key is the referral id, so the pair can never be paid twice
       // even if two requests race past the rewarded_at check above.
-      const [referrerAward, refereeAward] = await Promise.all([
+      // Coins and AI uses are granted in the same breath, under the same
+      // exactly-once guard. Both are keyed on the referral id — `wallet_award_once`
+      // for coins, the UNIQUE `ai_bonus_grants.source_id` for AI uses — so a
+      // concurrent double-activation pays each side once, in both currencies.
+      //
+      // The AI-use grant is deliberately NOT allowed to fail the coin grant:
+      // `grantBonusUses` never throws, and until the 20260907140000 migration
+      // is hand-applied it reports itself unavailable and grants nothing. A
+      // referral still pays its coins in that window.
+      const [referrerAward, refereeAward, referrerUses, refereeUses] = await Promise.all([
         this.wallet.awardWalletOnce(
           row.referrer_id,
           `referral:referrer:${row.id}`,
@@ -214,6 +238,18 @@ export class ReferralsService {
           REFERRAL_REWARD_REFEREE,
           'Welcome bonus'
         ),
+        grantBonusUses(row.referrer_id, {
+          source: 'referral',
+          sourceId: `referral:referrer:${row.id}`,
+          amount: REFERRAL_BONUS_AI_USES_EACH,
+          cap: REFERRAL_BONUS_AI_USES_CAP,
+        }),
+        grantBonusUses(row.referee_id, {
+          source: 'referral',
+          sourceId: `referral:referee:${row.id}`,
+          amount: REFERRAL_BONUS_AI_USES_EACH,
+          cap: REFERRAL_BONUS_AI_USES_CAP,
+        }),
       ]);
 
       await this.db
@@ -229,6 +265,10 @@ export class ReferralsService {
         referralId: row.id,
         referrerAwarded: referrerAward.awarded,
         refereeAwarded: refereeAward.awarded,
+        referrerAiUses: referrerUses.amount,
+        refereeAiUses: refereeUses.amount,
+        aiUsesCapped: referrerUses.capped || refereeUses.capped,
+        aiUsesUnavailable: referrerUses.unavailable || refereeUses.unavailable || false,
       });
       return { rewarded: true };
     } catch (err) {

@@ -27,7 +27,8 @@ export type DeepLinkType =
     | 'marketplace'
     | 'budget'
     | 'listing'
-    | 'note_share';
+    | 'note_share'
+    | 'join';
 
 export interface DeepLinkParams {
     type: DeepLinkType;

@@ -47,7 +47,11 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
-import router, { autoStartPdfOcrOrRevert, initializeNotesRoutes } from './notes';
+import router, {
+  autoStartPdfOcrOrRevert,
+  initializeNotesRoutes,
+  lectureTranscriptionCostFromRequest,
+} from './notes';
 import { chargeAiCredits, refundFeatureAiCredit } from '../middleware/aiRateLimit';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { generateDailyQuiz } from '../services/aiService';
@@ -316,5 +320,40 @@ describe('POST /:noteId/quiz regenerate pre-check', () => {
     expect(res.statusCode).toBe(200);
     expect(supabase.upsertNoteQuiz).toHaveBeenCalled();
     expect(refundFeatureAiCredit).not.toHaveBeenCalled();
+  });
+});
+
+
+/**
+ * 3. Transcription is priced by recording length — 1 AI use per 15 minutes, or
+ *    part of one (founder decision, 2026-09-07). It used to charge a flat 1,
+ *    which gave a 90-minute lecture away for the price of a voice memo.
+ *    The charge is reserved BEFORE the provider call, so a student who cannot
+ *    afford it is refused up front rather than billed for a partial job.
+ */
+describe('what a transcription request costs', () => {
+  const min = (m: number) => m * 60_000;
+
+  it('prices the recording by its length, in whole 15-minute parts', () => {
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: min(10) } })).toBe(1);
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: min(15) } })).toBe(1);
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: min(15) + 1000 } })).toBe(2);
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: min(90) } })).toBe(6);
+  });
+
+  it('falls back to the one-use minimum rather than guessing high', () => {
+    // A CF Pages proxy or an empty Content-Type can leave the body unset, and
+    // an older client sends no duration at all. Neither may be overcharged.
+    expect(lectureTranscriptionCostFromRequest({})).toBe(1);
+    expect(lectureTranscriptionCostFromRequest({ body: undefined })).toBe(1);
+    expect(lectureTranscriptionCostFromRequest({ body: 'not-an-object' })).toBe(1);
+    expect(lectureTranscriptionCostFromRequest({ body: {} })).toBe(1);
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: 'lots' } })).toBe(1);
+  });
+
+  it('does not let a client claim its way past the per-action ceiling', () => {
+    // durationMs is a claim from the request body, not a measurement.
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: min(60 * 48) } })).toBe(10);
+    expect(lectureTranscriptionCostFromRequest({ body: { durationMs: -min(30) } })).toBe(1);
   });
 });

@@ -100,6 +100,7 @@ interface UIState {
     | 'academic'
     | 'notifications'
     | 'study'
+    | 'usage'
     | 'appearance'
     | 'privacy'
     | 'marketplace'

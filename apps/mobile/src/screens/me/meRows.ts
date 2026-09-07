@@ -16,6 +16,7 @@ import type { AppIconName } from '../../components/ui/appIconMap';
 
 export type MeRowId =
   | 'academic'
+  | 'joinClass'
   | 'budget'
   | 'credits'
   | 'downloads'
@@ -82,6 +83,14 @@ export function buildMeSections({ darkMode, lowDataMode }: MeState): MeSection[]
           kind: 'link',
           accessibilityLabel: 'Academic details',
         },
+        {
+          id: 'joinClass',
+          label: 'Join a class',
+          hint: 'Code from your lecturer — no LMS needed',
+          icon: 'people',
+          kind: 'link',
+          accessibilityLabel: 'Join a class',
+        },
       ],
     },
     {
@@ -109,11 +118,19 @@ export function buildMeSections({ darkMode, lowDataMode }: MeState): MeSection[]
         },
         {
           id: 'credits',
-          label: 'Lantern AI credits',
+          // "AI uses" is the one word for this unit across the app — the
+          // badge, the price on every button, and this row. It used to be
+          // "credits" here and "AI uses" three taps away, which reads as two
+          // different currencies.
+          label: 'AI uses',
+          hint: 'What you have left today, and what each action costs',
           icon: 'sparkles',
           feature: 'ai',
-          kind: 'readout',
-          accessibilityLabel: 'Lantern AI credits',
+          // It was a readout while there was nowhere to go. Usage & limits is
+          // now that somewhere: the counter, the whole price list, and what
+          // still works at zero.
+          kind: 'link',
+          accessibilityLabel: 'AI uses, usage and limits',
         },
       ],
     },

@@ -40,7 +40,9 @@ const AIUsageInline: React.FC<{ className?: string; cost?: number }> = ({
     limit: usage.limit,
     nowMs,
   });
-  const title = `${remaining} of ${usage.limit} AI requests remaining · ${resetLabel}`;
+  // One word for the unit — "AI uses", the same as the badge, the same as
+  // formatCreditCost. "Requests" here made it read as a third currency.
+  const title = `${remaining} of ${usage.limit} AI uses left today · ${resetLabel}`;
 
   return (
     <span
@@ -55,7 +57,7 @@ const AIUsageInline: React.FC<{ className?: string; cost?: number }> = ({
         {cost != null && (
           <span className="text-label tracking-normal font-normal">
             · costs {formatCreditCost(cost)}
-            {shortOfCredits ? ' — not enough credits' : ''}
+            {shortOfCredits ? ' — not enough left' : ''}
           </span>
         )}
       </span>

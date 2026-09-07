@@ -8,9 +8,10 @@ import {
     XCircleIcon, UserCircleIcon, BellIcon, ShieldExclamationIcon, 
     EyeIcon, EyeSlashIcon, ArrowRightOnRectangleIcon, TrashIcon,
     CameraIcon, AcademicCapIcon, PaintBrushIcon, LifebuoyIcon,
-    AdjustmentsHorizontalIcon, ShoppingBagIcon, BuildingLibraryIcon,
+    AdjustmentsHorizontalIcon, ShoppingBagIcon, BuildingLibraryIcon, SparklesIcon,
 } from '@heroicons/react/24/outline';
 import { AcademicSettingsSection } from './settings/AcademicSettingsSection';
+import { UsageLimitsSection } from './settings/UsageLimitsSection';
 import { compressImage } from '../utils/imageCompression';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
 import { useIsMdUp } from '../hooks/useMediaQuery';
@@ -41,6 +42,7 @@ type SettingsTab =
     | 'academic'
     | 'notifications'
     | 'study'
+    | 'usage'
     | 'appearance'
     | 'privacy'
     | 'marketplace'
@@ -94,6 +96,8 @@ interface SettingsModalProps {
   }) => Promise<{ noteFolders: number; notes: number; decks: number; flashcards: number } | void>;
   onExportAccount: () => void | Promise<void>;
   onResetSettings: () => void;
+  /** Opens the invite screen from the Usage & limits tab's referral step. */
+  onNavigateToInvite?: () => void;
 }
 
 const ToggleSwitch = ({ enabled, onChange, label, description }: {
@@ -110,7 +114,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
     onUpdateSettingsCategory,
     onUpdateProfile, onUpdateAvatar, onUpdatePassword, onLogout,
     onPauseAccount, onDeleteAccountImmediate, onImportAccount,
-    onExportAccount, onResetSettings,
+    onExportAccount, onResetSettings, onNavigateToInvite,
 }) => {
     const { lowDataMode } = useLowDataModeToggle();
     const paystackEnabled = usePaystackEnabled();
@@ -290,6 +294,8 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
         { id: 'academic', label: 'Academic', icon: BuildingLibraryIcon },
         { id: 'notifications', label: 'Notifications', icon: BellIcon },
         { id: 'study', label: 'Study', icon: AcademicCapIcon },
+        // "AI uses", not "Credits": one unit, one word, everywhere.
+        { id: 'usage', label: 'AI uses', icon: SparklesIcon },
         { id: 'appearance', label: 'Appearance', icon: PaintBrushIcon },
         { id: 'privacy', label: 'Privacy', icon: EyeIcon },
         { id: 'marketplace', label: 'Marketplace', icon: ShoppingBagIcon },
@@ -300,6 +306,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
 
     const renderContent = (tab: SettingsTab = activeTab) => {
         switch (tab) {
+            case 'usage': return <UsageLimitsSection onInviteFriends={onNavigateToInvite} />;
             case 'profile': return (
                 <div className="space-y-6">
                     <div>

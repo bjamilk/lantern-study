@@ -58,6 +58,8 @@ import { DashboardInsights } from '../../components/dashboard/DashboardInsights'
 import { GroupPerformanceChartCard } from '../../components/dashboard/GroupPerformanceChartCard';
 import { AIStudyCoachCard } from '../../components/dashboard/AIStudyCoachCard';
 import { CourseReadinessCard } from '../../components/dashboard/CourseReadinessCard';
+import { JoinClassCard } from '../../components/classes/JoinClassCard';
+import { ClassWorkCard } from '../../components/classes/ClassWorkCard';
 import { useCompanionStore } from '../../stores/companionStore';
 import * as api from '../../services/api';
 import { refreshUserData } from '../../services/dataRefresh';
@@ -799,6 +801,9 @@ export function DashboardScreen({ navigation }: Props) {
             Spec §5.7: the single coloured thing above the fold answers "am I
             ready", and it keeps its honest empty and failed states. */}
         <CourseReadinessCard />
+
+        <JoinClassCard />
+        <ClassWorkCard />
 
         {/* The four doors. Review is lime because it IS flashcards; the three
             siblings each carry their own feature hue, which is four hues on

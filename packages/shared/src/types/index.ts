@@ -237,6 +237,150 @@ export interface CourseTopic {
   position: number;
 }
 
+/** Lecturer-owned instance of a catalogue course (docs/phase-teach-portal-contract.md). */
+export type ClassRole = 'instructor' | 'ta' | 'student';
+export type ClassMemberStatus = 'active' | 'removed';
+export type ClassMaterialKind = 'syllabus' | 'lecture' | 'reading' | 'slide';
+export type ClassAssignmentKind = 'test' | 'deck' | 'notes' | 'open';
+export type ClassAssignmentProgressStatus = 'assigned' | 'completed';
+export type InstitutionStaffRole = 'instructor' | 'department_admin' | 'institution_admin';
+
+export interface ClassSection {
+  id: string;
+  course: Course;
+  institutionId: string | null;
+  title: string;
+  academicYear: string;
+  semester: 1 | 2 | null;
+  archivedAt: string | null;
+  createdAt: string;
+  memberCount: number;
+  role: ClassRole;
+  /** Present for instructors and TAs only — never sent to students. */
+  joinCode?: string;
+}
+
+export interface ClassJoinPreview {
+  title: string;
+  course: Course;
+  instructorName: string;
+  memberCount: number;
+  academicYear: string;
+  semester: 1 | 2 | null;
+}
+
+export interface ClassMember {
+  userId: string;
+  name: string;
+  username: string | null;
+  avatarUrl: string | null;
+  role: ClassRole;
+  status: ClassMemberStatus;
+  joinedAt: string;
+}
+
+export interface ClassMaterial {
+  id: string;
+  classId: string;
+  noteId: string | null;
+  kind: ClassMaterialKind;
+  title: string;
+  body?: string;
+  publishedAt: string | null;
+  createdAt: string;
+}
+
+export interface ClassGeneratedQuizQuestion {
+  text: string;
+  type: string;
+  options?: string[];
+  correctAnswer?: string;
+  explanation?: string;
+  difficulty?: string;
+  topic?: string;
+}
+
+export interface ClassGeneratedCard {
+  front: string;
+  back: string;
+  mnemonic?: string;
+}
+
+export interface ClassGenerateResult {
+  kind: 'quiz' | 'flashcards' | 'outline';
+  questions?: ClassGeneratedQuizQuestion[];
+  cards?: ClassGeneratedCard[];
+  outline?: string[];
+}
+
+export interface ClassAssignmentProgress {
+  assignmentId: string;
+  userId: string;
+  status: ClassAssignmentProgressStatus;
+  score: number | null;
+  completedAt: string | null;
+}
+
+export interface ClassAssignment {
+  id: string;
+  classId: string;
+  title: string;
+  kind: ClassAssignmentKind;
+  dueAt: string | null;
+  noteId: string | null;
+  deckId: string | null;
+  payload: {
+    questions?: ClassGeneratedQuizQuestion[];
+    cards?: ClassGeneratedCard[];
+    outline?: string[];
+  };
+  createdAt: string;
+  progress?: ClassAssignmentProgress | null;
+  completionCount?: number;
+}
+
+export interface ClassAnalyticsStudent {
+  userId: string;
+  name: string;
+  username: string | null;
+  completedAssignments: number;
+  lastActivityAt: string | null;
+  atRisk: boolean;
+}
+
+export interface ClassAnalytics {
+  memberCount: number;
+  publishedMaterialCount: number;
+  assignmentCount: number;
+  students: ClassAnalyticsStudent[];
+  atRiskDays: number;
+}
+
+export interface InstitutionStaff {
+  institutionId: string;
+  institutionName?: string;
+  userId: string;
+  name?: string;
+  username?: string | null;
+  role: InstitutionStaffRole;
+  status: 'active' | 'revoked';
+  createdAt: string;
+}
+
+export interface InstitutionClassAnalytics {
+  institutionId: string;
+  classCount: number;
+  memberCount: number;
+  publishedMaterialCount: number;
+  assignmentCount: number;
+}
+
+export interface LmsConnectorStatus {
+  available: false;
+  connectors: [];
+  message: string;
+}
+
 /**
  * A normalised topic in the knowledge network (concepts table). One row per
  * (course, slug); slug comes from @lantern/shared/learning normalizeConceptSlug.
@@ -1644,6 +1788,8 @@ export interface CompanionUserContext {
   noteContext?: string;
   noteTitle?: string;
   noteId?: string;
+  /** When set, companion grounding may include that class's published materials. */
+  classId?: string;
   studyGoal?: StudyGoalMode;
   /** Active companion thread; omit / null + newConversation to start fresh. */
   conversationId?: string;

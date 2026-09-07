@@ -180,6 +180,22 @@ export async function buildTrustedCompanionContext(
     }
   }
 
+  const rawClassId = typeof clientContext.classId === 'string' ? clientContext.classId.trim() : '';
+  const classId =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(rawClassId)
+      ? rawClassId
+      : undefined;
+  try {
+    const { getClassSectionsService } = await import('./classSections');
+    const corpus = await getClassSectionsService(supabaseService).corpusForCompanion(userId, classId);
+    if (corpus) {
+      const combined = [trusted.noteContext || '', corpus].filter(Boolean).join('\n\n').slice(0, MAX_NOTE_LEN);
+      if (combined) trusted.noteContext = combined;
+    }
+  } catch {
+    /* classes migration unapplied — companion still works */
+  }
+
   return trusted;
 }
 

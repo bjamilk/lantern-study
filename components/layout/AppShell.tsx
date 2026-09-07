@@ -230,6 +230,15 @@ const AppShell: React.FC<AppShellProps> = ({
                             <span className="block text-xs opacity-90 truncate">
                                 {lectureNoteTitle || 'Untitled note'} · Tap to return
                             </span>
+                            {/* Parity with the mobile pre-flight card's consent
+                                line (apps/mobile/src/components/lecture/
+                                lecturePreflight.ts). Same sentence, so the two
+                                platforms make the same promise. */}
+                            {lectureStatus === 'recording' && (
+                                <span className="block text-label opacity-75 truncate">
+                                    Recording is stored in your note; ask before recording other people.
+                                </span>
+                            )}
                         </button>
                         <div className="flex items-center gap-1.5 shrink-0">
                             {lectureStatus === 'recording' ? (

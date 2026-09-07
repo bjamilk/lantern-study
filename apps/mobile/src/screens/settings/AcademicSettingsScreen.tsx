@@ -38,6 +38,7 @@ import {
 import { formatCourseLabel, isValidExamDateInput, validateAcademicYears } from '../../utils/courseSelection';
 import type { AcademicProfile } from '../../utils/academicProfile';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 
 type NavigationProp = { goBack: () => void };
 
@@ -365,6 +366,16 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
           <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>My courses · {academicYear}</Text>
           {coursesLoading ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
         </View>
+        <Pressable
+          onPress={() => navigateFromRoot('JoinClass')}
+          accessibilityRole="button"
+          style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, marginBottom: 12 }]}
+        >
+          <Text style={[styles.courseCode, { color: colors.text }]}>Join a class</Text>
+          <Text style={[styles.courseMeta, { color: colors.textTertiary }]}>
+            Enter the code from your lecturer. No Canvas or Google Classroom needed.
+          </Text>
+        </Pressable>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <Text style={[styles.label, { color: colors.textSecondary }]}>Add a course</Text>
           <CourseMultiSelect

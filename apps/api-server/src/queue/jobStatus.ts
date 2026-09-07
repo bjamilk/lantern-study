@@ -17,6 +17,7 @@ import {
 import { refundAiCredits, refundFeatureAiCredit } from '../middleware/aiRateLimit';
 import { notifyJobTerminal } from '../services/jobPush';
 import type { JobRecord, JobStatus, QueueName } from './jobs/types';
+import type { AiJobCharge } from './enqueue';
 
 const TTL_SECONDS = 60 * 60 * 24;
 
@@ -148,7 +149,7 @@ export async function updateJobStatus(
 /** Stamp the enqueueing request's AI charge onto the job record (see JobRecord.charge). */
 export async function attachJobCharge(
   jobId: string,
-  charge: { credits: number; featureKey?: string }
+  charge: AiJobCharge
 ): Promise<void> {
   const existing = await getJobRecord(jobId);
   if (!existing) return;
@@ -193,10 +194,14 @@ export async function refundJobCreditOnce(record: JobRecord | null): Promise<boo
   if (record.credit && record.credit.refunded > 0) return false;
   if (!(await markJobChargeRefunded(record.id))) return false;
 
+  // Back to the pool that paid. A bonus use refunded into the daily counter
+  // would expire at midnight — the student would lose a reward to a job that
+  // failed through no fault of theirs.
+  const pool = charge.pool === 'bonus' ? 'bonus' : 'daily';
   if (charge.featureKey) {
-    await refundFeatureAiCredit(userId, charge.featureKey);
+    await refundFeatureAiCredit(userId, charge.featureKey, pool);
   } else {
-    await refundAiCredits(userId, charge.credits);
+    await refundAiCredits(userId, charge.credits, pool);
   }
 
   const latest = (await getJobRecord(record.id)) ?? record;
@@ -303,7 +308,8 @@ export async function createJobRecord(input: {
   queue: QueueName;
   name: string;
   userId?: string;
-  charge?: { credits: number; featureKey?: string };
+  /** What the enqueueing request reserved, and which pool paid for it. */
+  charge?: AiJobCharge;
   sourceTitle?: string;
 }): Promise<JobRecord> {
   const now = new Date().toISOString();

@@ -58,10 +58,15 @@ export function MeScreen({ navigation }: Props) {
     (id: MeRowId) => {
       switch (id) {
         case 'credits':
-          // A readout, not a door. Nothing to navigate to.
+          // Usage & limits: the counter, every action's price, and what still
+          // works at zero. A root-stack modal, like Academic details.
+          navigateFromRoot('UsageLimits');
           return;
         case 'academic':
           navigateFromRoot('AcademicSettings');
+          return;
+        case 'joinClass':
+          navigateFromRoot('JoinClass');
           return;
         case 'budget':
           // Budget lives on this stack, so Back returns to Me and the Me tab

@@ -47,7 +47,18 @@ export interface EnqueueResult {
   async: true;
 }
 
-export type AiJobCharge = { credits: number; featureKey?: string };
+/**
+ * What a request reserved before it handed work to a queue.
+ *
+ * `pool` records WHICH allowance paid — daily or banked bonus — because a job
+ * that permanently fails must refund to the same pool. Older job records
+ * predate the field; they are treated as 'daily', which is what they were.
+ */
+export type AiJobCharge = {
+  credits: number;
+  featureKey?: string;
+  pool?: 'daily' | 'bonus';
+};
 
 export async function enqueueJob(
   name: JobName,

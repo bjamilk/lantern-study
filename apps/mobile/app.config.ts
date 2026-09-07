@@ -273,7 +273,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     package: ANDROID_PACKAGE,
     ...(GOOGLE_SERVICES_FILE ? { googleServicesFile: GOOGLE_SERVICES_FILE } : {}),
-    permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS'],
+    // FOREGROUND_SERVICE + FOREGROUND_SERVICE_MICROPHONE are what let a
+    // lecture keep recording with the screen off: without a running
+    // foreground service of type `microphone`, Android suspends the process
+    // and the recording stops silently mid-lecture. POST_NOTIFICATIONS is
+    // already needed for push, and is also what makes the ongoing
+    // "Recording lecture" notification appear on Android 13+ — a microphone
+    // held with nothing on screen saying so is not something this app does.
+    // The service itself is declared by the local module in
+    // `modules/lecture-recording-service`.
+    permissions: [
+      'RECORD_AUDIO',
+      'MODIFY_AUDIO_SETTINGS',
+      'FOREGROUND_SERVICE',
+      'FOREGROUND_SERVICE_MICROPHONE',
+      'POST_NOTIFICATIONS',
+      'WAKE_LOCK',
+    ],
     // Both arrive through dependency manifests, not from this app.
     // SYSTEM_ALERT_WINDOW comes from react-native's *debug* manifest and was
     // reaching release builds — "display over other apps" is a permission Play

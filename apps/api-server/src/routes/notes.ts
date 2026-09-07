@@ -7,7 +7,6 @@ import {
 } from '../middleware/authorizeResource';
 import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import {
-  aiRateLimit,
   aiRateLimitForFeature,
   aiRateLimitWithCost,
   applyGlobalUsageHeaders,
@@ -16,7 +15,10 @@ import {
   refundFeatureAiCredit,
   NOTE_OCR_CREDIT_COST,
 } from '../middleware/aiRateLimit';
-import { getSmartNotesCreditCost } from '@lantern/shared/utils/aiCredits';
+import {
+  getLectureTranscriptionCost,
+  getSmartNotesCreditCost,
+} from '@lantern/shared/utils/aiCredits';
 import {
   aiPostBurstRateLimit,
   collaboratorInviteRateLimit,
@@ -1438,7 +1440,39 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
   });
 }));
 
-router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimit, asyncHandler(async (req: Request, res: Response) => {
+/**
+ * Transcription is priced by how long the recording is: 1 AI use per 15
+ * minutes, or part of one (founder decision, 2026-09-07). The cost is reserved
+ * BEFORE any work happens, so a student who cannot afford a 90-minute lecture
+ * is refused up front instead of being charged for a partial job, and the
+ * charge is stamped on `X-AI-Cost` so the client can show what it actually
+ * cost next to the estimate it quoted.
+ *
+ * `durationMs` comes from the client, so it is a claim. It is bounded by
+ * `MAX_LECTURE_TRANSCRIPTION_MS` and by `MAX_AI_CREDIT_COST` inside
+ * `getLectureTranscriptionCost`, and a missing or nonsense figure prices at
+ * the 1-use minimum rather than at a guess. The transcription service reads
+ * the real audio afterwards and logs the sniffed length; the price is not
+ * re-charged from it, because a student must never be billed more than the
+ * number they were shown before they pressed the button.
+ */
+/**
+ * The price of one transcription request, read off the body.
+ *
+ * Exported so the price a student is charged can be tested directly, rather
+ * than through a route that needs Whisper, storage and a note to exist. A CF
+ * Pages proxy or an empty Content-Type can leave `body` unset, so it is never
+ * destructured; a missing duration falls through to the 1-use minimum.
+ */
+export function lectureTranscriptionCostFromRequest(req: { body?: unknown }): number {
+  const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
+  return getLectureTranscriptionCost(Number(body.durationMs));
+}
+
+router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, aiRateLimitWithCost(
+  lectureTranscriptionCostFromRequest,
+  { label: 'Transcribing this recording' }
+), asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   // CF Pages proxy / empty Content-Type can leave body unset — never destructure undefined.

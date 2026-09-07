@@ -3,7 +3,14 @@
  */
 import { Router, Request, Response } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
-import { aiRateLimit, aiRateLimitForFeature, aiRateLimitWithCost, getAIUsage } from '../middleware/aiRateLimit';
+import {
+  aiRateLimit,
+  aiRateLimitForFeature,
+  aiRateLimitWithCost,
+  getAIUsage,
+  getAIBonusUsage,
+  getAllAIUsageForUser,
+} from '../middleware/aiRateLimit';
 import { aiPostBurstRateLimit } from '../middleware/rateLimit';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { clientErrorMessage } from '../utils/safeError';
@@ -78,12 +85,30 @@ router.get('/health', authMiddleware, (_req: Request, res: Response) => {
   });
 });
 
-// Get user's AI usage — auth required
+// Get user's AI usage — auth required.
+//
+// `features` is additive: the global counter alone cannot explain a refusal
+// that came from a per-feature cap (15 flashcard runs a day, say) while the
+// badge still shows credits left. The Usage & limits screen prints both, so a
+// student is never refused for a limit the app never showed them.
 router.get('/usage', authMiddleware, async (req: AuthenticatedRequest, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const usage = await getAIUsage(userId);
-  res.json(usage);
+  const [usage, all, bonus] = await Promise.all([
+    getAIUsage(userId),
+    getAllAIUsageForUser(userId),
+    getAIBonusUsage(userId),
+  ]);
+  res.json({
+    ...usage,
+    // Banked uses, earned by referral. Reported separately from `used`/`limit`
+    // because they obey different physics: they do not reset at midnight, and
+    // they are only spent once the daily allowance is gone. Folding them into
+    // `limit` would make the reset countdown a lie.
+    bonusRemaining: bonus.bonusRemaining,
+    bonusCap: bonus.bonusCap,
+    features: all.filter((row) => row.feature !== 'global'),
+  });
 });
 
 // All other routes require auth + per-user AI burst + daily AI quota

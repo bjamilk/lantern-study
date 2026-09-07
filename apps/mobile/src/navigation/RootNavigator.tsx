@@ -259,10 +259,10 @@ import {
 } from '../screens/discover';
 import { StudyRoomScreen } from '../screens/study/StudyRoomScreen';
 
-import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen, InviteFriendsScreen } from '../screens/settings';
+import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen, InviteFriendsScreen, JoinClassScreen } from '../screens/settings';
 
 import { CampusScreen } from '../screens/campus';
-import { MeScreen } from '../screens/me';
+import { MeScreen, UsageLimitsScreen } from '../screens/me';
 
 import { TestScreen, TestBuilderScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
@@ -1489,6 +1489,10 @@ function RootNavigatorInner() {
             <RootStack.Screen name="EditProfile" component={EditProfileScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="AcademicSettings" component={AcademicSettingsScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="JoinClass" component={JoinClassScreen} options={{ presentation: 'modal' }} />
+
+            <RootStack.Screen name="UsageLimits" component={UsageLimitsScreen} options={{ presentation: 'modal' }} />
 
             <RootStack.Screen name="InviteFriends" component={InviteFriendsScreen} options={{ presentation: 'modal' }} />
 
