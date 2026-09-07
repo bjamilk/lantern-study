@@ -1,5 +1,5 @@
 import { AppMode } from '../../types';
-import { ME_PATH } from '../../utils/appRoutes';
+import { ME_PATH, TEST_BUILDER_PATH } from '../../utils/appRoutes';
 
 /**
  * The five places a student goes on purpose. One vocabulary, shared by the
@@ -110,6 +110,12 @@ export function resolveActiveDestination(
   appMode: AppMode,
   pathname?: string | null,
 ): DestinationId | null {
-  if (pathname && pathname.replace(/\/$/, '') === ME_PATH) return 'me';
+  const path = pathname ? pathname.replace(/\/$/, '') : null;
+  if (path === ME_PATH) return 'me';
+  // `/study/tests/new` and `/study/tests/:testId` have no AppMode behind them
+  // (they render from the path, as `/me` does), so the mode underneath is
+  // whatever the student came from. The path is the only truthful signal, and
+  // both are inside Study.
+  if (path && (path === TEST_BUILDER_PATH || path.startsWith('/study/tests/'))) return 'study';
   return MODE_OWNER[appMode] ?? null;
 }

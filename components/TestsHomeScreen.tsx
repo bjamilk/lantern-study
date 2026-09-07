@@ -9,6 +9,8 @@ import {
 } from '@heroicons/react/24/outline';
 import type { OfflineSessionBundle, PausedSessionSummary, TestResult } from '../types';
 import { Button, Card, EmptyState, FeatureDisc, ScreenHeader } from './ui';
+import { retakeTitle } from '../utils/testRetake';
+import { tallyAttempt, unansweredNote } from '../utils/testAttempt';
 
 export interface TestsHomeScreenProps {
   /** Completed attempts, newest first is not assumed — the screen sorts. */
@@ -20,9 +22,18 @@ export interface TestsHomeScreenProps {
   /** Downloaded question sets — a test that is available with no connection. */
   availableBundles?: OfflineSessionBundle[];
   onStartBundle?: (bundleId: string) => void;
-  /** Routes to the existing creation flow (the group test config modal). */
+  /** Opens the "New test" page (`/study/tests/new`). */
   onNewTest?: () => void;
   onViewResult: (result: TestResult) => void;
+  /**
+   * Retake straight from a history row.
+   *
+   * The row itself carries no questions — the server mirrors those only onto
+   * launchable rows — so the handler behind this fetches the session first.
+   * The row must not try to decide for itself whether a retake is possible; it
+   * used to, by looking at `session.questions`, and refused every single one.
+   */
+  onRetakeResult?: (result: TestResult) => void;
 }
 
 type TestsTab = 'available' | 'history';
@@ -48,6 +59,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
   onStartBundle,
   onNewTest,
   onViewResult,
+  onRetakeResult,
 }) => {
   const [tab, setTab] = useState<TestsTab>('available');
 
@@ -208,42 +220,66 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                     const key =
                       result.id ??
                       `${result.session.startTime}-${result.session.config?.groupId ?? 'group'}-${index}`;
-                    const title =
-                      result.session.config?.groupName || 'Practice test';
+                    // One name. A row that said "Practice test" while the rest
+                    // of the section said "Test" read as two different things.
+                    const title = retakeTitle(result.session);
+                    const missed = unansweredNote(tallyAttempt(result.session));
                     return (
-                      <button
+                      <div
                         key={key}
-                        type="button"
-                        onClick={() => onViewResult(result)}
-                        className="w-full text-left flex items-center gap-3 p-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface hover:border-lantern-text-tertiary transition-colors"
+                        className="flex items-center gap-3 p-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface hover:border-lantern-text-tertiary transition-colors"
                       >
-                        <FeatureDisc feature="tests" icon={<ClipboardDocumentCheckIcon className="w-5 h-5" />} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-body font-semibold text-lantern-text truncate">{title}</span>
-                          <span className="block text-caption text-lantern-text-secondary">
-                            {new Date(result.session.startTime).toLocaleDateString()}
-                          </span>
-                          {/* Score as text AND a rail — the rail alone would be
-                              colour carrying meaning on its own. */}
-                          <span
-                            aria-hidden="true"
-                            className="mt-1.5 block h-1 w-full max-w-[12rem] rounded-full bg-lantern-background-secondary overflow-hidden"
-                          >
+                        <button
+                          type="button"
+                          onClick={() => onViewResult(result)}
+                          className="min-w-0 flex-1 text-left flex items-center gap-3"
+                        >
+                          <FeatureDisc feature="tests" icon={<ClipboardDocumentCheckIcon className="w-5 h-5" />} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-body font-semibold text-lantern-text truncate">{title}</span>
+                            <span className="block text-caption text-lantern-text-secondary">
+                              {new Date(result.session.startTime).toLocaleDateString()}
+                            </span>
+                            {/* Unanswered is reported separately from wrong —
+                                a question never reached is not one missed. */}
+                            {missed && (
+                              <span className="block text-caption text-lantern-text-secondary tabular-nums">
+                                {missed}
+                              </span>
+                            )}
+                            {/* Score as text AND a rail — the rail alone would be
+                                colour carrying meaning on its own. */}
                             <span
-                              className="block h-full rounded-full bg-lantern-feature-tests-ink"
-                              style={{ width: `${Math.max(0, Math.min(100, result.score))}%` }}
-                            />
+                              aria-hidden="true"
+                              className="mt-1.5 block h-1 w-full max-w-[12rem] rounded-full bg-lantern-background-secondary overflow-hidden"
+                            >
+                              <span
+                                className="block h-full rounded-full bg-lantern-feature-tests-ink"
+                                style={{ width: `${Math.max(0, Math.min(100, result.score))}%` }}
+                              />
+                            </span>
                           </span>
-                        </span>
-                        <span className="shrink-0 text-right">
-                          <span className="block text-heading font-bold tabular-nums text-lantern-text">
-                            {percent(result.score)}
+                          <span className="shrink-0 text-right">
+                            <span className="block text-heading font-bold tabular-nums text-lantern-text">
+                              {percent(result.score)}
+                            </span>
+                            <span className="block text-caption tabular-nums text-lantern-text-secondary">
+                              {result.correctAnswersCount}/{result.totalQuestions}
+                            </span>
                           </span>
-                          <span className="block text-caption tabular-nums text-lantern-text-secondary">
-                            {result.correctAnswersCount}/{result.totalQuestions}
-                          </span>
-                        </span>
-                      </button>
+                        </button>
+                        {onRetakeResult && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => onRetakeResult(result)}
+                            aria-label={`Retake ${title}`}
+                          >
+                            <ArrowPathIcon className="w-4 h-4" aria-hidden="true" />
+                            Retake
+                          </Button>
+                        )}
+                      </div>
                     );
                   })
                 )}

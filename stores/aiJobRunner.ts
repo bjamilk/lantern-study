@@ -154,7 +154,9 @@ function requestPermissionLazily(): void {
 const DONE_TITLE: Record<AiJobKind, string> = {
   smart_notes: 'Smart Notes ready',
   flashcards: 'Flashcards ready',
-  quiz: 'Quiz ready',
+  // A 'quiz' job files a personal TEST (`writeTest`), and the row it lands on
+  // is titled "Test · <source>": one name for one thing.
+  quiz: 'Test ready',
   import_study: 'Study set ready',
 };
 

@@ -2,7 +2,7 @@
 // Lantern Study Mobile - Test Configuration Modal
 // ===========================================
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useRef, useState, useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -33,6 +33,12 @@ import { AppIcon, type AppIconName } from './ui/AppIcon';
 // jest (node env, *.test.ts only) can reach them: this modal renders what
 // they return and holds no judgement of its own.
 import { isTestConfigValid, testConfigValidationHint } from '../screens/tests/testConfigRules';
+// The one line pinned above Start, and the same pure module the Tests screens
+// read their retake decision from.
+import { formatTestConfigSummary } from '../screens/tests/testAuthoring';
+import { resolveSessionTimeLimitMinutes } from '../utils/resolveAttemptTimeLimitMinutes';
+import { planTimerChoicePersist, type TimerChoiceExit } from '../screens/tests/testConfigRules';
+import { typeScale } from '../design/typeScale';
 
 // Timer presets in seconds
 const TIMER_PRESETS = [
@@ -66,6 +72,12 @@ export interface TestConfigOptions {
   visibilityMode?: QuestionVisibilityMode;
   /** Exam lock: can't return to a question once answered (test mode only). */
   lockAnswered?: boolean;
+  /**
+   * Shuffle the question order for THIS session. Seeded from the account
+   * setting; stated here so one session can differ from the preference
+   * without editing it.
+   */
+  shuffleQuestions?: boolean;
   /** Academic archive: course this session is for (defaults from the group). */
   courseId?: string | null;
   /**
@@ -110,6 +122,26 @@ interface TestConfigModalProps {
    */
   defaultCourseId?: string | null;
   defaultTopicId?: string | null;
+  /**
+   * The timer this sheet OPENS on, in minutes (0 = No limit).
+   *
+   * Supplied by the caller so the sheet, the mode sheet's stats strip and the
+   * launch all print the same number (finding T4: the strip said "No Limit"
+   * and this sheet said "5 min" for the same test). Omitted — a group session
+   * assembled out of chat messages, say — the old auto rule stands: one
+   * minute per question until the reader touches a chip.
+   */
+  defaultTimerMinutes?: number | null;
+  /**
+   * The timer this sheet is closing with, in MINUTES (0 = No limit).
+   *
+   * Fired on Start AND on Cancel/×, because a reader who set "No limit" and
+   * then backed out has still said the last word on this test — build 163
+   * threw that away and reopened the sheet on a minute per question. Only a
+   * TEST session reports one: study mode has no Timer section, so it has
+   * chosen nothing.
+   */
+  onTimerChoice?: (minutes: number) => void;
 }
 
 export default function TestConfigModal({
@@ -129,6 +161,8 @@ export default function TestConfigModal({
   isDownloading = false,
   defaultCourseId = null,
   defaultTopicId = null,
+  defaultTimerMinutes = null,
+  onTimerChoice,
 }: TestConfigModalProps) {
   const [numberOfQuestions, setNumberOfQuestions] = useState(Math.min(10, maxQuestions));
   const [timerDuration, setTimerDuration] = useState(0);
@@ -141,6 +175,7 @@ export default function TestConfigModal({
   const [selectedPresetId, setSelectedPresetId] = useState('');
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [lockAnswered, setLockAnswered] = useState(false);
+  const [shuffleQuestions, setShuffleQuestions] = useState(false);
   const [courseId, setCourseId] = useState<string | null>(defaultCourseId ?? null);
   const [topicId, setTopicId] = useState<string | null>(defaultTopicId ?? null);
   // Re-seed from the group whenever the modal (re)opens for a different default.
@@ -221,6 +256,7 @@ export default function TestConfigModal({
       setShowAdvanced(false);
       setTimerTouched(false);
       setLockAnswered(isStudyMode ? false : useSettingsStore.getState().settings.study.lockAnsweredQuestions);
+      setShuffleQuestions(useSettingsStore.getState().settings.study.shuffleQuestions);
     }
   }, [visible, maxQuestions, isStudyMode]);
 
@@ -241,12 +277,20 @@ export default function TestConfigModal({
 
   // Auto-set timer to 1 min per question in test mode — until the reader
   // states a preference, which then stands.
+  //
+  // A caller-supplied `defaultTimerMinutes` outranks the auto rule, 0
+  // included: a test saved as untimed must open untimed here, or the sheet
+  // reinstates a clock its own strip said there wasn't (T4).
   useEffect(() => {
     if (!visible || isStudyMode || timerTouched) return;
+    if (typeof defaultTimerMinutes === 'number' && Number.isFinite(defaultTimerMinutes)) {
+      setTimerDuration(Math.max(0, Math.round(defaultTimerMinutes)) * 60);
+      return;
+    }
     if (numberOfQuestions > 0) {
       setTimerDuration(numberOfQuestions * 60);
     }
-  }, [numberOfQuestions, visible, isStudyMode, timerTouched]);
+  }, [numberOfQuestions, visible, isStudyMode, timerTouched, defaultTimerMinutes]);
 
   // Mutual exclusion for SR and Focus on New
   useEffect(() => {
@@ -275,6 +319,7 @@ export default function TestConfigModal({
     setNumberOfQuestions(preset.config.numberOfQuestions);
     // A saved preset states its timer, 0 (untimed) included: don't let the
     // question count overwrite it.
+    timerTouchedRef.current = true;
     setTimerDuration(preset.config.timerDuration || 0);
     setTimerTouched(true);
     setSelectedQuestionTypes(webQuestionTypesToMobile(preset.config.allowedQuestionTypes || []));
@@ -356,6 +401,63 @@ export default function TestConfigModal({
 
   const validationHint = useMemo(() => testConfigValidationHint(validityInput), [validityInput]);
 
+  const summaryLine = useMemo(
+    () =>
+      formatTestConfigSummary({
+        questionCount: numberOfQuestions,
+        // The SAME rule the launch will apply (utils/resolveAttemptTimeLimitMinutes),
+        // not a second reading of the timer chips: the summary and the session
+        // cannot disagree about how long this runs.
+        timeLimitMinutes: resolveSessionTimeLimitMinutes({
+          timerDurationSeconds: isStudyMode ? 0 : timerDuration,
+          sessionMode: effectiveSessionMode,
+          // A study session has no timer of its own and no test to borrow one
+          // from: 0 here is what makes the line read "No time limit".
+          fallbackMinutes: 0,
+        }),
+        shuffled: shuffleQuestions,
+        lockAnswered: isStudyMode ? false : lockAnswered,
+      }),
+    [numberOfQuestions, timerDuration, isStudyMode, effectiveSessionMode, shuffleQuestions, lockAnswered]
+  );
+
+  /**
+   * Tell the caller what the timer is set to, whichever way this sheet closes.
+   *
+   * One function for both exits so Start and Cancel can never record
+   * different things, and none of the judgement lives here — the sheet keeps
+   * no rules of its own (`planTimerChoicePersist`).
+   */
+  const timerTouchedRef = useRef(false);
+  const reportTimerChoice = useCallback(
+    (exit: TimerChoiceExit) => {
+      if (!onTimerChoice) return;
+      const minutes = planTimerChoicePersist({
+        timerDurationSeconds: timerDuration,
+        sessionMode: effectiveSessionMode,
+        exit,
+        touched: timerTouchedRef.current,
+      });
+      if (minutes !== null) onTimerChoice(minutes);
+    },
+    [onTimerChoice, timerDuration, effectiveSessionMode]
+  );
+
+  /**
+   * Cancel, × and the hardware back — the choice is recorded before the sheet
+   * goes, on every one of them.
+   *
+   * A timer is a SETTING, not a form field: "No limit" is an answer about this
+   * test, and backing out of the sheet does not retract it. Build 164 kept it
+   * for × and dropped it for Cancel, so the same two presses on the same sheet
+   * meant different things. The exit is passed through only so the rule is
+   * legible (and testable) — `planTimerChoicePersist` ignores it.
+   */
+  const handleClose = useCallback(() => {
+    reportTimerChoice('cancel');
+    onClose();
+  }, [reportTimerChoice, onClose]);
+
   const handleSubmit = useCallback(() => {
     if (!isValid) return;
     if (questionVisibilityMode === 'none') {
@@ -369,6 +471,7 @@ export default function TestConfigModal({
       );
     }
 
+    reportTimerChoice('start');
     onSubmit(
       {
         numberOfQuestions,
@@ -380,6 +483,7 @@ export default function TestConfigModal({
         selectedSubgroupIds: useSpacedRepetition || focusOnNew ? [] : selectedSubgroupIds,
         visibilityMode: questionVisibilityMode,
         lockAnswered: isStudyMode ? false : lockAnswered,
+        shuffleQuestions,
         courseId,
         topicId,
       },
@@ -395,6 +499,7 @@ export default function TestConfigModal({
     focusOnNew,
     selectedSubgroupIds,
     lockAnswered,
+    shuffleQuestions,
     courseId,
     topicId,
     mode,
@@ -404,6 +509,7 @@ export default function TestConfigModal({
     effectiveSessionMode,
     isStudyMode,
     onSubmit,
+    reportTimerChoice,
   ]);
 
   /**
@@ -429,6 +535,7 @@ export default function TestConfigModal({
       // (toggle hidden) must not bake in an explicit false — undefined lets
       // the bundle fall back to the global setting, matching web bundles.
       lockAnswered: isStudyMode ? undefined : lockAnswered,
+      shuffleQuestions,
       courseId,
       topicId,
     });
@@ -445,6 +552,7 @@ export default function TestConfigModal({
     questionVisibilityMode,
     isStudyMode,
     lockAnswered,
+    shuffleQuestions,
     courseId,
     topicId,
   ]);
@@ -465,13 +573,13 @@ export default function TestConfigModal({
       transparent={true}
       statusBarTranslucent
       navigationBarTranslucent
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.card, height: sheetHeight, maxHeight: sheetHeight }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={onClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
+            <TouchableOpacity onPress={handleClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
               <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
@@ -657,6 +765,7 @@ export default function TestConfigModal({
                         timerDuration === preset.value && { backgroundColor: '#f97316', borderColor: '#f97316' },
                       ]}
                       onPress={() => {
+                        timerTouchedRef.current = true;
                         setTimerDuration(preset.value);
                         setTimerTouched(true);
                       }}
@@ -673,6 +782,28 @@ export default function TestConfigModal({
                 </View>
               </View>
             )}
+
+            {/* Shuffle — every mode. The account setting is the default this
+                opened on; the sheet is where one session may differ from it. */}
+            <View style={[styles.toggleSection, { backgroundColor: colors.inputBackground }]}>
+              <View style={styles.toggleInfo}>
+                <View style={styles.toggleIcon}>
+                  <AppIcon name="shuffle" size={20} color={colors.primaryText} />
+                </View>
+                <View style={styles.toggleContent}>
+                  <Text style={[styles.toggleTitle, { color: colors.text }]}>Shuffle questions</Text>
+                  <Text style={[styles.toggleDescription, { color: colors.textSecondary }]}>
+                    A different order each time, so you learn the material rather than the sequence.
+                  </Text>
+                </View>
+              </View>
+              <Switch
+                value={shuffleQuestions}
+                onValueChange={setShuffleQuestions}
+                trackColor={{ false: colors.border, true: colors.primaryFill }}
+                thumbColor={shuffleQuestions ? colors.primaryFill : colors.textSecondary}
+              />
+            </View>
 
             {/* Lock answered questions - Test Mode only */}
             {!isStudyMode && (
@@ -966,6 +1097,19 @@ export default function TestConfigModal({
 
           {/* Footer */}
           <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(32, insets.bottom + 16) }]}>
+            {/* What you are about to start, in one line.
+                The sheet is long enough that the question count set at the top
+                is off-screen by the time Start is in reach — which is how a
+                student sits a 10-question test they thought was 30. Nothing
+                here is computed for the first time; it reads back decisions
+                made further up this same sheet, and the minutes come from the
+                one time-limit rule the launch itself will use. */}
+            <Text
+              style={[styles.summaryLine, { color: colors.textSecondary }]}
+              accessibilityLabel={`${isStudyMode ? 'This session' : 'This test'}: ${summaryLine}`}
+            >
+              {summaryLine}
+            </Text>
             {!isValid && validationHint ? (
               <Text style={[styles.validationHint, { color: colors.textSecondary }]}>
                 {validationHint}
@@ -988,7 +1132,7 @@ export default function TestConfigModal({
               </TouchableOpacity>
             ) : null}
             <View style={styles.footerButtons}>
-              <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.inputBackground }]} onPress={onClose}>
+              <TouchableOpacity style={[styles.cancelButton, { backgroundColor: colors.inputBackground }]} onPress={handleClose}>
                 <Text style={[styles.cancelButtonText, { color: colors.text }]}>Cancel</Text>
               </TouchableOpacity>
 
@@ -1413,6 +1557,12 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   downloadButtonText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  summaryLine: {
+    ...typeScale.caption,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 10,
   },
   footerButtons: {
     flexDirection: 'row',

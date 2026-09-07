@@ -19,6 +19,7 @@ import {
   RateLimitError,
 } from '@lantern/shared'
 import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/shared/utils'
+import { isQuestionStatEligible } from '@lantern/shared/api'
 import {
   createSignedUrlBatcher,
   type SignedUrlBatchResult,
@@ -2646,6 +2647,11 @@ export const upsertUserQuestionStat = async (userId: string, questionId: string,
   incorrectAttempts: number;
   lastAttempted: string;
 }) => {
+  // Embedded personal-test questions (`q1`…) have no server row; the validator
+  // 400s on a non-UUID id, so the write is skipped rather than logged as an error.
+  if (!isQuestionStatEligible(questionId)) {
+    return null;
+  }
   if (!(await hasValidSession())) {
     return null;
   }

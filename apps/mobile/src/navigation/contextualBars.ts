@@ -67,6 +67,17 @@ export interface ContextualBarItem {
   /** Which of the eight identities paints this item when it is active (§5.6). */
   feature: FeatureKey;
   target: ContextualBarTarget;
+  /**
+   * Extra routes this item is the ACTIVE one on.
+   *
+   * A door's own screen can have children in the same lane — "+ New test"
+   * pushes TestBuilder, which is still Tests. Without this the row went
+   * neutral the moment the builder opened and the student lost the one signal
+   * that says which of the five they are inside. Never a navigate target: the
+   * item still goes to `target`, so pressing Tests from the builder comes
+   * back out to the list rather than scrolling a screen that is not there.
+   */
+  activeFor?: readonly RouteName[];
 }
 
 export interface ContextualBarSpec {
@@ -106,6 +117,8 @@ const STUDY_BAR: ContextualBarSpec = {
       icon: 'clipboard',
       feature: 'tests',
       target: { kind: 'route', route: 'TestsList' },
+      // The builder is a room inside Tests, not a sixth door.
+      activeFor: ['TestBuilder'],
     },
     {
       id: 'record',
@@ -138,6 +151,10 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
   NotesList: STUDY_BAR,
   FlashcardsList: STUDY_BAR,
   TestsList: STUDY_BAR,
+  // The SAME spec object as every other Study route, so the row does not
+  // twitch when "+ New test" pushes this screen — only which item is active
+  // changes, and `activeFor` keeps that on Tests.
+  TestBuilder: STUDY_BAR,
 };
 
 /**
@@ -167,7 +184,9 @@ export function activeItem(focusedRoute: string | undefined): ContextualBarItem 
   if (!spec) return null;
   return (
     spec.items.find(
-      item => item.target.kind === 'route' && item.target.route === focusedRoute,
+      item =>
+        (item.target.kind === 'route' && item.target.route === focusedRoute) ||
+        item.activeFor?.includes(focusedRoute as RouteName),
     ) ?? null
   );
 }

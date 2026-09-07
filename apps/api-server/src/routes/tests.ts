@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors, validateTestConfig, validatePagination, validateUserId } from '../middleware/validation';
-import { SupabaseService } from '../services/supabase';
+import { SupabaseService, buildAttemptTally } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
@@ -22,6 +22,7 @@ import {
 import { getTopicMasteryService } from '../services/topicMastery';
 import { PublicError } from '../utils/safeError';
 import { attachJobResultRef } from '../queue/jobStatus';
+import { normalizeQuestionExplanation } from '@lantern/shared/utils/testHelpers';
 
 /** A rejected topic (wrong course, no course, unusable id) is the caller's mistake — 400, not 500. */
 const respondPublicError = (err: unknown, res: any): boolean => {
@@ -86,15 +87,98 @@ export function normalizePersonalTestQuestions(
         },
       };
     }
-    questions.push({
+    // The rationale, under whichever key the generator used. Review reads it
+    // straight off the stored question — there is no second AI call — so a
+    // question saved with only `rationale` left review permanently blank.
+    const explanation = normalizeQuestionExplanation(raw);
+
+    const stored: Record<string, unknown> = {
       ...raw,
       // A stable id per question: answers are keyed by it, so a missing one
       // would make the attempt unscoreable.
       id: typeof raw.id === 'string' && raw.id ? raw.id : `q${index + 1}`,
       question: prompt,
-    });
+    };
+    // Written or removed, never left as the generator's placeholder: review
+    // decides what to say when there is no rationale, and "No explanation
+    // available." printed as if it were one is worse than nothing.
+    if (explanation) stored.explanation = explanation;
+    else delete stored.explanation;
+    questions.push(stored);
   }
   return { ok: true, questions };
+}
+
+/**
+ * The default title for a personal test built from a note or a deck.
+ *
+ * "Test · <source>", never "Quiz · <source>": the thing being created is a
+ * test session that lands under Available Tests, and calling it a quiz there
+ * made students look for it somewhere else.
+ */
+export function defaultPersonalTestTitle(sourceTitle: string | null | undefined): string | null {
+  const title = typeof sourceTitle === 'string' ? sourceTitle.trim() : '';
+  if (!title) return null;
+  return `Test · ${title}`.slice(0, 200);
+}
+
+/**
+ * The source a personal test is being created from, accepted in both the
+ * nested (`source: { deckId, noteId }`) and flat (`sourceDeckId`) shapes so a
+ * client that already sends one does not have to change.
+ */
+export function readPersonalTestSource(body: any): { noteId: string | null; deckId: string | null } {
+  const nested = body?.source && typeof body.source === 'object' && !Array.isArray(body.source)
+    ? body.source
+    : {};
+  const pick = (...values: unknown[]) => {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim()) return value.trim();
+    }
+    return null;
+  };
+  return {
+    noteId: pick(nested.noteId, body?.sourceNoteId),
+    deckId: pick(nested.deckId, body?.sourceDeckId),
+  };
+}
+
+/**
+ * The only config keys a client may write while COMPLETING a session.
+ *
+ * A whitelist, not a merge: `config` also carries the questions' own settings
+ * and a completing client has no business rewriting those. What it legitimately
+ * knows at the end is
+ *
+ *  - the study group the sitting belongs to (mobile drafts historically wrote
+ *    a deckId or a `custom-*` id into `config.groupId`),
+ *  - how the sitting was actually taken, and against what pass mark, and
+ *  - for a PRACTICE sitting only, its tally.
+ *
+ * The tally is here because a study session never writes a `test_results` row
+ * (see completeTestDraft: it returns before createTestResult), so the score on
+ * every list read was 0 and History printed "0% · 0/0 pts · NOT PASSED" for a
+ * sitting the student had just answered. Config is returned by the lean list;
+ * the result row is not, and does not exist.
+ *
+ * Anything else in the body is dropped silently, as it always was.
+ */
+export function completionConfigPatch(body: any): Record<string, unknown> {
+  const patch: Record<string, unknown> = {};
+  const str = (value: unknown) => typeof value === 'string' || value === null;
+  const nonNegative = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0;
+
+  if (str(body.groupId)) patch.groupId = body.groupId;
+  if (str(body.groupName)) patch.groupName = body.groupName;
+  if (body.mode === 'study' || body.mode === 'test') patch.mode = body.mode;
+  if (nonNegative(body.passingScore)) patch.passingScore = body.passingScore;
+  if (nonNegative(body.practiceScore)) patch.practiceScore = body.practiceScore;
+  if (nonNegative(body.practiceCorrectCount)) patch.practiceCorrectCount = body.practiceCorrectCount;
+  if (nonNegative(body.practiceTotalQuestions)) {
+    patch.practiceTotalQuestions = body.practiceTotalQuestions;
+  }
+  return patch;
 }
 
 async function awardTestPassCoins(userId: string, testId: string, score: number) {
@@ -235,9 +319,21 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
-      const { title, questions, sourceNoteId, sourceJobId, courseId, topicId, config } = req.body || {};
+      const { title, questions, sourceJobId, courseId, topicId, config } = req.body || {};
+      // Accepts `source: { deckId }` / `source: { noteId }` as well as the flat
+      // `sourceNoteId` older clients send.
+      const source = readPersonalTestSource(req.body);
 
-      const cleanTitle = typeof title === 'string' ? title.trim().slice(0, 200) : '';
+      let cleanTitle = typeof title === 'string' ? title.trim().slice(0, 200) : '';
+      if (!cleanTitle && (source.noteId || source.deckId)) {
+        // No title, but a source we can name: default to "Test · <source>"
+        // rather than 400. A deck→test with nothing typed is a normal save,
+        // not a client bug, and this is the only place that can resolve the
+        // source's real title. A titleless save with NO source still 400s —
+        // there is nothing to name it after.
+        const sourceTitle = await supabaseService.resolvePersonalTestSourceTitle(source, userId);
+        cleanTitle = defaultPersonalTestTitle(sourceTitle) || '';
+      }
       if (!cleanTitle) {
         return res.status(400).json({
           success: false,
@@ -266,7 +362,8 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
             {
               title: cleanTitle,
               questions: normalized.questions,
-              sourceNoteId: typeof sourceNoteId === 'string' ? sourceNoteId : null,
+              sourceNoteId: source.noteId,
+              sourceDeckId: source.deckId,
               sourceJobId: typeof sourceJobId === 'string' ? sourceJobId : null,
               courseId: typeof courseId === 'string' ? courseId : null,
               topicId: typeof topicId === 'string' ? topicId : null,
@@ -365,6 +462,10 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         data: {
           ...mapped,
           score: data.score,
+          // Correct / incorrect / unanswered split three ways, plus the
+          // confidence the student reported. Review must not present a
+          // question they never reached as one they got wrong.
+          tally: buildAttemptTally(data),
           // Keep snake_case aliases — older mobile builders still read them.
           user_answers: mapped.userAnswers,
           start_time: data.start_time,
@@ -552,16 +653,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           totalQuestions: body.total_questions ?? body.totalQuestions,
           // Allow clients to correct study-group attribution on complete.
           // Mobile drafts historically wrote deckId/custom-* into config.groupId.
-          config: configBody
-            ? {
-                ...(typeof configBody.groupId === 'string' || configBody.groupId === null
-                  ? { groupId: configBody.groupId }
-                  : {}),
-                ...(typeof configBody.groupName === 'string' || configBody.groupName === null
-                  ? { groupName: configBody.groupName }
-                  : {}),
-              }
-            : undefined,
+          config: configBody ? completionConfigPatch(configBody) : undefined,
           surface: surfaceFromRequest(req),
         });
 
@@ -627,11 +719,34 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     })
   );
 
-  // GET /api/v1/tests/:testId - Get test by ID
+  /**
+   * GET /api/v1/tests/:testId — the FULL session, whatever its status.
+   *
+   * This is the one endpoint a client can always fall back to for a session's
+   * questions. The list is served without them on completed rows (a page of
+   * history would otherwise carry every question twice), which is why a retake
+   * launched straight off a history row had nothing to launch and could only
+   * say "question data is no longer available". Retake fetches this first.
+   *
+   * Response `data` (all fields always present, never undefined):
+   *   id, title, status, sessionKind, config, courseId, topicId
+   *   questions[]     — full question objects, each carrying `explanation`
+   *                     when the generator produced one
+   *   userAnswers     — questionId → answer (may carry `confidence`)
+   *   questionCount, currentQuestionIndex, startTime, endTime, remainingTime
+   *   provenance      — { noteId, deckId, groupId, title }, each string|null
+   *   tally           — { total, answered, correct, incorrect, unanswered,
+   *                       byConfidence } — unanswered is NEVER folded into
+   *                       incorrect
+   *   access          — 'owner' | 'group'
+   *
+   * Access: the owner, or — for a session built from a group's question bank —
+   * any member of that group. A group peer gets the questions to launch, never
+   * the owner's attempt: `userAnswers` comes back empty and `tally` is null.
+   */
   router.get(
     '/:testId',
     authMiddleware,
-    requireTestOwner(),
     handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
@@ -643,19 +758,26 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       const cacheKey = userScopedCacheKey('test', userId, testId);
       let test = await cacheService.get(cacheKey);
+      let access: 'owner' | 'group' = 'owner';
 
       if (!test) {
-        test = await supabaseService.getTestById(testId, userId);
+        const resolved = await supabaseService.resolveTestSessionForCaller(testId, userId);
 
-        if (!test) {
+        if (!resolved) {
           return res.status(404).json({
             success: false,
             error: 'Test not found or access denied',
           });
         }
 
-        // Cache for 10 minutes
-        await cacheService.set(cacheKey, test, 600);
+        test = resolved.session;
+        access = resolved.access;
+        // Only the owner's own read is cached under their key. A group peer's
+        // view is derived (answers stripped) and must not be able to land in
+        // a cache the owner then reads back.
+        if (access === 'owner') {
+          await cacheService.set(cacheKey, test, 600);
+        }
       } else if (!enforceResourceOwner(res, test as Record<string, unknown>, userId)) {
         return;
       }
@@ -667,13 +789,28 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       // Same contract as the list: a note quiz names the note it came from,
       // even if it was saved before that title was persisted into config.
-      if (mapped && typeof mapped === 'object') {
+      if (mapped && typeof mapped === 'object' && access === 'owner') {
         await supabaseService.attachSourceNoteTitles([mapped as any], userId);
+      }
+
+      if (access === 'group' && mapped && typeof mapped === 'object') {
+        const peerView: any = { ...(mapped as any) };
+        peerView.userAnswers = {};
+        peerView.currentQuestionIndex = 0;
+        peerView.score = undefined;
+        return res.json({
+          success: true,
+          data: { ...peerView, access, tally: null },
+        });
       }
 
       res.json({
         success: true,
-        data: mapped,
+        data: {
+          ...(mapped as any),
+          access,
+          tally: test && typeof test === 'object' ? buildAttemptTally(test) : null,
+        },
       });
     })
   );

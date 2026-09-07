@@ -80,6 +80,26 @@ export const SHOP_SELL_PATH = '/campus/shop/sell';
  */
 export const STUDY_PRODUCTS_PATH = '/study/products';
 
+/**
+ * Tests live under Study, and so do their URLs.
+ *
+ * `/tests`, `/tests/active` and `/tests/review` are older spellings that
+ * already exist in bookmarks and in the shell's own links, so they stay. The
+ * two NEW places a student can be — building a test, and one particular test —
+ * are minted under `/study/tests`, where the section they belong to is in the
+ * path. `/tests/new` redirects here.
+ *
+ * `/study/tests/:testId` is what makes a personal test linkable at all: before
+ * it, a generated test had nowhere to land, so the job runner's "Open" and
+ * every push notification could only drop the student on the list and leave
+ * them to find it.
+ */
+export const TEST_BUILDER_PATH = '/study/tests/new';
+
+export function buildTestDetailPath(testId: string): string {
+  return `/study/tests/${encodeURIComponent(testId)}`;
+}
+
 export type ShopView = 'browse' | 'courses' | 'sell';
 
 export interface ShopRoute {
@@ -133,6 +153,9 @@ const LEGACY_PATH_REDIRECTS: Readonly<Record<string, string>> = {
   '/campus/shop/study-products': STUDY_PRODUCTS_PATH,
   '/study-products': STUDY_PRODUCTS_PATH,
   '/downloads': '/offline',
+  // Tests moved under Study; `/study/tests` is the list, which already has a URL.
+  '/tests/new': TEST_BUILDER_PATH,
+  '/study/tests': '/tests',
   // Budget was Campus Pocket before the rename.
   '/campus-pocket': '/budget',
   '/pocket': '/budget',
@@ -172,6 +195,8 @@ export interface AppRouteParams {
   shopView?: Exclude<ShopView, 'browse' | 'sell'>;
   /** The course open on `/campus/shop/courses/:courseId`. */
   courseId?: string;
+  /** One personal test: `/study/tests/:testId`. */
+  testId?: string;
 }
 
 export interface ParsedAppRoute {
@@ -189,7 +214,7 @@ export interface ParsedAppRoute {
    * use. `useRouteSync` must leave these alone: they are neither a mode to
    * hydrate nor an unknown path to bounce to the dashboard.
    */
-  standalone?: 'me';
+  standalone?: 'me' | 'test-builder' | 'test-detail';
 }
 
 /** The single capture group of `pattern`, decoded — `null` when it is absent. */
@@ -389,6 +414,16 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/tests') return { mode: AppMode.TESTS_HOME, params: {} };
   if (path === '/tests/active') return { mode: AppMode.TEST_ACTIVE, params: {} };
   if (path === '/tests/review') return { mode: AppMode.TEST_REVIEW, params: {} };
+  // `/study/tests/...`: the builder, then one test by id. `new` is a reserved
+  // word in this namespace and is matched first, so a test can never be
+  // addressed by an id that would shadow the page that creates tests.
+  if (path === TEST_BUILDER_PATH) {
+    return { mode: null, params: {}, standalone: 'test-builder' };
+  }
+  const testId = segment(path, /^\/study\/tests\/([^/]+)$/);
+  if (testId) {
+    return { mode: null, params: { testId }, standalone: 'test-detail' };
+  }
   if (path === '/study/session') return { mode: AppMode.STUDY_ACTIVE, params: {} };
   if (path === '/game') return { mode: AppMode.GAME_ACTIVE, params: {} };
   if (path === '/game/results') return { mode: AppMode.GAME_RESULTS, params: {} };

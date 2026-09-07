@@ -44,7 +44,7 @@ import { useSettingsStore } from '../../stores/settingsStore';
 
 import { useNotesStore } from '../../stores/notesStore';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
-import { KeyboardAwareScrollView, useScreenBottomPadding } from '../../components/layout';
+import { useScreenBottomPadding } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTestStore } from '../../stores/testStore';
 
@@ -189,9 +189,6 @@ function ActivityHeatmap({ days, theme }: { days: { date: string; count: number 
 
 export function DashboardScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(24);
-  // The group picker is a Modal, so it covers the tab bar: it owes the plain
-  // system inset, not tab-bar clearance.
-  const sheetPadding = useScreenBottomPadding({ bottom: 'safe' });
   const { onScroll: chromeOnScroll } = useChrome();
 
   const user = useAuthStore(s => s.user);
@@ -277,7 +274,6 @@ export function DashboardScreen({ navigation }: Props) {
 
   const [quizLoading, setQuizLoading] = useState(false);
 
-  const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [openingRecorder, setOpeningRecorder] = useState(false);
 
@@ -348,8 +344,6 @@ export function DashboardScreen({ navigation }: Props) {
       ? { ...quiz, sourceNoteTitle: note.title?.trim() || 'Untitled note' }
       : quiz;
   }, [getDailyQuizForToday, dailyQuiz, notes]);
-
-  const availableGroups = useMemo(() => groups.filter(g => !g.isArchived), [groups]);
 
   const recentPeriodBounds = useMemo(() => {
     if (selectedPeriod === 'all') return { from: undefined as string | undefined, to: undefined as string | undefined };
@@ -693,48 +687,19 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
+  /**
+   * Home's Test door.
+   *
+   * It used to open a "Pick a group" sheet — or jump straight into a group
+   * chat when there was exactly one — because a group was the only place a
+   * test was authored. That is no longer true, and it never made sense from
+   * Home: pressing "Test" landed the student in a conversation. The door now
+   * opens the Tests list, where History, Available Tests and "+ New test"
+   * (which offers a deck, a note, or the group) all live.
+   */
   const handleQuickTest = () => {
-
-    if (availableGroups.length > 1) {
-
-      setGroupPickerOpen(true);
-
-      return;
-
-    }
-
-    if (availableGroups.length === 1) {
-
-      parent?.navigate('ChatTab', {
-
-        screen: 'GroupChat',
-
-        params: { groupId: availableGroups[0].id, groupName: availableGroups[0].name },
-
-        // Keep the chat list beneath, so back reaches it.
-        initial: false,
-
-      });
-
-      return;
-
-    }
-
     parent?.navigate('StudyTab', toTab('TestsList'));
-
   };
-
-
-
-  const handleGroupPick = (groupId: string, groupName: string) => {
-
-    setGroupPickerOpen(false);
-
-    parent?.navigate('ChatTab', { screen: 'GroupChat', params: { groupId, groupName }, initial: false });
-
-  };
-
-
 
   const handleResumeTest = () => {
 
@@ -1382,7 +1347,7 @@ export function DashboardScreen({ navigation }: Props) {
 
             <Text className="text-xs text-white/80">
 
-              {availableGroups.length > 0 ? 'Pick a group & practice' : 'Go to tests'}
+              Your tests, your scores, and a new one
 
             </Text>
 
@@ -1488,83 +1453,6 @@ export function DashboardScreen({ navigation }: Props) {
           parent?.navigate('MarketTab', toTab('StudyProductDrafts', { source: { noteIds: [result.noteId], title: result.noteTitle } }));
         }}
       />
-
-      <Modal visible={groupPickerOpen} transparent animationType="fade" onRequestClose={() => setGroupPickerOpen(false)}>
-
-        {/* A user in ~8+ groups overflowed this centred, non-scrolling View and
-            the "All tests instead" escape button was clipped off the bottom
-            with no way to scroll to it. */}
-        <View className="flex-1 bg-black/40">
-
-          <KeyboardAwareScrollView
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ flexGrow: 1 }}
-          >
-
-          <Pressable
-            className="px-6"
-            style={{ flexGrow: 1, justifyContent: 'center', paddingTop: 24, paddingBottom: sheetPadding }}
-            onPress={() => setGroupPickerOpen(false)}
-          >
-
-          <Pressable
-            onPress={e => e.stopPropagation?.()}
-            accessibilityViewIsModal
-            accessibilityLabel="Pick a group"
-            className="bg-lantern-surface rounded-2xl p-4 border border-lantern-border"
-          >
-
-            <Text className="text-lg font-bold text-lantern-text mb-3" accessibilityRole="header">Pick a group</Text>
-
-            {availableGroups.map(g => (
-
-              <Pressable
-
-                key={g.id}
-
-                onPress={() => handleGroupPick(g.id, g.name)}
-
-                className="py-3 border-b border-lantern-border"
-
-              >
-
-                <Text className="text-lantern-text font-medium">{g.name}</Text>
-
-              </Pressable>
-
-            ))}
-
-            <Button
-
-              variant="secondary"
-
-              className="mt-3"
-
-              onPress={() => {
-
-                setGroupPickerOpen(false);
-
-                parent?.navigate('StudyTab', toTab('TestsList'));
-
-              }}
-
-            >
-
-              All tests instead
-
-            </Button>
-
-          </Pressable>
-
-          </Pressable>
-
-          </KeyboardAwareScrollView>
-
-        </View>
-
-      </Modal>
-
-
 
     </SafeAreaView>
 

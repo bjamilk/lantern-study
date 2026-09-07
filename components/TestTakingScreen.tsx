@@ -2,7 +2,7 @@
 
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { TestSessionData, StudySessionData, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel } from '../types';
+import { TestSessionData, StudySessionData, TestQuestion, QuestionType, UserAnswerRecord, MatchingItem, DiagramLabel, type AnswerConfidence, type TestSessionKind } from '../types';
 import { ChevronLeftIcon, ChevronRightIcon, CheckCircleIcon as CheckCircleSolid, XCircleIcon as XCircleSolid, ClockIcon, ArrowLeftIcon, ExclamationTriangleIcon, XMarkIcon, PauseIcon, LockClosedIcon } from '@heroicons/react/24/outline';
 import { BookmarkIcon as BookmarkSolidIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/solid';
 import VoiceInputButton from './VoiceInputButton';
@@ -10,6 +10,13 @@ import TestUtilityToolbar, { ToolType } from './TestUtilityToolbar';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 import { nearestPreviousUnlockedIndex } from '../utils/helpers';
 import { setStudyIntent } from '../services/presenceHeartbeat';
+import {
+  CONFIDENCE_CHOICES,
+  canRevealAnswer,
+  confidenceGate,
+  confidenceOutcomeLabel,
+  readConfidence,
+} from '../utils/testConfidence';
 
 interface TestTakingScreenProps {
   mode: 'test' | 'study';
@@ -152,6 +159,62 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
   const [answerStreak, setAnswerStreak] = useState(0);
   const [bestStreak, setBestStreak] = useState(0);
   const [showStreakBadge, setShowStreakBadge] = useState(false);
+
+  /**
+   * Confidence before the reveal — practice attempts only (spec §9 #5).
+   *
+   * The gate has to live HERE rather than in the grading handler because that
+   * handler reveals on the same call that records the answer (and, with "show
+   * explanations immediately" on, does it the instant an option is tapped). So
+   * a committed answer is HELD locally until the student says how sure they
+   * were, and only then handed over — which is what makes this confidence
+   * *before* the reveal rather than a survey after it.
+   *
+   * A timed exam attempt never reaches any of this: `commitAnswer` passes
+   * straight through for `mode === 'test'`.
+   */
+  const [confidenceByQuestion, setConfidenceByQuestion] = useState<Record<string, AnswerConfidence>>({});
+  const [heldAnswers, setHeldAnswers] = useState<
+    Record<string, Partial<Omit<UserAnswerRecord, 'questionId'>>>
+  >({});
+
+  const sessionKind: TestSessionKind = mode === 'study' ? 'study' : 'test';
+
+  const commitAnswer = (
+    questionId: string,
+    data: Partial<Omit<UserAnswerRecord, 'questionId'>> & { revealAnswer?: boolean }
+  ) => {
+    if (mode !== 'study') {
+      onUpdateAnswer(questionId, data);
+      return;
+    }
+    const already =
+      confidenceByQuestion[questionId] ?? readConfidence(session.userAnswers[questionId]);
+    const carriesAnswer = Boolean(
+      data.selectedOptionIds || data.fillText || data.matchingAnswers || data.diagramAnswers
+    );
+    if (!already && carriesAnswer) {
+      setHeldAnswers((prev) => ({ ...prev, [questionId]: { ...(prev[questionId] ?? {}), ...data } }));
+      return;
+    }
+    onUpdateAnswer(questionId, already ? { ...data, confidence: already } : data);
+  };
+
+  const answerWithConfidence = (level: AnswerConfidence) => {
+    const questionId = currentQuestion.id;
+    const held = heldAnswers[questionId];
+    setConfidenceByQuestion((prev) => ({ ...prev, [questionId]: level }));
+    setHeldAnswers((prev) => {
+      const next = { ...prev };
+      delete next[questionId];
+      return next;
+    });
+    onUpdateAnswer(questionId, {
+      ...(held ?? {}),
+      confidence: level,
+      revealAnswer: true,
+    } as Partial<Omit<UserAnswerRecord, 'questionId'>> & { revealAnswer?: boolean });
+  };
   const prevIsCorrectRef = useRef<boolean | null | undefined>(undefined);
 
   const questionViewStartTimeRef = useRef<number | null>(null);
@@ -298,7 +361,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     const timeSpentSeconds = questionViewStartTimeRef.current 
       ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
       : undefined;
-    onUpdateAnswer(currentQuestion.id, { selectedOptionIds: newSelections, timeSpentSeconds });
+    commitAnswer(currentQuestion.id, { selectedOptionIds: newSelections, timeSpentSeconds });
   };
   
   const handleMultiOptionSelect = (optionId: string) => {
@@ -315,7 +378,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         const timeSpentSeconds = questionViewStartTimeRef.current 
             ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
             : undefined;
-        onUpdateAnswer(currentQuestion.id, { selectedOptionIds: newSelections, timeSpentSeconds });
+        commitAnswer(currentQuestion.id, { selectedOptionIds: newSelections, timeSpentSeconds });
     }
   };
 
@@ -330,7 +393,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         const timeSpentSeconds = questionViewStartTimeRef.current 
             ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
             : undefined;
-        onUpdateAnswer(currentQuestion.id, { fillText: newText, timeSpentSeconds });
+        commitAnswer(currentQuestion.id, { fillText: newText, timeSpentSeconds });
     }
   };
 
@@ -340,7 +403,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
     const timeSpentSeconds = questionViewStartTimeRef.current 
         ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
         : undefined;
-    onUpdateAnswer(currentQuestion.id, { fillText, timeSpentSeconds });
+    commitAnswer(currentQuestion.id, { fillText, timeSpentSeconds });
   };
 
   const submitMultiSelectAnswer = () => {
@@ -348,7 +411,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         const timeSpentSeconds = questionViewStartTimeRef.current 
             ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
             : undefined;
-        onUpdateAnswer(currentQuestion.id, { selectedOptionIds: currentSelections, timeSpentSeconds });
+        commitAnswer(currentQuestion.id, { selectedOptionIds: currentSelections, timeSpentSeconds });
     }
   };
 
@@ -370,7 +433,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
               : undefined;
           
-          onUpdateAnswer(currentQuestion.id, { matchingAnswers, timeSpentSeconds });
+          commitAnswer(currentQuestion.id, { matchingAnswers, timeSpentSeconds });
       }
   };
   
@@ -384,7 +447,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
           ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
           : undefined;
           
-      onUpdateAnswer(currentQuestion.id, { matchingAnswers, timeSpentSeconds });
+      commitAnswer(currentQuestion.id, { matchingAnswers, timeSpentSeconds });
   };
 
   const handleDiagramLabelSelect = (labelId: string, selectedLabelId: string) => {
@@ -401,7 +464,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
         const timeSpentSeconds = questionViewStartTimeRef.current 
               ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
               : undefined;
-        onUpdateAnswer(currentQuestion.id, { diagramAnswers, timeSpentSeconds });
+        commitAnswer(currentQuestion.id, { diagramAnswers, timeSpentSeconds });
     }
   };
 
@@ -414,7 +477,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000) 
             : undefined;
             
-    onUpdateAnswer(currentQuestion.id, { diagramAnswers, timeSpentSeconds });
+    commitAnswer(currentQuestion.id, { diagramAnswers, timeSpentSeconds });
   };
 
   // ── Highlight helpers ──────────────────────────────────────────────────────
@@ -751,12 +814,26 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
 
   const finalSubmitAction = session.isOffline ? onSubmitOfflineTest : onSubmitTest;
   const isStudyModeAnswered = mode === 'study' && userAnswer?.isCorrect !== undefined;
-  const hasStudyAnswerDraft = mode === 'study' && !isStudyModeAnswered && !!(
-    userAnswer?.selectedOptionIds?.length ||
-    userAnswer?.fillText ||
-    userAnswer?.matchingAnswers?.length ||
-    userAnswer?.diagramAnswers?.length
+  const heldAnswer = heldAnswers[currentQuestion.id];
+  // A draft can be held locally (waiting on the confidence gate) as well as
+  // recorded on the session, and both count as "they have committed".
+  const hasStudyAnswerDraft = mode === 'study' && !isStudyModeAnswered && (
+    Boolean(heldAnswer) || !!(
+      userAnswer?.selectedOptionIds?.length ||
+      userAnswer?.fillText ||
+      userAnswer?.matchingAnswers?.length ||
+      userAnswer?.diagramAnswers?.length
+    )
   );
+  const recordedConfidence =
+    confidenceByQuestion[currentQuestion.id] ?? readConfidence(userAnswer);
+  const gate = confidenceGate({
+    sessionKind,
+    hasDraftAnswer: hasStudyAnswerDraft,
+    isRevealed: isStudyModeAnswered,
+    recorded: recordedConfidence,
+  });
+  const confidenceLine = confidenceOutcomeLabel(recordedConfidence, userAnswer?.isCorrect);
 
   const handleCheckStudyAnswer = () => {
     onUpdateAnswer(currentQuestion.id, { revealAnswer: true } as Partial<Omit<UserAnswerRecord, 'questionId'>> & { revealAnswer?: boolean });
@@ -1070,7 +1147,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
               </div>
             )}
             
-            {mode === 'study' && (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE || currentQuestion.questionType === QuestionType.MATCHING || currentQuestion.questionType === QuestionType.DIAGRAM_LABELING) && !isStudyModeAnswered && (
+            {mode === 'study' && (currentQuestion.questionType === QuestionType.MULTIPLE_CHOICE_MULTIPLE || currentQuestion.questionType === QuestionType.MATCHING || currentQuestion.questionType === QuestionType.DIAGRAM_LABELING) && !isStudyModeAnswered && gate.state !== 'ask' && (
                 <div className="mt-4 text-right">
                     <button 
                         onClick={currentQuestion.questionType === QuestionType.MATCHING ? submitMatchingAnswer : (currentQuestion.questionType === QuestionType.DIAGRAM_LABELING ? submitDiagramAnswer : submitMultiSelectAnswer)}
@@ -1086,7 +1163,30 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 </div>
             )}
 
-            {mode === 'study' && !showExplanationsImmediately && hasStudyAnswerDraft && (
+            {/* Confidence, asked BEFORE the reveal and only on practice. The
+                two chips replace "Check Answer" while the gate is open: the
+                answer is already committed, so this is the button that reveals
+                it, and the student cannot see the outcome before choosing. */}
+            {gate.state === 'ask' && (
+                <div className="mt-4 p-3 rounded-lg border border-lantern-border bg-lantern-surface">
+                    <p className="text-body font-semibold text-lantern-text">Before you see the answer — how sure are you?</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {CONFIDENCE_CHOICES.map((choice) => (
+                            <button
+                                key={choice.id}
+                                type="button"
+                                onClick={() => answerWithConfidence(choice.id)}
+                                className="min-h-[44px] px-4 rounded-lantern border border-lantern-border bg-lantern-background text-body font-semibold text-lantern-text hover:border-lantern-feature-tests-ink hover:bg-lantern-feature-tests-tint"
+                            >
+                                {choice.label}
+                                <span className="ml-2 text-caption font-normal text-lantern-text-secondary">{choice.hint}</span>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {mode === 'study' && !showExplanationsImmediately && hasStudyAnswerDraft && canRevealAnswer(gate) && (
                 <div className="mt-4 text-right">
                     <button
                         onClick={handleCheckStudyAnswer}
@@ -1108,6 +1208,9 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                     </p>
                   )}
                   <p className="text-sm text-lantern-text mt-1 whitespace-pre-wrap">{currentQuestion.explanation}</p>
+                  {confidenceLine && (
+                    <p className="text-caption text-lantern-text-secondary mt-1">{confidenceLine}</p>
+                  )}
               </div>
             )}
         </div>

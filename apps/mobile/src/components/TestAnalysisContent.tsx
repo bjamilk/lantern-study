@@ -21,12 +21,42 @@ import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
 import { useTheme } from '../theme';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AppIcon } from './ui/AppIcon';
+import { T } from './ui';
+import { useFeatureAccent } from './ui/FeatureDisc';
+import type { QuestionSource } from '../screens/tests/confidenceReveal';
+
+/**
+ * The word beside the dot.
+ *
+ * Every question card said how it went in a coloured dot and a coloured
+ * border and nothing else (device finding T5, build 162) — which is no
+ * signal at all to a reader who cannot separate the two hues, and none in a
+ * screenshot either. Colour keeps the meaning; it stops being the only thing
+ * carrying it.
+ */
+const QUESTION_STATUS_LABELS: Record<'correct' | 'incorrect' | 'unattempted', string> = {
+  correct: 'Correct',
+  incorrect: 'Incorrect',
+  unattempted: 'Not answered',
+};
 
 interface TestAnalysisContentProps {
   test: RecentTest;
   /** Optional header close control when embedded in a custom chrome. */
   onClose?: () => void;
   showHeader?: boolean;
+  /**
+   * Where this session's questions came from — a note, a deck or a study
+   * group. Drawn as one chip under the title, because the mobile question
+   * snapshot carries no per-question provenance: every question in an
+   * analysis shares the attempt's source, and claiming otherwise per row
+   * would be inventing detail the data does not have.
+   *
+   * Both this and `onOpenSource` are needed for the chip to appear: a chip
+   * that looks like a link and does nothing is worse than no chip.
+   */
+  source?: QuestionSource | null;
+  onOpenSource?: (source: QuestionSource) => void;
 }
 
 function TimePerQuestionBars({
@@ -61,7 +91,7 @@ function TimePerQuestionBars({
             key={item.questionNumber}
             onPress={() => onSelect(item)}
             accessibilityRole="button"
-            accessibilityLabel={`Question ${item.questionNumber}, ${item.time} seconds, ${item.status}`}
+            accessibilityLabel={`Question ${item.questionNumber}, ${item.time} seconds, ${QUESTION_STATUS_LABELS[item.status]}`}
             style={[styles.barItem, active && styles.barItemActive]}
           >
             <Text style={[styles.barValue, { color: labelColor }]}>{item.time}s</Text>
@@ -120,8 +150,11 @@ export default function TestAnalysisContent({
   test,
   onClose,
   showHeader = false,
+  source,
+  onOpenSource,
 }: TestAnalysisContentProps) {
   const { colors } = useTheme();
+  const sourceAccent = useFeatureAccent('tests');
   const [selectedQuestion, setSelectedQuestion] = useState<TestAnalysisQuestionTime | null>(null);
   const analysis = test.analysis;
 
@@ -157,12 +190,7 @@ export default function TestAnalysisContent({
   }
 
   const hasBars = analysis.timePerQuestion.length > 0;
-  const statusLabel =
-    selectedQuestion?.status === 'correct'
-      ? 'Correct'
-      : selectedQuestion?.status === 'incorrect'
-        ? 'Incorrect'
-        : 'Unattempted';
+  const statusLabel = selectedQuestion ? QUESTION_STATUS_LABELS[selectedQuestion.status] : '';
 
   return (
     <View style={styles.root}>
@@ -188,6 +216,21 @@ export default function TestAnalysisContent({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.contentContainer}
       >
+        {/* "Where did these questions come from?" — one tap from the chart. */}
+        {source && onOpenSource ? (
+          <TouchableOpacity
+            style={[styles.sourceChip, { borderColor: sourceAccent.ink }]}
+            onPress={() => onOpenSource(source)}
+            accessibilityRole="link"
+            accessibilityLabel={`${source.label}. Opens the source.`}
+          >
+            <AppIcon name="arrow-forward" size={12} color={sourceAccent.ink} />
+            <T.Label style={{ color: sourceAccent.ink }} numberOfLines={1}>
+              {source.label}
+            </T.Label>
+          </TouchableOpacity>
+        ) : null}
+
         <View style={[styles.scoreSummary, { backgroundColor: colors.inputBackground }]}>
           <View style={[styles.scoreCircle, { backgroundColor: colors.primaryFill }]}>
             <Text style={styles.scorePercentage}>{test.percentage}%</Text>
@@ -262,15 +305,15 @@ export default function TestAnalysisContent({
               <View style={styles.statusLegend}>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.correct }]} />
-                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>Correct</Text>
+                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>{QUESTION_STATUS_LABELS.correct}</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.incorrect }]} />
-                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>Incorrect</Text>
+                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>{QUESTION_STATUS_LABELS.incorrect}</Text>
                 </View>
                 <View style={styles.legendItem}>
                   <View style={[styles.legendDot, { backgroundColor: STATUS_BAR_COLORS.unattempted }]} />
-                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>Unattempted</Text>
+                  <Text style={[styles.legendText, { color: colors.textSecondary }]}>{QUESTION_STATUS_LABELS.unattempted}</Text>
                 </View>
               </View>
               <View style={styles.barChartContainer}>
@@ -320,7 +363,7 @@ export default function TestAnalysisContent({
                       />
                       <View style={styles.questionRowText}>
                         <Text style={[styles.questionRowMeta, { color: colors.textSecondary }]}>
-                          Q{item.questionNumber} · {item.time}s
+                          Q{item.questionNumber} · {item.time}s · {QUESTION_STATUS_LABELS[item.status]}
                         </Text>
                         <Text
                           style={[styles.questionRowStem, { color: colors.text }]}
@@ -446,6 +489,18 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: 20,
+  },
+  sourceChip: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    marginBottom: 12,
+    maxWidth: '100%',
   },
   scoreSummary: {
     flexDirection: 'row',

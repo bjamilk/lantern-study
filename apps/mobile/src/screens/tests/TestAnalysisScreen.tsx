@@ -26,12 +26,22 @@ import {
   normalizeRecentTest,
 } from '../../utils/testAnalysisHelpers';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
+import { toTab } from '../../navigation/nestedTab';
+import { questionSourceTarget, type QuestionSource } from './confidenceReveal';
 
 type TestAnalysisParams = {
   TestAnalysis: {
     test?: RecentTest;
     sessionId?: string;
     attemptId?: string;
+    /**
+     * Where this session's questions came from, resolved by whoever opened
+     * the analysis (TestResults does it from the attempt). Optional: an
+     * analysis opened from the dashboard has no attempt to resolve it from,
+     * and simply shows no chip.
+     */
+    source?: QuestionSource;
   };
 };
 
@@ -75,7 +85,35 @@ export default function TestAnalysisScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<RouteProp<TestAnalysisParams, 'TestAnalysis'>>();
   const { colors } = useTheme();
-  const { test: initialTest, sessionId, attemptId } = route.params ?? {};
+  const { test: initialTest, sessionId, attemptId, source } = route.params ?? {};
+
+  /**
+   * Open the note, deck or thread behind this session.
+   *
+   * Round-4 invariants: RESET the Study stack first — this screen sits above
+   * TestResults on it, and a bare tab switch would leave both mounted as the
+   * Study tab's route long after their session is gone — then name the target
+   * through `toTab(..., initial: false)` so its own tab root stays underneath.
+   */
+  const openSource = React.useCallback(
+    (target: QuestionSource) => {
+      const plan = questionSourceTarget(target);
+      if (plan.tab === 'StudyTab') {
+        navigation.reset({
+          index: 1,
+          routes: [
+            { name: TAB_STACK_ROOT_ROUTE.StudyTab },
+            { name: plan.screen, params: plan.params },
+          ],
+        });
+        return;
+      }
+      const parent = navigation.getParent?.();
+      navigation.reset({ index: 0, routes: [{ name: TAB_STACK_ROOT_ROUTE.StudyTab }] });
+      parent?.navigate?.(plan.tab, toTab(plan.screen, plan.params));
+    },
+    [navigation]
+  );
 
   const normalizedInitial = useMemo(
     () => (initialTest ? normalizeRecentTest(initialTest) : null),
@@ -205,7 +243,7 @@ export default function TestAnalysisScreen() {
             {error ? (
               <Text style={[styles.errorBanner, { color: colors.textSecondary }]}>{error}</Text>
             ) : null}
-            <TestAnalysisContent test={test} />
+            <TestAnalysisContent test={test} source={source} onOpenSource={openSource} />
           </>
         ) : (
           <View style={styles.centered}>

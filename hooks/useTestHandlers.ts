@@ -29,6 +29,7 @@ import { trackQuestProgress } from '../services/questProgress';
 import { trackStudyActivity } from '../services/studyActivity';
 import { trackTestStarted, trackTestCompleted } from '../services/productAnalytics';
 import { normalizeUserSettings } from '@lantern/shared/settings';
+import { buildRetakeSession, retakeTitle } from '../utils/testRetake';
 import {
     bindDraftIdToActiveSession,
     cancelScheduledSessionDraftAutosave,
@@ -736,30 +737,40 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     }, [removePausedSession, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
 
     const handleRetakeTest = useCallback((sessionData: TestSessionData) => {
-        const shuffledQuestions = createShuffledQuestionSet(sessionData.questions);
-        
+        // One rule for every launch: `buildRetakeSession` re-shuffles, re-arms
+        // the clock from the config and reads the attempt kind back off it —
+        // so a test built as practice is sat as practice from Retake too, not
+        // only from its `/study/tests/:testId` link. Hardcoding 'test' here was
+        // how the review's Retake turned a practice test into an untimed exam.
         const newSession: TestSessionData = {
-            config: sessionData.config,
-            questions: shuffledQuestions,
+            ...buildRetakeSession(
+                {
+                    kind: 'ready',
+                    questions: sessionData.questions,
+                    config: sessionData.config,
+                    title: retakeTitle(sessionData),
+                },
+                { shuffle: (questions) => createShuffledQuestionSet(questions) }
+            ),
             isOffline: sessionData.isOffline,
-            userAnswers: {},
-            currentQuestionIndex: 0,
-            startTime: new Date(),
-            endTime: sessionData.config.timerDuration 
-                ? new Date(Date.now() + sessionData.config.timerDuration * 1000) 
-                : undefined,
-            sessionKind: 'test',
-            status: 'in_progress',
-            title: sessionData.config?.groupName || 'Test',
         };
-        setActiveTestSession(newSession);
         setActiveTestResult(null);
+        if (newSession.sessionKind === 'study') {
+            setActiveStudySession(newSession as StudySessionData);
+            setAppMode(AppMode.STUDY_ACTIVE);
+            void ensureSessionDraft(newSession, 'study').then((drafted) => {
+                const bound = bindDraftIdToActiveSession('study', drafted);
+                if (bound) setActiveStudySession(bound as StudySessionData);
+            });
+            return;
+        }
+        setActiveTestSession(newSession);
         setAppMode(AppMode.TEST_ACTIVE);
         void ensureSessionDraft(newSession, 'test').then((drafted) => {
             const bound = bindDraftIdToActiveSession('test', drafted);
             if (bound) setActiveTestSession(bound);
         });
-    }, [setActiveTestSession, setActiveTestResult, setAppMode]);
+    }, [setActiveTestSession, setActiveStudySession, setActiveTestResult, setAppMode]);
     
     const handlePracticeFailedQuestions = useCallback((failedQuestions: TestQuestion[]) => {
         if (!selectedChat || selectedChat.chatType !== 'group' || failedQuestions.length === 0) return;

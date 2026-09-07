@@ -50,8 +50,21 @@ import type {
   ModerationFlag,
   ModerationState,
   ModerationStrike,
+  TestAttemptTally,
+  TestSessionProvenance,
   UserCourse,
 } from "../types";
+
+const QUESTION_STAT_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+/**
+ * Per-question stats are keyed on a server question row, so only a UUID id can
+ * be recorded. Embedded personal-test questions (`q1`, `q2`…) are skipped.
+ */
+export const isQuestionStatEligible = (questionId: string): boolean =>
+  typeof questionId === "string" && QUESTION_STAT_UUID_RE.test(questionId);
+
 
 /**
  * A `messages` row as the board reads it. `subject` / `pinned_at` / `pinned_by`
@@ -1490,9 +1503,16 @@ export function createApiEndpoints(client: ApiClient) {
      * appear under "Available Tests".
      */
     createPersonalTest: (data: {
-      title: string;
+      /**
+       * Optional when `source` names a note or deck the caller owns: the
+       * server then titles the test "Test · <source title>".
+       */
+      title?: string;
       questions: unknown[];
+      /** Where the questions came from. `sourceNoteId` below is the older flat form. */
+      source?: { noteId?: string | null; deckId?: string | null };
       sourceNoteId?: string | null;
+      sourceDeckId?: string | null;
       sourceJobId?: string | null;
       courseId?: string | null;
       topicId?: string | null;
@@ -1505,6 +1525,7 @@ export function createApiEndpoints(client: ApiClient) {
         questions: unknown[];
         status: "in_progress" | "completed" | "abandoned";
         userId: string;
+        provenance?: TestSessionProvenance;
       }>("/tests/personal", {
         method: "POST",
         body: JSON.stringify(data),
@@ -1774,12 +1795,22 @@ export function createApiEndpoints(client: ApiClient) {
         end_time?: string;
         config?: Record<string, unknown>;
         score?: number;
+        provenance?: TestSessionProvenance;
+        tally?: TestAttemptTally;
       }>(`/tests/sessions/${sessionId}`),
 
     /**
-     * Same payload web uses for Analyze/Review hydrate (`GET /tests/:id`).
-     * Prefer `fetchTestSessionDetail` first; use this as a fallback when the
-     * sessions route is unavailable or returns an empty body.
+     * The full session — questions (each with `explanation` when one exists),
+     * answers, provenance and tally — for any session the caller owns, or any
+     * group session whose group they belong to.
+     *
+     * This is what a RETAKE reads. The tests list drops questions from
+     * completed rows, so a retake launched off a history row must fetch here
+     * rather than trust the row it was drawn from.
+     *
+     * A group peer (`access: 'group'`) gets the questions with `userAnswers`
+     * empty and `tally` null: the questions are the group's, the attempt is
+     * not theirs to read.
      */
     fetchTestById: (testId: string) =>
       apiRequest<{
@@ -1793,6 +1824,12 @@ export function createApiEndpoints(client: ApiClient) {
         endTime?: string;
         config?: Record<string, unknown>;
         score?: number;
+        status?: string;
+        questionCount?: number;
+        provenance?: TestSessionProvenance;
+        /** null for a group peer's read — the attempt belongs to someone else. */
+        tally?: TestAttemptTally | null;
+        access?: "owner" | "group";
       }>(`/tests/${testId}`),
 
     deleteTestSession: (sessionId: string) =>
@@ -1855,8 +1892,12 @@ export function createApiEndpoints(client: ApiClient) {
         incorrectAttempts: number;
         lastAttempted: string;
       },
-    ) =>
-      apiRequest<void>("/user-stats", {
+    ) => {
+      // Questions embedded in a personal test carry ids like `q1`; they have no
+      // row on the server, and the validator 400s on anything but a UUID. The
+      // local stat still updates; the network write is simply not applicable.
+      if (!isQuestionStatEligible(questionId)) return Promise.resolve();
+      return apiRequest<void>("/user-stats", {
         method: "POST",
         body: JSON.stringify({
           userId,
@@ -1865,7 +1906,8 @@ export function createApiEndpoints(client: ApiClient) {
           incorrectAttempts: stat.incorrectAttempts,
           lastAttempted: stat.lastAttempted,
         }),
-      }),
+      });
+    },
 
     // ========== NOTIFICATIONS API ==========
 

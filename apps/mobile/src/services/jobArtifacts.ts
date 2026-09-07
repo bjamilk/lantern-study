@@ -40,6 +40,7 @@ import { mapFlashcardsFromApi } from '@lantern/shared';
 import { createDeckWithCards, createPersonalTest } from './api';
 import { useFlashcardStore, type Deck } from '../stores/flashcardStore';
 import { useJobsStore } from '../stores/jobsStore';
+import { useNotesStore } from '../stores/notesStore';
 import { useTestStore } from '../stores/testStore';
 import {
   findJob,
@@ -78,6 +79,8 @@ export interface SaveGeneratedTestInput {
   title: string;
   /** The note this was generated from. */
   sourceNoteId?: string;
+  /** The deck this was generated from, when the source was a deck. */
+  sourceDeckId?: string;
   /** Question rows, exactly as the generator produced them. */
   questions: unknown[];
 }
@@ -143,6 +146,7 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     kind: 'test',
     title: input.title,
     sourceNoteId: input.sourceNoteId,
+    sourceDeckId: input.sourceDeckId,
     questions: input.questions,
   };
   jobs.recordPendingSave(input.jobId, payload);
@@ -291,6 +295,26 @@ async function writeDeck(
   };
 }
 
+/**
+ * The note this test was generated from, by name.
+ *
+ * The list prints "From <note>" under a note quiz and the mode sheet names it
+ * in place of the bare "Saved test". The title is resolved from the note the
+ * save is already linked to, so it is on the row the moment the test lands
+ * rather than after the next fetch — and it is sent WITH the save, as the
+ * server's fallback for a note whose title it cannot read back itself.
+ *
+ * Empty string is not a title: a note that has never been named contributes
+ * nothing, and "From " with nothing after it is worse than no chip at all.
+ */
+function noteTitleFor(sourceNoteId: string | undefined): string | undefined {
+  if (!sourceNoteId) return undefined;
+  const title = useNotesStore
+    .getState()
+    .notes.find(note => note.id === sourceNoteId)?.title;
+  return typeof title === 'string' && title.trim() ? title.trim() : undefined;
+}
+
 /** The one request that saves a generated test, and its local landing. */
 async function writeTest(
   jobId: string,
@@ -300,11 +324,18 @@ async function writeTest(
   // the route has nothing to stamp, the job never learns which test it became,
   // and its notification and any later catch-up fall back to `jobs/<id>`.
   const serverJobId = findJob(useJobsStore.getState().jobs, jobId)?.serverJobId;
+  const sourceNoteTitle = noteTitleFor(payload.sourceNoteId);
   const response = await createPersonalTest({
     clientKey: jobId,
     title: payload.title,
     sourceNoteId: payload.sourceNoteId,
+    sourceDeckId: payload.sourceDeckId,
     ...(serverJobId ? { sourceJobId: serverJobId } : {}),
+    // The server resolves the note's own title and that always wins; this is
+    // the fallback it falls back TO, and without it a test whose note title
+    // could not be read back landed with no provenance at all — the row said
+    // nothing and the mode sheet said "Saved test".
+    ...(sourceNoteTitle ? { config: { sourceNoteTitle } } : {}),
     questions: payload.questions,
   }).catch((error: unknown) => {
     throw asSaveError(error);
@@ -330,6 +361,15 @@ async function writeTest(
     name: (test?.title as string) || (test?.name as string) || payload.title,
     questions,
     createdAt: (test?.created_at as string) ?? (test?.createdAt as string),
+    // Provenance from the save payload so the results chip links to the note
+    // immediately, not only after the next fetchTests (build 163 residual).
+    sourceNoteId:
+      (test?.sourceNoteId as string | undefined) ??
+      ((payload as { sourceNoteId?: string }).sourceNoteId ?? undefined),
+    // Server first (it reads the note's own row), then the title this device
+    // already holds — so the "From <note>" chip is on the freshly saved row
+    // immediately, not only after the next fetchTests.
+    sourceNoteTitle: (test?.sourceNoteTitle as string | undefined) ?? sourceNoteTitle,
   });
 
   return {

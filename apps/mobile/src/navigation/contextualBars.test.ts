@@ -104,6 +104,24 @@ describe('the registry reads its own navigator', () => {
     expect(offenders.join('\n')).toBe('');
   });
 
+  it('keeps every activeFor route in the SAME stack as its item', () => {
+    // `activeFor` is the other place a route NAME is written as a string, and
+    // it is wrong in the same two ways: a typo highlights nothing forever, and
+    // a route from another stack claims a highlight this row can never own.
+    const offenders: string[] = [];
+    for (const [route, spec] of entries()) {
+      const screens = screensOf(STACK_COMPONENT[spec.stack]);
+      for (const item of spec.items) {
+        for (const extra of item.activeFor ?? []) {
+          if (!screens.includes(extra)) {
+            offenders.push(`${route} → ${item.id} → activeFor ${extra} (not in ${spec.stack})`);
+          }
+        }
+      }
+    }
+    expect(offenders.join('\n')).toBe('');
+  });
+
   it('never targets the stack root, which a row must not stack under itself', () => {
     // Invariant 1: the root is reached by the GLOBAL bar's re-tap, never by a
     // contextual item — `planTabRootReset` owns that path.
@@ -129,6 +147,12 @@ describe('which routes carry a row', () => {
       specForRoute(route),
     );
     for (const row of rows) expect(row).toBe(rows[0]);
+  });
+
+  it('carries the same row into the test builder', () => {
+    // "+ New test" pushes TestBuilder, which had no row at all: the student
+    // lost both the row and the accent the moment they opened the door.
+    expect(specForRoute('TestBuilder')).toBe(specForRoute('TestsList'));
   });
 
   it('has no row on the Home, Me, Chat or Campus roots', () => {
@@ -224,12 +248,31 @@ describe('the active item', () => {
     expect(accentForRoute('TestsList')).toBe('tests');
   });
 
+  it('keeps Tests active inside the test builder', () => {
+    // The builder is a room inside Tests, not a sixth door.
+    expect(activeItem('TestBuilder')?.id).toBe('tests');
+    expect(accentForRoute('TestBuilder')).toBe('tests');
+  });
+
   it('is nothing on a Study screen no item points at', () => {
     // The hub is the row's home, not one of its doors; Notes is reached through
     // Library. Neither may borrow another item's highlight.
     expect(activeItem('StudyHub')).toBeNull();
     expect(accentForRoute('StudyHub')).toBeNull();
     expect(activeItem('NotesList')).toBeNull();
+  });
+
+  it('is what the ROW paints, not a target comparison the component repeats', () => {
+    // A source scan, because mobile jest cannot render the strip. The
+    // component had its own rule — `item.target.route === focusedRoute` —
+    // which knows nothing of `activeFor`, so Tests went grey the moment the
+    // builder opened however carefully the registry said otherwise.
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../components/layout/ContextualBar.tsx'),
+      'utf8',
+    );
+    expect(source).toMatch(/activeItem\(/);
+    expect(source).not.toMatch(/active=\{item\.target/);
   });
 
   it('is nothing where there is no row', () => {
@@ -243,6 +286,14 @@ describe('planContextualPress', () => {
   it('navigates to another screen in the stack', () => {
     expect(
       planContextualPress({ focusedRoute: 'Library', item: itemById(studyBar(), 'tests') }),
+    ).toEqual({ kind: 'navigate', route: 'TestsList' });
+  });
+
+  it('walks OUT of the builder rather than scrolling it', () => {
+    // Active is not the same as "you are here": Tests is highlighted in the
+    // builder, and pressing it must still reach the list.
+    expect(
+      planContextualPress({ focusedRoute: 'TestBuilder', item: itemById(studyBar(), 'tests') }),
     ).toEqual({ kind: 'navigate', route: 'TestsList' });
   });
 
@@ -264,6 +315,22 @@ describe('planContextualPress', () => {
     });
     expect(plan.kind).toBe('scrollToTop');
     expect(plan).not.toHaveProperty('route');
+  });
+
+  it('navigates from the hub ROOT exactly as from any other Study route', () => {
+    // The hub is a Study route like the rest: its row is the same row, and a
+    // press on it means the same thing. (What made the press dead on the hub
+    // was the chrome's dispatch, not this plan — see stackNavigate.ts.)
+    for (const id of ['library', 'flashcards', 'tests']) {
+      const item = itemById(studyBar(), id);
+      const fromHub = planContextualPress({ focusedRoute: 'StudyHub', item });
+      const fromLibrary = planContextualPress({ focusedRoute: 'NotesList', item });
+      expect(fromHub).toEqual({
+        kind: 'navigate',
+        route: (item.target as { route: string }).route,
+      });
+      if (id !== 'library') expect(fromHub).toEqual(fromLibrary);
+    }
   });
 
   it('opens the recorder door from anywhere in the row', () => {

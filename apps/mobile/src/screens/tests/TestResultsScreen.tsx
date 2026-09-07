@@ -40,6 +40,22 @@ import {
   type ReturnToTabPlan,
   type ReturnToTarget,
 } from './testSessionExit';
+import {
+  REVIEW_OUTCOMES,
+  classifyReviewOutcome,
+  describeTally,
+  isAnswerProvided,
+  questionSourceTarget,
+  resolveQuestionSource,
+  tallyAttempt,
+  type ConfidenceLevel,
+} from './confidenceReveal';
+import { deriveTestSource } from './testAuthoring';
+import { useFeatureAccent } from '../../components/ui/FeatureDisc';
+import { T } from '../../components/ui';
+
+/** One AI credit; the same rate limiter POST /ai/explain-answer charges. */
+const EXPLAIN_ANSWER_CREDIT_COST = 1;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -52,6 +68,13 @@ type TestResultsRouteParams = {
      * that thread instead of dropping the reader on the Study tab.
      */
     returnTo?: ReturnToTarget;
+    /**
+     * What the reader committed to before each answer was revealed, keyed by
+     * question id. Present only on a practice attempt that collected them
+     * (spec §9 #5) — a timed exam attempt never sends this, and review then
+     * reads exactly as it always did.
+     */
+    confidenceByQuestion?: Record<string, ConfidenceLevel>;
   };
 };
 
@@ -59,8 +82,9 @@ export default function TestResultsScreen() {
   const route = useRoute<RouteProp<TestResultsRouteParams, 'TestResults'>>();
   const navigation = useNavigation<any>();
   const isFocused = useIsFocused();
-  const { attemptId, returnTo } = route.params;
+  const { attemptId, returnTo, confidenceByQuestion } = route.params;
   const { colors } = useTheme();
+  const testsAccent = useFeatureAccent('tests');
   // Styles were hardcoded dark, so results stayed dark in light mode.
   const styles = useMemo(() => createStyles(colors), [colors]);
 
@@ -93,10 +117,19 @@ export default function TestResultsScreen() {
     return attempts.find(a => a.id === attemptId);
   }, [attempts, attemptId]);
 
+  /**
+   * The questions to practise again: ANSWERED and wrong.
+   *
+   * `!a.isCorrect` alone swept in every blank, so a session with three
+   * untouched questions offered "Practice Failed (3)" for three questions the
+   * reader had never seen — the same "unanswered = missed" reading the stats
+   * grid above already refuses (device finding T5, build 162). A blank is not
+   * a mistake to drill; it is a question still to be attempted.
+   */
   const failedQuestions = useMemo((): TestQuestion[] => {
     if (!attempt) return [];
     return attempt.answers
-      .filter(a => !a.isCorrect && a.questionSnapshot)
+      .filter(a => !a.isCorrect && isAnswerProvided(a.userAnswer) && a.questionSnapshot)
       .map(a => a.questionSnapshot!);
   }, [attempt]);
 
@@ -132,12 +165,71 @@ export default function TestResultsScreen() {
     returnTo,
   }), [attempt, retakeQuestions.length, retakeSourceTest, returnTo]);
 
+  /**
+   * The attempt's own provenance, for questions that carry none of their own.
+   *
+   * A mobile question snapshot has no note or deck id on it, so for most
+   * sessions the honest answer to "where did this come from?" is the study
+   * group whose board the questions were drawn from, or the deck behind the
+   * source test. Question-level provenance still wins when a snapshot happens
+   * to carry it (`resolveQuestionSource`), so this is a fallback, not a
+   * blanket label.
+   */
+  const attemptProvenance = useMemo(
+    () => ({
+      groupId: attempt?.groupId,
+      groupName: attempt?.groupName,
+      deckId: retakeSourceTest?.deckId,
+      deckName: retakeSourceTest?.deckName,
+    }),
+    [attempt?.groupId, attempt?.groupName, retakeSourceTest?.deckId, retakeSourceTest?.deckName]
+  );
+
+  /** The whole session's source — every row shares it when no row has its own. */
+  const analysisSource = useMemo(
+    () => resolveQuestionSource({ attempt: attemptProvenance }),
+    [attemptProvenance]
+  );
+
+  /**
+   * The chip under the test's name: where this test came from.
+   *
+   * `resolveQuestionSource` answers only from provenance the SERVER put on the
+   * row, and refuses anything it cannot link to — so a test made from a note
+   * had no chip at all on build 163 (F1), even though the screen was showing
+   * the note's name in the title the whole time. This derives it from what is
+   * already here, and settles for a NAME when there is no id to open.
+   */
+  const heroSource = useMemo(
+    () =>
+      deriveTestSource({
+        noteId: retakeSourceTest?.sourceNoteId,
+        noteTitle: retakeSourceTest?.sourceNoteTitle,
+        deckId: retakeSourceTest?.deckId,
+        deckName: retakeSourceTest?.deckName,
+        groupId: attempt?.groupId,
+        groupName: attempt?.groupName,
+        testTitle: attempt?.testName,
+      }),
+    [
+      retakeSourceTest?.sourceNoteId,
+      retakeSourceTest?.sourceNoteTitle,
+      retakeSourceTest?.deckId,
+      retakeSourceTest?.deckName,
+      attempt?.groupId,
+      attempt?.groupName,
+      attempt?.testName,
+    ]
+  );
+
   const analysisTest = useMemo((): RecentTest | null => {
     if (!attempt || attempt.answers.length === 0) return null;
     return normalizeRecentTest({
       id: attempt.id,
       groupName: attempt.groupName || attempt.testName,
-      score: attempt.answers.filter(a => a.isCorrect).length,
+      // The honest count: a blank the grader stamped `isCorrect: false` is not
+      // a wrong answer, and it is certainly not a right one.
+      score: tallyAttempt(attempt.answers).correct,
       totalQuestions: attempt.answers.length,
       percentage: attempt.percentage,
       completedAt: attempt.completedAt || attempt.startedAt,
@@ -169,6 +261,9 @@ export default function TestResultsScreen() {
       },
       sessionId: attempt.id,
       attemptId: attempt.id,
+      // Provenance travels with the analysis so its source chip is the same
+      // chip the review rows show, resolved once from the same attempt.
+      ...(analysisSource ? { source: analysisSource } : {}),
     });
   };
 
@@ -232,6 +327,39 @@ export default function TestResultsScreen() {
       parent?.navigate?.(plan.returnTo.tab, toTab(plan.returnTo.screen, plan.returnTo.params));
     },
     [navigation]
+  );
+
+  /**
+   * Open the note, deck or thread a question came from.
+   *
+   * Round-4 invariants, both halves: the Study stack is RESET first so these
+   * results cannot outlive their session as the tab's root, and the target is
+   * named through `toTab(..., initial: false)` so the destination tab keeps
+   * its own root underneath. A note or deck is on the Study tab, so its reset
+   * puts the target straight onto StudyHub in one dispatch; a group thread is
+   * on Chat, which is the existing `performReturnToTab` move exactly.
+   */
+  const openQuestionSource = useCallback(
+    (source: ReturnType<typeof resolveQuestionSource>) => {
+      if (!source) return;
+      const target = questionSourceTarget(source);
+      if (target.tab === 'StudyTab') {
+        navigation.reset({
+          index: 1,
+          routes: [
+            { name: TAB_STACK_ROOT_ROUTE.StudyTab },
+            { name: target.screen, params: target.params },
+          ],
+        });
+        return;
+      }
+      performReturnToTab({
+        action: 'returnToTab',
+        routes: [TAB_STACK_ROOT_ROUTE.StudyTab],
+        returnTo: { tab: target.tab, screen: target.screen, params: target.params },
+      });
+    },
+    [navigation, performReturnToTab]
   );
 
   /**
@@ -301,8 +429,30 @@ export default function TestResultsScreen() {
 
   const retakeBlocked = retakePlan.action === 'unavailable';
 
-  const correctCount = attempt.answers.filter(a => a.isCorrect).length;
-  const incorrectCount = attempt.answers.length - correctCount;
+  /**
+   * Unanswered ≠ missed (spec §5.7, and the v3 comparison's `qz-15-stats`
+   * finding: 17 blanks reported as "Missed" and the attempt called 10%).
+   *
+   * `incorrectCount` used to be `answers.length - correctCount`, which folded
+   * every blank into "Incorrect" — so walking away from a test read exactly
+   * like getting it wrong, and an abandoned session showed a failing score
+   * with no hint that most of it was never attempted. The tally keeps the
+   * three counts apart and `describeTally` says so in words.
+   */
+  /**
+   * A practice sitting — the kind that ends in this screen since build 163.
+   *
+   * Read from the attempt's own recorded mode, never guessed from the timer:
+   * an attempt written before the mode was stored says nothing, and "nothing"
+   * must not be read as "practice".
+   */
+  const isPracticeSitting = attempt.mode === 'study';
+
+  const tally = tallyAttempt(attempt.answers);
+  const correctCount = tally.correct;
+  const incorrectCount = tally.incorrect;
+  const unansweredCount = tally.unanswered;
+  const tallyNote = describeTally(tally);
 
   /**
    * Leave the results behind, never on top of the tests list.
@@ -390,7 +540,7 @@ export default function TestResultsScreen() {
 
   const handlePracticeFailed = async () => {
     if (!failedQuestions.length) return;
-    const sessionName = `${attempt.testName} - Practice Failed`;
+    const sessionName = `${attempt.testName} - Practice wrong answers`;
     await startQuestionSet(sessionName, failedQuestions, 'study');
     // `replace`, not `navigate`: the practice session ends by REPLACING itself
     // with its own results, so pushing it would leave this results screen
@@ -425,35 +575,125 @@ export default function TestResultsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Result Card */}
+        {/* NEUTRAL for a practice sitting, in all three places the verdict
+            was painted: the border, the disc behind the glyph, and the glyph
+            itself. A red border and a ✗ around an untimed run with feedback
+            is a verdict the sitting never earned (T2) — and the word below
+            already says "PRACTICE COMPLETE", so leaving the frame red was two
+            surfaces disagreeing on the same card. */}
         <View style={[
           styles.resultCard,
-          { borderColor: attempt.passed ? colors.success : colors.error }
+          {
+            borderColor:
+              isPracticeSitting || tally.isAbandoned
+                ? colors.border
+                : attempt.passed ? colors.success : colors.error,
+          }
         ]}>
           <View style={[
             styles.resultIcon,
-            { backgroundColor: attempt.passed ? '#10b98120' : '#ef444420' }
+            {
+              backgroundColor: tally.isAbandoned || isPracticeSitting
+                ? testsAccent.tint
+                : attempt.passed ? '#10b98120' : '#ef444420',
+            }
           ]}>
-            <AppIcon 
-              name={attempt.passed ? 'trophy' : 'close-circle'} 
-              size={48} 
-              color={attempt.passed ? colors.success : colors.error} 
+            <AppIcon
+              name={
+                tally.isAbandoned
+                  ? 'remove-circle'
+                  : isPracticeSitting
+                    ? 'book'
+                    : attempt.passed ? 'trophy' : 'close-circle'
+              }
+              size={48}
+              color={
+                tally.isAbandoned || isPracticeSitting
+                  ? testsAccent.ink
+                  : attempt.passed ? colors.success : colors.error
+              }
             />
           </View>
-          
+
           <Text style={styles.testName}>{attempt.testName}</Text>
-          
+
+          {/* Where these questions came from. A link when something here knows
+              the id; plain text when all we have is the name — which is still
+              worth saying, and better than a link with nowhere to go. */}
+          {heroSource ? (
+            heroSource.id ? (
+              <TouchableOpacity
+                style={[styles.sourceChip, styles.heroSourceChip, { borderColor: testsAccent.ink }]}
+                onPress={() => openQuestionSource({
+                  kind: heroSource.kind,
+                  id: heroSource.id ?? '',
+                  title: heroSource.title,
+                  label: heroSource.label,
+                })}
+                accessibilityRole="link"
+                accessibilityLabel={`${heroSource.label}. Opens the source.`}
+              >
+                <AppIcon name="arrow-forward" size={12} color={testsAccent.ink} />
+                <T.Label style={{ color: testsAccent.ink }} numberOfLines={1}>
+                  {heroSource.label}
+                </T.Label>
+              </TouchableOpacity>
+            ) : (
+              <T.Caption tone="secondary" style={styles.heroSourceText} numberOfLines={1}>
+                {heroSource.label}
+              </T.Caption>
+            )
+          ) : null}
+
+          {/* An attempt where nothing was answered has no result to report.
+              Calling it "NOT PASSED · 0%" is the dishonest reading the spec's
+              "unanswered ≠ missed" rule exists to stop.
+
+              Nor does a PRACTICE session pass or fail. Pass marks belong to
+              the exam it is practice for; stamping a red NOT PASSED on an
+              untimed run with feedback turns the low-stakes surface into a
+              verdict, which is the reason to practise at all. */}
           <Text style={[
             styles.resultStatus,
-            { color: attempt.passed ? colors.success : colors.error }
+            {
+              color: tally.isAbandoned || isPracticeSitting
+                ? testsAccent.ink
+                : attempt.passed ? colors.success : colors.error,
+            }
           ]}>
-            {attempt.passed ? 'PASSED!' : 'NOT PASSED'}
+            {tally.isAbandoned
+              ? 'NOT ATTEMPTED'
+              : isPracticeSitting
+                ? 'PRACTICE COMPLETE'
+                : attempt.passed ? 'PASSED!' : 'NOT PASSED'}
           </Text>
-          
+          {isPracticeSitting ? (
+            <T.Caption tone="secondary" style={styles.tallyNote}>
+              Practice — untimed, with feedback as you went. No pass mark applies.
+            </T.Caption>
+          ) : null}
+
           <View style={styles.scoreCircle}>
-            <Text style={styles.scorePercentage}>{attempt.percentage}%</Text>
-            <Text style={styles.scoreLabel}>Score</Text>
+            {tally.isAbandoned ? (
+              <>
+                <Text style={styles.scoreLabel}>No score</Text>
+                <Text style={styles.scoreLabel}>0 of {tally.total} answered</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.scorePercentage}>{attempt.percentage}%</Text>
+                <Text style={styles.scoreLabel}>
+                  {tally.isPartial ? `Of all ${tally.total}` : 'Score'}
+                </Text>
+              </>
+            )}
           </View>
-          
+
+          {/* The one line that keeps a partial or abandoned attempt honest. */}
+          {tallyNote ? (
+            <T.Caption tone="secondary" style={styles.tallyNote}>{tallyNote}</T.Caption>
+          ) : null}
+
           <Text style={styles.dateText}>
             Completed {formatDate(attempt.completedAt || attempt.startedAt)}
           </Text>
@@ -490,6 +730,13 @@ export default function TestResultsScreen() {
             <Text style={styles.statValue}>{incorrectCount}</Text>
             <Text style={styles.statLabel}>Incorrect</Text>
           </View>
+          {/* Its own card, never folded into Incorrect. A blank is a question
+              the reader never got to, not a question they got wrong. */}
+          <View style={styles.statCard}>
+            <AppIcon name="remove-circle" size={24} color={testsAccent.ink} />
+            <Text style={styles.statValue}>{unansweredCount}</Text>
+            <Text style={styles.statLabel}>Unanswered</Text>
+          </View>
           <View style={styles.statCard}>
             <AppIcon name="star" size={24} color="#fbbf24" />
             <Text style={styles.statValue}>{attempt.score}/{attempt.totalPoints}</Text>
@@ -510,13 +757,13 @@ export default function TestResultsScreen() {
               <View 
                 style={[
                   styles.progressFillCorrect, 
-                  { width: `${(correctCount / attempt.answers.length) * 100}%` }
+                  { width: `${tally.total > 0 ? (correctCount / tally.total) * 100 : 0}%` }
                 ]} 
               />
               <View 
                 style={[
                   styles.progressFillIncorrect, 
-                  { width: `${(incorrectCount / attempt.answers.length) * 100}%` }
+                  { width: `${tally.total > 0 ? (incorrectCount / tally.total) * 100 : 0}%` }
                 ]} 
               />
             </View>
@@ -529,6 +776,12 @@ export default function TestResultsScreen() {
                 <View style={[styles.progressDot, { backgroundColor: colors.error }]} />
                 <Text style={styles.progressLabelText}>Incorrect ({incorrectCount})</Text>
               </View>
+              {unansweredCount > 0 && (
+                <View style={styles.progressLabel}>
+                  <View style={[styles.progressDot, { backgroundColor: colors.border }]} />
+                  <Text style={styles.progressLabelText}>Unanswered ({unansweredCount})</Text>
+                </View>
+              )}
             </View>
           </View>
         </View>
@@ -536,67 +789,148 @@ export default function TestResultsScreen() {
         {/* Question Review */}
         <View style={styles.reviewSection}>
           <Text style={styles.sectionTitle}>Question Review</Text>
-          {attempt.answers.map((answer, index) => (
-            <View key={answer.questionId} style={styles.questionReview}>
-              <View style={[
-                styles.questionStatus,
-                { backgroundColor: answer.isCorrect ? '#10b98120' : '#ef444420' }
-              ]}>
-                <AppIcon 
-                  name={answer.isCorrect ? 'checkmark' : 'close'} 
-                  size={16} 
-                  color={answer.isCorrect ? colors.success : colors.error} 
-                />
-              </View>
-              <View style={styles.questionInfo}>
-                <Text style={styles.questionNumber}>Question {index + 1}</Text>
-                {(answer as any).questionText ? (
-                  <Text style={styles.questionStem}>{(answer as any).questionText}</Text>
-                ) : null}
-                <Text style={[
-                  styles.questionAnswer,
-                  !answer.isCorrect && styles.questionAnswerWrong,
+          {attempt.answers.map((answer, index) => {
+            const answered = isAnswerProvided(answer.userAnswer);
+            const outcome = classifyReviewOutcome({
+              isCorrect: answer.isCorrect,
+              answered,
+              // The route param is this run's copy; the attempt's own field
+              // is what a result reopened from History carries.
+              confidence: confidenceByQuestion?.[answer.questionId] ?? answer.confidence,
+            });
+            const presentation = REVIEW_OUTCOMES[outcome];
+            // A plain correct/incorrect is already said by the status disc and
+            // the points column; only the confidence pairs and the blank add
+            // something a badge is needed for.
+            const showOutcomeBadge = outcome !== 'correct' && outcome !== 'incorrect';
+            // Every reviewed question shows its rationale, not only the ones
+            // that were got wrong: "why is this the answer" is the point of a
+            // review, and a right answer for the wrong reason is exactly what
+            // the Lucky badge above is pointing at.
+            const rationale =
+              (answer as any).explanation || answer.questionSnapshot?.explanation || '';
+            const correctAnswerText =
+              formatAnswer(answer.correctAnswer, answer.questionSnapshot) ||
+              (answer.questionSnapshot ? formatCorrectAnswerDisplay(answer.questionSnapshot) : '');
+            const source = resolveQuestionSource({
+              question: answer.questionSnapshot as never,
+              attempt: attemptProvenance,
+            });
+            return (
+              <View key={answer.questionId} style={styles.questionReview}>
+                <View style={[
+                  styles.questionStatus,
+                  {
+                    backgroundColor: !answered
+                      ? testsAccent.tint
+                      : answer.isCorrect ? '#10b98120' : '#ef444420',
+                  },
                 ]}>
-                  Your answer: {formatAnswer(answer.userAnswer, answer.questionSnapshot)}
-                </Text>
-                {!answer.isCorrect && answer.correctAnswer !== undefined && (
-                  <Text style={styles.questionCorrectAnswer}>
-                    Correct answer: {formatAnswer(
-                      answer.correctAnswer,
-                      answer.questionSnapshot
-                    ) || (answer.questionSnapshot ? formatCorrectAnswerDisplay(answer.questionSnapshot) : '')}
+                  <AppIcon
+                    name={!answered ? 'remove' : answer.isCorrect ? 'checkmark' : 'close'}
+                    size={16}
+                    color={!answered ? testsAccent.ink : answer.isCorrect ? colors.success : colors.error}
+                  />
+                </View>
+                <View style={styles.questionInfo}>
+                  <Text style={styles.questionNumber}>Question {index + 1}</Text>
+
+                  {/* The confidence pair, as a word and a glyph — colour is
+                      never the only signal (spec §5.6 honesty rule). The badge
+                      is drawn in the tests pair for every outcome precisely so
+                      that reading it means reading it.
+
+                      A plain correct/incorrect — a timed exam attempt, which
+                      never collects confidence — draws NO badge: the status
+                      disc and the points column already say that, and a
+                      redundant pill is how "stays plain" gets broken. */}
+                  {showOutcomeBadge || source ? (
+                  <View style={styles.outcomeRow}>
+                    {!showOutcomeBadge ? null : (
+                      <View style={[styles.outcomeBadge, { backgroundColor: testsAccent.tint }]}>
+                        <AppIcon name={presentation.icon as never} size={12} color={testsAccent.ink} />
+                        <T.Label style={{ color: testsAccent.ink }}>{presentation.label}</T.Label>
+                      </View>
+                    )}
+                    {source ? (
+                      <TouchableOpacity
+                        style={[styles.sourceChip, { borderColor: testsAccent.ink }]}
+                        onPress={() => openQuestionSource(source)}
+                        accessibilityRole="link"
+                        accessibilityLabel={`${source.label}. Opens the source.`}
+                      >
+                        <AppIcon name="arrow-forward" size={12} color={testsAccent.ink} />
+                        <T.Label style={{ color: testsAccent.ink }} numberOfLines={1}>
+                          {source.label}
+                        </T.Label>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                  ) : null}
+                  {presentation.detail ? (
+                    <T.Caption tone="secondary" style={styles.outcomeDetail}>
+                      {presentation.detail}
+                    </T.Caption>
+                  ) : null}
+
+                  {(answer as any).questionText ? (
+                    <Text style={styles.questionStem}>{(answer as any).questionText}</Text>
+                  ) : null}
+                  <Text style={[
+                    styles.questionAnswer,
+                    answered && !answer.isCorrect && styles.questionAnswerWrong,
+                  ]}>
+                    Your answer: {answered
+                      ? formatAnswer(answer.userAnswer, answer.questionSnapshot)
+                      : 'Left blank'}
                   </Text>
+                  {/* The correct answer belongs on a blank too: an unanswered
+                      question is the one the reader learned least from. */}
+                  {(!answer.isCorrect || !answered) && correctAnswerText ? (
+                    <Text style={styles.questionCorrectAnswer}>
+                      Correct answer: {correctAnswerText}
+                    </Text>
+                  ) : null}
+                  {rationale ? (
+                    <Text style={styles.questionExplanation}>{rationale}</Text>
+                  ) : null}
+                </View>
+                {/* Only when the question carries no rationale of its own —
+                    and never spent without this tap. The cost is printed
+                    beside the button, before the reader commits to it. */}
+                {!rationale && (
+                  <View style={styles.explainColumn}>
+                    <TouchableOpacity
+                      style={styles.explainButton}
+                      onPress={() => {
+                        setExplainData({
+                          question: (answer as any).questionText || `Question ${index + 1}`,
+                          userAnswer: answered
+                            ? formatAnswer(answer.userAnswer, answer.questionSnapshot)
+                            : '(left blank)',
+                          correctAnswer: correctAnswerText,
+                          options: (answer as any).options,
+                        });
+                        setShowExplain(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Explain question ${index + 1} with Lantern AI, costs ${EXPLAIN_ANSWER_CREDIT_COST} credit`}
+                    >
+                      <AppIcon name="sparkles" size={14} color={colors.primaryText} />
+                      <Text style={styles.explainButtonText}>Explain</Text>
+                    </TouchableOpacity>
+                    <AIUsageBadge variant="inline" cost={EXPLAIN_ANSWER_CREDIT_COST} />
+                  </View>
                 )}
-                {!answer.isCorrect && (answer as any).explanation ? (
-                  <Text style={styles.questionExplanation}>{(answer as any).explanation}</Text>
-                ) : null}
+                <Text style={[
+                  styles.questionPoints,
+                  { color: !answered ? colors.textTertiary : answer.isCorrect ? colors.success : colors.error }
+                ]}>
+                  {answer.isCorrect && answered ? `+${answer.points}` : answered ? '0' : '—'}
+                </Text>
               </View>
-              {!answer.isCorrect && (
-                <TouchableOpacity
-                  style={styles.explainButton}
-                  onPress={() => {
-                    setExplainData({
-                      question: (answer as any).questionText || `Question ${index + 1}`,
-                      userAnswer: formatAnswer(answer.userAnswer, answer.questionSnapshot),
-                      correctAnswer: formatAnswer(answer.correctAnswer, answer.questionSnapshot)
-                        || (answer.questionSnapshot ? formatCorrectAnswerDisplay(answer.questionSnapshot) : ''),
-                      options: (answer as any).options,
-                    });
-                    setShowExplain(true);
-                  }}
-                >
-                  <AppIcon name="sparkles" size={14} color={colors.primaryText} />
-                  <Text style={styles.explainButtonText}>Explain</Text>
-                </TouchableOpacity>
-              )}
-              <Text style={[
-                styles.questionPoints,
-                { color: answer.isCorrect ? colors.success : colors.error }
-              ]}>
-                {answer.isCorrect ? `+${answer.points}` : '0'}
-              </Text>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
 
@@ -632,7 +966,7 @@ export default function TestResultsScreen() {
           >
             <AppIcon name="school" size={20} color="#10b981" />
             <Text style={styles.practiceFailedButtonText}>
-              Practice Failed ({failedQuestions.length})
+              Practice wrong answers ({failedQuestions.length})
             </Text>
           </TouchableOpacity>
         ) : null}
@@ -845,6 +1179,50 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   reviewSection: {
     marginBottom: 24,
+  },
+  tallyNote: {
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  outcomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 4,
+  },
+  outcomeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  heroSourceChip: {
+    alignSelf: 'center',
+    marginTop: 8,
+  },
+  heroSourceText: {
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  sourceChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    maxWidth: '70%',
+  },
+  outcomeDetail: {
+    marginBottom: 4,
+  },
+  explainColumn: {
+    alignItems: 'center',
+    gap: 4,
   },
   questionReview: {
     flexDirection: 'row',

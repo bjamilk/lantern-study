@@ -8,7 +8,7 @@ export {
   marketplaceListingsCache,
   marketplaceCategoryAnalyticsCache,
 } from './marketplaceCache';
-export { createApiEndpoints, type LanternApiEndpoints } from './endpoints';
+export { createApiEndpoints, isQuestionStatEligible, type LanternApiEndpoints } from './endpoints';
 export {
   createAIClient,
   type AIClientConfig,

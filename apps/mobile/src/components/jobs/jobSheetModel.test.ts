@@ -4,6 +4,7 @@ import {
   JOB_STAGE_BANDS,
   KEEP_WORKING_COPY,
   NO_NOTIFICATIONS_COPY,
+  UNVERIFIED_NOTIFICATIONS_COPY,
   OVER_BUDGET_COPY,
   STILL_WORKING_COPY,
   WAITING_FOR_CONNECTION_COPY,
@@ -23,6 +24,7 @@ import {
   percentFor,
   stageIndexFor,
 } from './jobSheetModel';
+import { PUSH_SENT_COPY } from '../../utils/pushDiagnostics';
 
 const NOW = 1_700_000_000_000;
 
@@ -527,5 +529,82 @@ describe('swiping the progress sheet away', () => {
     expect(shouldDismissSheet(SHEET_DISMISS_DISTANCE + 1)).toBe(true);
     expect(shouldDismissSheet(SHEET_DISMISS_DISTANCE)).toBe(false);
     expect(shouldDismissSheet(10)).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// What the sheet says about the notification itself
+// ─────────────────────────────────────────────────────────────
+
+describe('the push audit line', () => {
+  it('says nothing while the job is still running', () => {
+    expect(jobSheetState(job(), NOW).pushNote).toBeNull();
+  });
+
+  it('says nothing about a finished job whose record carries no audit', () => {
+    expect(jobSheetState(job({ status: 'done', resultCount: 3 }), NOW).pushNote).toBeNull();
+  });
+
+  it('confirms a push that went out', () => {
+    const state = jobSheetState(
+      job({
+        status: 'done',
+        resultCount: 3,
+        pushAudit: { attemptedAt: '2026-09-05T10:00:00.000Z', tokenCount: 1 },
+      }),
+      NOW
+    );
+    expect(state.pushNote).toBe(PUSH_SENT_COPY);
+  });
+
+  it('names the reason in plain words when one was skipped', () => {
+    const state = jobSheetState(
+      job({
+        status: 'done',
+        resultCount: 3,
+        pushAudit: { attemptedAt: '2026-09-05T10:00:00.000Z', skippedReason: 'no_token' },
+      }),
+      NOW
+    );
+    expect(state.pushNote).toBe('Push skipped: no push token on this device');
+    expect(state.pushNote).not.toContain('no_token');
+  });
+
+  it('reports it on a failure too', () => {
+    const state = jobSheetState(
+      job({
+        status: 'failed',
+        error: 'The generation failed.',
+        pushAudit: { attemptedAt: '2026-09-05T10:00:00.000Z', skippedReason: 'prefs_off' },
+      }),
+      NOW
+    );
+    expect(state.pushNote).toBe('Push skipped: notifications are off in Settings');
+  });
+});
+
+describe('the promise the sheet makes about being told', () => {
+  const running = () => job({ status: 'running' });
+
+  it('promises only when delivery is verified', () => {
+    const state = jobSheetState(running(), NOW, JOB_TIME_BUDGET_MS, { notifications: 'ready' });
+    expect(jobActionLabel('stop-watching', { notifications: 'ready' })).toBe(KEEP_WORKING_COPY);
+    expect(state.actions).not.toContain('enable-notifications');
+  });
+
+  it('drops the promise and offers a fix when delivery is known to be off', () => {
+    const state = jobSheetState(running(), NOW, JOB_TIME_BUDGET_MS, { notifications: 'off' });
+    expect(jobActionLabel('stop-watching', { notifications: 'off' })).toBe(NO_NOTIFICATIONS_COPY);
+    expect(state.actions).toContain('enable-notifications');
+  });
+
+  it('neither promises nor accuses when the server could not be asked', () => {
+    const state = jobSheetState(running(), NOW, JOB_TIME_BUDGET_MS, { notifications: 'unknown' });
+    const label = jobActionLabel('stop-watching', { notifications: 'unknown' });
+    expect(label).toBe(UNVERIFIED_NOTIFICATIONS_COPY);
+    expect(label).not.toMatch(/we'll tell you/i);
+    expect(label).not.toMatch(/notifications are off/i);
+    // Nothing to turn on: we do not know that anything is off.
+    expect(state.actions).not.toContain('enable-notifications');
   });
 });

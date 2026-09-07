@@ -9,7 +9,7 @@ import {
 } from '@lantern/shared';
 import * as notesApi from '../services/notes';
 import { aiGenerateFlashcards } from '../services/ai';
-import { saveGeneratedDeck } from '../services/jobArtifacts';
+import { saveGeneratedDeck, saveGeneratedTest } from '../services/jobArtifacts';
 import type { AiJobHooks } from '../stores/aiJobRunner';
 import { normalizeFlashcardCount } from '../utils/flashcardGeneration';
 import { useNotesStore } from '../stores/notesStore';
@@ -17,6 +17,8 @@ import { useAuthStore } from '../stores/authStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useStudyGoalsStore, buildDailyQuizQuestions } from '../stores/studyGoalsStore';
 import type { DailyQuizSession, Deck, NoteAttachment, StudyNote } from '../types';
+import { buildDeckStudyContent, testTitleForSource } from '../utils/testGeneration';
+import { testConfigForPlan, type TestPlanDraft } from '../utils/testBuilder';
 
 export interface ImportAndStudyResult {
   noteId: string;
@@ -78,6 +80,95 @@ async function refreshNoteAfterOcr(note: NoteWithAttachments): Promise<NoteWithA
 interface UseStudyGeneratorsOptions {
   generateCards: boolean;
   generateQuiz: boolean;
+}
+
+/** What the test generator produces once the test is filed. */
+export interface GeneratedTestResult {
+  /** The saved test's id — the thing `/study/tests/:testId` opens. */
+  testId: string;
+  title: string;
+  questionCount: number;
+}
+
+/** Named stages the test generator passes through. */
+export type TestGeneratorStage = 'reading' | 'generating' | 'saving';
+
+/**
+ * Build a test from a deck or a note, and FILE it.
+ *
+ * This is the from-deck / from-note half of the "New test" page, and it runs on
+ * the same job runner as every other generation (Wave G): the caller passes the
+ * runner's hooks straight through, so the job gets its staged progress, its
+ * 90-second budget, its background notification and its resume-after-reload —
+ * a test is not a second, weaker kind of generation.
+ *
+ * It saves through `saveGeneratedTest`, which is keyed on the job id, so a
+ * retried save cannot mint a second copy of the same test.
+ */
+export async function runTestGenerator(
+  plan: TestPlanDraft,
+  deps: {
+    studyGoal?: Parameters<typeof notesApi.generateDailyQuizFromContent>[1];
+    onStage?: (stage: TestGeneratorStage) => void;
+    hooks?: AiJobHooks;
+  } = {}
+): Promise<GeneratedTestResult> {
+  const onStage = deps.onStage ?? (() => {});
+  if (!plan.sourceId || (plan.source !== 'deck' && plan.source !== 'note')) {
+    throw new Error('Pick a deck or a note to build the test from.');
+  }
+
+  onStage('reading');
+  let content = '';
+  if (plan.source === 'deck') {
+    const cards = useFlashcardStore
+      .getState()
+      .flashcards.filter((card) => card.deckId === plan.sourceId);
+    content = buildDeckStudyContent(cards);
+    if (!content) {
+      throw new Error('That deck has no cards to build questions from yet.');
+    }
+  } else {
+    const note = await notesApi.fetchNote(plan.sourceId);
+    const studyInput = {
+      sourceType: note.sourceType,
+      body: note.body,
+      summary: note.summary,
+      attachments: (note as NoteWithAttachments).attachments,
+    };
+    if (!hasEnoughNoteStudyContent(studyInput) || isThinOrUnusableStudyContent(studyInput)) {
+      throw new Error(
+        `There is not enough text in that note yet (need ${MIN_NOTE_STUDY_CONTENT_CHARS}+ characters).`
+      );
+    }
+    content = getNoteStudyContent(studyInput);
+    if (!plan.sourceTitle) plan = { ...plan, sourceTitle: note.title };
+  }
+
+  onStage('generating');
+  const { questions } = await notesApi.generateDailyQuizFromContent(
+    content.slice(0, 8000),
+    deps.studyGoal,
+    plan.questionCount
+  );
+  if (!questions?.length) {
+    throw new Error('The generator returned no questions. Nothing was charged twice — try again.');
+  }
+
+  onStage('saving');
+  const title = testTitleForSource(plan);
+  const saved = await saveGeneratedTest({
+    jobId: deps.hooks?.clientJobId || `test-${plan.sourceId}-${Date.now()}`,
+    title,
+    ...(plan.source === 'note' ? { sourceNoteId: plan.sourceId } : { sourceDeckId: plan.sourceId }),
+    // Practice/exam and the clock, written into the test itself. They were
+    // dropped here, so every built test launched as a plain untimed exam no
+    // matter what the builder's summary line had promised.
+    config: testConfigForPlan(plan),
+    questions,
+  });
+
+  return { testId: saved.ref.id, title: saved.ref.name || title, questionCount: saved.saved };
 }
 
 /**

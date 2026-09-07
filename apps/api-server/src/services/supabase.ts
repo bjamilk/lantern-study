@@ -23,6 +23,8 @@ import {
   coerceRawUserAnswers,
   initialUserStats,
   resolveQuestionStatusAfterVote,
+  sanitizeAnswerConfidences,
+  tallyTestAttempt,
 } from "@lantern/shared/utils/testHelpers";
 import {
   BADGE_DEFINITIONS,
@@ -559,6 +561,53 @@ export function normalizeSourceNoteTitle(value: unknown): string | null {
 }
 
 /**
+ * Where a session came from, resolved once here so no client has to know the
+ * config key names. Every field is a string or null — never absent — so
+ * "From <title>" renders or does not, and never prints "From undefined".
+ *
+ * Precedence is note → deck → group: a quiz generated from a note that also
+ * carries a groupId is a note quiz, because that is the source a student
+ * recognises.
+ */
+export function buildTestProvenance(session: any): {
+  noteId: string | null;
+  deckId: string | null;
+  groupId: string | null;
+  title: string | null;
+} {
+  const config = (session?.config && typeof session.config === "object" ? session.config : {}) as any;
+  const noteId = typeof config.sourceNoteId === "string" && config.sourceNoteId ? config.sourceNoteId : null;
+  const deckId = typeof config.sourceDeckId === "string" && config.sourceDeckId ? config.sourceDeckId : null;
+  const groupId = typeof config.groupId === "string" && config.groupId ? config.groupId : null;
+  const title = noteId
+    ? normalizeSourceNoteTitle(config.sourceNoteTitle)
+    : deckId
+      ? normalizeSourceNoteTitle(config.sourceDeckTitle)
+      : groupId
+        ? normalizeSourceNoteTitle(config.groupName)
+        : null;
+  return { noteId, deckId, groupId, title };
+}
+
+/**
+ * Correct / incorrect / unanswered for one stored session row, plus the same
+ * split by reported confidence. Never throws and never returns undefined: a
+ * session with no questions tallies to all zeroes, which a client can render.
+ *
+ * Unanswered is its own number on purpose — see `tallyTestAttempt`.
+ */
+export function buildAttemptTally(session: any) {
+  const questions = Array.isArray(session?.questions) ? session.questions : [];
+  return tallyTestAttempt(
+    questions,
+    coerceRawUserAnswers(session?.user_answers ?? session?.userAnswers, questions) as Record<
+      string,
+      unknown
+    >,
+  );
+}
+
+/**
  * One row of GET /api/v1/tests, as every client reads it.
  *
  * Pure and exported because this shape is a contract, not an implementation
@@ -616,6 +665,7 @@ export function mapTestListRow(session: any, lean: boolean): any {
       groupId: session.config?.groupId ?? null,
       sourceNoteId: session.config?.sourceNoteId ?? null,
       sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
+      provenance: buildTestProvenance(session),
     };
   }
 
@@ -663,7 +713,11 @@ export function mapTestListRow(session: any, lean: boolean): any {
      * (build 159). Always a string or null — never absent, never undefined.
      */
     sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
+    sourceDeckId: session.config?.sourceDeckId ?? null,
+    sourceDeckTitle: normalizeSourceNoteTitle(session.config?.sourceDeckTitle),
     sourceJobId: session.config?.sourceJobId ?? null,
+    /** @see buildTestProvenance — one object instead of four config lookups. */
+    provenance: buildTestProvenance(session),
     start_time: session.start_time ?? null,
     end_time: session.end_time ?? null,
     // test_sessions has no `created_at` column: `start_time` (DEFAULT NOW()
@@ -7177,6 +7231,46 @@ export class SupabaseService {
     ); // Cache for 10 minutes
   }
 
+  /**
+   * The session row `userId` is allowed to read, and on what footing.
+   *
+   * `getTestById` answers only for the owner, which made GET /tests/:id a 404
+   * for a group test another member launched — so a client that fell back to
+   * it (a retake off a history row, which no longer carries questions) had
+   * nowhere left to get the questions from and could only say "question data
+   * is no longer available".
+   *
+   * Group access is READ-ONLY and deliberately narrower than ownership: it
+   * grants the questions the group's bank produced, never another student's
+   * answers. Callers must strip the attempt — see `sanitizeSessionForGroupPeer`.
+   */
+  async resolveTestSessionForCaller(
+    testId: string,
+    userId: string,
+  ): Promise<{ session: any; access: "owner" | "group" } | null> {
+    const owned = await this.getTestById(testId, userId);
+    if (owned) return { session: owned, access: "owner" };
+
+    // Not the owner. The only other readable case is a group session whose
+    // group this caller belongs to; everything else stays a 404.
+    const { data, error } = await this.supabase
+      .from("test_sessions")
+      .select("*")
+      .eq("id", testId)
+      .maybeSingle();
+    if (error) {
+      if (error.code === "PGRST116") return null;
+      throw error;
+    }
+    if (!data) return null;
+
+    const groupId = data.config?.groupId;
+    if (typeof groupId !== "string" || !groupId) return null;
+    if (!(await this.isGroupMember(groupId, userId))) return null;
+
+    return { session: data, access: "group" };
+  }
+
   async createTest(testConfig: any, userId: string): Promise<any> {
     // Check if this is a completed test session (has questions and user_answers)
     const isCompletedSession =
@@ -7249,6 +7343,8 @@ export class SupabaseService {
       title: string;
       questions: any[];
       sourceNoteId?: string | null;
+      /** Deck the questions were drawn from — the deck→test path. */
+      sourceDeckId?: string | null;
       sourceJobId?: string | null;
       courseId?: string | null;
       topicId?: string | null;
@@ -7277,6 +7373,18 @@ export class SupabaseService {
         normalizeSourceNoteTitle((payload.config as any)?.sourceNoteTitle)
       : null;
 
+    // Same rule as the note above, one source over: the deck's OWN name wins
+    // over anything the client sent, and is resolved once at creation so every
+    // later read is a plain config read.
+    const sourceDeckId =
+      typeof payload.sourceDeckId === "string" && payload.sourceDeckId
+        ? payload.sourceDeckId
+        : null;
+    const sourceDeckTitle = sourceDeckId
+      ? ((await this.fetchDeckTitles([sourceDeckId], userId)).get(sourceDeckId) ??
+        normalizeSourceNoteTitle((payload.config as any)?.sourceDeckTitle))
+      : null;
+
     const config = {
       ...(payload.config && typeof payload.config === "object" ? payload.config : {}),
       title: payload.title,
@@ -7292,8 +7400,14 @@ export class SupabaseService {
       // Always written, so a client-supplied value can never outlive the
       // resolved one (or survive on a test that links to no note at all).
       sourceNoteTitle,
+      ...(sourceDeckId ? { sourceDeckId } : {}),
+      sourceDeckTitle,
       ...(payload.sourceJobId ? { sourceJobId: payload.sourceJobId } : {}),
-      source: sourceNoteId ? "note" : (payload.config as any)?.source || "personal",
+      source: sourceNoteId
+        ? "note"
+        : sourceDeckId
+          ? "deck"
+          : (payload.config as any)?.source || "personal",
     };
 
     const { data, error } = await writeWithTopicFallback(
@@ -7359,7 +7473,15 @@ export class SupabaseService {
       sourceNoteId: session.config?.sourceNoteId ?? null,
       /** @see mapTestListRow — same contract: a string or null, never absent. */
       sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
+      sourceDeckId: session.config?.sourceDeckId ?? null,
+      sourceDeckTitle: normalizeSourceNoteTitle(session.config?.sourceDeckTitle),
       sourceJobId: session.config?.sourceJobId ?? null,
+      /**
+       * Resolved source of the session — {noteId, deckId, groupId, title}, each
+       * a string or null. This is what a retake reads to name what it is
+       * relaunching; it never has to parse `config` itself.
+       */
+      provenance: buildTestProvenance(session),
     };
   }
 
@@ -7397,6 +7519,62 @@ export class SupabaseService {
       });
     }
     return titles;
+  }
+
+  /**
+   * The names of `deckIds` this user owns, as an id → name map. Same contract
+   * as `fetchNoteTitles`: one query, never throws, ids with no readable deck
+   * are simply absent (a missing name degrades "From <deck>", it does not fail
+   * the save).
+   */
+  private async fetchDeckTitles(
+    deckIds: string[],
+    userId: string,
+  ): Promise<Map<string, string>> {
+    const titles = new Map<string, string>();
+    const ids = Array.from(
+      new Set(deckIds.filter((id): id is string => typeof id === "string" && !!id)),
+    );
+    if (ids.length === 0 || !userId) return titles;
+    try {
+      const { data, error } = await this.supabase
+        .from("decks")
+        .select("id, name")
+        .eq("user_id", userId)
+        .in("id", ids);
+      if (error) throw error;
+      for (const deck of (data || []) as any[]) {
+        const title = normalizeSourceNoteTitle(deck?.name);
+        if (deck?.id && title) titles.set(String(deck.id), title);
+      }
+    } catch (err) {
+      logger.warn("Could not resolve source deck titles", {
+        userId,
+        count: ids.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return titles;
+  }
+
+  /**
+   * The display title of a source a personal test is about to be created from
+   * — a note or a deck this caller owns — or null. Used to default the test's
+   * title when the client sends none.
+   */
+  async resolvePersonalTestSourceTitle(
+    source: { noteId?: string | null; deckId?: string | null },
+    userId: string,
+  ): Promise<string | null> {
+    if (typeof source.noteId === "string" && source.noteId) {
+      const found = (await this.fetchNoteTitles([source.noteId], userId)).get(source.noteId);
+      if (found) return found;
+    }
+    if (typeof source.deckId === "string" && source.deckId) {
+      const found = (await this.fetchDeckTitles([source.deckId], userId)).get(source.deckId);
+      if (found) return found;
+    }
+    return null;
   }
 
   /**
@@ -7505,7 +7683,12 @@ export class SupabaseService {
 
     const now = new Date().toISOString();
     const patch: any = { updated_at: now };
-    if (updates.user_answers !== undefined) patch.user_answers = updates.user_answers;
+    // Answers pass through untouched EXCEPT `confidence`, which is validated
+    // down to 'sure' | 'unsure' or removed. An unrecognised value stored here
+    // would be read back as a confidence level of its own by every analysis.
+    if (updates.user_answers !== undefined) {
+      patch.user_answers = sanitizeAnswerConfidences(updates.user_answers);
+    }
     if (typeof updates.current_question_index === "number") {
       patch.current_question_index = Math.max(0, updates.current_question_index);
     }
@@ -7572,7 +7755,9 @@ export class SupabaseService {
     }
 
     const now = new Date().toISOString();
-    const answers = options?.user_answers ?? existing.user_answers ?? {};
+    const answers = sanitizeAnswerConfidences(
+      options?.user_answers ?? existing.user_answers ?? {},
+    );
     const sessionKind = existing.session_kind === "study" ? "study" : "test";
     const existingConfig =
       existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
@@ -7737,7 +7922,8 @@ export class SupabaseService {
       .from("test_sessions")
       .update({
         end_time: new Date().toISOString(),
-        user_answers: answers,
+        // Array form preserved; only `confidence` is validated. @see sanitizeAnswerConfidences
+        user_answers: sanitizeAnswerConfidences(answers),
         status: "completed",
         updated_at: new Date().toISOString(),
         remaining_time_seconds: null,
@@ -7897,12 +8083,16 @@ export class SupabaseService {
         }
 
         // Check access if userId provided
-        if (userId) {
-          const test = await this.getTestById(testId, userId);
-          if (!test) return null;
-        }
+        const test = userId
+          ? await this.getTestById(testId, userId)
+          : await this.getTestById(testId);
+        if (userId && !test) return null;
 
-        return data;
+        // `correct_answers_count` alone cannot tell a client whether the rest
+        // were wrong or never reached, so every results screen guessed
+        // (total - correct) and called them all missed. The tally splits the
+        // three apart, and carries the confidence the student reported.
+        return { ...data, tally: buildAttemptTally(test) };
       },
       { ttl: 1800 },
     ); // Cache for 30 minutes

@@ -46,6 +46,7 @@ import { NotificationRow } from "../../components/ui";
 import { AcademicFeedPanel } from "../../components/AcademicFeedPanel";
 import { useChrome } from '../../components/layout/ChromeContext';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { NotificationDeliveryPanel } from '../../components/settings/NotificationDeliveryPanel';
 
 import { toTab } from '../../navigation/nestedTab';
 
@@ -67,6 +68,7 @@ type NotificationsNavigationProp = CompositeNavigationProp<
   BottomTabNavigationProp<MainTabParamList, "NotificationsTab">,
   import("@react-navigation/native").NavigationProp<RootStackParamList>
 >;
+
 
 export default function NotificationsScreen() {
   const { onScroll: chromeOnScroll } = useChrome();
@@ -383,6 +385,8 @@ export default function NotificationsScreen() {
           // the list: the last row needs its clearance, not `pb-8` (28px).
           contentContainerStyle={{ paddingBottom: bottomPadding }}
           ListHeaderComponent={
+            <>
+            <NotificationDeliveryPanel />
             <AcademicFeedPanel
               limit={6}
               className="mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
@@ -398,6 +402,7 @@ export default function NotificationsScreen() {
                 )
               }
             />
+            </>
           }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">

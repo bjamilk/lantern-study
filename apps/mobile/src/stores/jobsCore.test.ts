@@ -35,6 +35,7 @@ import {
   UNSAVED_GENERATION_ERROR,
   isRecentTerminalJob,
   savedSettlePatch,
+  toPushAudit,
 } from './jobsCore';
 
 const NOW = 1_700_000_000_000;
@@ -702,5 +703,81 @@ describe('jobsAwaitingSave', () => {
 
   it('leaves a job with nothing generated alone — that retry costs a credit', () => {
     expect(jobsAwaitingSave([runningJob({ status: 'failed' })])).toEqual([]);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// The push audit
+// ─────────────────────────────────────────────────────────────
+
+describe('toPushAudit', () => {
+  it('rejects anything without an attempt stamp', () => {
+    expect(toPushAudit(null)).toBeUndefined();
+    expect(toPushAudit({})).toBeUndefined();
+    expect(toPushAudit({ skippedReason: 'no_token' })).toBeUndefined();
+  });
+
+  it('keeps only fields of the right type', () => {
+    expect(
+      toPushAudit({
+        attemptedAt: '2026-09-05T10:00:00.000Z',
+        skippedReason: 'no_token',
+        tokenCount: 0,
+        url: 'lanternstudy://deck/1',
+        error: null,
+        expoTickets: [{ status: 'error', message: 'DeviceNotRegistered' }, null],
+      })
+    ).toEqual({
+      attemptedAt: '2026-09-05T10:00:00.000Z',
+      skippedReason: 'no_token',
+      tokenCount: 0,
+      url: 'lanternstudy://deck/1',
+      expoTickets: [{ status: 'error', id: undefined, message: 'DeviceNotRegistered' }],
+    });
+  });
+});
+
+describe('toJobStatusSnapshot with a push audit', () => {
+  it('carries the audit through', () => {
+    const snapshot = toJobStatusSnapshot({
+      stage: 'done',
+      push: { attemptedAt: '2026-09-05T10:00:00.000Z', tokenCount: 1 },
+    });
+    expect(snapshot.push).toEqual({ attemptedAt: '2026-09-05T10:00:00.000Z', tokenCount: 1 });
+  });
+
+  it('leaves it undefined when the server never wrote one', () => {
+    expect(toJobStatusSnapshot({ stage: 'done' }).push).toBeUndefined();
+  });
+});
+
+describe('planServerSettle records the push audit', () => {
+  const settled = (status: 'completed' | 'failed') =>
+    planServerSettle(
+      {
+        ...createJob({ id: 'p1', userId: 'u1', kind: 'quiz', sourceTitle: 'Notes', now: 1 }),
+        savedRef: { type: 'quiz', id: 'daily' },
+      },
+      {
+        status,
+        push: { attemptedAt: '2026-09-05T10:00:00.000Z', skippedReason: 'no_token' },
+      }
+    );
+
+  it('attaches it to a completion', () => {
+    expect(settled('completed')?.pushAudit?.skippedReason).toBe('no_token');
+  });
+
+  it('attaches it to a failure too', () => {
+    expect(settled('failed')?.pushAudit?.skippedReason).toBe('no_token');
+  });
+
+  it('adds nothing to a job that is still running', () => {
+    expect(
+      planServerSettle(
+        createJob({ id: 'p2', userId: 'u1', kind: 'quiz', sourceTitle: 'Notes', now: 1 }),
+        { status: 'running', push: { attemptedAt: 'x' } }
+      )
+    ).toBeNull();
   });
 });

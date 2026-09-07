@@ -84,7 +84,7 @@ export function toExpoEnvelope(token: string, message: JobPushMessage): ExpoPush
     // A finished generation is what the student is waiting on: it should wake
     // the device rather than sit in Android's deferred bucket.
     priority: "high",
-    channelId: "default",
+    channelId: "study-jobs",
   };
 }
 

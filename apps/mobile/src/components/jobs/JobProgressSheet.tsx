@@ -27,7 +27,8 @@ import {
 } from './jobSheetModel';
 import { openJobResult } from './openJobResult';
 import { retrySaveJob } from '../../services/jobArtifacts';
-import { areJobNotificationsReady, enableJobNotifications } from '../../services/pushNotifications';
+import { jobNotificationsReadiness, enableJobNotifications } from '../../services/pushNotifications';
+import { PUSH_SENT_COPY, type PushReadiness } from '../../utils/pushDiagnostics';
 import { syncService } from '../../services/syncService';
 
 /** Which feature accent a generation belongs to. */
@@ -63,11 +64,17 @@ export function JobProgressSheet() {
   const dismissJob = useJobsStore((s) => s.dismissJob);
   const retryGenerate = useJobsStore((s) => s.retryGenerate);
   const refreshActiveJobs = useJobsStore((s) => s.refreshActiveJobs);
+  const refreshJobPush = useJobsStore((s) => s.refreshJobPush);
 
   const job = sheetJobId ? findJob(jobs, sheetJobId) : undefined;
   const [now, setNow] = useState(() => Date.now());
   const [offline, setOffline] = useState(false);
-  const [notificationsOff, setNotificationsOff] = useState(false);
+  // Three answers, not two: "we could not ask the server" is not the same as
+  // "notifications are off", and the button says something different for each.
+  // Starts as `unknown`: until the OS and the status route have both answered,
+  // the sheet has no grounds to promise a notification, and `unknown` is the
+  // one label that neither promises nor accuses.
+  const [notifications, setNotifications] = useState<PushReadiness>('unknown');
 
   /** Closing is unconditional: the sheet reports on work, it never holds it. */
   const close = useCallback(() => {
@@ -113,17 +120,27 @@ export function JobProgressSheet() {
   }, [sheetJobId]);
 
   // Can this device be told when the job lands? If not, the sheet stops
-  // promising it will be.
+  // promising it will be. Asked of the OS and of the server's status route,
+  // never of the client's own settings copy.
   useEffect(() => {
     if (!sheetJobId) return;
     let alive = true;
-    void areJobNotificationsReady().then((ready) => {
-      if (alive) setNotificationsOff(!ready);
+    void jobNotificationsReadiness().then((readiness) => {
+      if (alive) setNotifications(readiness);
     });
     return () => {
       alive = false;
     };
   }, [sheetJobId]);
+
+  // A finished job: ask the server what it did about the push. This is the
+  // only place that answer exists — the runner in this process settles the
+  // job without ever reading its record, which is why a push that never
+  // happened looked exactly like one that did.
+  useEffect(() => {
+    if (!sheetJobId) return;
+    void refreshJobPush(sheetJobId);
+  }, [sheetJobId, job?.status, refreshJobPush]);
   // "Keep waiting" pushes the budget out rather than closing the sheet — the
   // prompt would otherwise reappear on the next tick.
   const [budgetMs, setBudgetMs] = useState(JOB_TIME_BUDGET_MS);
@@ -180,7 +197,7 @@ export function JobProgressSheet() {
 
   if (!job) return null;
 
-  const state = jobSheetState(job, now, budgetMs, { offline, notificationsOff });
+  const state = jobSheetState(job, now, budgetMs, { offline, notifications });
   const accent = (isDark ? featureAccentsDark : featureAccentsLight)[featureKeyForJob(job.kind)];
 
   const runAction = (action: JobSheetAction) => {
@@ -195,8 +212,10 @@ export function JobProgressSheet() {
         void refreshActiveJobs();
         break;
       case 'enable-notifications':
-        void enableJobNotifications().then((enabled) => {
-          setNotificationsOff(!enabled);
+        void enableJobNotifications().then(async (enabled) => {
+          // Registering is not the same as being reachable: re-ask both
+          // sources rather than assuming the button worked.
+          setNotifications(await jobNotificationsReadiness());
           // A hard refusal can only be undone in the system settings.
           if (!enabled) void Linking.openSettings().catch(() => undefined);
         });
@@ -311,6 +330,21 @@ export function JobProgressSheet() {
             </>
           ) : null}
 
+          {/* What the server did about the notification for this job. One
+              line, in plain words, and only when the record actually says. */}
+          {state.pushNote ? (
+            <View className="mt-4 flex-row items-center gap-2">
+              <AppIcon
+                name={state.pushNote === PUSH_SENT_COPY ? 'checkmark-circle' : 'information-circle'}
+                size={14}
+                color={colors.textTertiary}
+              />
+              <Text className="text-caption text-lantern-text-secondary flex-1">
+                {state.pushNote}
+              </Text>
+            </View>
+          ) : null}
+
           <View className="mt-5 gap-2">
             {state.actions.map((action, index) => {
               const primary = index === 0 && action !== 'stop-watching';
@@ -330,7 +364,7 @@ export function JobProgressSheet() {
                     className="text-body font-semibold"
                     style={{ color: primary ? '#ffffff' : colors.text }}
                   >
-                    {jobActionLabel(action, { notificationsOff })}
+                    {jobActionLabel(action, { notifications })}
                   </Text>
                 </Pressable>
               );

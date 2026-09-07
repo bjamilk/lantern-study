@@ -4,6 +4,8 @@ import type {
     Badge,
     TestQuestion,
     UserAnswerRecord,
+    AnswerConfidence,
+    TestAttemptTally,
     Message,
     MatchingItem,
     DiagramLabel,
@@ -410,6 +412,23 @@ function buildQuestionOptions(question: Record<string, unknown>): QuestionOption
     return undefined;
 }
 
+/**
+ * The rationale a question carries, whatever the generator called it.
+ *
+ * Review shows "why" straight off the stored question — there is no second AI
+ * call — so a generator that wrote `rationale` instead of `explanation` left
+ * the review screen blank forever. Placeholder text ("No explanation
+ * available.") is treated as absent so a client can decide what to say.
+ */
+export function normalizeQuestionExplanation(q: Record<string, unknown>): string | undefined {
+    const raw = q.explanation ?? q.rationale ?? (q as { explanation_text?: unknown }).explanation_text;
+    if (typeof raw !== 'string') return undefined;
+    const text = raw.trim();
+    if (!text) return undefined;
+    if (/^no explanation( (is )?available)?\.?$/i.test(text)) return undefined;
+    return text;
+}
+
 /** Map mobile/web question variants to canonical TestQuestion for session storage. */
 export function normalizeTestQuestionForSession(q: Record<string, unknown>, index: number): TestQuestion {
     const questionType =
@@ -455,7 +474,7 @@ export function normalizeTestQuestionForSession(q: Record<string, unknown>, inde
         diagramLabels,
         imageUrl: (q.imageUrl || q.diagramUrl) as string | undefined,
         tags: q.tags as string[] | undefined,
-        explanation: q.explanation as string | undefined,
+        explanation: normalizeQuestionExplanation(q),
         upvotes: (q.upvotes as number | undefined) ?? 0,
         downvotes: (q.downvotes as number | undefined) ?? 0,
     };
@@ -565,6 +584,12 @@ export function normalizeStoredUserAnswer(raw: unknown, questionId?: string): Us
         timeSpentSeconds: (record.timeSpentSeconds ?? record.time_spent_seconds) as number | undefined,
         isBookmarked: record.isBookmarked as boolean | undefined,
     };
+
+    // Only ever 'sure' | 'unsure'. Anything else — an older client's free text,
+    // a stray boolean — becomes absent, which reads as "never asked" rather
+    // than silently counting as a confidence level of its own.
+    const confidence = normalizeAnswerConfidence(record.confidence);
+    if (confidence) normalized.confidence = confidence;
 
     if (record.selectedOptionIds !== undefined) {
         normalized.selectedOptionIds = Array.isArray(record.selectedOptionIds)
@@ -689,6 +714,101 @@ export function resolveQuestionResultStatus(
     const q = normalizeTestQuestionForSession(question as unknown as Record<string, unknown>, 0);
     const a = normalizeStoredUserAnswer(answer!, question.id);
     return checkAnswerIsCorrect(q, a) ? 'correct' : 'incorrect';
+}
+
+/**
+ * The confidence a client sent, or undefined. Deliberately strict: an
+ * unrecognised value must not survive into storage, because every reader
+ * treats "absent" as "never asked" and would otherwise have to guess.
+ */
+export function normalizeAnswerConfidence(raw: unknown): AnswerConfidence | undefined {
+    if (typeof raw !== 'string') return undefined;
+    const value = raw.trim().toLowerCase();
+    return value === 'sure' || value === 'unsure' ? value : undefined;
+}
+
+const sanitizeOneAnswerConfidence = (value: unknown): unknown => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const record = value as Record<string, unknown>;
+    if (!('confidence' in record)) return record;
+    const confidence = normalizeAnswerConfidence(record.confidence);
+    const next = { ...record };
+    if (confidence) next.confidence = confidence;
+    else delete next.confidence;
+    return next;
+};
+
+/**
+ * Copy of `answers` with every `confidence` value validated and everything
+ * else untouched. The shape is preserved exactly — the legacy array form
+ * stays an array, because turning it into an index-keyed object would make
+ * every stored answer unreadable to the coercion that reads it back.
+ */
+export function sanitizeAnswerConfidences<T>(answers: T | null | undefined): T {
+    if (Array.isArray(answers)) {
+        return answers.map(sanitizeOneAnswerConfidence) as unknown as T;
+    }
+    if (!answers || typeof answers !== 'object') return (answers ?? {}) as T;
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(answers as Record<string, unknown>)) {
+        out[key] = sanitizeOneAnswerConfidence(value);
+    }
+    return out as T;
+}
+
+const emptyConfidenceBucket = () => ({ correct: 0, incorrect: 0, answered: 0 });
+
+/**
+ * Split an attempt into correct / incorrect / unanswered, and again by the
+ * confidence the student reported before the reveal.
+ *
+ * A question with no attempted answer counts ONLY as `unanswered`. Folding it
+ * into `incorrect` (which is what a bare `total - correct` does) tells a
+ * student who ran out of time that they got those questions wrong, and makes
+ * "review my mistakes" open questions they never saw.
+ */
+export function tallyTestAttempt(
+    questions: TestQuestion[] | unknown[],
+    answers: Record<string, unknown> | unknown[] | null | undefined
+): TestAttemptTally {
+    const list = normalizeTestSessionQuestions(
+        Array.isArray(questions) ? (questions as unknown[]) : []
+    );
+    const normalizedAnswers = normalizeStoredUserAnswers(answers ?? {}, list);
+
+    const tally: TestAttemptTally = {
+        total: list.length,
+        answered: 0,
+        correct: 0,
+        incorrect: 0,
+        unanswered: 0,
+        byConfidence: {
+            sure: emptyConfidenceBucket(),
+            unsure: emptyConfidenceBucket(),
+            unspecified: emptyConfidenceBucket(),
+        },
+    };
+
+    for (const question of list) {
+        const answer = normalizedAnswers[question.id];
+        const status = resolveQuestionResultStatus(question, answer);
+        if (status === 'unattempted') {
+            tally.unanswered++;
+            continue;
+        }
+        tally.answered++;
+        const bucket = tally.byConfidence[answer?.confidence ?? 'unspecified'];
+        bucket.answered++;
+        if (status === 'correct') {
+            tally.correct++;
+            bucket.correct++;
+        } else {
+            tally.incorrect++;
+            bucket.incorrect++;
+        }
+    }
+
+    return tally;
 }
 
 export function normalizeTestSessionQuestions(questions: unknown[]): TestQuestion[] {

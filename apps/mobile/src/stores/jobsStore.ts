@@ -240,6 +240,9 @@ const runHeldSaves = async (): Promise<void> => {
 
 const POLL_INTERVAL_MS = 1500;
 
+/** One push-audit read per job at a time — the sheet re-renders freely. */
+const pushAuditInFlight = new Set<string>();
+
 interface JobsState {
   jobs: TrackedJob[];
   userId: string | null;
@@ -280,6 +283,16 @@ interface JobsState {
    * server has already passed.
    */
   refreshActiveJobs: () => Promise<void>;
+  /**
+   * Read this job's push audit back from the server, once.
+   *
+   * A job settled by the runner in this process never polls, so its record's
+   * `push` field — the only evidence of whether the server actually notified
+   * this phone — was never read. The sheet asks for it when it shows a
+   * finished job, so "Notified by push ✓" / "Push skipped: …" is a fact from
+   * the server rather than a guess from the client.
+   */
+  refreshJobPush: (id: string) => Promise<void>;
   /** Resolve `lanternstudy://jobs/<id>` to the artefact link, if there is one. */
   resolveJobLink: (serverOrClientJobId: string) => Promise<string | null>;
   dismissJob: (id: string) => void;
@@ -671,6 +684,25 @@ export const useJobsStore = create<JobsState>((set, get) => {
     refreshActiveJobs: async () => {
       const active = runningJobs(get().jobs).filter((j) => j.serverJobId);
       await Promise.all(active.map((job) => catchUp(job, runners.has(job.id))));
+    },
+
+    refreshJobPush: async (id: string) => {
+      const job = findJob(get().jobs, id);
+      // Only for a settled job with a server record, and only once: the audit
+      // is written when the job goes terminal and never changes afterwards.
+      if (!job || !job.serverJobId || !isTerminal(job.status) || job.pushAudit) return;
+      if (pushAuditInFlight.has(id)) return;
+      pushAuditInFlight.add(id);
+      try {
+        const snapshot = await jobClient.getJobStatus(job.serverJobId);
+        if (!snapshot.push) return;
+        update((jobs) => patchJob(jobs, id, { pushAudit: snapshot.push }, Date.now()));
+      } catch {
+        // Offline or an older server. The sheet simply says nothing about the
+        // push, which is the honest answer when we could not ask.
+      } finally {
+        pushAuditInFlight.delete(id);
+      }
     },
 
     resolveJobLink: async (serverOrClientJobId: string) => {

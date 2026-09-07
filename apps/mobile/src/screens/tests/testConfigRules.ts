@@ -78,3 +78,127 @@ export {
   resolveSessionTimeLimitMinutes as resolveTestTimeLimitMinutes,
   type TestTimeLimitInput,
 } from '../../utils/resolveAttemptTimeLimitMinutes';
+
+/**
+ * The minutes a test STARTS with before anyone touches a timer chip — the one
+ * answer the mode sheet prints, the config sheet opens on, and the launch
+ * uses.
+ *
+ * There were two answers on build 162 (finding T4). The mode sheet printed
+ * `test.timeLimit`, which is `resolveAttemptTimeLimitMinutes(row.config)` and
+ * therefore 0 for every test saved without a timer key — "∞ / No Limit". The
+ * config sheet for the SAME test opened on its own auto rule (one minute per
+ * question) and said "5 min". Whichever the student read, the other was
+ * lying, and the sheet's own Start honoured neither: it launched with 0 and
+ * TestTaking drew no countdown.
+ *
+ * The rule, in one place:
+ *   - a test that RECORDED a timer choice keeps it, 0 ("No limit") included.
+ *     An explicit "no limit" is an answer, never a missing value to fill in.
+ *   - a test that recorded none gets one minute per question, which is what
+ *     the config sheet has always defaulted to. At least one minute, so a
+ *     one-question test is not born untimed by rounding.
+ */
+export function resolveDefaultSessionMinutes(input: {
+  /** Did the stored config express a timer at all? (`hasStoredTimerChoice`) */
+  timerChosen: boolean;
+  /** The minutes that choice resolved to. Only read when `timerChosen`. */
+  storedMinutes: number;
+  /** Questions in the test, for the fallback. */
+  questionCount: number;
+}): number {
+  const { timerChosen, storedMinutes, questionCount } = input;
+  if (timerChosen && Number.isFinite(storedMinutes)) {
+    return Math.max(0, Math.round(storedMinutes));
+  }
+  if (!Number.isFinite(questionCount) || questionCount <= 0) return 1;
+  return Math.max(1, Math.round(questionCount));
+}
+
+/* ------------------------------------------------------------------ *
+ * Remembering a timer
+ * ------------------------------------------------------------------ */
+
+/**
+ * Which way the sheet closed. It does NOT change the answer — see below.
+ */
+export type TimerChoiceExit = 'start' | 'cancel' | 'dismiss';
+
+/**
+ * The timer the config sheet is closing with, in MINUTES, as a recorded
+ * choice — or null when there is nothing to record.
+ *
+ * The sheet's chips are seconds and its Start already converts them; this is
+ * the same conversion for all THREE exits — Start, Cancel and ×. Build 163
+ * kept none of them: a reader set "No limit", pressed ×, reopened the sheet
+ * and found 5 min waiting again, because nothing outside the launch ever saw
+ * the choice. Build 164 kept × and dropped Cancel, which is worse: the same
+ * two presses on the same sheet meant different things, and neither is
+ * signposted.
+ *
+ * So `exit` is accepted and deliberately ignored. A TIMER IS A SETTING, NOT A
+ * FORM FIELD: "5 min" is an answer about this test, and backing out of the
+ * sheet is not a retraction of it. Taking the parameter — rather than leaving
+ * the exits unmentioned — is what lets a test assert that all three agree.
+ * Study mode has no Timer section at all, so it never records one; writing 0
+ * there would silently retimetable the test itself.
+ */
+export function planTimerChoicePersist(input: {
+  timerDurationSeconds: number;
+  sessionMode: 'test' | 'study';
+  /** Every exit keeps a choice the reader actually made. */
+  exit?: TimerChoiceExit;
+  /**
+   * Whether the reader touched the timer control. Cancel/× on an untouched
+   * sheet must NOT turn the seeded default into a recorded choice (opening
+   * and closing the sheet on a 30-question test recorded 10 min as its timer
+   * — build 164 review residual). Start always records what it launches with.
+   */
+  touched?: boolean;
+}): number | null {
+  if (input.sessionMode !== 'test') return null;
+  if (input.exit && input.exit !== 'start' && input.touched === false) return null;
+  const seconds = input.timerDurationSeconds;
+  if (!Number.isFinite(seconds) || seconds <= 0) return 0;
+  return Math.ceil(seconds / 60);
+}
+
+/** A test row carrying whatever timer it was listed with. */
+export interface TimerChoiceRow {
+  id: string;
+  timeLimit: number;
+  timerChosen?: boolean;
+}
+
+/**
+ * Put the choices this device recorded back onto a freshly fetched list.
+ *
+ * `GET /tests` answers with the row's STORED config, which has no timer key
+ * for any test the server never had one written for — so a fetch would undo
+ * the choice a reader had just made in the config sheet, and the "No limit"
+ * they picked would come back as a minute per question. The local record is
+ * the more recent answer and wins; it is dropped only when the test is.
+ */
+export function applyTimerChoices<T extends TimerChoiceRow>(
+  tests: readonly T[],
+  choices: Readonly<Record<string, number>>
+): T[] {
+  return tests.map(test => {
+    const minutes = choices[test.id];
+    if (typeof minutes !== 'number' || !Number.isFinite(minutes)) return test;
+    return { ...test, timeLimit: Math.max(0, Math.round(minutes)), timerChosen: true };
+  });
+}
+
+/** Forget choices for tests that are no longer listed, so the map cannot grow forever. */
+export function pruneTimerChoices(
+  choices: Readonly<Record<string, number>>,
+  liveTestIds: readonly string[]
+): Record<string, number> {
+  const live = new Set(liveTestIds);
+  const next: Record<string, number> = {};
+  for (const [id, minutes] of Object.entries(choices)) {
+    if (live.has(id)) next[id] = minutes;
+  }
+  return next;
+}

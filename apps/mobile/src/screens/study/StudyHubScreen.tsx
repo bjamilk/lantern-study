@@ -179,7 +179,7 @@ export function StudyHubScreen({ navigation }: Props) {
             feature="notes"
             icon="cloud-upload"
             title="Import & study"
-            subtitle="Paste or upload material and get cards and a quiz back"
+            subtitle="Paste or upload material and get cards and a test back"
             onPress={() => setImportOpen(true)}
             testID="study-tile-import"
           />

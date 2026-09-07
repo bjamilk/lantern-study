@@ -32,7 +32,7 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchNotifications, fetchDecks, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
+import { fetchTestSessionById, fetchNotifications, fetchDecks, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
 import { saveGeneratedDeck } from './services/jobArtifacts';
 import { useCommunityStore } from './stores/communityStore';
 import { COMMUNITY_COPY, canAccessDiscoverHub, studyGroupAnnouncement } from '@lantern/shared/network';
@@ -127,6 +127,7 @@ import NoteEditorScreen from './components/NoteEditorScreen';
 const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
 const StudyHubScreen = lazyWithRetry(() => import('./components/StudyHubScreen'));
 const TestsHomeScreen = lazyWithRetry(() => import('./components/TestsHomeScreen'));
+const TestBuilderScreen = lazyWithRetry(() => import('./components/TestBuilderScreen'));
 const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
 const LandingPage = lazyWithRetry(() => import('./components/marketing/LandingPage'));
 import AppShell from './components/layout/AppShell';
@@ -149,12 +150,15 @@ import {
     ME_PATH,
     SHOP_COURSES_PATH,
     SHOP_PATH,
+    TEST_BUILDER_PATH,
+    buildTestDetailPath,
     campusSegmentPath,
     isPublicMarketplacePath,
     parseAppRoute,
     parseShopRoute,
     type CampusSegment,
 } from './utils/appRoutes';
+import { Button } from './components/ui';
 import CampusHubScreen from './components/campus/CampusHubScreen';
 import MeScreen from './components/layout/MeScreen';
 import { useModalHistory } from './components/layout/useModalHistory';
@@ -168,9 +172,14 @@ import { useCompanionStore } from './stores/companionStore';
 import { useNotesStore } from './stores/notesStore';
 import { useStudyGoalsStore } from './stores/studyGoalsStore';
 import { useNoteHandlers } from './hooks/useNoteHandlers';
-import { CompanionAction } from './types';
+import { AI_CREDIT_COSTS } from '@lantern/shared';
+import { CompanionAction, type TestSessionData } from './types';
 import { buildFlashcardSourceContent } from './utils/buildFlashcardSource';
 import { normalizeFlashcardCount } from './utils/flashcardGeneration';
+import { buildRetakeSession, planRetake } from './utils/testRetake';
+import { attemptKindFromConfig, type TestPlanDraft } from './utils/testBuilder';
+import { runTestGenerator } from './hooks/useStudyGenerators';
+import { runAiJob } from './stores/aiJobRunner';
 
 const AppContentLoadingFallback: React.FC = () => (
     <div
@@ -1016,20 +1025,196 @@ export const App: React.FC = () => {
 
     const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
     /**
-     * The Tests home's "New test": the web's only authoring path is the group
-     * test-config modal, so this needs a group. With none, it says so and sends
-     * the student where a group is made rather than opening a modal that cannot
-     * be filled in.
+     * The Tests home's "New test".
+     *
+     * It used to reach into the group chat: pick the first group, switch the
+     * global tab to Chat and open the group's test-config modal. So pressing
+     * "New test" inside Study left Study, and a student with no group could not
+     * make a test at all. It now opens the builder page, which owns all three
+     * sources and is the only one of them that stays inside Study.
      */
     const handleStartNewTest = () => {
+        navigateToPath(TEST_BUILDER_PATH);
+    };
+
+    /**
+     * "With your group" from the builder. Group tests really are set up in the
+     * group's chat, so this is a door out and the page says so before taking
+     * it — the toast names where the student is about to land.
+     */
+    const handleBuildTestWithGroup = () => {
         const group = groups.find(g => !g.isArchived) ?? groups[0];
         if (!group) {
-            showToast('Tests are built from a group\u2019s questions. Join or create a group first.', 'info');
+            showToast('Group tests are built from a group\u2019s questions. Join or create a group first.', 'info');
             navigateTo(AppMode.CHAT);
             return;
         }
+        showToast(`Opening ${group.name} \u2014 set the test up there.`, 'info');
         handleOpenQuickTest(group.id);
     };
+
+    /**
+     * Retake, with the questions actually in hand.
+     *
+     * Every retake from history failed with "Question data is no longer
+     * available for this test" — including yesterday's attempt. The reason was
+     * never missing data: the tests list returns LEAN rows (score, date, id, no
+     * questions, because the server mirrors questions only onto launchable
+     * rows) and retake read `session.questions` straight off one. The planner
+     * says which of the three states a row is in; a lean row is fetched once
+     * before anything is declared gone.
+     */
+    const handleRetakeTestFromResult = useCallback(async (session: TestSessionData, rowId?: string) => {
+        // The row's own id matters: a lean history row carries the session id
+        // there, and `session.id` on it can be empty. Losing it is the
+        // difference between one fetch and "no longer available".
+        const plan = planRetake({ id: rowId ?? session.id ?? '', session });
+        if (plan.kind === 'ready') {
+            handleRetakeTest(session);
+            return;
+        }
+        if (plan.kind === 'unavailable') {
+            showToast(plan.reason, 'error');
+            return;
+        }
+        showToast('Fetching this test\u2019s questions\u2026', 'info');
+        const full = await fetchTestSessionById(plan.sessionId);
+        const second = planRetake(full ? { id: full.id, session: full.session } : null, {
+            alreadyFetched: true,
+        });
+        if (second.kind === 'ready' && full) {
+            handleRetakeTest(full.session);
+            return;
+        }
+        showToast(
+            second.kind === 'unavailable'
+                ? second.reason
+                : 'Could not load that test right now. Check your connection and try again.',
+            'error'
+        );
+    }, [handleRetakeTest, showToast]);
+
+    /**
+     * `/study/tests/:testId` — one test, by id.
+     *
+     * This is what makes a personal test linkable: a generated test, a push
+     * notification and the job runner's "Open" all land here. A finished
+     * attempt opens its review; an unsat one starts. The route resolves and
+     * then replaces itself, so Back never returns to a URL that would
+     * immediately re-launch the test.
+     */
+    const normalizedPath = location.pathname.replace(/\/$/, '');
+    const onMePath = normalizedPath === ME_PATH;
+    /**
+     * The two Tests routes that render from the PATH rather than from an
+     * AppMode — the same shape `/me` uses. A builder page and one particular
+     * test are places a student can be linked to, so they need URLs; neither is
+     * a mode, because neither replaces the section underneath.
+     *
+     * Declared HERE, above the effect that depends on `testDetailId`: a `const`
+     * named in a dependency list before its declaration throws at render.
+     */
+    const onTestBuilderPath = normalizedPath === TEST_BUILDER_PATH;
+    const testDetailId = (() => {
+        const parsed = parseAppRoute(location.pathname);
+        return parsed.standalone === 'test-detail' ? parsed.params.testId ?? null : null;
+    })();
+
+    const [testDetailError, setTestDetailError] = useState<string | null>(null);
+    useEffect(() => {
+        if (!testDetailId || !currentUser) return;
+        let cancelled = false;
+        setTestDetailError(null);
+        void (async () => {
+            const result = await fetchTestSessionById(testDetailId);
+            if (cancelled) return;
+            if (!result) {
+                setTestDetailError('That test could not be found. It may have been removed.');
+                return;
+            }
+            const isFinished =
+                result.session?.status === 'completed' || Boolean(result.session?.endTime);
+            if (isFinished) {
+                setActiveTestResult(result);
+                navigateTo(AppMode.TEST_REVIEW, {}, { replace: true });
+                return;
+            }
+            const plan = planRetake({ id: result.id, session: result.session }, { alreadyFetched: true });
+            if (plan.kind !== 'ready') {
+                setTestDetailError(
+                    plan.kind === 'unavailable' ? plan.reason : 'That test has no questions yet.'
+                );
+                return;
+            }
+            // Practice and exam are two different screens, not one screen with a
+            // flag: STUDY_ACTIVE renders `mode="study"`, which is what reveals
+            // each answer as it is committed and (spec §9 #5) asks how sure the
+            // student was first. Launching every built test as TEST_ACTIVE is
+            // how a test built as practice came out as a plain exam.
+            const session = { ...buildRetakeSession(plan), id: result.id };
+            const store = useTestStore.getState();
+            if (attemptKindFromConfig(plan.config) === 'practice') {
+                store.setActiveStudySession(session);
+                store.setActiveTestSession(null);
+                setActiveTestResult(null);
+                navigateTo(AppMode.STUDY_ACTIVE, {}, { replace: true });
+                return;
+            }
+            store.setActiveTestSession(session);
+            store.setActiveStudySession(null);
+            setActiveTestResult(null);
+            navigateTo(AppMode.TEST_ACTIVE, {}, { replace: true });
+        })();
+        return () => { cancelled = true; };
+    }, [testDetailId, currentUser, navigateTo, setActiveTestResult]);
+
+    /**
+     * "Start" on the builder page, for the deck and note sources.
+     *
+     * It runs on the shared job runner rather than a bare await, so the
+     * generation keeps its staged progress, its budget and its notification
+     * (Wave G) — and so navigating away mid-generation does not throw the
+     * result on the floor after the credits were spent.
+     */
+    const [isBuildingTest, setIsBuildingTest] = useState(false);
+    const [testBuilderError, setTestBuilderError] = useState<string | null>(null);
+    const handleStartBuiltTest = useCallback(async (plan: TestPlanDraft) => {
+        if (!currentUser) return;
+        setTestBuilderError(null);
+        setIsBuildingTest(true);
+        try {
+            const created = await runAiJob(
+                {
+                    userId: currentUser.id,
+                    kind: 'quiz',
+                    title: plan.sourceTitle || 'New test',
+                    stages: ['Reading your material', 'Writing questions', 'Saving your test'],
+                    creditCost: AI_CREDIT_COSTS.generate_questions,
+                    // A fallback only — the save replaces this with the test's own route.
+                    target: { path: '/tests', label: 'Open tests' },
+                },
+                async (report, hooks) => {
+                    const result = await runTestGenerator(plan, {
+                        studyGoal,
+                        hooks,
+                        onStage: (stage) => report(stage === 'reading' ? 0 : stage === 'generating' ? 1 : 2),
+                    });
+                    return result;
+                },
+                {
+                    resolveTarget: (result) => ({
+                        path: buildTestDetailPath(result.testId),
+                        label: 'Open test',
+                    }),
+                }
+            );
+            navigateToPath(buildTestDetailPath(created.testId), { replace: true });
+        } catch (error: any) {
+            setTestBuilderError(error?.message || 'Could not build that test. Please try again.');
+        } finally {
+            setIsBuildingTest(false);
+        }
+    }, [currentUser, studyGoal, navigateToPath]);
 
     /**
      * The Record door (Home tile and Study hub tile). Parity with mobile
@@ -1257,7 +1442,10 @@ export const App: React.FC = () => {
     };
 
     // ---- The five destinations ----
-    const onMePath = location.pathname.replace(/\/$/, '') === ME_PATH;
+    // `normalizedPath`, `onMePath`, `onTestBuilderPath` and `testDetailId` are
+    // derived further up, before the `/study/tests/:testId` effect that reads
+    // them: a `const` read in that effect's dependency list before its own
+    // declaration is a TDZ ReferenceError on every render.
     const communitiesSegmentOpen = canAccessDiscoverHub(isPlatformAdmin);
     /**
      * Where the Campus tab lands. Never a closed segment: Communities is
@@ -1839,7 +2027,8 @@ export const App: React.FC = () => {
                 return <TestReviewScreen results={activeTestResult} allTestResults={testResults} groups={groups}
                     onExit={() => { setActiveTestResult(null); setAppMode(AppMode.CHAT); }}
                     onNavigateToDashboard={() => { setActiveTestResult(null); setAppMode(AppMode.DASHBOARD); }}
-                    onRetakeTest={handleRetakeTest} onPracticeFailedQuestions={handlePracticeFailedQuestions}
+                    onRetakeTest={(session) => { void handleRetakeTestFromResult(session, activeTestResult?.id); }}
+                    onPracticeFailedQuestions={handlePracticeFailedQuestions}
                     onExplainAnswer={handleAIExplainAnswer} />;
             case AppMode.DASHBOARD:
                 return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} offlineBundles={offlineBundles}
@@ -2001,6 +2190,7 @@ export const App: React.FC = () => {
                         onStartBundle={(bundleId) => handleStartOfflineSession(bundleId, 'test')}
                         onNewTest={handleStartNewTest}
                         onViewResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
+                        onRetakeResult={(result) => { void handleRetakeTestFromResult(result.session, result.id); }}
                     />
                 );
             case AppMode.AI_TOOLS:
@@ -2754,6 +2944,42 @@ export const App: React.FC = () => {
                 />
             );
         }
+        // `/study/tests/new` — the builder, likewise rendered from the path.
+        if (onTestBuilderPath) {
+            return (
+                <TestBuilderScreen
+                    decks={decks.map((deck) => ({
+                        id: deck.id,
+                        name: deck.name,
+                        cardCount: flashcards.filter((card) => card.deckId === deck.id).length,
+                    }))}
+                    notes={notes
+                        .filter((note) => isQuizzableNote(note))
+                        .map((note) => ({ id: note.id, title: note.title }))}
+                    isBusy={isBuildingTest}
+                    busyLabel="Writing your questions\u2026 this keeps running if you leave the page."
+                    error={testBuilderError}
+                    onBack={() => navigateTo(AppMode.TESTS_HOME)}
+                    onStart={(plan) => { void handleStartBuiltTest(plan); }}
+                    onOpenGroupChat={handleBuildTestWithGroup}
+                />
+            );
+        }
+        // `/study/tests/:testId` resolves and then replaces itself with the
+        // test or its review. Until it does, the only honest thing on screen is
+        // that it is loading — or why it could not.
+        if (testDetailId) {
+            return testDetailError ? (
+                <div className="flex-1 flex flex-col items-center justify-center gap-3 p-6 bg-lantern-background text-lantern-text text-center">
+                    <p className="text-body text-lantern-text-secondary max-w-md">{testDetailError}</p>
+                    <Button variant="secondary" onClick={() => navigateTo(AppMode.TESTS_HOME)}>
+                        Back to Tests
+                    </Button>
+                </div>
+            ) : (
+                <AppContentLoadingFallback />
+            );
+        }
         const screen = renderScreen();
         const segment = CAMPUS_SEGMENT_BY_MODE[appMode];
         if (!segment) return screen;
@@ -2812,7 +3038,8 @@ export const App: React.FC = () => {
             ) : (
             <>
             <div className={`shrink-0 ${
-                onMePath || appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
+                onMePath || onTestBuilderPath || Boolean(testDetailId)
+                    || appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
                     ? 'hidden'
                     : (appMode === AppMode.CHAT && selectedChat)
                         || (appMode === AppMode.COMMUNITY_DETAIL && communityChannelId)

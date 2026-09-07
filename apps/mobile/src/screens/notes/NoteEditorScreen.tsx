@@ -858,7 +858,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     const currentBody = body;
 
     startJob({
-      kind: 'quiz',
+      // One name for one thing: what this makes lands under Tests as a test,
+      // so the progress sheet and the notification call it that.
+      kind: 'test',
       sourceTitle: noteTitle,
       requestedCount: 5,
       run: async ({ jobId, onServerJob, onStage }) => {
@@ -867,9 +869,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         const { studyGoal } = useStudyGoalsStore.getState();
         const session = await generateNoteQuiz(noteId, studyGoal, 5, onServerJob);
         if (!session.questions.length) {
-          throw new Error('Could not generate a quiz from this note.');
+          throw new Error('Could not generate a test from this note.');
         }
-        onStage('Saving your quiz');
+        onStage('Saving your test');
         // A quiz made from a note is a test of the student's own: it is saved
         // as one, appears in the Tests list under Available, and its link
         // opens it. It used to be handed to the DAILY quiz store instead and
@@ -878,7 +880,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         // Open, the notification and the deep link all landed on Home.
         const { ref, saved } = await saveGeneratedTest({
           jobId,
-          title: `Quiz · ${noteTitle}`,
+          title: `Test · ${noteTitle}`,
           sourceNoteId: noteId,
           questions: session.questions,
         });
@@ -1151,7 +1153,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 <TurnIntoOption
                   feature="tests"
                   icon="document-text"
-                  label="Quiz"
+                  label="Test"
                   cost={formatCreditCost(AI_CREDIT_COSTS.generate_questions)}
                   disabled={!canGenerateStudyMaterials || shortForOneCredit}
                   disabledReason={
@@ -1558,7 +1560,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 onPress={handleGenerateQuiz}
               >
 
-                Quiz
+                Test
 
               </Button>
 

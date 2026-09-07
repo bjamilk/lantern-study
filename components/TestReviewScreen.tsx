@@ -6,6 +6,16 @@ import Confetti from './Confetti';
 import TestAnalysisModal from './TestAnalysisModal';
 import AIUsageInline from './AIUsageInline';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
+import {
+  calibrationNote,
+  isAnswerRecorded,
+  provenanceChipLabel,
+  readProvenance,
+  tallyAttempt,
+  unansweredNote,
+} from '../utils/testAttempt';
+import { confidenceOutcomeLabel, readConfidence } from '../utils/testConfidence';
+import { retakeTitle } from '../utils/testRetake';
 
 interface TestReviewScreenProps {
   results: TestResult; 
@@ -88,13 +98,39 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
     return currentTestIndex !== -1 ? currentTestIndex + 1 : groupTests.length;
   }, [allTestResults, results]);
 
-  const groupName = useMemo(() => {
-    const group = groups.find(g => g.id === session.config.groupId);
-    return group ? `${group.name} (Test #${testNumberForGroup})` : 'Unknown Group';
-  }, [groups, session.config.groupId, testNumberForGroup]);
+  /**
+   * Where this attempt came from, and what to call it.
+   *
+   * It used to read "Unknown Group" for every test that was not a group test —
+   * which, since personal tests shipped, is most of them. A test built from a
+   * note is not an unknown group; it is a note, and it has a name.
+   */
+  const provenance = useMemo(() => {
+    const resolved = readProvenance(session);
+    if (resolved.title || !resolved.groupId) return resolved;
+    const group = groups.find(g => g.id === resolved.groupId);
+    return group ? { ...resolved, title: group.name } : resolved;
+  }, [groups, session]);
 
+  const sourceLabel = provenanceChipLabel(provenance);
+  const attemptTitle = useMemo(() => {
+    const base = retakeTitle(session);
+    return provenance.groupId ? `${base} · #${testNumberForGroup}` : base;
+  }, [session, provenance.groupId, testNumberForGroup]);
 
-  const failedQuestions = session.questions.filter(q => !session.userAnswers[q.id]?.isCorrect);
+  /**
+   * Correct / incorrect / unanswered, kept apart. `failedQuestions` used to be
+   * "everything not marked correct", which swept in every question the student
+   * never reached — so "Practice Failed (12)" on a test they ran out of time on
+   * offered to drill twelve questions they had never seen.
+   */
+  const tally = useMemo(() => tallyAttempt(session), [session]);
+  const missedNote = unansweredNote(tally);
+  const calibration = calibrationNote(tally);
+
+  const failedQuestions = session.questions.filter(
+    q => isAnswerRecorded(session.userAnswers[q.id]) && !session.userAnswers[q.id]?.isCorrect
+  );
   const Icon = scoreFeedback.icon;
 
   return (
@@ -102,7 +138,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
       {scoreFeedback.showConfetti && <Confetti />}
       <div className="mb-6 pb-4 border-b border-lantern-border dark:border-lantern-border">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
-            <h1 className="text-title text-lantern-primary-text dark:text-lantern-primary-light mb-2 sm:mb-0">Test Review</h1>
+            <h1 className="text-title text-lantern-primary-text dark:text-lantern-primary-light mb-2 sm:mb-0">Test review</h1>
             <div className="flex space-x-2">
                 <button
                     onClick={onNavigateToDashboard}
@@ -142,11 +178,15 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
                 <div className="text-center">
                     <p className="text-body text-lantern-text-secondary">Correct Answers</p>
                     <p className="text-title tabular-nums text-lantern-text">{correctAnswersCount} / {totalQuestions}</p>
+                    {/* Unanswered is its own number, never folded into wrong. */}
+                    <p className="text-caption tabular-nums text-lantern-text-secondary mt-0.5">
+                        {tally.incorrect} wrong · {tally.unanswered} unanswered
+                    </p>
                 </div>
                 <div className="text-center">
-                    <p className="text-body text-lantern-text-secondary">Group</p>
-                    <p className="text-heading font-medium text-lantern-text truncate max-w-[150px] md:max-w-xs" title={groupName}>
-                        {groupName} 
+                    <p className="text-body text-lantern-text-secondary">From</p>
+                    <p className="text-heading font-medium text-lantern-text truncate max-w-[150px] md:max-w-xs" title={sourceLabel || attemptTitle}>
+                        {sourceLabel || attemptTitle}
                     </p>
                 </div>
             </div>
@@ -183,8 +223,14 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
             Detailed Analysis
           </button>
         </div>
-        {failedQuestions.length === 0 && (
+        {failedQuestions.length === 0 && tally.unanswered === 0 && (
             <p className="text-caption text-center mt-2 text-green-600 dark:text-green-400">Perfect score! No questions to practice.</p>
+        )}
+        {missedNote && (
+            <p className="text-caption text-center mt-2 text-lantern-text-secondary tabular-nums">{missedNote}</p>
+        )}
+        {calibration && (
+            <p className="text-caption text-center mt-1 text-lantern-text-secondary">{calibration}</p>
         )}
       </div>
 
@@ -192,13 +238,11 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         {session.questions.map((question, index) => {
           const userAnswerRecord = session.userAnswers[question.id];
           const isCorrect = userAnswerRecord?.isCorrect;
-          
-          const wasAnswered = userAnswerRecord && (
-              (userAnswerRecord.selectedOptionIds && userAnswerRecord.selectedOptionIds.length > 0) || 
-              (userAnswerRecord.fillText && userAnswerRecord.fillText.trim() !== '') ||
-              (userAnswerRecord.matchingAnswers && userAnswerRecord.matchingAnswers.length > 0) ||
-              (userAnswerRecord.diagramAnswers && userAnswerRecord.diagramAnswers.length > 0)
-          );
+
+          // One predicate for "did they answer", shared with the tally — the
+          // header and the per-question badge cannot disagree about it.
+          const wasAnswered = isAnswerRecorded(userAnswerRecord);
+          const confidenceLine = confidenceOutcomeLabel(readConfidence(userAnswerRecord), isCorrect);
 
           return (
             <div key={question.id} className="bg-lantern-surface p-4 rounded-lg shadow-md">
@@ -351,9 +395,26 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
               
               <div className="mt-3 pt-3 border-t border-lantern-border">
                 <h4 className="text-body font-semibold text-lantern-text-secondary flex items-center">
-                    <InformationCircleIcon className="w-5 h-5 mr-1 text-lantern-primary-text" /> Explanation:
+                    <InformationCircleIcon className="w-5 h-5 mr-1 text-lantern-primary-text" /> Why:
                 </h4>
-                <p className="text-body text-lantern-text-secondary mt-1 whitespace-pre-wrap">{question.explanation}</p>
+                {/* Every reviewed question owes a rationale. When there is none
+                    the screen says so — an empty paragraph read as a rendering
+                    bug and left the student unsure whether to scroll. */}
+                <p className="text-body text-lantern-text-secondary mt-1 whitespace-pre-wrap">
+                  {question.explanation?.trim()
+                    ? question.explanation
+                    : 'No rationale was written for this question. Ask Lantern AI below for one.'}
+                </p>
+                {/* Source chip: which note, deck or group this question came
+                    from, so a wrong answer points at material to go back to. */}
+                {sourceLabel && (
+                  <p className="mt-2 inline-flex items-center rounded-full bg-lantern-feature-tests-tint text-lantern-feature-tests-ink px-2.5 py-1 text-caption font-medium">
+                    {sourceLabel}
+                  </p>
+                )}
+                {confidenceLine && (
+                  <p className="mt-2 text-caption text-lantern-text-secondary">{confidenceLine}</p>
+                )}
               </div>
 
               {/* AI Explain button */}

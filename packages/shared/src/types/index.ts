@@ -619,6 +619,16 @@ export interface TestQuestion extends Message {
   questionNumber: number;
 }
 
+/**
+ * How a test is meant to be sat.
+ *
+ * 'practice' reveals each answer as you go (and, per spec §9 #5, asks how sure
+ * you were first); 'exam' hides everything until the end and may run a clock.
+ * The builder writes this into the saved test's config, which is the only place
+ * a launch — hours later, from a link or a notification — can read it back.
+ */
+export type TestAttemptKind = 'practice' | 'exam';
+
 export interface TestConfig {
   groupId: string;
   groupName?: string;
@@ -649,6 +659,31 @@ export interface TestConfig {
    * travel the same path or it is dropped on save.
    */
   topicId?: string | null;
+  /**
+   * Provenance of a personal test, written once at creation. Read it through
+   * `TestSessionProvenance` (the server resolves and returns that) rather than
+   * off the config, so the reading code does not have to know these key names.
+   */
+  sourceNoteId?: string | null;
+  sourceNoteTitle?: string | null;
+  sourceDeckId?: string | null;
+  sourceDeckTitle?: string | null;
+  /** The job that generated the questions, when one did. */
+  sourceJobId?: string | null;
+  /** 'note' | 'deck' | 'group' | 'personal' — which source above is the real one. */
+  source?: string;
+  /**
+   * What the student chose in the builder. Absent on every test written before
+   * the builder existed, and those read as an exam — the older, stricter of the
+   * two, so a missing field can never accidentally reveal answers early.
+   */
+  attemptKind?: TestAttemptKind;
+  /**
+   * The taking mode `attemptKind` implies: 'study' for practice, 'test' for an
+   * exam. Stored alongside rather than derived at every read so a client that
+   * only knows about session kinds does not have to learn the builder's words.
+   */
+  mode?: TestSessionKind;
 }
 
 export type UserAnswerRecord = {
@@ -660,7 +695,57 @@ export type UserAnswerRecord = {
   isCorrect?: boolean;
   timeSpentSeconds?: number;
   isBookmarked?: boolean;
+  /**
+   * How sure the student was when they committed this answer (spec §9 #5:
+   * asked on PRACTICE attempts only; timed exam attempts stay plain).
+   * Absent means "never asked", which is NOT the same as unsure — review and
+   * analysis must keep the three states apart.
+   */
+  confidence?: AnswerConfidence;
 };
+
+/** Self-report captured before the reveal on a practice attempt. */
+export type AnswerConfidence = 'sure' | 'unsure';
+
+export const ANSWER_CONFIDENCE_VALUES: readonly AnswerConfidence[] = ['sure', 'unsure'];
+
+/**
+ * Where a test session came from, resolved server-side so no client has to
+ * dig through `config`. Every field is a string or null — never absent — so a
+ * client can render "From <title>" without an undefined check.
+ */
+export interface TestSessionProvenance {
+  /** Note the questions were generated from, when applicable. */
+  noteId: string | null;
+  /** Deck the questions were drawn from, when applicable. */
+  deckId: string | null;
+  /** Study group whose question bank the test was built from, when applicable. */
+  groupId: string | null;
+  /** Display title of whichever source is set (note title, deck name, group name). */
+  title: string | null;
+}
+
+/**
+ * Outcome of one attempt, split three ways. `unanswered` is never folded into
+ * `incorrect`: a question the student never reached is not a question they got
+ * wrong, and the results screen must not accuse them of one for the other.
+ */
+export interface TestAttemptTally {
+  total: number;
+  answered: number;
+  correct: number;
+  incorrect: number;
+  unanswered: number;
+  /**
+   * The same split again, keyed by what the student said BEFORE the reveal.
+   * `unspecified` covers exam attempts and every answer recorded before
+   * confidence existed — it is not a third confidence level.
+   */
+  byConfidence: Record<
+    AnswerConfidence | 'unspecified',
+    { correct: number; incorrect: number; answered: number }
+  >;
+}
 
 export type TestSessionStatus = 'in_progress' | 'paused' | 'completed' | 'abandoned';
 export type TestSessionKind = 'test' | 'study';

@@ -42,3 +42,6 @@ yarn-error.*
 
 # Google Play service account (eas submit) — never commit
 play-service-account.json
+
+# Firebase Android config: app.config.ts picks ./google-services.json up automatically. Never commit it.
+google-services.json

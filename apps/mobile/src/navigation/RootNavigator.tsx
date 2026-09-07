@@ -45,6 +45,7 @@ import { useAppTheme, useTheme } from '../theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { planTabPress, planTabRootReset, TAB_STACK_ROOT_ROUTE } from './tabPressBehavior';
+import { planStackNavigate } from './stackNavigate';
 
 import { BottomTabBar } from '../components/layout/BottomTabBar';
 import { ContextualBar } from '../components/layout/ContextualBar';
@@ -263,7 +264,7 @@ import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, 
 import { CampusScreen } from '../screens/campus';
 import { MeScreen } from '../screens/me';
 
-import { TestScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
+import { TestScreen, TestBuilderScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
 import { GameScreen, GameResultScreen, ChallengesInboxScreen } from '../screens/games';
 
@@ -406,6 +407,10 @@ function StudyNavigator() {
       <StudyStack.Screen name="NoteShareAccept" component={NoteShareAcceptScreen} />
 
       <StudyStack.Screen name="TestsList" component={TestScreen} />
+
+      {/* "+ New test": a real screen on this stack, replacing the temporary
+          wiring that switched the global tab to Chat. */}
+      <StudyStack.Screen name="TestBuilder" component={TestBuilderScreen} />
 
       <StudyStack.Screen name="TestTaking" component={TestTakingScreen} options={{ presentation: 'fullScreenModal' }} />
 
@@ -833,18 +838,33 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
    * already there, root intact, so hardware Back keeps popping to StudyHub and
    * round-4 invariants 1 and 3 are untouched.
    *
-   * Before the child navigator has rehydrated there is no key to aim at; the
-   * row is only ever visible on a route that stack is already showing, so that
-   * case cannot arise in practice and is a no-op if it ever does.
+   * A nested navigator's state does not reach its parent until something
+   * inside it has navigated, so on a tab sitting at its own stack ROOT — the
+   * Study hub, freshly opened — there is no key to aim at. That case was a
+   * silent `return`: pressing Tests in the row did nothing on the hub while
+   * the same press from Library worked. It now falls back to the nested form
+   * with `initial: false` (`toTab`), which reaches the same screen and keeps
+   * the tab's root beneath it. The decision is in navigation/stackNavigate.ts,
+   * where it is tested.
    */
   const navigateWithinFocusedStack = useCallback(
     (route: string, params?: Record<string, unknown>) => {
-      const target = state.routes[state.index]?.state?.key as string | undefined;
-      if (!target) return;
-      navigation.dispatch({
-        ...CommonActions.navigate({ name: route, params }),
-        target,
+      const focusedTab = state.routes[state.index];
+      if (!focusedTab) return;
+      const plan = planStackNavigate({
+        childState: focusedTab.state as { key?: string } | undefined,
+        tabRouteName: focusedTab.name,
+        route,
+        params,
       });
+      if (plan.kind === 'dispatch') {
+        navigation.dispatch({
+          ...CommonActions.navigate({ name: plan.route, params: plan.params }),
+          target: plan.target,
+        });
+        return;
+      }
+      navigation.navigate(plan.tabRouteName as never, plan.params as never);
     },
     [navigation, state]
   );

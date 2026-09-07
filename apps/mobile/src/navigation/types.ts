@@ -54,6 +54,13 @@ export type StudyStackParamList = {
    */
   NoteEditor: { noteId: string; startRecording?: boolean };
   NoteShareAccept: { token: string };
+  /**
+   * "+ New test" — the three sources a test can come from (a deck, a note, or
+   * the group chat). It lives on the STUDY stack because a test is Study's
+   * business: the button used to switch the global tab to Chat, which is the
+   * defect this route replaces.
+   */
+  TestBuilder: undefined;
   /** Library tree → History filtered to a course (`'null'` = unfiled sessions). */
   TestsList:
     | { tab?: "tests" | "history"; courseId?: string | null; courseLabel?: string }

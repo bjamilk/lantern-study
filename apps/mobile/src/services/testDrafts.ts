@@ -56,7 +56,21 @@ export async function completeMobileTestDraft(
     score?: number;
     correct_answers_count?: number;
     total_questions?: number;
-    config?: { groupId?: string; groupName?: string };
+    /**
+     * The config keys the COMPLETE route accepts (see its
+     * `completionConfigPatch`): group attribution, how the sitting was taken,
+     * and — for a practice sitting, which never writes a `test_results` row —
+     * its tally, so History has a score to read at all.
+     */
+    config?: {
+      groupId?: string;
+      groupName?: string;
+      mode?: 'test' | 'study';
+      passingScore?: number;
+      practiceScore?: number;
+      practiceCorrectCount?: number;
+      practiceTotalQuestions?: number;
+    };
   },
 ): Promise<Record<string, unknown>> {
   return request(`/api/v1/tests/drafts/${encodeURIComponent(draftId)}/complete`, {

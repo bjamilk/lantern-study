@@ -28,6 +28,7 @@
 
 import { create } from 'zustand';
 import { createJSONStorage, persist, type StateStorage } from 'zustand/middleware';
+import { buildTestDetailPath } from '../utils/appRoutes';
 
 export type AiJobKind =
   | 'smart_notes'
@@ -93,7 +94,15 @@ export type PendingAiSave =
       kind: 'test';
       title: string;
       sourceNoteId?: string;
+      /** A test built from a deck's cards. Mutually exclusive with the note. */
+      sourceDeckId?: string;
       questions: unknown[];
+      /**
+       * The builder's choices (attempt kind, timer) as they will be stored on
+       * the test. Kept on the pending save so a retried save after a reload
+       * still writes the test the student actually asked for.
+       */
+      config?: Record<string, unknown>;
     };
 
 /** What the panel says when a reload finds generated work that never saved. */
@@ -112,9 +121,11 @@ export function routeForResultRef(
       return id ? `/notes/${encodeURIComponent(id)}` : '/notes';
     case 'test':
     case 'quiz':
-      // Personal tests have no per-id route on web; the Tests home lists them
-      // under "Available Tests", which is where the student can start one.
-      return '/tests';
+      // A generated test is a place now (`/study/tests/:testId`), so "Open"
+      // and the push notification land ON the test rather than on the list
+      // with the student left to find it. Without an id there is nothing to
+      // open, and the list is the honest fallback.
+      return id ? buildTestDetailPath(id) : '/tests';
     default:
       return undefined;
   }

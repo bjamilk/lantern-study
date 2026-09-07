@@ -64,6 +64,8 @@ export type PendingSave =
       title: string;
       /** The note this was generated from, for the server's own record. */
       sourceNoteId?: string;
+      /** The deck this was generated from, when the source was a deck. */
+      sourceDeckId?: string;
       /** Question rows, exactly as the generator produced them. */
       questions: unknown[];
     };
@@ -133,6 +135,12 @@ export interface TrackedJob {
   notified: boolean;
   /** The student still has the sheet open. Watching stops; the job does not. */
   watching: boolean;
+  /**
+   * What the server did about the completion push, read back from the job
+   * record when it settles. Absent until then, and on servers that predate
+   * the audit — which is why every reader treats absence as "no claim".
+   */
+  pushAudit?: JobPushAudit;
 }
 
 /** The store's AsyncStorage key prefix. Scoped per user, as pending results are. */
@@ -559,6 +567,48 @@ export const planHydration = (
   return { ...plan, jobs: pruneJobs([...owned, ...plan.jobs], now) };
 };
 
+/**
+ * Why the server did not push about a job — its own words, mirrored here so
+ * this module keeps its "imports nothing" rule.
+ *
+ * `packages/shared/src/jobs/jobState.ts` is the source; a reason this client
+ * has never heard of is carried through as a string and mapped to plain words
+ * in utils/pushDiagnostics.
+ */
+export type JobPushSkipReason =
+  | 'disabled'
+  | 'no_owner'
+  | 'no_token'
+  | 'prefs_off'
+  | 'not_pushable'
+  | 'claimed'
+  | 'error';
+
+/** One Expo receipt line, as Expo returns it. */
+export interface JobPushTicket {
+  status: 'ok' | 'error';
+  id?: string;
+  message?: string;
+}
+
+/**
+ * What the server actually did about notifying this job's owner.
+ *
+ * Served by `GET /api/v1/jobs/:id` to the owner alone. It is the only way the
+ * device can tell "the server never sent one" from "it sent one and the OS
+ * dropped it", which is precisely the question build 161 could not answer.
+ */
+export interface JobPushAudit {
+  attemptedAt: string;
+  skippedReason?: JobPushSkipReason;
+  /** How many devices the envelope went to (0 when nothing was sent). */
+  tokenCount?: number;
+  expoTickets?: JobPushTicket[];
+  /** The deep link the notification carried. */
+  url?: string;
+  error?: string;
+}
+
 /** A fresh job record. */
 export const createJob = (input: {
   id: string;
@@ -602,6 +652,8 @@ export interface JobStatusSnapshot {
   result?: unknown;
   /** Where the server says the work landed, when it says so. */
   artifact?: JobArtifactRef;
+  /** What the server did about the completion push, when it says. */
+  push?: JobPushAudit;
 }
 
 /** The `GET /api/v1/jobs/:id` body, across both shapes it has had. */
@@ -618,6 +670,8 @@ export interface WireJobRecord {
   result?: unknown;
   /** Where the finished work landed. */
   resultRef?: { type?: string; id?: string; route?: string; name?: string };
+  /** The owner-only push audit. Only present once the job is terminal. */
+  push?: unknown;
 }
 
 /** Artefact types this client knows how to open. */
@@ -636,6 +690,53 @@ export const toArtifactRef = (
   if (!ref.id) return undefined;
   return { type: ref.type as JobArtifactRef['type'], id: ref.id, name: ref.name };
 };
+
+const PUSH_SKIP_REASONS = new Set<string>([
+  'disabled',
+  'no_owner',
+  'no_token',
+  'prefs_off',
+  'not_pushable',
+  'claimed',
+  'error',
+]);
+
+/**
+ * The wire `push` field as an audit this client will show.
+ *
+ * Validated rather than cast: the caption it feeds is shown to the student as
+ * fact, so a malformed record must produce NO claim (undefined) rather than a
+ * half-filled one that reads as "we told you".
+ */
+export const toPushAudit = (raw: unknown): JobPushAudit | undefined => {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  if (typeof record.attemptedAt !== 'string') return undefined;
+  const reason = typeof record.skippedReason === 'string' ? record.skippedReason : undefined;
+  const tickets = Array.isArray(record.expoTickets)
+    ? record.expoTickets
+        .filter((t): t is Record<string, unknown> => Boolean(t) && typeof t === 'object')
+        .map((t) => ({
+          status: t.status === 'error' ? ('error' as const) : ('ok' as const),
+          id: typeof t.id === 'string' ? t.id : undefined,
+          message: typeof t.message === 'string' ? t.message : undefined,
+        }))
+    : undefined;
+  return {
+    attemptedAt: record.attemptedAt,
+    // An unrecognised reason is still shown, not swallowed: a newer server
+    // naming a condition this build has never heard of is news, not noise.
+    ...(reason ? { skippedReason: reason as JobPushSkipReason } : {}),
+    ...(typeof record.tokenCount === 'number' ? { tokenCount: record.tokenCount } : {}),
+    ...(tickets && tickets.length > 0 ? { expoTickets: tickets } : {}),
+    ...(typeof record.url === 'string' ? { url: record.url } : {}),
+    ...(typeof record.error === 'string' ? { error: record.error } : {}),
+  };
+};
+
+/** Is this a reason this build has copy for? */
+export const isKnownPushSkipReason = (reason: string | undefined): boolean =>
+  typeof reason === 'string' && PUSH_SKIP_REASONS.has(reason);
 
 const TERMINAL_DONE = new Set(['done', 'completed']);
 const TERMINAL_FAILED = new Set(['failed', 'timed_out']);
@@ -674,6 +775,7 @@ export const toJobStatusSnapshot = (record: WireJobRecord): JobStatusSnapshot =>
     error,
     result: record.result,
     artifact: toArtifactRef(record.resultRef),
+    push: toPushAudit(record.push),
   };
 };
 
@@ -693,6 +795,16 @@ export const toJobStatusSnapshot = (record: WireJobRecord): JobStatusSnapshot =>
  * post "10 flashcards ready" over a deck that does not exist.
  */
 export const planServerSettle = (
+  job: TrackedJob,
+  snapshot: JobStatusSnapshot
+): Partial<TrackedJob> | null => {
+  const plan = planServerOutcome(job, snapshot);
+  // The push audit rides along with whatever the outcome is: the server writes
+  // it when the job goes terminal, which is the same read that settles it.
+  return plan && snapshot.push ? { ...plan, pushAudit: snapshot.push } : plan;
+};
+
+const planServerOutcome = (
   job: TrackedJob,
   snapshot: JobStatusSnapshot
 ): Partial<TrackedJob> | null => {

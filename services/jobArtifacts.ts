@@ -26,6 +26,7 @@ import { createDeckWithCards, createPersonalTest } from './apiEndpoints';
 import { fetchAllFlashcards, mapDeckFromApi } from './supabase';
 import { useAiJobStore, type AiJobResultRef, type GeneratedCard, type PendingAiSave } from '../stores/aiJobStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
+import { buildTestDetailPath } from '../utils/appRoutes';
 
 export interface SaveGeneratedDeckInput {
   /** The job this save belongs to. Its save-once guard is keyed on this. */
@@ -54,7 +55,15 @@ export interface SaveGeneratedTestInput {
   title: string;
   /** The note this was generated from. */
   sourceNoteId?: string;
+  /** The deck this was generated from, when the source was a deck. */
+  sourceDeckId?: string;
   questions: unknown[];
+  /**
+   * How the student asked to sit it — practice or exam, and the clock. Sent
+   * verbatim into the test's `config`, because a launch hours later (from a
+   * link, a notification, or the list) has nowhere else to read it from.
+   */
+  config?: Record<string, unknown>;
 }
 
 /** The copy a save failure is reported with when the request never landed. */
@@ -128,7 +137,9 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     kind: 'test',
     title: input.title,
     sourceNoteId: input.sourceNoteId,
+    sourceDeckId: input.sourceDeckId,
     questions: input.questions,
+    ...(input.config ? { config: input.config } : {}),
   };
   jobs.recordPendingSave(input.jobId, payload);
 
@@ -253,7 +264,11 @@ async function writeTest(
   const response = await createPersonalTest({
     title: payload.title,
     sourceNoteId: payload.sourceNoteId ?? null,
+    sourceDeckId: payload.sourceDeckId ?? null,
     ...(serverJobId ? { sourceJobId: serverJobId } : {}),
+    // The route spreads this into the stored config; without it the builder's
+    // Practice/Exam and timer choices died at the network boundary.
+    ...(payload.config ? { config: payload.config } : {}),
     questions: payload.questions,
   } as Parameters<typeof createPersonalTest>[0]).catch((error: unknown) => {
     throw asSaveError(error);
@@ -276,7 +291,10 @@ async function writeTest(
     ref: {
       type: 'test',
       id,
-      route: '/tests',
+      // The test itself, not the list. A generated test used to hand back
+      // `/tests`, so "Open" and the push notification dropped the student on
+      // a list of everything and left them to spot which row was theirs.
+      route: buildTestDetailPath(id),
       name: (test?.title as string) || payload.title,
     },
     saved: questions.length,

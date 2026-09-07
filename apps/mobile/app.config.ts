@@ -1,4 +1,6 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
+import { existsSync } from 'fs';
+import { resolve } from 'path';
 
 const APP_VARIANT = process.env.APP_VARIANT || process.env.EAS_BUILD_PROFILE || 'development';
 const IS_DEV_VARIANT = APP_VARIANT === 'development';
@@ -39,6 +41,37 @@ if (IS_PRODUCTION_BUILD) {
 }
 
 const SPLASH_BACKGROUND_COLOR = '#6569EE';
+
+/**
+ * Android push needs a Firebase configuration baked into the binary.
+ *
+ * Without it `getDevicePushTokenAsync` has no FCM registration to return and
+ * `getExpoPushTokenAsync` cannot mint an Android token at all — so the account
+ * keeps whichever token some OTHER build left on it, which is how an Android
+ * emulator's job push came back "Could not find APNs credentials for
+ * com.lanternstudy.app.dev".
+ *
+ * Resolved, never invented: EAS mounts the secret file and exports its path as
+ * GOOGLE_SERVICES_JSON, and a local `google-services.json` works for local
+ * builds. When neither exists the key is omitted rather than pointing at a
+ * missing file, because a bad path fails `expo prebuild` outright and would
+ * take every non-push build down with it. Nothing here creates credentials —
+ * see scripts/push-credentials-checklist or the founder checklist.
+ */
+function resolveGoogleServicesFile(): string | undefined {
+  const candidates = [
+    process.env.GOOGLE_SERVICES_JSON,
+    process.env.EXPO_ANDROID_GOOGLE_SERVICES_JSON,
+    './google-services.json',
+  ].filter((value): value is string => Boolean(value && value.length > 0));
+  for (const candidate of candidates) {
+    const path = resolve(__dirname, candidate);
+    if (existsSync(path)) return candidate;
+  }
+  return undefined;
+}
+
+const GOOGLE_SERVICES_FILE = resolveGoogleServicesFile();
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -239,6 +272,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       backgroundColor: SPLASH_BACKGROUND_COLOR,
     },
     package: ANDROID_PACKAGE,
+    ...(GOOGLE_SERVICES_FILE ? { googleServicesFile: GOOGLE_SERVICES_FILE } : {}),
     permissions: ['RECORD_AUDIO', 'MODIFY_AUDIO_SETTINGS'],
     // Both arrive through dependency manifests, not from this app.
     // SYSTEM_ALERT_WINDOW comes from react-native's *debug* manifest and was
@@ -280,6 +314,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     // Bounds READ_EXTERNAL_STORAGE to API <= 32 — see the plugin.
     './plugins/withScopedStoragePermission',
     'expo-font',
+    // Required for Android push: the plugin wires the notification service and
+    // the default channel/icon into the manifest. Its absence is half of why a
+    // background push has never been deliverable on Android.
+    'expo-notifications',
     'expo-secure-store',
     'expo-web-browser',
     'expo-av',

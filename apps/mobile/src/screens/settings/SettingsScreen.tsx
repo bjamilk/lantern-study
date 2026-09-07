@@ -50,6 +50,7 @@ import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner'
 import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
+import { NotificationDeliveryPanel } from '../../components/settings/NotificationDeliveryPanel';
 
 // First entry must match DEFAULT_USER_SETTINGS.appearance.accentColor so a fresh
 // account shows a selected swatch (and matches the web default primary).
@@ -485,6 +486,13 @@ export default function SettingsScreen() {
         {/* Notifications Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textTertiary }]}>Notifications</Text>
+          {/*
+            Above the toggles, not below them: the toggles say what the student
+            WANTS, and this says what will actually happen. On device, push was
+            on in settings while no notification could ever be delivered, and
+            the only screen that admitted it was the notifications inbox.
+          */}
+          <NotificationDeliveryPanel />
           <Text style={[styles.subGroupTitle, { color: colors.textTertiary }]}>Push & in-app</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
             <SettingItem

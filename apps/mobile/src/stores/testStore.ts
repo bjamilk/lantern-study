@@ -38,6 +38,14 @@ import {
   resolveAttemptTimeLimitMinutes,
   resolveResumeTimeLimitMinutes,
 } from '../utils/resolveAttemptTimeLimitMinutes';
+// One raw history row → mode, score and pass mark. Pure and tested, because
+// getting it wrong is what stamped a red NOT PASSED · 0% on a practice sitting.
+import { planAttemptFromSessionRow } from '../utils/testAttemptMapping';
+import { displayTestTitle } from '../screens/tests/testAuthoring';
+import {
+  applyTimerChoices,
+  pruneTimerChoices,
+} from '../screens/tests/testConfigRules';
 import {
   activeElapsedSeconds,
   bankedSecondsFromTimings,
@@ -98,14 +106,19 @@ function buildSessionPayload(
       !(Array.isArray(raw) && raw.length === 0);
     // Omit unattempted keys entirely so hydrate matches web (skipped ≠ wrong).
     if (!attempted) continue;
-    userAnswers[answer.questionId] = toUserAnswerRecord(
-      question as unknown as Record<string, unknown>,
-      raw,
-      {
-        isCorrect: answer.isCorrect,
-        timeSpentSeconds: activeTest.answerTimings?.[answer.questionId],
-      }
-    );
+    userAnswers[answer.questionId] = {
+      ...toUserAnswerRecord(
+        question as unknown as Record<string, unknown>,
+        raw,
+        {
+          isCorrect: answer.isCorrect,
+          timeSpentSeconds: activeTest.answerTimings?.[answer.questionId],
+        }
+      ),
+      // `UserAnswerRecord.confidence` — the server validates it to
+      // 'sure' | 'unsure' or strips it, and its tally splits by it.
+      ...(answer.confidence ? { confidence: answer.confidence } : {}),
+    };
   }
 
   return {
@@ -170,6 +183,12 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
       timerDurationMinutes: activeTest.test.timeLimit || 0,
       timerDuration: (activeTest.test.timeLimit || 0) * 60,
       allowedQuestionTypes: [],
+      // How this sitting is being taken, written at CREATION and not only at
+      // the end: a practice attempt whose config never said 'study' came back
+      // out of History as a failed exam (0% · NOT PASSED). `session_kind`
+      // carries the same fact on the row; both are read on the way back.
+      mode: activeTest.mode,
+      passingScore: activeTest.test.passingScore,
       testId: activeTest.test.id,
       deckId: activeTest.test.deckId,
       deckName: activeTest.test.deckName,
@@ -209,6 +228,14 @@ async function ensureMobileDraft(activeTest: ActiveTest): Promise<ActiveTest> {
 const TESTS_STORAGE_KEY = 'lantern_tests';
 const ATTEMPTS_STORAGE_KEY = 'lantern_test_attempts';
 const TEST_QUESTIONS_STORAGE_KEY = 'lantern_test_questions';
+/**
+ * Timer choices this device recorded, by test id (minutes, 0 = No limit).
+ *
+ * Kept apart from the test rows because a fetch REPLACES those: the choice a
+ * reader made in the config sheet a second ago would otherwise be undone by
+ * the next refresh, which is exactly what build 163 did.
+ */
+const TEST_TIMER_CHOICES_STORAGE_KEY = 'lantern_test_timer_choices';
 
 // 7 Question Types matching web app
 export type QuestionType = 
@@ -270,6 +297,26 @@ export interface Test {
   deckName?: string;
   questionCount: number;
   timeLimit: number; // in minutes, 0 = no limit
+  /**
+   * Did the stored row express a timer AT ALL (`hasStoredTimerChoice`)?
+   *
+   * `timeLimit: 0` conflates two different tests: one saved as untimed on
+   * purpose, and one saved before anything recorded a timer. The mode sheet
+   * printed "∞ / No Limit" for both while the config sheet defaulted the
+   * second to a minute per question — the two-answers defect (T4). This flag
+   * is what lets `resolveDefaultSessionMinutes` tell them apart.
+   */
+  timerChosen?: boolean;
+  /**
+   * The note this test was generated from, when it was.
+   *
+   * The results screen's "From …" chip had nothing to resolve for a personal
+   * test: mobile question snapshots carry no provenance, the attempt has no
+   * group, and a note test has no deck. The server names the note on the row
+   * (`sourceNoteId` / `sourceNoteTitle`); it was simply never read.
+   */
+  sourceNoteId?: string;
+  sourceNoteTitle?: string;
   passingScore: number; // percentage
   createdAt: string;
 }
@@ -291,9 +338,27 @@ export interface TestAttempt {
   score: number;
   totalPoints: number;
   percentage: number;
-  passed: boolean;
+  /**
+   * Whether this attempt met the pass mark — EXAM sittings only.
+   *
+   * Undefined on a practice sitting, and on any row that never recorded it.
+   * A practice run is untimed and reveals as it goes, so it has no pass mark
+   * to miss; storing one and then drawing it red was finding T2. Read it
+   * through `planAttemptRow`, never directly.
+   */
+  passed?: boolean;
   /** Minutes; 0 = no time limit. Used to restore conditions on retake. */
   timeLimitMinutes?: number;
+  /**
+   * Which kind of sitting this was — `'study'` is practice.
+   *
+   * Practice attempts were not recorded at all until build 163 (they ended in
+   * `exitStudyMode`), so History could not tell a practice run from an exam
+   * and the review screen could not say which it was looking at. Absent on
+   * every attempt written before this, which reads as "not stated", never as
+   * "an exam".
+   */
+  mode?: TestMode;
   answers: {
     questionId: string;
     userAnswer: string | string[] | Record<string, string>; // Support different answer formats
@@ -308,6 +373,12 @@ export interface TestAttempt {
     /** Per-question dwell time for detailed analysis charts. */
     timeSpentSeconds?: number;
     questionSnapshot?: TestQuestion;
+    /**
+     * What the student said BEFORE the reveal on a practice attempt
+     * (spec §9 #5). Absent on a timed attempt, and on every answer recorded
+     * before confidence existed — "never asked", not "unsure".
+     */
+    confidence?: 'sure' | 'unsure';
   }[];
   timeSpent: number; // in seconds
 }
@@ -367,6 +438,14 @@ export interface StartTestConfig {
   tags?: string[];
   spacedRepetition?: boolean;
   focusOnNew?: boolean;
+  /**
+   * Shuffle the question order for THIS session.
+   *
+   * The global setting (`settings.study.shuffleQuestions`) remains the
+   * default; a config sheet that offers the toggle states its answer here so
+   * one session can differ without editing the account's preference.
+   */
+  shuffleQuestions?: boolean;
   groupId?: string;
   groupName?: string;
   /** Exam lock for this session; falls back to the study setting when omitted. */
@@ -416,10 +495,20 @@ interface TestState {
   activeTest: ActiveTest | null;
   pausedSessions: PausedSessionSummary[];
   testQuestionsById: Record<string, TestQuestion[]>;
+  /** Minutes per test id, recorded from the config sheet. 0 = No limit. */
+  timerChoiceByTestId: Record<string, number>;
   userQuestionStats: Record<string, UserQuestionStatEntry>;
   testPresets: TestPreset[];
   isLoading: boolean;
   error: string | null;
+  /**
+   * Remember the timer a reader chose for one saved test.
+   *
+   * Called on Start AND on Cancel/× — a choice made and then backed out of is
+   * still the last thing they said about this test, and reopening the sheet on
+   * something else is how the sheet came to disagree with the mode strip.
+   */
+  recordTestTimerChoice: (testId: string, minutes: number) => Promise<void>;
   
   // Local storage helpers
   loadFromStorage: () => Promise<void>;
@@ -454,7 +543,16 @@ interface TestState {
   goToQuestion: (index: number) => void;
   nextQuestion: () => void;
   previousQuestion: () => void;
-  submitTest: (userId: string, options?: { isOffline?: boolean; groupName?: string; groupId?: string }) => Promise<TestAttempt>;
+  submitTest: (
+    userId: string,
+    options?: {
+      isOffline?: boolean;
+      groupName?: string;
+      groupId?: string;
+      /** Practice attempts only: per-question confidence, stored on the attempt and sent to the server. */
+      confidenceByQuestion?: Record<string, 'sure' | 'unsure'>;
+    }
+  ) => Promise<TestAttempt>;
   exitStudyMode: () => void; // Exit without submitting (study or test)
   pauseActiveTest: () => Promise<void>;
   refreshPausedSessions: () => Promise<void>;
@@ -483,6 +581,40 @@ interface TestState {
     name: string;
     questions: unknown[];
     createdAt?: string;
+    /** The note it was generated from, for the results screen's source chip. */
+    sourceNoteId?: string;
+    sourceNoteTitle?: string;
+  }) => Promise<Test>;
+  /**
+   * Pull one test's FULL session from the server and file it locally.
+   *
+   * `GET /tests` is served lean — the server mirrors questions only onto rows
+   * it considers launchable — so a test reached from history has a row and no
+   * questions, and every retake refused with "Question data is no longer
+   * available for this test" (build 161, including a result from the day
+   * before). This is the step that was missing: `GET /tests/:id`, normalised
+   * into `tests` + `testQuestionsById` so the ordinary start path can run.
+   *
+   * Resolves to the questions it landed (empty when the server genuinely has
+   * none). Rejects when the fetch itself failed, which the caller must show
+   * differently — "check your connection" is a different sentence from "these
+   * are gone".
+   */
+  hydrateTestFromServer: (testId: string) => Promise<TestQuestion[]>;
+  /**
+   * Write a test of the student's own (`POST /tests/personal`) and file it.
+   *
+   * The route that exists because plain `POST /tests` marks any payload
+   * carrying questions as COMPLETED — which is why "Available Tests" was empty
+   * for months. Everything the New test door builds goes through here.
+   */
+  createPersonalTest: (input: {
+    title: string;
+    questions: unknown[];
+    /** The note this came from, when it came from one. */
+    sourceNoteId?: string;
+    /** The generation job that produced it, for the completion push's deep link. */
+    sourceJobId?: string;
   }) => Promise<Test>;
   createTestFromDeck: (deckId: string, deckName: string, userId: string, config: {
     questionCount: number;
@@ -702,6 +834,7 @@ export const useTestStore = create<TestState>((set, get) => ({
   activeTest: null,
   pausedSessions: [],
   testQuestionsById: {},
+  timerChoiceByTestId: {},
   userQuestionStats: {},
   testPresets: [],
   isLoading: false,
@@ -710,10 +843,11 @@ export const useTestStore = create<TestState>((set, get) => ({
   // Load cached data from AsyncStorage
   loadFromStorage: async () => {
     try {
-      const [testsJson, attemptsJson, questionsJson] = await Promise.all([
+      const [testsJson, attemptsJson, questionsJson, timerChoicesJson] = await Promise.all([
         AsyncStorage.getItem(TESTS_STORAGE_KEY),
         AsyncStorage.getItem(ATTEMPTS_STORAGE_KEY),
         AsyncStorage.getItem(TEST_QUESTIONS_STORAGE_KEY),
+        AsyncStorage.getItem(TEST_TIMER_CHOICES_STORAGE_KEY),
       ]);
       
       if (testsJson) {
@@ -725,6 +859,12 @@ export const useTestStore = create<TestState>((set, get) => ({
       if (questionsJson) {
         set({ testQuestionsById: JSON.parse(questionsJson) });
       }
+      if (timerChoicesJson) {
+        const parsed = JSON.parse(timerChoicesJson);
+        if (parsed && typeof parsed === 'object') {
+          set({ timerChoiceByTestId: parsed as Record<string, number> });
+        }
+      }
     } catch (error) {
       console.error('Failed to load tests from storage:', error);
     }
@@ -733,11 +873,15 @@ export const useTestStore = create<TestState>((set, get) => ({
   // Save current state to AsyncStorage
   saveToStorage: async () => {
     try {
-      const { tests, attempts, testQuestionsById } = get();
+      const { tests, attempts, testQuestionsById, timerChoiceByTestId } = get();
       await Promise.all([
         AsyncStorage.setItem(TESTS_STORAGE_KEY, JSON.stringify(tests)),
         AsyncStorage.setItem(ATTEMPTS_STORAGE_KEY, JSON.stringify(attempts)),
         AsyncStorage.setItem(TEST_QUESTIONS_STORAGE_KEY, JSON.stringify(testQuestionsById)),
+        AsyncStorage.setItem(
+          TEST_TIMER_CHOICES_STORAGE_KEY,
+          JSON.stringify(timerChoiceByTestId)
+        ),
       ]);
     } catch (error) {
       console.error('Failed to save tests to storage:', error);
@@ -773,9 +917,14 @@ export const useTestStore = create<TestState>((set, get) => ({
         }
         return {
           id: t.id,
-          name: availableTestName(t),
+          // Display-time only: "Quiz · SDOH" rows written by the old builder
+          // render as "Test · SDOH" (T3). The stored title is untouched.
+          name: displayTestTitle(availableTestName(t)),
           description: t.config?.description,
-          deckId: t.config?.deckId,
+          // A deck-built personal test names its deck as `sourceDeckId`
+          // (server config, mirrored at the top of the row); a deck-launched
+          // group test as `config.deckId`. Either is the "From <deck>" chip.
+          deckId: t.config?.deckId || t.sourceDeckId || t.config?.sourceDeckId,
           // `sourceNoteTitle` is what a note quiz has instead of a deck; without
           // it the list printed the literal "From undefined" (D3). The server
           // puts it at the TOP of the row (`string | null`, backfilled from the
@@ -785,13 +934,21 @@ export const useTestStore = create<TestState>((set, get) => ({
             t.config?.deckName ||
             t.config?.groupName ||
             t.sourceNoteTitle ||
-            t.config?.sourceNoteTitle,
+            t.config?.sourceNoteTitle ||
+            t.sourceDeckTitle ||
+            t.config?.sourceDeckTitle,
           questionCount: questions.length || t.config?.numberOfQuestions || 0,
           // `timerDuration` is SECONDS: reading it straight into `timeLimit`
           // (minutes) turned a 5-minute test into a 300-minute one on the
           // tests list and in any start that did not go through the config
           // sheet. One rule decides the units now.
           timeLimit: resolveAttemptTimeLimitMinutes(t.config),
+          timerChosen: hasStoredTimerChoice(t.config),
+          // Provenance the row already carries, kept as ITS OWN fields rather
+          // than folded into `deckName`: the results chip needs a note id to
+          // open the note, and a name alone cannot be linked.
+          sourceNoteId: t.sourceNoteId || t.config?.sourceNoteId || undefined,
+          sourceNoteTitle: t.sourceNoteTitle || t.config?.sourceNoteTitle || undefined,
           passingScore: t.config?.passingScore || 70,
           createdAt: t.created_at,
         };
@@ -799,8 +956,16 @@ export const useTestStore = create<TestState>((set, get) => ({
       // A test this device filed a moment ago outlives a fetch that has not
       // caught up with it yet (a cached list, a read replica): the Tests list
       // said "No Tests Available" over a quiz the student had just saved.
-      const tests = mergeAvailableTests(get().tests, fetched, Date.now());
-      set({ tests, testQuestionsById, isLoading: false });
+      const merged = mergeAvailableTests(get().tests, fetched, Date.now());
+      // The stored config has no timer key for a test the server never wrote
+      // one for, so a plain fetch would undo the choice the reader made in the
+      // config sheet moments ago. The local record is the later answer.
+      const timerChoiceByTestId = pruneTimerChoices(
+        get().timerChoiceByTestId,
+        merged.map(t => t.id)
+      );
+      const tests = applyTimerChoices(merged, timerChoiceByTestId);
+      set({ tests, testQuestionsById, timerChoiceByTestId, isLoading: false });
       await get().saveToStorage();
     } catch (error: any) {
       console.warn('Failed to fetch tests from API, using cached:', error);
@@ -869,10 +1034,23 @@ export const useTestStore = create<TestState>((set, get) => ({
           tags: resolvedQuestion?.tags,
           timeSpentSeconds: ans?.timeSpentSeconds ?? (ans as any)?.time_spent_seconds ?? 0,
           questionSnapshot: resolvedQuestion,
+          // Hydrating REPLACES the answers the list built, so a confidence
+          // dropped here is a confidence lost: the four practice outcomes
+          // collapse back to Correct/Incorrect the moment the attempt is
+          // reopened a second time.
+          ...(ans?.confidence === 'sure' || ans?.confidence === 'unsure'
+            ? { confidence: ans.confidence as 'sure' | 'unsure' }
+            : {}),
         };
       }).filter((row: any) => row.questionId);
 
       if (!answers.length) return;
+
+      // A practice sitting writes no test_results row, so the list could only
+      // read 0/0 for one saved before the tally rode in config. The FULL
+      // session is in hand here — count it.
+      const hydratedCorrect = answers.filter((a: any) => a.isCorrect).length;
+      const hydratedTotal = answers.length;
 
       const timeSpent = answers.reduce(
         (sum, a: any) => sum + (a.timeSpentSeconds || 0),
@@ -882,7 +1060,21 @@ export const useTestStore = create<TestState>((set, get) => ({
       set(state => ({
         attempts: state.attempts.map(a =>
           a.id === attemptId
-            ? ({ ...a, answers, timeSpent: a.timeSpent || timeSpent } as typeof a)
+            ? ({
+                ...a,
+                answers,
+                timeSpent: a.timeSpent || timeSpent,
+                // Only a practice row, and only one the server scored at 0:
+                // an exam sitting has a real result row and a genuine 0% must
+                // stay 0%.
+                ...(a.mode === 'study' && a.percentage === 0 && hydratedTotal > 0
+                  ? {
+                      score: hydratedCorrect,
+                      totalPoints: hydratedTotal,
+                      percentage: Math.round((hydratedCorrect / hydratedTotal) * 100),
+                    }
+                  : {}),
+              } as typeof a)
             : a
         ),
       }));
@@ -911,9 +1103,14 @@ export const useTestStore = create<TestState>((set, get) => ({
         const startTime = session.startTime || session.start_time;
         const endTime = session.endTime || session.end_time;
         const sessionId = session.id || r.id;
-        const totalQuestions = r.totalQuestions ?? r.total_questions ?? questions.length;
-        const correctAnswersCount = r.correctAnswersCount ?? r.correct_answers_count ?? 0;
-        const percentage = Math.round(r.score ?? 0);
+        // Mode, tally and pass mark in one place (utils/testAttemptMapping):
+        // a practice sitting writes no test_results row, so `r.score` and the
+        // two counts are 0 on the wire and have to be recovered from the
+        // answers — or from the tally the client persisted into config.
+        const plan = planAttemptFromSessionRow(r);
+        const totalQuestions = plan.totalQuestions;
+        const correctAnswersCount = plan.correctCount;
+        const percentage = plan.percentage;
         // `undefined` = the attempt never recorded a timer (legacy rows), so a
         // retake may fall back on the test's own limit; 0 = the reader chose
         // "None", which a retake must keep untimed.
@@ -948,6 +1145,12 @@ export const useTestStore = create<TestState>((set, get) => ({
             tags: question?.tags,
             timeSpentSeconds: ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0,
             questionSnapshot: question,
+            // Without this, reopening a practice attempt from History lost
+            // every confidence pair and the four outcomes silently collapsed
+            // back to plain Correct/Incorrect.
+            ...(ans?.confidence === 'sure' || ans?.confidence === 'unsure'
+              ? { confidence: ans.confidence as 'sure' | 'unsure' }
+              : {}),
           };
         });
 
@@ -959,7 +1162,14 @@ export const useTestStore = create<TestState>((set, get) => ({
           id: sessionId,
           testId: originalTestId || sessionId,
           originalTestId,
-          testName: config.name || config.testName || config.groupName || config.deckName || 'Test',
+          testName: displayTestTitle(
+            config.name || config.testName || config.groupName || config.deckName || 'Test'
+          ),
+          // `'study'` is a practice sitting — from `config.mode`, or from the
+          // server's own `session_kind` for the drafts that never wrote one.
+          // Anything else, a row written before the mode was recorded
+          // included, is left unstated.
+          mode: plan.mode,
           groupId: config.groupId,
           groupName: config.groupName,
           courseId: session.course_id ?? session.courseId ?? config.courseId ?? null,
@@ -969,7 +1179,9 @@ export const useTestStore = create<TestState>((set, get) => ({
           score: correctAnswersCount,
           totalPoints: totalQuestions,
           percentage,
-          passed: percentage >= (config.passingScore || 70),
+          // A practice sitting has no pass mark, so it records none (T2) —
+          // the planner omits the key entirely rather than writing `false`.
+          ...(plan.passed === undefined ? {} : { passed: plan.passed }),
           timeLimitMinutes,
           answers,
           timeSpent,
@@ -1065,7 +1277,9 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
 
     const studySettings = useSettingsStore.getState().settings.study;
-    if (studySettings.shuffleQuestions) {
+    // The sheet's own answer wins for this session; the account setting is
+    // only the default it opened on.
+    if (config?.shuffleQuestions ?? studySettings.shuffleQuestions) {
       questions = shuffleArray(questions);
     }
     if (studySettings.shuffleOptions) {
@@ -1345,7 +1559,10 @@ export const useTestStore = create<TestState>((set, get) => ({
       id: drafted.draftId || `local-${Date.now()}`,
       sessionKind: drafted.mode === 'study' ? 'study' : 'test',
       status: 'paused',
-      title: drafted.test.name,
+      // Display-time rename, the same one the tests list applies: a saved
+      // session written by the old builder read "Quiz · SDOH" on Home beside
+      // a dozen surfaces that say "test" (T3).
+      title: displayTestTitle(drafted.test.name),
       answeredCount: Object.keys(drafted.answers).length,
       totalQuestions: drafted.questions.length,
       currentQuestionIndex: drafted.currentQuestionIndex,
@@ -1363,7 +1580,13 @@ export const useTestStore = create<TestState>((set, get) => ({
   refreshPausedSessions: async () => {
     try {
       const list = await fetchMobilePausedSessions();
-      set({ pausedSessions: list });
+      // Display-time only: the stored title is untouched on the server.
+      set({
+        pausedSessions: list.map(session => ({
+          ...session,
+          title: displayTestTitle(session.title),
+        })),
+      });
     } catch (error) {
       console.warn('Failed to refresh paused sessions', error);
     }
@@ -1603,7 +1826,15 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
-  submitTest: async (userId: string, options?: { isOffline?: boolean; groupName?: string; groupId?: string }) => {
+  submitTest: async (
+    userId: string,
+    options?: {
+      isOffline?: boolean;
+      groupName?: string;
+      groupId?: string;
+      confidenceByQuestion?: Record<string, 'sure' | 'unsure'>;
+    }
+  ) => {
     const activeTest = get().activeTest;
     if (!activeTest) throw new Error('No active test');
     const testMode = activeTest.mode;
@@ -1686,6 +1917,11 @@ export const useTestStore = create<TestState>((set, get) => ({
         tags: q.tags,
         timeSpentSeconds: activeTest.answerTimings?.[q.id] ?? 0,
         questionSnapshot: q,
+        // Only an ANSWERED question can carry a confidence: a blank one was
+        // never revealed, so nothing was committed to.
+        ...(attempted && options?.confidenceByQuestion?.[q.id]
+          ? { confidence: options.confidenceByQuestion[q.id] }
+          : {}),
       };
     });
     
@@ -1703,8 +1939,15 @@ export const useTestStore = create<TestState>((set, get) => ({
       score,
       totalPoints,
       percentage,
-      passed: percentage >= activeTest.test.passingScore,
+      // Practice is untimed and reveals as it goes: there is nothing here to
+      // pass or fail, and nothing is written down (T2).
+      ...(testMode === 'study'
+        ? {}
+        : { passed: percentage >= activeTest.test.passingScore }),
       timeLimitMinutes: activeTest.test.timeLimit || 0,
+      // What History marks as practice, and what the results screen reads to
+      // decide whether "practice" is the honest word for this row.
+      mode: testMode,
       answers,
       timeSpent,
     };
@@ -1786,6 +2029,22 @@ export const useTestStore = create<TestState>((set, get) => ({
             config: {
               groupId: options?.groupId || activeTest.groupId,
               groupName: options?.groupName || activeTest.groupName || activeTest.test.name,
+              // Restated on completion so a draft created before the mode was
+              // written still lands as what it was, and so the pass mark is
+              // on the row History reads.
+              mode: testMode,
+              passingScore: activeTest.test.passingScore,
+              // A study session never writes a test_results row, so the score
+              // History would otherwise read is 0/0. The tally rides in config,
+              // which the lean list DOES return, and only for practice: a test
+              // sitting has the real row.
+              ...(testMode === 'study'
+                ? {
+                    practiceScore: percentage,
+                    practiceCorrectCount: correctCount,
+                    practiceTotalQuestions: activeTest.questions.length,
+                  }
+                : {}),
             },
           });
         } else {
@@ -1946,19 +2205,40 @@ export const useTestStore = create<TestState>((set, get) => ({
     await get().saveToStorage();
   },
 
+  recordTestTimerChoice: async (testId: string, minutes: number) => {
+    const id = testId?.trim();
+    if (!id || !Number.isFinite(minutes)) return;
+    const value = Math.max(0, Math.round(minutes));
+    const current = get().timerChoiceByTestId[id];
+    const test = get().tests.find(t => t.id === id);
+    if (current === value && test?.timerChosen && test.timeLimit === value) return;
+    const timerChoiceByTestId = { ...get().timerChoiceByTestId, [id]: value };
+    set(state => ({
+      timerChoiceByTestId,
+      tests: applyTimerChoices(state.tests, timerChoiceByTestId),
+    }));
+    await get().saveToStorage();
+  },
+
   insertPersonalTest: async (input) => {
     const questions = normalizeApiQuestions(input.questions);
     const test: Test = {
       id: input.id,
       name: input.name,
       questionCount: questions.length,
-      // A test made from a note is untimed: nothing chose a limit, and
-      // inventing one would start a clock the student never asked for.
+      // A test made from a note is untimed, and that is RECORDED, not left
+      // blank: an unrecorded 0 is indistinguishable from "no one ever chose",
+      // which the config sheet then fills in at a minute per question (T4).
+      // The builder's save says "No limit" out loud, so every surface agrees.
       timeLimit: 0,
+      timerChosen: true,
+      sourceNoteId: input.sourceNoteId,
+      sourceNoteTitle: input.sourceNoteTitle,
       passingScore: 70,
       createdAt: input.createdAt || new Date().toISOString(),
     };
     set(state => ({
+      timerChoiceByTestId: { ...state.timerChoiceByTestId, [test.id]: 0 },
       tests: [...state.tests.filter(t => t.id !== test.id), test],
       testQuestionsById: questions.length
         ? { ...state.testQuestionsById, [test.id]: questions }
@@ -1968,105 +2248,104 @@ export const useTestStore = create<TestState>((set, get) => ({
     return test;
   },
 
-  createTestFromDeck: async (deckId: string, deckName: string, userId: string, config: { questionCount: number; timeLimit: number; passingScore: number }) => {
-    const newTest: Test = {
-      id: `test-${Date.now()}`,
-      name: `${deckName} Quiz`,
-      description: `Auto-generated quiz from ${deckName}`,
-      deckId,
-      deckName,
-      questionCount: config.questionCount,
-      timeLimit: config.timeLimit,
-      passingScore: config.passingScore,
-      createdAt: new Date().toISOString(),
-    };
-    
-    // Optimistic update
+  hydrateTestFromServer: async (testId: string) => {
+    const id = testId?.trim();
+    if (!id) return [];
+
+    // Same two-step web uses for its own hydrate: the sessions route first,
+    // `GET /tests/:id` as the fallback (screens/tests/TestAnalysisScreen does
+    // the same). Either may be the one the deployment answers.
+    let row: any = null;
+    try {
+      const session: any = await api.fetchTestSessionDetail(id);
+      if (Array.isArray(session?.questions) && session.questions.length > 0) row = session;
+    } catch {
+      // Fall through — the fallback below is the one that must decide.
+    }
+    if (!row) {
+      try {
+        row = await api.fetchTestById(id);
+      } catch (error) {
+        // A 404 is an answer — the test is gone — not a failed fetch. Only a
+        // transport or server failure should be reported as "try again".
+        if ((error as { status?: number } | null)?.status === 404) return [];
+        throw error;
+      }
+    }
+
+    const questions = normalizeApiQuestions(row?.questions || []);
+    if (questions.length === 0) return [];
+
+    const existing = get().tests.find(t => t.id === id);
+    const test: Test = existing
+      ? { ...existing, questionCount: questions.length }
+      : {
+          id,
+          name: availableTestName(row),
+          description: row?.config?.description,
+          deckId: row?.config?.deckId || row?.provenance?.deckId || row?.config?.sourceDeckId,
+          deckName:
+            row?.config?.deckName ||
+            row?.config?.groupName ||
+            row?.sourceNoteTitle ||
+            row?.config?.sourceNoteTitle ||
+            row?.provenance?.title ||
+            row?.config?.sourceDeckTitle,
+          questionCount: questions.length,
+          // `timerDuration` is SECONDS; one rule reads the units.
+          timeLimit: resolveAttemptTimeLimitMinutes(row?.config),
+          // Same flag the list mapper sets, so the mode sheet, the config
+          // sheet and Start read one rule for a hydrated test too (T4).
+          timerChosen: hasStoredTimerChoice(row?.config),
+          sourceNoteId: row?.sourceNoteId || row?.config?.sourceNoteId || undefined,
+          sourceNoteTitle: row?.sourceNoteTitle || row?.config?.sourceNoteTitle || undefined,
+          passingScore: row?.config?.passingScore || 70,
+          createdAt: row?.created_at || new Date().toISOString(),
+        };
+
     set(state => ({
-      tests: [...state.tests, newTest],
+      tests: applyTimerChoices(
+        [...state.tests.filter(t => t.id !== id), test],
+        state.timerChoiceByTestId
+      ),
+      testQuestionsById: { ...state.testQuestionsById, [id]: questions },
     }));
     await get().saveToStorage();
-    
-    if (DEMO_MODE) {
-      // Generate mock questions for the new test
-      mockQuestions[newTest.id] = [
-        {
-          id: `${newTest.id}-q1`,
-          type: 'multiple_choice_single',
-          question: 'Sample question 1 from your deck',
-          options: ['Option A', 'Option B', 'Option C', 'Option D'],
-          correctAnswer: 'Option A',
-          points: 10,
-        },
-        {
-          id: `${newTest.id}-q2`,
-          type: 'true_false',
-          question: 'Sample question 2 from your deck',
-          options: ['True', 'False'],
-          correctAnswer: 'True',
-          points: 10,
-        },
-      ];
-      
-      return newTest;
-    }
-    
-    try {
-      let questions: TestQuestion[] = [];
-      try {
-        const flashcards = unwrapFlashcards(await api.fetchFlashcards(deckId));
-        questions = flashcardsToQuestions(flashcards, config.questionCount);
-      } catch (error) {
-        console.warn('Failed to fetch deck flashcards for test creation:', error);
-      }
-
-      const testSession = await api.createTestSession({
-        userId,
-        groupId: '',
-        config: {
-          name: `${deckName} Quiz`,
-          description: `Auto-generated quiz from ${deckName}`,
-          deckId,
-          deckName,
-          numberOfQuestions: config.questionCount,
-          // Minutes in the minutes field, seconds in the seconds field —
-          // this wrote minutes into `timerDuration` (seconds).
-          timerDurationMinutes: Math.max(0, config.timeLimit || 0),
-          timerDuration: Math.max(0, config.timeLimit || 0) * 60,
-          passingScore: config.passingScore,
-        },
-        questions,
-      });
-      
-      const sessionConfig = testSession.config as { name?: string; description?: string } | undefined;
-      const createdTest: Test = {
-        id: testSession.id,
-        name: sessionConfig?.name || `${deckName} Quiz`,
-        description: sessionConfig?.description,
-        deckId,
-        deckName,
-        questionCount: questions.length || config.questionCount,
-        timeLimit: config.timeLimit,
-        passingScore: config.passingScore,
-        createdAt: testSession.created_at || new Date().toISOString(),
-      };
-      
-      set(state => ({
-        tests: [...state.tests.filter(t => t.id !== newTest.id), createdTest],
-        testQuestionsById: {
-          ...state.testQuestionsById,
-          [createdTest.id]: questions.length ? questions : state.testQuestionsById[createdTest.id] || [],
-        },
-      }));
-      
-      return createdTest;
-    } catch (error: any) {
-      console.error('Failed to create test from deck:', error);
-      // Fall back to local-only test
-      set(state => ({
-        tests: [...state.tests, newTest],
-      }));
-      return newTest;
-    }
+    return questions;
   },
+
+  createPersonalTest: async (input) => {
+    const response = await api.createPersonalTest({
+      title: input.title,
+      questions: input.questions,
+      sourceNoteId: input.sourceNoteId,
+      sourceJobId: input.sourceJobId,
+    });
+    // The route answers with the mapped session itself; `test` is accepted as
+    // an alias so an envelope change cannot make a saved test read as unsaved.
+    const saved = ((response as { test?: unknown } | undefined)?.test ?? response) as
+      | ({ id?: string; title?: string; questions?: unknown[] } & Record<string, unknown>)
+      | undefined;
+    const id = typeof saved?.id === 'string' ? saved.id : '';
+    if (!id) throw new Error('The test was not saved. Try again.');
+
+    return get().insertPersonalTest({
+      id,
+      name: (saved?.title as string) || input.title,
+      questions: Array.isArray(saved?.questions) ? (saved.questions as unknown[]) : input.questions,
+      createdAt: (saved?.created_at as string) ?? (saved?.createdAt as string),
+      sourceNoteId:
+        input.sourceNoteId ?? ((saved?.sourceNoteId as string | undefined) || undefined),
+      sourceNoteTitle: (saved?.sourceNoteTitle as string | undefined) || undefined,
+    });
+  },
+
+  createTestFromDeck: async (_deckId: string, _deckName: string, _userId: string, _config: { questionCount: number; timeLimit: number; passingScore: number }) => {
+    // Dead path (Wave 2): it posted questions through api.createTestSession,
+    // the payload shape the server records as a COMPLETED session — the reason
+    // "Available Tests" stayed empty for months. Deck-built tests go through
+    // TestBuilder → saveGeneratedTest → POST /tests/personal. Refuse loudly.
+    throw new Error('createTestFromDeck is retired — build tests from TestBuilder (POST /tests/personal).');
+  },
+
 }));

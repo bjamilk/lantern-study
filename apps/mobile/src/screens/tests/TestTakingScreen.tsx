@@ -36,6 +36,8 @@ import { T } from '../../components/ui';
 import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
 import { toTab } from '../../navigation/nestedTab';
 import { planTestExit, type ReturnToTarget } from './testSessionExit';
+import { isPracticeAttempt, type ConfidenceLevel } from './confidenceReveal';
+import { useFeatureAccent } from '../../components/ui/FeatureDisc';
 
 /** Footer dots never exceed this; beyond it the window slides and counts. */
 const MAX_QUESTION_DOTS = 10;
@@ -590,6 +592,16 @@ export default function TestTakingScreen() {
   const [showFeedback, setShowFeedback] = useState(false);
   const [feedbackResult, setFeedbackResult] = useState<{ isCorrect: boolean; explanation?: string } | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  /**
+   * What the reader committed to BEFORE seeing the answer, per question.
+   *
+   * Screen state, not store state: it is a property of this run, it is handed
+   * to the results screen as a route param when the session is submitted, and
+   * keeping it here means the confidence prompt cannot change how a session is
+   * drafted, resumed or graded. A reader who never answers a question never
+   * gets a key here, which is exactly what `classifyReviewOutcome` wants.
+   */
+  const [confidenceByQuestion, setConfidenceByQuestion] = useState<Record<string, ConfidenceLevel>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submittingRef = useRef(false);
   const questionViewStartTimeRef = useRef<number | null>(null);
@@ -603,6 +615,18 @@ export default function TestTakingScreen() {
 
   // Get mode from active test
   const isStudyMode = activeTest?.mode === 'study';
+  /**
+   * Confidence-before-reveal, on PRACTICE attempts only (spec §9 #5).
+   *
+   * The clock is the whole test: an attempt with a time limit is an exam and
+   * stays plain, so the JAMB/WAEC presets are untouched. Untimed test mode and
+   * study mode are both quiz-style practice and both ask.
+   */
+  const isPractice = isPracticeAttempt({
+    mode: activeTest?.mode,
+    timeLimitMinutes: activeTest?.test.timeLimit,
+  });
+  const testsAccent = useFeatureAccent('tests');
   // Exam lock: once answered + advanced, a question can't be returned to.
   const lockMode = !isStudyMode && activeTest?.lockAnswered === true;
   // In lock mode, "Previous" jumps to the nearest earlier open (skipped) question.
@@ -736,12 +760,24 @@ export default function TestTakingScreen() {
     return activeTest.revealedAnswers.has(currentQuestion.id);
   }, [activeTest, currentQuestion]);
 
+  /** What the reader committed to for the question on screen, if anything. */
+  const currentConfidence = currentQuestion ? confidenceByQuestion[currentQuestion.id] : undefined;
+
+  /**
+   * On a practice attempt the answer stays hidden until the reader says how
+   * sure they are. That is the point of the feature: a reveal that arrives
+   * before the commitment turns "did I know this?" into "did I recognise it
+   * once I saw it?", and the four review outcomes stop meaning anything.
+   */
+  const awaitingConfidence = isPractice && hasAnsweredCurrent && !isAnswerRevealed && !currentConfidence;
+
   useEffect(() => {
     if (
       !isStudyMode ||
       !showExplanationsImmediately ||
       !hasAnsweredCurrent ||
       isAnswerRevealed ||
+      awaitingConfidence ||
       !currentQuestion
     ) {
       return;
@@ -758,6 +794,7 @@ export default function TestTakingScreen() {
     showExplanationsImmediately,
     hasAnsweredCurrent,
     isAnswerRevealed,
+    awaitingConfidence,
     currentQuestion,
     checkCurrentAnswer,
     revealAnswer,
@@ -788,19 +825,41 @@ export default function TestTakingScreen() {
       ? Math.round((Date.now() - questionViewStartTimeRef.current) / 1000)
       : 0;
     answerQuestion(currentQuestion.id, answer, timeSpentSeconds);
-  }, [currentQuestion, answerQuestion]);
+    // Changing the answer before the reveal retracts the commitment: the
+    // stored pair has to describe the answer that was actually submitted, so
+    // the reader re-commits rather than inheriting how sure they were of a
+    // choice they have since abandoned. After the reveal there is nothing left
+    // to be confident about, so a recorded pair is never disturbed.
+    if (!activeTest?.revealedAnswers.has(currentQuestion.id)) {
+      setConfidenceByQuestion(prev => {
+        if (!(currentQuestion.id in prev)) return prev;
+        const next = { ...prev };
+        delete next[currentQuestion.id];
+        return next;
+      });
+    }
+  }, [currentQuestion, answerQuestion, activeTest]);
+
+  /** Commit to Sure / Not sure, which is what unlocks the reveal. */
+  const handleConfidence = useCallback((level: ConfidenceLevel) => {
+    if (!currentQuestion) return;
+    setConfidenceByQuestion(prev => ({ ...prev, [currentQuestion.id]: level }));
+  }, [currentQuestion]);
 
   // Check answer in study mode
   const handleCheckAnswer = useCallback(() => {
     if (!currentQuestion || !activeTest) return;
-    
+    // Belt and braces: the button is not rendered while a commitment is
+    // outstanding, but the reveal must not be reachable without one.
+    if (isPractice && !confidenceByQuestion[currentQuestion.id]) return;
+
     const result = checkCurrentAnswer();
     if (result) {
       setFeedbackResult(result);
       setShowFeedback(true);
       revealAnswer(currentQuestion.id);
     }
-  }, [currentQuestion, activeTest, checkCurrentAnswer, revealAnswer]);
+  }, [currentQuestion, activeTest, checkCurrentAnswer, revealAnswer, isPractice, confidenceByQuestion]);
 
   const flaggedCount = useMemo(() => {
     if (!activeTest) return 0;
@@ -886,6 +945,9 @@ export default function TestTakingScreen() {
         isOffline: !!isOffline,
         groupName: groupName || liveSession.test.name,
         groupId,
+        // Stored on the attempt and sent with the session, so reopening this
+        // result from History keeps the four confidence outcomes.
+        ...(Object.keys(confidenceByQuestion).length > 0 ? { confidenceByQuestion } : {}),
       });
       // Marketplace question bank: queue the attempt for its leaderboard.
       // These sessions are usually finished offline, so the post is deferred
@@ -913,12 +975,18 @@ export default function TestTakingScreen() {
       navigation.replace('TestResults', {
         attemptId: attempt.id,
         ...(returnTo ? { returnTo } : {}),
+        // The confidence pairs belong to THIS run; review is the only place
+        // they are read, and it is the next screen. Omitted entirely on a
+        // timed attempt, which never collects them.
+        ...(Object.keys(confidenceByQuestion).length > 0
+          ? { confidenceByQuestion }
+          : {}),
       });
     } catch {
       submittingRef.current = false;
       setIsSubmitting(false);
     }
-  }, [submitTest, userId, isOffline, groupName, groupId, offlineTestId, navigation, returnTo]);
+  }, [submitTest, userId, isOffline, groupName, groupId, offlineTestId, navigation, returnTo, confidenceByQuestion]);
 
   const handleSubmit = useCallback(async (timeUp = false) => {
     // Session may have been abandoned (exit) while a timer tick was queued.
@@ -926,17 +994,28 @@ export default function TestTakingScreen() {
     if (!liveSession) return;
     hapticSuccess();
 
-    // Study mode doesn't need submission
+    /**
+     * A practice session ENDS IN A REVIEW, exactly like a test.
+     *
+     * It used to end in `exitStudyMode()` — the session was thrown away, the
+     * reader was dropped back on the tests list, and nothing was written: no
+     * results screen, no History entry, and therefore nowhere for the four
+     * confidence outcomes, the rationale, Explain or the source chip to
+     * appear, even though every one of them had been built for practice
+     * (device finding T2, build 162). So the one attempt type that collects
+     * confidence was the one type that never showed it.
+     *
+     * `finalizeSubmit` is the same path a test takes: score, file the
+     * attempt (its config carries `mode: 'study'`, which is what marks the
+     * History row as practice), and REPLACE this screen with TestResults.
+     */
     if (liveSession.mode === 'study') {
       Alert.alert(
         'End Study Session',
-        'Would you like to end this study session?',
+        'End this session and see your review? Blanks are counted separately, not as wrong answers.',
         [
           { text: 'Continue', style: 'cancel' },
-          { text: 'End Session', onPress: () => {
-            exitStudyMode();
-            dismissSession();
-          }},
+          { text: 'End & review', onPress: () => { void finalizeSubmit(); } },
         ]
       );
       return;
@@ -949,7 +1028,7 @@ export default function TestTakingScreen() {
     }
 
     setShowReviewModal(true);
-  }, [finalizeSubmit, exitStudyMode, dismissSession]);
+  }, [finalizeSubmit]);
 
   handleSubmitRef.current = handleSubmit;
 
@@ -1251,8 +1330,58 @@ export default function TestTakingScreen() {
           </View>
         )}
 
+        {/* Confidence before reveal — practice attempts only (spec §9 #5) */}
+        {isPractice && hasAnsweredCurrent && !isAnswerRevealed && (
+          <View
+            style={[s(colors).confidenceCard, { backgroundColor: testsAccent.tint }]}
+            accessibilityRole="radiogroup"
+            accessibilityLabel="How sure are you of this answer?"
+          >
+            <T.Label style={{ color: testsAccent.ink }}>BEFORE YOU SEE THE ANSWER</T.Label>
+            <T.Body style={{ color: testsAccent.ink }}>How sure are you?</T.Body>
+            <View style={s(colors).confidenceRow}>
+              {([
+                { level: 'sure' as ConfidenceLevel, label: 'Sure', icon: 'checkmark-circle' },
+                { level: 'unsure' as ConfidenceLevel, label: 'Not sure', icon: 'help-circle' },
+              ]).map(option => {
+                const selected = currentConfidence === option.level;
+                return (
+                  <TouchableOpacity
+                    key={option.level}
+                    style={[
+                      s(colors).confidenceOption,
+                      { borderColor: testsAccent.ink },
+                      selected && { backgroundColor: testsAccent.ink },
+                    ]}
+                    onPress={() => handleConfidence(option.level)}
+                    activeOpacity={0.8}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected }}
+                    accessibilityLabel={option.label}
+                  >
+                    <AppIcon
+                      name={option.icon as never}
+                      size={18}
+                      color={selected ? testsAccent.tint : testsAccent.ink}
+                    />
+                    <T.Body style={{ color: selected ? testsAccent.tint : testsAccent.ink, fontWeight: '600' }}>
+                      {option.label}
+                    </T.Body>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {/* The answer to "why is it asking?", once, where it is asked. */}
+            <T.Caption style={{ color: testsAccent.ink }}>
+              {currentConfidence
+                ? 'Saved. Your review will separate what you knew from what you guessed.'
+                : 'Answering this is what tells your review whether a right answer was knowledge or a guess.'}
+            </T.Caption>
+          </View>
+        )}
+
         {/* Study Mode Check Answer Button */}
-        {isStudyMode && hasAnsweredCurrent && !isAnswerRevealed && (
+        {isStudyMode && hasAnsweredCurrent && !isAnswerRevealed && !awaitingConfidence && (
           <TouchableOpacity
             style={s(colors).checkAnswerButton}
             onPress={handleCheckAnswer}
@@ -2225,6 +2354,28 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     fontSize: 15,
     color: c.success,
     fontWeight: '600',
+  },
+  confidenceCard: {
+    marginTop: 20,
+    padding: 16,
+    borderRadius: 12,
+    gap: 8,
+  },
+  confidenceRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  confidenceOption: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    // 48 keeps both targets above the 44 pt minimum at every font scale.
+    minHeight: 48,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   checkAnswerButton: {
     flexDirection: 'row',

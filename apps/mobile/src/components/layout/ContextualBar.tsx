@@ -6,6 +6,7 @@ import {
   featureSmallTextInk,
 } from '@lantern/shared/design';
 import {
+  activeItem,
   planContextualPress,
   type ContextualBarItem,
   type ContextualBarSpec,
@@ -124,6 +125,11 @@ export function ContextualBar({
   const [openingRecorder, setOpeningRecorder] = useState(false);
 
   const spec = resolveContextualSpec({ spec: contextual, immersive, withinChrome });
+  // Which segment is the screen you are looking at. The registry owns the
+  // answer — including `activeFor`, the rooms a door owns that are not the
+  // door itself (Tests → TestBuilder). Comparing `target.route` here instead
+  // is what turned the whole row grey the moment "+ New test" was pressed.
+  const current = activeItem(contextualRoute);
 
   // What is currently PAINTED, which lags `spec` by one animation on the way
   // out: the row has to still be on screen while its height animates to 0.
@@ -230,7 +236,7 @@ export function ContextualBar({
           <Segment
             key={item.id}
             item={item}
-            active={item.target.kind === 'route' && item.target.route === contextualRoute}
+            active={current?.id === item.id}
             onPress={() => press(item)}
             isDark={isDark}
             neutralInk={colors.tabBarInactive}

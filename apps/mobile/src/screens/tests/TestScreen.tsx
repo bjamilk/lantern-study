@@ -26,8 +26,8 @@ import { BackButton, EmptyState, FeatureDisc, useFeatureAccent } from '../../com
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
-import { resolveTestTimeLimitMinutes } from './testConfigRules';
-import { testSourceLine } from '../../stores/availableTests';
+import { resolveTestTimeLimitMinutes, resolveDefaultSessionMinutes } from './testConfigRules';
+import { planRetake, planAttemptRow, deriveTestSource } from './testAuthoring';
 // Wave T: the six type steps replace this file's eleven ad-hoc sizes.
 import { typeScale, tabularNums } from '../../design/typeScale';
 
@@ -41,6 +41,19 @@ type HistoryFilter = {
   topicId?: string | null;
   topicLabel?: string;
 };
+
+/**
+ * The minutes THIS test starts with — one call, used by the mode sheet's
+ * stats strip, by the launch behind Start Test, and as the config sheet's
+ * opening timer. See `resolveDefaultSessionMinutes` for why all three had to
+ * be the same number.
+ */
+const defaultMinutesFor = (test: Test): number =>
+  resolveDefaultSessionMinutes({
+    timerChosen: !!test.timerChosen,
+    storedMinutes: test.timeLimit,
+    questionCount: test.questionCount,
+  });
 
 const historyTopicLabel = (filter: HistoryFilter) =>
   filter.topicId === UNTOPICED_TOPIC_ID ? COURSE_TOPIC_COPY.none : filter.topicLabel || COURSE_TOPIC_COPY.filterLabel;
@@ -103,7 +116,7 @@ export default function TestScreen() {
   // FlatLists because only one is mounted at a time (they are keyed).
   const listRef = useRef<FlatList>(null);
   useScrollToTopRequest(() => listRef.current?.scrollToOffset({ offset: 0, animated: true }));
-  const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, deleteAttempt, clearTestHistory } = useTestStore();
+  const { tests, attempts, isLoading, fetchTests, fetchAttempts, startTest, startQuestionSet, testQuestionsById, hydrateTestFromServer, deleteAttempt, clearTestHistory, recordTestTimerChoice } = useTestStore();
 
   const visibleAttempts = useMemo(() => {
     if (!historyCourse) return attempts;
@@ -135,7 +148,13 @@ export default function TestScreen() {
 
   const handleStartTest = useCallback(async (test: Test, mode: TestMode) => {
     try {
-      await startTest(test.id, mode);
+      // The SAME minutes the mode sheet printed and the config sheet opens on
+      // (T4). Passing nothing let the store fall back on `test.timeLimit`,
+      // which is 0 for any test saved without a timer key — so a sheet that
+      // said "5 min" started a session with no countdown at all.
+      await startTest(test.id, mode, {
+        timeLimit: mode === 'test' ? defaultMinutesFor(test) : 0,
+      });
       trackTestStarted({
         mode: mode === 'test' ? 'test' : 'study',
         questionCount: useTestStore.getState().activeTest?.questions.length ?? 0,
@@ -171,6 +190,9 @@ export default function TestScreen() {
       spacedRepetition: config.useSpacedRepetition,
       focusOnNew: config.focusOnNew,
       lockAnswered: config.lockAnswered,
+      // The sheet's own answer, not the account default the store would
+      // otherwise reach for: the summary line above Start said "shuffled".
+      shuffleQuestions: config.shuffleQuestions,
       courseId: config.courseId ?? null,
       topicId: config.topicId ?? null,
     }).then(() => {
@@ -195,6 +217,16 @@ export default function TestScreen() {
     return Array.from(tags);
   }, [configTest, testQuestionsById]);
 
+  /**
+   * Retake, through the planner in `testAuthoring.ts`.
+   *
+   * The middle step is the whole fix. `GET /tests` is served lean, so a row in
+   * History has a source test with NO questions cached against it, and the old
+   * handler read that as "gone" — every retake on build 161 refused, including
+   * a result from the day before. The plan asks the server first
+   * (`hydrateTestFromServer` → `GET /tests/:id`) and only refuses when that
+   * comes back empty, with a different sentence when the fetch itself failed.
+   */
   const handleRetake = useCallback(async (attempt: TestAttempt) => {
     const questions = normalizeApiQuestions(
       attempt.answers
@@ -202,12 +234,13 @@ export default function TestScreen() {
         .filter((q): q is NonNullable<typeof q> => !!q)
     );
 
-    const timeLimitMinutes = attempt.timeLimitMinutes ?? 0;
     const sessionName = attempt.testName || 'Retake';
+    const sourceTestId = attempt.originalTestId || attempt.testId || null;
 
-    if (questions.length > 0) {
+    const launchSnapshot = async () => {
       await startQuestionSet(sessionName, questions, 'test', {
-        timeLimitMinutes,
+        // An attempt that recorded "None" (0) retakes untimed.
+        timeLimitMinutes: attempt.timeLimitMinutes ?? 0,
         groupId: attempt.groupId,
         groupName: attempt.groupName,
       });
@@ -218,24 +251,21 @@ export default function TestScreen() {
         groupName: attempt.groupName,
         groupId: attempt.groupId,
       });
-      return;
-    }
+    };
 
-    const lookupId = attempt.originalTestId || attempt.testId;
-    const existingTest = tests.find(t => t.id === lookupId);
-    if (existingTest) {
+    const launchTest = async (testId: string) => {
+      const sourceTest = useTestStore.getState().tests.find(t => t.id === testId);
       try {
-        await startTest(existingTest.id, 'test', {
-          // An attempt that recorded "None" (0) retakes untimed; only an
-          // attempt with NO recorded timer falls back on the test's limit.
-          timeLimit: attempt.timeLimitMinutes ?? existingTest.timeLimit,
+        await startTest(testId, 'test', {
+          // Only an attempt with NO recorded timer falls back on the test's.
+          timeLimit: attempt.timeLimitMinutes ?? sourceTest?.timeLimit,
           userId: user?.id,
           groupId: attempt.groupId,
           groupName: attempt.groupName,
         });
         navigation.navigate('TestTaking', {
-          testId: existingTest.id,
-          testName: existingTest.name,
+          testId,
+          testName: sourceTest?.name || sessionName,
           mode: 'test',
           groupName: attempt.groupName,
           groupId: attempt.groupId,
@@ -243,11 +273,37 @@ export default function TestScreen() {
       } catch {
         Alert.alert('Error', 'Failed to start test');
       }
-      return;
+    };
+
+    const localCount = (testId: string) =>
+      (useTestStore.getState().testQuestionsById[testId] || []).length;
+
+    let plan = planRetake({
+      snapshotCount: questions.length,
+      sourceTestId,
+      localQuestionCount: sourceTestId ? localCount(sourceTestId) : 0,
+    });
+
+    if (plan.action === 'fetchTest') {
+      let fetchFailed = false;
+      try {
+        await hydrateTestFromServer(plan.testId);
+      } catch {
+        fetchFailed = true;
+      }
+      plan = planRetake({
+        snapshotCount: questions.length,
+        sourceTestId,
+        localQuestionCount: localCount(plan.testId),
+        fetchAttempted: true,
+        fetchFailed,
+      });
     }
 
-    Alert.alert('Cannot retake', 'Question data is no longer available for this test.');
-  }, [tests, startQuestionSet, startTest, navigation, user?.id]);
+    if (plan.action === 'launchSnapshot') return launchSnapshot();
+    if (plan.action === 'launchTest') return launchTest(plan.testId);
+    if (plan.action === 'refuse') Alert.alert(plan.title, plan.message);
+  }, [startQuestionSet, startTest, hydrateTestFromServer, navigation, user?.id]);
 
   const handleViewAttempt = useCallback((attempt: TestAttempt) => {
     navigation.navigate('TestResults', { attemptId: attempt.id });
@@ -274,18 +330,16 @@ export default function TestScreen() {
   }, [user?.id, deleteAttempt]);
 
   /**
-   * The only door into authoring a test that exists on mobile today: a group
-   * chat. Landing on the Chat tab's ROOT (the group list) rather than naming a
-   * screen inside it is the navigation rule — `toTab` is for a nested target,
-   * and there is no group id to push here.
+   * The New test door.
    *
-   * Wave 2 replaces this with a real creation flow; until then the button
-   * takes the student to where the thing actually happens instead of nowhere.
+   * It used to switch the GLOBAL tab to Chat — the temporary group-quiz
+   * wiring — so pressing a button on the Study tab silently moved the student
+   * to another destination with no way to tell why. It now pushes a real
+   * screen onto the Study stack, which offers the group as one of three
+   * sources and says out loud that choosing it opens the chat.
    */
   const handleNewTest = useCallback(() => {
-    const parent = navigation.getParent?.();
-    if (parent) parent.navigate('ChatTab');
-    else navigation.navigate('ChatTab');
+    navigation.navigate('TestBuilder');
   }, [navigation]);
 
   const handleClearHistory = useCallback(() => {
@@ -321,6 +375,28 @@ export default function TestScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  /**
+   * "From SDOH" under a saved test, and in the mode sheet's subtitle.
+   *
+   * Read from EVERY source the row records, not `deckName` alone: a test
+   * generated from a note has no deck, so the line was omitted entirely and
+   * the sheet fell through to the bare "Saved test" for a quiz that plainly
+   * came from a note. `sourceNoteId` rides only when a title rides with it —
+   * a linkable source with no name resolves to "From this note", which is
+   * worse than the note's own name read off the test's title.
+   */
+  const testSourceLabel = useCallback(
+    (test: Test): string | null =>
+      deriveTestSource({
+        noteId: test.sourceNoteTitle ? test.sourceNoteId : undefined,
+        noteTitle: test.sourceNoteTitle,
+        deckId: test.deckId,
+        deckName: test.deckName,
+        testTitle: test.name,
+      })?.label ?? null,
+    []
+  );
+
   const renderTestItem = useCallback(({ item }: { item: Test }) => (
     <TouchableOpacity
       style={[styles.testCard, { backgroundColor: colors.card }]}
@@ -336,11 +412,14 @@ export default function TestScreen() {
       <View style={styles.testInfo}>
         <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
         {/* Never "From undefined": a note quiz has no deck and no group, and
-            the row said so out loud (D3). testSourceLine omits the line when
-            there is no source to name. */}
-        {item.description || testSourceLine(item.deckName) ? (
+            the row said so out loud (D3). `testSourceLabel` omits the line
+            when there is no source to name. */}
+        {/* "From Quiz · SDOH" attributed the test to a note that does not
+            exist — the "Quiz · " belongs to the test's own old title, not to
+            its source (T3). Display-time only. */}
+        {item.description || testSourceLabel(item) ? (
           <Text style={[styles.testDescription, { color: colors.textSecondary }]} numberOfLines={1}>
-            {item.description || testSourceLine(item.deckName)}
+            {item.description || testSourceLabel(item)}
           </Text>
         ) : null}
         
@@ -352,7 +431,11 @@ export default function TestScreen() {
           <View style={styles.metaItem}>
             <AppIcon name="time" size={14} color={colors.textSecondary} />
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {item.timeLimit > 0 ? `${item.timeLimit} min` : 'No limit'}
+              {/* The SAME number the mode sheet's strip and the launch use.
+                  Reading `timeLimit` straight said "No limit" for a test that
+                  had merely never recorded one, and which the config sheet
+                  then opened at a minute per question (T4). */}
+              {defaultMinutesFor(item) > 0 ? `${defaultMinutesFor(item)} min` : 'No limit'}
             </Text>
           </View>
           <View style={styles.metaItem}>
@@ -364,9 +447,20 @@ export default function TestScreen() {
       
       <AppIcon name="chevron-forward" size={20} color={colors.textSecondary} />
     </TouchableOpacity>
-  ), [colors]);
+  ), [colors, testSourceLabel]);
 
-  const renderAttemptItem = useCallback(({ item }: { item: TestAttempt }) => (
+  const renderAttemptItem = useCallback(({ item }: { item: TestAttempt }) => {
+    const rowPlan = planAttemptRow({ mode: item.mode, passed: item.passed });
+    // Where it came from, said as text. A group names itself; everything else
+    // is read out of the test's own title, which is the only place a note
+    // test records its note — and the prefix is stripped, so this reads
+    // "From SDOH" and never "From Test · SDOH" (T3).
+    const rowSource = deriveTestSource({
+      groupId: item.groupId,
+      groupName: item.groupName,
+      testTitle: item.testName,
+    });
+    return (
     <View style={[styles.attemptCard, { backgroundColor: colors.card }]}>
       <TouchableOpacity
         style={styles.attemptMain}
@@ -381,9 +475,9 @@ export default function TestScreen() {
         
         <View style={styles.attemptInfo}>
           <Text style={[styles.attemptName, { color: colors.text }]} numberOfLines={1}>{item.testName}</Text>
-          {testSourceLine(item.groupName) ? (
+          {rowSource ? (
             <Text style={[styles.attemptSource, { color: colors.textSecondary }]} numberOfLines={1}>
-              {testSourceLine(item.groupName)}
+              {rowSource.label}
             </Text>
           ) : null}
           <Text style={[styles.attemptDate, { color: colors.textSecondary }]}>{formatDate(item.completedAt || item.startedAt)}</Text>
@@ -396,22 +490,37 @@ export default function TestScreen() {
             <Text style={[styles.scoreText, { color: colors.text }]}>
               {item.percentage}%
             </Text>
-            <View style={styles.attemptVerdict}>
-              <AppIcon
-                name={item.passed ? 'checkmark-circle' : 'close-circle'}
-                size={14}
-                color={item.passed ? colors.success : colors.error}
-                importantForAccessibility="no"
-              />
-              <Text
-                style={[
-                  styles.attemptMeta,
-                  { color: item.passed ? colors.success : colors.error },
-                ]}
-              >
-                {item.passed ? 'Passed' : 'Not passed'}
-              </Text>
-            </View>
+            {/* Practice and exam are different sittings and the row says which
+                (T2): practice is untimed and gives feedback as you go, so its
+                percentage does not mean what an exam's does. */}
+            {/* One planner decides both, so the chip and the verdict cannot
+                disagree: a practice row shows the chip and NO pass/fail — it
+                has no pass mark to miss, and a red ✗ on an untimed run with
+                feedback is a verdict on the reason to practise at all (T2). */}
+            {rowPlan.showPracticeChip ? (
+              <View style={[styles.attemptPracticeChip, { backgroundColor: colors.backgroundSecondary }]}>
+                <AppIcon name="book" size={12} color={colors.textSecondary} importantForAccessibility="no" />
+                <Text style={[styles.attemptMeta, { color: colors.textSecondary }]}>Practice</Text>
+              </View>
+            ) : null}
+            {rowPlan.verdict ? (
+              <View style={styles.attemptVerdict}>
+                <AppIcon
+                  name={rowPlan.verdict === 'passed' ? 'checkmark-circle' : 'close-circle'}
+                  size={14}
+                  color={rowPlan.verdict === 'passed' ? colors.success : colors.error}
+                  importantForAccessibility="no"
+                />
+                <Text
+                  style={[
+                    styles.attemptMeta,
+                    { color: rowPlan.verdict === 'passed' ? colors.success : colors.error },
+                  ]}
+                >
+                  {rowPlan.verdict === 'passed' ? 'Passed' : 'Not passed'}
+                </Text>
+              </View>
+            ) : null}
             <Text style={[styles.attemptMeta, { color: colors.textSecondary }]}>
               {item.score}/{item.totalPoints} pts • {formatTime(item.timeSpent)}
             </Text>
@@ -454,7 +563,8 @@ export default function TestScreen() {
         </TouchableOpacity>
       </View>
     </View>
-  ), [handleViewAttempt, handleRetake, handleDeleteAttempt, colors]);
+    );
+  }, [handleViewAttempt, handleRetake, handleDeleteAttempt, colors, testsAccent.ink]);
 
   /**
    * The empty state: the shared `EmptyState` card — a neutral panel with ONE
@@ -463,11 +573,10 @@ export default function TestScreen() {
    * Available tab — one action. It replaced a full-tint panel that painted
    * roughly 40% of the viewport in sky; the band is about 6%.
    *
-   * That action is deliberately modest. Lantern has no creation door of its
-   * own on mobile yet (Wave 2 builds it), and the only place a test is
-   * actually authored today is a group chat. So the button says where it is
-   * taking you and takes you there, rather than pretending to a wizard that
-   * does not exist.
+   * That action now opens a real door: TestBuilder, on this same stack, with
+   * the three sources a test can come from. It used to be a button that
+   * switched the global tab to Chat, because a group was the only place a
+   * test was authored — which is exactly what this wave replaced.
    */
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
@@ -491,7 +600,7 @@ export default function TestScreen() {
               activeOpacity={0.8}
               style={[styles.emptyAction, { backgroundColor: testsAccent.ink }]}
               accessibilityRole="button"
-              accessibilityLabel="New test. Opens Chat, where a test is started from a group."
+              accessibilityLabel="New test. Choose a deck, a note, or your group."
             >
               <AppIcon name="add" size={16} color={colors.card} importantForAccessibility="no" />
               <Text style={[styles.emptyActionText, { color: colors.card }]}>New test</Text>
@@ -508,15 +617,32 @@ export default function TestScreen() {
       <View style={styles.header}>
         <View style={styles.headerTopRow}>
           <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: -9, marginRight: 4 }} />
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Tests</Text>
+          <Text style={[styles.headerTitle, { color: colors.text, flex: 1 }]} numberOfLines={1}>Tests</Text>
           {activeTab === 'history' && attempts.length > 0 ? (
             <TouchableOpacity onPress={handleClearHistory} style={styles.clearHistoryButton}>
               <Text style={[styles.clearHistoryText, { color: '#ef4444' }]}>Clear History</Text>
             </TouchableOpacity>
           ) : null}
+          {/* The New test door, in the header and UNCONDITIONAL.
+              It previously existed only inside the empty state, and only on
+              the Available tab — so the moment a student had one test, or was
+              looking at History, TestBuilder had no entrance anywhere in the
+              app (device finding T1, build 162). A door that disappears as
+              soon as the shelf is non-empty is not a door. */}
+          <TouchableOpacity
+            onPress={handleNewTest}
+            activeOpacity={0.8}
+            style={[styles.newTestButton, { backgroundColor: colors.primaryFill }]}
+            accessibilityRole="button"
+            accessibilityLabel="New test. Choose a deck, a note, or your group."
+            testID="tests-new-test"
+          >
+            <AppIcon name="add" size={16} color="#ffffff" importantForAccessibility="no" />
+            <Text style={styles.newTestButtonText}>New test</Text>
+          </TouchableOpacity>
         </View>
         <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
-          Review scores in History · Launch saved quizzes under Available Tests
+          Review scores in History · Launch saved tests under Available Tests
         </Text>
       </View>
 
@@ -694,7 +820,7 @@ export default function TestScreen() {
                   </View>
                   <Text style={[styles.modalTitle, { color: colors.text }]}>{selectedTest.name}</Text>
                   <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
-                    {selectedTest.description || `Quiz from ${selectedTest.deckName}`}
+                    {selectedTest.description || testSourceLabel(selectedTest) || 'Saved test'}
                   </Text>
                 </View>
 
@@ -774,26 +900,31 @@ export default function TestScreen() {
                   </View>
                 </View>
 
-                <View style={styles.modalStats}>
+                {/* The stats strip.
+                    It used to paint itself #000000 and then have its figures
+                    overridden to `colors.text` — dark navy on black in light
+                    mode, effectively unreadable (T4). The panel is a theme
+                    surface now, and every glyph on it a text token. */}
+                <View style={[styles.modalStats, { backgroundColor: colors.backgroundSecondary }]}>
                   <View style={styles.modalStatItem}>
                     <AppIcon name="help-circle" size={24} color={colors.primaryText} />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>{selectedTest.questionCount}</Text>
                     <Text style={[styles.modalStatLabel, { color: colors.textSecondary }]}>Questions</Text>
                   </View>
                   <View style={styles.modalStatItem}>
-                    <AppIcon 
-                      name={selectedMode === 'test' ? 'time' : 'infinite'} 
-                      size={24} 
-                      color="#f97316" 
+                    <AppIcon
+                      name={selectedMode === 'test' && defaultMinutesFor(selectedTest) > 0 ? 'time' : 'infinite'}
+                      size={24}
+                      color="#f97316"
                     />
                     <Text style={[styles.modalStatValue, { color: colors.text }]}>
-                      {selectedMode === 'test' 
-                        ? (selectedTest.timeLimit > 0 ? selectedTest.timeLimit : '∞')
+                      {selectedMode === 'test' && defaultMinutesFor(selectedTest) > 0
+                        ? defaultMinutesFor(selectedTest)
                         : '∞'
                       }
                     </Text>
                     <Text style={[styles.modalStatLabel, { color: colors.textSecondary }]}>
-                      {selectedMode === 'test' ? 'Minutes' : 'No Limit'}
+                      {selectedMode === 'test' && defaultMinutesFor(selectedTest) > 0 ? 'Minutes' : 'No limit'}
                     </Text>
                   </View>
                   <View style={styles.modalStatItem}>
@@ -857,7 +988,7 @@ export default function TestScreen() {
                   }}
                 >
                   <AppIcon name="settings" size={16} color="#6366f1" />
-                  <Text style={styles.advancedLinkText}>Advanced Configuration</Text>
+                  <Text style={styles.advancedLinkText}>Configure test</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -873,11 +1004,18 @@ export default function TestScreen() {
             setShowConfigModal(false);
             setConfigTest(null);
           }}
+          // Both exits, Start and Cancel/×: the sheet reports the timer and it
+          // is written onto this test, so reopening shows the last choice
+          // rather than the auto rule (T4).
+          onTimerChoice={minutes => void recordTestTimerChoice(configTest.id, minutes)}
           onSubmit={handleConfigSubmit}
           mode={selectedMode}
           maxQuestions={configTest.questionCount || 10}
           availableTags={configTags}
           testName={configTest.name || ''}
+          // One answer for "how long does this run", shared with the mode
+          // sheet's strip and with Start Test itself (T4).
+          defaultTimerMinutes={configTest.timerChosen ? defaultMinutesFor(configTest) : undefined}
         />
       )}
     </Screen>
@@ -902,6 +1040,28 @@ const styles = StyleSheet.create({
   clearHistoryButton: {
     paddingVertical: 6,
     paddingHorizontal: 4,
+  },
+  attemptPracticeChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  newTestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    minHeight: 44,
+  },
+  newTestButtonText: {
+    ...typeScale.body,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   clearHistoryText: {
     ...typeScale.body,
@@ -1126,7 +1286,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: 24,
     paddingVertical: 16,
-    backgroundColor: '#000000',
     borderRadius: 16,
   },
   modalStatItem: {
@@ -1136,12 +1295,10 @@ const styles = StyleSheet.create({
     ...typeScale.title,
     ...tabularNums,
     fontWeight: 'bold',
-    color: '#ffffff',
     marginTop: 8,
   },
   modalStatLabel: {
     ...typeScale.caption,
-    color: '#6b7280',
     marginTop: 4,
   },
   modalButtons: {
@@ -1185,7 +1342,6 @@ const styles = StyleSheet.create({
   modeSectionTitle: {
     ...typeScale.heading,
     fontWeight: '600',
-    color: '#ffffff',
     marginBottom: 12,
   },
   modeOptions: {

@@ -35,6 +35,7 @@ export function InFlightJobsCard({ className }: Props) {
   const dismissJob = useJobsStore((s) => s.dismissJob);
   const retryGenerate = useJobsStore((s) => s.retryGenerate);
   const refreshActiveJobs = useJobsStore((s) => s.refreshActiveJobs);
+  const refreshJobPush = useJobsStore((s) => s.refreshJobPush);
   const [now, setNow] = useState(() => Date.now());
 
   // Home is the app's initial route, so this is where persisted jobs are
@@ -58,6 +59,18 @@ export function InFlightJobsCard({ className }: Props) {
   useEffect(() => {
     if (hasRunning) void refreshActiveJobs();
   }, [hasRunning, refreshActiveJobs]);
+
+  // Whether the server actually notified this phone is only knowable from the
+  // job record, and only for a settled job. Read it once per card so a
+  // finished row can say which of the two things happened.
+  const settledIds = shown
+    .filter((j) => j.status !== 'queued' && j.status !== 'running' && !j.pushAudit)
+    .map((j) => j.id)
+    .join(',');
+  useEffect(() => {
+    if (!settledIds) return;
+    for (const id of settledIds.split(',')) void refreshJobPush(id);
+  }, [settledIds, refreshJobPush]);
 
   if (shown.length === 0) return null;
 
@@ -102,6 +115,13 @@ export function InFlightJobsCard({ className }: Props) {
           <Text className="text-caption text-lantern-text-secondary" numberOfLines={3}>
             {running ? `${state.detail} · ${state.percent}% · ${state.elapsedLabel}` : state.detail}
           </Text>
+          {/* Whether a push about this actually went out. Absent on records
+              the server never audited, and then nothing is claimed. */}
+          {!running && state.pushNote ? (
+            <Text className="text-label text-lantern-text-tertiary mt-0.5" numberOfLines={2}>
+              {state.pushNote}
+            </Text>
+          ) : null}
         </View>
 
         {state.tone === 'done' ? (

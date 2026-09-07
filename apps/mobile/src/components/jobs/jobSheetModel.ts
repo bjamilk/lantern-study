@@ -21,6 +21,7 @@ import {
   type JobKind,
   type TrackedJob,
 } from '../../stores/jobsCore';
+import { describeJobPush, type PushReadiness } from '../../utils/pushDiagnostics';
 
 /** The three stages every generator moves through, in the student's words. */
 export const jobStages = (kind: JobKind, count?: number): string[] => {
@@ -29,7 +30,7 @@ export const jobStages = (kind: JobKind, count?: number): string[] => {
     case 'flashcards':
       return ['Reading your notes', many('cards'), 'Saving to your deck'];
     case 'quiz':
-      return ['Reading your notes', many('questions'), 'Saving your quiz'];
+      return ['Reading your notes', many('questions'), 'Saving your test'];
     case 'test':
       return ['Reading your material', many('questions'), 'Saving your test'];
     case 'summary':
@@ -47,7 +48,7 @@ export const jobArtefactLabel = (kind: JobKind, count?: number): string => {
     case 'flashcards':
       return n ? `${n} flashcard${n === 1 ? '' : 's'}` : 'Your flashcards';
     case 'quiz':
-      return n ? `${n}-question quiz` : 'Your quiz';
+      return n ? `${n}-question test` : 'Your test';
     case 'test':
       return n ? `${n}-question test` : 'Your test';
     case 'summary':
@@ -223,6 +224,15 @@ export const KEEP_WORKING_COPY = "Keep working, we'll tell you when it's ready";
 export const NO_NOTIFICATIONS_COPY =
   'Come back to this screen to see it finish — notifications are off';
 
+/**
+ * The same button when we could not check.
+ *
+ * The status route did not answer (offline, or a server that predates it), so
+ * neither "we'll tell you" nor "notifications are off" is a thing we know.
+ * This says only what is certain: coming back here always works.
+ */
+export const UNVERIFIED_NOTIFICATIONS_COPY = 'Come back to this screen to see it finish';
+
 /** After the budget: honest about the wait, not about a death that has not happened. */
 export const OVER_BUDGET_COPY =
   "This is taking longer than usual. It's still running and you've only been charged once — keep waiting, or carry on and we'll tell you when it's ready.";
@@ -260,6 +270,14 @@ export interface JobSheetState {
   /** Buttons, in order. */
   actions: JobSheetAction[];
   tone: 'running' | 'done' | 'failed';
+  /**
+   * One line about the completion push — "Notified by push ✓", or the plain
+   * reason it was skipped. `null` while the job runs, and on any record whose
+   * server never wrote an audit: an absent field is not evidence of either
+   * outcome, and a caption that guessed would be the same silent failure this
+   * line exists to expose.
+   */
+  pushNote: string | null;
 }
 
 /**
@@ -271,9 +289,28 @@ export interface JobSheetContext extends JobProgressContext {
   /**
    * This device cannot be notified — permission refused, or no push token.
    * The sheet stops promising and offers to turn notifications on.
+   *
+   * The older boolean form of `notifications`; `'off'` when true.
    */
   notificationsOff?: boolean;
+  /**
+   * Whether a push about this job can actually reach this phone, as three
+   * answers: OS permission granted AND the server holding a usable token AND
+   * the account's push switch on (`ready`), any of those known false
+   * (`off`), or the server not reachable to ask (`unknown`).
+   *
+   * Three rather than two because the promise "we'll tell you when it's
+   * ready" is only true in the first case, and the claim "notifications are
+   * off" is only true in the second — build 161 made the first claim while
+   * neither was checked.
+   */
+  notifications?: PushReadiness;
 }
+
+/** Fold the two forms into one answer. Absent means: assume it works. */
+export const resolveNotificationReadiness = (
+  context: { notificationsOff?: boolean; notifications?: PushReadiness } = {}
+): PushReadiness => context.notifications ?? (context.notificationsOff ? 'off' : 'ready');
 
 export const jobSheetState = (
   job: TrackedJob,
@@ -303,6 +340,7 @@ export const jobSheetState = (
       // cannot happen again.
       actions: ['open', 'dismiss'],
       tone: 'done',
+      pushNote: describeJobPush(job.pushAudit),
     };
   }
 
@@ -323,6 +361,7 @@ export const jobSheetState = (
       waiting: false,
       actions: ['save-to-library', 'dismiss'],
       tone: 'failed',
+      pushNote: describeJobPush(job.pushAudit),
     };
   }
 
@@ -342,6 +381,7 @@ export const jobSheetState = (
       waiting: false,
       actions: ['retry', 'dismiss'],
       tone: 'failed',
+      pushNote: describeJobPush(job.pushAudit),
     };
   }
 
@@ -362,6 +402,7 @@ export const jobSheetState = (
       waiting: false,
       actions: ['retry', 'dismiss'],
       tone: 'failed',
+      pushNote: describeJobPush(job.pushAudit),
     };
   }
 
@@ -391,9 +432,18 @@ export const jobSheetState = (
     actions: [
       ...(overBudget ? (['keep-waiting'] as JobSheetAction[]) : []),
       'stop-watching' as JobSheetAction,
-      ...(context.notificationsOff ? (['enable-notifications'] as JobSheetAction[]) : []),
+      // Only offered when we KNOW it is off. Offering "Turn on notifications"
+      // to a student whose notifications are already on — which is what an
+      // unverifiable answer would do — sends them to a screen with nothing
+      // to fix.
+      ...(resolveNotificationReadiness(context) === 'off'
+        ? (['enable-notifications'] as JobSheetAction[])
+        : []),
     ],
     tone: 'running',
+    // Nothing to report until the job settles: the audit is written when it
+    // does.
+    pushNote: null,
   };
 };
 
@@ -405,11 +455,15 @@ export const jobSheetState = (
  */
 export const jobActionLabel = (
   action: JobSheetAction,
-  context: { notificationsOff?: boolean } = {}
+  context: { notificationsOff?: boolean; notifications?: PushReadiness } = {}
 ): string => {
   switch (action) {
-    case 'stop-watching':
-      return context.notificationsOff ? NO_NOTIFICATIONS_COPY : KEEP_WORKING_COPY;
+    case 'stop-watching': {
+      const readiness = resolveNotificationReadiness(context);
+      if (readiness === 'off') return NO_NOTIFICATIONS_COPY;
+      if (readiness === 'unknown') return UNVERIFIED_NOTIFICATIONS_COPY;
+      return KEEP_WORKING_COPY;
+    }
     case 'enable-notifications':
       return 'Turn on notifications';
     case 'keep-waiting':

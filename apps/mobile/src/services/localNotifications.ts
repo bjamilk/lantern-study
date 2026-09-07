@@ -16,7 +16,10 @@
 import { Platform } from 'react-native';
 
 /** Android channel for finished generations. Named so the OS settings row makes sense. */
-const JOBS_CHANNEL_ID = 'study-jobs';
+export const JOBS_CHANNEL_ID = 'study-jobs';
+
+/** Whether this process has created the channel yet. */
+let channelReady = false;
 
 type PermissionState = 'unknown' | 'granted' | 'denied';
 
@@ -27,6 +30,38 @@ let inFlight: Promise<boolean> | null = null;
 export function resetLocalNotificationPermission(): void {
   permission = 'unknown';
   inFlight = null;
+  channelReady = false;
+}
+
+/**
+ * Create the app's own notification channel, before anything is posted to it.
+ *
+ * Android drops a notification whose `channelId` names a channel that does
+ * not exist — expo-notifications catches that by re-homing it on
+ * `expo_notifications_fallback_notification_channel`, which is where the
+ * shipped build's completion notices actually landed. The student then sees
+ * an OS settings row called "Miscellaneous" instead of "Study materials", and
+ * turning THAT off silences the app in a way nothing in the app explains.
+ *
+ * Idempotent and cheap (a module flag makes every call after the first a
+ * no-op); called on the permission path and again before every post, since
+ * the permission path returns early once permission is cached and a process
+ * that never ran it would otherwise post to a channel that does not exist.
+ */
+export async function ensureJobsChannel(): Promise<void> {
+  if (Platform.OS !== 'android' || channelReady) return;
+  try {
+    const Notifications = await import('expo-notifications');
+    await Notifications.setNotificationChannelAsync(JOBS_CHANNEL_ID, {
+      name: 'Study materials',
+      description: 'Flashcards, quizzes and summaries you asked us to make.',
+      importance: Notifications.AndroidImportance.DEFAULT,
+    });
+    channelReady = true;
+  } catch {
+    // No channel API (iOS, Expo Go, a stubbed module). Posting still works;
+    // it simply has no channel to name.
+  }
 }
 
 /**
@@ -53,12 +88,7 @@ export async function ensureLocalNotificationPermission(): Promise<boolean> {
         permission = 'denied';
         return false;
       }
-      if (Platform.OS === 'android') {
-        await Notifications.setNotificationChannelAsync(JOBS_CHANNEL_ID, {
-          name: 'Study materials',
-          importance: Notifications.AndroidImportance.DEFAULT,
-        });
-      }
+      await ensureJobsChannel();
       permission = 'granted';
       return true;
     } catch {
@@ -159,6 +189,8 @@ export async function postLocalNotification(
   if (await isAlreadyInTray(ids)) return false;
   try {
     const Notifications = await import('expo-notifications');
+    // The channel has to exist BEFORE the request names it.
+    await ensureJobsChannel();
     await Notifications.scheduleNotificationAsync({
       content: {
         title: input.title,
@@ -171,8 +203,12 @@ export async function postLocalNotification(
           ...(input.jobId ? { jobId: input.jobId } : {}),
         },
       },
-      // null = deliver immediately.
-      trigger: null,
+      // Android names the channel on the TRIGGER, not the content: a bare
+      // `null` trigger is what put every completion notice on
+      // `expo_notifications_fallback_notification_channel` in the shipped
+      // build. A channel-aware trigger with no schedule still delivers
+      // immediately — it only says which channel to deliver on.
+      trigger: Platform.OS === 'android' ? { channelId: JOBS_CHANNEL_ID } : null,
     });
     return true;
   } catch {

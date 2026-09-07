@@ -233,6 +233,8 @@ export interface PersonalTestRequest {
   title: string;
   /** The note this was generated from. */
   sourceNoteId?: string;
+  /** The deck this was generated from, when the source was a deck. */
+  sourceDeckId?: string;
   /**
    * The SERVER job that generated these questions. The route stamps the saved
    * test onto that job record (`attachJobResultRef`), which is what turns the
@@ -240,6 +242,13 @@ export interface PersonalTestRequest {
    * and lets a resumed app settle the job from the record alone.
    */
   sourceJobId?: string;
+  /**
+   * Config the route folds into the session. `sourceNoteTitle` is the
+   * server's documented FALLBACK for the note's title (its own read of the
+   * note row always wins) — sent so a freshly saved note test names its note
+   * even when that read comes back empty.
+   */
+  config?: { sourceNoteTitle?: string };
   questions: unknown[];
 }
 
