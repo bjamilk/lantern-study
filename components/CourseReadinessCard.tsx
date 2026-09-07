@@ -7,12 +7,16 @@ import {
 import { Illustration } from './ui';
 import {
   MASTERY_BAND_LABELS,
-  examCountdownLabel,
   masteryBand,
   type CourseClassSignal,
   type CourseReadiness,
 } from '@lantern/shared/network';
+import {
+  buildReadinessRow,
+  type ReadinessNavTarget,
+} from '@lantern/shared/learning/readinessCard';
 import { fetchCourseReadiness, refreshMasteryGraph } from '../services/supabase';
+import { ManageOutlineModal } from './academic/ManageOutlineModal';
 
 /**
  * "Exam readiness" — the syllabus-aware rollup of the mastery graph, per
@@ -47,12 +51,30 @@ const BAND_CHIP_CLASSES: Record<string, string> = {
   strong: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
 };
 
-export const CourseReadinessCard: React.FC = () => {
+export interface CourseReadinessCardProps {
+  /** Open a deck by id — the "Review …" action. Hidden when not wired. */
+  onOpenDeck?: (deckId: string) => void;
+  /** Open a note by id — the "Read your … note" action. */
+  onOpenNote?: (noteId: string) => void;
+  /** The tests home — the "Take a test on …" action. */
+  onOpenTests?: () => void;
+  /** Settings → Academic, where `examDate` is edited. */
+  onOpenAcademicSettings?: () => void;
+}
+
+export const CourseReadinessCard: React.FC<CourseReadinessCardProps> = ({
+  onOpenDeck,
+  onOpenNote,
+  onOpenTests,
+  onOpenAcademicSettings,
+}) => {
   const [courses, setCourses] = useState<CourseReadiness[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
   const [classSignals, setClassSignals] = useState<Record<string, CourseClassSignal | 'loading'>>({});
+  /** The course whose outline is open for editing, from a "topics" action. */
+  const [outlineCourse, setOutlineCourse] = useState<{ id: string; label: string } | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -78,6 +100,49 @@ export const CourseReadinessCard: React.FC = () => {
       console.error('Error refreshing mastery graph:', e);
     } finally {
       setRefreshing(false);
+    }
+  };
+
+  /**
+   * The card's one action, routed to whichever handler the host wired.
+   *
+   * An action the host cannot honour is not rendered at all (`canRun`): a
+   * button that goes nowhere teaches the student that the card is scenery,
+   * which costs more than the button was ever worth. Topics are always
+   * honourable — the outline editor is right here in the card.
+   */
+  const canRun = (target: ReadinessNavTarget): boolean => {
+    switch (target.kind) {
+      case 'deck':
+        return !!onOpenDeck;
+      case 'note':
+        return !!onOpenNote;
+      case 'test':
+        return !!onOpenTests;
+      case 'examDate':
+        return !!onOpenAcademicSettings;
+      case 'topics':
+        return true;
+    }
+  };
+
+  const run = (target: ReadinessNavTarget) => {
+    switch (target.kind) {
+      case 'deck':
+        onOpenDeck?.(target.deckId);
+        return;
+      case 'note':
+        onOpenNote?.(target.noteId);
+        return;
+      case 'test':
+        onOpenTests?.();
+        return;
+      case 'examDate':
+        onOpenAcademicSettings?.();
+        return;
+      case 'topics':
+        setOutlineCourse({ id: target.courseId, label: target.courseLabel || 'Course' });
+        return;
     }
   };
 
@@ -134,22 +199,18 @@ export const CourseReadinessCard: React.FC = () => {
         ) : (
           <div className="space-y-3">
             {courses.map(course => {
-              const pct = course.readinessScore ?? course.coveragePct;
-              const band = masteryBand(course.readinessScore);
+              // The same row mobile's card is built from, so the two surfaces
+              // can never name a different next action for the same course.
+              const row = buildReadinessRow(course);
+              const pct = row.barPct;
+              const band = row.band;
               const expanded = expandedCourseId === course.courseId;
               const signal = classSignals[course.courseId];
               const barClass =
                 course.readinessScore != null
                   ? BAND_BAR_CLASSES[band]
                   : 'bg-lantern-primary/50';
-              const statusLine =
-                course.readinessScore != null
-                  ? `Readiness ${course.readinessScore}%`
-                  : course.coveragePct != null
-                    ? `${course.coveredCount} of ${course.outlineTotal} topics started`
-                    : course.averageMastery != null
-                      ? `Average mastery ${course.averageMastery}%`
-                      : 'No study data yet';
+              const statusLine = row.statusLine;
 
               return (
                 <div key={course.courseId} className="rounded-xl border border-lantern-border/70 p-3">
@@ -167,7 +228,7 @@ export const CourseReadinessCard: React.FC = () => {
                         ) : null}
                       </p>
                       <span className="flex items-center gap-1.5 shrink-0 text-caption text-lantern-text-tertiary">
-                        {course.daysUntil != null ? examCountdownLabel(course.daysUntil) : null}
+                        {row.daysLeftLabel}
                         {expanded ? (
                           <ChevronDownIcon className="w-4 h-4" aria-hidden />
                         ) : (
@@ -191,20 +252,62 @@ export const CourseReadinessCard: React.FC = () => {
                       ) : null}
                     </div>
 
-                    {course.nextTopic ? (
-                      <p className="mt-1.5 text-caption text-lantern-primary font-medium">
-                        Start here: {course.nextTopic.title}
-                      </p>
-                    ) : null}
                   </button>
+
+                  {/* The three topics holding the score down, named — a score
+                      without them is a verdict rather than a lead. */}
+                  {row.weakestChips.length > 0 ? (
+                    <ul className="mt-2 flex flex-wrap gap-1.5">
+                      {row.weakestChips.map(chip => (
+                        <li
+                          key={chip}
+                          className="rounded-full bg-lantern-feature-tests-tint px-2 py-0.5 text-label font-medium text-lantern-feature-tests-ink"
+                        >
+                          {chip}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+
+                  {/* ONE action. Rendered only when the host wired somewhere
+                      for it to go. */}
+                  {canRun(row.nextAction.target) ? (
+                    <div className="mt-2">
+                      <button
+                        type="button"
+                        onClick={() => run(row.nextAction.target)}
+                        aria-label={row.nextAction.accessibilityLabel}
+                        className="rounded-lg bg-lantern-feature-tests-tint px-3 py-1.5 text-caption font-semibold text-lantern-feature-tests-ink transition-opacity hover:opacity-80"
+                      >
+                        {row.nextAction.label}
+                      </button>
+                      {row.nextAction.reason ? (
+                        <p className="mt-1 text-label text-lantern-text-tertiary">
+                          {row.nextAction.reason}
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {/* The countdown's stand-in when there is no exam date —
+                      never a second action beside a countdown. */}
+                  {row.examDatePrompt && onOpenAcademicSettings ? (
+                    <button
+                      type="button"
+                      onClick={() => run(row.examDatePrompt!.target)}
+                      className="mt-1.5 text-label font-medium text-lantern-primary hover:underline"
+                      aria-label={`${row.examDatePrompt.label}. ${row.examDatePrompt.reason}`}
+                    >
+                      {row.examDatePrompt.label}
+                    </button>
+                  ) : null}
 
                   {expanded ? (
                     <div className="mt-3 pt-3 border-t border-lantern-border/60">
                       {course.topics.length === 0 ? (
                         <p className="text-caption text-lantern-text-tertiary">
-                          No outline or study data for this course yet. Add topics from the course
-                          outline in your Library, or just start studying — readiness fills in on its
-                          own.
+                          No outline or study data for this course yet. Add topics below, or just
+                          start studying — readiness fills in on its own.
                         </p>
                       ) : (
                         <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
@@ -233,6 +336,23 @@ export const CourseReadinessCard: React.FC = () => {
                         </ul>
                       )}
 
+                      {/* The list above is a report; this is how to change it.
+                          Without it a student who sees a missing or misspelt
+                          topic here has nowhere to go. */}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          run({
+                            kind: 'topics',
+                            courseId: course.courseId,
+                            courseLabel: course.courseCode || undefined,
+                          })
+                        }
+                        className="mt-2 text-caption font-semibold text-lantern-primary hover:underline"
+                      >
+                        Edit topics
+                      </button>
+
                       <div className="mt-3">
                         {signal === 'loading' ? (
                           <p className="text-label text-lantern-text-tertiary" role="status">
@@ -258,6 +378,15 @@ export const CourseReadinessCard: React.FC = () => {
           </div>
         )}
       </div>
+
+      <ManageOutlineModal
+        isOpen={!!outlineCourse}
+        onClose={() => setOutlineCourse(null)}
+        courseId={outlineCourse?.id ?? ''}
+        courseLabel={outlineCourse?.label ?? null}
+        // The outline drives coverage, so every number on this card follows it.
+        onChanged={() => void load()}
+      />
     </div>
   );
 };

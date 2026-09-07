@@ -421,6 +421,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                         <ToggleSwitch enabled={notifications.marketplaceUpdates} onChange={(val) => onUpdateSettingsCategory('notifications', { marketplaceUpdates: val })} label="Marketplace Updates" description="Alerts about listings and messages." />
                         <ToggleSwitch enabled={notifications.badgeUnlocks} onChange={(val) => onUpdateSettingsCategory('notifications', { badgeUnlocks: val })} label="Badge Unlocks" description="Achievement notifications." />
                         <ToggleSwitch enabled={notifications.srsReminders} onChange={(val) => onUpdateSettingsCategory('notifications', { srsReminders: val })} label="Review reminders" description="Browser alerts when cards are due — only while Lantern is in the background, at most every few hours." />
+                        <ToggleSwitch enabled={notifications.examReminders !== false} onChange={(val) => onUpdateSettingsCategory('notifications', { examReminders: val })} label="Exam reminders" description="A week before your exam, the day before, and on the morning." />
                         <ToggleSwitch enabled={notifications.testResults} onChange={(val) => onUpdateSettingsCategory('notifications', { testResults: val })} label="Test Results" description="Notifications when tests are completed." />
                     </div>
 

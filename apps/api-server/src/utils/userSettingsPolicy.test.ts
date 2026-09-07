@@ -22,6 +22,19 @@ describe('userSettingsPolicy', () => {
     expect(shouldCreateInAppNotification(settings, 'warning')).toBe(true);
   });
 
+  it('honours the exam reminders toggle for exam_reminder notifications', () => {
+    expect(shouldCreateInAppNotification(baseSettings, 'exam_reminder')).toBe(true);
+    const settings = {
+      ...baseSettings,
+      notifications: {
+        ...baseSettings.notifications,
+        examReminders: false,
+      },
+    };
+    expect(shouldCreateInAppNotification(settings, 'exam_reminder')).toBe(false);
+    expect(shouldSendExpoPush(settings, 'exam_reminder')).toBe(false);
+  });
+
   it('blocks push when pushEnabled is false', () => {
     const settings = {
       ...baseSettings,

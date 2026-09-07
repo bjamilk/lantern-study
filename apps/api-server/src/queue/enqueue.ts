@@ -26,6 +26,7 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   "cron.jobAlerts": "marketplace-alerts",
   "cron.jobReminders": "marketplace-alerts",
   "cron.studyReminders": "marketplace-alerts",
+  "cron.examReminders": "marketplace-alerts",
   "cron.weeklySummary": "marketplace-alerts",
 };
 

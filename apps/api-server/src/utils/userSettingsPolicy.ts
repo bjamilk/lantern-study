@@ -53,6 +53,10 @@ const NOTIFICATION_PREF_BY_TYPE: Record<
   job_offer_reminder: "marketplaceUpdates",
   test_result: "testResults",
   srs_reminder: "srsReminders",
+  // Exam countdown reminders (services/examReminders.ts). Without this row the
+  // "Exam reminders" toggle is a switch wired to nothing: an unmapped type
+  // falls through to "always deliver" below.
+  exam_reminder: "examReminders",
   daily_reminder: "dailyReminder",
   challenge_invite: "groupActivity",
   challenge_accepted: "groupActivity",

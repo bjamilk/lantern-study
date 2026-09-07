@@ -1,26 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
-import {
-  examCountdownLabel,
-  masteryBand,
-  type CourseReadiness,
-} from '@lantern/shared/network';
 import { fetchCourseReadiness } from '../../services/api';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { Card } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { tabularNums } from '../../design/typeScale';
 import { clampProgressPercent } from './progressBar';
+import {
+  buildReadinessRows,
+  type ReadinessCardRow,
+  type ReadinessCourseInput,
+  type ReadinessNavTarget,
+} from './readinessCardModel';
 
 import { toTab } from '../../navigation/nestedTab';
 
 /**
- * Home's "Exam readiness" card: one compact bar per active course, a
- * Start-here pointer for day one, tap-through to the full Mastery screen.
+ * Home's "Exam readiness" card: one compact bar per active course, the three
+ * topics that are actually holding the score down, and ONE button that says
+ * where it goes.
  *
  * Spec §5.7 makes this the SECOND card on Home and the screen's ONE tint
  * panel, in the tests family's sky — so the single coloured thing above the
  * fold is the answer to "am I ready", not a decoration.
+ *
+ * Every rule about what to show — the days-left line, which chips, which one
+ * action and what it is called — lives in `readinessCardModel.ts` and is
+ * tested there. This file only draws it and drives the navigator.
  *
  * It no longer disappears when there are no courses. A card that renders
  * nothing is indistinguishable from a card that failed, and both read to a
@@ -40,9 +46,49 @@ const openMastery = (courseId?: string) =>
     params: toTab('Mastery', courseId ? { courseId } : undefined),
   });
 
+const openStudy = (screen: string, params?: Record<string, unknown>) =>
+  navigateFromRoot('Main', {
+    screen: 'StudyTab',
+    params: toTab(screen, params),
+  });
+
+/**
+ * The one action, driven through the existing stack helpers only — `toTab`
+ * carries `initial: false`, so the target lands ON TOP of its tab's root
+ * rather than replacing it and stranding Back (navigation/nestedTab.ts).
+ */
+export function runReadinessAction(target: ReadinessNavTarget): void {
+  switch (target.kind) {
+    case 'deck':
+      openStudy('DeckDetail', { deckId: target.deckId });
+      return;
+    case 'note':
+      openStudy('NoteEditor', { noteId: target.noteId });
+      return;
+    case 'test':
+      // TestBuilder takes no course preselect today (StudyStackParamList:
+      // `{ noteId?: string }`), so it opens on its own picker rather than
+      // being handed a param it would silently drop.
+      openStudy('TestBuilder');
+      return;
+    case 'topics':
+      // The outline editor lives on Library, which opens it on arrival from
+      // this param — the topics list is where "Add your topics" must land.
+      openStudy('Library', {
+        manageOutlineCourseId: target.courseId,
+        manageOutlineCourseLabel: target.courseLabel,
+      });
+      return;
+    case 'examDate':
+      // Exam dates are edited in Settings → Academic, on the root stack.
+      navigateFromRoot('AcademicSettings');
+      return;
+  }
+}
+
 type LoadState =
   | { status: 'loading' }
-  | { status: 'ready'; courses: CourseReadiness[] }
+  | { status: 'ready'; courses: ReadinessCourseInput[] }
   | { status: 'failed' };
 
 export function CourseReadinessCard() {
@@ -66,7 +112,8 @@ export function CourseReadinessCard() {
   // screen's only tint panel is a flash of colour that means nothing.
   if (state.status === 'loading') return null;
 
-  const courses = state.status === 'ready' ? state.courses : [];
+  const rows: ReadinessCardRow[] =
+    state.status === 'ready' ? buildReadinessRows(state.courses, 3) : [];
 
   return (
     <Card
@@ -85,35 +132,31 @@ export function CourseReadinessCard() {
           We could not load your readiness just now. Your study still counts — pull down to
           refresh.
         </Text>
-      ) : courses.length === 0 ? (
+      ) : rows.length === 0 ? (
         <Text className="text-caption text-lantern-text-secondary">
           Add your courses and exam dates and this becomes a per-course readiness score.
         </Text>
       ) : (
-        courses.slice(0, 3).map((course) => {
-          const pct = course.readinessScore ?? course.coveragePct;
-          const band = masteryBand(course.readinessScore);
-          const statusLine =
-            course.readinessScore != null
-              ? `Readiness ${course.readinessScore}%`
-              : course.coveragePct != null
-                ? `${course.coveredCount} of ${course.outlineTotal} topics started`
-                : 'No study data yet';
-          return (
+        rows.map((row) => (
+          <View
+            key={row.courseId}
+            className="py-2 border-b border-lantern-border/50 last:border-b-0"
+          >
             <Pressable
-              key={course.courseId}
-              onPress={() => openMastery(course.courseId)}
+              onPress={() => openMastery(row.courseId)}
               accessibilityRole="button"
-              accessibilityLabel={`${course.courseCode || 'Course'}: ${statusLine}. Open breakdown`}
-              className="py-2 border-b border-lantern-border/50 last:border-b-0"
+              accessibilityLabel={`${row.courseLabel}: ${row.statusLine}. Open breakdown`}
             >
               <View className="flex-row items-center justify-between" style={{ gap: 8 }}>
-                <Text className="flex-1 text-caption font-semibold text-lantern-text" numberOfLines={1}>
-                  {course.courseCode || 'Course'}
+                <Text
+                  className="flex-1 text-caption font-semibold text-lantern-text"
+                  numberOfLines={1}
+                >
+                  {row.courseLabel}
                 </Text>
-                {course.daysUntil != null ? (
+                {row.daysLeftLabel ? (
                   <Text className="text-label text-lantern-text-tertiary" style={tabularNums}>
-                    {examCountdownLabel(course.daysUntil)}
+                    {row.daysLeftLabel}
                   </Text>
                 ) : null}
                 <AppIcon
@@ -125,31 +168,81 @@ export function CourseReadinessCard() {
               </View>
               <View className="mt-1.5 h-1.5 rounded-full bg-lantern-background-secondary overflow-hidden">
                 <View
-                  className={`h-full rounded-full ${course.readinessScore != null ? BAND_BAR[band] : 'bg-lantern-primary/50'}`}
+                  className={`h-full rounded-full ${row.readinessScore != null ? BAND_BAR[row.band] : 'bg-lantern-primary/50'}`}
                   style={{
-                    width: `${Math.max(clampProgressPercent(pct), pct != null ? 4 : 0)}%`,
+                    width: `${Math.max(
+                      clampProgressPercent(row.barPct),
+                      row.barPct != null ? 4 : 0
+                    )}%`,
                   }}
                 />
               </View>
-              <View className="mt-1 flex-row items-center justify-between" style={{ gap: 8 }}>
-                <Text className="text-label text-lantern-text-secondary" style={tabularNums}>
-                  {statusLine}
-                </Text>
-                {course.nextTopic ? (
-                  <Text
-                    className="flex-1 text-right text-label font-medium text-lantern-primary-text"
-                    numberOfLines={1}
-                  >
-                    Start here: {course.nextTopic.title}
-                  </Text>
-                ) : null}
-              </View>
+              <Text className="mt-1 text-label text-lantern-text-secondary" style={tabularNums}>
+                {row.statusLine}
+              </Text>
             </Pressable>
-          );
-        })
+
+            {/* The countdown's stand-in, not a second action: a course with no
+                exam date has an empty slot where the days-left line goes, and
+                this fills THAT slot. Never shown alongside a countdown. */}
+            {row.examDatePrompt ? (
+              <Pressable
+                onPress={() => runReadinessAction(row.examDatePrompt!.target)}
+                hitSlop={6}
+                accessibilityRole="button"
+                accessibilityLabel={`${row.examDatePrompt.label}. ${row.examDatePrompt.reason}`}
+                className="mt-1 self-start"
+              >
+                <Text className="text-label font-medium text-lantern-primary-text">
+                  {row.examDatePrompt.label}
+                </Text>
+              </Pressable>
+            ) : null}
+
+            {/* The three topics holding the score down, in the tests ink —
+                named, because "you're at 44%" without a name is a verdict
+                rather than a lead. */}
+            {row.weakestChips.length > 0 ? (
+              <View className="mt-1.5 flex-row flex-wrap" style={{ gap: 6 }}>
+                {row.weakestChips.map((chip) => (
+                  <View
+                    key={chip}
+                    className="rounded-full bg-lantern-feature-tests-tint px-2 py-0.5"
+                  >
+                    <Text
+                      className="text-label font-medium text-lantern-feature-tests-ink"
+                      numberOfLines={1}
+                    >
+                      {chip}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            <Pressable
+              onPress={() => runReadinessAction(row.nextAction.target)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel={row.nextAction.accessibilityLabel}
+              className="mt-2 self-start rounded-lg bg-lantern-feature-tests-tint px-3 py-1.5"
+            >
+              <Text className="text-caption font-semibold text-lantern-feature-tests-ink">
+                {row.nextAction.label}
+              </Text>
+            </Pressable>
+            {/* Why this and not something else, in one sentence. Without it the
+                button is an instruction; with it, it is an answer. */}
+            {row.nextAction.reason ? (
+              <Text className="mt-1 text-label text-lantern-text-tertiary">
+                {row.nextAction.reason}
+              </Text>
+            ) : null}
+          </View>
+        ))
       )}
 
-      {courses.length > 0 ? (
+      {rows.length > 0 ? (
         <Pressable
           onPress={() => openMastery()}
           hitSlop={8}

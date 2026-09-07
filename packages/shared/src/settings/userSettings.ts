@@ -10,6 +10,13 @@ export interface NotificationSettings {
   marketplaceUpdates: boolean;
   badgeUnlocks: boolean;
   srsReminders: boolean;
+  /**
+   * The exam countdown reminders (a week before, the day before, the morning
+   * of). Defaults ON: a student who set an exam date has already asked to be
+   * reminded about it, and a countdown that stays silent is the one failure
+   * this feature cannot survive.
+   */
+  examReminders: boolean;
   testResults: boolean;
   emailEnabled: boolean;
   weeklyDigest: boolean;
@@ -128,6 +135,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
     marketplaceUpdates: true,
     badgeUnlocks: true,
     srsReminders: true,
+    examReminders: true,
     testResults: true,
     emailEnabled: true,
     weeklyDigest: true,

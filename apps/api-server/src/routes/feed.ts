@@ -132,6 +132,31 @@ masteryRouter.get(
 );
 
 /**
+ * GET /api/v1/mastery/unmatched-tags?courseId= — the tags this student uses on
+ * a course that match no topic in its shared outline.
+ *
+ * The inline outline edit itself is already PATCH
+ * /api/v1/courses/:courseId/topics/:topicId (rename), with POST for a new
+ * topic — this endpoint is what tells the student WHICH edits are worth making
+ * rather than leaving them to diff two lists by eye.
+ */
+masteryRouter.get(
+  '/unmatched-tags',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const courseId = str(req.query.courseId);
+    if (!courseId) {
+      res.status(400).json({ success: false, error: 'courseId is required' });
+      return;
+    }
+    const data = await getTopicMasteryService(supabaseService).unmatchedTags(userId, courseId);
+    res.json({ success: true, data });
+  })
+);
+
+/**
  * GET /api/v1/mastery/course/:courseId — population aggregate.
  * Refused below a 20-student cohort; the RPC enforces the same floor so this
  * endpoint is not the only thing protecting a small class from a

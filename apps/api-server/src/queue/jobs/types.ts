@@ -97,6 +97,7 @@ export type CronJobName =
   | "cron.jobAlerts"
   | "cron.jobReminders"
   | "cron.studyReminders"
+  | "cron.examReminders"
   | "cron.weeklySummary";
 
 export type JobName = AIJobName | FileJobName | ExportJobName | CronJobName;

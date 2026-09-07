@@ -510,6 +510,10 @@ async function processCronJob(job: Job, _progress: JobProgress): Promise<unknown
   if (job.name === "cron.studyReminders") {
     return processStudyReminders(supabaseService);
   }
+  if (job.name === "cron.examReminders") {
+    const { processExamReminders } = await import("../../services/examReminders");
+    return processExamReminders(supabaseService);
+  }
   if (job.name === "cron.weeklySummary") {
     return processWeeklySummary(supabaseService);
   }
@@ -647,6 +651,13 @@ export async function scheduleRepeatableCronJobs(): Promise<void> {
     "cron.studyReminders",
     {},
     { repeat: { every: 4 * 60 * 60 * 1000 }, jobId: "repeat-study-reminders" },
+  );
+  await alertsQueue.add(
+    // Hourly, not four-hourly: the 06:00-local gate means a slower loop could
+    // deliver a "your exam is today" reminder in the afternoon.
+    "cron.examReminders",
+    {},
+    { repeat: { every: 60 * 60 * 1000 }, jobId: "repeat-exam-reminders" },
   );
   await alertsQueue.add(
     "cron.weeklySummary",

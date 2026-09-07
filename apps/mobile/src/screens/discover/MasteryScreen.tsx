@@ -12,6 +12,8 @@ import {
 import { fetchCourseReadiness, fetchMasteryGraph, refreshMasteryGraph } from '../../services/api';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { runReadinessAction } from '../../components/dashboard/CourseReadinessCard';
+import { buildReadinessRow } from '../../components/dashboard/readinessCardModel';
 
 type NavigationProp = { goBack: () => void };
 type RouteProp = { params?: { courseId?: string } };
@@ -68,14 +70,10 @@ const CourseBlock: React.FC<{ course: CourseReadiness; expanded: boolean }> = ({
 }) => {
   const pct = course.readinessScore ?? course.coveragePct;
   const band = masteryBand(course.readinessScore);
-  const statusLine =
-    course.readinessScore != null
-      ? `Readiness ${course.readinessScore}%`
-      : course.coveragePct != null
-        ? `${course.coveredCount} of ${course.outlineTotal} topics started`
-        : course.averageMastery != null
-          ? `Average mastery ${course.averageMastery}%`
-          : 'No study data yet';
+  // The same row the Home card is built from, so the breakdown screen and the
+  // card can never name a different next action for the same course.
+  const row = buildReadinessRow(course);
+  const statusLine = row.statusLine;
 
   return (
     <View className="mb-3 rounded-xl border border-lantern-border/70 bg-lantern-surface p-3">
@@ -107,10 +105,19 @@ const CourseBlock: React.FC<{ course: CourseReadiness; expanded: boolean }> = ({
           </Text>
         ) : null}
       </View>
-      {course.nextTopic ? (
-        <Text className="mt-1.5 text-xs font-medium text-lantern-primary-text">
-          Start here: {course.nextTopic.title}
+      <Pressable
+        onPress={() => runReadinessAction(row.nextAction.target)}
+        hitSlop={6}
+        accessibilityRole="button"
+        accessibilityLabel={row.nextAction.accessibilityLabel}
+        className="mt-2 self-start rounded-lg bg-lantern-feature-tests-tint px-3 py-1.5"
+      >
+        <Text className="text-caption font-semibold text-lantern-feature-tests-ink">
+          {row.nextAction.label}
         </Text>
+      </Pressable>
+      {row.nextAction.reason ? (
+        <Text className="mt-1 text-label text-lantern-text-tertiary">{row.nextAction.reason}</Text>
       ) : null}
 
       {expanded && course.topics.length > 0 ? (
@@ -135,6 +142,24 @@ const CourseBlock: React.FC<{ course: CourseReadiness; expanded: boolean }> = ({
               </Text>
             </View>
           ))}
+          {/* The list above is a report; this is the way to change it. Without
+              it a student who sees a wrong or missing topic here has nowhere
+              to go — the outline editor is two screens away in Library. */}
+          <Pressable
+            onPress={() =>
+              runReadinessAction({
+                kind: 'topics',
+                courseId: course.courseId,
+                ...(course.courseCode ? { courseLabel: course.courseCode } : {}),
+              })
+            }
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit the topics for ${course.courseCode || 'this course'}`}
+            className="mt-2 self-start"
+          >
+            <Text className="text-caption font-semibold text-lantern-primary-text">Edit topics</Text>
+          </Pressable>
         </View>
       ) : null}
     </View>

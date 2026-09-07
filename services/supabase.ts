@@ -5540,6 +5540,16 @@ export const fetchCourseReadiness = (courseId?: string) =>
     15000
   );
 
+/**
+ * Tags on this student's own work for a course that no outline topic covers.
+ * Drives the outline editor's "Unmatched tags" one-tap add.
+ */
+export const fetchUnmatchedTags = (courseId: string) =>
+  networkGet<import('@lantern/shared/learning/readinessCard').UnmatchedTagsResponse>(
+    `/mastery/unmatched-tags${networkQuery({ courseId })}`,
+    10000
+  );
+
 // ── Phase 4 Q — referrals ──
 
 export const fetchReferralSummary = () => networkGet<ReferralSummary>('/referrals');

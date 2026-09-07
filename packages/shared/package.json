@@ -143,6 +143,12 @@
       "require": "./dist/learning/index.js",
       "default": "./src/learning/index.ts"
     },
+    "./learning/*": {
+      "types": "./src/learning/*.ts",
+      "import": "./src/learning/*.ts",
+      "require": "./dist/learning/*.js",
+      "default": "./src/learning/*.ts"
+    },
     "./jobs": {
       "types": "./src/jobs/index.ts",
       "import": "./src/jobs/index.ts",

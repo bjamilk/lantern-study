@@ -82,13 +82,15 @@ export const COURSE_TOPIC_COPY = {
   // ---------- Manage: rename, reorder, delete ----------
   manageTitle: 'Course topics',
   /**
-   * The outline is empty, seen from a surface that only CURATES it. Distinct
-   * from {@link COURSE_TOPIC_COPY.empty}, which tells the picker's user to type
-   * a title — there is no title field here, so repeating that line would be an
-   * instruction the surface cannot honour. Says where topics actually come from.
+   * The outline is empty, seen from the manage surface — which now has its own
+   * title field, so the line points at the field that is right there rather
+   * than sending the student off to the Topic picker to find one.
    */
-  manageEmpty:
-    'No topics yet. Topics are added while filing a note, deck or test — choose the course, then add one from the Topic picker.',
+  manageEmpty: 'No topics yet. Add the first one above to start this course’s outline.',
+  /** Heading and field for adding a topic in place, on the manage surface. */
+  addTitle: 'Add a topic',
+  addPlaceholder: 'Topic title',
+  addAction: 'Add',
   rename: 'Rename topic',
   renameHint: 'Renaming changes this topic for everyone taking the course.',
   renameFailed: 'Could not rename that topic',

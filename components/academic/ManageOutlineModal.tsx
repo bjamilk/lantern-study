@@ -12,17 +12,25 @@ import {
   TOPIC_TITLE_MAX,
   formatDeleteTopicTitle,
   sortCourseTopics,
+  upsertCourseTopic,
 } from '@lantern/shared';
 import type { CourseTopic } from '../../types';
 import Modal from '../ui/Modal';
 import { Button } from '../ui/Button';
 import { ConfirmDialog } from '../ui/ConfirmDialog';
 import {
+  createCourseTopic,
   deleteCourseTopic,
   fetchCourseTopics,
   renameCourseTopic,
   reorderCourseTopics,
 } from '../../services/academic';
+import { fetchUnmatchedTags } from '../../services/supabase';
+import {
+  planUnmatchedTags,
+  unmatchedTagSubtitle,
+  type UnmatchedTag,
+} from '@lantern/shared/learning/readinessCard';
 
 export interface ManageOutlineModalProps {
   isOpen: boolean;
@@ -54,8 +62,11 @@ export interface ManageOutlineModalProps {
  * works from the keyboard, and every mutation refreshes the Library overview via
  * `onChanged` so the tree's counts stay truthful.
  *
- * New topics are NOT added here — they are created inline from the topic picker
- * while filing a note, deck or test. This surface only curates what exists.
+ * Topics are added here too, in place. The outline used to be curate-only —
+ * new topics existed only as a side effect of filing a note, deck or test —
+ * so a student sent here to fill in a course's topics landed on a screen that
+ * could not add one. The endpoint is find-or-create, so typing a title that
+ * already exists returns the existing row instead of a duplicate.
  */
 export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
   isOpen,
@@ -75,6 +86,14 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftTitle, setDraftTitle] = useState('');
   const [pendingDelete, setPendingDelete] = useState<CourseTopic | null>(null);
+  /** The in-place "Add a topic" field. */
+  const [newTitle, setNewTitle] = useState('');
+  /**
+   * Tags on this student's own work that no outline topic covers. `null` means
+   * "not answered yet, or could not be read" and HIDES the section — an empty
+   * "Unmatched tags" header is a promise the card cannot keep.
+   */
+  const [unmatched, setUnmatched] = useState<UnmatchedTag[] | null>(null);
   /** Surfaced inside ConfirmDialog, which stays open over the parent's error line. */
   const [deleteError, setDeleteError] = useState<string | null>(null);
   // Announced to assistive tech after a move/rename/delete, and the disabled
@@ -88,6 +107,8 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
     setActionError(null);
     setStatus('');
     setPendingDelete(null);
+    setNewTitle('');
+    setUnmatched(null);
     const current = ++seq.current;
     setLoading(true);
     setLoadError(false);
@@ -104,7 +125,63 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
       .finally(() => {
         if (seq.current === current) setLoading(false);
       });
+    // Additive: a failure here leaves the section away rather than blocking
+    // the outline this modal exists to edit.
+    fetchUnmatchedTags(courseId)
+      .then((data) => {
+        if (seq.current === current) setUnmatched(data?.tags ?? []);
+      })
+      .catch(() => {
+        if (seq.current === current) setUnmatched(null);
+      });
   }, [isOpen, courseId]);
+
+  const addTopic = async () => {
+    const title = newTitle.trim().replace(/\s+/g, ' ');
+    if (!title) return;
+    if (title.length > TOPIC_TITLE_MAX) {
+      setActionError(COURSE_TOPIC_COPY.titleTooLong);
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    try {
+      const created = await createCourseTopic(courseId, title);
+      // find-or-create: an existing title comes back as its existing row, so
+      // upsert rather than append — appending would show a twin that the next
+      // load silently removes.
+      setTopics((prev) => upsertCourseTopic(prev, created));
+      setNewTitle('');
+      setStatus(`Added ${created.title}`);
+      onChanged?.();
+    } catch (e: any) {
+      setActionError(e?.message || COURSE_TOPIC_COPY.createFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * One click turns a tag the student already uses into an outline topic. The
+   * row leaves the list because it is no longer unmatched — it is now a topic.
+   */
+  const addTagAsTopic = async (tag: string) => {
+    setBusy(true);
+    setActionError(null);
+    try {
+      const created = await createCourseTopic(courseId, tag);
+      setTopics((prev) => upsertCourseTopic(prev, created));
+      setUnmatched((prev) =>
+        prev ? prev.filter((row) => row.tag.toLowerCase() !== tag.toLowerCase()) : prev
+      );
+      setStatus(`Added ${created.title}`);
+      onChanged?.();
+    } catch (e: any) {
+      setActionError(e?.message || COURSE_TOPIC_COPY.createFailed);
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const beginRename = (topic: CourseTopic) => {
     setActionError(null);
@@ -198,6 +275,8 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
     }
   };
 
+  const unmatchedPlan = planUnmatchedTags(unmatched);
+
   return (
     <>
       <Modal
@@ -246,6 +325,38 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
             {actionError}
           </p>
         ) : null}
+
+        {/* Add sits ABOVE the list and outside every load gate: the course a
+            student is sent here to fill in is exactly the one whose list is
+            empty, and a field that only appeared once topics existed could
+            never have created the first one. */}
+        <div className="mt-3 flex items-center gap-2">
+          <input
+            type="text"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                void addTopic();
+              }
+            }}
+            disabled={busy || loadError}
+            maxLength={TOPIC_TITLE_MAX}
+            placeholder={COURSE_TOPIC_COPY.addPlaceholder}
+            aria-label={COURSE_TOPIC_COPY.addTitle}
+            className="flex-1 min-w-0 px-2 py-2 text-body rounded-md border border-lantern-border bg-lantern-surface text-lantern-text focus:outline-none focus:ring-2 focus:ring-lantern-primary disabled:opacity-50"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void addTopic()}
+            disabled={busy || loadError || !newTitle.trim()}
+            className="min-h-[44px] shrink-0"
+          >
+            {COURSE_TOPIC_COPY.addAction}
+          </Button>
+        </div>
 
         <div className="mt-3">
           {loading ? (
@@ -365,6 +476,36 @@ export const ManageOutlineModal: React.FC<ManageOutlineModalProps> = ({
             </ul>
           )}
         </div>
+
+        {unmatchedPlan.visible ? (
+          <div className="mt-4 border-t border-lantern-border/60 pt-3">
+            <h3 className="text-body font-semibold text-lantern-text">Unmatched tags</h3>
+            <p className="text-label text-lantern-text-tertiary">
+              You already file work under these, but they are not in the outline yet.
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {unmatchedPlan.tags.slice(0, 6).map((row) => (
+                <li key={row.tag} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-caption text-lantern-text">{row.tag}</span>
+                    <span className="block text-label text-lantern-text-tertiary">
+                      {unmatchedTagSubtitle(row)}
+                    </span>
+                  </span>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => void addTagAsTopic(row.tag)}
+                    disabled={busy}
+                    className="min-h-[44px] shrink-0"
+                  >
+                    Add as topic
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
 
         <div className="mt-4 flex justify-end">
           <Button type="button" variant="ghost" onClick={onClose} disabled={busy} className="min-h-[44px]">

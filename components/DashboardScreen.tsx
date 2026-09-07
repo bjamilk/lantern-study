@@ -277,6 +277,14 @@ interface DashboardScreenProps {
   onReviewDueCards?: () => void;
   /** Wave 1 doors on Home. Each tile renders only when its route is wired. */
   onNavigateToTests?: () => void;
+  /**
+   * The readiness card's one action needs somewhere to go. Each is optional
+   * and the card hides the action it cannot honour, so a host that wires none
+   * of them still gets a truthful card rather than dead buttons.
+   */
+  onOpenDeckById?: (deckId: string) => void;
+  onOpenNoteById?: (noteId: string) => void;
+  onOpenAcademicSettings?: () => void;
   onRecordLecture?: () => void;
   onViewTestResult?: (result: TestResult) => void;
   dailyQuests?: Array<{ id: string; questType: string; targetCount: number; progressCount: number; completed: boolean; rewardXp: number }>;
@@ -422,6 +430,9 @@ export default function DashboardScreen({
   onNavigateToAITools,
   onReviewDueCards,
   onNavigateToTests,
+  onOpenDeckById,
+  onOpenNoteById,
+  onOpenAcademicSettings,
   onRecordLecture,
   onViewTestResult,
   dailyQuests = [],
@@ -1285,7 +1296,12 @@ export default function DashboardScreen({
           sit three screens down inside "Progress & analytics"; it is the honest
           answer to "am I ready?", so it goes where that question is asked. */}
       <div className="px-4 md:px-8 mt-4 w-full">
-        <CourseReadinessCard />
+        <CourseReadinessCard
+          onOpenDeck={onOpenDeckById}
+          onOpenNote={onOpenNoteById}
+          onOpenTests={onNavigateToTests}
+          onOpenAcademicSettings={onOpenAcademicSettings}
+        />
       </div>
 
       <div className="px-4 md:px-8 mt-4 w-full flex flex-col gap-3">

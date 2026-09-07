@@ -20,7 +20,9 @@ import type { SupabaseService } from './supabase';
 import { logger } from '../utils/logger';
 import {
   computeCourseReadiness,
+  type CourseActionEvidence,
   type CourseReadiness,
+  type NextActionArtefact,
 } from '@lantern/shared/network';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -251,6 +253,76 @@ export class TopicMasteryService {
   }
 
   /**
+   * The artefacts standing behind each outline topic: the student's own decks
+   * and notes, keyed by `course_topics.id`.
+   *
+   * This is the OTHER half of the outline↔tag bridge. `computeCourseReadiness`
+   * bridges free-text mastery tags to outline TITLES; a next action has to
+   * point at a row, so it joins on `topic_id` — the explicit foreign key that
+   * 20260826120000 put on `decks` and `notes` — and never on a tag. A tag match
+   * would happily hand back another student's deck, or a deck on a different
+   * course that happens to use the same word.
+   *
+   * Scoped by `topic_id IN (this course's outline)` rather than by course_id:
+   * an artefact can carry a topic without a course, and the topic already
+   * determines the course. Degrades to `{}` — a course-level next action, not a
+   * wrong one — if the columns are not there yet.
+   */
+  private async resolveActionEvidence(
+    userId: string,
+    topicIds: string[]
+  ): Promise<{ decks: Map<string, NextActionArtefact>; notes: Map<string, NextActionArtefact> }> {
+    const byTopic = {
+      decks: new Map<string, NextActionArtefact>(),
+      notes: new Map<string, NextActionArtefact>(),
+    };
+    if (topicIds.length === 0) return byTopic;
+
+    const ids = topicIds.slice(0, 1000);
+    const [deckResult, noteResult] = await Promise.all([
+      this.db
+        .from('decks')
+        .select('id, name, topic_id')
+        .eq('user_id', userId)
+        .in('topic_id', ids)
+        .order('created_at', { ascending: false })
+        .limit(500),
+      this.db
+        .from('notes')
+        .select('id, title, topic_id')
+        .eq('user_id', userId)
+        .in('topic_id', ids)
+        .order('updated_at', { ascending: false })
+        .limit(500),
+    ]);
+
+    if (deckResult.error) {
+      logger.warn('next action: could not read decks by topic', {
+        error: deckResult.error.message,
+      });
+    }
+    if (noteResult.error) {
+      logger.warn('next action: could not read notes by topic', {
+        error: noteResult.error.message,
+      });
+    }
+
+    // Newest first, so the first row for a topic is the one we keep.
+    for (const row of deckResult.data || []) {
+      const topicId = (row as any).topic_id as string | null;
+      if (!topicId || byTopic.decks.has(topicId)) continue;
+      byTopic.decks.set(topicId, { id: (row as any).id, title: (row as any).name ?? null });
+    }
+    for (const row of noteResult.data || []) {
+      const topicId = (row as any).topic_id as string | null;
+      if (!topicId || byTopic.notes.has(topicId)) continue;
+      byTopic.notes.set(topicId, { id: (row as any).id, title: (row as any).title ?? null });
+    }
+
+    return byTopic;
+  }
+
+  /**
    * Syllabus-aware readiness for every ACTIVE enrolled course — unlike
    * examReadiness above it does not require an exam date, so a brand-new
    * student sees their courses (and where to start) from day one. The
@@ -321,6 +393,12 @@ export class TopicMasteryService {
       });
     }
 
+    const allTopicIds: string[] = [];
+    for (const list of outlineByCourse.values()) {
+      for (const topic of list) allTopicIds.push(topic.id);
+    }
+    const artefacts = await this.resolveActionEvidence(userId, allTopicIds);
+
     const courses = enrolments.map((e: any) => {
       const course = Array.isArray(e.courses) ? e.courses[0] : e.courses;
       let daysUntil: number | null = null;
@@ -328,14 +406,27 @@ export class TopicMasteryService {
         const examDate = new Date(`${e.exam_date}T00:00:00Z`);
         daysUntil = Math.max(0, Math.ceil((examDate.getTime() - today.getTime()) / 86_400_000));
       }
+      const outline = outlineByCourse.get(e.course_id) || [];
+      const evidence: CourseActionEvidence = {
+        decksByTopicId: {},
+        notesByTopicId: {},
+      };
+      for (const topic of outline) {
+        const deck = artefacts.decks.get(topic.id);
+        const note = artefacts.notes.get(topic.id);
+        if (deck) (evidence.decksByTopicId as Record<string, NextActionArtefact>)[topic.id] = deck;
+        if (note) (evidence.notesByTopicId as Record<string, NextActionArtefact>)[topic.id] = note;
+      }
+
       return computeCourseReadiness({
         courseId: e.course_id,
         courseCode: course?.code ?? null,
         courseTitle: course?.title ?? null,
         examDate: e.exam_date ?? null,
         daysUntil,
-        outline: outlineByCourse.get(e.course_id) || [],
+        outline,
         mastery: masteryByCourse.get(e.course_id) || [],
+        evidence,
       });
     });
 
@@ -346,6 +437,101 @@ export class TopicMasteryService {
       if (da !== db) return da - db;
       return (a.courseCode ?? '').localeCompare(b.courseCode ?? '');
     });
+  }
+
+  /**
+   * Tags the student is actually using on this course that match NO outline
+   * topic — the gap between what they study and what the syllabus says.
+   *
+   * This is what makes the outline editable in practice. `seed_course_topics_
+   * from_tags` bootstraps an outline once; after that, every new tag a student
+   * invents drifts away from the shared syllabus, and mastery on it lands in
+   * the "outside the outline" bucket where coverage never counts it. Listing
+   * the drift lets them promote a tag to a topic (or rename the topic to match)
+   * instead of quietly scoring against a syllabus they have outgrown.
+   *
+   * Sources are the two places a topic tag can exist: flashcard tags on the
+   * student's own decks for this course, and the mastery graph's own topic
+   * rows (which come from tagged test questions). Notes carry no tags column,
+   * so nothing is silently dropped by leaving them out — they file under a
+   * topic through `notes.topic_id` instead, which by definition matches.
+   */
+  async unmatchedTags(
+    userId: string,
+    courseId: string
+  ): Promise<{
+    courseId: string;
+    outlineTotal: number;
+    tags: Array<{ tag: string; count: number; sources: string[] }>;
+  }> {
+    if (!courseId || !UUID_RE.test(String(courseId))) {
+      return { courseId: String(courseId ?? ''), outlineTotal: 0, tags: [] };
+    }
+
+    const [outlineResult, masteryResult, deckResult] = await Promise.all([
+      this.db.from('course_topics').select('title').eq('course_id', courseId).limit(1000),
+      this.db
+        .from('user_topic_mastery')
+        .select('topic, attempts')
+        .eq('user_id', userId)
+        .eq('course_id', courseId)
+        .limit(500),
+      this.db
+        .from('decks')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('course_id', courseId)
+        .limit(200),
+    ]);
+
+    // A missing outline is not an error: every tag is then "unmatched", which
+    // is the honest answer for a course whose syllabus nobody has entered.
+    const outlineTitles = new Set<string>(
+      (outlineResult.data || []).map((row: any) => String(row.title ?? '').trim().toLowerCase())
+    );
+    outlineTitles.delete('');
+
+    const counts = new Map<string, { tag: string; count: number; sources: Set<string> }>();
+    const add = (raw: unknown, source: string, weight = 1) => {
+      const tag = String(raw ?? '').trim().replace(/\s+/g, ' ');
+      if (!tag) return;
+      const key = tag.toLowerCase();
+      // 'General' is the untagged bucket, not a syllabus entry — the seeding
+      // RPC excludes it for the same reason.
+      if (key === 'general' || outlineTitles.has(key)) return;
+      const entry = counts.get(key) ?? { tag, count: 0, sources: new Set<string>() };
+      entry.count += weight;
+      entry.sources.add(source);
+      counts.set(key, entry);
+    };
+
+    for (const row of masteryResult.data || []) {
+      add((row as any).topic, 'tests', Math.max(1, Number((row as any).attempts) || 1));
+    }
+
+    const deckIds = (deckResult.data || []).map((row: any) => row.id).filter(Boolean);
+    if (deckIds.length > 0) {
+      const { data: cards, error } = await this.db
+        .from('flashcards')
+        .select('tags')
+        .in('deck_id', deckIds)
+        .limit(2000);
+      if (error) {
+        logger.warn('unmatched tags: could not read flashcard tags', { error: error.message });
+      }
+      for (const row of cards || []) {
+        const tags = (row as any).tags;
+        if (!Array.isArray(tags)) continue;
+        for (const tag of tags) add(tag, 'cards');
+      }
+    }
+
+    const tags = [...counts.values()]
+      .sort((a, b) => b.count - a.count || a.tag.localeCompare(b.tag))
+      .slice(0, 40)
+      .map((entry) => ({ tag: entry.tag, count: entry.count, sources: [...entry.sources].sort() }));
+
+    return { courseId, outlineTotal: outlineTitles.size, tags };
   }
 
   /**

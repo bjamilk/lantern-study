@@ -479,6 +479,12 @@ export interface CourseReadiness {
   weakestTopics: string[];
   /** Outline order first, then out-of-outline evidence (weakest first). */
   topics: CourseTopicReadiness[];
+  /**
+   * The ONE thing to do next, resolved against the artefacts the student
+   * actually owns. Always present: {@link planNextBestAction} always has an
+   * answer, even for a course with nothing in it at all.
+   */
+  nextAction: NextBestAction;
 }
 
 /**
@@ -502,6 +508,182 @@ export interface CourseClassSignal {
   topics?: CourseClassSignalTopic[];
 }
 
+// ---------------------------------------------------------------------------
+// The next best action
+// ---------------------------------------------------------------------------
+// A readiness card that offers four doors has answered "how ready am I?" with
+// "you decide" — which is the question the student arrived with. So exactly one
+// action comes out of a readiness rollup, and it names a real destination.
+//
+// The ladder is THINNEST EVIDENCE FIRST: fix what makes the number unknowable
+// before asking for more work. An empty outline beats everything, because
+// readiness cannot be about a syllabus that does not exist. A missing exam date
+// is a SUGGESTION, never a blocker — a student without a date still has topics
+// worth studying today, and refusing to point at them until they fill in a form
+// is the app holding its own usefulness hostage.
+
+export const NEXT_ACTION_KINDS = [
+  'review-deck',
+  'study-topic-note',
+  'take-test',
+  'add-topics',
+  'set-exam-date',
+] as const;
+export type NextActionKind = (typeof NEXT_ACTION_KINDS)[number];
+
+/** A deck or note the student already owns, filed under an outline topic. */
+export interface NextActionArtefact {
+  id: string;
+  /** Deck name / note title. Without it a pointer cannot say where it goes. */
+  title?: string | null;
+}
+
+/**
+ * What the student owns, keyed by `course_topics.id`. The server resolves
+ * these from `decks.topic_id` / `notes.topic_id`; a client with nothing to
+ * offer passes `{}` and gets the same ladder minus its top two rungs.
+ */
+export interface CourseActionEvidence {
+  decksByTopicId?: Readonly<Record<string, NextActionArtefact>>;
+  notesByTopicId?: Readonly<Record<string, NextActionArtefact>>;
+}
+
+export interface NextBestAction {
+  kind: NextActionKind;
+  /** Deck id, note id, or the course id for course-level actions. */
+  targetId?: string;
+  /** Button copy. Says where it goes: "Review Glycolysis", not "Study". */
+  label: string;
+  /** One plain sentence saying why this and not something else. */
+  reason: string;
+  /** The outline topic this action is about, when it is about one. */
+  topicId?: string | null;
+  topicTitle?: string | null;
+  /**
+   * Never a blocker, so it rides alongside the action rather than replacing
+   * it. Null once an exam date is set.
+   */
+  suggestion: { kind: 'set-exam-date'; targetId: string; label: string; reason: string } | null;
+}
+
+const SET_EXAM_DATE_LABEL = 'Add your exam date';
+const SET_EXAM_DATE_REASON =
+  'Set it and we will remind you a week before, the day before, and on the morning.';
+
+/**
+ * The one next action for a course.
+ *
+ * Order, and why each rung exists because the rung below it would be a lie:
+ *
+ *  1. No outline → add topics. Every number on the card is "of the syllabus";
+ *     without one there is nothing to be ready for.
+ *  2. An outline topic with a deck or note behind it → open THAT artefact.
+ *     Untested topics come before weak ones (thinnest evidence first), and a
+ *     deck beats a note because reviewing is what moves the score.
+ *  3. Otherwise a test on the course — the only action left that produces
+ *     evidence when the student owns nothing filed under their topics.
+ *
+ * A missing exam date attaches as `suggestion` at every rung.
+ */
+export function planNextBestAction(
+  readiness: CourseReadiness,
+  evidence: CourseActionEvidence = {}
+): NextBestAction {
+  const decks = evidence.decksByTopicId ?? {};
+  const notes = evidence.notesByTopicId ?? {};
+  const courseLabel = (readiness.courseCode || '').trim() || 'this course';
+
+  const suggestion: NextBestAction['suggestion'] =
+    typeof readiness.examDate === 'string' && readiness.examDate.trim()
+      ? null
+      : {
+          kind: 'set-exam-date',
+          targetId: readiness.courseId,
+          label: SET_EXAM_DATE_LABEL,
+          reason: SET_EXAM_DATE_REASON,
+        };
+
+  if (readiness.outlineTotal === 0) {
+    return {
+      kind: 'add-topics',
+      targetId: readiness.courseId,
+      label: 'Add your course topics',
+      reason: `We cannot say how ready you are for ${courseLabel} until its topics are in.`,
+      topicId: null,
+      topicTitle: null,
+      suggestion,
+    };
+  }
+
+  // Outline order is the tiebreak, so two equally weak topics resolve the same
+  // way on every surface and on every request.
+  const order = new Map<CourseTopicReadiness, number>();
+  readiness.topics.forEach((topic, index) => order.set(topic, index));
+
+  const backed = readiness.topics.filter(
+    (topic) =>
+      topic.inOutline &&
+      typeof topic.topicId === 'string' &&
+      (decks[topic.topicId] || notes[topic.topicId])
+  );
+
+  if (backed.length > 0) {
+    // An untested topic is thinner evidence than a scored-but-weak one, so it
+    // sorts first — the same pointer `nextTopic` already uses for day one.
+    const rank = (topic: CourseTopicReadiness) =>
+      topic.masteryScore == null ? -1 : topic.masteryScore;
+    const target = [...backed].sort(
+      (a, b) => rank(a) - rank(b) || (order.get(a) ?? 0) - (order.get(b) ?? 0)
+    )[0] as CourseTopicReadiness;
+    const topicId = target.topicId as string;
+    const deck = decks[topicId];
+    const note = notes[topicId];
+    const untested = target.masteryScore == null;
+
+    if (deck) {
+      const name = (deck.title || '').trim() || target.title;
+      return {
+        kind: 'review-deck',
+        targetId: deck.id,
+        label: `Review ${name}`,
+        reason: untested
+          ? `You have a deck for ${target.title} and have not been tested on it yet.`
+          : `${target.title} is your weakest topic so far (${target.masteryScore}%).`,
+        topicId,
+        topicTitle: target.title,
+        suggestion,
+      };
+    }
+
+    const resolvedNote = note as NextActionArtefact;
+    const name = (resolvedNote.title || '').trim() || target.title;
+    return {
+      kind: 'study-topic-note',
+      targetId: resolvedNote.id,
+      label: `Read your ${name} note`,
+      reason: untested
+        ? `You have a note on ${target.title} and have not been tested on it yet.`
+        : `${target.title} is your weakest topic so far (${target.masteryScore}%).`,
+      topicId,
+      topicTitle: target.title,
+      suggestion,
+    };
+  }
+
+  const pointer = readiness.nextTopic?.title ?? readiness.weakestTopics[0] ?? null;
+  return {
+    kind: 'take-test',
+    targetId: readiness.courseId,
+    label: `Take a test on ${courseLabel}`,
+    reason: pointer
+      ? `Nothing of yours is filed under ${pointer} yet — a short test shows where you stand.`
+      : 'A short test is the quickest way to find out where you stand.',
+    topicId: readiness.nextTopic?.topicId ?? null,
+    topicTitle: pointer,
+    suggestion,
+  };
+}
+
 const normaliseTopicKey = (title: string): string => title.trim().toLowerCase();
 
 export function computeCourseReadiness(input: {
@@ -512,6 +694,12 @@ export function computeCourseReadiness(input: {
   daysUntil?: number | null;
   outline: ReadonlyArray<CourseOutlineTopicInput>;
   mastery: ReadonlyArray<CourseMasterySignalInput>;
+  /**
+   * Decks and notes the student owns, keyed by outline topic id. Omitted by
+   * callers that have not resolved them — the next action then degrades to a
+   * course-level rung rather than promising an artefact that was never named.
+   */
+  evidence?: CourseActionEvidence;
 }): CourseReadiness {
   const masteryByKey = new Map<string, CourseMasterySignalInput>();
   for (const row of input.mastery) {
@@ -598,7 +786,7 @@ export function computeCourseReadiness(input: {
     .slice(0, 3)
     .map((t) => t.title);
 
-  return {
+  const readiness: CourseReadiness = {
     courseId: input.courseId,
     courseCode: input.courseCode ?? null,
     courseTitle: input.courseTitle ?? null,
@@ -612,7 +800,12 @@ export function computeCourseReadiness(input: {
     nextTopic,
     weakestTopics,
     topics: allTopics,
+    // Placeholder: the planner reads the finished rollup, so it cannot be
+    // built inside the literal it needs.
+    nextAction: undefined as unknown as NextBestAction,
   };
+  readiness.nextAction = planNextBestAction(readiness, input.evidence ?? {});
+  return readiness;
 }
 
 // ---------------------------------------------------------------------------

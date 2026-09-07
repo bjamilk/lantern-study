@@ -43,7 +43,18 @@ export type HomeStackParamList = {
 
 export type StudyStackParamList = {
   StudyHub: undefined;
-  Library: { tab?: "notes" | "flashcards" } | undefined;
+  /**
+   * `manageOutlineCourseId` opens the outline editor on arrival — the deep
+   * link behind the readiness card's "Add your topics", which has to land on
+   * an editable topic list rather than near one.
+   */
+  Library:
+    | {
+        tab?: "notes" | "flashcards";
+        manageOutlineCourseId?: string;
+        manageOutlineCourseLabel?: string;
+      }
+    | undefined;
   FlashcardsList: undefined;
   DeckDetail: { deckId: string; deckName?: string };
   FlashcardReview: { deckId: string; deckName?: string };

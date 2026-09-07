@@ -116,6 +116,7 @@ function sanitizeNotifications(
     ),
     badgeUnlocks: asBoolean(partial.badgeUnlocks ?? base.badgeUnlocks, base.badgeUnlocks),
     srsReminders: asBoolean(partial.srsReminders ?? base.srsReminders, base.srsReminders),
+    examReminders: asBoolean(partial.examReminders ?? base.examReminders, base.examReminders),
     testResults: asBoolean(partial.testResults ?? base.testResults, base.testResults),
     emailEnabled: asBoolean(partial.emailEnabled ?? base.emailEnabled, base.emailEnabled),
     weeklyDigest: asBoolean(partial.weeklyDigest ?? base.weeklyDigest, base.weeklyDigest),

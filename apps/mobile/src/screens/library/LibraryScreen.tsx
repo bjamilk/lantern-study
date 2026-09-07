@@ -39,7 +39,14 @@ interface Props {
     navigate: (screen: string, params?: Record<string, unknown>) => void;
     goBack: () => void;
   };
-  route?: { params?: { tab?: Tab } };
+  route?: {
+    params?: {
+      tab?: Tab;
+      /** Deep link from the readiness card: open this course's outline editor. */
+      manageOutlineCourseId?: string;
+      manageOutlineCourseLabel?: string;
+    };
+  };
 }
 
 const tabs: { id: Tab; label: string; icon: AppIconName }[] = [
@@ -237,6 +244,20 @@ export function LibraryScreen({ navigation, route }: Props) {
       }
     }, [route?.params?.tab, setLibraryTab])
   );
+
+  // "Add your topics" on the readiness card lands here, and the outline editor
+  // opens itself on arrival. Keyed on the param so the sheet re-opens if the
+  // student comes back through the same door, and closed by hand (rather than
+  // by the param going away) so dismissing it does not re-open it.
+  const manageOutlineCourseId = route?.params?.manageOutlineCourseId;
+  const manageOutlineCourseLabel = route?.params?.manageOutlineCourseLabel;
+  useEffect(() => {
+    if (!manageOutlineCourseId) return;
+    setManageCourse({
+      id: manageOutlineCourseId,
+      label: manageOutlineCourseLabel ?? 'Course',
+    });
+  }, [manageOutlineCourseId, manageOutlineCourseLabel]);
 
   // Decks and their due counts are only fetched at login bootstrap, so without
   // this a card reviewed on the web still reads as due here (and a deck created

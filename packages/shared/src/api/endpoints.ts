@@ -3530,6 +3530,17 @@ export function createApiEndpoints(client: ApiClient) {
         15000,
       ),
 
+    /**
+     * Tags on this student's own work for a course that match no topic in its
+     * shared outline — what the outline editor offers to add as topics.
+     */
+    fetchUnmatchedTags: (courseId: string) =>
+      apiRequest<import('../learning/readinessCard').UnmatchedTagsResponse>(
+        `/mastery/unmatched-tags?courseId=${encodeURIComponent(courseId)}`,
+        {},
+        10000,
+      ),
+
     /** Phase 4 Q — the caller's referral code, stats and referred users. */
     fetchReferralSummary: () => apiRequest<ReferralSummary>('/referrals', {}, 10000),
 

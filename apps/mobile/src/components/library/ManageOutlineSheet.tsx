@@ -36,8 +36,15 @@ import {
   formatDeleteTopicTitle,
   upsertCourseTopic,
 } from '@lantern/shared';
+import {
+  planUnmatchedTags,
+  unmatchedTagSubtitle,
+  type UnmatchedTag,
+} from '@lantern/shared/learning/readinessCard';
+import { fetchUnmatchedTags } from '../../services/api';
 import { useTheme } from '../../theme';
 import {
+  createCourseTopic,
   deleteCourseTopic,
   getCourseTopics,
   invalidateCourseTopicsCache,
@@ -91,6 +98,15 @@ export function ManageOutlineSheet({
   const [busy, setBusy] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
+  /** The in-place "Add a topic" field. Editing in place means adding here too. */
+  const [newTitle, setNewTitle] = useState('');
+  /**
+   * Tags on the student's own decks and notes that no outline topic covers.
+   * `null` means "not answered yet, or could not be read", which HIDES the
+   * section — an empty "Unmatched tags" header is a promise the app cannot
+   * keep, and a student who taps into nothing learns the section is scenery.
+   */
+  const [unmatched, setUnmatched] = useState<UnmatchedTag[] | null>(null);
 
   // Fresh outline every time the sheet opens; force past the picker cache so a
   // topic added in a picker moments ago is already here.
@@ -103,6 +119,8 @@ export function ManageOutlineSheet({
   useEffect(() => {
     setTopics([]);
     setEditingId(null);
+    setNewTitle('');
+    setUnmatched(null);
     setError(null);
     setLoadError(false);
     if (!visible || !courseId) return;
@@ -122,10 +140,21 @@ export function ManageOutlineSheet({
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+    // Additive: a failure here leaves `unmatched` null and the section stays
+    // away, rather than blocking the outline the sheet exists to show.
+    fetchUnmatchedTags(courseId)
+      .then(data => {
+        if (!cancelled) setUnmatched(data?.tags ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setUnmatched(null);
+      });
     return () => {
       cancelled = true;
     };
   }, [visible, courseId]);
+
+  const unmatchedPlan = planUnmatchedTags(unmatched);
 
   const close = useCallback(() => {
     Keyboard.dismiss();
@@ -139,6 +168,63 @@ export function ManageOutlineSheet({
     if (courseId) invalidateCourseTopicsCache(courseId);
     onChanged?.();
   }, [courseId, onChanged]);
+
+  /**
+   * Add a topic without leaving the list.
+   *
+   * The outline used to be curate-only: topics could be created only from the
+   * Topic picker while filing something, so a student sent here to "add your
+   * topics" arrived at a screen that could not add one. The endpoint is
+   * find-or-create, so a duplicate title returns the existing row rather than
+   * a second copy — `upsertCourseTopic` keeps the list from growing a twin.
+   */
+  const submitAdd = useCallback(async () => {
+    if (!courseId || busy) return;
+    const title = newTitle.trim().replace(/\s+/g, ' ');
+    if (!title) return;
+    if (title.length > TOPIC_TITLE_MAX) {
+      setError(COURSE_TOPIC_COPY.titleTooLong);
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await createCourseTopic(courseId, title);
+      setTopics(prev => upsertCourseTopic(prev, created));
+      setNewTitle('');
+      afterMutation();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : COURSE_TOPIC_COPY.createFailed);
+    } finally {
+      setBusy(false);
+    }
+  }, [courseId, busy, newTitle, afterMutation]);
+
+  /**
+   * One tap turns a tag the student already uses into an outline topic. The
+   * row disappears on success because it is no longer unmatched — it is now
+   * the topic at the bottom of the list.
+   */
+  const addTagAsTopic = useCallback(
+    async (tag: string) => {
+      if (!courseId || busy) return;
+      setBusy(true);
+      setError(null);
+      try {
+        const created = await createCourseTopic(courseId, tag);
+        setTopics(prev => upsertCourseTopic(prev, created));
+        setUnmatched(prev =>
+          prev ? prev.filter(row => row.tag.toLowerCase() !== tag.toLowerCase()) : prev
+        );
+        afterMutation();
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : COURSE_TOPIC_COPY.createFailed);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [courseId, busy, afterMutation]
+  );
 
   const startRename = useCallback((topic: CourseTopic) => {
     setError(null);
@@ -254,6 +340,43 @@ export function ManageOutlineSheet({
           <Text style={[styles.shared, { color: colors.textSecondary }]}>{COURSE_TOPIC_COPY.shared}</Text>
 
           {error ? <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text> : null}
+
+          {/* Add sits ABOVE the list and outside every load gate: the course a
+              student is sent here to fill in is exactly the one whose list is
+              empty, and an add field that only appears once topics exist could
+              never have created the first one. */}
+          <View style={styles.addRow}>
+            <TextInput
+              value={newTitle}
+              onChangeText={setNewTitle}
+              editable={!busy && !loadError}
+              maxLength={TOPIC_TITLE_MAX}
+              placeholder={COURSE_TOPIC_COPY.addPlaceholder}
+              placeholderTextColor={colors.inputPlaceholder}
+              onSubmitEditing={() => void submitAdd()}
+              returnKeyType="done"
+              style={[
+                styles.renameInput,
+                {
+                  color: colors.inputText,
+                  backgroundColor: colors.inputBackground,
+                  borderColor: colors.inputBorder,
+                },
+              ]}
+              accessibilityLabel={COURSE_TOPIC_COPY.addTitle}
+            />
+            <Pressable
+              onPress={() => void submitAdd()}
+              disabled={busy || loadError || !newTitle.trim()}
+              style={[styles.addButton, { opacity: busy || loadError || !newTitle.trim() ? 0.4 : 1 }]}
+              accessibilityRole="button"
+              accessibilityLabel={COURSE_TOPIC_COPY.addTitle}
+            >
+              <Text style={[styles.addButtonText, { color: colors.primaryText }]}>
+                {COURSE_TOPIC_COPY.addAction}
+              </Text>
+            </Pressable>
+          </View>
 
           {/* `loading` alone, never "loading AND empty": a list that is still
               arriving must not be interactive, or a tap lands on whatever rows
@@ -375,6 +498,38 @@ export function ManageOutlineSheet({
             </ScrollView>
           )}
 
+          {unmatchedPlan.visible ? (
+            <View style={styles.unmatched}>
+              <Text style={[styles.unmatchedTitle, { color: colors.text }]}>Unmatched tags</Text>
+              <Text style={[styles.sheetSubtitle, { color: colors.textSecondary }]}>
+                You already file work under these, but they are not in the outline yet.
+              </Text>
+              {unmatchedPlan.tags.slice(0, 6).map(row => (
+                <View key={row.tag} style={[styles.row, { borderBottomColor: colors.border }]}>
+                  <View style={styles.unmatchedText}>
+                    <Text style={[styles.rowTitle, { color: colors.text }]} numberOfLines={1}>
+                      {row.tag}
+                    </Text>
+                    <Text style={[styles.sheetSubtitle, { color: colors.textTertiary }]}>
+                      {unmatchedTagSubtitle(row)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => void addTagAsTopic(row.tag)}
+                    disabled={busy}
+                    style={[styles.addButton, { opacity: busy ? 0.4 : 1 }]}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Add ${row.tag} as a topic`}
+                  >
+                    <Text style={[styles.addButtonText, { color: colors.primaryText }]}>
+                      Add as topic
+                    </Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
           {busy ? (
             <View style={styles.busyRow}>
               <ActivityIndicator size="small" color={colors.primaryText} />
@@ -430,8 +585,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   iconButton: { padding: 6, minWidth: 32, alignItems: 'center', justifyContent: 'center' },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingTop: 12 },
+  addButton: { paddingHorizontal: 14, paddingVertical: 10, minHeight: 44, justifyContent: 'center' },
+  addButtonText: { fontWeight: '600' },
   footerHint: { fontSize: 12, paddingTop: 12 },
   busyRow: { alignItems: 'center', paddingVertical: 10 },
+  unmatched: { paddingHorizontal: 16, paddingTop: 12 },
+  unmatchedTitle: { fontWeight: '700' },
+  unmatchedText: { flex: 1, paddingRight: 8 },
 });
 
 export default ManageOutlineSheet;

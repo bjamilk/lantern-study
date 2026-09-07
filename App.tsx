@@ -2097,6 +2097,20 @@ export const App: React.FC = () => {
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
                     onNavigateToTests={() => navigateTo(AppMode.TESTS_HOME)}
+                    onOpenDeckById={(deckId) => {
+                        const deck = decks.find((d) => d.id === deckId);
+                        if (deck) handleSelectDeck(deck);
+                        else navigateTo(AppMode.DECK_DETAIL, { deckId });
+                    }}
+                    onOpenNoteById={(noteId) => { void noteHandlers.openNote(noteId); }}
+                    // The readiness card's "Add your exam date" lands on the tab
+                    // that edits it, not merely inside Settings.
+                    onOpenAcademicSettings={() => {
+                        // openModal resets the tab to 'profile', so the tab is
+                        // chosen after it, not before.
+                        openModal('settings');
+                        useUIStore.getState().setSettingsTab('academic');
+                    }}
                     onRecordLecture={handleRecordLecture}
                     onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
                     onNavigateToOffline={() => navigateTo(AppMode.OFFLINE_MODE)}

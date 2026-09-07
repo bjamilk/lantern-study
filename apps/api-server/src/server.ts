@@ -226,6 +226,8 @@ async function initializeServices() {
       startMarketplaceAlertJobs(supabaseService);
       const { startRetentionJobs } = await import('./services/retentionReminders');
       startRetentionJobs(supabaseService);
+      const { startExamReminderJobs } = await import('./services/examReminders');
+      startExamReminderJobs(supabaseService);
     } else {
       logger.info('Marketplace alert cron delegated to BullMQ worker');
     }

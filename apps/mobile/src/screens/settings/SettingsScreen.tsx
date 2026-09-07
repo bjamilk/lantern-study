@@ -621,6 +621,22 @@ export default function SettingsScreen() {
             />
             <SettingItem
               colors={colors}
+              icon="alarm"
+              iconColor="#0ea5e9"
+              title="Exam reminders"
+              subtitle="A week before, the day before, and the morning of"
+              rightElement={
+                <Switch
+                  value={settings.notifications.examReminders}
+                  onValueChange={(val) => updateSingleSetting('notifications', 'examReminders', val)}
+                  trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
+                  thumbColor={settings.notifications.examReminders ? colors.switchThumbOn : colors.switchThumbOff}
+                />
+              }
+              showChevron={false}
+            />
+            <SettingItem
+              colors={colors}
               icon="checkmark-done"
               iconColor="#ec4899"
               title="Test Results"
