@@ -19,9 +19,11 @@ import {
   featureAccentsDark,
   featureAccentsLight,
   type FeatureKey,
+  type IllustrationName,
 } from '@lantern/shared/design';
 import { useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
+import { Illustration } from './Illustration';
 
 export function LoadingState({ label }: { label?: string }) {
   const { colors } = useTheme();
@@ -126,8 +128,8 @@ export function InlineErrorBanner({
  * error.
  *
  * Spec §5.7 anatomy: a disc, a title that names the BENEFIT (not the absence),
- * ONE sentence, and ONE action. Never a second "or…" button, never a
- * paragraph, never an illustration — imagery is Wave V2.
+ * ONE sentence, and ONE action, and — since Wave V2 — at most ONE spot
+ * illustration. Never a second "or…" button, never a paragraph.
  *
  * THE SHAPE, and why it changed: this used to be a full-tint panel with 28 px
  * of vertical padding, which on a 360x640 screen painted about 40% of the
@@ -153,14 +155,40 @@ export function InlineErrorBanner({
  */
 const EMPTY_BAND_MIN_HEIGHT = 52;
 
+/**
+ * With an `illustration`, the band carries the picture INSTEAD of the 22 px
+ * glyph — one mark, not two — and its vertical padding halves so the band
+ * grows as little as it can: 56 + 12 = 68 dp rather than 52.
+ *
+ * What that costs, said out loud. On a 360x640 viewport the card is 328 wide,
+ * so the band goes from 328x52 (7.4% of the screen) to 328x68 (9.7%), against
+ * the 6-9% an empty state gets in §5.6. It is a hair over, and it is the
+ * deliberate trade the imagery rule asks for: the picture itself adds no tint
+ * at all, because on a tint band the asset's ground ellipse inverts to the
+ * surface colour (`variant="surface"`) rather than filling with more tint.
+ *
+ * The alternative — the picture below the band, on the reading surface —
+ * would have cost 0% and been strictly cheaper, and it is not what §5.7 asks
+ * for: an empty state's picture belongs with its heading, not stranded above
+ * the sentence.
+ */
+const EMPTY_BAND_ILLUSTRATION_SIZE = 56;
+
 export function EmptyState({
   icon,
   title,
   description,
   action,
   feature,
+  illustration,
 }: {
   icon?: AppIconName;
+  /**
+   * One of the ten (spec v3 §5.6). Drawn on the band in place of `icon`, so
+   * passing both is not two marks — the picture simply wins. An unmapped name
+   * is a compile error.
+   */
+  illustration?: IllustrationName;
   /** Name the benefit: "Turn slides into cards", not "No decks". */
   title: string;
   /** One sentence. Two is a paragraph, and a paragraph is not an empty state. */
@@ -175,13 +203,22 @@ export function EmptyState({
     <View className="px-4 py-6 items-center">
       <View className="w-full max-w-md rounded-lantern-xl overflow-hidden border border-lantern-border bg-lantern-surface">
         <View
-          className="flex-row items-center gap-2.5 px-3.5 py-2.5"
+          className={`flex-row items-center gap-2.5 px-3.5 ${illustration && feature ? 'py-1.5' : 'py-2.5'}`}
           style={{
             minHeight: EMPTY_BAND_MIN_HEIGHT,
             backgroundColor: accent ? accent.tint : colors.backgroundSecondary,
           }}
         >
-          {icon ? (
+          {illustration && feature ? (
+            <Illustration
+              name={illustration}
+              feature={feature}
+              size={EMPTY_BAND_ILLUSTRATION_SIZE}
+              // On the band, so the ground ellipse inverts to the surface
+              // colour; the authored tint ground would be invisible here.
+              variant="surface"
+            />
+          ) : icon ? (
             <AppIcon
               name={icon}
               size={22}

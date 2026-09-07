@@ -16,6 +16,22 @@ export function isSearchExpanded(searchOpen: boolean, searchQuery: string): bool
   return searchOpen || searchQuery.length > 0;
 }
 
+/**
+ * Whether the Shop home's quick band draws its own Cart and You.
+ *
+ * The contextual row below (spec v3 §7.2) is Browse · Cart · You, and it is on
+ * screen on this surface, so the band's own pair was the same two doors twice
+ * within a thumb's width — the duplication the build-166 pass called out. The
+ * row replaces them, with one exception it cannot cover: the row stands down
+ * while the soft keyboard is up (contextualBarLayout.ts), and the search box
+ * being expanded is exactly when the keyboard is up. So the band keeps the pair
+ * for that state and hands them back the moment the box collapses. Alerts and
+ * Sell are unaffected: neither is in the row.
+ */
+export function showsBandCartAndYou(searchExpanded: boolean): boolean {
+  return searchExpanded;
+}
+
 export function alertsLabel(n: number): string {
   return n <= 0 ? 'Alerts' : n === 1 ? 'Alerts, 1 new match' : `Alerts, ${n} new matches`;
 }

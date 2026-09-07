@@ -51,7 +51,18 @@ export const FEATURE_INK_BG: Record<FeatureKey, string> = {
 };
 
 /**
- * Hover border for a door tile. At rest a feature card is neutral (§5.6:
- * "hue = identity, at rest, in tints" — the tint is in the band, not the
- * outline), so the ink only appears on pointer focus.
+ * Feature tint as an SVG `fill` — the one filled shape in a spot illustration
+ * (§5.6: "monoline stroke 2 in currentColor plus one tint-filled ground
+ * ellipse"). Spelled out for the same reason as the tables above: Tailwind
+ * cannot build `fill-lantern-feature-${key}-tint` at runtime.
  */
+export const FEATURE_TINT_FILL: Record<FeatureKey, string> = {
+  notes: 'fill-lantern-feature-notes-tint',
+  flashcards: 'fill-lantern-feature-flashcards-tint',
+  tests: 'fill-lantern-feature-tests-tint',
+  recording: 'fill-lantern-feature-recording-tint',
+  ai: 'fill-lantern-feature-ai-tint',
+  groups: 'fill-lantern-feature-groups-tint',
+  campus: 'fill-lantern-feature-campus-tint',
+  budget: 'fill-lantern-feature-budget-tint',
+};

@@ -39,6 +39,7 @@ import {
 } from '../../utils/pendingQuestionBankScores';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { Illustration } from '../../components/ui/Illustration';
 
 import { toTab } from '../../navigation/nestedTab';
 
@@ -511,6 +512,16 @@ export default function OfflineScreen() {
                 </Text>
               ) : null}
             </View>
+            {/* The screen's one picture, on its header block (spec v3 §5.6:
+                heroes, not lists — the downloaded-test rows below stay bare).
+                `budget` is the feature key on purpose: `featureAccents.offline`
+                IS budget's amber ink, so this is the same hue the folder glyph
+                beside it already uses, not a ninth colour.
+
+                It is drawn from string literals in the bundle like every other
+                asset here, so it renders identically with `lowDataMode` on —
+                which matters more on this screen than on any other. */}
+            <Illustration name="download-phone" feature="budget" size={56} />
           </View>
           
           <View style={styles.storageStats}>

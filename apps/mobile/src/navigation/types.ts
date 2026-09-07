@@ -60,7 +60,18 @@ export type StudyStackParamList = {
    * business: the button used to switch the global tab to Chat, which is the
    * defect this route replaces.
    */
-  TestBuilder: undefined;
+  TestBuilder:
+    | {
+        /**
+         * The note the student was reading when they asked for a test — the
+         * contextual row's Test item on `NoteEditor` (spec v3 §7.2) carries
+         * it. The builder opens on its note picker with that note first; it
+         * never starts a generation on arrival, because a screen that spends
+         * a credit before it is read is not a builder.
+         */
+        noteId?: string;
+      }
+    | undefined;
   /** Library tree → History filtered to a course (`'null'` = unfiled sessions). */
   TestsList:
     | { tab?: "tests" | "history"; courseId?: string | null; courseLabel?: string }

@@ -1,10 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  AcademicCapIcon,
   ArrowPathIcon,
   ChevronDownIcon,
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
+import { Illustration } from './ui';
 import {
   MASTERY_BAND_LABELS,
   examCountdownLabel,
@@ -95,17 +95,22 @@ export const CourseReadinessCard: React.FC = () => {
   };
 
   return (
-    <div className="bg-lantern-surface rounded-2xl p-4 sm:p-5 ring-1 ring-lantern-border/60">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <AcademicCapIcon className="w-5 h-5 text-lantern-primary shrink-0" aria-hidden />
-          <h2 className="text-heading font-bold text-lantern-text truncate">Exam readiness</h2>
+    <div className="bg-lantern-surface rounded-2xl overflow-hidden ring-1 ring-lantern-border/60">
+      {/* The screen's one hero band (§5.6): 56 px of sky tint on a neutral card,
+          the title in the tests ink (5.17:1 on its own tint), and the
+          `readiness-ring` illustration. Home's doors below it are 56 px bands
+          too, so this earns its place by being the only band with a TITLE in
+          it — the readiness question is the one Home exists to answer. */}
+      <div className="flex h-14 items-center justify-between gap-2 px-4 sm:px-5 bg-lantern-feature-tests-tint text-lantern-feature-tests-ink">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <Illustration name="readiness-ring" feature="tests" size={56} />
+          <h2 className="text-heading font-bold truncate">Exam readiness</h2>
         </div>
         <button
           type="button"
           onClick={() => void handleRefresh()}
           disabled={refreshing}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-caption font-medium text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors disabled:opacity-60"
+          className="flex shrink-0 items-center gap-1 px-2.5 py-1.5 rounded-lg text-caption font-medium transition-opacity hover:opacity-80 disabled:opacity-60"
           aria-label="Recompute readiness from your latest tests and reviews"
         >
           <ArrowPathIcon className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
@@ -113,144 +118,146 @@ export const CourseReadinessCard: React.FC = () => {
         </button>
       </div>
 
-      {error ? (
-        <p className="text-body text-lantern-text-secondary py-2">{error}</p>
-      ) : courses === null ? (
-        <p className="text-body text-lantern-text-tertiary py-2" role="status">
-          Working out where you stand…
-        </p>
-      ) : courses.length === 0 ? (
-        // No enrolled courses. The nudge says what would fill the card rather
-        // than what is missing from it, and the card keeps its place.
-        <p className="text-body text-lantern-text-secondary py-2">
-          Add your courses and exam dates and this becomes a per-course readiness score.
-        </p>
-      ) : (
-        <div className="space-y-3">
-          {courses.map(course => {
-            const pct = course.readinessScore ?? course.coveragePct;
-            const band = masteryBand(course.readinessScore);
-            const expanded = expandedCourseId === course.courseId;
-            const signal = classSignals[course.courseId];
-            const barClass =
-              course.readinessScore != null
-                ? BAND_BAR_CLASSES[band]
-                : 'bg-lantern-primary/50';
-            const statusLine =
-              course.readinessScore != null
-                ? `Readiness ${course.readinessScore}%`
-                : course.coveragePct != null
-                  ? `${course.coveredCount} of ${course.outlineTotal} topics started`
-                  : course.averageMastery != null
-                    ? `Average mastery ${course.averageMastery}%`
-                    : 'No study data yet';
+      <div className="p-4 sm:p-5">
+        {error ? (
+          <p className="text-body text-lantern-text-secondary py-2">{error}</p>
+        ) : courses === null ? (
+          <p className="text-body text-lantern-text-tertiary py-2" role="status">
+            Working out where you stand…
+          </p>
+        ) : courses.length === 0 ? (
+          // No enrolled courses. The nudge says what would fill the card rather
+          // than what is missing from it, and the card keeps its place.
+          <p className="text-body text-lantern-text-secondary py-2">
+            Add your courses and exam dates and this becomes a per-course readiness score.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {courses.map(course => {
+              const pct = course.readinessScore ?? course.coveragePct;
+              const band = masteryBand(course.readinessScore);
+              const expanded = expandedCourseId === course.courseId;
+              const signal = classSignals[course.courseId];
+              const barClass =
+                course.readinessScore != null
+                  ? BAND_BAR_CLASSES[band]
+                  : 'bg-lantern-primary/50';
+              const statusLine =
+                course.readinessScore != null
+                  ? `Readiness ${course.readinessScore}%`
+                  : course.coveragePct != null
+                    ? `${course.coveredCount} of ${course.outlineTotal} topics started`
+                    : course.averageMastery != null
+                      ? `Average mastery ${course.averageMastery}%`
+                      : 'No study data yet';
 
-            return (
-              <div key={course.courseId} className="rounded-xl border border-lantern-border/70 p-3">
-                <button
-                  type="button"
-                  onClick={() => toggleCourse(course.courseId)}
-                  aria-expanded={expanded}
-                  className="w-full text-left"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="min-w-0 text-body font-semibold text-lantern-text truncate">
-                      {course.courseCode || 'Course'}
-                      {course.courseTitle ? (
-                        <span className="font-normal text-lantern-text-secondary"> — {course.courseTitle}</span>
-                      ) : null}
-                    </p>
-                    <span className="flex items-center gap-1.5 shrink-0 text-caption text-lantern-text-tertiary">
-                      {course.daysUntil != null ? examCountdownLabel(course.daysUntil) : null}
-                      {expanded ? (
-                        <ChevronDownIcon className="w-4 h-4" aria-hidden />
-                      ) : (
-                        <ChevronRightIcon className="w-4 h-4" aria-hidden />
-                      )}
-                    </span>
-                  </div>
-
-                  <div className="mt-2 h-2 rounded-full bg-lantern-background-secondary overflow-hidden">
-                    <div
-                      className={`h-full rounded-full transition-all ${barClass}`}
-                      style={{ width: `${Math.max(pct ?? 0, pct != null ? 4 : 0)}%` }}
-                    />
-                  </div>
-                  <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                    <span className="text-caption text-lantern-text-secondary">{statusLine}</span>
-                    {course.coveragePct != null && course.readinessScore != null ? (
-                      <span className="text-label text-lantern-text-tertiary">
-                        {course.coveredCount}/{course.outlineTotal} topics · syllabus {course.coveragePct}%
-                      </span>
-                    ) : null}
-                  </div>
-
-                  {course.nextTopic ? (
-                    <p className="mt-1.5 text-caption text-lantern-primary font-medium">
-                      Start here: {course.nextTopic.title}
-                    </p>
-                  ) : null}
-                </button>
-
-                {expanded ? (
-                  <div className="mt-3 pt-3 border-t border-lantern-border/60">
-                    {course.topics.length === 0 ? (
-                      <p className="text-caption text-lantern-text-tertiary">
-                        No outline or study data for this course yet. Add topics from the course
-                        outline in your Library, or just start studying — readiness fills in on its
-                        own.
+              return (
+                <div key={course.courseId} className="rounded-xl border border-lantern-border/70 p-3">
+                  <button
+                    type="button"
+                    onClick={() => toggleCourse(course.courseId)}
+                    aria-expanded={expanded}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="min-w-0 text-body font-semibold text-lantern-text truncate">
+                        {course.courseCode || 'Course'}
+                        {course.courseTitle ? (
+                          <span className="font-normal text-lantern-text-secondary"> — {course.courseTitle}</span>
+                        ) : null}
                       </p>
-                    ) : (
-                      <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                        {course.topics.map(topic => (
-                          <li
-                            key={topic.topicId ?? `tag:${topic.title}`}
-                            className="flex items-center justify-between gap-2"
-                          >
-                            <span className="min-w-0 truncate text-caption text-lantern-text">
-                              {topic.title}
-                              {!topic.inOutline ? (
-                                <span className="ml-1 text-label tracking-normal text-lantern-text-tertiary">(outside outline)</span>
-                              ) : null}
-                            </span>
-                            <span
-                              className={`shrink-0 px-1.5 py-0.5 rounded-full text-label tracking-normal font-medium ${BAND_CHIP_CLASSES[topic.band]}`}
-                            >
-                              {topic.masteryScore != null
-                                ? `${topic.masteryScore}%`
-                                : topic.covered
-                                  ? MASTERY_BAND_LABELS.unknown
-                                  : 'Not started'}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                      <span className="flex items-center gap-1.5 shrink-0 text-caption text-lantern-text-tertiary">
+                        {course.daysUntil != null ? examCountdownLabel(course.daysUntil) : null}
+                        {expanded ? (
+                          <ChevronDownIcon className="w-4 h-4" aria-hidden />
+                        ) : (
+                          <ChevronRightIcon className="w-4 h-4" aria-hidden />
+                        )}
+                      </span>
+                    </div>
 
-                    <div className="mt-3">
-                      {signal === 'loading' ? (
-                        <p className="text-label text-lantern-text-tertiary" role="status">
-                          Checking what the class finds hard…
-                        </p>
-                      ) : signal && signal.available && signal.topics && signal.topics.length > 0 ? (
-                        <p className="text-label text-lantern-text-secondary">
-                          <span className="font-semibold">Your class finds hardest:</span>{' '}
-                          {signal.topics.slice(0, 3).map(t => t.topic).join(', ')}
-                          <span className="text-lantern-text-tertiary"> · {signal.cohortSize} students</span>
-                        </p>
-                      ) : signal ? (
-                        <p className="text-label text-lantern-text-tertiary">
-                          Class insights unlock once 20+ students on this course have study data.
-                        </p>
+                    <div className="mt-2 h-2 rounded-full bg-lantern-background-secondary overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${barClass}`}
+                        style={{ width: `${Math.max(pct ?? 0, pct != null ? 4 : 0)}%` }}
+                      />
+                    </div>
+                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                      <span className="text-caption text-lantern-text-secondary">{statusLine}</span>
+                      {course.coveragePct != null && course.readinessScore != null ? (
+                        <span className="text-label text-lantern-text-tertiary">
+                          {course.coveredCount}/{course.outlineTotal} topics · syllabus {course.coveragePct}%
+                        </span>
                       ) : null}
                     </div>
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
+
+                    {course.nextTopic ? (
+                      <p className="mt-1.5 text-caption text-lantern-primary font-medium">
+                        Start here: {course.nextTopic.title}
+                      </p>
+                    ) : null}
+                  </button>
+
+                  {expanded ? (
+                    <div className="mt-3 pt-3 border-t border-lantern-border/60">
+                      {course.topics.length === 0 ? (
+                        <p className="text-caption text-lantern-text-tertiary">
+                          No outline or study data for this course yet. Add topics from the course
+                          outline in your Library, or just start studying — readiness fills in on its
+                          own.
+                        </p>
+                      ) : (
+                        <ul className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                          {course.topics.map(topic => (
+                            <li
+                              key={topic.topicId ?? `tag:${topic.title}`}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <span className="min-w-0 truncate text-caption text-lantern-text">
+                                {topic.title}
+                                {!topic.inOutline ? (
+                                  <span className="ml-1 text-label tracking-normal text-lantern-text-tertiary">(outside outline)</span>
+                                ) : null}
+                              </span>
+                              <span
+                                className={`shrink-0 px-1.5 py-0.5 rounded-full text-label tracking-normal font-medium ${BAND_CHIP_CLASSES[topic.band]}`}
+                              >
+                                {topic.masteryScore != null
+                                  ? `${topic.masteryScore}%`
+                                  : topic.covered
+                                    ? MASTERY_BAND_LABELS.unknown
+                                    : 'Not started'}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+
+                      <div className="mt-3">
+                        {signal === 'loading' ? (
+                          <p className="text-label text-lantern-text-tertiary" role="status">
+                            Checking what the class finds hard…
+                          </p>
+                        ) : signal && signal.available && signal.topics && signal.topics.length > 0 ? (
+                          <p className="text-label text-lantern-text-secondary">
+                            <span className="font-semibold">Your class finds hardest:</span>{' '}
+                            {signal.topics.slice(0, 3).map(t => t.topic).join(', ')}
+                            <span className="text-lantern-text-tertiary"> · {signal.cohortSize} students</span>
+                          </p>
+                        ) : signal ? (
+                          <p className="text-label text-lantern-text-tertiary">
+                            Class insights unlock once 20+ students on this course have study data.
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

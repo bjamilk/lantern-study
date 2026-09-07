@@ -32,7 +32,7 @@ import {
   Alert,
   ActivityIndicator,
 } from 'react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { Screen, useScreenBottomPadding, useScreenInsets } from '../../components/layout';
 import { BackButton, FeatureDisc, useFeatureAccent } from '../../components/ui';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -54,6 +54,7 @@ import {
   TEST_BUILDER_SOURCES,
   deckStudyNotes,
   personalTestTitle,
+  planPreselectedNote,
   type TestBuilderSourceId,
 } from './testAuthoring';
 
@@ -75,6 +76,16 @@ interface PickerRow {
 
 export default function TestBuilderScreen() {
   const navigation = useNavigation<any>();
+  /**
+   * `noteId` arrives from the note editor's contextual row (spec v3 §7.2):
+   * the student was reading a note and asked for a test of it. The builder
+   * opens with that note already chosen — a "From this note" card above the
+   * sources with its own Generate action — rather than on the picker, so the
+   * student lands on the builder, not on a modal. It is still a confirmation,
+   * not a shortcut past one: generating costs a credit and nothing here
+   * spends it before the screen has been read.
+   */
+  const requestedNoteId = (useRoute().params as { noteId?: string } | undefined)?.noteId;
   const { colors } = useTheme();
   const testsAccent = useFeatureAccent('tests');
   const insets = useScreenInsets();
@@ -115,16 +126,21 @@ export default function TestBuilderScreen() {
     [decks, flashcardsByDeck]
   );
 
-  const noteRows = useMemo<PickerRow[]>(
-    () =>
-      notes.map(note => ({
-        id: note.id,
-        title: note.title || 'Untitled note',
-        subtitle: hasEnoughNoteStudyContent(note) ? undefined : 'Needs more content',
-        disabledReason: hasEnoughNoteStudyContent(note) ? undefined : 'Needs more content',
-      })),
-    [notes]
-  );
+  const noteRows = useMemo<PickerRow[]>(() => {
+    const rows = notes.map(note => ({
+      id: note.id,
+      title: note.title || 'Untitled note',
+      subtitle: hasEnoughNoteStudyContent(note) ? undefined : 'Needs more content',
+      disabledReason: hasEnoughNoteStudyContent(note) ? undefined : 'Needs more content',
+    }));
+    // The note the student came from goes first, so the row they mean is the
+    // one under their thumb rather than somewhere down a list of everything
+    // they have ever written.
+    if (!requestedNoteId) return rows;
+    const asked = rows.findIndex(row => row.id === requestedNoteId);
+    if (asked <= 0) return rows;
+    return [rows[asked], ...rows.slice(0, asked), ...rows.slice(asked + 1)];
+  }, [notes, requestedNoteId]);
 
   /**
    * Land back on the Tests list once a job is under way.
@@ -248,6 +264,11 @@ export default function TestBuilderScreen() {
     [handleGroup]
   );
 
+  const preselected = useMemo(
+    () => planPreselectedNote(requestedNoteId, noteRows),
+    [requestedNoteId, noteRows]
+  );
+
   const pickerRows = picker === 'deck' ? deckRows : picker === 'note' ? noteRows : [];
   const pickerTitle = picker === 'deck' ? 'Pick a deck' : 'Pick a note';
   const pickerEmpty =
@@ -272,6 +293,44 @@ export default function TestBuilderScreen() {
         keyExtractor={item => item.id}
         contentContainerStyle={[styles.listContent, { paddingBottom: listPadding }]}
         showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          preselected ? (
+            <View
+              style={[styles.preselectCard, { backgroundColor: testsAccent.tint }]}
+              accessibilityLabel={`From this note: ${preselected.title}.${
+                preselected.disabledReason ? ` ${preselected.disabledReason}.` : ''
+              }`}
+              testID="test-builder-preselected-note"
+            >
+              <Text style={[styles.preselectEyebrow, { color: testsAccent.ink }]}>FROM THIS NOTE</Text>
+              <Text style={[styles.sourceTitle, { color: colors.text }]} numberOfLines={2}>
+                {preselected.title}
+              </Text>
+              {preselected.disabledReason ? (
+                <Text style={[styles.sourceDescription, { color: colors.textSecondary }]}>
+                  {preselected.disabledReason}
+                </Text>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.preselectAction, { backgroundColor: colors.primaryFill }]}
+                  onPress={() => handleNotePicked(preselected.id, preselected.title)}
+                  activeOpacity={0.8}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Generate ${GENERATED_QUESTION_COUNT} questions from ${preselected.title}. Costs ${formatCreditCost(AI_CREDIT_COSTS.generate_questions)}.`}
+                  testID="test-builder-preselected-generate"
+                >
+                  <AppIcon name="sparkles" size={15} color="#ffffff" />
+                  <Text style={[styles.preselectActionText, { color: "#ffffff" }]}>
+                    Generate {GENERATED_QUESTION_COUNT} questions · {formatCreditCost(AI_CREDIT_COSTS.generate_questions)}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              <Text style={[styles.sourceDescription, { color: colors.textSecondary, marginTop: 8 }]}>
+                Or pick another source below.
+              </Text>
+            </View>
+          ) : null
+        }
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[styles.sourceCard, { backgroundColor: colors.card }]}
@@ -461,6 +520,30 @@ const styles = StyleSheet.create({
   sheetEmpty: {
     ...typeScale.body,
     padding: 20,
+  },
+  preselectCard: {
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 12,
+  },
+  preselectEyebrow: {
+    ...typeScale.label,
+    letterSpacing: 0.6,
+    marginBottom: 4,
+  },
+  preselectAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 10,
+    gap: 8,
+  },
+  preselectActionText: {
+    ...typeScale.body,
+    fontWeight: '600',
   },
   pickerRow: {
     flexDirection: 'row',

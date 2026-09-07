@@ -1293,6 +1293,7 @@ export default function DashboardScreen({
             <DoorTile
               feature="flashcards"
               icon={<RectangleStackOutline className="w-6 h-6" />}
+              illustration="cards-fan"
               title="Review"
               promise={dueCardsCount > 0 ? 'Cards are ready now' : 'Nothing due — get ahead'}
               count={dueCardsCount > 0 ? `${dueCardsCount} due` : undefined}
@@ -1303,6 +1304,7 @@ export default function DashboardScreen({
             <DoorTile
               feature="notes"
               icon={<ArrowDownOnSquareIcon className="w-6 h-6" />}
+              illustration="import-tray"
               title="Import"
               promise="PDF or slides into cards"
               onClick={() => (onOpenImportAndStudy ?? onNavigateToAITools)!()}
@@ -1312,6 +1314,7 @@ export default function DashboardScreen({
             <DoorTile
               feature="recording"
               icon={<MicrophoneIcon className="w-6 h-6" />}
+              illustration="mic-wave"
               title="Record"
               promise="A lecture becomes a note"
               onClick={onRecordLecture}
@@ -1321,6 +1324,7 @@ export default function DashboardScreen({
             <DoorTile
               feature="tests"
               icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}
+              illustration="test-sheet"
               title="Test"
               promise="Find the gaps before the exam"
               onClick={onNavigateToTests}

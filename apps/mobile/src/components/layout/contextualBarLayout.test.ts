@@ -32,6 +32,38 @@ describe('resolveContextualSpec', () => {
   it('is null outside the chrome, where there is no bar to sit above', () => {
     expect(resolveContextualSpec({ spec: SPEC, immersive: false, withinChrome: false })).toBeNull();
   });
+
+  it('is null while the keyboard is up — the IME covers the row', () => {
+    // Build 166, note editor with the keyboard open (21-kbd-up.png): the row
+    // was under the IME, on screen but unpressable. A row a thumb cannot reach
+    // is worse than no row, and lifting it would cover the text being typed.
+    expect(
+      resolveContextualSpec({
+        spec: SPEC,
+        immersive: false,
+        withinChrome: true,
+        keyboardVisible: true,
+      })
+    ).toBeNull();
+  });
+
+  it('comes straight back when the keyboard goes down', () => {
+    // The suppression is a rule, not a latch: the same inputs with the
+    // keyboard down give the same row back, unchanged.
+    expect(
+      resolveContextualSpec({
+        spec: SPEC,
+        immersive: false,
+        withinChrome: true,
+        keyboardVisible: false,
+      })
+    ).toBe(SPEC);
+  });
+
+  it('treats an absent keyboard flag as "down"', () => {
+    // Every caller that predates the rule keeps today's behaviour.
+    expect(resolveContextualSpec({ spec: SPEC, immersive: false, withinChrome: true })).toBe(SPEC);
+  });
 });
 
 describe('CONTEXTUAL_BAR_CONTENT_HEIGHT', () => {

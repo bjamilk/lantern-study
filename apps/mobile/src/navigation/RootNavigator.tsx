@@ -698,6 +698,30 @@ function LegacyBudgetTab({ navigation, route }: { navigation: any; route: any })
   return <RedirectSurface />;
 }
 
+/**
+ * The params of the deepest focused route inside a tab, or undefined.
+ *
+ * The contextual row's second half (spec v3 §7.2): the deck row's four modes
+ * are modes of THIS deck and the note row's Test is a test of THIS note, but a
+ * registry entry is a constant and cannot know which. The registry says which
+ * keys an item inherits (`paramsFrom`), and this is where those keys come
+ * from. Walks the same chain `getFocusedRouteNameFromRoute` reports the name
+ * of, so the name and the params always describe the same screen; a tab whose
+ * stack has no state yet is showing its declared root, which takes no params,
+ * so the answer there is undefined rather than the TAB's own params.
+ */
+function focusedRouteParams(route: any): Record<string, unknown> | undefined {
+  let current: any = route;
+  let descended = false;
+  while (current?.state?.routes?.length) {
+    const nested = current.state;
+    current = nested.routes[nested.index ?? nested.routes.length - 1];
+    descended = true;
+  }
+  if (!descended) return undefined;
+  return (current?.params as Record<string, unknown> | undefined) ?? undefined;
+}
+
 function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   const { setTabState } = useChrome();
@@ -753,6 +777,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
    */
   const focusedRoute =
     focused ?? TAB_STACK_ROOT_ROUTE[currentRoute as keyof typeof TAB_STACK_ROOT_ROUTE];
+  /** That route's own params — see `focusedRouteParams`. */
+  const focusedParams = focusedRouteParams(route);
 
   useEffect(() => {
     // `focused` joins the publication: the contextual row (spec v3 §7.2) is a
@@ -760,8 +786,8 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     // still the one component in the app that knows what that route is. It
     // is a plain route name — the registry, not this component, decides
     // whether it carries a row.
-    setTabState({ activeTab, immersive: hideBar, focusedRoute });
-  }, [activeTab, hideBar, focusedRoute, setTabState]);
+    setTabState({ activeTab, immersive: hideBar, focusedRoute, focusedParams });
+  }, [activeTab, hideBar, focusedRoute, focusedParams, setTabState]);
 
   const dueCardsCount = useMemo(
 

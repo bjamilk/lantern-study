@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View } from 'react-native';
+import { Animated, Keyboard, Platform, Pressable, Text, View } from 'react-native';
 import {
   featureAccentsDark,
   featureAccentsLight,
@@ -36,9 +36,14 @@ import {
  * one tap away, which is the whole difference from StudyFetch's answer of
  * deleting its bar on every pushed screen (`inv #77`, `#169`).
  *
- * What it is a function of: THE FOCUSED ROUTE, and nothing else. Not scroll,
- * not the keyboard, not a selection — the same rule `immersive` already
- * follows. The registry lives in navigation/contextualBars.ts (pure, tested);
+ * What its CONTENTS are a function of: THE FOCUSED ROUTE (and, for a route
+ * that hosts more than one destination, the segment its params name). Not
+ * scroll, not a selection — the same rule `immersive` already follows. The one
+ * thing outside the route that touches the row is the soft keyboard, which
+ * removes it entirely rather than moving it: the IME is drawn over the bottom
+ * of the window, so the row was buried and unpressable while typing. Nothing
+ * about the row's ITEMS changes while it is gone, and it returns as it was.
+ * The registry lives in navigation/contextualBars.ts (pure, tested);
  * the arithmetic and the two suppressions live in contextualBarLayout.ts (pure,
  * tested); this file is the untestable shell over both, because mobile jest is
  * node-env and cannot render a native component.
@@ -117,19 +122,48 @@ export function ContextualBar({
 }: {
   onNavigate: (route: RouteName, params?: Record<string, unknown>) => void;
 }) {
-  const { contextual, contextualRoute, immersive, withinChrome, requestScrollToTop } = useChrome();
+  const {
+    contextual,
+    contextualRoute,
+    contextualParams,
+    immersive,
+    withinChrome,
+    requestScrollToTop,
+    runScreenAction,
+  } = useChrome();
   const { colors, isDark, reduceMotion } = useTheme();
   const openCompanion = useCompanionStore((s) => s.open);
   const createNote = useNotesStore((s) => s.createNote);
   const showToast = useToastStore((s) => s.showToast);
   const [openingRecorder, setOpeningRecorder] = useState(false);
 
-  const spec = resolveContextualSpec({ spec: contextual, immersive, withinChrome });
+  /**
+   * Is the soft keyboard up? The row stands down while it is
+   * (contextualBarLayout.ts owns the decision and why).
+   *
+   * `keyboardDidShow`/`Hide` on Android — the `will*` pair is never emitted
+   * there — and the `will*` pair on iOS, where it exists and fires early
+   * enough that the row is gone before the IME slides over its place.
+   */
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const subs = [
+      Keyboard.addListener(showEvent, () => setKeyboardVisible(true)),
+      Keyboard.addListener(hideEvent, () => setKeyboardVisible(false)),
+    ];
+    return () => subs.forEach((sub) => sub.remove());
+  }, []);
+
+  const spec = resolveContextualSpec({ spec: contextual, immersive, withinChrome, keyboardVisible });
   // Which segment is the screen you are looking at. The registry owns the
   // answer — including `activeFor`, the rooms a door owns that are not the
-  // door itself (Tests → TestBuilder). Comparing `target.route` here instead
-  // is what turned the whole row grey the moment "+ New test" was pressed.
-  const current = activeItem(contextualRoute);
+  // door itself (Tests → TestBuilder), and the params that say which SEGMENT
+  // of a route you are on (Campus → Shop). Comparing `target.route` here
+  // instead is what turned the whole row grey the moment "+ New test" was
+  // pressed.
+  const current = activeItem(contextualRoute, contextualParams);
 
   // What is currently PAINTED, which lags `spec` by one animation on the way
   // out: the row has to still be on screen while its height animates to 0.
@@ -191,7 +225,20 @@ export function ContextualBar({
 
   const press = useCallback(
     (item: ContextualBarItem) => {
-      const plan = planContextualPress({ focusedRoute: contextualRoute, item });
+      /**
+       * `focusedParams` is how a row below Study says WHICH thing it is about:
+       * Deck detail's four modes are modes of the deck in the current route's
+       * params, and the note editor's Test is a test of the note in its own.
+       * A registry entry is a static description of a row and cannot carry an
+       * id, so the params travel with the focused route and the registry says
+       * which of them an item inherits. The cast is the seam with lane A: the
+       * field is ignored by a planner that does not read it.
+       */
+      const plan = planContextualPress({
+        focusedRoute: contextualRoute,
+        focusedParams: contextualParams,
+        item,
+      });
       switch (plan.kind) {
         case 'navigate':
           onNavigate(plan.route, plan.params);
@@ -205,9 +252,29 @@ export function ContextualBar({
         case 'record':
           void openRecorder();
           return;
+        case 'screenAction':
+          // Addressed to the focused route, and silent when that screen has
+          // not registered it: a press in the frame between one screen going
+          // and the next arriving must do nothing rather than guess.
+          runScreenAction(contextualRoute, plan.action);
+          return;
+        case 'unavailable':
+          // The item needs a param the focused route did not supply — a deck
+          // mode with no deck. The registry has already decided the honest
+          // answer is nothing at all, rather than a session opened over an
+          // empty deck.
+          return;
       }
     },
-    [contextualRoute, onNavigate, requestScrollToTop, openCompanion, openRecorder]
+    [
+      contextualRoute,
+      contextualParams,
+      onNavigate,
+      requestScrollToTop,
+      openCompanion,
+      openRecorder,
+      runScreenAction,
+    ]
   );
 
   // Nothing to draw and nothing animating out: render nothing at all, so the

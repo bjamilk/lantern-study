@@ -8,7 +8,8 @@ import {
   TrashIcon,
 } from '@heroicons/react/24/outline';
 import type { OfflineSessionBundle, PausedSessionSummary, TestResult } from '../types';
-import { Button, Card, EmptyState, FeatureDisc, ScreenHeader } from './ui';
+import { Button, Card, CourseChip, EmptyState, FeatureDisc, ScreenHeader } from './ui';
+import { useAcademicStore } from '../stores/academicStore';
 import { retakeTitle } from '../utils/testRetake';
 import { tallyAttempt, unansweredNote } from '../utils/testAttempt';
 
@@ -62,6 +63,10 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
   onRetakeResult,
 }) => {
   const [tab, setTab] = useState<TestsTab>('available');
+  // §5.6 list row: "course chip on the right". The chip draws nothing when the
+  // row has no course, which is most of them — a "no course" chip is a label on
+  // an absence.
+  const resolveCourse = useAcademicStore((s) => s.resolveCourse);
 
   const history = useMemo(
     () =>
@@ -104,7 +109,7 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
           <EmptyState
             compact
             feature="tests"
-            icon={<ClipboardDocumentCheckIcon className="w-7 h-7" />}
+            illustration="test-sheet"
             title="Sit a test, find the gaps"
             description="A practice test is the fastest way to learn what you do not know yet — make one from a group's past questions, or from anything already in your library."
             actionLabel={onNewTest ? 'New test' : undefined}
@@ -144,12 +149,19 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
             {tab === 'available' ? (
               <div className="space-y-2">
                 {savedCount === 0 ? (
-                  <Card padding="md">
-                    <p className="text-body text-lantern-text-secondary">
-                      Nothing waiting. Start a new test, or download a group&apos;s questions for
-                      offline — they show up here.
-                    </p>
-                  </Card>
+                  /* Not the screen's first-run panel — that one is above, and
+                     the two never render together (`isEmpty` takes the whole
+                     screen). This is the Available tab with a history behind
+                     it: nothing has arrived, which is what `empty-inbox` says. */
+                  <EmptyState
+                    compact
+                    feature="tests"
+                    illustration="empty-inbox"
+                    title="Nothing waiting"
+                    description="Start a new test, or download a group's questions for offline — they show up here and run with no signal."
+                    actionLabel={onNewTest ? 'New test' : undefined}
+                    onAction={onNewTest}
+                  />
                 ) : null}
 
                 {pausedSessions.map((session) => (
@@ -198,6 +210,10 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                         on this device
                       </p>
                     </div>
+                    <CourseChip
+                      code={resolveCourse(bundle.courseId ?? bundle.config?.courseId)?.code}
+                      title={resolveCourse(bundle.courseId ?? bundle.config?.courseId)?.title}
+                    />
                     {onStartBundle && (
                       <Button size="sm" onClick={() => onStartBundle(bundle.bundleId)}>
                         <PlayIcon className="w-4 h-4" />
@@ -259,6 +275,10 @@ export const TestsHomeScreen: React.FC<TestsHomeScreenProps> = ({
                               />
                             </span>
                           </span>
+                          <CourseChip
+                            code={resolveCourse(result.session.config?.courseId)?.code}
+                            title={resolveCourse(result.session.config?.courseId)?.title}
+                          />
                           <span className="shrink-0 text-right">
                             <span className="block text-heading font-bold tabular-nums text-lantern-text">
                               {percent(result.score)}

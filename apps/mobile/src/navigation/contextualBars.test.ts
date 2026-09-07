@@ -15,6 +15,7 @@ import fs from 'fs';
 import path from 'path';
 import {
   CONTEXTUAL_BARS,
+  CONTEXTUAL_BAR_SEGMENTS,
   accentForRoute,
   activeItem,
   planContextualPress,
@@ -45,8 +46,26 @@ const STACK_COMPONENT: Record<string, string> = {
   MeTab: 'MeStack',
 };
 
+/**
+ * Every row in the file, however it is keyed: the plain route registry AND the
+ * segmented one. The source scans below are the only defence against a route
+ * name that is a typo or lives in another stack, so a registry they do not
+ * walk is a registry with no scan at all — which is how the Shop row shipped
+ * pointing at screens the student never lands on.
+ */
 function entries(): [string, ContextualBarSpec][] {
-  return Object.entries(CONTEXTUAL_BARS) as [string, ContextualBarSpec][];
+  const rows = Object.entries(CONTEXTUAL_BARS) as [string, ContextualBarSpec][];
+  for (const [route, segmented] of Object.entries(CONTEXTUAL_BAR_SEGMENTS)) {
+    for (const [value, spec] of Object.entries(segmented!.values)) {
+      rows.push([`${route}#${segmented!.param}=${value}`, spec]);
+    }
+  }
+  return rows;
+}
+
+/** The route half of an `entries()` key, without any `#segment=…` suffix. */
+function routeOf(key: string): string {
+  return key.split('#')[0];
 }
 
 function itemById(spec: ContextualBarSpec, id: string): ContextualBarItem {
@@ -55,11 +74,19 @@ function itemById(spec: ContextualBarSpec, id: string): ContextualBarItem {
   return item;
 }
 
-const studyBar = (): ContextualBarSpec => {
-  const spec = specForRoute('StudyHub');
-  if (!spec) throw new Error('the Study row is missing');
+const barFor = (route: string): ContextualBarSpec => {
+  const spec = specForRoute(route);
+  if (!spec) throw new Error(`no contextual row on '${route}'`);
   return spec;
 };
+
+const studyBar = (): ContextualBarSpec => barFor('StudyHub');
+const deckBar = (): ContextualBarSpec => barFor('DeckDetail');
+const noteBar = (): ContextualBarSpec => barFor('NoteEditor');
+const shopBar = (): ContextualBarSpec => barFor('ShopBrowse');
+
+/** The params a real `DeckDetail` route carries. */
+const DECK = { deckId: 'deck-1', deckName: 'Pharmacology' };
 
 describe('the registry reads its own navigator', () => {
   it('finds the Study stack in RootNavigator (self-check)', () => {
@@ -83,7 +110,7 @@ describe('the registry reads its own navigator', () => {
     // The row belongs to the screen you are ON; a key from another stack would
     // mean the row never appears, or appears over the wrong navigator.
     for (const [route, spec] of entries()) {
-      expect(screensOf(STACK_COMPONENT[spec.stack])).toContain(route);
+      expect(screensOf(STACK_COMPONENT[spec.stack])).toContain(routeOf(route));
     }
   });
 
@@ -131,6 +158,80 @@ describe('the registry reads its own navigator', () => {
         if (item.target.kind === 'route') expect(item.target.route).not.toBe(root);
       }
     }
+  });
+});
+
+describe('every key is a route the chrome can actually observe', () => {
+  /**
+   * The build-166 defect this describes exists for.
+   *
+   * The Shop row was keyed on `ShopBrowse`, `Cart` and `ShopAccount` — all
+   * three real CampusStack screens, so every scan above passed — and it never
+   * appeared, because the Shop a student reaches from the tab bar is not a
+   * screen at all: `CampusScreen` renders `MarketplaceScreen` inline as its
+   * `shop` SEGMENT, so the route name the chrome publishes there is `Campus`.
+   * A registry key is only worth anything if the chrome can see it.
+   */
+  const CAMPUS_SCREEN = path.resolve(__dirname, '../screens/campus/CampusScreen.tsx');
+
+  /** Every route name any tab stack registers — what CustomTabBar can report. */
+  function observableRoutes(): string[] {
+    return Object.values(STACK_COMPONENT).flatMap(navigator => screensOf(navigator));
+  }
+
+  it('finds screens on all five stacks (self-check)', () => {
+    expect(observableRoutes().length).toBeGreaterThan(40);
+  });
+
+  it('keys every row on a route name some stack registers', () => {
+    const observable = new Set(observableRoutes());
+    const offenders = entries()
+      .map(([key]) => routeOf(key))
+      .filter(route => !observable.has(route));
+    expect(offenders.join('\n')).toBe('');
+  });
+
+  it('carries the Shop row on the SEGMENT the student lands on, not only the department list', () => {
+    expect(specForRoute('Campus', { segment: 'shop' })).toBe(shopBar());
+    expect(activeItem('Campus', { segment: 'shop' })?.id).toBe('browse');
+    expect(accentForRoute('Campus', { segment: 'shop' })).toBe('campus');
+  });
+
+  it('leaves Campus\'s other two segments with no row at all', () => {
+    expect(specForRoute('Campus', { segment: 'communities' })).toBeNull();
+    expect(specForRoute('Campus', { segment: 'jobs' })).toBeNull();
+    // No params at all — the first frame, before the screen has published one.
+    expect(specForRoute('Campus')).toBeNull();
+    expect(specForRoute('Campus', {})).toBeNull();
+    expect(activeItem('Campus', { segment: 'communities' })).toBeNull();
+  });
+
+  it('reads Shop as a segment of Campus in the screen itself (source scan)', () => {
+    // If Shop is ever promoted to its own route, this fails and the segment
+    // entry becomes dead data that reads like a decision.
+    const source = fs.readFileSync(CAMPUS_SCREEN, 'utf8');
+    expect(source).toMatch(/active === 'shop'/);
+    expect(source).toMatch(/<GatedShop/);
+  });
+
+  it('publishes the visible segment where the chrome can read it (source scan)', () => {
+    // The other half of the fix: a segment held only in `useState` is
+    // invisible to CustomTabBar, so the row would never resolve however the
+    // registry were keyed.
+    const source = fs.readFileSync(CAMPUS_SCREEN, 'utf8');
+    expect(source).toMatch(/setParams\?\.\(\{ segment: active \}\)/);
+  });
+
+  it('presses Browse out to the department list from the segment', () => {
+    // Browse is ACTIVE on the segment but is not that route, so it navigates
+    // rather than scrolling — the same rule Tests follows from the builder. It
+    // must never target `Campus`: that is the stack root, the global bar's.
+    expect(
+      planContextualPress({ focusedRoute: 'Campus', item: itemById(shopBar(), 'browse') }),
+    ).toEqual({ kind: 'navigate', route: 'ShopBrowse' });
+    expect(
+      planContextualPress({ focusedRoute: 'Campus', item: itemById(shopBar(), 'cart') }),
+    ).toEqual({ kind: 'navigate', route: 'Cart' });
   });
 });
 
@@ -380,5 +481,321 @@ describe('planContextualPress', () => {
       item: itemById(studyBar(), 'library'),
     });
     expect(Object.prototype.hasOwnProperty.call(plan, 'params')).toBe(false);
+  });
+});
+
+describe('activeFor points only at routes that have the row', () => {
+  it('keys every activeFor route on the SAME spec object', () => {
+    // `activeFor` says "this item is the highlighted one on that screen too".
+    // If that screen is not in the registry it carries no row at all, so the
+    // highlight can never be drawn: the entry reads like a decision and is
+    // dead data. TestBuilder and the two Shop browse rooms are keys precisely
+    // so their rows exist to highlight. A SEGMENTED key counts the same way —
+    // Browse is active on `Campus` because Campus's shop segment carries this
+    // very row — so both registries are consulted.
+    const registry = CONTEXTUAL_BARS as Record<string, ContextualBarSpec>;
+    const carries = (route: string, spec: ContextualBarSpec): boolean => {
+      if (registry[route] === spec) return true;
+      const segmented = CONTEXTUAL_BAR_SEGMENTS[route as keyof typeof CONTEXTUAL_BAR_SEGMENTS];
+      return Object.values(segmented?.values ?? {}).includes(spec);
+    };
+    const offenders: string[] = [];
+    for (const [route, spec] of entries()) {
+      for (const item of spec.items) {
+        for (const extra of item.activeFor ?? []) {
+          if (!carries(extra, spec)) offenders.push(`${route} → ${item.id} → activeFor ${extra}`);
+        }
+      }
+    }
+    expect(offenders.join('\n')).toBe('');
+  });
+});
+
+describe('the deck row', () => {
+  it('is Review · Learn · Match · Cram, the four modes', () => {
+    expect(deckBar().items.map(item => item.id)).toEqual(['review', 'learn', 'match', 'cram']);
+    expect(deckBar().items.map(item => item.label)).toEqual(['Review', 'Learn', 'Match', 'Cram']);
+  });
+
+  it('sends each mode to that mode’s own Study-stack route', () => {
+    const routes = deckBar().items.map(item => (item.target as { route: string }).route);
+    expect(routes).toEqual(['FlashcardReview', 'LearnStudy', 'MatchStudy', 'CramSession']);
+    // The same-stack lint above proves these exist on StudyStack; this proves
+    // the four are not accidentally the same one.
+    expect(new Set(routes).size).toBe(4);
+  });
+
+  it('paints lime (§7.2) even though nothing in it is ever the current screen', () => {
+    // The four targets are immersive, so no press can ever leave you standing
+    // on one of them with the row still up. Without the declared accent the
+    // deck row would be permanently neutral.
+    expect(activeItem('DeckDetail')).toBeNull();
+    expect(accentForRoute('DeckDetail')).toBe('flashcards');
+  });
+
+  it('carries the deck through to the mode it opens', () => {
+    for (const item of deckBar().items) {
+      expect(
+        planContextualPress({ focusedRoute: 'DeckDetail', item, focusedParams: DECK }),
+      ).toEqual({
+        kind: 'navigate',
+        route: (item.target as { route: string }).route,
+        params: { deckId: 'deck-1', deckName: 'Pharmacology' },
+      });
+    }
+  });
+
+  it('carries the id alone when the deck has no name yet', () => {
+    // `deckName` is optional in StudyStackParamList; a key the focused route
+    // does not have must be LEFT OUT, not written as `undefined` — React
+    // Navigation merges params, and an explicit undefined erases one.
+    const plan = planContextualPress({
+      focusedRoute: 'DeckDetail',
+      item: itemById(deckBar(), 'match'),
+      focusedParams: { deckId: 'deck-1' },
+    });
+    expect(plan).toEqual({ kind: 'navigate', route: 'MatchStudy', params: { deckId: 'deck-1' } });
+    expect(
+      Object.prototype.hasOwnProperty.call((plan as { params: object }).params, 'deckName'),
+    ).toBe(false);
+  });
+
+  it('does NOTHING rather than open a session on no deck', () => {
+    // The trap this exists for: a caller that has not been taught to pass the
+    // focused route's params. A navigate would push an immersive session over
+    // an empty deck, which is worse than a dead press.
+    for (const item of deckBar().items) {
+      expect(planContextualPress({ focusedRoute: 'DeckDetail', item })).toEqual({
+        kind: 'unavailable',
+      });
+      expect(
+        planContextualPress({ focusedRoute: 'DeckDetail', item, focusedParams: { deckName: 'x' } }),
+      ).toEqual({ kind: 'unavailable' });
+    }
+  });
+
+  it('never re-taps: no mode is the screen the row is on', () => {
+    // Re-tap means "the item IS the current route". On the deck screen no item
+    // is, so every press must be a real navigate — a `scrollToTop` here would
+    // be a mode button that silently does nothing.
+    for (const item of deckBar().items) {
+      expect(
+        planContextualPress({ focusedRoute: 'DeckDetail', item, focusedParams: DECK }).kind,
+      ).toBe('navigate');
+    }
+  });
+
+  it('is gone inside every mode it opens', () => {
+    // §7.2: a session owns the window. The row that launched it must not
+    // survive into it, and there is nothing to highlight when it is gone.
+    for (const route of ['FlashcardReview', 'LearnStudy', 'MatchStudy', 'CramSession']) {
+      expect(specForRoute(route)).toBeNull();
+      expect(activeItem(route)).toBeNull();
+      expect(accentForRoute(route)).toBeNull();
+    }
+  });
+});
+
+describe('the note row', () => {
+  it('is Learn · Cards · Test · AI', () => {
+    expect(noteBar().items.map(item => item.id)).toEqual(['learn', 'cards', 'test', 'ai']);
+    expect(noteBar().items.map(item => item.label)).toEqual(['Learn', 'Cards', 'Test', 'AI']);
+  });
+
+  it('paints teal (§7.2) with nothing active', () => {
+    expect(activeItem('NoteEditor')).toBeNull();
+    expect(accentForRoute('NoteEditor')).toBe('notes');
+  });
+
+  it('leaves NotesList on the STUDY row — the list is a Study surface', () => {
+    // The editor is a note; the list of notes is one of Study's five places.
+    expect(specForRoute('NotesList')).toBe(specForRoute('StudyHub'));
+    expect(specForRoute('NoteEditor')).not.toBe(specForRoute('NotesList'));
+  });
+
+  it('hands Learn and Cards back to the screen to run', () => {
+    // Neither is a route and neither is a global store: both spend credits and
+    // raise a toast inside the editor's own state.
+    expect(
+      planContextualPress({ focusedRoute: 'NoteEditor', item: itemById(noteBar(), 'learn') }),
+    ).toEqual({ kind: 'screenAction', action: 'noteLearn' });
+    expect(
+      planContextualPress({ focusedRoute: 'NoteEditor', item: itemById(noteBar(), 'cards') }),
+    ).toEqual({ kind: 'screenAction', action: 'noteFlashcards' });
+  });
+
+  it('plans a screen action without needing the focused route at all', () => {
+    // A screen action is not a navigate: it must not become `scrollToTop`, and
+    // it must not wait on focus having settled.
+    for (const route of [undefined, 'NoteEditor', 'NotAScreen']) {
+      expect(
+        planContextualPress({ focusedRoute: route, item: itemById(noteBar(), 'cards') }).kind,
+      ).toBe('screenAction');
+    }
+  });
+
+  it('opens the test builder with THIS note preselected', () => {
+    expect(
+      planContextualPress({
+        focusedRoute: 'NoteEditor',
+        item: itemById(noteBar(), 'test'),
+        focusedParams: { noteId: 'note-9', startRecording: true },
+      }),
+    ).toEqual({ kind: 'navigate', route: 'TestBuilder', params: { noteId: 'note-9' } });
+  });
+
+  it('does not open an empty builder when the note id is missing', () => {
+    expect(
+      planContextualPress({ focusedRoute: 'NoteEditor', item: itemById(noteBar(), 'test') }),
+    ).toEqual({ kind: 'unavailable' });
+  });
+
+  it('still opens the AI panel, the same door the Study row uses', () => {
+    expect(
+      planContextualPress({ focusedRoute: 'NoteEditor', item: itemById(noteBar(), 'ai') }),
+    ).toEqual({ kind: 'openAi' });
+  });
+});
+
+describe('the Shop row', () => {
+  it('is Browse · Cart · You on the CAMPUS stack, not a retired MarketTab', () => {
+    // Spec §7.2 writes "MarketTab / Shop screens"; MarketTab is a redirect
+    // shim (legacyTabs.ts) and Shop's screens live on CampusStack. A row
+    // registered against the wrong stack never appears.
+    expect(shopBar().stack).toBe('CampusTab');
+    expect(shopBar().items.map(item => item.id)).toEqual(['browse', 'cart', 'you']);
+    expect(shopBar().items.map(item => item.label)).toEqual(['Browse', 'Cart', 'You']);
+  });
+
+  it('carries the same row across every shop surface it owns', () => {
+    for (const route of [
+      'ShopBrowse',
+      'CourseBrowse',
+      'CourseListings',
+      'Cart',
+      'ShopAccount',
+    ]) {
+      expect(specForRoute(route)).toBe(shopBar());
+    }
+  });
+
+  it('does not key the redirect that is not a screen', () => {
+    // `MarketplaceHome` forwards to the Campus shop segment in one frame; a
+    // row there would appear and animate straight back out.
+    expect(specForRoute('MarketplaceHome')).toBeNull();
+  });
+
+  it('highlights the surface you are on, browse rooms included', () => {
+    expect(activeItem('ShopBrowse')?.id).toBe('browse');
+    expect(activeItem('CourseBrowse')?.id).toBe('browse');
+    expect(activeItem('CourseListings')?.id).toBe('browse');
+    expect(activeItem('Cart')?.id).toBe('cart');
+    expect(activeItem('ShopAccount')?.id).toBe('you');
+    for (const route of ['ShopBrowse', 'Cart', 'ShopAccount']) {
+      expect(accentForRoute(route)).toBe('campus');
+    }
+  });
+
+  it('re-taps the surface you are already on, and navigates otherwise', () => {
+    expect(
+      planContextualPress({ focusedRoute: 'Cart', item: itemById(shopBar(), 'cart') }),
+    ).toEqual({ kind: 'scrollToTop' });
+    expect(
+      planContextualPress({ focusedRoute: 'Cart', item: itemById(shopBar(), 'browse') }),
+    ).toEqual({ kind: 'navigate', route: 'ShopBrowse' });
+    // Browse is ACTIVE in a department page but is not that route: pressing it
+    // must walk out to the department list, exactly as Tests does from the
+    // test builder.
+    expect(
+      planContextualPress({ focusedRoute: 'CourseListings', item: itemById(shopBar(), 'browse') }),
+    ).toEqual({ kind: 'navigate', route: 'ShopBrowse' });
+  });
+
+  it('carries no params it was not given', () => {
+    const plan = planContextualPress({
+      focusedRoute: 'ShopAccount',
+      item: itemById(shopBar(), 'cart'),
+      focusedParams: { role: 'buyer' },
+    });
+    // No `paramsFrom` means no pass-through: a stray param from whatever
+    // screen you happened to be on must not leak into the target.
+    expect(plan).toEqual({ kind: 'navigate', route: 'Cart' });
+  });
+
+  it('is gone on a listing, which is immersive', () => {
+    expect(specForRoute('ListingDetail')).toBeNull();
+  });
+});
+
+describe('params pass-through, in general', () => {
+  it('lets a focused param override a fixed one of the same name', () => {
+    const item: ContextualBarItem = {
+      id: 'x',
+      label: 'X',
+      icon: 'layers',
+      feature: 'flashcards',
+      target: {
+        kind: 'route',
+        route: 'MatchStudy',
+        params: { deckId: 'fallback' },
+        paramsFrom: ['deckId'],
+      },
+    };
+    expect(
+      planContextualPress({ focusedRoute: 'DeckDetail', item, focusedParams: { deckId: 'real' } }),
+    ).toEqual({ kind: 'navigate', route: 'MatchStudy', params: { deckId: 'real' } });
+  });
+
+  it('keeps a fixed param when the focused route has nothing to say', () => {
+    const item: ContextualBarItem = {
+      id: 'x',
+      label: 'X',
+      icon: 'layers',
+      feature: 'flashcards',
+      target: { kind: 'route', route: 'Library', params: { tab: 'notes' }, paramsFrom: ['deckId'] },
+    };
+    expect(planContextualPress({ focusedRoute: 'DeckDetail', item })).toEqual({
+      kind: 'navigate',
+      route: 'Library',
+      params: { tab: 'notes' },
+    });
+  });
+
+  it('omits params when pass-through resolves to nothing', () => {
+    const item: ContextualBarItem = {
+      id: 'x',
+      label: 'X',
+      icon: 'layers',
+      feature: 'flashcards',
+      target: { kind: 'route', route: 'Library', paramsFrom: ['tab'] },
+    };
+    const plan = planContextualPress({ focusedRoute: 'DeckDetail', item, focusedParams: {} });
+    expect(Object.prototype.hasOwnProperty.call(plan, 'params')).toBe(false);
+  });
+
+  it('ignores focused params entirely for a target with no paramsFrom', () => {
+    expect(
+      planContextualPress({
+        focusedRoute: 'StudyHub',
+        item: itemById(studyBar(), 'library'),
+        focusedParams: { deckId: 'deck-1' },
+      }),
+    ).toEqual({ kind: 'navigate', route: 'Library' });
+  });
+
+  it('never lets `requires` name a key `paramsFrom` does not carry', () => {
+    // A required key that is never copied would make the item permanently
+    // unavailable in one direction, or navigate without it in the other.
+    const offenders: string[] = [];
+    for (const [route, spec] of entries()) {
+      for (const item of spec.items) {
+        if (item.target.kind !== 'route') continue;
+        const { paramsFrom, requires } = item.target;
+        for (const key of requires ?? []) {
+          if (!paramsFrom?.includes(key)) offenders.push(`${route} → ${item.id} requires ${key}`);
+        }
+      }
+    }
+    expect(offenders.join('\n')).toBe('');
   });
 });

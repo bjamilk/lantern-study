@@ -15,6 +15,9 @@ export { NotificationRow } from './NotificationRow';
 export { Toggle } from './Toggle';
 export { LanternIcon } from './LanternIcon';
 export { EmptyState } from './EmptyState';
+export type { EmptyStateProps } from './EmptyState';
+export { Illustration } from './Illustration';
+export type { IllustrationProps, IllustrationName } from './Illustration';
 export { DoorTile } from './DoorTile';
 export type { DoorTileProps } from './DoorTile';
 export { FeatureDisc } from './FeatureDisc';
@@ -25,6 +28,7 @@ export {
   FEATURE_INK_TEXT,
   FEATURE_TINT_BG,
   FEATURE_INK_BG,
+  FEATURE_TINT_FILL,
 } from './featureClasses';
 export type { FeatureKey } from './featureClasses';
 export { FolderNameModal } from './FolderNameModal';

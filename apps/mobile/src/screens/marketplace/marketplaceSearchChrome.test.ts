@@ -3,6 +3,7 @@ import {
   countActiveFilters,
   filtersLabel,
   isSearchExpanded,
+  showsBandCartAndYou,
 } from './marketplaceSearchChrome';
 
 describe('isSearchExpanded', () => {
@@ -90,5 +91,20 @@ describe('countActiveFilters', () => {
         selectedCategory: 'textbooks',
       }),
     ).toBe(8);
+  });
+});
+
+describe('showsBandCartAndYou', () => {
+  it('leaves Cart and You to the contextual row while the box is collapsed', () => {
+    // The build-166 duplication: the row is Browse · Cart · You and the band
+    // drew its own pair a thumb away from it.
+    expect(showsBandCartAndYou(false)).toBe(false);
+  });
+
+  it('draws them while the search box is expanded, where the row stands down', () => {
+    // The row hides under the keyboard by design (contextualBarLayout.ts), and
+    // an expanded box means a keyboard — so a buyer mid-search keeps a route
+    // to the cart and the You hub without wiping the query.
+    expect(showsBandCartAndYou(true)).toBe(true);
   });
 });

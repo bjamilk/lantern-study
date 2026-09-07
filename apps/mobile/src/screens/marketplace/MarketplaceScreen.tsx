@@ -68,6 +68,7 @@ import {
   countActiveFilters,
   filtersLabel,
   isSearchExpanded,
+  showsBandCartAndYou,
 } from './marketplaceSearchChrome';
 import { AppIcon } from '../../components/ui/AppIcon';
 
@@ -816,14 +817,16 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
               <AppIcon name="search" size={19} color={colors.textSecondary} />
             </Pressable>
           )}
-          {/* Alerts, Cart and You stay mounted in BOTH states. searchExpanded
-              is pinned true for as long as a query sits in the store (results
-              browsing, returning from ListingDetail/Cart), not just while
-              typing, and ShopQuickActions (the other Cart/You entry) hides on
-              any query. Unmounting these here would leave a buyer with an
-              active search no route to alerts or the You hub except Close,
-              which wipes the query. Expanded, they shrink to icons and Sell
-              yields; collapsed, all four stretch to fill the row. */}
+          {/* Alerts stays mounted in BOTH states; Cart and You are now the
+              contextual row's (spec v3 §7.2) and appear here only while the
+              search box is expanded, which is the one state the row stands
+              down for — see showsBandCartAndYou. searchExpanded is pinned true
+              for as long as a query sits in the store (results browsing,
+              returning from ListingDetail/Cart), not just while typing, so a
+              buyer with an active search still has a route to the cart and the
+              You hub without pressing Close and wiping the query. Expanded,
+              the buttons shrink to icons and Sell yields; collapsed, Alerts and
+              Sell stretch to fill the row. */}
           <Pressable
             onPress={() => togglePanel('alerts')}
             accessibilityRole="button"
@@ -850,8 +853,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <Badge count={savedSearchNewMatches} />
           </Pressable>
           {/* Amazon keeps the cart and your account one tap away on every
-              page. These replace a favourites toggle and a "..." sheet that
-              hid orders, cart, inquiries and offers behind an extra tap. */}
+              page. On this surface the contextual row is that guarantee, so
+              these two draw only when the row cannot. */}
+          {!showsBandCartAndYou(searchExpanded) ? null : (
+          <>
           <Pressable
             onPress={() => navigation.navigate('Cart')}
             accessibilityRole="button"
@@ -888,6 +893,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             ) : null}
             <Badge count={badges.needsYou} />
           </Pressable>
+          </>
+          )}
           {/* Sell is the one control that yields to the box: it is the widest
               and stays reachable through the You hub's Selling section. While
               collapsed it takes an equal share of the row like the others. */}

@@ -17,9 +17,18 @@ import {
   featureSmallTextInk,
   type FeatureAccentPair,
   type FeatureKey,
+  type IllustrationName,
 } from '@lantern/shared/design';
 import { useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
+import {
+  TILE_BAND_HEIGHT,
+  TILE_CHEVRON_SIZE,
+  TILE_ILLUSTRATION_SIZE,
+  featureTileFooterHeight,
+  featureTileMinHeight,
+} from './featureTileLayout';
+import { Illustration } from './Illustration';
 import { Body, Caption, Label } from './Text';
 
 /** The theme-correct `{ ink, tint }` pair for a feature. */
@@ -136,8 +145,36 @@ export function FeatureDisc({
  *
  * The floor itself does not move: 32/132 is 24% tint, and the spec caps a
  * card at 25%, so a shorter tile would put the band over budget.
+ *
+ * THE PICTURE (spec v3 §5.6 "Imagery rule"). A tile may carry ONE spot
+ * illustration, and it goes in the SLACK — the bottom-left of the body, on
+ * the chevron's own row — not in the band. Three reasons, in order:
+ *
+ *   1. Tint budget. The band is 32 dp of a 132 dp floor, i.e. 24% against a
+ *      25% cap; a 56 dp picture in the band takes it to 80/180 = 44%. In the
+ *      body it costs nothing, because the only filled part of the asset is
+ *      its ground ellipse (~180 px^2 at this size, well under 1% of the tile).
+ *      Being taller, a tile WITH a picture is in fact less tinted than one
+ *      without: ~19% instead of 24%.
+ *   2. The band already has a mark. The 24 dp disc is the FEATURE's mark and
+ *      the illustration is the DOOR's picture; stacking them in one 32 dp
+ *      strip reads as two competing logos.
+ *   3. That slack was the D1 complaint. A one-line promise left ~48 dp of
+ *      blank stripe above the chevron; the picture is what the space is for.
+ *
+ * The picture is decorative: the tile's own accessibility label already says
+ * the title, the count and the promise, so `Illustration` is left unlabelled
+ * and hidden from the screen reader rather than announced as an image.
+ *
+ * WHY THE HEIGHT IS ARITHMETIC AND NOT A MEASUREMENT. Every Home door on
+ * build 166 rendered at its 132 floor with the picture clipped and the chevron
+ * pushed out of the card, while the identical tile on the Study hub rendered
+ * 160 and correct — because Home is the initial route and its doors are the
+ * only ones laid out on the app's first layout pass, where the picture's
+ * subtree contributes no height. So the tile no longer waits to be told: the
+ * footer row is given a definite height and the floor already reserves it. The
+ * arithmetic is in `featureTileLayout.ts`, beside its test.
  */
-const TILE_BAND_HEIGHT = 32;
 
 export function FeatureTile({
   feature,
@@ -146,6 +183,7 @@ export function FeatureTile({
   subtitle,
   count,
   countLabel,
+  illustration,
   onPress,
   accessibilityLabel,
   className = '',
@@ -155,6 +193,11 @@ export function FeatureTile({
   icon: AppIconName;
   title: string;
   subtitle?: string;
+  /**
+   * The door's picture, from the ten in `@lantern/shared/design`. An unmapped
+   * name is a compile error; omitting it draws the tile exactly as before.
+   */
+  illustration?: IllustrationName;
   /** Drawn as a pill on the band. `0` and `undefined` draw nothing. */
   count?: number;
   /** Spoken form of the count, e.g. "3 due". Falls back to the raw number. */
@@ -179,7 +222,12 @@ export function FeatureTile({
           .join('. ')
       }
       testID={testID}
-      style={{ minHeight: 132 }}
+      style={{
+        minHeight: featureTileMinHeight({
+          hasIllustration: Boolean(illustration),
+          hasSubtitle: Boolean(subtitle),
+        }),
+      }}
       className={`flex-1 overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface active:opacity-90 ${className}`}
     >
       <View
@@ -213,10 +261,25 @@ export function FeatureTile({
             </Caption>
           ) : null}
         </View>
-        <View className="flex-row justify-end">
+        <View
+          // Definite, never measured: see the note above. Without it the row
+          // is only as tall as whatever the picture's view has reported, which
+          // on the first pass is nothing.
+          style={{ height: featureTileFooterHeight(Boolean(illustration)) }}
+          className={`flex-row items-end justify-between ${illustration ? 'mt-2' : ''}`}
+        >
+          {illustration ? (
+            <Illustration
+              name={illustration}
+              feature={feature}
+              size={TILE_ILLUSTRATION_SIZE}
+            />
+          ) : (
+            <View />
+          )}
           <AppIcon
             name="chevron-forward"
-            size={16}
+            size={TILE_CHEVRON_SIZE}
             color={accent.ink}
             importantForAccessibility="no"
           />

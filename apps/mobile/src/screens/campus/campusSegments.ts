@@ -72,3 +72,40 @@ export function resolveCampusSegment(
 export function shouldShowSegmentBar(available: readonly CampusSegment[]): boolean {
   return available.length > 1;
 }
+
+/**
+ * Whether the screen should write `active` back into its own route params.
+ *
+ * The params are how the chrome sees which segment is showing (the Shop
+ * contextual row keys on `Campus` + `segment: 'shop'`), so the visible segment
+ * has to be published. There are TWO writers of the same param, though — the
+ * reader's tap, and every `navigate('Campus', { segment })` from a redirect or
+ * a deep link — and an effect that blindly re-publishes `active` whenever it
+ * differs from the params fights the second one: the request effect copies the
+ * new request into `picked` while this one writes the OLD pick back over it,
+ * and the two alternate forever ("Maximum update depth exceeded").
+ *
+ * So the rule is: a request the screen has not yet adopted is never
+ * overwritten. Publish only when the params carry NO request (first mount, or
+ * a root reset that cleared them) or when the request has already been
+ * adopted into `picked` and still does not match what is showing — which is
+ * the one honest disagreement left, a request for a segment whose gate is
+ * closed. The tap itself writes the param directly, so it never needs this.
+ */
+export function shouldPublishCampusSegment({
+  requested,
+  picked,
+  active,
+}: {
+  /** `route.params.segment` — what the params say right now. */
+  requested: CampusSegment | undefined | null;
+  /** The screen's own last adoption of a request or a tap. */
+  picked: CampusSegment | null;
+  /** What is actually on screen (`resolveCampusSegment`). */
+  active: CampusSegment | null;
+}): boolean {
+  if (!active) return false;
+  if (requested === active) return false;
+  if (requested && picked !== requested) return false;
+  return true;
+}

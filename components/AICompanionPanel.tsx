@@ -68,6 +68,7 @@ function withHardBreaks(content: string): string {
     .join('');
 }
 import Drawer from './ui/Drawer';
+import { Illustration } from './ui/Illustration';
 
 interface AICompanionPanelProps {
   context?: CompanionUserContext;
@@ -1091,9 +1092,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
 
 const EmptyState: React.FC<{ theme: 'light' | 'dark'; onQuickPrompt: (text: string) => void }> = ({ theme, onQuickPrompt }) => (
   <div className="flex flex-col items-center gap-4 py-6 text-center">
-    <div className="flex items-center justify-center w-14 h-14 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-dark">
-      <SparklesIcon className="w-8 h-8 text-lantern-primary" />
-    </div>
+    {/* The AI empty state's spot illustration (§5.6). It replaces a plain
+        indigo disc: the disc was a container with a glyph in it, and this is
+        the same hue doing the same job while actually saying what Lantern
+        reads — a book. */}
+    <Illustration name="sparkles-book" feature="ai" size={88} />
     <div>
       <p className={`font-semibold text-base ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}>Hi, I'm Lantern!</p>
       <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>

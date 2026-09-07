@@ -29,6 +29,12 @@ interface Props {
  *
  * The old hub painted every tile and every chevron in `featureAccents.groups`
  * emerald, which made hue mean "this is a tile" instead of "this is Notes".
+ *
+ * Each door also carries its own spot illustration (§5.6): the hub is the one
+ * screen in the app that is nothing BUT doors, so a picture per door is what
+ * makes it scannable without reading five titles. Tiles only — the "Jump back
+ * in" rows below stay bare, because a picture per list item is exactly the
+ * noise §5.8 forbids.
  */
 export function StudyHubScreen({ navigation }: Props) {
   const { decks } = useFlashcardStore();
@@ -136,6 +142,7 @@ export function StudyHubScreen({ navigation }: Props) {
             title="Library"
             subtitle="Turn slides into cards"
             onPress={() => navigation.navigate('Library', { tab: 'notes' })}
+            illustration="notes-stack"
             testID="study-tile-library"
           />
           <FeatureTile
@@ -146,6 +153,7 @@ export function StudyHubScreen({ navigation }: Props) {
             count={dueCardsCount}
             countLabel={`${dueCardsCount} due`}
             onPress={startDueReview}
+            illustration="cards-fan"
             testID="study-tile-flashcards"
           />
         </View>
@@ -159,6 +167,7 @@ export function StudyHubScreen({ navigation }: Props) {
             count={tests.length}
             countLabel={`${tests.length} saved`}
             onPress={() => navigation.navigate('TestsList')}
+            illustration="test-sheet"
             testID="study-tile-tests"
           />
           <FeatureTile
@@ -167,6 +176,7 @@ export function StudyHubScreen({ navigation }: Props) {
             title="Record"
             subtitle="Capture a lecture as notes"
             onPress={() => void openRecorder()}
+            illustration="mic-wave"
             testID="study-tile-record"
           />
         </View>
@@ -181,6 +191,7 @@ export function StudyHubScreen({ navigation }: Props) {
             title="Import & study"
             subtitle="Paste or upload material and get cards and a test back"
             onPress={() => setImportOpen(true)}
+            illustration="import-tray"
             testID="study-tile-import"
           />
         </View>

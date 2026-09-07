@@ -207,6 +207,23 @@ export function tallyAttempt(rows: readonly TallyRow[]): AttemptTally {
 }
 
 /**
+ * The percentage the results header shows. The stored figure and the answers
+ * on the attempt can disagree: an attempt rehydrated from a server that had
+ * not yet learned to score practice runs carries `percentage: 0` beside five
+ * graded answers, and the header then says 0% above a sentence that says
+ * "right on 50% of what you answered". The answers are the record of what
+ * happened, so when they exist the header is derived from them; the stored
+ * figure is used only when there is nothing else to go on.
+ */
+export function displayedScorePercentage(
+  tally: Pick<AttemptTally, 'total' | 'scorePercentage'>,
+  storedPercentage: number | null | undefined
+): number {
+  if (tally.total > 0) return tally.scorePercentage;
+  return Math.max(0, Math.round(storedPercentage ?? 0));
+}
+
+/**
  * The one line that stops a blank from reading as a failure.
  *
  * Returns null when every question was answered — there is nothing to

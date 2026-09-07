@@ -32,16 +32,22 @@ import { withMarketplaceGate } from '../marketplace/MarketplaceGate';
 import {
   CAMPUS_SEGMENT_LABELS,
   resolveCampusSegment,
+  shouldPublishCampusSegment,
   resolveCampusSegments,
   shouldShowSegmentBar,
   type CampusSegment,
 } from './campusSegments';
 import { AppIcon } from '../../components/ui/AppIcon';
-import { FeatureDisc, useFeatureAccent } from '../../components/ui';
+import { FeatureDisc, Illustration, useFeatureAccent } from '../../components/ui';
 import { communityRowIcon } from './communityRowIcon';
 
 interface NavigationProp {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  /**
+   * Optional because the panels below are also rendered under test doubles
+   * that only ever navigate. React Navigation always supplies it.
+   */
+  setParams?: (params: Record<string, unknown>) => void;
 }
 
 interface Props {
@@ -338,7 +344,10 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
                   which says what a room is FOR rather than that the list is
                   empty. Never drawn on the back of a failed load — the banner
                   above has already said what really happened, and "you have
-                  joined nothing" would be a claim we cannot make. */}
+                  joined nothing" would be a claim we cannot make.
+                  So it is CORRECTLY absent for a student who has joined
+                  anything — the build 166 pass did not find it because that
+                  account is in six communities (shots24/23-campus.png). */}
               {!listUnknown && myCommunities.length === 0 ? (
                 <View
                   style={{ backgroundColor: campusAccent.tint }}
@@ -346,7 +355,19 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
                   accessibilityRole="summary"
                 >
                   <View className="flex-row items-center gap-3 mb-2">
-                    <FeatureDisc feature="campus" icon="book" size={32} />
+                    {/* The picture REPLACES the disc rather than joining it:
+                        this card is a door into rooms, and a 32 dp disc plus a
+                        56 dp illustration is two marks saying the same thing.
+                        `variant="surface"` because the card is a full campus
+                        tint panel — the asset's authored tint ground would be
+                        invisible on it. It adds no tint of its own either way,
+                        so the card's chromatic cost is unchanged. */}
+                    <Illustration
+                      name="campus-hall"
+                      feature="campus"
+                      size={56}
+                      variant="surface"
+                    />
                     <Text
                       style={{ color: campusAccent.ink }}
                       className="flex-1 text-heading font-bold"
@@ -460,6 +481,42 @@ export function CampusScreen({ navigation, route }: Props) {
 
   const active = resolveCampusSegment(picked ?? requestedSegment, segments);
 
+  /**
+   * Publish the visible segment back into this route's own params.
+   *
+   * Campus is one route with three destinations inside it, and the app chrome
+   * can only see route names and params (RootNavigator's CustomTabBar). Until
+   * this ran, tapping Shop changed a `useState` and nothing outside the screen
+   * could tell — which is why the Shop contextual row never appeared in build
+   * 166: the chrome saw `Campus`, not `ShopBrowse`. Writing the segment into
+   * the params keeps the row a pure function of the FOCUSED ROUTE
+   * (navigation/contextualBars.ts, CONTEXTUAL_BAR_SEGMENTS) instead of adding
+   * a second, screen-owned publisher of chrome state.
+   *
+   * ONE writer per event. A tap writes the param itself (`selectSegment`
+   * below), and the effect above adopts every `navigate('Campus', { segment })`
+   * from a redirect or a deep link into `picked`. This effect only fills the
+   * gap those two leave — no request at all (first mount, a cleared root
+   * reset), or an adopted request for a segment whose gate is closed — and it
+   * NEVER overwrites a request the screen has not adopted yet. Re-publishing
+   * `active` unconditionally would race the adoption effect: one copies the
+   * new request in while the other writes the old pick back out, forever.
+   * `shouldPublishCampusSegment` holds that rule and its test holds the race.
+   */
+  useEffect(() => {
+    if (!shouldPublishCampusSegment({ requested: requestedSegment, picked, active })) return;
+    navigation.setParams?.({ segment: active });
+  }, [active, picked, requestedSegment, navigation]);
+
+  /** The reader's tap: the screen's own state AND the param the chrome reads. */
+  const selectSegment = useCallback(
+    (segment: CampusSegment) => {
+      setPicked(segment);
+      navigation.setParams?.({ segment });
+    },
+    [navigation]
+  );
+
   if (!active) return <CampusEmpty />;
 
   const panel =
@@ -486,7 +543,7 @@ export function CampusScreen({ navigation, route }: Props) {
             elevation: 2,
           }}
         >
-          <SegmentBar segments={segments} active={active} onSelect={setPicked} />
+          <SegmentBar segments={segments} active={active} onSelect={selectSegment} />
         </View>
       ) : null}
       <View

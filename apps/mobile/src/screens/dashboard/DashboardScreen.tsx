@@ -802,7 +802,9 @@ export function DashboardScreen({ navigation }: Props) {
 
         {/* The four doors. Review is lime because it IS flashcards; the three
             siblings each carry their own feature hue, which is four hues on
-            the screen and none of them repeated. */}
+            the screen and none of them repeated. Each also carries its own
+            spot illustration (§5.6) — these are doors, which is the one place
+            the imagery rule allows a picture. */}
         <View className="flex-row gap-3 mb-3">
           <FeatureTile
             feature="flashcards"
@@ -812,6 +814,7 @@ export function DashboardScreen({ navigation }: Props) {
             count={dueCount}
             countLabel={`${dueCount} due`}
             onPress={() => parent?.navigate('StudyTab', toTab('FlashcardsList'))}
+            illustration="cards-fan"
             testID="home-tile-review"
           />
           <FeatureTile
@@ -820,6 +823,7 @@ export function DashboardScreen({ navigation }: Props) {
             title="Import"
             subtitle="Paste material, get cards"
             onPress={() => setImportOpen(true)}
+            illustration="import-tray"
             testID="home-tile-import"
           />
         </View>
@@ -830,6 +834,7 @@ export function DashboardScreen({ navigation }: Props) {
             title="Record"
             subtitle="Capture a lecture"
             onPress={() => void openRecorder()}
+            illustration="mic-wave"
             testID="home-tile-record"
           />
           <FeatureTile
@@ -838,6 +843,7 @@ export function DashboardScreen({ navigation }: Props) {
             title="Test"
             subtitle="Practise under time"
             onPress={() => parent?.navigate('StudyTab', toTab('TestsList'))}
+            illustration="test-sheet"
             testID="home-tile-test"
           />
         </View>

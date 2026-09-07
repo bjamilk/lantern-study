@@ -12,8 +12,10 @@ import {
   featureAccentsDark,
   featureAccentsLight,
   type FeatureKey,
+  type IllustrationName,
 } from '@lantern/shared/design';
 import { FeatureDisc, smallTextInk } from './FeatureDisc';
+import { Illustration } from './Illustration';
 import { type AppIconName } from './AppIcon';
 import { Heading, Label } from './Text';
 
@@ -116,10 +118,18 @@ export interface CardProps {
   /** Spoken form of `count`, e.g. "4 due". */
   countLabel?: string;
   /**
-   * Wave V2 slot: a flat, two-tone mark drawn in the band's ink. Left empty
-   * today — the imagery rule is explicitly NOT this wave.
+   * ONE spot illustration from `@lantern/shared/design` (spec v3 §5.6). An
+   * unmapped name is a compile error; omitting it draws the card as before.
+   *
+   * It is drawn as a right-hand column of the BODY, not on the band, and the
+   * reason is the 25% tint cap. This card's band is 56 dp — a 32 dp disc plus
+   * `py-3` — against a body that is typically ~160 dp, which is already 26%.
+   * Putting a 72 dp picture up there would make the band 96 and the card 42%
+   * tint. In the body the picture costs no tint at all: the only filled part
+   * of the asset is its ground ellipse. The card's height does not change
+   * either, because the picture is shorter than the content it sits beside.
    */
-  illustration?: React.ReactNode;
+  illustration?: IllustrationName;
 }
 
 export function Card({
@@ -164,7 +174,6 @@ export function Card({
           ) : (
             <View className="flex-1" />
           )}
-          {illustration}
           {showCount ? (
             <View className="px-2 py-0.5 rounded-full bg-lantern-surface">
               <Label
@@ -177,7 +186,16 @@ export function Card({
             </View>
           ) : null}
         </View>
-        <View className="p-4">{children}</View>
+        {illustration ? (
+          <View className="p-4 flex-row items-start gap-3">
+            <View className="flex-1 min-w-0">{children}</View>
+            {/* Decorative: the band's title already names the card, so this
+                is hidden from the screen reader rather than announced. */}
+            <Illustration name={illustration} feature={feature} size={72} />
+          </View>
+        ) : (
+          <View className="p-4">{children}</View>
+        )}
       </View>
     );
   }
@@ -381,6 +399,14 @@ export {
   useFeatureAccent,
   type FeatureDiscSize,
 } from './FeatureDisc';
+// The ten spot illustrations, rendered. Doors, tiles, empty states, heroes.
+export {
+  Illustration,
+  ILLUSTRATION_SIZES,
+  illustrationFills,
+  type IllustrationSize,
+  type IllustrationVariant,
+} from './Illustration';
 // The six type steps, for screens built out of StyleSheet rather than classes.
 export {
   T,

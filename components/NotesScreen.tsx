@@ -4,7 +4,6 @@ import {
   FolderPlusIcon,
   FolderIcon,
   MagnifyingGlassIcon,
-  DocumentTextIcon,
   DocumentArrowUpIcon,
   PhotoIcon,
   CameraIcon,
@@ -29,6 +28,7 @@ import type { NoteFolder, StudyNote } from '../types';
 import {
   ScreenHeader,
   Button,
+  CourseChip,
   EmptyState,
   FolderNameModal,
   Modal,
@@ -1014,7 +1014,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
               />
             ) : (
               <EmptyState
-                icon={<DocumentTextIcon className="w-8 h-8" />}
+                compact
+                feature="notes"
+                illustration="notes-stack"
                 title="No notes yet"
                 description="Create a note, upload a PDF, or import PowerPoint slides to get started."
                 actionLabel="New note"
@@ -1089,14 +1091,17 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                           {note.title}
                         </h3>
                         <span className="flex items-center gap-1 shrink-0">
-                          {note.courseId && resolveCourse(note.courseId) ? (
-                            <span
-                              className="hidden sm:inline text-label px-2 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary"
+                          {/* The shared row chip, not an indigo pill. §5.6 caps
+                              a card at two feature hues and the type disc has
+                              already spent one; a course is metadata, so it
+                              reads as border + secondary ink on every list on
+                              both platforms. */}
+                          <span className="hidden sm:inline-flex">
+                            <CourseChip
+                              code={resolveCourse(note.courseId)?.code}
                               title={resolveCourse(note.courseId)?.title}
-                            >
-                              {resolveCourse(note.courseId)?.code}
-                            </span>
-                          ) : null}
+                            />
+                          </span>
                           <span className="text-label px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary">
                             {sourceBadge(note)}
                           </span>

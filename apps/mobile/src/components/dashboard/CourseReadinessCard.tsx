@@ -74,6 +74,10 @@ export function CourseReadinessCard() {
       feature="tests"
       icon="clipboard"
       title="Exam readiness"
+      // The screen's one tint panel gets the screen's one picture. It sits
+      // beside the courses rather than on the band, which costs the card no
+      // extra tint — see `CardProps.illustration`.
+      illustration="readiness-ring"
       className="mb-4"
     >
       {state.status === 'failed' ? (

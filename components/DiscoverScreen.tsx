@@ -38,6 +38,7 @@ import {
   listStudyRooms,
 } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
+import { Illustration } from './ui';
 import { useGroupStore } from '../stores/groupStore';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
@@ -574,6 +575,26 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 {createBusy ? 'Creating…' : 'Create community'}
               </button>
             </form>
+          ) : null}
+
+          {/* Campus coaching card (§5.7 Campus): one violet panel, shown only
+              while the student has joined nothing. It is not an empty state —
+              the list below it may be full — so it says what a course room is
+              FOR rather than that something is missing, and it disappears the
+              moment they join one. */}
+          {yours.length === 0 && listState !== 'noMatch' ? (
+            <div className="flex items-center gap-4 rounded-xl bg-lantern-feature-campus-tint p-4">
+              <Illustration name="campus-hall" feature="campus" size={64} />
+              <div className="min-w-0">
+                <p className="text-body font-semibold text-lantern-feature-campus-ink">
+                  Your course room is where past questions get verified
+                </p>
+                <p className="mt-0.5 text-caption text-lantern-text">
+                  Join the room for a course you take: the questions other students have sat, marked
+                  up by the people who sat them.
+                </p>
+              </div>
+            </div>
           ) : null}
 
           <section className="grid gap-2 sm:grid-cols-2" aria-label="Communities">

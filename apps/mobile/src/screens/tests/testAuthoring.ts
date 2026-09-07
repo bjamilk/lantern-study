@@ -184,6 +184,27 @@ export const TEST_BUILDER_SOURCES: readonly TestBuilderSource[] = [
  * only place the other word survived into a title, so a note-made test read as
  * a different species from every other row of the same list.
  */
+export interface PreselectableNoteRow {
+  id: string;
+  title: string;
+  disabledReason?: string;
+}
+
+/**
+ * The note the builder should open already chosen, when it was reached from a
+ * note's contextual row. Null when no note was asked for or the asked note is
+ * not in the list (deleted, or not loaded yet — the plain sources still work).
+ * A note that cannot be used is still returned, carrying its reason, so the
+ * card explains rather than silently falling back to the picker.
+ */
+export function planPreselectedNote(
+  requestedNoteId: string | null | undefined,
+  rows: readonly PreselectableNoteRow[]
+): PreselectableNoteRow | null {
+  if (!requestedNoteId) return null;
+  return rows.find(row => row.id === requestedNoteId) ?? null;
+}
+
 export function personalTestTitle(sourceName: string | null | undefined): string {
   const name = (sourceName ?? '').trim();
   return name ? `Test · ${name}` : 'Test';

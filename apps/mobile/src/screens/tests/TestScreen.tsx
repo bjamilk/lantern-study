@@ -17,12 +17,13 @@ import { Screen, useScreenBottomPadding, useScreenInsets, useScrollToTopRequest 
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
 import { matchesCourseFilter, matchesTopicFilter, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
+import { getMyActiveCourses } from '../../services/academic';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
-import { BackButton, EmptyState, FeatureDisc, useFeatureAccent } from '../../components/ui';
+import { BackButton, CourseChip, EmptyState, FeatureDisc, useFeatureAccent } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -71,6 +72,37 @@ export default function TestScreen() {
   const routeTopicId: string | null | undefined = route.params?.topicId;
   const routeTopicLabel: string | undefined = route.params?.topicLabel;
   const [activeTab, setActiveTab] = useState<TabType>(routeTab === 'history' ? 'history' : 'tests');
+  /**
+   * `courseId` -> the printed code ("BIO 201") for the History row chips.
+   *
+   * The same lookup the Library uses (`getMyActiveCourses`, already cached for
+   * a minute behind every course picker), so a student can scan a mixed
+   * history for one course without reading titles. A saved TEST carries no
+   * course — only the sitting does — so the chip appears on History rows and
+   * nowhere else.
+   *
+   * A failed lookup is silent: the chip is decoration on a row that reads
+   * correctly without it, and History must never banner because an enrolment
+   * list did not load.
+   */
+  const [courseCodes, setCourseCodes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    getMyActiveCourses()
+      .then((rows) => {
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const row of rows) {
+          if (row.course?.id && row.course.code) map[row.course.id] = row.course.code;
+        }
+        setCourseCodes(map);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const [historyCourse, setHistoryCourse] = useState<HistoryFilter | null>(
     routeCourseId
       ? {
@@ -474,7 +506,18 @@ export default function TestScreen() {
         <View style={{ width: 12 }} />
         
         <View style={styles.attemptInfo}>
-          <Text style={[styles.attemptName, { color: colors.text }]} numberOfLines={1}>{item.testName}</Text>
+          {/* What it is ABOUT, printed once at the right edge. Neutral by
+              design: the sky disc already spends this row's hue on what the
+              thing IS (spec v3 §5.6). No course, no chip. */}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 8 }}>
+            <Text
+              style={[styles.attemptName, { color: colors.text, flex: 1 }]}
+              numberOfLines={1}
+            >
+              {item.testName}
+            </Text>
+            <CourseChip code={item.courseId ? courseCodes[item.courseId] : undefined} />
+          </View>
           {rowSource ? (
             <Text style={[styles.attemptSource, { color: colors.textSecondary }]} numberOfLines={1}>
               {rowSource.label}
@@ -564,7 +607,7 @@ export default function TestScreen() {
       </View>
     </View>
     );
-  }, [handleViewAttempt, handleRetake, handleDeleteAttempt, colors, testsAccent.ink]);
+  }, [handleViewAttempt, handleRetake, handleDeleteAttempt, colors, courseCodes, testsAccent.ink]);
 
   /**
    * The empty state: the shared `EmptyState` card — a neutral panel with ONE
@@ -583,6 +626,11 @@ export default function TestScreen() {
       <EmptyState
         feature="tests"
         icon={activeTab === 'tests' ? 'document-text' : 'time'}
+        // Only the Available tab gets the picture. History's emptiness is
+        // usually a FILTER result ("nothing under this topic yet"), and a
+        // hero illustration on a filtered list reads as if the whole feature
+        // were empty.
+        illustration={activeTab === 'tests' ? 'test-sheet' : undefined}
         title={activeTab === 'tests' ? 'Practise before it counts' : 'Every score you have earned'}
         description={
           activeTab === 'tests'

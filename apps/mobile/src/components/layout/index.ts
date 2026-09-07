@@ -46,7 +46,18 @@ export {
 } from './screenInsets';
 
 export { BOTTOM_TAB_BAR_CONTENT_HEIGHT, BottomTabBar, useTabBarClearance } from './BottomTabBar';
-export { ChromeProvider, useChrome, useScrollToTopRequest } from './ChromeContext';
+export {
+  ChromeProvider,
+  useChrome,
+  useScreenActions,
+  useScrollToTopRequest,
+} from './ChromeContext';
+export {
+  planScreenActionDispatch,
+  screenActionEntries,
+  screenActionKey,
+  type ScreenActionHandler,
+} from './screenActionDispatch';
 export {
   CONTEXTUAL_BAR_ANIMATION_MS,
   CONTEXTUAL_BAR_CONTENT_HEIGHT,

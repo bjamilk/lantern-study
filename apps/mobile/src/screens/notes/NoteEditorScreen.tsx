@@ -1,4 +1,5 @@
-import { Screen } from '../../components/layout';
+import { Screen, useScreenActions } from '../../components/layout';
+import { learnTailPadding } from './noteLearnScroll';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -230,6 +231,23 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [showCollaborators, setShowCollaborators] = useState(false);
   const [parentScrollEnabled, setParentScrollEnabled] = useState(true);
   const tabBarClearance = useTabBarClearance(16);
+  /**
+   * The note's own scroller, and where the "Learn from this note" panel sits
+   * inside it. Both exist for the contextual row's Learn item (spec v3 §7.2):
+   * the panel is a section of this screen, not a route, so the row asks the
+   * screen to bring it into view rather than navigating anywhere.
+   */
+  const scrollRef = useRef<ScrollView>(null);
+  const learnPanelY = useRef(0);
+  /**
+   * The two measurements `learnTailPadding` needs (noteLearnScroll.ts): how
+   * tall the scroller is and how tall the Learn panel is. State rather than
+   * refs because the answer is a style — the padding has to be re-rendered
+   * when either changes — and each setter is guarded on equality so a layout
+   * pass that reports the same number does not loop.
+   */
+  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
+  const [learnPanelHeight, setLearnPanelHeight] = useState(0);
   const openCompanionWithMessage = useCompanionStore(s => s.openWithMessage);
   const handleDocumentScrollLock = useCallback((locked: boolean) => {
     setParentScrollEnabled(!locked);
@@ -889,6 +907,53 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     });
   };
 
+  /**
+   * The contextual row's two in-place actions (spec v3 §7.2, the `NoteEditor`
+   * row: Learn · Cards · Test · AI).
+   *
+   * Learn and Cards have no route to go to — they are things this screen does
+   * to the note that is open — so the row asks the screen, through
+   * ChromeContext, and only while this screen is the focused one. Test and AI
+   * are not here: Test is a plain navigate to the builder carrying this note's
+   * id, and AI is the app's own companion door, both of which the registry
+   * plans on its own.
+   *
+   * Plain functions, deliberately not memoised: `useScreenActions` reads them
+   * through a ref on every render, so a handler can never close over a stale
+   * `shortForOneCredit` or a note that has since been swapped.
+   */
+  const scrollToLearnPanel = () => {
+    // The panel is a direct child of the scroller's content, so its layout y
+    // IS the offset that puts its heading at the top of the viewport.
+    scrollRef.current?.scrollTo({ y: learnPanelY.current, animated: true });
+  };
+
+  const makeCardsFromNote = () => {
+    // The same work the "Turn into → Flashcards" tile does, and the same
+    // refusals — but the tile prints its cost and its disabled reason before
+    // the tap and a row item cannot, so the one refusal the handler does not
+    // already make out loud is made here.
+    if (shortForOneCredit) {
+      scrollToLearnPanel();
+      Alert.alert(
+        'No credits left today',
+        `Flashcards from a note cost ${formatCreditCost(AI_CREDIT_COSTS.generate_flashcards)}. Your credits reset tomorrow.`
+      );
+      return;
+    }
+    if (isAILoading) return;
+    handleGenerateFlashcards();
+  };
+
+  useScreenActions('NoteEditor', {
+    // The ids are the registry's `ContextualScreenAction` values, not the row
+    // item ids: what the screen offers is named by what it DOES.
+    noteLearn: scrollToLearnPanel,
+    // A note the reader cannot edit has no "Turn into" section at all, so the
+    // row's Cards press falls through to nothing rather than to an alert.
+    noteFlashcards: canEdit ? makeCardsFromNote : undefined,
+  });
+
   const handleDelete = async () => {
 
     // Mirror web App.tsx's onDelete: never delete without confirmation, and
@@ -1047,10 +1112,26 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       <View className="flex-1">
 
         <ScrollView
+          ref={scrollRef}
           className="flex-1"
           keyboardShouldPersistTaps="handled"
           contentContainerClassName="p-4"
-          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          onLayout={event => {
+            const height = event.nativeEvent.layout.height;
+            setScrollViewportHeight(prev => (prev === height ? prev : height));
+          }}
+          // Enough tail for the Learn panel's heading to reach the TOP when the
+          // contextual row's Learn item scrolls to it — it is the last content
+          // in the note, so without this the scroll stopped at the end of the
+          // document and left the panel in the bottom half (16-note-learn.png).
+          // Never less than the chrome clearance; see noteLearnScroll.ts.
+          contentContainerStyle={{
+            paddingBottom: learnTailPadding({
+              base: tabBarClearance,
+              viewportHeight: scrollViewportHeight,
+              panelHeight: learnPanelHeight,
+            }),
+          }}
           scrollEnabled={parentScrollEnabled}
           nestedScrollEnabled
           directionalLockEnabled
@@ -1475,7 +1556,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
 
-          {canEdit ? <Card className="border-lantern-border">
+          {canEdit ? <View
+            // Where the row's Learn item scrolls to. A direct child of the
+            // scroller's content, so `y` needs no conversion.
+            onLayout={event => {
+              const { y, height } = event.nativeEvent.layout;
+              learnPanelY.current = y;
+              setLearnPanelHeight(prev => (prev === height ? prev : height));
+            }}
+          ><Card className="border-lantern-border">
 
             <Text className="text-sm font-semibold text-lantern-text mb-1">
 
@@ -1570,7 +1659,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <AIUsageBadge variant="inline" cost={SMART_NOTES_CREDIT_COST[smartNotesDepth]} />
             </View>
 
-          </Card> : null}
+          </Card></View> : null}
 
         </ScrollView>
 

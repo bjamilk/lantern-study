@@ -7,6 +7,7 @@ import {
   formatSummaryMinutes,
   formatTestConfigSummary,
   personalTestTitle,
+  planPreselectedNote,
   planAttemptRow,
   planRetake,
 } from './testAuthoring';
@@ -339,5 +340,29 @@ describe('planAttemptRow', () => {
       showPracticeChip: false,
       verdict: 'passed',
     });
+  });
+});
+
+describe('planPreselectedNote', () => {
+  const rows = [
+    { id: 'a', title: 'SDOH' },
+    { id: 'b', title: 'Thin', disabledReason: 'Needs more content' },
+  ];
+
+  it('returns nothing when the builder was opened without a note', () => {
+    expect(planPreselectedNote(undefined, rows)).toBeNull();
+    expect(planPreselectedNote(null, rows)).toBeNull();
+  });
+
+  it('returns the asked note so the builder opens with it chosen', () => {
+    expect(planPreselectedNote('a', rows)).toEqual({ id: 'a', title: 'SDOH' });
+  });
+
+  it('keeps an unusable note, with its reason, instead of hiding it', () => {
+    expect(planPreselectedNote('b', rows)?.disabledReason).toBe('Needs more content');
+  });
+
+  it('returns nothing for a note that is not in the list', () => {
+    expect(planPreselectedNote('gone', rows)).toBeNull();
   });
 });

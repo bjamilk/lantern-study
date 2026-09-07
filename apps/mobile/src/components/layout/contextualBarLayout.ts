@@ -54,6 +54,27 @@ export interface ContextualPresenceInput<Spec> {
    * have no bottom bar at all, so there is nothing for a row to sit above.
    */
   withinChrome: boolean;
+  /**
+   * True while the soft keyboard is up.
+   *
+   * The one thing that hides the row without being a property of the route,
+   * and it is here rather than in the component because it is a DECISION, not
+   * an animation. On Android the IME is drawn over the bottom of the window:
+   * build 166's note editor showed the row buried under the keyboard, present
+   * in the tree, unreachable by a thumb (`21-kbd-up.png`). The choice is to
+   * hide it or to lift it, and lifting loses either way — a row that rides the
+   * IME covers the text the student is typing, and a row you cannot press is
+   * worse than a row that is not there. So: while the keyboard is up there is
+   * no row, and it comes straight back when the keyboard goes down.
+   *
+   * This does NOT re-open the "bars move on scroll" door the chrome closed: a
+   * keyboard is an explicit act by the student on this screen, not a side
+   * effect of reading, and the GLOBAL bar still never moves.
+   *
+   * Optional, and false when omitted, so a host with no keyboard to speak of
+   * (and every existing caller) keeps today's behaviour.
+   */
+  keyboardVisible?: boolean;
 }
 
 /**
@@ -69,9 +90,11 @@ export function resolveContextualSpec<Spec>({
   spec,
   immersive,
   withinChrome,
+  keyboardVisible = false,
 }: ContextualPresenceInput<Spec>): Spec | null {
   if (!withinChrome) return null;
   if (immersive) return null;
+  if (keyboardVisible) return null;
   return spec ?? null;
 }
 

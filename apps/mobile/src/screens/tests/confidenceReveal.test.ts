@@ -2,6 +2,7 @@ import {
   REVIEW_OUTCOMES,
   classifyReviewOutcome,
   describeTally,
+  displayedScorePercentage,
   isAnswerProvided,
   isPracticeAttempt,
   questionSourceTarget,
@@ -186,5 +187,20 @@ describe('questionSourceTarget', () => {
       screen: 'GroupChat',
       params: { groupId: 'g1', groupName: 'Bio 101' },
     });
+  });
+});
+
+describe('displayedScorePercentage', () => {
+  it('derives the header from the answers when they exist, so it agrees with the sentence', () => {
+    // Five questions, one right, one wrong, three blank — stored as 0% by an
+    // older server. The sentence says "right on 50% of what you answered";
+    // the header must say 20%, not 0%.
+    const tally = { total: 5, scorePercentage: 20 };
+    expect(displayedScorePercentage(tally, 0)).toBe(20);
+  });
+
+  it('falls back to the stored figure only when there are no answers to count', () => {
+    expect(displayedScorePercentage({ total: 0, scorePercentage: 0 }, 64)).toBe(64);
+    expect(displayedScorePercentage({ total: 0, scorePercentage: 0 }, undefined)).toBe(0);
   });
 });

@@ -44,6 +44,7 @@ import {
   REVIEW_OUTCOMES,
   classifyReviewOutcome,
   describeTally,
+  displayedScorePercentage,
   isAnswerProvided,
   questionSourceTarget,
   resolveQuestionSource,
@@ -231,7 +232,7 @@ export default function TestResultsScreen() {
       // a wrong answer, and it is certainly not a right one.
       score: tallyAttempt(attempt.answers).correct,
       totalQuestions: attempt.answers.length,
-      percentage: attempt.percentage,
+      percentage: displayedScorePercentage(tallyAttempt(attempt.answers), attempt.percentage),
       completedAt: attempt.completedAt || attempt.startedAt,
       timeSpent: attempt.timeSpent,
       analysis: buildAnalysisFromAttempt(attempt),
@@ -681,7 +682,9 @@ export default function TestResultsScreen() {
               </>
             ) : (
               <>
-                <Text style={styles.scorePercentage}>{attempt.percentage}%</Text>
+                <Text style={styles.scorePercentage}>
+                  {displayedScorePercentage(tally, attempt.percentage)}%
+                </Text>
                 <Text style={styles.scoreLabel}>
                   {tally.isPartial ? `Of all ${tally.total}` : 'Score'}
                 </Text>

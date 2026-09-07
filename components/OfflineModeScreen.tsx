@@ -18,6 +18,7 @@ import {
   fetchQuestionBankUpdates,
   downloadQuestionBank,
 } from '../services/supabase';
+import { EmptyState } from './ui/EmptyState';
 import { FeatureHero } from './ui/FeatureHero';
 import { ConnectionBadge } from './ui/ConnectionBadge';
 import { OfflineBundleCard } from './offline/OfflineBundleCard';
@@ -419,15 +420,17 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
             ))}
           </div>
         ) : (
-          <div className="text-center py-10 bg-lantern-surface border border-lantern-border rounded-lantern-xl shadow-lantern">
-            <DocumentTextIcon className="w-16 h-16 text-lantern-text-tertiary mx-auto mb-4" />
-            <p className="text-lantern-text-secondary">
-              You haven&apos;t downloaded any tests for offline use yet.
-            </p>
-            <p className="text-xs text-lantern-text-tertiary mt-1">
-              Go to a group and configure a test to download questions.
-            </p>
-          </div>
+          /* The screen's one tint panel (§5.6 empty state), in amber — the hue
+             §5.7 gives Downloads on Me, so the same idea is the same colour
+             wherever a student meets it. The benefit line says what downloading
+             buys, not that the list is empty. */
+          <EmptyState
+            compact
+            feature="budget"
+            illustration="download-phone"
+            title="Nothing saved on this device yet"
+            description="A downloaded test runs with no signal and costs no data to sit — download a group's questions and they wait here until you do."
+          />
         )}
       </section>
 

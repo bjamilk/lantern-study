@@ -30,9 +30,21 @@
  * imports below are erased (a type, and a predicate from a file that itself has
  * no runtime imports), so mobile jest's node environment can test all of it.
  *
- * FOUNDER SCOPE, this wave: the STUDY registry only. Deck detail, the note
- * editor and the Shop registries are named in §7.2 and come later; adding a key
- * here is the whole change when they do.
+ * FOUNDER SCOPE: all four registries in §7.2 are now here — Study, deck detail,
+ * the note editor and Shop. The three added later than Study brought two things
+ * the Study row never needed, and both are deliberately small:
+ *
+ * - `paramsFrom`. Every deck mode is "this deck, in that mode", so the row has
+ *   to carry the deck id it is standing on. The registry cannot read the
+ *   navigator, so the FOCUSED ROUTE'S OWN PARAMS are passed into
+ *   `planContextualPress` and named keys are copied across. `requires` names
+ *   the keys the item is meaningless without: a Review with no `deckId` opens
+ *   an immersive session on nothing, so the plan is `unavailable` instead —
+ *   never a navigate that lands somewhere broken.
+ * - `screenAction`. Two of the note editor's four doors are not screens and not
+ *   global stores either: "Cards" is that screen's own generate-flashcards flow
+ *   (credits, a job, a toast). The plan names the action and the SCREEN runs
+ *   it, exactly as `record` and `ai` name a door someone else opens.
  */
 
 import type { FeatureKey } from '@lantern/shared/design';
@@ -53,9 +65,48 @@ export type ContextualBarStack = 'HomeTab' | 'StudyTab' | 'ChatTab' | 'CampusTab
  * because both need stores; the plan only says which one to run.
  */
 export type ContextualBarTarget =
-  | { kind: 'route'; route: RouteName; params?: Record<string, unknown> }
+  | {
+      kind: 'route';
+      route: RouteName;
+      /** Fixed params, the same on every press. */
+      params?: Record<string, unknown>;
+      /**
+       * Params to carry across from the FOCUSED route, by name.
+       *
+       * The deck row is the reason this exists: `DeckDetail` → `MatchStudy` is
+       * only meaningful for the deck you are looking at, and the registry is a
+       * constant that cannot know which one that is. Keys absent from the
+       * focused route's params are skipped, not written as `undefined` — React
+       * Navigation merges params, and an explicit `undefined` would erase one
+       * the screen already had.
+       */
+      paramsFrom?: readonly string[];
+      /**
+       * The subset of `paramsFrom` the item is meaningless without.
+       *
+       * `deckId` is required and `deckName` is not: a nameless review is a
+       * cosmetic loss, a deckless one is an immersive session over an empty
+       * deck. A missing required key makes the press `unavailable` rather than
+       * a navigate — the row would rather do nothing than do that.
+       */
+      requires?: readonly string[];
+    }
   | { kind: 'record' }
-  | { kind: 'ai' };
+  | { kind: 'ai' }
+  | { kind: 'screenAction'; action: ContextualScreenAction };
+
+/**
+ * A door that only the focused SCREEN can open.
+ *
+ * Not a route (there is nothing to navigate to) and not a store either (these
+ * flows spend credits, run a job and raise a toast inside the note editor's own
+ * state). The registry names the action; the screen listens for it.
+ */
+export type ContextualScreenAction =
+  /** Scroll to / open the note editor's "Learn from this note" card. */
+  | 'noteLearn'
+  /** The editor's own "Turn into → Flashcards" generate flow. */
+  | 'noteFlashcards';
 
 export interface ContextualBarItem {
   /** Stable id, for keys and for tests; not shown to anyone. */
@@ -84,6 +135,17 @@ export interface ContextualBarSpec {
   /** The tab whose stack every `route` target below belongs to. */
   stack: ContextualBarStack;
   items: readonly ContextualBarItem[];
+  /**
+   * The row's accent when NO item is the current screen.
+   *
+   * Study has none on purpose — its hub is not one of its own doors, so the row
+   * is neutral there and §7.2 says "feature of the active item". The three rows
+   * added after it are the opposite case: §7.2 gives the deck row lime and the
+   * note row teal outright, because you are never standing on one of their
+   * items — `DeckDetail` and `NoteEditor` are the screens the row serves, not
+   * destinations inside it.
+   */
+  accent?: FeatureKey;
 }
 
 /**
@@ -138,6 +200,182 @@ const STUDY_BAR: ContextualBarSpec = {
 };
 
 /**
+ * The deck row: the four ways to study THIS deck, without going back up to the
+ * deck screen's own buttons every time.
+ *
+ * Every target is a fullScreenModal session on the same stack, and every one of
+ * them takes the deck — hence `paramsFrom`. Nothing here is ever the active
+ * item: the sessions are immersive, so the row does not exist inside them, and
+ * `DeckDetail` itself is the screen the row serves rather than a fifth mode. So
+ * the accent is declared (§7.2: lime = `flashcards`) instead of derived.
+ *
+ * Cram is the plain speed run, not the timed drill: the timed one asks for a
+ * length first, and an item in this row may not open a sheet (§7.2 swap rule).
+ */
+const DECK_BAR: ContextualBarSpec = {
+  stack: 'StudyTab',
+  accent: 'flashcards',
+  items: [
+    {
+      id: 'review',
+      label: 'Review',
+      icon: 'play-circle',
+      feature: 'flashcards',
+      target: {
+        kind: 'route',
+        route: 'FlashcardReview',
+        paramsFrom: ['deckId', 'deckName'],
+        requires: ['deckId'],
+      },
+    },
+    {
+      id: 'learn',
+      label: 'Learn',
+      icon: 'school',
+      feature: 'flashcards',
+      target: {
+        kind: 'route',
+        route: 'LearnStudy',
+        paramsFrom: ['deckId', 'deckName'],
+        requires: ['deckId'],
+      },
+    },
+    {
+      id: 'match',
+      label: 'Match',
+      icon: 'shuffle',
+      feature: 'flashcards',
+      target: {
+        kind: 'route',
+        route: 'MatchStudy',
+        paramsFrom: ['deckId', 'deckName'],
+        requires: ['deckId'],
+      },
+    },
+    {
+      id: 'cram',
+      label: 'Cram',
+      icon: 'flash',
+      feature: 'flashcards',
+      target: {
+        kind: 'route',
+        route: 'CramSession',
+        paramsFrom: ['deckId', 'deckName'],
+        requires: ['deckId'],
+      },
+    },
+  ],
+};
+
+/**
+ * The note row: the four things a note becomes — §7.2's "the Note Learn
+ * actions, closes the mobile gap".
+ *
+ * Two of the four are the editor's own flows rather than screens, which is what
+ * `screenAction` is for. Test is the one real navigate: `TestBuilder` is a
+ * Study-stack route and takes the note as its source, so `paramsFrom` carries
+ * `noteId` across and `requires` keeps the builder from opening on nothing.
+ *
+ * Accent teal (`notes`) per §7.2, declared for the same reason as the deck
+ * row: you are standing on the note, not on one of its four doors.
+ */
+const NOTE_BAR: ContextualBarSpec = {
+  stack: 'StudyTab',
+  accent: 'notes',
+  items: [
+    {
+      id: 'learn',
+      label: 'Learn',
+      icon: 'bulb',
+      feature: 'notes',
+      target: { kind: 'screenAction', action: 'noteLearn' },
+    },
+    {
+      id: 'cards',
+      label: 'Cards',
+      icon: 'layers',
+      feature: 'flashcards',
+      target: { kind: 'screenAction', action: 'noteFlashcards' },
+    },
+    {
+      id: 'test',
+      label: 'Test',
+      icon: 'clipboard',
+      feature: 'tests',
+      target: {
+        kind: 'route',
+        route: 'TestBuilder',
+        paramsFrom: ['noteId'],
+        requires: ['noteId'],
+      },
+    },
+    {
+      id: 'ai',
+      label: 'AI',
+      icon: 'sparkles',
+      feature: 'ai',
+      target: { kind: 'ai' },
+    },
+  ],
+};
+
+/**
+ * The Shop row: Browse · Cart · You, §7.2's third registry.
+ *
+ * Shop lives on the CAMPUS stack — `MarketTab` in the spec table is the retired
+ * tab name, kept only as a redirect shim (navigation/legacyTabs.ts) — so every
+ * target here is a `CampusStack` route reached by name, and the Campus tab
+ * stays lit the whole way.
+ *
+ * `MarketplaceHome` is deliberately NOT a key: it is a one-frame redirect onto
+ * the Campus shop segment, and a row on it would flash in and straight back out.
+ * The department pages and the course index are rooms inside Browse rather than
+ * doors of their own, so they hang off `activeFor`.
+ *
+ * Accent `campus` — §7.2 writes "marketplace", which is this palette's name for
+ * the same identity; `FEATURE_KEYS` has eight entries and campus is Shop's.
+ */
+const SHOP_BAR: ContextualBarSpec = {
+  stack: 'CampusTab',
+  accent: 'campus',
+  items: [
+    {
+      id: 'browse',
+      label: 'Browse',
+      icon: 'storefront',
+      feature: 'campus',
+      // Departments and the by-course index are Browse, not extra doors, and
+      // so is Campus's own shop SEGMENT — the grid a student actually lands on
+      // (see CONTEXTUAL_BAR_SEGMENTS). Browse is therefore active there while
+      // still targeting `ShopBrowse`: pressing it opens the department list,
+      // exactly as Tests walks out of the test builder rather than scrolling a
+      // screen that is not there. It cannot target `Campus` in any case — that
+      // is the stack ROOT, which is the global bar's re-tap, never a row's.
+      target: { kind: 'route', route: 'ShopBrowse' },
+      activeFor: ['Campus', 'CourseBrowse', 'CourseListings'],
+    },
+    {
+      id: 'cart',
+      label: 'Cart',
+      icon: 'cart',
+      feature: 'campus',
+      target: { kind: 'route', route: 'Cart' },
+    },
+    {
+      id: 'you',
+      label: 'You',
+      icon: 'person-circle',
+      feature: 'campus',
+      // Orders, saved and the seller tools are rooms of the You hub, but they
+      // are not keys of this registry, so they carry no row and there is
+      // nothing for an `activeFor` to highlight. Adding one here without also
+      // adding the key is dead data that reads like a decision.
+      target: { kind: 'route', route: 'ShopAccount' },
+    },
+  ],
+};
+
+/**
  * Focused route → the row it carries.
  *
  * A route that is absent has NO row (height 0), which is the correct answer for
@@ -155,6 +393,45 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
   // twitch when "+ New test" pushes this screen — only which item is active
   // changes, and `activeFor` keeps that on Tests.
   TestBuilder: STUDY_BAR,
+
+  // One deck, four modes. The sessions themselves are immersive and carry no
+  // row at all, which is why only the deck screen is keyed.
+  DeckDetail: DECK_BAR,
+
+  // The note editor. `NotesList` keeps the STUDY row above — the list is a
+  // Study surface; the editor is a note.
+  NoteEditor: NOTE_BAR,
+
+  // Shop, on the Campus stack. The three keys the row points at, plus the
+  // browse rooms that hang off them, so the row never disappears mid-shop.
+  ShopBrowse: SHOP_BAR,
+  CourseBrowse: SHOP_BAR,
+  CourseListings: SHOP_BAR,
+  Cart: SHOP_BAR,
+  ShopAccount: SHOP_BAR,
+};
+
+/**
+ * The rows that belong to a SEGMENT of a route rather than to the route.
+ *
+ * Build 166's device pass found the Shop row missing everywhere it mattered,
+ * and the reason was not a typo: `ShopBrowse` is a real CampusStack screen,
+ * but it is the DEPARTMENT LIST, two taps in. The Shop a student actually
+ * lands on from the tab bar is the `shop` segment of the `Campus` route —
+ * `CampusScreen` renders `MarketplaceScreen` inline — so the focused route
+ * name the chrome observes there is `Campus`, which no key matched.
+ *
+ * A segment is not screen state: `CampusScreen` publishes the visible one back
+ * into its own route params (`navigation.setParams({ segment })`), so this
+ * stays what the file's header promises — a function of the FOCUSED ROUTE and
+ * its params, decided once, unmovable by scrolling, the keyboard or a
+ * selection. `Campus` with the communities or jobs segment has no row, exactly
+ * as before.
+ */
+export const CONTEXTUAL_BAR_SEGMENTS: Partial<
+  Record<RouteName, { param: string; values: Readonly<Record<string, ContextualBarSpec>> }>
+> = {
+  Campus: { param: 'segment', values: { shop: SHOP_BAR } },
 };
 
 /**
@@ -164,10 +441,23 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
  * session owns the whole window, both bars unmount, and the screen's own header
  * back is the one tap out. `shouldHideTabBar` is the single source for that
  * list, so a route added to it can never keep a row behind the founder's back.
+ *
+ * `focusedParams` is optional and only ever read for a route in
+ * {@link CONTEXTUAL_BAR_SEGMENTS}: a caller that has none still gets the right
+ * answer for every route whose row is the route's alone.
  */
-export function specForRoute(focusedRoute: string | undefined): ContextualBarSpec | null {
+export function specForRoute(
+  focusedRoute: string | undefined,
+  focusedParams?: Record<string, unknown> | undefined,
+): ContextualBarSpec | null {
   if (!focusedRoute) return null;
   if (shouldHideTabBar(focusedRoute)) return null;
+  const segmented = CONTEXTUAL_BAR_SEGMENTS[focusedRoute as RouteName];
+  if (segmented) {
+    const value = focusedParams?.[segmented.param];
+    if (typeof value !== 'string') return null;
+    return segmented.values[value] ?? null;
+  }
   return CONTEXTUAL_BARS[focusedRoute as RouteName] ?? null;
 }
 
@@ -179,8 +469,11 @@ export function specForRoute(focusedRoute: string | undefined): ContextualBarSpe
  * the row paints is this item's `feature` (§7.2, "Accent: feature of the active
  * item"); with no active item the row is neutral.
  */
-export function activeItem(focusedRoute: string | undefined): ContextualBarItem | null {
-  const spec = specForRoute(focusedRoute);
+export function activeItem(
+  focusedRoute: string | undefined,
+  focusedParams?: Record<string, unknown> | undefined,
+): ContextualBarItem | null {
+  const spec = specForRoute(focusedRoute, focusedParams);
   if (!spec) return null;
   return (
     spec.items.find(
@@ -191,22 +484,74 @@ export function activeItem(focusedRoute: string | undefined): ContextualBarItem 
   );
 }
 
-/** The row's accent, or null when nothing in it is the current screen. */
-export function accentForRoute(focusedRoute: string | undefined): FeatureKey | null {
-  return activeItem(focusedRoute)?.feature ?? null;
+/**
+ * The row's accent: the active item's feature, else the row's own declared one.
+ *
+ * The fallback is not a default — it is only ever set on rows whose SCREEN is
+ * not one of their items (the deck, the note), where §7.2 names a colour
+ * outright. Study declares none, so its hub stays neutral exactly as before.
+ */
+export function accentForRoute(
+  focusedRoute: string | undefined,
+  focusedParams?: Record<string, unknown> | undefined,
+): FeatureKey | null {
+  const item = activeItem(focusedRoute, focusedParams);
+  if (item) return item.feature;
+  return specForRoute(focusedRoute, focusedParams)?.accent ?? null;
 }
 
 export interface ContextualPressInput {
   /** The route currently focused inside the tab's stack. */
   focusedRoute: string | undefined;
   item: ContextualBarItem;
+  /**
+   * That route's own params, for targets that declare `paramsFrom`.
+   *
+   * Optional so a caller that has no params to give (or has not been taught to
+   * pass them yet) still compiles and still gets the right plan for every
+   * target that does not need them.
+   */
+  focusedParams?: Record<string, unknown> | undefined;
 }
 
 export type ContextualPressPlan =
   | { kind: 'navigate'; route: RouteName; params?: Record<string, unknown> }
   | { kind: 'scrollToTop' }
   | { kind: 'openAi' }
-  | { kind: 'record' };
+  | { kind: 'record' }
+  /** The focused SCREEN runs this one; see `ContextualScreenAction`. */
+  | { kind: 'screenAction'; action: ContextualScreenAction }
+  /**
+   * Nothing to do: the item needs a param the focused route did not supply.
+   * The row does nothing rather than navigating somewhere broken.
+   */
+  | { kind: 'unavailable' };
+
+/**
+ * The params a `route` target should carry, or null when a required one is
+ * missing.
+ *
+ * Fixed `params` first, `paramsFrom` over the top — the two never name the same
+ * key today, and if they ever do, the value belonging to the deck or note you
+ * are actually looking at is the one that should win. A key the focused route
+ * does not have is left out entirely rather than written as `undefined`, which
+ * React Navigation's param merge would treat as an erasure.
+ */
+function resolveParams(
+  target: Extract<ContextualBarTarget, { kind: 'route' }>,
+  focusedParams: Record<string, unknown> | undefined,
+): Record<string, unknown> | null | undefined {
+  for (const key of target.requires ?? []) {
+    if (focusedParams?.[key] === undefined) return null;
+  }
+  const carried: Record<string, unknown> = { ...(target.params ?? {}) };
+  for (const key of target.paramsFrom ?? []) {
+    const value = focusedParams?.[key];
+    if (value !== undefined) carried[key] = value;
+  }
+  // `{ params: undefined }` is not `{}` to the param merge; say nothing at all.
+  return Object.keys(carried).length > 0 ? carried : undefined;
+}
 
 /**
  * What a press on a contextual item means.
@@ -222,14 +567,18 @@ export type ContextualPressPlan =
 export function planContextualPress({
   focusedRoute,
   item,
+  focusedParams,
 }: ContextualPressInput): ContextualPressPlan {
   const { target } = item;
   if (target.kind === 'record') return { kind: 'record' };
   if (target.kind === 'ai') return { kind: 'openAi' };
+  if (target.kind === 'screenAction') return { kind: 'screenAction', action: target.action };
   if (focusedRoute && target.route === focusedRoute) return { kind: 'scrollToTop' };
+  const params = resolveParams(target, focusedParams);
+  if (params === null) return { kind: 'unavailable' };
   return {
     kind: 'navigate',
     route: target.route,
-    ...(target.params !== undefined ? { params: target.params } : {}),
+    ...(params !== undefined ? { params } : {}),
   };
 }

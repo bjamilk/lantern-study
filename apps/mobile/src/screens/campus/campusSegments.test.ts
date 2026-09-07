@@ -2,6 +2,7 @@ import {
   CAMPUS_SEGMENT_LABELS,
   resolveCampusSegment,
   resolveCampusSegments,
+  shouldPublishCampusSegment,
   shouldShowSegmentBar,
   type CampusSegment,
 } from './campusSegments';
@@ -74,5 +75,40 @@ describe('shouldShowSegmentBar', () => {
 
   it('shows the bar as soon as there are two segments', () => {
     expect(shouldShowSegmentBar(['shop', 'jobs'])).toBe(true);
+  });
+});
+
+describe('shouldPublishCampusSegment', () => {
+  it('publishes on first mount, when the params carry no request', () => {
+    expect(shouldPublishCampusSegment({ requested: undefined, picked: null, active: 'communities' })).toBe(
+      true
+    );
+  });
+
+  it('is quiet when the params already say what is showing', () => {
+    expect(shouldPublishCampusSegment({ requested: 'shop', picked: 'shop', active: 'shop' })).toBe(false);
+    // A deep link the screen has not copied into `picked` yet still resolves
+    // to itself, so there is nothing to write.
+    expect(shouldPublishCampusSegment({ requested: 'shop', picked: null, active: 'shop' })).toBe(false);
+  });
+
+  it('never overwrites a request the screen has not adopted yet', () => {
+    // The oscillation: the reader is on Shop, a JobsHome redirect navigates
+    // Campus with `segment: 'jobs'`. This render still shows Shop (`picked`
+    // wins), the request effect is about to adopt 'jobs' — writing 'shop'
+    // back here would make the two effects alternate forever.
+    expect(shouldPublishCampusSegment({ requested: 'jobs', picked: 'shop', active: 'shop' })).toBe(false);
+  });
+
+  it('publishes the honest answer once a request for a closed gate has been adopted', () => {
+    // Requested Communities, gate closed, so Shop is showing: the params must
+    // say Shop or the chrome keys on a segment nobody is looking at.
+    expect(
+      shouldPublishCampusSegment({ requested: 'communities', picked: 'communities', active: 'shop' })
+    ).toBe(true);
+  });
+
+  it('has nothing to publish when Campus is empty', () => {
+    expect(shouldPublishCampusSegment({ requested: undefined, picked: null, active: null })).toBe(false);
   });
 });

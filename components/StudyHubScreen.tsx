@@ -151,6 +151,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <DoorTile
             feature="notes"
             icon={<Squares2X2Icon className="w-6 h-6" />}
+            illustration="notes-stack"
             title="Library"
             promise="Turn slides into cards"
             count={
@@ -163,6 +164,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <DoorTile
             feature="flashcards"
             icon={<RectangleStackIcon className="w-6 h-6" />}
+            illustration="cards-fan"
             title="Flashcards"
             promise="Spaced repetition that remembers for you"
             count={dueCardsCount > 0 ? `${dueCardsCount} due` : undefined}
@@ -172,6 +174,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             <DoorTile
               feature="tests"
               icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}
+              illustration="test-sheet"
               title="Tests"
               promise="Sit a practice test, see what to fix"
               count={recentTestCount > 0 ? `${recentTestCount} saved` : undefined}
@@ -182,6 +185,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             <DoorTile
               feature="recording"
               icon={<MicrophoneIcon className="w-6 h-6" />}
+              illustration="mic-wave"
               title="Record"
               promise="Record a lecture, get a note back"
               onClick={onRecordLecture}
@@ -190,6 +194,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <DoorTile
             feature="notes"
             icon={<ArrowDownOnSquareIcon className="w-6 h-6" />}
+            illustration="import-tray"
             title="Import & study"
             promise="PDF, slides or pasted notes — one step"
             onClick={onOpenAITools}
