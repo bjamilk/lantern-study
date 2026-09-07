@@ -67,8 +67,33 @@ export async function uploadPushToken(expoPushToken: string): Promise<void> {
   }
 }
 
+/**
+ * What a notification carries for the app to act on.
+ *
+ * `jobId` is Wave G's: the server sends it on a generation push so the client
+ * can mark that job done from the server record — and so the local completion
+ * notification for the same job is not posted a second time on top of it.
+ */
+export interface NotificationPayload {
+  url?: string;
+  jobId?: string;
+  kind?: string;
+  /** The server is telling us a job exists, not that it has finished. */
+  pending?: boolean;
+}
+
+const readPayload = (data: unknown): NotificationPayload => {
+  const raw = (data ?? {}) as Record<string, unknown>;
+  return {
+    url: typeof raw.url === 'string' ? raw.url : undefined,
+    jobId: typeof raw.jobId === 'string' ? raw.jobId : undefined,
+    kind: typeof raw.kind === 'string' ? raw.kind : undefined,
+    pending: raw.pending === true,
+  };
+};
+
 export function addNotificationResponseListener(
-  handler: (url: string | undefined) => void
+  handler: (payload: NotificationPayload) => void
 ): () => void {
   let unsubscribe: (() => void) | undefined;
 
@@ -83,8 +108,25 @@ export function addNotificationResponseListener(
       }),
     });
     const sub = Notifications.addNotificationResponseReceivedListener(response => {
-      const url = response.notification.request.content.data?.url as string | undefined;
-      handler(url);
+      handler(readPayload(response.notification.request.content.data));
+    });
+    unsubscribe = () => sub.remove();
+  });
+
+  return () => {
+    unsubscribe?.();
+  };
+}
+
+/** Fires when a notification ARRIVES with the app running, tapped or not. */
+export function addNotificationReceivedListener(
+  handler: (payload: NotificationPayload) => void
+): () => void {
+  let unsubscribe: (() => void) | undefined;
+
+  void import('expo-notifications').then(Notifications => {
+    const sub = Notifications.addNotificationReceivedListener(notification => {
+      handler(readPayload(notification.request.content.data));
     });
     unsubscribe = () => sub.remove();
   });

@@ -51,6 +51,10 @@ const NON_TEXT_VARS = new Set([
   '--color-primary-dark', // pressed-state fill and gradient stop only
   // FILL role. Gated below by WHITE on it, which is the only text it carries.
   '--color-primary-fill',
+  // FILL role too: the red under a white numeral (count badges, danger
+  // buttons). Never painted as text — red TEXT is `--color-error`, which is
+  // gated as text above. Gated below by WHITE on it.
+  '--color-error-strong',
   // Tint GROUNDS, not inks. Checked below as the background of their own ink.
   '--color-primary-background',
   '--color-accent-background',
@@ -69,7 +73,12 @@ const INK_ON_TINT = [
  * Fill vars, each with the label colour painted on it. A fill is never gated
  * as text — it is gated by what sits ON it.
  */
-const WHITE_ON_FILL = [['--color-primary-fill', '255 255 255']];
+const WHITE_ON_FILL = [
+  ['--color-primary-fill', '255 255 255'],
+  // The badge fix: white on `--color-error` was 3.76:1 in dark. Both themes
+  // are gated so a future re-lightening of either value fails here.
+  ['--color-error-strong', '255 255 255'],
+];
 
 /**
  * Palette key in tokens.ts -> the CSS var index.css must hold for it, as RGB
@@ -93,6 +102,7 @@ const PALETTE_VAR_MAP = {
   success: '--color-success',
   warning: '--color-warning',
   error: '--color-error',
+  errorStrong: '--color-error-strong',
   info: '--color-info',
   border: '--color-border',
 };
@@ -389,6 +399,19 @@ function run() {
       check(`${t.name} white label`, fillVar, label, fill);
     }
 
+    // The warning chip ("Buy freeze", DailyQuestsWidget) is painted on
+    // Tailwind's amber-100 / amber-900@30%, not on a token ground, so the
+    // sweep above never saw it. It shipped `text-amber-700` in BOTH modes,
+    // which on the dark chip is 1.4:1. It now uses `--color-warning`; gate
+    // both grounds so a re-lightening of either fails here.
+    const warningChipGround = t.name === 'light'
+      ? '#fef3c7' // amber-100
+      : composite('#78350f4d', t.surface); // amber-900 at 30% over the card
+    const warningInk = t.vars['--color-warning'];
+    if (warningInk && warningChipGround) {
+      check(`${t.name} --color-warning`, 'amber warning chip', warningInk, warningChipGround);
+    }
+
     // The ink must also hold on the CARD, which in both themes is its own
     // token (light #ffffff, dark #101214) and is where most primary text sits.
     const inkOnCard = t.vars['--color-primary-text'];
@@ -407,6 +430,7 @@ function run() {
         '--color-success',
         '--color-warning',
         '--color-error',
+        '--color-error-strong',
         '--color-info',
       ]) {
         if (!(name in dark)) {
@@ -434,16 +458,47 @@ function run() {
       drift.push(`tokens.ts \`type\` has no "${step}"`);
       continue;
     }
-    const px = (value) => {
-      const m = String(value ?? '').match(/^calc\((\d+(?:\.\d+)?)px \* var\(--type-scale\)\)$/);
-      return m ? parseFloat(m[1]) : NaN;
+    // A step is `calc(<px> * var(--type-scale))`, optionally wrapped in
+    // `max(<floor>px, ...)`. The wrapper is how the two smallest steps survive
+    // the Small text setting: at --type-scale .875 a bare calc drops label to
+    // 9.625px and caption to 11.375px, i.e. the app's own accessibility
+    // setting breaking the 11px floor. See design/type.css.
+    const step_ = (value) => {
+      const raw = String(value ?? '').trim();
+      const capped = raw.match(
+        /^max\(\s*(\d+(?:\.\d+)?)px\s*,\s*calc\((\d+(?:\.\d+)?)px \* var\(--type-scale\)\)\s*\)$/
+      );
+      if (capped) return { px: parseFloat(capped[2]), floor: parseFloat(capped[1]) };
+      const bare = raw.match(/^calc\((\d+(?:\.\d+)?)px \* var\(--type-scale\)\)$/);
+      if (bare) return { px: parseFloat(bare[1]), floor: null };
+      return null;
     };
-    const size = px(typeRoot[`--type-${step}-size`]);
-    const lh = px(typeRoot[`--type-${step}-lh`]);
+    /** The smallest --type-scale the app ships (`:root.font-size-small`). */
+    const MIN_SCALE = 0.875;
+    const sizeSpec = step_(typeRoot[`--type-${step}-size`]);
+    const lhSpec = step_(typeRoot[`--type-${step}-lh`]);
+    const size = sizeSpec ? sizeSpec.px : NaN;
+    const lh = lhSpec ? lhSpec.px : NaN;
     if (!Number.isFinite(size) || !Number.isFinite(lh)) {
-      drift.push(`design/type.css ${step}: size/lh must be calc(<px> * var(--type-scale))`);
+      drift.push(
+        `design/type.css ${step}: size/lh must be calc(<px> * var(--type-scale)), optionally wrapped in max(<floor>px, ...)`
+      );
     } else {
       if (size < 11) drift.push(`${step} is ${size}px — below the 11px floor (spec v3 §6.5)`);
+      // The floor has to hold at the SMALL setting too, not just at scale 1.
+      const floor = sizeSpec.floor;
+      if (size * MIN_SCALE < 11) {
+        if (floor === null) {
+          drift.push(
+            `${step} is ${(size * MIN_SCALE).toFixed(3)}px at the Small text setting — wrap --type-${step}-size in max(11px, ...)`
+          );
+        } else if (floor < 11) {
+          drift.push(`--type-${step}-size floor is ${floor}px — below the 11px floor (spec v3 §6.5)`);
+        }
+      }
+      if (floor !== null && floor > size) {
+        drift.push(`--type-${step}-size floor ${floor}px is above its own ${size}px base — the step would never scale down`);
+      }
       if (size !== token.fontSize) drift.push(`--type-${step}-size: type.css ${size}px != tokens.ts ${token.fontSize}px`);
       if (lh !== token.lineHeight) drift.push(`--type-${step}-lh: type.css ${lh}px != tokens.ts ${token.lineHeight}px`);
     }

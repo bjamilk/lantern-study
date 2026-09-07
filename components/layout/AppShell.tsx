@@ -311,7 +311,7 @@ const AppShell: React.FC<AppShellProps> = ({
                             {aiCredits != null ? (
                                 <span
                                     aria-hidden="true"
-                                    className="absolute top-1 right-0.5 rounded-full bg-lantern-primary px-1 text-[10px] font-bold leading-4 text-white"
+                                    className="absolute top-1 right-0.5 rounded-full bg-lantern-primary px-1 text-label tracking-normal font-bold leading-4 text-white"
                                 >
                                     {aiCredits > 99 ? '99+' : aiCredits}
                                 </span>
@@ -331,7 +331,7 @@ const AppShell: React.FC<AppShellProps> = ({
                             {sidebarProps.unreadNotificationCount > 0 ? (
                                 <span
                                     aria-hidden="true"
-                                    className="absolute top-1 right-0.5 rounded-full bg-lantern-error px-1 text-[10px] font-bold leading-4 text-white"
+                                    className="absolute top-1 right-0.5 rounded-full bg-lantern-error-strong px-1 text-label tracking-normal font-bold leading-4 text-white"
                                 >
                                     {sidebarProps.unreadNotificationCount > 99 ? '99+' : sidebarProps.unreadNotificationCount}
                                 </span>

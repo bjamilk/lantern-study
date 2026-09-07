@@ -974,7 +974,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                       exactly the people we want publishing.
                     */}
                     {shouldShowTrustChip((listing.seller as { trustLevel?: string } | undefined)?.trustLevel) && (
-                      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[10px] font-medium text-lantern-primary">
+                      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-2 py-0.5 text-label tracking-normal font-medium text-lantern-primary">
                         {trustLabel((listing.seller as { trustLevel?: string } | undefined)?.trustLevel)}
                       </span>
                     )}
@@ -1017,14 +1017,14 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               <div className="bg-lantern-primary-background rounded-xl ring-1 ring-lantern-primary/20 dark:ring-lantern-primary/30 overflow-hidden">
                 {/* Header row */}
                 <div className="flex items-center gap-2 px-3 py-2.5">
-                  <span className="px-2 py-0.5 bg-lantern-primary text-white text-[10px] font-bold rounded-md">YOU</span>
+                  <span className="px-2 py-0.5 bg-lantern-primary text-white text-label tracking-normal font-bold rounded-md">YOU</span>
                   <span className="text-xs text-lantern-primary font-medium">This is your listing</span>
                 </div>
 
                 {/* Moderation takedown: read-only for the seller (mirrors MyListingsScreen) */}
                 {isMarketplaceListingModerated(listing.status) ? (
                   <div className="mx-3 mb-3 p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40">
-                    <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 rounded">
+                    <span className="inline-block px-1.5 py-0.5 text-label tracking-normal font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 rounded">
                       {MARKETPLACE_LISTING_STATUS_LABELS[listing.status]}
                     </span>
                     <p className="mt-1 text-[11px] text-red-700 dark:text-red-300">
@@ -1699,7 +1699,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                         <p className="font-semibold text-sm text-lantern-text flex items-center gap-1.5 flex-wrap">
                           {review.reviewer?.name || review.reviewer?.username || 'User'}
                           {review.verifiedPurchase && (
-                            <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 text-label tracking-normal font-medium text-emerald-700 dark:text-emerald-300">
                               <CheckBadgeIcon className="w-3 h-3" aria-hidden />
                               Verified purchase
                             </span>

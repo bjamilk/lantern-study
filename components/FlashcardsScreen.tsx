@@ -338,7 +338,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                       <RectangleStackIcon className="w-5 h-5 text-white/90 flex-shrink-0" />
                       <h2 className="text-sm font-bold text-white truncate drop-shadow-sm">{deck.name}</h2>
                       {deck.isShared && (
-                        <span className="text-[10px] font-bold uppercase tracking-wide text-white/90 bg-white/20 px-1.5 py-0.5 rounded flex-shrink-0">
+                        <span className="text-label font-bold uppercase tracking-wide text-white/90 bg-white/20 px-1.5 py-0.5 rounded flex-shrink-0">
                           Shared
                         </span>
                       )}

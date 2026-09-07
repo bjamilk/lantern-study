@@ -143,6 +143,12 @@
       "require": "./dist/jobs/index.js",
       "default": "./src/jobs/index.ts"
     },
+    "./jobs/*": {
+      "types": "./src/jobs/*.ts",
+      "import": "./src/jobs/*.ts",
+      "require": "./dist/jobs/*.js",
+      "default": "./src/jobs/*.ts"
+    },
     "./analytics": {
       "types": "./src/analytics/index.ts",
       "import": "./src/analytics/index.ts",

@@ -129,7 +129,7 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
       {!loading && code && (
         <>
           <section className="rounded-xl border border-lantern-border bg-lantern-background p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+            <p className="text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
               Your invite link
             </p>
             <p className="mt-1 break-all font-mono text-sm text-lantern-text">{link}</p>
@@ -179,7 +179,7 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
 
           {summary && summary.referrals.length > 0 && (
             <section aria-label="People you invited">
-              <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+              <h2 className="mb-1 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
                 People you invited
               </h2>
               <ul className="divide-y divide-lantern-border/60 rounded-xl border border-lantern-border bg-lantern-background">
@@ -187,7 +187,7 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
                   <li key={r.id} className="flex items-center justify-between px-3 py-2">
                     <span className="text-sm text-lantern-text">{r.refereeName || 'A student'}</span>
                     <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                      className={`rounded-full px-2 py-0.5 text-label tracking-normal font-medium ${
                         r.status === 'rewarded'
                           ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
                           : 'bg-lantern-background-secondary text-lantern-text-secondary'
@@ -205,7 +205,7 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
 
       {!loading && (ambassadors.length > 0 || ambassadorBoard.length > 0) && (
         <section aria-label="Campus ambassadors">
-          <h2 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+          <h2 className="mb-1 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
             Campus ambassadors
           </h2>
           <p className="mb-2 text-xs text-lantern-text-tertiary">
@@ -216,7 +216,7 @@ export const InviteFriendsScreen: React.FC<InviteFriendsScreenProps> = ({ onBack
               {ambassadors.map((a) => (
                 <li key={a.id} className="flex items-center justify-between px-3 py-2">
                   <span className="text-sm text-lantern-text">{a.name}</span>
-                  <span className="text-[10px] font-medium text-lantern-text-secondary">
+                  <span className="text-label tracking-normal font-medium text-lantern-text-secondary">
                     {a.programme || 'Ambassador'}
                   </span>
                 </li>

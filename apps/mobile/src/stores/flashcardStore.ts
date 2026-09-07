@@ -9,6 +9,7 @@ import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared';
 import { applyLocalFlashcardReview } from '@lantern/shared/utils/offlineReview';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
+import { isSyncOpOrphanedByDeckDelete } from './jobsCore';
 import { trackDeckCreated, trackFirstCardAdded } from '../services/productAnalytics';
 import { useSettingsStore } from './settingsStore';
 import { getDeckCardStats, groupFlashcardsByDeck } from '../utils/flashcardHelpers';
@@ -226,6 +227,13 @@ interface FlashcardState {
   error: string | null;
   // explicitly-downloaded deck ids, used to drive manual offline mode
   offlineDeckIds: string[];
+  /**
+   * Cards whose queued write the server refused outright, by card id → the
+   * reason it gave. A refused write is dropped from the sync queue (it can
+   * only ever be refused again), so this is the only remaining record that
+   * the card is local-only.
+   */
+  cardSyncFailures: Record<string, string>;
   
   // Actions
   // No course/topic filter: decks load whole into a shared store (Dashboard, the
@@ -248,6 +256,24 @@ interface FlashcardState {
     userId: string
   ) => Promise<void>;
   deleteDeck: (deckId: string, userId: string) => Promise<void>;
+  /**
+   * Put a deck the SERVER has already written into the local store.
+   *
+   * The counterpart to `createDeck`, for material that is saved in one whole
+   * request (a generation). It is deliberately not optimistic and queues
+   * nothing: the rows it is given exist server-side, so there is no write to
+   * replay and no `temp_` id to rebind. Every optimistic path here ends in a
+   * `syncService.queueOperation`, and that queued create is what survived the
+   * rollback of a failed generation and minted the empty "From: …" decks.
+   */
+  insertSavedDeck: (deck: Deck, cards: Flashcard[]) => Promise<void>;
+  /**
+   * The server has permanently refused this card's queued write.
+   *
+   * Recorded rather than retried: the operation is dropped from the queue by
+   * the sync handler, and this is what is left to tell the student with.
+   */
+  markCardSyncFailed: (cardId: string, message: string) => void;
   createFlashcard: (data: {
     deckId: string;
     type: FlashcardType;
@@ -286,7 +312,8 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   isLoading: false,
   error: null,
   offlineDeckIds: [],
-  
+  cardSyncFailures: {},
+
   // Load cached data from AsyncStorage
   loadFromStorage: async () => {
     try {
@@ -503,6 +530,43 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
 
+  /**
+   * A deck the server has already written, dropped straight into the store.
+   *
+   * No optimistic row, no `temp_` id, no queued operation — the cards came
+   * back from the API with ids, so there is nothing left to sync. This is the
+   * whole point of the one-request save: what the student sees in the library
+   * is what the server holds, or the save failed and they see nothing.
+   */
+  insertSavedDeck: async (deck: Deck, cards: Flashcard[]) => {
+    const isNewDeck = !get().decks.some(d => d.id === deck.id);
+    set(state => {
+      // Merged, not replaced: a generation can be saved INTO a deck the
+      // student already has, and its existing cards are not this run's to drop.
+      const byId = new Map((state.flashcards[deck.id] || []).map(c => [c.id, c]));
+      for (const card of cards) byId.set(card.id, card);
+      const flashcards = { ...state.flashcards, [deck.id]: Array.from(byId.values()) };
+      const decks = state.decks.some(d => d.id === deck.id)
+        ? state.decks.map(d => (d.id === deck.id ? { ...d, ...deck } : d))
+        : [...state.decks, deck];
+      return { flashcards, decks: enrichDecksWithStats(decks, flashcards) };
+    });
+    await get().saveToStorage();
+    if (isNewDeck) {
+      trackDeckCreated(deck.id);
+      if (cards.length > 0) trackFirstCardAdded(deck.id);
+    }
+  },
+
+  markCardSyncFailed: (cardId: string, message: string) => {
+    set(state => ({
+      cardSyncFailures: { ...state.cardSyncFailures, [cardId]: message },
+      // Surfaced through the same field every other write failure uses, so
+      // the student is told once rather than never.
+      error: message,
+    }));
+  },
+
   updateDeck: async (deckId, updates, userId) => {
     // Store previous state for rollback
     const previousDecks = get().decks;
@@ -548,11 +612,21 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }));
     await get().saveToStorage();
     
+    // Nothing queued for this deck may replay now: its own offline `create`
+    // would mint an EMPTY copy of it on the server after the delete, and the
+    // card creates aimed at it would fail against an id that never existed.
+    await syncService
+      .removeQueuedOperations((op) => isSyncOpOrphanedByDeckDelete(op, deckId))
+      .catch(() => {});
+
+    // A deck the server never issued an id for has nothing to delete there.
+    if (deckId.startsWith('temp_')) return;
+
     try {
       await api.deleteDeck(deckId);
     } catch (error: any) {
       console.error('Failed to delete deck on server:', error);
-      
+
       // Queue for later sync
       await syncService.queueOperation('deck', deckId, 'delete', {}, userId);
     }

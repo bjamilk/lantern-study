@@ -1,8 +1,8 @@
 import { Worker, type Job } from "bullmq";
 import { getQueueConnectionOptions } from "../connection";
 import { QUEUE_NAMES } from "../jobs/types";
-import { updateJobStatus, getJobRecord, markJobChargeRefunded } from "../jobStatus";
-import { refundAiCredits, refundFeatureAiCredit } from "../../middleware/aiRateLimit";
+import { setJobStage, getJobRecord, refundJobCreditOnce } from "../jobStatus";
+import type { JobError, JobResultRef } from "@lantern/shared/jobs/jobState";
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
@@ -89,13 +89,59 @@ async function recordGenerationEvent(
   });
 }
 
-async function processAiJob(job: Job): Promise<unknown> {
+/**
+ * What a processor uses to say where it has got to. Every call is best-effort:
+ * a progress write that fails must never fail the student's actual work.
+ */
+export interface JobProgress {
+  stage(stage: "reading" | "generating" | "saving", percent?: number): Promise<void>;
+  /** Where the finished work will live, so the client can navigate to it. */
+  ref(resultRef: JobResultRef): void;
+  /** Read back by wrapProcessor when the job completes. */
+  readonly resultRef?: JobResultRef;
+}
+
+function createProgress(job: Job): JobProgress {
+  const state: { resultRef?: JobResultRef } = {};
+  return {
+    async stage(stage, percent) {
+      if (!job.id) return;
+      try {
+        await setJobStage(job.id, stage, { percent });
+      } catch (err) {
+        console.error(`[queue] progress write failed for job ${job.id}:`, err);
+      }
+    },
+    ref(resultRef) {
+      state.resultRef = resultRef;
+    },
+    get resultRef() {
+      return state.resultRef;
+    },
+  };
+}
+
+/** Anything the student could fix by changing their input is not retryable. */
+function toJobError(err: unknown): JobError {
+  const message = err instanceof Error ? err.message : String(err);
+  const code =
+    (err as { code?: unknown })?.code && typeof (err as { code?: unknown }).code === "string"
+      ? ((err as { code: string }).code)
+      : "JOB_FAILED";
+  const permanent = /invalid|required|not found|unauthor|permission|too (large|long)|unsupported|unknown .* job/i.test(
+    message,
+  );
+  return { code, message, retryable: !permanent };
+}
+
+async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
   const userId = job.data.userId as string | undefined;
   const name = job.name;
 
   switch (name) {
     case "ai.generate.questions": {
       const { notes, count, difficulty, questionTypes, subject } = job.data;
+      await progress.stage("generating");
       const result = await generateQuestionsFromNotes(notes, {
         count,
         difficulty,
@@ -113,6 +159,7 @@ async function processAiJob(job: Job): Promise<unknown> {
     }
     case "ai.generate.flashcards": {
       const { notes, count, style } = job.data;
+      await progress.stage("generating");
       const result = await generateFlashcardsFromNotes(notes, { count, style });
       await recordInference(userId, "generate-flashcards", result);
       await recordGenerationEvent(
@@ -125,6 +172,7 @@ async function processAiJob(job: Job): Promise<unknown> {
     }
     case "ai.explain.answer": {
       const { question, userAnswer, correctAnswer, options } = job.data;
+      await progress.stage("generating");
       const result = await explainAnswer(
         question,
         userAnswer || "",
@@ -135,18 +183,21 @@ async function processAiJob(job: Job): Promise<unknown> {
       return result;
     }
     case "ai.study.recommendations": {
+      await progress.stage("generating");
       const result = await getStudyRecommendations(job.data.performanceData);
       await recordInference(userId, "study-recommendations", result);
       return result;
     }
     case "ai.ask.tutor": {
       const { question, context } = job.data;
+      await progress.stage("generating");
       const result = await askTutor(question, context);
       await recordInference(userId, "ask-tutor", result);
       return result;
     }
     case "ai.enhance.flashcard": {
       const { front, back } = job.data;
+      await progress.stage("generating");
       const result = await enhanceFlashcard(front, back);
       await recordInference(userId, "enhance-flashcard", result);
       return result;
@@ -164,6 +215,7 @@ async function processAiJob(job: Job): Promise<unknown> {
         );
       }
       const client = supabaseService.getClient();
+      await progress.stage("reading");
       const trustedContext = await buildTrustedCompanionContext(
         supabaseService,
         userId,
@@ -192,6 +244,7 @@ async function processAiJob(job: Job): Promise<unknown> {
         content: string;
       }>;
       const trimmed = String(message).trim();
+      await progress.stage("generating");
       const { reply, actions, provider } = await companionChat(
         trimmed,
         history,
@@ -199,6 +252,8 @@ async function processAiJob(job: Job): Promise<unknown> {
       );
       await recordInference(userId, "companion-message", { provider });
 
+      await progress.stage("saving");
+      progress.ref({ type: "conversation", id: conversation.id });
       const now = new Date().toISOString();
       await client.from("ai_companion_messages").insert([
         {
@@ -233,9 +288,12 @@ async function processAiJob(job: Job): Promise<unknown> {
         guidance?: string;
         depth?: "concise" | "standard" | "deep";
       };
+      await progress.stage("generating");
       const result = await summarizeNoteContent(content, { title, sourceType, guidance, depth });
       await recordInference(userId, "summarize-note", result);
       if (noteId && userId && supabaseService) {
+        await progress.stage("saving");
+        progress.ref({ type: "note", id: noteId, route: `/notes/${noteId}` });
         const latest = await supabaseService.getNote(noteId, userId);
         const nextBody = upsertSmartNotesSection(latest.body || "", result.summary);
         const note = await supabaseService.updateNote(
@@ -255,6 +313,7 @@ async function processAiJob(job: Job): Promise<unknown> {
         count?: number;
         noteId?: string;
       };
+      await progress.stage("generating");
       const result = await generateDailyQuiz(content, { studyGoal, count });
       await recordInference(userId, "note-quiz", result);
       await recordGenerationEvent(
@@ -264,6 +323,7 @@ async function processAiJob(job: Job): Promise<unknown> {
         job.data as Record<string, unknown>,
       );
       if (noteId && userId && supabaseService) {
+        await progress.stage("saving");
         const questions = result.questions.map((q, index) => ({
           id: `nq-${index}`,
           text: q.text,
@@ -277,6 +337,7 @@ async function processAiJob(job: Job): Promise<unknown> {
           studyGoal: studyGoal || "retention",
           questions,
         });
+        progress.ref({ type: "quiz", id: noteId, route: `/notes/${noteId}/quiz` });
         return session;
       }
       return result;
@@ -287,6 +348,7 @@ async function processAiJob(job: Job): Promise<unknown> {
         count?: number;
         style?: string;
       };
+      await progress.stage("generating");
       const result = await generateFlashcardsFromNotes(content, {
         count,
         style: style as "concise" | "detailed" | undefined,
@@ -305,6 +367,8 @@ async function processAiJob(job: Job): Promise<unknown> {
       if (!draftId || !supabaseService) {
         throw new Error("Study pack generation job requires draftId and supabase service");
       }
+      await progress.stage("generating");
+      progress.ref({ type: "studyPack", id: draftId, route: `/study-packs/drafts/${draftId}` });
       // Throws on total failure → the worker wrapper refunds the AI charge.
       return getStudyPackFactoryService(supabaseService).generate(draftId);
     }
@@ -313,15 +377,19 @@ async function processAiJob(job: Job): Promise<unknown> {
   }
 }
 
-async function processFileJob(job: Job): Promise<unknown> {
+async function processFileJob(job: Job, progress: JobProgress): Promise<unknown> {
   if (job.name === "deck.importApkg") {
     const { apkgBase64, userId } = job.data as {
       apkgBase64: string;
       userId: string;
     };
     const buffer = Buffer.from(apkgBase64, "base64");
+    await progress.stage("reading");
     const importData = await parseApkgBuffer(buffer);
+    await progress.stage("saving");
     const importedDeck = await supabaseService.importDeck(importData, userId);
+    const deckId = (importedDeck as { id?: string })?.id;
+    if (deckId) progress.ref({ type: "deck", id: deckId, route: `/flashcards/${deckId}` });
     return { success: true, data: importedDeck };
   }
   if (job.name === "notes.presentation.preview") {
@@ -342,6 +410,7 @@ async function processFileJob(job: Job): Promise<unknown> {
       bufferBase64?: string;
       extractedText?: string;
     };
+    await progress.stage("reading");
     await runPresentationPreviewJob(supabaseService, {
       noteId,
       attachmentId,
@@ -360,6 +429,7 @@ async function processFileJob(job: Job): Promise<unknown> {
       videoId: string;
       meta?: Record<string, unknown>;
     };
+    await progress.stage("reading");
     const result = await runYoutubeTranscriptJob(supabaseService, {
       noteId,
       attachmentId,
@@ -386,6 +456,7 @@ async function processFileJob(job: Job): Promise<unknown> {
       meta?: Record<string, unknown>;
       bufferBase64?: string;
     };
+    await progress.stage("reading");
     const result = await runNoteOcrJob(supabaseService, {
       noteId,
       attachmentId,
@@ -407,16 +478,17 @@ async function processFileJob(job: Job): Promise<unknown> {
   throw new Error(`Unknown file job: ${job.name}`);
 }
 
-async function processExportJob(job: Job): Promise<unknown> {
+async function processExportJob(job: Job, progress: JobProgress): Promise<unknown> {
   if (job.name === "export.userData") {
     const { userId } = job.data as { userId: string };
+    await progress.stage("generating");
     const archive = await supabaseService.exportUserData(userId);
     return { success: true, data: archive };
   }
   throw new Error(`Unknown export job: ${job.name}`);
 }
 
-async function processCronJob(job: Job): Promise<unknown> {
+async function processCronJob(job: Job, _progress: JobProgress): Promise<unknown> {
   if (job.name === "cron.dataRetention") {
     // Shared with in-process retention: AI log purges + overdue paused-account hard deletes.
     return runDataRetentionPurge(supabaseService);
@@ -444,16 +516,17 @@ async function processCronJob(job: Job): Promise<unknown> {
   throw new Error(`Unknown cron job: ${job.name}`);
 }
 
-function wrapProcessor(processor: (job: Job) => Promise<unknown>) {
+function wrapProcessor(processor: (job: Job, progress: JobProgress) => Promise<unknown>) {
   return async (job: Job) => {
-    await updateJobStatus(job.id!, "active");
+    const progress = createProgress(job);
+    // Every job starts by reading its input; processors move it on from there.
+    await progress.stage("reading");
     try {
-      const result = await processor(job);
-      await updateJobStatus(job.id!, "completed", { result });
+      const result = await processor(job, progress);
+      await setJobStage(job.id!, "done", { result, resultRef: progress.resultRef });
       return result;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      await updateJobStatus(job.id!, "failed", { error: message });
+      await setJobStage(job.id!, "failed", { error: toJobError(err) });
       await refundChargeOnFinalFailure(job).catch((refundErr) => {
         console.error(`[queue] Credit refund failed for job ${job.id}:`, refundErr);
       });
@@ -465,19 +538,7 @@ function wrapProcessor(processor: (job: Job) => Promise<unknown>) {
 /** Refund whatever charge is stamped on this job's record (idempotent). */
 async function refundJobCharge(job: Job): Promise<void> {
   const record = job.id ? await getJobRecord(job.id) : null;
-  const userId = record?.userId;
-  const charge = record?.charge;
-  if (!record || !userId || !charge || charge.credits <= 0) return;
-  if (!(await markJobChargeRefunded(job.id!))) return;
-
-  if (charge.featureKey) {
-    await refundFeatureAiCredit(userId, charge.featureKey);
-  } else {
-    await refundAiCredits(userId, charge.credits);
-  }
-  console.log(
-    `[queue] Refunded ${charge.credits} AI credit(s)${charge.featureKey ? ` (+1 ${charge.featureKey})` : ''} for failed job ${job.id}`
-  );
+  await refundJobCreditOnce(record);
 }
 
 /**
@@ -546,7 +607,7 @@ export function startWorkers(): Worker[] {
       // This hook DOES fire for them: record the failure and refund the
       // charge (idempotent, so overlap with the catch path is harmless).
       if (job?.id) {
-        void updateJobStatus(job.id, "failed", { error: err.message }).catch(() => {});
+        void setJobStage(job.id, "failed", { error: toJobError(err) }).catch(() => {});
         void refundChargeOnFinalFailure(job).catch((refundErr) => {
           console.error(`[queue] Credit refund failed for stalled job ${job.id}:`, refundErr);
         });

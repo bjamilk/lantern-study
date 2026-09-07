@@ -231,7 +231,7 @@ export default function JobCompanyScreen({
                     <p className="font-medium text-lantern-text">
                       {job.title}
                       {job.hasApplied ? (
-                        <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                        <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-label font-bold uppercase tracking-wide text-emerald-800">
                           Already applied
                         </span>
                       ) : null}

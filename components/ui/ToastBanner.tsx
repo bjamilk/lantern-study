@@ -19,7 +19,7 @@ interface ToastBannerProps {
 
 const typeStyles: Record<ToastType, string> = {
   success: 'bg-lantern-success text-white',
-  error: 'bg-lantern-error text-white',
+  error: 'bg-lantern-error-strong text-white',
   info: 'bg-lantern-primary text-white',
 };
 

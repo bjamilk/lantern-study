@@ -22,6 +22,13 @@ import {
 } from '@heroicons/react/24/outline';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
+import { runAiJob } from '../stores/aiJobRunner';
+import { useAiJobUserId } from '../hooks/useAiJobs';
+import {
+  SMART_NOTES_CREDIT_COST,
+  AI_CREDIT_COSTS,
+  getSmartNotesCreditCost,
+} from '@lantern/shared/utils/aiCredits';
 import DailyQuizWidget from './DailyQuizWidget';
 import YouTubeEmbed from './YouTubeEmbed';
 import YoutubeTranscriptPanel, {
@@ -213,6 +220,82 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     summary: note.summary,
     attachments: note.attachments,
   }).length;
+
+  const aiJobUserId = useAiJobUserId();
+
+  /**
+   * The three note-level generators, each filed as a tracked AI job.
+   *
+   * Before this, every one of these was a bare `await` inside the panel: leave
+   * the note while Smart Notes is running and the result had nowhere to land,
+   * even though the credits were already spent. Handing the promise to the
+   * module-level runner keeps it alive across navigation and unmount, and the
+   * progress panel reports it from wherever the student ends up.
+   *
+   * When signed out there is no owner to file a job against, so these fall
+   * straight through to the original behaviour.
+   */
+  const runSmartNoteJob: NoteEditorScreenProps['onSmartNote'] = async (editorState, options) => {
+    if (!aiJobUserId) return onSmartNote(editorState, options);
+    return runAiJob(
+      {
+        userId: aiJobUserId,
+        kind: 'smart_notes',
+        title: title || note.title || 'Untitled note',
+        stages: ['Reading your note', 'Writing Smart Notes', 'Saving to your note'],
+        creditCost: options?.depth
+          ? getSmartNotesCreditCost(options.depth)
+          : SMART_NOTES_CREDIT_COST.standard,
+        target: { path: `/notes/${note.id}`, label: 'Open note' },
+      },
+      async (report) => {
+        report(1);
+        const summary = await onSmartNote(editorState, options);
+        report(2);
+        return summary;
+      }
+    );
+  };
+
+  const runFlashcardJob = async () => {
+    if (!aiJobUserId) return onGenerateFlashcards({ title, body });
+    return runAiJob(
+      {
+        userId: aiJobUserId,
+        kind: 'flashcards',
+        title: title || note.title || 'Untitled note',
+        stages: ['Reading your note', 'Writing flashcards', 'Saving your deck'],
+        creditCost: AI_CREDIT_COSTS.generate_flashcards,
+        target: { path: '/flashcards', label: 'Open flashcards' },
+      },
+      async (report) => {
+        report(1);
+        const result = await onGenerateFlashcards({ title, body });
+        report(2);
+        return result;
+      }
+    );
+  };
+
+  const runQuizJob = async () => {
+    if (!aiJobUserId) return onGenerateQuiz({ title, body });
+    return runAiJob(
+      {
+        userId: aiJobUserId,
+        kind: 'quiz',
+        title: title || note.title || 'Untitled note',
+        stages: ['Reading your note', 'Writing questions', 'Preparing your quiz'],
+        creditCost: AI_CREDIT_COSTS.generate_questions,
+        target: { path: `/notes/${note.id}`, label: 'Open note' },
+      },
+      async (report) => {
+        report(1);
+        const result = await onGenerateQuiz({ title, body });
+        report(2);
+        return result;
+      }
+    );
+  };
 
   useEffect(() => {
     // Only hydrate when switching notes. Re-syncing on every store title/body
@@ -1138,12 +1221,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             note={{ ...note, title, body }}
             studyContentLength={studyContentLength}
             theme={theme}
-            onSmartNote={onSmartNote}
+            onSmartNote={runSmartNoteJob}
             onChatWithNote={onChatWithNote}
             onGenerateFlashcards={async () => {
               setGeneratingCards(true);
               try {
-                await onGenerateFlashcards({ title, body });
+                await runFlashcardJob();
               } finally {
                 setGeneratingCards(false);
               }
@@ -1151,7 +1234,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             onGenerateQuiz={async () => {
               setGeneratingQuiz(true);
               try {
-                await onGenerateQuiz({ title, body });
+                await runQuizJob();
               } finally {
                 setGeneratingQuiz(false);
               }

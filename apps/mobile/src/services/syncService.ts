@@ -15,6 +15,12 @@ import {
 } from '@lantern/shared';
 import * as api from './api';
 import { supabase, saveBudgetTransaction, deleteBudgetTransaction } from './supabase';
+import {
+  isDoomedTempDeckOp,
+  isPermanentSyncError,
+  syncErrorMessage,
+  syncErrorStatus,
+} from '../utils/syncErrorPolicy';
 
 // ============================================
 // ASYNC STORAGE ADAPTER
@@ -46,6 +52,9 @@ class AsyncStorageAdapter implements IStorageAdapter {
 // ============================================
 // SYNC SERVICE SINGLETON
 // ============================================
+
+/** Set once the unsendable temp-deck card writes have been swept. */
+const TEMP_DECK_PURGE_KEY = '@lantern_sync_purge_temp_deck_v1';
 
 class SyncService {
   private queue: SyncQueue;
@@ -126,6 +135,10 @@ class SyncService {
     // storage (and migrates the pre-split shared key), so there is deliberately
     // no unscoped `queue.initialize()` here. Signed out, the queue stays empty.
     await this.bindActiveUser();
+    // After the queue is loaded, before anything can replay it: operations
+    // aimed at a deck the server never issued are removed rather than retried
+    // into the ground.
+    await this.purgeDoomedTempDeckOperations();
     this.setupNetworkListener();
     this.setupAppStateListener();
     this.startPeriodicSync();
@@ -328,6 +341,27 @@ class SyncService {
         // Dead connection: rethrow so the queue stops the run without burning
         // one of this operation's retries. `return false` means "server said no".
         if (isTransientSyncError(error)) throw error;
+        // A 4xx is the server refusing the request itself. `return false`
+        // would retry it five times and then park it in `failedOperations`,
+        // which every reconnect revives — one rejected card produced 240
+        // consecutive "Validation Error status 400" lines on the device run
+        // that prompted this. Dropping it (a `true` result removes the
+        // operation) and telling the student what the server said is the only
+        // outcome that is both honest and finite.
+        if (isPermanentSyncError(error)) {
+          const message = syncErrorMessage(
+            error,
+            "This card couldn't be saved to your account."
+          );
+          console.warn('[SyncHandler:flashcard] Refused by the server — dropping', {
+            entityId: op.entityId,
+            status: syncErrorStatus(error),
+            message,
+          });
+          this.markCardRefused(op.entityId, message);
+          this.emitStatus();
+          return true;
+        }
         console.error('[SyncHandler:flashcard] Error:', error);
         return false;
       }
@@ -611,6 +645,64 @@ class SyncService {
     // while their work sits in the queue.
     this.emitStatus();
     return id;
+  }
+
+  /**
+   * Drop queued (pending or failed) operations that a later local action has
+   * made moot — e.g. every write aimed at a deck that was just rolled back.
+   * Returns how many were removed.
+   */
+  /**
+   * Tell the flashcard store one of its cards was refused for good.
+   *
+   * Imported lazily: flashcardStore imports this service, so a top-level
+   * import here would close the cycle.
+   */
+  private markCardRefused(cardId: string, message: string): void {
+    void import('../stores/flashcardStore')
+      .then(({ useFlashcardStore }) => {
+        useFlashcardStore.getState().markCardSyncFailed(cardId, message);
+      })
+      .catch(() => {
+        // The operation is dropped either way; failing to annotate it must
+        // not resurrect the loop this exists to end.
+      });
+  }
+
+  /**
+   * Drop queued card writes that can never succeed — once, on launch.
+   *
+   * The old generate-and-save path created a deck optimistically when the
+   * network was down and queued its cards against the `temp_` id it handed
+   * back. That id exists only in this device's memory, so every replay is a
+   * guaranteed 400 and every reconnect tries again. Devices already carry
+   * these; the flag makes this a migration rather than a permanent sweep, so
+   * a legitimate future operation shape is never quietly eaten by it.
+   */
+  private async purgeDoomedTempDeckOperations(): Promise<void> {
+    try {
+      if (await AsyncStorage.getItem(TEMP_DECK_PURGE_KEY)) return;
+      const removed = await this.removeQueuedOperations(isDoomedTempDeckOp);
+      await AsyncStorage.setItem(TEMP_DECK_PURGE_KEY, new Date().toISOString());
+      if (removed > 0) {
+        console.log(`[SyncService] Purged ${removed} unsendable temp-deck operations`);
+      }
+    } catch (error) {
+      // A failed purge leaves the flag unset, so the next launch retries it.
+      console.warn('[SyncService] Temp-deck purge failed:', error);
+    }
+  }
+
+  async removeQueuedOperations(
+    predicate: (op: SyncOperation) => boolean
+  ): Promise<number> {
+    const { pendingOperations, failedOperations } = this.queue.getStatus();
+    const doomed = [...pendingOperations, ...failedOperations].filter(predicate);
+    for (const op of doomed) {
+      await this.queue.removeOperation(op.id);
+    }
+    if (doomed.length > 0) this.emitStatus();
+    return doomed.length;
   }
 
   /**

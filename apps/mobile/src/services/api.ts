@@ -167,6 +167,96 @@ const client: ApiClient = {
  */
 export const apiClient: ApiClient = client;
 
+// ─────────────────────────────────────────────────────────────
+// Whole-artefact writes (generated material)
+//
+// A generation is one thing the student asked for, so it is saved in one
+// request. The old path created a deck and then added cards one at a time:
+// every step was a chance to half-succeed, and on a phone that lost signal
+// mid-run it reliably did — an empty "From: <note>" deck in the library and
+// the cards nowhere. These endpoints take the whole artefact and either
+// commit all of it or none of it, which is the only shape a save that can be
+// interrupted may have.
+//
+// `clientKey` is the job id: sending the same generation twice (a retry, a
+// resumed run) returns the artefact the first call created instead of a
+// second copy of it.
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Read a response that may or may not be wrapped in the API's `{ data }`
+ * envelope, so the client is not brittle about which of the two the endpoint
+ * settles on.
+ */
+const unwrapEnvelope = <T,>(payload: unknown): T => {
+  const body = payload as { data?: T } | T;
+  return (body && typeof body === 'object' && 'data' in (body as object)
+    ? ((body as { data?: T }).data ?? (body as unknown as T))
+    : (body as T));
+};
+
+export interface DeckWithCardsRequest {
+  /** The job that generated these cards. The server's idempotency key. */
+  clientKey: string;
+  /** Save into a deck the student already has, instead of making one. */
+  deckId?: string;
+  name: string;
+  description?: string;
+  cards: Array<{ front: string; back: string }>;
+}
+
+export interface DeckWithCardsResponse {
+  deck: { id: string; name: string; description?: string } & Record<string, unknown>;
+  /** The saved card rows, as the route names them. */
+  flashcards?: Array<Record<string, unknown>>;
+  /** Accepted as an alias of `flashcards`. */
+  cards?: Array<Record<string, unknown>>;
+  cardCount?: number;
+  /** False when the server used the compensating (non-RPC) path. */
+  atomic?: boolean;
+}
+
+/** `POST /decks/with-cards` — a deck and its cards, committed together. */
+export const createDeckWithCards = async (
+  body: DeckWithCardsRequest
+): Promise<DeckWithCardsResponse> => {
+  const payload = await client.requestRaw<unknown>('/decks/with-cards', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return unwrapEnvelope<DeckWithCardsResponse>(payload);
+};
+
+export interface PersonalTestRequest {
+  /** The job that generated these questions. The server's idempotency key. */
+  clientKey?: string;
+  title: string;
+  /** The note this was generated from. */
+  sourceNoteId?: string;
+  questions: unknown[];
+}
+
+/**
+ * The route answers with the mapped session itself (`{ id, title, questions,
+ * status, … }`). `test` is accepted as an alias so a later envelope change
+ * cannot make a saved test read as unsaved.
+ */
+export type PersonalTestResponse = ({ id?: string; title?: string; questions?: unknown[] } & Record<
+  string,
+  unknown
+>) & { test?: { id: string } & Record<string, unknown> };
+
+/** `POST /tests/personal` — a test of one's own, from a note. */
+export const createPersonalTest = async (
+  body: PersonalTestRequest
+): Promise<PersonalTestResponse> => {
+  const payload = await client.requestRaw<unknown>('/tests/personal', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return unwrapEnvelope<PersonalTestResponse>(payload);
+};
+
 const lanternApi = createApiEndpoints(client);
 
 /** Shared API instance for stores using `import * as api` */

@@ -97,7 +97,7 @@ export const DailyQuestsWidget: React.FC<DailyQuestsWidgetProps> = ({
           {onPurchaseStreakFreeze && streakFreezes === 0 && (
             <button
               onClick={onPurchaseStreakFreeze}
-              className="text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700"
+              className="text-caption px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-lantern-warning"
               title="Buy streak freeze for 50 coins"
             >
               Buy freeze (50🪙)

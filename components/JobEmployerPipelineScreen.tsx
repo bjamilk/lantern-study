@@ -405,12 +405,12 @@ export default function JobEmployerPipelineScreen({
                             </p>
                             <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
                               {app.resumePath || app.resumeUrl ? (
-                                <span className="rounded bg-lantern-background px-1.5 py-0.5 text-[10px] font-medium text-lantern-text-secondary">
+                                <span className="rounded bg-lantern-background px-1.5 py-0.5 text-label tracking-normal font-medium text-lantern-text-secondary">
                                   Resume
                                 </span>
                               ) : null}
                               {app.notesCount ? (
-                                <span className="rounded bg-lantern-background px-1.5 py-0.5 text-[10px] font-medium text-lantern-text-secondary">
+                                <span className="rounded bg-lantern-background px-1.5 py-0.5 text-label tracking-normal font-medium text-lantern-text-secondary">
                                   {app.notesCount}{" "}
                                   {app.notesCount === 1 ? "note" : "notes"}
                                 </span>

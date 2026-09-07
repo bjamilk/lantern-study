@@ -133,20 +133,77 @@ describe('type scale tokens', () => {
     expect(typeCss).toContain(`--type-${step}-lh:`);
   });
 
+  /**
+   * A step is `calc(<px> * var(--type-scale))`, optionally wrapped in
+   * `max(<floor>px, ...)` — the floor the two smallest steps need to survive
+   * the Small text setting. Returns the base px and the floor, or null.
+   */
+  const readStep = (name: string): { px: number; floor: number | null } | null => {
+    const decl = typeCss.match(new RegExp(`--type-${name}:\\s*([^;]+);`));
+    const raw = decl?.[1]?.trim();
+    if (!raw) return null;
+    const capped = raw.match(
+      /^max\(\s*(\d+(?:\.\d+)?)px\s*,\s*calc\((\d+(?:\.\d+)?)px \* var\(--type-scale\)\)\s*\)$/,
+    );
+    if (capped) return { px: Number(capped[2]), floor: Number(capped[1]) };
+    const bare = raw.match(/^calc\((\d+(?:\.\d+)?)px \* var\(--type-scale\)\)$/);
+    return bare ? { px: Number(bare[1]), floor: null } : null;
+  };
+
+  const EXPECTED_PX: Record<string, [number, number]> = {
+    display: [28, 34],
+    title: [22, 28],
+    heading: [17, 24],
+    body: [15, 22],
+    caption: [13, 18],
+    label: [11, 16],
+  };
+
   it('ships the six steps at the same pixels as mobile', () => {
     // The whole point of px steps: `text-title` is 22 px on both platforms.
-    const expected: Record<string, [number, number]> = {
-      display: [28, 34],
-      title: [22, 28],
-      heading: [17, 24],
-      body: [15, 22],
-      caption: [13, 18],
-      label: [11, 16],
-    };
-    for (const [step, [size, lh]] of Object.entries(expected)) {
-      expect(typeCss).toContain(`--type-${step}-size: calc(${size}px * var(--type-scale))`);
-      expect(typeCss).toContain(`--type-${step}-lh: calc(${lh}px * var(--type-scale))`);
+    for (const [step, [size, lh]] of Object.entries(EXPECTED_PX)) {
+      expect(readStep(`${step}-size`), `--type-${step}-size`).toEqual(
+        expect.objectContaining({ px: size }),
+      );
+      expect(readStep(`${step}-lh`), `--type-${step}-lh`).toEqual(
+        expect.objectContaining({ px: lh }),
+      );
     }
+  });
+
+  it('never renders a step below 11px, even at the Small text setting', () => {
+    // The bug this locks shut: the setting scales every step, so at
+    // --type-scale .875 label rendered 9.625px and caption 11.375px — the
+    // app's own accessibility control making the app less legible. Any step
+    // that would drop under 11px scaled must carry a max() floor of >= 11px.
+    const SMALL = 0.875;
+    const problems: string[] = [];
+    for (const step of STEPS) {
+      const spec = readStep(`${step}-size`);
+      if (!spec) {
+        problems.push(`--type-${step}-size is not calc(<px> * var(--type-scale)), optionally in max()`);
+        continue;
+      }
+      const rendered = spec.floor === null
+        ? spec.px * SMALL
+        : Math.max(spec.floor, spec.px * SMALL);
+      if (rendered < 11) {
+        problems.push(
+          `${step} renders ${rendered}px at Small — wrap --type-${step}-size in max(11px, ...)`,
+        );
+      }
+      if (spec.floor !== null && spec.floor > spec.px) {
+        problems.push(`${step} floor ${spec.floor}px is above its own ${spec.px}px base`);
+      }
+    }
+    expect(problems).toEqual([]);
+  });
+
+  it('floors the two smallest steps in the built CSS, not just in source', () => {
+    // max() is plain CSS Values 4 — but a minifier or an over-eager autoprefixer
+    // collapsing it would silently restore the bug, so assert the shipped form.
+    expect(typeCss).toContain('--type-label-size: max(11px, calc(11px * var(--type-scale)))');
+    expect(typeCss).toContain('--type-caption-size: max(12px, calc(13px * var(--type-scale)))');
   });
 
   it('lets the app text-size setting scale every step', () => {

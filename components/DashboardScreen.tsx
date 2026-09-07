@@ -44,6 +44,7 @@ import { DashboardQuickLinks, SHOW_DASHBOARD_QUICK_LINKS } from './dashboard/Das
 import { DashboardSummaryRow } from './dashboard/DashboardSummaryRow';
 import { DashboardStatGrid } from './dashboard/DashboardStatGrid';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
+import AiJobsCard from './jobs/AiJobsCard';
 import {
   GroupPerformanceMultiSelect,
   type GroupPerformanceOption,
@@ -1281,6 +1282,11 @@ export default function DashboardScreen({
             <SkeletonStatRow />
           )}
         </div>
+      </div>
+
+      {/* In-flight AI work: renders nothing unless something is actually running. */}
+      <div className="px-4 md:px-8 mt-4 w-full empty:hidden">
+        <AiJobsCard />
       </div>
 
       <div className="px-4 md:px-8 mt-4 w-full">

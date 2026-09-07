@@ -15,8 +15,21 @@ export async function uploadPushToken(_expoPushToken: string): Promise<void> {
   // no-op in Expo Go
 }
 
+export interface NotificationPayload {
+  url?: string;
+  jobId?: string;
+  kind?: string;
+  pending?: boolean;
+}
+
 export function addNotificationResponseListener(
-  _handler: (url: string | undefined) => void
+  _handler: (payload: NotificationPayload) => void
+): () => void {
+  return () => {};
+}
+
+export function addNotificationReceivedListener(
+  _handler: (payload: NotificationPayload) => void
 ): () => void {
   return () => {};
 }

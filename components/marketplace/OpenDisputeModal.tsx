@@ -113,7 +113,7 @@ export const OpenDisputeModal: React.FC<OpenDisputeModalProps> = ({
           placeholder="What happened, and what would resolve it?"
           className="w-full resize-none rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-sm text-lantern-text placeholder:text-lantern-text-secondary"
         />
-        <p className="mt-1 text-right text-[10px] text-lantern-text-secondary">
+        <p className="mt-1 text-right text-label tracking-normal text-lantern-text-secondary">
           {reason.length}/{DISPUTE_REASON_MAX}
         </p>
 

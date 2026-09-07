@@ -744,7 +744,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             <BookmarkIcon className="w-4 h-4" />
             Saved Searches ({savedSearches.length})
             {savedSearchNewMatches > 0 && (
-              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-lantern-primary text-white text-[10px]">
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-lantern-primary text-white text-label tracking-normal">
                 {savedSearchNewMatches} new
               </span>
             )}
@@ -1089,7 +1089,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
             <div className="grid grid-cols-3 sm:grid-cols-3 lg:grid-cols-6 gap-1.5 sm:gap-2">
               {topCategories.map((item) => (
                 <div key={item.category} className="min-w-0 rounded-md border border-lantern-border px-2 py-1.5 bg-lantern-background-secondary">
-                  <p className="text-[10px] sm:text-xs font-semibold text-lantern-text truncate">
+                  <p className="text-label tracking-normal sm:text-caption font-semibold text-lantern-text truncate">
                     {getCategoryName(item.category)}
                   </p>
                   <p className="text-xs sm:text-sm font-bold text-lantern-primary">{item.total}</p>
@@ -1146,7 +1146,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                   type="button"
                   onClick={() => setShowBrowseTree((value) => !value)}
                   aria-expanded={showBrowseTree}
-                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+                  className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-label tracking-normal font-medium text-lantern-text-secondary"
                 >
                   Types
                   <ChevronDownIcon className={`w-3.5 h-3.5 transition-transform ${showBrowseTree ? 'rotate-180' : ''}`} />
@@ -1157,7 +1157,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 onClick={() => onOpenCourseBrowse?.()}
                 aria-haspopup="dialog"
                 aria-label={COURSE_ANCHOR_COPY.browseTitle}
-                className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] font-medium text-lantern-text-secondary"
+                className="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md bg-lantern-background-secondary text-label tracking-normal font-medium text-lantern-text-secondary"
               >
                 <AcademicCapIcon className="w-3.5 h-3.5" aria-hidden />
                 By course
@@ -1167,7 +1167,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
                 onClick={() => setShowCategoryPanel(v => !v)}
                 aria-expanded={showCategoryPanel}
                 aria-label="Marketplace category"
-                className="shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-[10px] sm:text-xs font-medium text-lantern-text-secondary"
+                className="shrink-0 flex items-center gap-1 max-w-[42%] px-2 py-1 rounded-md bg-lantern-background-secondary text-label tracking-normal sm:text-caption font-medium text-lantern-text-secondary"
               >
                 <span className="truncate">{activeCategoryLabel}</span>
                 <ChevronDownIcon className={`w-3.5 h-3.5 shrink-0 transition-transform ${showCategoryPanel ? 'rotate-180' : ''}`} />

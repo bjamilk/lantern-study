@@ -24,7 +24,7 @@ export const SaleCountdown: React.FC<SaleCountdownProps> = ({ saleEndsAt, classN
 
   return (
     <span
-      className={`inline-flex items-center text-[10px] sm:text-xs font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ${className}`}
+      className={`inline-flex items-center text-label tracking-normal sm:text-caption font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ${className}`}
     >
       {label}
     </span>

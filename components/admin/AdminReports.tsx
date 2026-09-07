@@ -186,15 +186,15 @@ export const AdminReports: React.FC<AdminReportsProps> = ({
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="inline-block rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide bg-lantern-primary-background text-lantern-primary">
+                    <span className="inline-block rounded px-1.5 py-0.5 text-label font-semibold uppercase tracking-wide bg-lantern-primary-background text-lantern-primary">
                       {typeLabel}
                     </span>
                     <p className="font-medium text-lantern-text truncate">{target.title}</p>
                     {!target.exists ? (
-                      <span className="text-[10px] font-semibold text-lantern-text-muted">(no longer exists)</span>
+                      <span className="text-label tracking-normal font-semibold text-lantern-text-muted">(no longer exists)</span>
                     ) : null}
                     {target.status ? (
-                      <span className="text-[10px] text-lantern-text-muted">· {target.status}</span>
+                      <span className="text-label tracking-normal text-lantern-text-muted">· {target.status}</span>
                     ) : null}
                   </div>
                   <p className="text-sm text-lantern-text-muted">

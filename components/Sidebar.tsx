@@ -338,7 +338,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </span>
       ) : null}
       {showBadge && (
-          <span aria-hidden="true" className={`absolute top-1.5 right-1.5 bg-lantern-error text-white text-label tracking-normal px-1.5 py-0.5 rounded-full`}>
+          <span aria-hidden="true" className={`absolute top-1.5 right-1.5 bg-lantern-error-strong text-white text-label tracking-normal px-1.5 py-0.5 rounded-full`}>
               {formatUnreadBadgeCount(badgeCount!)}
           </span>
       )}
@@ -381,7 +381,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               >
                 <ChatBubbleLeftRightIcon className="w-6 h-6" aria-hidden="true" />
                 {showChatsHeaderBadge && (
-                  <span aria-hidden="true" className="absolute top-0 right-0 bg-lantern-error text-white text-label tracking-normal font-bold min-w-[1rem] h-4 px-1 flex items-center justify-center rounded-full">
+                  <span aria-hidden="true" className="absolute top-0 right-0 bg-lantern-error-strong text-white text-label tracking-normal font-bold min-w-[1rem] h-4 px-1 flex items-center justify-center rounded-full">
                     {formatUnreadBadgeCount(totalUnreadChatCount)}
                   </span>
                 )}
@@ -531,7 +531,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             <h2 className="text-heading font-bold text-lantern-text flex items-center gap-2 min-w-0">
               <span className="truncate">Chats</span>
               {totalUnreadChatCount > 0 && (
-                <span className="bg-lantern-error text-white text-label tracking-normal font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                <span className="bg-lantern-error-strong text-white text-label tracking-normal font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                   {formatUnreadBadgeCount(totalUnreadChatCount)}
                 </span>
               )}

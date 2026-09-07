@@ -106,7 +106,7 @@ const SellerCustomersScreen: React.FC<SellerCustomersScreenProps> = ({ onBack, o
             {buyer.segments && buyer.segments.length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {buyer.segments.map((s) => (
-                  <span key={s} className="text-[10px] px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary-background dark:text-lantern-primary-light">
+                  <span key={s} className="text-label tracking-normal px-2 py-0.5 rounded-full bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary-background dark:text-lantern-primary-light">
                     {SEGMENT_LABELS[s as SellerCustomerSegment] || s}
                   </span>
                 ))}

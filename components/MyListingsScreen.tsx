@@ -272,7 +272,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
               <p className="text-xs text-lantern-text-secondary truncate">
                 Manage your listings
                 {boostCredits != null ? (
-                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-[10px] font-semibold">
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 text-label tracking-normal font-semibold">
                     {boostCredits} boost{boostCredits === 1 ? '' : 's'}
                   </span>
                 ) : null}
@@ -508,19 +508,19 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
                               className="min-w-0 text-left flex-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary rounded"
                             >
                               <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                                <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-lantern-primary-background text-lantern-primary rounded">
+                                <span className="inline-block px-1.5 py-0.5 text-label tracking-normal font-medium bg-lantern-primary-background text-lantern-primary rounded">
                                   {getCategoryName(listing.category)}
                                 </span>
                                 {listing.status === 'reserved' ? (
-                                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 rounded">
+                                  <span className="inline-block px-1.5 py-0.5 text-label tracking-normal font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 rounded">
                                     Sale in progress
                                   </span>
                                 ) : isMarketplaceListingModerated(listing.status) ? (
-                                  <span className="inline-block px-1.5 py-0.5 text-[10px] font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 rounded">
+                                  <span className="inline-block px-1.5 py-0.5 text-label tracking-normal font-semibold bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 rounded">
                                     {MARKETPLACE_LISTING_STATUS_LABELS[listing.status]}
                                   </span>
                                 ) : (
-                                  <span className="text-[10px] capitalize text-lantern-text-tertiary">{listing.status}</span>
+                                  <span className="text-label tracking-normal capitalize text-lantern-text-tertiary">{listing.status}</span>
                                 )}
                               </div>
                               <h3 className="text-sm sm:text-base font-semibold text-lantern-text truncate">
@@ -774,7 +774,7 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
 function Kpi({ label, value, accent }: { label: string; value: string | number; accent?: boolean }) {
   return (
     <div className="rounded-lg border border-lantern-border bg-lantern-background-secondary/60 px-2.5 py-2">
-      <p className="text-[10px] sm:text-xs text-lantern-text-secondary truncate">{label}</p>
+      <p className="text-label tracking-normal sm:text-caption text-lantern-text-secondary truncate">{label}</p>
       <p className={`text-sm sm:text-base font-bold truncate ${accent ? 'text-lantern-primary' : 'text-lantern-text'}`}>
         {value}
       </p>

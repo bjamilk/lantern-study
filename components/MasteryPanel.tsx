@@ -41,7 +41,7 @@ const TopicRow: React.FC<{ topic: TopicMastery }> = ({ topic }) => {
     <li className="flex items-center justify-between gap-3 py-1.5">
       <div className="min-w-0">
         <p className="truncate text-xs font-medium text-lantern-text">{topic.topic}</p>
-        <p className="text-[10px] text-lantern-text-secondary">
+        <p className="text-label tracking-normal text-lantern-text-secondary">
           {topic.attempts > 0
             ? `${topic.correct}/${topic.attempts} correct`
             : `${topic.cardsTotal} ${topic.cardsTotal === 1 ? 'card' : 'cards'}`}
@@ -49,7 +49,7 @@ const TopicRow: React.FC<{ topic: TopicMastery }> = ({ topic }) => {
         </p>
       </div>
       <span
-        className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${BAND_STYLES[band]}`}
+        className={`shrink-0 rounded-full px-2 py-0.5 text-label tracking-normal font-medium ${BAND_STYLES[band]}`}
       >
         {topic.masteryScore == null ? MASTERY_BAND_LABELS.unknown : `${topic.masteryScore}%`}
       </span>
@@ -139,7 +139,7 @@ export const MasteryPanel: React.FC<MasteryPanelProps> = ({ courseId, className 
                   {examCountdownLabel(exam.daysUntil)}
                 </p>
                 {exam.weakestTopics.length > 0 && (
-                  <p className="text-[10px] text-lantern-text-secondary">
+                  <p className="text-label tracking-normal text-lantern-text-secondary">
                     Biggest gain: {exam.weakestTopics.join(', ')}
                   </p>
                 )}
@@ -169,7 +169,7 @@ export const MasteryPanel: React.FC<MasteryPanelProps> = ({ courseId, className 
 
       {!loading && !error && weak.length > 0 && (
         <div className="mb-3">
-          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+          <h3 className="mb-1 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
             Needs work
           </h3>
           <ul className="divide-y divide-lantern-border/60">
@@ -182,7 +182,7 @@ export const MasteryPanel: React.FC<MasteryPanelProps> = ({ courseId, className 
 
       {!loading && !error && strong.length > 0 && (
         <div>
-          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+          <h3 className="mb-1 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
             Strongest
           </h3>
           <ul className="divide-y divide-lantern-border/60">

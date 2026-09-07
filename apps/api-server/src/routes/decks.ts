@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors, validatePagination, validateDeckId, validateDeckCreate, validateDeckUpdate } from '../middleware/validation';
+import { handleValidationErrors, validatePagination, validateDeckId, validateDeckCreate, validateDeckWithCardsTarget, validateDeckUpdate } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { runSyncOrEnqueue } from '../queue/enqueue';
 import { sendAsyncJobAccepted } from '../queue/respondAsync';
 import { requireDeckAccess } from '../middleware/authorizeResource';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
+import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
+import { DeckWithCardsError, validateDeckCards } from '../services/deckWithCards';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
@@ -24,6 +26,18 @@ const DEFAULT_DECK_PAGE_SIZE = 20;
 const MAX_DECK_PAGE_SIZE = 50;
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
   profile === 'compact' ? 'compact' : 'full';
+
+/**
+ * The deck a with-cards save named is gone, or the caller may not edit it.
+ * Kept distinct so it answers 404 like every other deck route instead of the
+ * 400 a PublicError would give.
+ */
+class DeckTargetMissingError extends Error {
+  constructor() {
+    super('Deck not found or access denied');
+    this.name = 'DeckTargetMissingError';
+  }
+}
 
 /** A rejected topic (wrong course, no course, unusable id) is the caller's mistake — 400, not 500. */
 const respondPublicError = (err: unknown, res: any): boolean => {
@@ -141,6 +155,112 @@ router.post(
     await cacheService.deletePattern(`decks:${userId}*`);
 
     res.status(201).json({ success: true, data: deck });
+  })
+);
+
+/**
+ * POST /api/v1/decks/with-cards — create a deck and its cards atomically.
+ *
+ * Replaces the two-call generate flow (create deck, then push cards) that left
+ * an empty "0 cards" deck behind whenever the client died in between. The
+ * service either commits both (create_deck_with_cards RPC) or removes the deck
+ * it just wrote, so an error here always means nothing was saved.
+ *
+ * Retries are safe: an `Idempotency-Key` header — or `clientKey`, or the
+ * generating `source.jobId` — replays the FIRST response instead of creating a
+ * second deck.
+ *
+ * A body carrying `deckId` targets a deck the student already has: the cards
+ * are appended to it and that same deck comes back. No deck row is written on
+ * that path, so the single card insert is the whole transaction.
+ */
+router.post(
+  '/with-cards',
+  authMiddleware,
+  idempotencyMiddleware({
+    operation: 'deck_create_with_cards',
+    // A generate job is already a unique id; using it means a client that
+    // never set a header still cannot double-create by retrying.
+    fallbackKey: (req: any) =>
+      (typeof req.body?.clientKey === 'string' && req.body.clientKey) ||
+      (typeof req.body?.source?.jobId === 'string' && `job:${req.body.source.jobId}`) ||
+      null,
+  }),
+  validateDeckCreate,
+  validateDeckWithCardsTarget,
+  handleValidationErrors,
+  asyncHandler(async (req: IdempotentRequest & any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { name, description, isShared, courseId, topicId, cards, source, deckId } = req.body;
+
+    // Generation opened from inside a deck sends that deck's id: the cards go
+    // there. Without this the server made a SECOND deck with the same name
+    // while the client filed the cards under the original — a duplicate deck
+    // and an original still missing its cards.
+    const targetDeckId = typeof deckId === 'string' && deckId.trim() ? deckId.trim() : null;
+
+    const validation = validateDeckCards(cards);
+    if (!validation.ok) {
+      const { code, message, index, field } = validation.rejection;
+      return res.status(400).json({
+        success: false,
+        code,
+        error: message,
+        // A rejected payload never becomes valid on its own — a client queue
+        // must drop it rather than retry forever.
+        retryable: false,
+        ...(index !== undefined ? { cardIndex: index } : {}),
+        ...(field ? { field } : {}),
+      });
+    }
+
+    const run = req.runIdempotent || ((handler: () => Promise<any>) => handler());
+
+    let payload: any;
+    try {
+      payload = await run(async () => {
+        const result = targetDeckId
+          ? await supabaseService.addCardsToExistingDeck(targetDeckId, validation.cards, userId)
+          : await supabaseService.createDeckWithCards(
+              { name, description, isShared, courseId, topicId },
+              validation.cards,
+              userId,
+            );
+        if (!result) {
+          // Only the existing-deck path can miss: unknown deck or no edit
+          // rights, answered the same way so neither reveals the other.
+          throw new DeckTargetMissingError();
+        }
+        return {
+          deck: result.deck,
+          flashcards: result.flashcards,
+          cardCount: result.flashcards.length,
+          atomic: result.atomic,
+          source: source && typeof source === 'object' ? source : undefined,
+        };
+      });
+    } catch (err) {
+      if (err instanceof DeckTargetMissingError) {
+        return res.status(404).json({ success: false, error: err.message, retryable: false });
+      }
+      if (respondPublicError(err, res)) return;
+      if (err instanceof DeckWithCardsError) {
+        logger.error('Deck with cards failed', { userId, code: err.code, rolledBack: err.rolledBack });
+        return res.status(500).json({
+          success: false,
+          code: err.code,
+          error: "We couldn't save this deck. Nothing was added to your library.",
+          // False only if even the cleanup delete failed; the client should
+          // then refresh rather than assume the deck is absent.
+          rolledBack: err.rolledBack,
+        });
+      }
+      throw err;
+    }
+
+    res.status(201).json({ success: true, data: payload });
   })
 );
 

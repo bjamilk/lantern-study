@@ -462,6 +462,8 @@ export const cssVarNames = {
   success: '--color-success',
   warning: '--color-warning',
   error: '--color-error',
+  // Fill-role red: the one a white numeral/label sits on. See `errorStrong`.
+  errorStrong: '--color-error-strong',
   info: '--color-info',
   border: '--color-border',
   radiusLg: '--radius-lg',
@@ -508,6 +510,7 @@ export function paletteToCssVars(palette: ThemePalette): Record<string, string> 
     [cssVarNames.success]: ch(palette.success),
     [cssVarNames.warning]: ch(palette.warning),
     [cssVarNames.error]: ch(palette.error),
+    [cssVarNames.errorStrong]: ch(palette.errorStrong),
     [cssVarNames.info]: ch(palette.info),
     [cssVarNames.border]: ch(palette.border),
     [cssVarNames.radiusLg]: `${radius.lg}px`,

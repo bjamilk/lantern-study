@@ -39,9 +39,9 @@ const SavedSessionsList: React.FC<SavedSessionsListProps> = ({
           <ClockIcon className="w-5 h-5" />
         </div>
         <div>
-          <p className="font-semibold text-lantern-text">
+          <h3 className="text-heading text-lantern-text">
             Saved sessions ({sessions.length})
-          </p>
+          </h3>
           <p className="text-sm text-lantern-text-secondary">
             Pause anytime — pick up where you left off after refresh
           </p>

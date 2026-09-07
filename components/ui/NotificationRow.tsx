@@ -83,7 +83,7 @@ export const NotificationRow: React.FC<NotificationRowProps> = ({
           <div className="flex justify-between items-start gap-2">
             <div className="min-w-0">
               {meta.label ? (
-                <span className="text-[10px] font-bold uppercase tracking-wider text-lantern-text-tertiary">
+                <span className="text-label font-bold uppercase tracking-wider text-lantern-text-tertiary">
                   {meta.label}
                 </span>
               ) : null}

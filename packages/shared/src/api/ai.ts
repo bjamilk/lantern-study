@@ -8,6 +8,11 @@ import type {
 } from '../types';
 import { DEFAULT_AI_DAILY_LIMIT } from '../utils/aiUsage';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
+import {
+  JobStillRunningError,
+  createJobClient,
+  type JobUpdateHandler,
+} from '../jobs/jobClient';
 
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
@@ -26,38 +31,6 @@ export interface AIClientConfig {
    * already generated and billed the reply, so retrying would charge twice.
    */
   supportsResponseStreaming?: boolean;
-}
-
-async function pollAiJob<T>(
-  config: AIClientConfig,
-  jobId: string,
-  timeoutMs = 180_000
-): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const headers = await config.getAuthHeaders();
-    const response = await fetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
-    const payload = (await response.json().catch(() => ({}))) as {
-      data?: { status?: string; result?: T; error?: string };
-      error?: string;
-      status?: string;
-      result?: T;
-    };
-    if (!response.ok) {
-      throw new Error(payload.error || `Job status check failed (${response.status})`);
-    }
-    const job = payload.data ?? payload;
-    const status = job.status;
-    if (status === 'completed') {
-      if (job.result !== undefined) return job.result;
-      throw new Error('AI job completed without a result.');
-    }
-    if (status === 'failed') {
-      throw new Error(typeof job.error === 'string' && job.error ? job.error : 'AI job failed.');
-    }
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  throw new Error('AI request timed out. Try again in a moment.');
 }
 
 export interface AIGeneratedQuestion {
@@ -106,6 +79,23 @@ export interface AIStudyPerformanceData {
 
 export function createAIClient(config: AIClientConfig) {
   const defaultTimeout = config.defaultTimeoutMs ?? 30000;
+  /**
+   * Queued work is watched, not blind-polled: stages and percent come back on
+   * every poll, and when the client's 90s budget runs out we surface
+   * JobStillRunningError (carrying the jobId) instead of claiming failure —
+   * the job is still running and the student has already been charged once.
+   */
+  const jobs = createJobClient({
+    getBaseUrl: config.getBaseUrl,
+    getAuthHeaders: config.getAuthHeaders,
+  });
+
+  const awaitJob = async <T>(jobId: string, onUpdate?: JobUpdateHandler): Promise<T> => {
+    const outcome = await jobs.watchJob<T>(jobId, onUpdate);
+    if (outcome.status === 'done') return outcome.result;
+    if (outcome.status === 'failed') throw new Error(outcome.error.message);
+    throw new JobStillRunningError(jobId);
+  };
   const USAGE_FETCH_TTL_MS = 60_000;
   let usageLastFetchAt = 0;
   let usageInFlight: Promise<AIUsageInfo> | null = null;
@@ -140,7 +130,8 @@ export function createAIClient(config: AIClientConfig) {
   const aiRequest = async <T>(
     endpoint: string,
     body: Record<string, unknown> = {},
-    method: 'GET' | 'POST' = 'POST'
+    method: 'GET' | 'POST' = 'POST',
+    onJobUpdate?: JobUpdateHandler
   ): Promise<T> => {
     const headers = await config.getAuthHeaders();
     const userId = config.getUserId ? await config.getUserId() : undefined;
@@ -171,7 +162,7 @@ export function createAIClient(config: AIClientConfig) {
 
       if (response.status === 202 && typeof json.jobId === 'string') {
         if (hadFeatureQuota) refreshGlobalUsage();
-        return pollAiJob<T>(config, json.jobId);
+        return awaitJob<T>(json.jobId, onJobUpdate);
       }
 
       if (!response.ok) {
@@ -192,6 +183,9 @@ export function createAIClient(config: AIClientConfig) {
       }
 
       if (hadFeatureQuota) refreshGlobalUsage();
+      // A synchronous 200 is still a job to the watcher: queued → done, now.
+      onJobUpdate?.({ jobId: null, kind: 'other', stage: 'queued', percent: 0, record: null });
+      onJobUpdate?.({ jobId: null, kind: 'other', stage: 'done', percent: 100, record: null });
       return json as T;
     } catch (error: unknown) {
       clearTimeout(timeoutId);
@@ -203,6 +197,10 @@ export function createAIClient(config: AIClientConfig) {
   };
 
   return {
+    /** Watch/resume/cancel background jobs (see jobs/jobClient). */
+    jobs,
+    /** Reattach to a job after a restart, e.g. from a saved jobId. */
+    resumeJob: <T>(jobId: string, onUpdate?: JobUpdateHandler) => awaitJob<T>(jobId, onUpdate),
     fetchAIUsage: async (_userId?: string): Promise<AIUsageInfo> => {
       const now = Date.now();
       if (now < usageBackoffUntil && cachedUsage) return cachedUsage;
@@ -247,21 +245,41 @@ export function createAIClient(config: AIClientConfig) {
 
     aiGenerateQuestions: (
       notes: string,
-      options?: { count?: number; difficulty?: string; questionTypes?: string[]; subject?: string }
-    ) =>
-      aiRequest<{ questions: AIGeneratedQuestion[]; provider: string }>('/generate-questions', {
-        notes,
-        ...options,
-      }),
+      options?: {
+        count?: number;
+        difficulty?: string;
+        questionTypes?: string[];
+        subject?: string;
+        /** Called with stage/percent while the work is queued. */
+        onJobUpdate?: JobUpdateHandler;
+      }
+    ) => {
+      const { onJobUpdate, ...rest } = options ?? {};
+      return aiRequest<{ questions: AIGeneratedQuestion[]; provider: string }>(
+        '/generate-questions',
+        { notes, ...rest },
+        'POST',
+        onJobUpdate
+      );
+    },
 
     aiGenerateFlashcards: (
       notes: string,
-      options?: { count?: number; style?: 'concise' | 'detailed' }
-    ) =>
-      aiRequest<{ flashcards: AIGeneratedFlashcard[]; provider: string }>('/generate-flashcards', {
-        notes,
-        ...options,
-      }),
+      options?: {
+        count?: number;
+        style?: 'concise' | 'detailed';
+        /** Called with stage/percent while the work is queued. */
+        onJobUpdate?: JobUpdateHandler;
+      }
+    ) => {
+      const { onJobUpdate, ...rest } = options ?? {};
+      return aiRequest<{ flashcards: AIGeneratedFlashcard[]; provider: string }>(
+        '/generate-flashcards',
+        { notes, ...rest },
+        'POST',
+        onJobUpdate
+      );
+    },
 
     aiExplainAnswer: (
       question: string,

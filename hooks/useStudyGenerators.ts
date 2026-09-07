@@ -36,6 +36,16 @@ export interface ImportAndStudyResult {
 
 type NoteWithAttachments = StudyNote & { attachments?: NoteAttachment[] };
 
+/**
+ * Named stages this pipeline passes through. Named rather than numbered
+ * because which stages actually run depends on the generateCards/generateQuiz
+ * toggles — the caller builds the label list and maps names onto it, so the
+ * two cannot drift out of step.
+ */
+export type StudyGeneratorStage = 'extract' | 'summary' | 'flashcards' | 'quiz' | 'saving';
+
+export type StudyGeneratorStageReporter = (stage: StudyGeneratorStage) => void;
+
 async function refreshNoteAfterOcr(note: NoteWithAttachments): Promise<NoteWithAttachments> {
   const source = note.sourceType;
   if (source !== 'photos' && source !== 'pdf' && source !== 'presentation') return note;
@@ -84,7 +94,11 @@ interface UseStudyGeneratorsOptions {
  */
 export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGeneratorsOptions) {
   const runStudyGenerators = useCallback(
-    async (incoming: NoteWithAttachments): Promise<ImportAndStudyResult> => {
+    async (
+      incoming: NoteWithAttachments,
+      onStage: StudyGeneratorStageReporter = () => {}
+    ): Promise<ImportAndStudyResult> => {
+      onStage('extract');
       const note = await refreshNoteAfterOcr(incoming);
       const studyInput = {
         sourceType: note.sourceType,
@@ -115,6 +129,7 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
 
       // 1) AI Smart Notes summary — written back onto the note.
       if (hasUsableContent) {
+        onStage('summary');
         try {
           const { summary, note: updated } = await notesApi.summarizeNote(note.id);
           summarized =
@@ -154,6 +169,7 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
       // 2) Flashcards — generate, then persist into a new deck (mirrors
       // useNoteHandlers.handleCreateFlashcardDeckFromNote).
       if (generateCards && hasUsableContent) {
+        onStage('flashcards');
         let generated: { front: string; back: string }[] = [];
         try {
           const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
@@ -233,6 +249,7 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
       // 3) Quiz — persist via the same store path the dashboard daily-quiz widget reads
       // (mirrors useNoteHandlers.handleStartDailyQuiz's content-based path).
       if (generateQuiz && hasUsableContent) {
+        onStage('quiz');
         try {
           const studyGoal = useStudyGoalsStore.getState().studyGoal;
           const { questions } = await notesApi.generateDailyQuizFromContent(
@@ -259,6 +276,7 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
         }
       }
 
+      onStage('saving');
       return {
         noteId: note.id,
         noteTitle: note.title,

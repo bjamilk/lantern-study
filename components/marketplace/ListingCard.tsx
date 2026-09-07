@@ -128,7 +128,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
         </button>
 
         <span
-          className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 max-w-[calc(100%-3.5rem)] px-2 py-0.5 bg-lantern-surface/90 backdrop-blur-sm text-[10px] sm:text-xs font-medium rounded-md text-lantern-text flex items-center gap-1 shadow-sm pointer-events-none z-10"
+          className="absolute top-2 left-2 sm:top-2.5 sm:left-2.5 max-w-[calc(100%-3.5rem)] px-2 py-0.5 bg-lantern-surface/90 backdrop-blur-sm text-label tracking-normal sm:text-caption font-medium rounded-md text-lantern-text flex items-center gap-1 shadow-sm pointer-events-none z-10"
           style={{ borderLeft: `2px solid ${featureAccents.marketplace}` }}
         >
           <CategoryIcon className="w-3 h-3 shrink-0" />
@@ -136,19 +136,19 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
         </span>
 
         {listing.is_on_sale && !isOwner ? (
-          <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-lantern-error text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
+          <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-lantern-error-strong text-label tracking-normal font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
             {listing.promo_label || 'Deal'}
           </span>
         ) : null}
 
         {listing.status === 'reserved' ? (
-          <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-amber-500/95 text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
+          <span className="absolute bottom-2 right-2 px-2 py-0.5 bg-amber-500/95 text-label tracking-normal font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
             Sale in progress
           </span>
         ) : null}
 
         {isOwner ? (
-          <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-lantern-primary/90 backdrop-blur-sm text-[10px] font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
+          <span className="absolute bottom-2 left-2 px-2 py-0.5 bg-lantern-primary/90 backdrop-blur-sm text-label tracking-normal font-semibold rounded-md text-white shadow-sm pointer-events-none z-10">
             Your Listing
           </span>
         ) : null}
@@ -169,7 +169,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
             'new' shows nothing on purpose: labelling every newcomer reads as a
             warning and punishes exactly the people we want publishing. */}
         {shouldShowTrustChip((listing.seller as { trustLevel?: string } | undefined)?.trustLevel) && (
-          <span className="mb-1 inline-block rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-[10px] font-medium text-lantern-primary">
+          <span className="mb-1 inline-block rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-label tracking-normal font-medium text-lantern-primary">
             {trustLabel((listing.seller as { trustLevel?: string } | undefined)?.trustLevel)}
           </span>
         )}
@@ -185,7 +185,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
                   ₦{Number(listing.effective_price).toLocaleString()}
                 </span>
                 {listing.promo_label ? (
-                  <span className="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-lantern-error/10 text-lantern-error">
+                  <span className="ml-1 text-label tracking-normal px-1.5 py-0.5 rounded-full bg-lantern-error/10 text-lantern-error">
                     {listing.promo_label}
                   </span>
                 ) : null}
@@ -208,7 +208,7 @@ const ListingCardComponent: React.FC<ListingCardProps> = ({
           ) : null}
         </div>
 
-        <div className="flex items-center gap-2 min-w-0 text-[10px] sm:text-xs text-lantern-text-tertiary">
+        <div className="flex items-center gap-2 min-w-0 text-label tracking-normal sm:text-caption text-lantern-text-tertiary">
           {conditionLabel ? (
             <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-lantern-background-secondary text-lantern-text-secondary font-medium">
               {conditionLabel}

@@ -29,6 +29,19 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   "cron.weeklySummary": "marketplace-alerts",
 };
 
+/**
+ * The material a job was started from, for the completion push's subtitle.
+ * Routes that already pass a `title` (or an explicit `sourceTitle`) get it for
+ * free; the rest just have no suffix, which is honest.
+ */
+function sourceTitleFromPayload(payload: Record<string, unknown>): string | undefined {
+  for (const key of ["sourceTitle", "title", "fileName"]) {
+    const value = payload[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 80);
+  }
+  return undefined;
+}
+
 export interface EnqueueResult {
   jobId: string;
   async: true;
@@ -49,7 +62,14 @@ export async function enqueueJob(
   if (!queue) return null;
 
   const jobId = randomUUID();
-  await createJobRecord({ id: jobId, queue: queueName, name, userId, charge });
+  await createJobRecord({
+    id: jobId,
+    queue: queueName,
+    name,
+    userId,
+    charge,
+    sourceTitle: sourceTitleFromPayload(payload),
+  });
 
   await queue.add(
     name,

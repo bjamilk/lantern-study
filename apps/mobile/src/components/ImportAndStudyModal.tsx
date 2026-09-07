@@ -11,7 +11,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
-import { FlashcardType, getNoteStudyContent } from '@lantern/shared';
+import { getNoteStudyContent } from '@lantern/shared';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { HANDWRITING_OCR_OFF_MESSAGE } from '@lantern/shared/utils/handwritingOcr';
@@ -20,8 +20,9 @@ import { fetchAiHealth } from '../services/api';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useAuthStore } from '../stores/authStore';
-import { useFlashcardStore } from '../stores/flashcardStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
+import { useJobsStore } from '../stores/jobsStore';
+import { saveGeneratedDeck } from '../services/jobArtifacts';
 import { Button } from './ui';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 import { AppIcon } from './ui/AppIcon';
@@ -29,6 +30,11 @@ import { AppIcon } from './ui/AppIcon';
 export interface ImportAndStudyResult {
   noteId: string;
   noteTitle: string;
+  /**
+   * Study materials are being generated in the background (jobsStore) and are
+   * not part of this result. Counts arrive with the completion notification.
+   */
+  generating?: boolean;
   flashcardCount?: number;
   /** Name of the deck the generated cards were saved into. */
   deckName?: string;
@@ -79,8 +85,21 @@ export default function ImportAndStudyModal({
     onClose();
   };
 
+  /**
+   * Wave G: the note is saved here and now, and the AI enrichment is handed to
+   * the jobs store.
+   *
+   * The import used to sit on a blocking spinner through two AI calls — the
+   * exact shape of the delivery failure this wave exists to beat. Now the note
+   * lands immediately, the student can leave, and the flashcards and quiz
+   * arrive with a notification and a deep link.
+   *
+   * The job is started UNWATCHED: this component is itself a Modal, and the
+   * progress sheet is another one. The done panel below carries the promise,
+   * and the Home card is where the sheet can be opened.
+   */
   const enrichNote = useCallback(
-    async (note: {
+    (note: {
       id: string;
       title: string;
       body?: string;
@@ -89,69 +108,76 @@ export default function ImportAndStudyModal({
       attachments?: Array<{ extractedText?: string | null; metadata?: Record<string, unknown> | null }>;
     }) => {
       const studyText = getNoteStudyContent(note);
-      let flashcardCount = 0;
-      let quizQuestionCount = 0;
-      let deckName: string | undefined;
-
-      if (generateCards && studyText.length >= 50) {
-        try {
-          const { flashcards } = await aiGenerateFlashcards(studyText.slice(0, 8000), {
-            count: normalizeFlashcardCount(),
-          });
-          // Persist into a deck the same way the note editor's flashcard path
-          // does — generating without saving spends AI credits and reports a
-          // count of cards that exist nowhere. The count below refers only to
-          // cards that were actually saved.
-          const userId = useAuthStore.getState().user?.id;
-          if (flashcards?.length && userId) {
-            const { createDeck, createFlashcard } = useFlashcardStore.getState();
-            const deck = await createDeck(
-              `From: ${note.title}`.slice(0, 80),
-              `Generated from note: ${note.title}`,
-              userId
-            );
-            deckName = deck.name;
-            for (const card of flashcards) {
-              await createFlashcard({
-                deckId: deck.id,
-                type: FlashcardType.BASIC,
-                front: card.front,
-                back: card.back,
-                userId,
-              });
-              flashcardCount += 1;
-            }
-          }
-        } catch {
-          // non-fatal
-        }
-      }
-
-      if (generateQuiz && studyText.length >= 50) {
-        try {
-          // Same daily-quiz store path as the note editor's Quiz button: the
-          // session is kept (and shown on the dashboard) instead of being
-          // generated server-side and dropped. Uses the store's real studyGoal.
-          await useStudyGoalsStore
-            .getState()
-            .startDailyQuizFromContent(studyText.slice(0, 8000), note.id, note.title);
-          quizQuestionCount =
-            useStudyGoalsStore.getState().dailyQuiz?.questions.length ?? 0;
-        } catch {
-          // non-fatal
-        }
-      }
+      const wanted = (generateCards || generateQuiz) && studyText.length >= 50;
 
       const res: ImportAndStudyResult = {
         noteId: note.id,
         noteTitle: note.title,
-        flashcardCount,
-        deckName,
-        quizQuestionCount,
+        generating: wanted,
       };
       setResult(res);
       setStep('done');
       onComplete?.(res);
+      if (!wanted) return;
+
+      const content = studyText.slice(0, 8000);
+      const wantCards = generateCards;
+      const wantQuiz = generateQuiz;
+
+      useJobsStore.getState().startJob({
+        kind: 'import',
+        sourceTitle: note.title,
+        watch: false,
+        run: async ({ jobId, onServerJob, onStage }) => {
+          let flashcardCount = 0;
+          let quizQuestionCount = 0;
+
+          if (wantCards) {
+            const { flashcards } = await aiGenerateFlashcards(content, {
+              count: normalizeFlashcardCount(),
+              onJobUpdate: (p) => {
+                if (p.jobId) onServerJob(p.jobId);
+              },
+            });
+            // Persist into a deck the same way the note editor's flashcard path
+            // does — generating without saving spends AI credits and reports a
+            // count of cards that exist nowhere. One shared save path
+            // (services/jobArtifacts.ts) creates the deck only once the cards
+            // exist, counts only the ones the server took, and rolls the deck
+            // back rather than leaving an empty one in the library.
+            const userId = useAuthStore.getState().user?.id;
+            if (flashcards?.length && userId) {
+              onStage('Saving to your library');
+              const { saved } = await saveGeneratedDeck({
+                jobId,
+                userId,
+                cards: flashcards,
+                deckName: `From: ${note.title}`,
+                description: `Generated from note: ${note.title}`,
+              });
+              flashcardCount = saved;
+            }
+          }
+
+          if (wantQuiz) {
+            // Same daily-quiz store path as the note editor's Quiz button: the
+            // session is kept (and shown on the dashboard) instead of being
+            // generated server-side and dropped. Uses the store's real studyGoal.
+            await useStudyGoalsStore
+              .getState()
+              .startDailyQuizFromContent(content, note.id, note.title);
+            quizQuestionCount =
+              useStudyGoalsStore.getState().dailyQuiz?.questions.length ?? 0;
+          }
+
+          return {
+            // The note is the artefact the student asked for; the deck and quiz
+            // hang off it, and the note route is the one that always exists.
+            artifact: { type: 'note', id: note.id, name: note.title },
+            resultCount: flashcardCount + quizQuestionCount,
+          };
+        },
+      });
     },
     [generateCards, generateQuiz, onComplete]
   );
@@ -166,7 +192,7 @@ export default function ImportAndStudyModal({
         body: textContent.trim(),
         sourceType: 'typed',
       });
-      await enrichNote(note);
+      enrichNote(note);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Import failed');
       setStep('input');
@@ -188,7 +214,7 @@ export default function ImportAndStudyModal({
         undefined,
         defaultPhotoNoteTitle()
       );
-      await enrichNote({
+      enrichNote({
         ...uploaded.note,
         attachments: uploaded.attachments,
       });
@@ -316,7 +342,7 @@ export default function ImportAndStudyModal({
               <View className="items-center py-8">
                 <ActivityIndicator size="large" color="#6366f1" />
                 <Text className="font-medium text-lantern-text mt-4">
-                  Creating study materials...
+                  Saving your note...
                 </Text>
               </View>
             ) : null}
@@ -324,20 +350,13 @@ export default function ImportAndStudyModal({
             {step === 'done' && result ? (
               <View className="items-center py-4 gap-3">
                 <AppIcon name="checkmark-circle" size={48} color="#22c55e" />
-                <Text className="font-semibold text-lantern-text">{result.noteTitle} ready!</Text>
-                <View className="flex-row flex-wrap justify-center gap-3">
-                  {result.flashcardCount ? (
-                    <Text className="text-sm text-lantern-text-secondary">
-                      {result.flashcardCount} flashcards saved
-                      {result.deckName ? ` to "${result.deckName}"` : ''}
-                    </Text>
-                  ) : null}
-                  {result.quizQuestionCount ? (
-                    <Text className="text-sm text-lantern-text-secondary">
-                      {result.quizQuestionCount} quiz Qs on your dashboard
-                    </Text>
-                  ) : null}
-                </View>
+                <Text className="font-semibold text-lantern-text">{result.noteTitle} saved</Text>
+                {result.generating ? (
+                  <Text className="text-caption text-lantern-text-secondary text-center">
+                    Your study materials are being made. Keep working — we'll tell you when
+                    they're ready, and they'll show up on Home.
+                  </Text>
+                ) : null}
                 <Button
                   fullWidth
                   onPress={() => {

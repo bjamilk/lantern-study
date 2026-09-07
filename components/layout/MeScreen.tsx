@@ -60,7 +60,7 @@ const Row: React.FC<{
     <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
     <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
     {badge != null && badge > 0 ? (
-      <span className="rounded-full bg-lantern-error px-2 py-0.5 text-label tracking-normal text-white">
+      <span className="rounded-full bg-lantern-error-strong px-2 py-0.5 text-label tracking-normal text-white">
         {badge > 99 ? '99+' : badge}
       </span>
     ) : null}

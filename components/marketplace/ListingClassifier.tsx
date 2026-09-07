@@ -251,7 +251,7 @@ const ListingClassifier: React.FC<ListingClassifierProps> = ({
                     >
                       <span className="flex items-center justify-between gap-2">
                         <span className="text-sm font-medium text-lantern-text">{row.node.label}</span>
-                        <span className="text-[10px] font-semibold uppercase tracking-wide text-lantern-primary">
+                        <span className="text-label font-semibold uppercase tracking-wide text-lantern-primary">
                           {confidenceLabel(row.confidence)}
                         </span>
                       </span>

@@ -183,17 +183,34 @@ router.post(
 
     logger.debug('Creating flashcard', { deckId, type, front: front?.substring(0, 50), imageUrl, userId });
 
-    const flashcard = await supabaseService.createFlashcard({
-      deckId,
-      type: type || 'BASIC',
-      front,
-      back,
-      clozeText,
-      imageUrl,
-      occlusionData,
-      tags,
-      userId,
-    });
+    let flashcard;
+    try {
+      flashcard = await supabaseService.createFlashcard({
+        deckId,
+        type: type || 'BASIC',
+        front,
+        back,
+        clozeText,
+        imageUrl,
+        occlusionData,
+        tags,
+        userId,
+      });
+    } catch (error: any) {
+      // A card queued offline for a deck that has since been deleted (or was
+      // never the caller's) used to surface as a 500 the sync queue retried
+      // forever. It is a permanent, client-classifiable failure.
+      if (error?.message === 'Deck not found or access denied') {
+        return res.status(404).json({
+          success: false,
+          code: 'DECK_NOT_FOUND',
+          field: 'deckId',
+          error: 'Deck not found or access denied',
+          retryable: false,
+        });
+      }
+      throw error;
+    }
 
     // Invalidate deck's flashcards cache
     await cacheService.deletePattern(`flashcards:*`);

@@ -112,7 +112,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
                 kind === k
                   ? k === 'income'
                     ? 'bg-lantern-success text-white'
-                    : 'bg-lantern-error text-white'
+                    : 'bg-lantern-error-strong text-white'
                   : 'text-lantern-text-secondary'
               }`}
             >
@@ -217,7 +217,7 @@ const AddTransactionModal: React.FC<AddTransactionModalProps> = ({ isOpen, onClo
         <div className="space-y-2 pt-1">
           <button
             type="submit"
-            className={`w-full min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white rounded-xl shadow-sm hover:opacity-90 ${kind === 'income' ? 'bg-lantern-success' : 'bg-lantern-error'}`}
+            className={`w-full min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white rounded-xl shadow-sm hover:opacity-90 ${kind === 'income' ? 'bg-lantern-success' : 'bg-lantern-error-strong'}`}
           >
             {kind === 'income' ? 'Add income' : 'Add expense'}
           </button>

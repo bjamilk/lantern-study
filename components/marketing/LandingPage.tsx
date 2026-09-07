@@ -113,7 +113,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
         {PLAY_STORE_URL !== null && (
           <a href={PLAY_STORE_URL} target="_blank" rel="noopener noreferrer" className={STORE_BADGE_CLASS}>
             <span className="flex flex-col items-start leading-none">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-lantern-text-tertiary">Get it on</span>
+              <span className="text-label font-medium uppercase tracking-wide text-lantern-text-tertiary">Get it on</span>
               <span>Google Play</span>
             </span>
           </a>
@@ -121,7 +121,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
         {APP_STORE_URL !== null && (
           <a href={APP_STORE_URL} target="_blank" rel="noopener noreferrer" className={STORE_BADGE_CLASS}>
             <span className="flex flex-col items-start leading-none">
-              <span className="text-[10px] font-medium uppercase tracking-wide text-lantern-text-tertiary">Download on the</span>
+              <span className="text-label font-medium uppercase tracking-wide text-lantern-text-tertiary">Download on the</span>
               <span>App Store</span>
             </span>
           </a>

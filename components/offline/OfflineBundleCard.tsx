@@ -84,7 +84,7 @@ export const OfflineBundleCard: React.FC<OfflineBundleCardProps> = ({
             {bundle.displayName || bundle.groupName}
           </p>
           {isPurchased ? (
-            <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary text-[10px] font-bold uppercase tracking-wide">
+            <span className="shrink-0 px-1.5 py-0.5 rounded-full bg-lantern-primary/10 text-lantern-primary text-label font-bold uppercase tracking-wide">
               Purchased
             </span>
           ) : null}

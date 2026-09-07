@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   DocumentArrowUpIcon,
   PhotoIcon,
@@ -14,7 +14,14 @@ import * as notesApi from '../services/notes';
 import { fetchAiHealth } from '../services/supabase';
 import { useUIStore } from '../stores/uiStore';
 import { useNotesStore } from '../stores/notesStore';
-import { useStudyGenerators, type ImportAndStudyResult } from '../hooks/useStudyGenerators';
+import {
+  useStudyGenerators,
+  type ImportAndStudyResult,
+  type StudyGeneratorStage,
+} from '../hooks/useStudyGenerators';
+import { runAiJob } from '../stores/aiJobRunner';
+import { useAiJobUserId } from '../hooks/useAiJobs';
+import { SMART_NOTES_CREDIT_COST, AI_CREDIT_COSTS } from '@lantern/shared/utils/aiCredits';
 import type { NoteAttachment, StudyNote } from '../types';
 
 export type { ImportAndStudyResult } from '../hooks/useStudyGenerators';
@@ -45,9 +52,18 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
   const loadNote = useNotesStore((s) => s.loadNote);
+  const aiUserId = useAiJobUserId();
+  /**
+   * Set when the student sends a run to the background. The job still
+   * completes and still calls onComplete — we just stop steering this modal,
+   * so reopening it does not drop them on a stale "done" screen.
+   */
+  const backgroundedRef = useRef(false);
 
   useEffect(() => {
     if (!isOpen) return;
+    // A fresh open is steerable again, whatever the last run did.
+    backgroundedRef.current = false;
     void fetchAiHealth()
       .then((h) => setHandwritingOcrOff(h.handwritingOcr === 'off' || h.gemini === 'off'))
       .catch(() => setHandwritingOcrOff(false));
@@ -61,20 +77,76 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   };
 
   const handleClose = () => {
+    if (step === 'processing') backgroundedRef.current = true;
     reset();
     onClose();
   };
 
   const { runStudyGenerators: runGenerators } = useStudyGenerators({ generateCards, generateQuiz });
 
+  /**
+   * Runs the generator pipeline as a tracked AI job.
+   *
+   * The work is handed to the module-level runner rather than awaited by this
+   * component, so closing the modal (or navigating away entirely) no longer
+   * throws away a generation the student has already paid credits for — the
+   * progress panel picks it up and the result still lands.
+   */
   const runStudyGenerators = useCallback(
     async (note: StudyNote & { attachments?: NoteAttachment[] }) => {
-      const res = await runGenerators(note);
-      setResult(res);
-      setStep('done');
+      if (!aiUserId) {
+        // Signed out: fall back to the plain path rather than filing a job
+        // against nobody, which no panel would ever show.
+        const res = await runGenerators(note);
+        setResult(res);
+        setStep('done');
+        onComplete(res);
+        return;
+      }
+
+      // Stage labels mirror what actually runs, so the bar cannot promise a
+      // step the student switched off.
+      const stageNames: StudyGeneratorStage[] = ['extract', 'summary'];
+      const stageLabels = ['Reading your material', 'Writing Smart Notes'];
+      if (generateCards) {
+        stageNames.push('flashcards');
+        stageLabels.push('Building flashcards');
+      }
+      if (generateQuiz) {
+        stageNames.push('quiz');
+        stageLabels.push('Writing quiz questions');
+      }
+      stageNames.push('saving');
+      stageLabels.push('Saving to your library');
+
+      const creditCost =
+        SMART_NOTES_CREDIT_COST.standard +
+        (generateCards ? AI_CREDIT_COSTS.generate_flashcards : 0) +
+        (generateQuiz ? AI_CREDIT_COSTS.generate_questions : 0);
+
+      const res = await runAiJob(
+        {
+          userId: aiUserId,
+          kind: 'import_study',
+          title: note.title || 'Imported note',
+          stages: stageLabels,
+          creditCost,
+          target: { path: `/notes/${note.id}`, label: 'Open note' },
+        },
+        (report) =>
+          runGenerators(note, (stage) => {
+            const index = stageNames.indexOf(stage);
+            if (index >= 0) report(index);
+          })
+      );
+
+      if (!backgroundedRef.current) {
+        setResult(res);
+        setStep('done');
+      }
       onComplete(res);
     },
-    [runGenerators, onComplete]
+    [runGenerators, onComplete, aiUserId, generateCards, generateQuiz]
   );
 
   const processContent = useCallback(
@@ -286,6 +358,13 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
               <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" aria-hidden />
               <p className="font-medium text-lantern-text">Creating your study materials...</p>
               <p className="text-sm text-lantern-text-muted mt-1">Summary + flashcards + quiz</p>
+              <button
+                type="button"
+                onClick={handleClose}
+                className="mt-4 px-3 py-1.5 rounded-lg text-caption font-medium border border-lantern-border text-lantern-text"
+              >
+                Continue in background
+              </button>
             </div>
           )}
 

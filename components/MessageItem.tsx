@@ -664,7 +664,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 the older member-share bar is shown rather than a wrong zero. */}
             {isPending && peerUpvotes !== null && (
               <div className="space-y-1 pt-1">
-                <div className="flex items-center justify-between text-[10px] text-lantern-text-secondary">
+                <div className="flex items-center justify-between text-label tracking-normal text-lantern-text-secondary">
                   <span>{QUESTION_VERIFY_COPY.progress(peerUpvotes)}</span>
                   <span>{peerProgress}%</span>
                 </div>
@@ -681,7 +681,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                     style={{ width: `${peerProgress}%`, minWidth: peerProgress > 0 ? '4px' : undefined }}
                   />
                 </div>
-                <p className="text-[10px] text-lantern-text-tertiary">
+                <p className="text-label tracking-normal text-lantern-text-tertiary">
                   {peerVerifyReady
                     ? QUESTION_VERIFY_COPY.ready
                     : QUESTION_VERIFY_COPY.blocked(peerUpvotes)}
@@ -691,7 +691,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
             {isPending && peerUpvotes === null && memberCount > 0 && (
               <div className="space-y-1 pt-1">
-                <div className="flex items-center justify-between text-[10px] text-lantern-text-secondary">
+                <div className="flex items-center justify-between text-label tracking-normal text-lantern-text-secondary">
                   <span>{message.upvotes} / {approvalThreshold} approvals needed</span>
                   <span>{approvalProgress}%</span>
                 </div>

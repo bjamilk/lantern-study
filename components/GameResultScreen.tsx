@@ -134,7 +134,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
         <h1 className={`text-4xl md:text-5xl font-extrabold tracking-tight mb-2 ${getResultColor()}`}>
           {getResultText()}
         </h1>
-        <p className="text-lantern-text-secondary dark:text-lantern-text-secondary text-md md:text-lg mb-8 font-medium">
+        <p className="text-lantern-text-secondary dark:text-lantern-text-secondary text-body md:text-heading mb-8 font-medium">
           {getResultSubtitle()}
         </p>
 
@@ -159,7 +159,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                   <span className="font-extrabold text-2xl">1</span>
                   <div className="flex flex-col">
                     <span className="text-xs truncate font-bold">{currentUser.name}</span>
-                    <span className="text-[10px] font-medium">{session.userScore} pts</span>
+                    <span className="text-label tracking-normal font-medium">{session.userScore} pts</span>
                   </div>
                 </div>
               </div>
@@ -180,7 +180,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                   <span className="font-extrabold text-2xl">1</span>
                   <div className="flex flex-col">
                     <span className="text-xs truncate font-bold">{opponent.name}</span>
-                    <span className="text-[10px] font-medium">{session.opponentScore} pts</span>
+                    <span className="text-label tracking-normal font-medium">{session.opponentScore} pts</span>
                   </div>
                 </div>
               </div>
@@ -204,7 +204,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                   <span className="font-extrabold text-xl">2</span>
                   <div className="flex flex-col">
                     <span className="text-xs truncate font-bold">{(!isWinner ? currentUser : opponent).name}</span>
-                    <span className="text-[10px] font-medium">{!isWinner ? session.userScore : session.opponentScore} pts</span>
+                    <span className="text-label tracking-normal font-medium">{!isWinner ? session.userScore : session.opponentScore} pts</span>
                   </div>
                 </div>
               </div>
@@ -238,7 +238,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
         <div className="grid grid-cols-2 gap-6 border-t border-b border-lantern-border py-6 mb-8 text-left text-sm font-medium">
           {/* Your Stats */}
           <div className="space-y-3">
-            <h3 className="font-bold text-md text-lantern-primary flex items-center">
+            <h3 className="font-bold text-heading text-lantern-primary flex items-center">
               <span>{currentUser.name} (You)</span>
             </h3>
             <ul className="space-y-1.5 text-lantern-text-secondary">
@@ -251,7 +251,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
 
           {/* Opponent Stats */}
           <div className="space-y-3">
-            <h3 className="font-bold text-md text-lantern-text">
+            <h3 className="font-bold text-heading text-lantern-text">
               <span>{opponent.name}</span>
             </h3>
             <ul className="space-y-1.5 text-lantern-text-secondary">

@@ -2046,7 +2046,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <span className="text-sm font-bold text-lantern-primary">
                     {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
                   </span>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize ${
+                  <span className={`text-label tracking-normal font-semibold px-2 py-0.5 rounded-full capitalize ${
                     inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
                     inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
                     inquiry.status === 'closed' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary' :
@@ -2116,7 +2116,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 <button type="button" onClick={() => setActiveTab(activeTab === 'offers' ? 'chat' : 'offers')} className="ml-auto text-[11px] font-medium text-lantern-primary hover:underline">
                   {activeTab === 'offers' ? 'View chat' : 'View details'}
                 </button>
-                <span className="basis-full text-[10px] text-lantern-text-tertiary">Paystack-protected · you pay the listed price</span>
+                <span className="basis-full text-label tracking-normal text-lantern-text-tertiary">Paystack-protected · you pay the listed price</span>
               </div>
             );
           })()}
@@ -2213,7 +2213,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     <h3 className="text-base font-bold text-lantern-text line-clamp-2">
                       {inquiry.listing?.title}
                     </h3>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md uppercase flex-shrink-0 ${
+                    <span className={`text-label font-bold px-2 py-0.5 rounded-md uppercase flex-shrink-0 ${
                       inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
                       inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
                       inquiry.status === 'closed' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary' :
@@ -2449,7 +2449,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                             <span className="text-xs font-bold text-lantern-text">
                               ₦{offer.amount.toLocaleString()}
                             </span>
-                            <span className="text-[10px] text-lantern-text-tertiary font-medium">
+                            <span className="text-label tracking-normal text-lantern-text-tertiary font-medium">
                               {new Date(offer.created_at).toLocaleString()}
                             </span>
                           </div>

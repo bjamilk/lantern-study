@@ -19,6 +19,7 @@
       "@lantern/shared/chat": ["../../packages/shared/dist/chat/index"],
       "@lantern/shared/learning": ["../../packages/shared/dist/learning/index"],
       "@lantern/shared/jobs": ["../../packages/shared/dist/jobs/index"],
+      "@lantern/shared/jobs/*": ["../../packages/shared/dist/jobs/*"],
       "@lantern/shared/analytics": ["../../packages/shared/dist/analytics/index"],
       "@lantern/shared/moderation": ["../../packages/shared/dist/moderation/index"],
       "@lantern/shared/types": ["../../packages/shared/dist/types/index"],

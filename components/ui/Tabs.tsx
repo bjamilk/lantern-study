@@ -173,7 +173,7 @@ export function Tab({ value, children, icon, badge, disabled, className = '', st
       disabled={disabled}
       onClick={() => ctx.onValueChange(value)}
       onKeyDown={(event) => ctx.handleKeyDown(event, index)}
-      className={`relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-t-lg transition-colors min-h-[44px] ${variantClass} ${className}`}
+      className={`relative flex items-center gap-2 px-4 py-2.5 text-body font-semibold rounded-t-lg transition-colors min-h-[44px] ${variantClass} ${className}`}
       style={style}
     >
       {icon}

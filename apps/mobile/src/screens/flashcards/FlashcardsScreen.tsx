@@ -24,6 +24,7 @@ import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { exportDeck } from '../../services/api';
 import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
+import { JobProgressSheet } from '../../components/jobs';
 import { COURSE_TOPIC_COPY, FlashcardType, getDeckListStatsLine, getStudyCtaLabel } from '@lantern/shared';
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -744,8 +745,14 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
             setAiDeckId(null);
           }}
           onFlashcardsGenerated={handleAIGenerated}
+          // Wave G: naming the deck moves generation into the jobs store, so
+          // the cards are saved (and notified) even if the student leaves.
+          deckId={aiDeckId}
+          deckName={decks.find((d) => d.id === aiDeckId)?.name}
         />
       ) : null}
+
+      <JobProgressSheet />
     </Wrapper>
   );
 }

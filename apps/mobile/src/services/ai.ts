@@ -5,6 +5,7 @@ import { createLanternAI, parseGlobalAIUsageFromHeaders } from '@lantern/shared/
 import type { AIUsageInfo } from '@lantern/shared';
 import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
 import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
+import { settleJob } from './jobWatch';
 
 export type {
   AIGeneratedQuestion,
@@ -87,12 +88,23 @@ export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () =
 }
 
 export const fetchAIUsage = ai.fetchAIUsage;
-export const aiGenerateQuestions = ai.aiGenerateQuestions;
-export const aiGenerateFlashcards = ai.aiGenerateFlashcards;
-export const aiExplainAnswer = ai.aiExplainAnswer;
-export const aiGetStudyRecommendations = ai.aiGetStudyRecommendations;
-export const aiAskTutor = ai.aiAskTutor;
-export const aiEnhanceFlashcard = ai.aiEnhanceFlashcard;
+
+// Every generator below may answer 202 in production (BullMQ is on). The
+// shared client watches such a job for 90 s and then throws
+// JobStillRunningError — the right signal for a sheet, the wrong one for the
+// runner that has to save the result, which would otherwise report a running,
+// already-charged job as failed. settleJob carries it to the real end.
+export const aiGenerateQuestions: typeof ai.aiGenerateQuestions = (notes, options) =>
+  settleJob(() => ai.aiGenerateQuestions(notes, options));
+export const aiGenerateFlashcards: typeof ai.aiGenerateFlashcards = (notes, options) =>
+  settleJob(() => ai.aiGenerateFlashcards(notes, options));
+export const aiExplainAnswer: typeof ai.aiExplainAnswer = (...args) =>
+  settleJob(() => ai.aiExplainAnswer(...args));
+export const aiGetStudyRecommendations: typeof ai.aiGetStudyRecommendations = (...args) =>
+  settleJob(() => ai.aiGetStudyRecommendations(...args));
+export const aiAskTutor: typeof ai.aiAskTutor = (...args) => settleJob(() => ai.aiAskTutor(...args));
+export const aiEnhanceFlashcard: typeof ai.aiEnhanceFlashcard = (...args) =>
+  settleJob(() => ai.aiEnhanceFlashcard(...args));
 export const aiHealthCheck = ai.aiHealthCheck;
 export const aiGenerateListingDescription = ai.aiGenerateListingDescription;
 

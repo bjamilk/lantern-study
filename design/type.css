@@ -14,6 +14,16 @@
    packages/shared/src/design/tokens.ts; scripts/design/contrast.mjs reads this
    file and fails if a step is missing or drops below the 11px floor.
 
+   THE FLOOR: the two smallest steps are wrapped in max(), so the Small text
+   setting (--type-scale .875) cannot push them under the 11 px legibility
+   floor. Without it, label rendered 9.625 px and caption 11.375 px at Small —
+   the app's own accessibility setting made the app less legible. max() is
+   plain CSS Values 4 and needs no build support; the floor is the value at
+   scale 1 for label (11 px) and one step down for caption (12 px, from 13),
+   so at scale 1 and 1.125 nothing moves and the mobile parity holds.
+   scripts/design/contrast.mjs and apps/web/src/typeScaleLint.test.ts both
+   parse this form and fail if a floor is dropped.
+
    Loaded after index.css (see index.tsx). */
 
 :root {
@@ -39,12 +49,12 @@
   --type-body-weight: 400;
   --type-body-tracking: -0.011em;
 
-  --type-caption-size: calc(13px * var(--type-scale));
+  --type-caption-size: max(12px, calc(13px * var(--type-scale)));
   --type-caption-lh: calc(18px * var(--type-scale));
   --type-caption-weight: 400;
   --type-caption-tracking: 0;
 
-  --type-label-size: calc(11px * var(--type-scale));
+  --type-label-size: max(11px, calc(11px * var(--type-scale)));
   --type-label-lh: calc(16px * var(--type-scale));
   --type-label-weight: 600;
   --type-label-tracking: 0.04em;

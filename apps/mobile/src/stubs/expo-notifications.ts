@@ -52,6 +52,11 @@ export async function scheduleNotificationAsync(
   return 'expo-go-stub';
 }
 
+/** Nothing is ever presented from this stub, so the tray is always empty. */
+export async function getPresentedNotificationsAsync(): Promise<unknown[]> {
+  return [];
+}
+
 export async function cancelScheduledNotificationAsync(_identifier: string): Promise<void> {}
 
 export async function cancelAllScheduledNotificationsAsync(): Promise<void> {}

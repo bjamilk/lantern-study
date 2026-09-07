@@ -87,6 +87,12 @@ import {
   rankRelatedListings,
 } from "@lantern/shared/marketplace";
 import { PublicError } from "../utils/safeError";
+import {
+  cardToFlashcardRow,
+  DeckWithCardsError,
+  isMissingRpcError,
+  type NormalizedDeckCard,
+} from "./deckWithCards";
 // Value import (const array) — marketplaceOrders only type-imports supabase, so
 // this introduces no runtime import cycle.
 import { OPEN_ORDER_STATUSES } from "./marketplaceOrders";
@@ -3797,6 +3803,238 @@ export class SupabaseService {
     return data;
   }
 
+  /**
+   * Create a deck AND its cards as one unit.
+   *
+   * Preferred path is the `create_deck_with_cards` RPC (one transaction). That
+   * migration is hand-applied, so while it is missing this compensates: insert
+   * the deck, insert the cards, and DELETE the deck if any card fails. Either
+   * way a caller that sees an error can be sure no empty deck was left behind —
+   * which is the whole point (an interrupted generate used to strand a
+   * "0 cards" deck that no client-side rollback could reach).
+   */
+  async createDeckWithCards(
+    deckData: {
+      name: string;
+      description?: string;
+      isShared?: boolean;
+      courseId?: string | null;
+      topicId?: string | null;
+    },
+    cards: NormalizedDeckCard[],
+    userId: string,
+  ): Promise<{ deck: any; flashcards: any[]; atomic: boolean }> {
+    // Resolved before anything is written: a topic that belongs to another
+    // course is a PublicError (400), not a half-written deck.
+    const topicId = await this.resolveArtefactTopic({
+      topicId: deckData.topicId,
+      courseId: deckData.courseId,
+    });
+
+    const rpcResult = await this.tryCreateDeckWithCardsRpc(deckData, topicId, cards, userId);
+    if (rpcResult) {
+      await this.invalidateDeckCaches(userId, rpcResult.deckId);
+      const deck = await this.getDeckRow(rpcResult.deckId);
+      const flashcards = await this.getDeckCardRows(rpcResult.deckId);
+      return { deck, flashcards, atomic: true };
+    }
+
+    // ---- Compensating path (RPC not present on this database) ----
+    const { data: deck, error: deckError } = await writeWithTopicFallback(
+      (row) => this.supabase.from("decks").insert(row).select().single(),
+      {
+        name: deckData.name,
+        description: deckData.description || "",
+        user_id: userId,
+        is_shared: deckData.isShared ?? false,
+        course_id: deckData.courseId || null,
+        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+      },
+    );
+
+    if (deckError || !deck) {
+      logger.error("Error creating deck (with-cards)", { error: deckError, userId });
+      throw new DeckWithCardsError(
+        "DECK_WRITE_FAILED",
+        deckError?.message || "Failed to create deck",
+        true,
+      );
+    }
+
+    const { data: inserted, error: cardsError } = await this.supabase
+      .from("flashcards")
+      .insert(cards.map((card) => cardToFlashcardRow(card, deck.id)))
+      .select();
+
+    // A partial insert is the same failure as none: PostgREST inserts the array
+    // in one statement, so any error means zero rows landed.
+    if (cardsError || !inserted || inserted.length !== cards.length) {
+      const rolledBack = await this.deleteDeckRowBestEffort(deck.id);
+      logger.error("Cards failed after deck insert — deck removed", {
+        error: cardsError,
+        deckId: deck.id,
+        rolledBack,
+        expected: cards.length,
+        inserted: inserted?.length ?? 0,
+      });
+      await this.invalidateDeckCaches(userId, deck.id);
+      throw new DeckWithCardsError(
+        "CARD_WRITE_FAILED",
+        cardsError?.message || "Failed to save the deck's cards",
+        rolledBack,
+      );
+    }
+
+    await this.invalidateDeckCaches(userId, deck.id);
+    return { deck, flashcards: inserted, atomic: false };
+  }
+
+  /**
+   * Add generated cards to a deck the student already has.
+   *
+   * The generate flow opened from inside a deck promises the cards land in
+   * THAT deck; creating a second one named after it left a duplicate in the
+   * library and the original still empty. No deck row is written here, so a
+   * single PostgREST insert (one statement, all rows or none) is the whole
+   * transaction — nothing to compensate.
+   *
+   * Returns null when the caller may not edit the deck, which the route
+   * answers as 404 rather than leaking whether the deck exists.
+   */
+  async addCardsToExistingDeck(
+    deckId: string,
+    cards: NormalizedDeckCard[],
+    userId: string,
+  ): Promise<{ deck: any; flashcards: any[]; atomic: boolean } | null> {
+    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
+    if (!canEdit) return null;
+
+    // The FULL row, not fetchDeckRecord's projection: the client merges what
+    // comes back over its local copy, and a row missing `topic_id` would file
+    // the student's deck under no topic until the next refetch.
+    const { data: deck, error: deckError } = await this.supabase
+      .from("decks")
+      .select("*")
+      .eq("id", deckId)
+      .maybeSingle();
+    if (deckError) throw deckError;
+    if (!deck) return null;
+
+    const { data: inserted, error: cardsError } = await this.supabase
+      .from("flashcards")
+      .insert(cards.map((card) => cardToFlashcardRow(card, deckId)))
+      .select();
+
+    if (cardsError || !inserted || inserted.length !== cards.length) {
+      logger.error("Cards failed for existing deck", {
+        error: cardsError,
+        deckId,
+        expected: cards.length,
+        inserted: inserted?.length ?? 0,
+      });
+      // One statement: an error means zero rows landed, so the deck is
+      // exactly as the student left it.
+      throw new DeckWithCardsError(
+        "CARD_WRITE_FAILED",
+        cardsError?.message || "Failed to save the deck's cards",
+        true,
+      );
+    }
+
+    await this.invalidateDeckCaches(userId, deckId);
+    return { deck, flashcards: inserted, atomic: true };
+  }
+
+  /** Returns null when this database has no `create_deck_with_cards` yet. */
+  private async tryCreateDeckWithCardsRpc(
+    deckData: {
+      name: string;
+      description?: string;
+      isShared?: boolean;
+      courseId?: string | null;
+    },
+    topicId: string | null | undefined,
+    cards: NormalizedDeckCard[],
+    userId: string,
+  ): Promise<{ deckId: string } | null> {
+    const { data, error } = await this.supabase.rpc("create_deck_with_cards", {
+      p_owner: userId,
+      p_deck: {
+        name: deckData.name,
+        description: deckData.description || "",
+        is_shared: deckData.isShared ?? false,
+        course_id: deckData.courseId || null,
+        ...(topicId ? { topic_id: topicId } : {}),
+      },
+      p_cards: cards.map((card) => ({
+        type: card.type,
+        front: card.front,
+        back: card.back,
+        clozeText: card.clozeText,
+        imageUrl: card.imageUrl,
+        occlusionData: card.occlusionData,
+        tags: card.tags,
+      })),
+    });
+
+    if (error) {
+      if (isMissingRpcError(error)) return null;
+      logger.error("create_deck_with_cards RPC failed", { error, userId });
+      // The function is transactional: an error means nothing was written.
+      throw new DeckWithCardsError(
+        "CARD_WRITE_FAILED",
+        error.message || "Failed to create deck",
+        true,
+      );
+    }
+
+    const deckId =
+      (data as any)?.deckId || (data as any)?.deck_id || (Array.isArray(data) ? data[0]?.deckId : null);
+    if (!deckId) {
+      throw new DeckWithCardsError("CARD_WRITE_FAILED", "Failed to create deck", true);
+    }
+    return { deckId: String(deckId) };
+  }
+
+  private async getDeckRow(deckId: string): Promise<any> {
+    const { data } = await this.supabase
+      .from("decks")
+      .select("*")
+      .eq("id", deckId)
+      .maybeSingle();
+    return data || { id: deckId };
+  }
+
+  private async getDeckCardRows(deckId: string): Promise<any[]> {
+    const { data } = await this.supabase
+      .from("flashcards")
+      .select("*")
+      .eq("deck_id", deckId);
+    return data || [];
+  }
+
+  /** Best effort: report whether the orphan deck row is actually gone. */
+  private async deleteDeckRowBestEffort(deckId: string): Promise<boolean> {
+    try {
+      const { error } = await this.supabase.from("decks").delete().eq("id", deckId);
+      return !error;
+    } catch (err) {
+      logger.error("Failed to remove partial deck", { deckId, err });
+      return false;
+    }
+  }
+
+  private async invalidateDeckCaches(userId: string, deckId?: string): Promise<void> {
+    if (deckId) {
+      await cacheService.delete(`deck:${deckId}`);
+      await cacheService.deletePattern(`deck:${deckId}:user:*`);
+    }
+    await cacheService.delete(`decks:user:${userId}`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
+    await cacheService.deletePattern("flashcards:*");
+  }
+
   async getDecks(
     userId: string,
     includeShared: boolean = false,
@@ -6911,6 +7149,77 @@ export class SupabaseService {
     if (error) throw error;
 
     // Invalidate caches
+    await cacheService.deletePattern(`tests:${userId}:*`);
+
+    return data;
+  }
+
+  /**
+   * Create a personal, not-yet-started test from a set of questions — the shape
+   * "Available Tests" lists (questions present, no end_time, status
+   * in_progress).
+   *
+   * POST /tests cannot express this: it treats any payload carrying questions
+   * as a COMPLETED session, so a quiz generated from a note had nowhere to be
+   * saved as a launchable test.
+   */
+  async createPersonalTest(
+    payload: {
+      title: string;
+      questions: any[];
+      sourceNoteId?: string | null;
+      sourceJobId?: string | null;
+      courseId?: string | null;
+      topicId?: string | null;
+      config?: Record<string, any> | null;
+    },
+    userId: string,
+  ): Promise<any> {
+    const courseId =
+      typeof payload.courseId === "string" && payload.courseId ? payload.courseId : null;
+    const topicId = await this.resolveArtefactTopic({
+      topicId: payload.topicId,
+      courseId,
+    });
+
+    const config = {
+      ...(payload.config && typeof payload.config === "object" ? payload.config : {}),
+      title: payload.title,
+      // The mobile Tests list names a session from `config.name` (then
+      // `testName`); without it a refetch renamed every note quiz "Untitled
+      // Test" the moment it left the client-side insert behind.
+      name: payload.title,
+      numberOfQuestions: payload.questions.length,
+      courseId,
+      // Provenance lives in config, not a column: no migration is needed for
+      // the note link, and the client reads it straight back off the session.
+      ...(payload.sourceNoteId ? { sourceNoteId: payload.sourceNoteId } : {}),
+      ...(payload.sourceJobId ? { sourceJobId: payload.sourceJobId } : {}),
+      source: payload.sourceNoteId ? "note" : (payload.config as any)?.source || "personal",
+    };
+
+    const { data, error } = await writeWithTopicFallback(
+      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
+      {
+        user_id: userId,
+        course_id: courseId,
+        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        config,
+        questions: payload.questions,
+        user_answers: {},
+        // No end_time and a non-empty question list is exactly what the mobile
+        // Tests list filters for; anything else would silently not appear.
+        status: "in_progress",
+        session_kind: "test",
+        title: payload.title,
+        current_question_index: 0,
+        is_offline: false,
+        updated_at: new Date().toISOString(),
+      },
+    );
+
+    if (error) throw error;
+
     await cacheService.deletePattern(`tests:${userId}:*`);
 
     return data;

@@ -24,7 +24,11 @@ import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
 import { AIDisclaimer } from './AIDisclaimer';
-import type { AIGeneratedFlashcard } from '../services/ai';
+import { aiGenerateFlashcards, type AIGeneratedFlashcard } from '../services/ai';
+import { trackAIToolUsed } from '../services/productAnalytics';
+import { useAuthStore } from '../stores/authStore';
+import { useJobsStore } from '../stores/jobsStore';
+import { saveGeneratedDeck } from '../services/jobArtifacts';
 import { AppIcon } from './ui/AppIcon';
 
 interface AIGenerateFlashcardsModalProps {
@@ -32,6 +36,15 @@ interface AIGenerateFlashcardsModalProps {
   onClose: () => void;
   /** Called with generated flashcards for parent to create */
   onFlashcardsGenerated: (flashcards: AIGeneratedFlashcard[]) => void;
+  /**
+   * Wave G. When the caller names the deck the cards belong in, generation
+   * runs as a background job instead of a blocking wait: the modal closes, the
+   * progress sheet takes over, and the cards are saved and notified even if the
+   * student leaves. Without it the modal keeps its original generate-then-
+   * preview flow, which needs the student to stay to save anything.
+   */
+  deckId?: string;
+  deckName?: string;
 }
 
 const COUNT_OPTIONS = [3, 5, 8, 10] as const;
@@ -41,6 +54,8 @@ export default function AIGenerateFlashcardsModal({
   visible,
   onClose,
   onFlashcardsGenerated,
+  deckId,
+  deckName,
 }: AIGenerateFlashcardsModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -63,6 +78,49 @@ export default function AIGenerateFlashcardsModal({
       return;
     }
     setAiError(null);
+
+    if (deckId) {
+      const content = notes;
+      const targetDeck = deckId;
+      const chosen = count;
+      const chosenStyle = style;
+      useJobsStore.getState().startJob({
+        kind: 'flashcards',
+        sourceTitle: deckName || 'your deck',
+        requestedCount: chosen,
+        run: async ({ jobId, onServerJob, onStage }) => {
+          // The raw service, not the hook: the hook swallows the error and
+          // returns [], which would report every failure as an empty result.
+          const { flashcards } = await aiGenerateFlashcards(content, {
+            count: chosen,
+            style: chosenStyle,
+            onJobUpdate: (p) => {
+              if (p.jobId) onServerJob(p.jobId);
+            },
+          });
+          trackAIToolUsed('generate_flashcards');
+          if (!flashcards.length) throw new Error('Could not generate flashcards from these notes.');
+          const userId = useAuthStore.getState().user?.id;
+          if (!userId) throw new Error('You must be signed in to save flashcards.');
+
+          onStage('Saving to your deck');
+          // One save path for every generator (services/jobArtifacts.ts): it
+          // counts only cards the server actually took, and it will not write
+          // this job's cards a second time if the run is resumed.
+          const { ref, saved } = await saveGeneratedDeck({
+            jobId,
+            userId,
+            cards: flashcards,
+            deckId: targetDeck,
+            deckName: deckName || 'your deck',
+          });
+          return { artifact: ref, resultCount: saved };
+        },
+      });
+      handleClose();
+      return;
+    }
+
     const cards = await handleAIGenerateFlashcards(notes, { count, style });
     if (cards.length > 0) {
       setGenerated(cards);

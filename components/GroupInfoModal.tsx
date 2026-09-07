@@ -207,7 +207,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
             if (communityOwned) {
                 return (
                     <div className="space-y-3">
-                        <h3 className="text-md font-medium text-lantern-text">{group.name}</h3>
+                        <h3 className="text-heading text-lantern-text">{group.name}</h3>
                         {group.description ? (
                             <p className="text-sm text-lantern-text-secondary">{group.description}</p>
                         ) : null}
@@ -221,7 +221,7 @@ const GroupInfoModal: React.FC<GroupInfoModalProps> = ({
             return (
                  <form onSubmit={handleDetailsSubmit} className="space-y-4">
                     <div className="mb-6 pb-6 border-b border-lantern-border">
-                        <h3 className="text-md font-medium text-lantern-text mb-3">Group Avatar</h3>
+                        <h3 className="text-heading text-lantern-text mb-3">Group Avatar</h3>
                         <div className="flex items-start space-x-4">
                             <img 
                                 src={avatarPreviewUrl || group.avatarUrl || `https://ui-avatars.com/api/?name=${group.name.replace(/\s/g, '+')}&background=random&color=fff&size=100`} 

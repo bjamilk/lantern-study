@@ -50,7 +50,7 @@ const ROW =
   'w-full flex items-center gap-2 rounded-lantern px-3 py-1 min-h-[44px] md:min-h-[40px] text-left transition-colors hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary disabled:opacity-60';
 const ROW_SELECTED = 'bg-lantern-primary-background text-lantern-primary';
 const PILL =
-  'ml-auto bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full shrink-0';
+  'ml-auto bg-lantern-error-strong text-white text-label tracking-normal font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full shrink-0';
 
 const UnreadPill: React.FC<{ count: number }> = ({ count }) =>
   count > 0 ? (

@@ -68,7 +68,7 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
                 <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
               </div>
             </div>
-            <span className={`text-[10px] font-bold ${textColor} flex-shrink-0`}>{remaining}</span>
+            <span className={`text-label tracking-normal font-bold ${textColor} flex-shrink-0`}>{remaining}</span>
           </div>
           <p className="text-[11px] leading-tight text-lantern-text-secondary break-words">{resetLabel}</p>
         </div>
@@ -90,8 +90,8 @@ const AIUsageBadge: React.FC<{ className?: string; compact?: boolean }> = ({ cla
       <div className="w-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary rounded-full h-1.5">
         <div className={`${barColor} h-1.5 rounded-full transition-all duration-500`} style={{ width: `${pct}%` }} />
       </div>
-      <p className="text-[10px] text-lantern-text-secondary mt-1">{resetLabel}</p>
-      {remaining === 0 && <p className="text-[10px] text-red-600 dark:text-red-400 mt-1 font-medium">Daily limit reached</p>}
+      <p className="text-label tracking-normal text-lantern-text-secondary mt-1">{resetLabel}</p>
+      {remaining === 0 && <p className="text-label tracking-normal text-red-600 dark:text-red-400 mt-1 font-medium">Daily limit reached</p>}
     </div>
   );
 };

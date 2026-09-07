@@ -209,7 +209,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                         className="h-5 w-5 rounded text-lantern-primary border-white/40 bg-lantern-surface/20 mr-2 focus:ring-offset-0 focus:ring-0" 
                       />
                     )}
-                    <span className="text-md md:text-lg flex-grow text-left">{opt.text}</span>
+                    <span className="text-body md:text-heading flex-grow text-left">{opt.text}</span>
                     {icon}
                 </div>
             </li>
@@ -279,7 +279,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     <div className="ml-3 flex flex-col items-start">
                       <span className="leading-tight">{session.user.name}</span>
                       {session.userStreak && session.userStreak > 0 ? (
-                        <div className="flex items-center space-x-1 bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full text-[10px] font-bold animate-bounce mt-0.5 shadow-sm">
+                        <div className="flex items-center space-x-1 bg-amber-100 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full text-label tracking-normal font-bold animate-bounce mt-0.5 shadow-sm">
                           <span>🔥 {session.userStreak} Streak!</span>
                           {session.userStreak >= 3 && <span className="text-[8px] tracking-wider uppercase ml-1 animate-pulse font-extrabold text-red-500">Hot</span>}
                         </div>
@@ -326,7 +326,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
                     <div className="mr-3 flex flex-col items-end">
                       <span className="leading-tight">{session.opponent.name || 'Opponent'}</span>
                       {session.opponentStreak && session.opponentStreak > 0 ? (
-                        <div className="flex items-center space-x-1 bg-lantern-background-secondary dark:bg-lantern-surface text-lantern-text-secondary px-2 py-0.5 rounded-full text-[10px] font-bold mt-0.5 shadow-sm">
+                        <div className="flex items-center space-x-1 bg-lantern-background-secondary dark:bg-lantern-surface text-lantern-text-secondary px-2 py-0.5 rounded-full text-label tracking-normal font-bold mt-0.5 shadow-sm">
                           <span>🔥 {session.opponentStreak} Streak</span>
                         </div>
                       ) : null}
@@ -389,7 +389,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({
             <h2 className="text-lg md:text-xl font-bold text-lantern-text">
                 Question {currentQuestion.questionNumber}:
             </h2>
-            <p className="text-md md:text-lg my-4 whitespace-pre-wrap text-lantern-text-secondary dark:text-lantern-text font-medium leading-relaxed">
+            <p className="text-body md:text-heading my-4 whitespace-pre-wrap text-lantern-text-secondary dark:text-lantern-text font-medium leading-relaxed">
               {currentQuestion.questionStem}
             </p>
             

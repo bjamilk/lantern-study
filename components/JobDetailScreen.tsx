@@ -319,12 +319,12 @@ export default function JobDetailScreen({
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 {job.hasApplied ? (
-                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                  <span className="rounded-full bg-emerald-100 px-2 py-1 text-label font-bold uppercase tracking-wide text-emerald-800">
                     Already applied
                   </span>
                 ) : null}
                 {job.isSponsored ? (
-                  <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-label font-bold uppercase tracking-wide text-amber-800">
                     Featured
                   </span>
                 ) : null}

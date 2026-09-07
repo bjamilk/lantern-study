@@ -1150,7 +1150,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
       {pinned && !pinned.removedAt ? (
         <div className="sticky top-0 z-10 shrink-0 border-b border-lantern-border bg-lantern-background-secondary px-4 py-2">
           <div className="mx-auto flex max-w-2xl items-center gap-2">
-            <span className="shrink-0 text-[10px] font-bold tracking-wide text-lantern-text-tertiary">
+            <span className="shrink-0 text-label font-bold tracking-wide text-lantern-text-tertiary">
               {COMMUNITY_BOARD_COPY.pinnedLabel}
             </span>
             <p

@@ -202,7 +202,7 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
 
           return (
             <div key={question.id} className="bg-lantern-surface p-4 rounded-lg shadow-md">
-              <h2 className="text-md font-semibold mb-2 text-lantern-text"> 
+              <h2 className="text-heading mb-2 text-lantern-text"> 
                 Question {index + 1}: {isCorrect ? 
                 <CheckCircleIcon className="w-5 h-5 inline-block ml-2 text-green-500 dark:text-green-400" /> : 
                 (wasAnswered ? <XCircleIcon className="w-5 h-5 inline-block ml-2 text-red-500 dark:text-red-400" /> : <InformationCircleIcon className="w-5 h-5 inline-block ml-2 text-yellow-500 dark:text-yellow-400" />)

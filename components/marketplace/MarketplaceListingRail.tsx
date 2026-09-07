@@ -50,7 +50,7 @@ export const MarketplaceListingRail: React.FC<MarketplaceListingRailProps> = ({
                     </div>
                   )}
                   {price.onSale ? (
-                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-lantern-error text-white text-[10px] font-semibold">
+                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-lantern-error-strong text-white text-label tracking-normal font-semibold">
                       Deal
                     </span>
                   ) : null}

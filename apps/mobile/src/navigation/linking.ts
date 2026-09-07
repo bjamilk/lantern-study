@@ -1,9 +1,6 @@
 import * as Linking from 'expo-linking';
 import type { LinkingOptions } from '@react-navigation/native';
-import { parseDeepLink } from '@lantern/shared';
 import type { RootStackParamList } from './types';
-
-import { toTab } from './nestedTab';
 
 const prefixes = [
   Linking.createURL('/'),
@@ -126,45 +123,10 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
   },
 };
 
-/** Map legacy / notification links into navigation state. */
-export function resolveDeepLinkNavigation(url: string): { screen: string; params?: Record<string, string> } | null {
-  const parsed = parseDeepLink(url);
-  if (!parsed) return null;
-  switch (parsed.type) {
-    case 'deck':
-      return { screen: 'StudyTab', params: toTab('DeckDetail', { deckId: parsed.id }) as any };
-    case 'group':
-      return { screen: 'ChatTab', params: { screen: 'GroupChat', params: { groupId: parsed.id }, initial: false } as any };
-    case 'listing':
-      return { screen: 'CampusTab', params: { screen: 'ListingDetail', params: { listingId: parsed.id }, initial: false } as any };
-    case 'flashcard':
-      return parsed.extra?.deckId
-        ? { screen: 'StudyTab', params: toTab('DeckDetail', { deckId: parsed.extra.deckId }) as any }
-        : { screen: 'StudyTab', params: toTab('FlashcardsList') as any };
-    case 'profile':
-      return { screen: 'EditProfile' } as any;
-    case 'marketplace':
-      // marketplace/orders/:orderId (Paystack return / notification deep links)
-      if (parsed.id === 'orders' && parsed.extra?.orderId) {
-        return {
-          screen: 'CampusTab',
-          params: {
-            initial: false,
-            screen: 'OrderDetail',
-            params: {
-              orderId: parsed.extra.orderId,
-              payment: parsed.extra.payment,
-              reference: parsed.extra.reference || parsed.extra.trxref,
-            },
-          } as any,
-        };
-      }
-      return { screen: 'CampusTab', params: { screen: 'Campus', params: { segment: 'shop' } } as any };
-    case 'budget':
-      return { screen: 'MeTab', params: { screen: 'BudgetHome', initial: false } as any };
-    case 'test':
-      return { screen: 'StudyTab', params: toTab('TestsList') as any };
-    default:
-      return null;
-  }
-}
+/**
+ * The routing table itself lives in `deepLinkTargets.ts`, which imports
+ * nothing from expo: it is the rule that decides where a link lands, and it is
+ * worth testing in node rather than only on a device. Re-exported here so
+ * every existing caller keeps its import.
+ */
+export { resolveDeepLinkNavigation } from './deepLinkTargets';

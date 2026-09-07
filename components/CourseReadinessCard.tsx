@@ -203,11 +203,11 @@ export const CourseReadinessCard: React.FC = () => {
                             <span className="min-w-0 truncate text-xs text-lantern-text">
                               {topic.title}
                               {!topic.inOutline ? (
-                                <span className="ml-1 text-[10px] text-lantern-text-tertiary">(outside outline)</span>
+                                <span className="ml-1 text-label tracking-normal text-lantern-text-tertiary">(outside outline)</span>
                               ) : null}
                             </span>
                             <span
-                              className={`shrink-0 px-1.5 py-0.5 rounded-full text-[10px] font-medium ${BAND_CHIP_CLASSES[topic.band]}`}
+                              className={`shrink-0 px-1.5 py-0.5 rounded-full text-label tracking-normal font-medium ${BAND_CHIP_CLASSES[topic.band]}`}
                             >
                               {topic.masteryScore != null
                                 ? `${topic.masteryScore}%`

@@ -189,7 +189,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
     if (courseId) return null; // already scoped — no need to repeat the code on every row
     const course = resolveCourse(row.courseId);
     return course ? (
-      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-lantern-primary-text">
+      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-label tracking-normal font-semibold text-lantern-primary-text">
         {course.code}
       </span>
     ) : null;
@@ -270,7 +270,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                         <span className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium text-lantern-text">{row.title || 'Untitled note'}</span>
                           {courseTag(row)}
-                          <span className="ml-auto shrink-0 text-[10px] text-lantern-text-tertiary">{formatUpdated(row.updatedAt)}</span>
+                          <span className="ml-auto shrink-0 text-label tracking-normal text-lantern-text-tertiary">{formatUpdated(row.updatedAt)}</span>
                         </span>
                         {renderSnippet(row)}
                       </span>
@@ -300,12 +300,12 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                           <span className="truncate text-sm font-medium text-lantern-text">{group.title || 'Deck'}</span>
                           {group.deck ? courseTag(group.deck) : group.cards[0] ? courseTag(group.cards[0]) : null}
                           {group.cards.length > 0 ? (
-                            <span className="shrink-0 text-[10px] text-lantern-text-tertiary">
+                            <span className="shrink-0 text-label tracking-normal text-lantern-text-tertiary">
                               {group.cards.length} matching card{group.cards.length === 1 ? '' : 's'}
                             </span>
                           ) : null}
                           {group.deck ? (
-                            <span className="ml-auto shrink-0 text-[10px] text-lantern-text-tertiary">
+                            <span className="ml-auto shrink-0 text-label tracking-normal text-lantern-text-tertiary">
                               {formatUpdated(group.deck.updatedAt)}
                             </span>
                           ) : null}
@@ -351,12 +351,12 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                         <span className="flex items-center gap-2">
                           <span className="truncate text-sm font-medium text-lantern-text">{row.title || 'Bundle'}</span>
                           {isPurchasedBundleId(row.id) ? (
-                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-lantern-accent/10 px-1.5 py-0.5 text-[10px] font-semibold text-lantern-accent">
+                            <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-lantern-accent/10 px-1.5 py-0.5 text-label tracking-normal font-semibold text-lantern-accent">
                               <ShoppingBagIcon className="h-3 w-3" aria-hidden /> Purchased
                             </span>
                           ) : null}
                           {courseTag(row)}
-                          <span className="ml-auto shrink-0 text-[10px] text-lantern-text-tertiary">{formatUpdated(row.updatedAt)}</span>
+                          <span className="ml-auto shrink-0 text-label tracking-normal text-lantern-text-tertiary">{formatUpdated(row.updatedAt)}</span>
                         </span>
                         {renderSnippet(row)}
                       </span>

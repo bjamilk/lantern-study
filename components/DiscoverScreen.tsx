@@ -373,7 +373,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
               ) : null}
               {unread > 0 ? (
                 <span
-                  className="bg-lantern-error text-white text-[10px] font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full shrink-0"
+                  className="bg-lantern-error-strong text-white text-label tracking-normal font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full shrink-0"
                   aria-hidden="true"
                 >
                   {formatCommunityUnread(unread)}
@@ -612,7 +612,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             )}
             {yours.length > 0 ? (
               <>
-                <h2 className="sm:col-span-2 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+                <h2 className="sm:col-span-2 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
                   Yours
                 </h2>
                 {yours.map(renderCommunityCard)}
@@ -620,7 +620,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
             ) : null}
             {more.length > 0 ? (
               <>
-                <h2 className="sm:col-span-2 text-[10px] font-semibold uppercase tracking-wide text-lantern-text-secondary">
+                <h2 className="sm:col-span-2 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
                   {yours.length > 0 ? 'More to join' : 'On Discover'}
                 </h2>
                 {more.map(renderCommunityCard)}
@@ -744,7 +744,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
                   {person.name}
                   {chip ? (
-                    <span className="rounded-full bg-lantern-primary/10 px-2 py-0.5 text-[10px] font-medium text-lantern-primary">
+                    <span className="rounded-full bg-lantern-primary/10 px-2 py-0.5 text-label tracking-normal font-medium text-lantern-primary">
                       {chip}
                     </span>
                   ) : null}

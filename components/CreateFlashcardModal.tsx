@@ -933,8 +933,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                                 Blur {idx + 1}
                                               </button>
                                               <div className="flex items-center gap-2">
-                                                <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.radius * 100)}%</span>
-                                                <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.opacity * 100)}%</span>
+                                                <span className="text-label tracking-normal text-lantern-text-secondary">{Math.round(blur.radius * 100)}%</span>
+                                                <span className="text-label tracking-normal text-lantern-text-secondary">{Math.round(blur.opacity * 100)}%</span>
                                                 <button
                                                   type="button"
                                                   onClick={() => removeOcclusionShape(idx)}
@@ -1304,8 +1304,8 @@ const CreateFlashcardModal: React.FC<CreateFlashcardModalProps> = ({ isOpen, onC
                                           Blur {idx + 1}
                                         </button>
                                         <div className="flex items-center gap-2">
-                                          <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.radius * 100)}%</span>
-                                          <span className="text-[10px] text-lantern-text-secondary">{Math.round(blur.opacity * 100)}%</span>
+                                          <span className="text-label tracking-normal text-lantern-text-secondary">{Math.round(blur.radius * 100)}%</span>
+                                          <span className="text-label tracking-normal text-lantern-text-secondary">{Math.round(blur.opacity * 100)}%</span>
                                           <button
                                             type="button"
                                             onClick={() => removeOcclusionShape(idx)}

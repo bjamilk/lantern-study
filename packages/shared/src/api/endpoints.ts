@@ -170,6 +170,66 @@ export function createApiEndpoints(client: ApiClient) {
         body: JSON.stringify({ ...data, userId }),
       }),
 
+    /**
+     * Create a deck AND its cards in one call.
+     *
+     * Use this for every generated deck. The two-call flow (createDeck, then
+     * createFlashcard per card) leaves an empty deck behind whenever the app
+     * dies in between — this either saves both or saves nothing.
+     *
+     * `clientKey` (or the generating job id) makes a retry idempotent: the
+     * server replays the first response instead of creating a second deck.
+     */
+    createDeckWithCards: (
+      data: {
+        name: string;
+        description?: string;
+        courseId?: string | null;
+        topicId?: string | null;
+        source?: { noteId?: string; jobId?: string };
+        /** Idempotency key; defaults to `source.jobId` server-side. */
+        clientKey?: string;
+        cards: Array<{
+          type?: "BASIC" | "CLOZE" | "IMAGE_OCCLUSION";
+          front?: string | null;
+          back?: string | null;
+          clozeText?: string | null;
+          imageUrl?: string | null;
+          occlusionData?: unknown;
+          tags?: string[];
+        }>;
+      },
+    ) =>
+      apiRequest<{
+        deck: {
+          id: string;
+          name: string;
+          description?: string;
+          user_id: string;
+          course_id?: string | null;
+          topic_id?: string | null;
+          created_at: string;
+        };
+        flashcards: Array<{ id: string; deck_id: string; type: string }>;
+        cardCount: number;
+        /** False when the server had to use the compensating (non-RPC) path. */
+        atomic: boolean;
+      }>(
+        "/decks/with-cards",
+        {
+          method: "POST",
+          headers: {
+            "Idempotency-Key":
+              data.clientKey ||
+              (data.source?.jobId ? `job:${data.source.jobId}` : createIdempotencyKey("deck")),
+          },
+          body: JSON.stringify(data),
+        },
+        // Generated decks can carry hundreds of cards; the default timeout is
+        // short enough to abort a write that then completes server-side.
+        20000,
+      ),
+
     updateDeck: (
       deckId: string,
       updates: {
@@ -1422,6 +1482,33 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/tests?${params.toString()}`);
     },
+
+    /**
+     * Save generated questions as a launchable personal test (a note quiz, most
+     * often). `createTestSession` cannot express this — a payload carrying
+     * questions is stored there as a COMPLETED attempt, so the test would never
+     * appear under "Available Tests".
+     */
+    createPersonalTest: (data: {
+      title: string;
+      questions: unknown[];
+      sourceNoteId?: string | null;
+      sourceJobId?: string | null;
+      courseId?: string | null;
+      topicId?: string | null;
+      config?: Record<string, unknown>;
+    }) =>
+      apiRequest<{
+        id: string;
+        title?: string;
+        config: unknown;
+        questions: unknown[];
+        status: "in_progress" | "completed" | "abandoned";
+        userId: string;
+      }>("/tests/personal", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
 
     createTestSession: (data: {
       userId: string;

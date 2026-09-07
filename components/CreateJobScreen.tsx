@@ -648,7 +648,7 @@ export default function CreateJobScreen({ onNavigate, jobId }: Props) {
                   )}
                   {isSponsored ? (
                     <p className="text-sm text-lantern-text-secondary">
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-label font-bold uppercase tracking-wide text-amber-800">
                         Featured
                       </span>{" "}
                       This posting has featured placement (granted by Lantern).

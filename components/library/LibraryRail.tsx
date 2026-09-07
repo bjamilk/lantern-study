@@ -190,7 +190,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
    */
   const renderEmptyMarker = (selected: boolean, extraClass = '') => (
     <span
-      className={`text-[10px] shrink-0 ${selected ? 'text-white/70' : 'text-lantern-text-tertiary'} ${extraClass}`}
+      className={`text-label tracking-normal shrink-0 ${selected ? 'text-white/70' : 'text-lantern-text-tertiary'} ${extraClass}`}
     >
       empty<span className="sr-only"> — no notes, decks, tests or offline packs</span>
     </span>

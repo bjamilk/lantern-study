@@ -137,7 +137,7 @@ export const AcademicFeedPanel: React.FC<AcademicFeedPanelProps> = ({
           const body = (
             <>
               <span className="text-xs text-lantern-text">{text}</span>
-              <span className="ml-2 text-[10px] text-lantern-text-secondary">
+              <span className="ml-2 text-label tracking-normal text-lantern-text-secondary">
                 {relativeTime(item.createdAt)}
               </span>
             </>

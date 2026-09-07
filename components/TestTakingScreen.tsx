@@ -611,7 +611,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
           onKeyDown={isStudyModeAnswered ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && handleClick()}
         >
           {isMultiChoice && <input type="checkbox" checked={isSelected} readOnly className="h-3.5 w-3.5 sm:h-4 sm:w-4 rounded text-lantern-primary border-lantern-border focus:ring-lantern-primary mr-2 sm:mr-3" />}
-          <span className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-current flex items-center justify-center text-[10px] sm:text-xs font-bold mr-2 sm:mr-3 select-none">
+          <span className="flex-shrink-0 w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-current flex items-center justify-center text-label tracking-normal sm:text-caption font-bold mr-2 sm:mr-3 select-none">
             {displayLetter}
           </span>
           <span className={`text-xs sm:text-sm font-medium flex-grow ${isStruckOut ? 'line-through' : ''}`}>{displayText}</span>
@@ -827,7 +827,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
                 </span>
                 {lockMode && (
                   <span
-                    className="inline-flex items-center gap-1 text-[10px] sm:text-xs font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full whitespace-nowrap"
+                    className="inline-flex items-center gap-1 text-label tracking-normal sm:text-caption font-medium text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 px-1.5 py-0.5 rounded-full whitespace-nowrap"
                     title="Locked mode: once you answer a question and move on, you can't return to it."
                   >
                     <LockClosedIcon className="w-3 h-3" aria-hidden="true" />
@@ -918,7 +918,7 @@ export const TestTakingScreen: React.FC<TestTakingScreenProps> = ({
             </div>
             <p
               ref={questionStemRef}
-              className={`text-sm sm:text-md md:text-lg mb-3 sm:mb-4 whitespace-pre-wrap text-lantern-text ${
+              className={`text-body md:text-heading mb-3 sm:mb-4 whitespace-pre-wrap text-lantern-text ${
                 activeTool === 'highlight'
                   ? 'cursor-text select-text'
                   : 'select-none'

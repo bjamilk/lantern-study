@@ -19,13 +19,20 @@ const variantClasses: Record<ButtonVariant, string> = {
     'bg-lantern-accent hover:brightness-95 text-white shadow-lantern hover:shadow-lantern-md',
   ghost:
     'bg-transparent text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text',
-  danger: 'bg-lantern-error hover:brightness-95 text-white shadow-lantern',
+  // error-strong, not error: white on `--color-error` is 3.76:1 in dark.
+  danger: 'bg-lantern-error-strong hover:brightness-95 text-white shadow-lantern',
 };
 
+// Sizes are STEPS, not Tailwind's default ramp. The primary button used to
+// render its label at Tailwind's 14/16 px, which is off the six-step scale AND
+// froze under the app's text-size setting (the setting moves --type-scale, and
+// the default ramp is rem off the root). `font-semibold` on the base class
+// still wins over the step's own weight — Tailwind emits fontWeight after
+// fontSize — so every variant keeps the same voice at three sizes.
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-xs rounded-lg',
-  md: 'px-4 py-2.5 text-sm rounded-lantern',
-  lg: 'px-6 py-3 text-base rounded-lantern',
+  sm: 'px-3 py-1.5 text-caption rounded-lg',
+  md: 'px-4 py-2.5 text-body rounded-lantern',
+  lg: 'px-6 py-3 text-heading rounded-lantern',
 };
 
 export const Button: React.FC<ButtonProps> = ({

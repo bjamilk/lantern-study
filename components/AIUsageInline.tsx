@@ -53,13 +53,13 @@ const AIUsageInline: React.FC<{ className?: string; cost?: number }> = ({
         </svg>
         <span className="font-medium">{remaining} left</span>
         {cost != null && (
-          <span className="text-[10px] font-normal">
+          <span className="text-label tracking-normal font-normal">
             · costs {formatCreditCost(cost)}
             {shortOfCredits ? ' — not enough credits' : ''}
           </span>
         )}
       </span>
-      <span className="text-[10px] text-lantern-text-secondary pl-4">{resetLabel}</span>
+      <span className="text-label tracking-normal text-lantern-text-secondary pl-4">{resetLabel}</span>
     </span>
   );
 };

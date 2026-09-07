@@ -81,6 +81,10 @@ module.exports = {
           success: 'rgb(var(--color-success) / <alpha-value>)',
           warning: 'rgb(var(--color-warning) / <alpha-value>)',
           error: 'rgb(var(--color-error) / <alpha-value>)',
+          // FILL role, the error twin of `primary-fill`: the red a white
+          // numeral or label sits ON. `error` itself is tuned as TEXT on the
+          // page ground and is too light under white in dark mode (3.76:1).
+          'error-strong': 'rgb(var(--color-error-strong) / <alpha-value>)',
           border: 'rgb(var(--color-border) / <alpha-value>)',
           feature: {
             dashboard: 'rgb(var(--color-feature-dashboard) / <alpha-value>)',

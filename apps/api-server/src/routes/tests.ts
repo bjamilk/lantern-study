@@ -7,6 +7,7 @@ import { CacheService } from '../services/cache';
 import { logger } from '../utils/logger';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { requireTestOwner } from '../middleware/authorizeResource';
+import { idempotencyMiddleware, type IdempotentRequest } from '../middleware/idempotency';
 import { enforceResourceOwner, userScopedCacheKey } from '../utils/resourceAccess';
 import { getWalletService } from '../services/walletService';
 import { WALLET_COINS, WALLET_TEST_PASS_THRESHOLD, testAwardKey } from '@lantern/shared/utils/walletCoins';
@@ -27,6 +28,73 @@ const respondPublicError = (err: unknown, res: any): boolean => {
   res.status(400).json({ success: false, error: err.message });
   return true;
 };
+
+/** A quiz saved as a launchable test must actually contain askable questions. */
+export const MAX_PERSONAL_TEST_QUESTIONS = 500;
+
+export type PersonalTestRejection = { code: string; error: string; field?: string; index?: number };
+
+/**
+ * Validate + normalise the questions of a personal test. Returns the rows to
+ * store, or a structured rejection. Kept pure so the rules are unit-testable.
+ */
+export function normalizePersonalTestQuestions(
+  input: unknown
+): { ok: true; questions: any[] } | { ok: false; rejection: PersonalTestRejection } {
+  if (!Array.isArray(input) || input.length === 0) {
+    return {
+      ok: false,
+      rejection: {
+        code: 'EMPTY_QUESTIONS',
+        error: 'A test needs at least one question. Nothing was saved.',
+        field: 'questions',
+      },
+    };
+  }
+  if (input.length > MAX_PERSONAL_TEST_QUESTIONS) {
+    return {
+      ok: false,
+      rejection: {
+        code: 'TOO_MANY_QUESTIONS',
+        error: `A test can hold at most ${MAX_PERSONAL_TEST_QUESTIONS} questions.`,
+        field: 'questions',
+      },
+    };
+  }
+
+  const questions: any[] = [];
+  for (let index = 0; index < input.length; index++) {
+    const raw = input[index] as Record<string, unknown> | null;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+      return {
+        ok: false,
+        rejection: { code: 'INVALID_QUESTION', error: 'Each question must be an object.', index },
+      };
+    }
+    const prompt = ['question', 'text', 'prompt']
+      .map((key) => (typeof raw[key] === 'string' ? (raw[key] as string).trim() : ''))
+      .find((value) => value.length > 0);
+    if (!prompt) {
+      return {
+        ok: false,
+        rejection: {
+          code: 'INVALID_QUESTION',
+          error: 'Each question needs question text.',
+          index,
+          field: 'question',
+        },
+      };
+    }
+    questions.push({
+      ...raw,
+      // A stable id per question: answers are keyed by it, so a missing one
+      // would make the attempt unscoreable.
+      id: typeof raw.id === 'string' && raw.id ? raw.id : `q${index + 1}`,
+      question: prompt,
+    });
+  }
+  return { ok: true, questions };
+}
 
 async function awardTestPassCoins(userId: string, testId: string, score: number) {
   if (score < WALLET_TEST_PASS_THRESHOLD) {
@@ -133,6 +201,87 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         logger.error('Error in tests route:', error);
         throw error;
       }
+    })
+  );
+
+  /**
+   * POST /api/v1/tests/personal — save a set of questions as a launchable
+   * personal test (a quiz generated from a note, most often).
+   *
+   * POST /tests cannot do this: any payload carrying questions is stored as a
+   * COMPLETED session there, so a generated quiz had nowhere to live and never
+   * appeared under "Available Tests". This writes the shape that list reads —
+   * questions present, no end_time, status in_progress.
+   *
+   * Retries are safe: an `Idempotency-Key` header — or `clientKey`, or the
+   * generating `sourceJobId` — replays the FIRST test instead of creating a
+   * second one. The client saves BEFORE it writes anything locally, so a
+   * process that dies after the response and re-saves on the next launch
+   * must get the same test back, not a duplicate under Available.
+   */
+  router.post(
+    '/personal',
+    authMiddleware,
+    idempotencyMiddleware({
+      operation: 'test_create_personal',
+      fallbackKey: (req: any) =>
+        (typeof req.body?.clientKey === 'string' && req.body.clientKey) ||
+        (typeof req.body?.sourceJobId === 'string' && `job:${req.body.sourceJobId}`) ||
+        null,
+    }),
+    handleValidationErrors,
+    asyncHandler(async (req: IdempotentRequest & any, res: any) => {
+      const userId = requireAuthUserId(req, res);
+      if (!userId) return;
+
+      const { title, questions, sourceNoteId, sourceJobId, courseId, topicId, config } = req.body || {};
+
+      const cleanTitle = typeof title === 'string' ? title.trim().slice(0, 200) : '';
+      if (!cleanTitle) {
+        return res.status(400).json({
+          success: false,
+          code: 'INVALID_TITLE',
+          field: 'title',
+          error: 'A title is required.',
+          retryable: false,
+        });
+      }
+
+      const normalized = normalizePersonalTestQuestions(questions);
+      if (!normalized.ok) {
+        return res.status(400).json({
+          success: false,
+          retryable: false,
+          ...normalized.rejection,
+        });
+      }
+
+      const run = req.runIdempotent || ((handler: () => Promise<any>) => handler());
+
+      let payload: any;
+      try {
+        payload = await run(async () => {
+          const test = await supabaseService.createPersonalTest(
+            {
+              title: cleanTitle,
+              questions: normalized.questions,
+              sourceNoteId: typeof sourceNoteId === 'string' ? sourceNoteId : null,
+              sourceJobId: typeof sourceJobId === 'string' ? sourceJobId : null,
+              courseId: typeof courseId === 'string' ? courseId : null,
+              topicId: typeof topicId === 'string' ? topicId : null,
+              config: config && typeof config === 'object' ? config : null,
+            },
+            userId
+          );
+          await cacheService.deletePattern(`tests:${userId}:*`);
+          return supabaseService.mapTestSessionRowToClient(test);
+        });
+      } catch (err) {
+        if (respondPublicError(err, res)) return;
+        throw err;
+      }
+
+      res.status(201).json({ success: true, data: payload });
     })
   );
 

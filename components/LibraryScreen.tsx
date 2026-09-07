@@ -230,7 +230,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
               its totals are the rail's — repeated here only because they fit
               beside the title for free. */}
           <div className="mb-2 flex flex-wrap items-center gap-2">
-            <h1 className="flex shrink-0 items-center gap-2 text-base font-semibold text-lantern-text">
+            <h1 className="flex shrink-0 items-center gap-2 text-title text-lantern-text">
               <RectangleStackIcon className="h-5 w-5 text-lantern-feature-library" aria-hidden />
               Library
             </h1>
@@ -278,7 +278,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 style={tab === id ? { borderTopWidth: 3, borderTopColor: featureAccents.library } : undefined}
                 badge={
                   id === 'flashcards' && dueCardsCount > 0 ? (
-                    <span className="bg-lantern-error text-white text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
+                    <span className="bg-lantern-error-strong text-white text-label tracking-normal font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1">
                       {dueCardsCount > 99 ? '99+' : dueCardsCount}
                     </span>
                   ) : undefined

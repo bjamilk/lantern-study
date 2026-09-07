@@ -710,7 +710,7 @@ export default function JobsBoardScreen({
                         {savedSearchMatches[saved.id] ? (
                           <span
                             aria-label={`${savedSearchMatches[saved.id]} new matches`}
-                            className="rounded-full bg-lantern-primary px-1.5 py-0.5 text-[10px] font-bold text-white"
+                            className="rounded-full bg-lantern-primary px-1.5 py-0.5 text-label tracking-normal font-bold text-white"
                           >
                             {savedSearchMatches[saved.id]}
                           </span>
@@ -921,12 +921,12 @@ export default function JobsBoardScreen({
                           </div>
                           <div className="relative z-10 flex shrink-0 items-center gap-2">
                             {job.hasApplied ? (
-                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">
+                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-label font-bold uppercase tracking-wide text-emerald-800">
                                 Already applied
                               </span>
                             ) : null}
                             {job.isSponsored ? (
-                              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-amber-800">
+                              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-label font-bold uppercase tracking-wide text-amber-800">
                                 Featured
                               </span>
                             ) : null}

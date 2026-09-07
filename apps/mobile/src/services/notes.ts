@@ -5,32 +5,28 @@ import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { assertNoteUploadSize } from '@lantern/shared/utils/noteUpload';
 import { assertAllowedImageUpload } from '@lantern/shared';
 import { applyAIUsageFromResponse, applyAIUsageFromErrorBody } from './ai';
+import { awaitJobResult } from './jobWatch';
 
-async function pollApiJob<T>(jobId: string, timeoutMs = 180_000): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const headers = await getAuthHeaders();
-    const response = await fetch(`${API_BASE_URL}/api/v1/jobs/${jobId}`, { headers });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error || `Job status check failed (${response.status})`);
-    }
-    const job = payload.data ?? payload;
-    if (job.status === 'completed' && job.result !== undefined) {
-      return job.result as T;
-    }
-    if (job.status === 'failed') {
-      throw new Error(typeof job.error === 'string' ? job.error : 'AI job failed.');
-    }
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  throw new Error('AI request timed out. Try again.');
+/**
+ * Watch a 202 to its real end. Backoff-polled through the shared JobClient;
+ * `timeoutMs` bounds how long an UNREACHABLE server is tolerated, after which
+ * JobStillRunningError (not "timed out") is thrown — the job may still land.
+ */
+function pollApiJob<T>(jobId: string, timeoutMs?: number): Promise<T> {
+  return awaitJobResult<T>(jobId, timeoutMs);
 }
 
-async function notesRequest<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function notesRequest<T>(
+  path: string,
+  options: RequestInit & {
+    /** Called with the server job id when the request answers 202. */
+    onJobId?: (jobId: string) => void;
+  } = {}
+): Promise<T> {
+  const { onJobId, ...fetchOptions } = options;
   const headers = await getAuthHeaders();
   const response = await fetch(`${API_BASE_URL}/api/v1/notes${path}`, {
-    ...options,
+    ...fetchOptions,
     headers: {
       ...headers,
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
@@ -45,6 +41,7 @@ async function notesRequest<T>(path: string, options: RequestInit = {}): Promise
     applyAIUsageFromErrorBody(data);
   }
   if (response.status === 202 && typeof data.jobId === 'string') {
+    onJobId?.(data.jobId);
     return pollApiJob<T>(data.jobId);
   }
   if (!response.ok) {
@@ -426,11 +423,13 @@ export const getNoteQuiz = (noteId: string) =>
 export const generateNoteQuiz = (
   noteId: string,
   studyGoal?: StudyGoalMode,
-  count?: number
+  count?: number,
+  onJobId?: (jobId: string) => void
 ) =>
   notesRequest<DailyQuizSession>(`/${noteId}/quiz`, {
     method: 'POST',
     body: JSON.stringify({ studyGoal, count }),
+    onJobId,
   });
 
 export const updateNoteQuiz = (

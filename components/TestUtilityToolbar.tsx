@@ -198,7 +198,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
     <div className="space-y-1.5">
       {/* ── Tool Buttons ── */}
       <div className="flex items-center gap-1 sm:gap-1.5 flex-wrap bg-lantern-surface border border-lantern-border rounded-lg sm:rounded-xl px-2 py-1 sm:px-3 sm:py-1.5 shadow-sm">
-        <span className="hidden sm:inline text-[10px] font-bold text-lantern-text-tertiary uppercase tracking-widest mr-1 select-none">
+        <span className="hidden sm:inline text-label font-bold text-lantern-text-tertiary uppercase tracking-widest mr-1 select-none">
           Tools
         </span>
 
@@ -206,7 +206,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={() => onToolChange(activeTool === 'highlight' ? null : 'highlight')}
           title="Highlight key terms — select text in the question"
-          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-label tracking-normal sm:text-caption font-medium border transition-all ${
             activeTool === 'highlight'
               ? 'bg-yellow-100 dark:bg-yellow-900/40 border-yellow-400 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 shadow-sm'
               : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
@@ -220,7 +220,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           </svg>
           <span className="hidden sm:inline">Highlight</span>
           {highlightCount > 0 && (
-            <span className="bg-yellow-500 text-white text-[10px] rounded-full w-3.5 h-3.5 sm:w-4 sm:h-4 flex items-center justify-center font-bold leading-none">
+            <span className="bg-yellow-500 text-white text-label tracking-normal rounded-full w-3.5 h-3.5 sm:w-4 sm:h-4 flex items-center justify-center font-bold leading-none">
               {highlightCount}
             </span>
           )}
@@ -230,7 +230,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={() => onToolChange(activeTool === 'strikeout' ? null : 'strikeout')}
           title="Strike out answer choices you've eliminated"
-          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-label tracking-normal sm:text-caption font-medium border transition-all ${
             activeTool === 'strikeout'
               ? 'bg-red-100 dark:bg-red-900/40 border-red-400 dark:border-red-600 text-red-700 dark:text-red-300 shadow-sm'
               : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
@@ -249,7 +249,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={onToggleCalculator}
           title="Open calculator"
-          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-label tracking-normal sm:text-caption font-medium border transition-all ${
             showCalculator
               ? 'bg-emerald-100 dark:bg-emerald-900/40 border-emerald-400 dark:border-emerald-600 text-emerald-700 dark:text-emerald-300 shadow-sm'
               : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
@@ -272,7 +272,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
         <button
           onClick={onToggleNote}
           title="Open scratch note for this question"
-          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-label tracking-normal sm:text-caption font-medium border transition-all ${
             showNote
               ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-400 dark:border-lantern-primary/30 text-blue-700 dark:text-blue-300 shadow-sm'
               : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'
@@ -295,7 +295,7 @@ const TestUtilityToolbar: React.FC<TestUtilityToolbarProps> = ({
           type="button"
           onClick={onToggleBookmark}
           title={isBookmarked ? 'Remove bookmark / review mark' : 'Bookmark this question for review'}
-          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-[10px] sm:text-xs font-medium border transition-all ${
+          className={`flex items-center gap-1 px-2 py-1 sm:px-2.5 sm:py-1.5 rounded-md sm:rounded-lg text-label tracking-normal sm:text-caption font-medium border transition-all ${
             isBookmarked
               ? 'bg-yellow-100 dark:bg-yellow-900/40 border-yellow-400 dark:border-yellow-600 text-yellow-700 dark:text-yellow-300 shadow-sm'
               : 'bg-lantern-surface dark:bg-lantern-surface-secondary border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-border'

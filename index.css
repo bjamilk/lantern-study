@@ -57,6 +57,12 @@ svg[data-slot="icon"] {
   /* red-600 was 4.46:1 on the cream page ground - 0.04 short of AA for field
      errors. #d42323 clears it at 4.77 and is indistinguishable. */
   --color-error: 212 35 35;
+  /* The red that carries WHITE on top of it: filled count badges, destructive
+     buttons. `--color-error` is tuned to be readable AS text on the page
+     ground, which in dark makes it too light under a white numeral
+     (white on #ef4444 is 3.76:1). Light needs no separate value; the pair
+     mirrors `errorStrong` in packages/shared/src/design/tokens.ts. */
+  --color-error-strong: 212 35 35;
   /* New this wave: sky-700. sky-500 (the old `info` token) was 2.63:1 as text
      on cream, which is why no info var ever shipped. */
   --color-info: 3 105 161;
@@ -155,6 +161,10 @@ svg[data-slot="icon"] {
   --color-success: 16 185 129;
   --color-warning: 251 191 36;
   --color-error: 239 68 68;
+  /* red-600. White on it is 4.83:1 (AA); white on `--color-error` is 3.76:1,
+     which is what every filled error badge shipped at. Fill only — red TEXT
+     on the dark ground stays `--color-error`, the lighter of the two here. */
+  --color-error-strong: 220 38 38;
   --color-info: 125 211 252;
 
   /* Feature accents - spec v3 5.6 dark column. */

@@ -321,7 +321,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                 >
                   <span className="text-sm">{badge.icon}</span>
                   <span className="text-xs font-semibold text-lantern-primary">{badge.name}</span>
-                  <span className="text-[10px] text-lantern-primary">Lv.{badge.level}</span>
+                  <span className="text-label tracking-normal text-lantern-primary">Lv.{badge.level}</span>
                 </div>
               ))}
             </div>
@@ -351,7 +351,7 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
                       </div>
                     )}
                     {listing.status === 'reserved' ? (
-                      <span className="absolute top-2 left-2 px-1.5 py-0.5 text-[10px] font-semibold rounded bg-amber-100 text-amber-900 dark:bg-amber-900/80 dark:text-amber-100">
+                      <span className="absolute top-2 left-2 px-1.5 py-0.5 text-label tracking-normal font-semibold rounded bg-amber-100 text-amber-900 dark:bg-amber-900/80 dark:text-amber-100">
                         Sale in progress
                       </span>
                     ) : null}

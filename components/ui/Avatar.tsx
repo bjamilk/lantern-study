@@ -11,12 +11,15 @@ interface AvatarProps {
   localOnly?: boolean;
 }
 
+// Initials sit on the six-step scale so they grow with the app's text-size
+// setting; the CIRCLE stays fixed (w-/h-), which is what keeps the avatar the
+// same shape at every setting. `text-[10px]` on xs did neither.
 const sizeClasses = {
-  xs: 'w-6 h-6 text-[10px]',
-  sm: 'w-8 h-8 text-xs',
-  md: 'w-10 h-10 text-sm',
-  lg: 'w-12 h-12 text-base',
-  xl: 'w-16 h-16 text-lg',
+  xs: 'w-6 h-6 text-label tracking-normal',
+  sm: 'w-8 h-8 text-caption',
+  md: 'w-10 h-10 text-body',
+  lg: 'w-12 h-12 text-heading',
+  xl: 'w-16 h-16 text-title',
 };
 
 export const Avatar: React.FC<AvatarProps> = ({

@@ -28,7 +28,7 @@ export const AIDisclaimer: React.FC<AIDisclaimerProps> = ({ className = '', comp
 
 export const AIGeneratedBadge: React.FC<{ className?: string }> = ({ className = '' }) => (
   <span
-    className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium uppercase tracking-wide bg-lantern-primary-background text-lantern-primary ${className}`}
+    className={`inline-flex items-center px-1.5 py-0.5 rounded text-label font-medium uppercase tracking-wide bg-lantern-primary-background text-lantern-primary ${className}`}
   >
     AI
   </span>

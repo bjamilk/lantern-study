@@ -9,42 +9,27 @@ import type {
 } from '../types';
 import type { AIClientConfig } from './ai';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
+import { JobStillRunningError, createJobClient } from '../jobs/jobClient';
 
 type CompanionRequestOptions = {
   /** When false, never update the global usage badge from this response. */
   trackUsage?: boolean;
 };
 
-async function pollCompanionJob<T>(
-  config: AIClientConfig,
-  jobId: string,
-  timeoutMs = 180_000
-): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const headers = await config.getAuthHeaders();
-    const response = await fetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
-    const payload = (await response.json().catch(() => ({}))) as {
-      data?: { status?: string; result?: T; error?: string };
-      error?: string;
-    };
-    if (!response.ok) {
-      throw new Error(payload.error || `Job status check failed (${response.status})`);
-    }
-    const job = payload.data ?? payload;
-    const status = (job as { status?: string }).status;
-    if (status === 'completed') {
-      const result = (job as { result?: T }).result;
-      if (result !== undefined) return result;
-      throw new Error('Companion job completed without a result.');
-    }
-    if (status === 'failed') {
-      const err = (job as { error?: string }).error;
-      throw new Error(typeof err === 'string' && err ? err : 'Companion request failed.');
-    }
-    await new Promise((r) => setTimeout(r, 1500));
-  }
-  throw new Error('Companion request timed out. Try again.');
+/**
+ * The companion's queued replies use the same watcher as every other job: real
+ * stages, backoff polling, and a budget that ends in `still_running` rather
+ * than a lie about the message being lost.
+ */
+async function awaitCompanionJob<T>(config: AIClientConfig, jobId: string): Promise<T> {
+  const jobs = createJobClient({
+    getBaseUrl: config.getBaseUrl,
+    getAuthHeaders: config.getAuthHeaders,
+  });
+  const outcome = await jobs.watchJob<T>(jobId);
+  if (outcome.status === 'done') return outcome.result;
+  if (outcome.status === 'failed') throw new Error(outcome.error.message);
+  throw new JobStillRunningError(jobId, 'Still thinking. Your message is safe and on its way.');
 }
 
 function historyQuery(opts?: {
@@ -90,7 +75,7 @@ export function createCompanionClient(config: AIClientConfig) {
     };
 
     if (response.status === 202 && typeof json.jobId === 'string') {
-      return pollCompanionJob<T>(config, json.jobId);
+      return awaitCompanionJob<T>(config, json.jobId);
     }
 
     if (!response.ok) {

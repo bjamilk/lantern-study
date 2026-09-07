@@ -172,7 +172,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
                 <div className="flex items-center gap-2">
                   <p className="font-semibold truncate text-lantern-text flex-1 min-w-0">{name}</p>
                   {timeLabel && !isMessageRequest && (
-                    <span className="text-[10px] font-medium text-lantern-text-tertiary shrink-0">{timeLabel}</span>
+                    <span className="text-label tracking-normal font-medium text-lantern-text-tertiary shrink-0">{timeLabel}</span>
                   )}
                 </div>
                 {isMessageRequest ? (
@@ -183,7 +183,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
             </div>
             {isArchived && <ArchiveBoxIcon className="w-4 h-4 text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived"/>}
             {unreadCount > 0 && !isArchived && (
-                <span className="ml-2 bg-lantern-error text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
+                <span className="ml-2 bg-lantern-error-strong text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">
                     {formatUnreadBadgeCount(unreadCount)}
                 </span>
             )}

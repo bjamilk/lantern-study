@@ -18,7 +18,6 @@ import {
 
 import {
   aggregatePhotoOcrStatus,
-  FlashcardType,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
   isPhotoNoteSource,
@@ -32,7 +31,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useCompanionStore } from '../../stores/companionStore';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useNotesStore } from '../../stores/notesStore';
-import { useStudyGoalsStore, withSourceTitle } from '../../stores/studyGoalsStore';
+import { useStudyGoalsStore } from '../../stores/studyGoalsStore';
 import { useTheme } from '../../theme';
 
 
@@ -48,6 +47,11 @@ import {
 } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
+import { aiGenerateFlashcards } from '../../services/ai';
+import { trackAIToolUsed } from '../../services/productAnalytics';
+import { useJobsStore } from '../../stores/jobsStore';
+import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifacts';
+import { JobProgressSheet } from '../../components/jobs';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
 import { Button, Card } from '../../components/ui';
@@ -63,7 +67,6 @@ import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { SMART_NOTES_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
 import { SMART_NOTES_GUIDANCE_MAX_CHARS } from '@lantern/shared/utils/smartNotes';
 import { useAuthStore } from '../../stores/authStore';
-import { useFlashcardStore } from '../../stores/flashcardStore';
 import {
   formatRecordingDuration,
   getElapsedRecordingSeconds,
@@ -102,7 +105,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const { colors } = useTheme();
   const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote, setSelectedNote } = useNotesStore();
 
-  const { handleAIGenerateFlashcards, isAILoading } = useAIHandlers();
+  const { isAILoading } = useAIHandlers();
+  const startJob = useJobsStore((state) => state.startJob);
 
 
 
@@ -157,9 +161,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     aiUsage.limit > 0 && remainingCredits < SMART_NOTES_CREDIT_COST[smartNotesDepth];
   const shortForOneCredit = aiUsage.limit > 0 && remainingCredits < 1;
 
-  const [generatingQuiz, setGeneratingQuiz] = useState(false);
 
-  const [generatingCards, setGeneratingCards] = useState(false);
   const [retryingYoutubeTranscript, setRetryingYoutubeTranscript] = useState(false);
   const [youtubeTranscriptExpanded, setYoutubeTranscriptExpanded] = useState(true);
   const [showCollaborators, setShowCollaborators] = useState(false);
@@ -685,7 +687,16 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     );
   };
 
-  const handleGenerateFlashcards = async () => {
+  /**
+   * Wave G: hand the generation to the jobs store instead of awaiting it here.
+   *
+   * The screen used to hold a spinner through an AI call and a save loop, and
+   * a student who backed out lost the sheet AND any way of knowing what
+   * happened. Now the work is owned by jobsStore: the progress sheet can be
+   * swiped away, the cards still land in a deck, and a local notification
+   * deep-links to it.
+   */
+  const handleGenerateFlashcards = () => {
     if (!canGenerateStudyMaterials) {
       Alert.alert(
         'Not enough content',
@@ -697,53 +708,56 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       Alert.alert('Error', 'You must be signed in to generate flashcards.');
       return;
     }
-    setGeneratingCards(true);
-    try {
-      // Same count as web's deck-from-note path; 5 was below the supported
-      // minimum of 10 and got clamped anyway.
-      const cards = await handleAIGenerateFlashcards(studyContent.slice(0, 8000), {
-        count: normalizeFlashcardCount(),
-        style: 'concise',
-      });
-      if (!cards.length) {
-        throw new Error('Could not generate flashcards from this note.');
-      }
 
-      // Persist into a deck the same way web does — generating without saving
-      // spends AI credits and leaves the user with nothing to study.
-      const noteTitle = title || selectedNote?.title || 'Untitled Note';
-      const { createDeck, createFlashcard } = useFlashcardStore.getState();
-      const deck = await createDeck(
-        `From: ${noteTitle}`.slice(0, 80),
-        `Generated from note: ${noteTitle}`,
-        user.id
-      );
-      for (const card of cards) {
-        await createFlashcard({
-          deckId: deck.id,
-          type: FlashcardType.BASIC,
-          front: card.front,
-          back: card.back,
-          userId: user.id,
+    // Same count as web's deck-from-note path; 5 was below the supported
+    // minimum of 10 and got clamped anyway.
+    const count = normalizeFlashcardCount();
+    const noteTitle = title || selectedNote?.title || 'Untitled Note';
+    const content = studyContent.slice(0, 8000);
+    const userId = user.id;
+
+    startJob({
+      kind: 'flashcards',
+      sourceTitle: noteTitle,
+      requestedCount: count,
+      run: async ({ jobId, onServerJob, onStage }) => {
+        // The raw service rather than useAIHandlers: the hook swallows the
+        // error and returns [], which would report every failure as "could
+        // not generate" and hide the real reason from the sheet.
+        const { flashcards } = await aiGenerateFlashcards(content, {
+          count,
+          style: 'concise',
+          // The server's job id, the moment the 202 lands: it is what a push
+          // names, and what survives a cold start.
+          onJobUpdate: (p) => {
+            if (p.jobId) onServerJob(p.jobId);
+          },
         });
-      }
+        trackAIToolUsed('generate_flashcards');
+        if (!flashcards.length) {
+          throw new Error('Could not generate flashcards from this note.');
+        }
 
-      Alert.alert('Generated', `Created ${cards.length} flashcards in "${deck.name}".`, [
-        { text: 'Later', style: 'cancel' },
-        {
-          text: 'Open deck',
-          onPress: () =>
-            navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name }),
-        },
-      ]);
-    } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Flashcard generation failed');
-    } finally {
-      setGeneratingCards(false);
-    }
+        // Persist into a deck the same way web does — generating without saving
+        // spends AI credits and leaves the user with nothing to study. The deck
+        // is created only now that the cards exist, and is rolled back if they
+        // do not land (services/jobArtifacts.ts).
+        onStage('Saving to your deck');
+        const { ref, saved } = await saveGeneratedDeck({
+          jobId,
+          userId,
+          cards: flashcards,
+          deckName: `From: ${noteTitle}`,
+          description: `Generated from note: ${noteTitle}`,
+        });
+        // `saved`, never `flashcards.length`: the count the student is shown
+        // is of cards that exist.
+        return { artifact: ref, resultCount: saved };
+      },
+    });
   };
 
-  const handleGenerateQuiz = async () => {
+  const handleGenerateQuiz = () => {
     if (!canGenerateStudyMaterials) {
       Alert.alert(
         'Not enough content',
@@ -752,46 +766,39 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       return;
     }
 
-    setGeneratingQuiz(true);
+    const noteTitle = title || selectedNote?.title || 'Untitled Note';
+    const currentTitle = title;
+    const currentBody = body;
 
-    try {
+    startJob({
+      kind: 'quiz',
+      sourceTitle: noteTitle,
+      requestedCount: 5,
+      run: async ({ jobId, onServerJob, onStage }) => {
+        await saveNote(noteId, { title: currentTitle, body: currentBody });
 
-      await saveNote(noteId, { title, body });
-
-      // Mirror web's handleStartNoteQuiz (hooks/useNoteHandlers.ts): keep the
-      // returned session, stamp it with this note's title, and hand it to the
-      // daily-quiz store. Generating server-side and dropping the result left
-      // the phone with a quiz it never showed anywhere.
-      const { studyGoal, setDailyQuiz } = useStudyGoalsStore.getState();
-      const session = await generateNoteQuiz(noteId, studyGoal, 5);
-      const noteTitle = title || selectedNote?.title || 'Untitled Note';
-      setDailyQuiz(withSourceTitle(session, noteTitle));
-
-      Alert.alert(
-        'Quiz ready',
-        `A ${session.questions.length}-question quiz was generated from this note. It's waiting in Today's Quiz on your dashboard.`,
-        [
-          { text: 'Later', style: 'cancel' },
-          {
-            text: 'Take quiz',
-            onPress: () => navigation.navigate('HomeTab', { screen: 'Dashboard' }),
-          },
-        ]
-      );
-
-    } catch (e: unknown) {
-
-      Alert.alert('Error', e instanceof Error ? e.message : 'Quiz generation failed');
-
-    } finally {
-
-      setGeneratingQuiz(false);
-
-    }
-
+        const { studyGoal } = useStudyGoalsStore.getState();
+        const session = await generateNoteQuiz(noteId, studyGoal, 5, onServerJob);
+        if (!session.questions.length) {
+          throw new Error('Could not generate a quiz from this note.');
+        }
+        onStage('Saving your quiz');
+        // A quiz made from a note is a test of the student's own: it is saved
+        // as one, appears in the Tests list under Available, and its link
+        // opens it. It used to be handed to the DAILY quiz store instead and
+        // referenced as `quiz/daily` — so it lived only in a dashboard panel
+        // that shows one quiz a day, Tests said "No tests available", and
+        // Open, the notification and the deep link all landed on Home.
+        const { ref, saved } = await saveGeneratedTest({
+          jobId,
+          title: `Quiz · ${noteTitle}`,
+          sourceNoteId: noteId,
+          questions: session.questions,
+        });
+        return { artifact: ref, resultCount: saved };
+      },
+    });
   };
-
-
 
   const handleDelete = async () => {
 
@@ -1375,9 +1382,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <Button
                 size="sm"
                 variant="secondary"
-                loading={generatingCards}
                 disabled={isAILoading || !canGenerateStudyMaterials || shortForOneCredit}
-                onPress={() => void handleGenerateFlashcards()}
+                onPress={handleGenerateFlashcards}
               >
                 Flashcards
               </Button>
@@ -1385,9 +1391,8 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <Button
                 size="sm"
                 variant="secondary"
-                loading={generatingQuiz}
                 disabled={!canGenerateStudyMaterials || shortForOneCredit}
-                onPress={() => void handleGenerateQuiz()}
+                onPress={handleGenerateQuiz}
               >
 
                 Quiz
@@ -1413,6 +1418,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         currentUserId={user?.id}
         onClose={() => setShowCollaborators(false)}
       />
+
+      {/* Wave G: reports whichever generation this screen started, and can be
+          swiped away without stopping it. */}
+      <JobProgressSheet />
 
     </Screen>
 

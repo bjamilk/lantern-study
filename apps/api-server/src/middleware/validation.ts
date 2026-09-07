@@ -2,7 +2,31 @@ import { body, param, query, validationResult } from 'express-validator';
 import { Request, Response, NextFunction } from 'express';
 import { BOARD_POST_SUBJECT_MAX } from '@lantern/shared/network';
 
-// Middleware to handle validation errors
+/**
+ * Turn a field path into a stable machine code: `deckId` -> INVALID_DECK_ID,
+ * `config.courseId` -> INVALID_CONFIG_COURSE_ID. Clients branch on the code;
+ * only humans read the message.
+ */
+export const validationCodeForField = (field: string): string => {
+  const normalized = (field || 'body')
+    .replace(/\[\d+\]/g, '')
+    .replace(/[.\s]+/g, '_')
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[^A-Za-z0-9_]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .toUpperCase();
+  return normalized ? `INVALID_${normalized}` : 'VALIDATION_ERROR';
+};
+
+/**
+ * A rejected body is the client's fault and will never become valid on a
+ * retry. Before this, every rejection was the same opaque "Validation Error /
+ * Invalid request data", so an offline sync queue could not tell a bad payload
+ * (drop it) from a server hiccup (retry it) — and replayed one rejected
+ * flashcard write forever. Every 400 now carries `code`, `field` and
+ * `retryable: false`.
+ */
 export const handleValidationErrors = (
   req: Request,
   res: Response,
@@ -10,10 +34,21 @@ export const handleValidationErrors = (
 ): void => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    const details = errors.array();
+    const first = details[0] as { path?: string; param?: string; msg?: unknown } | undefined;
+    const field = String(first?.path || first?.param || 'body');
+    const message =
+      typeof first?.msg === 'string' && first.msg && first.msg !== 'Invalid value'
+        ? first.msg
+        : `Invalid value for ${field}`;
     res.status(400).json({
+      success: false,
       error: 'Validation Error',
-      message: 'Invalid request data',
-      details: errors.array(),
+      code: validationCodeForField(field),
+      field,
+      message,
+      retryable: false,
+      details,
     });
     return;
   }
@@ -415,6 +450,20 @@ export const validateDeckCreate = [
   topicIdBodyRule(),
 ];
 
+/**
+ * `deckId` on POST /decks/with-cards — present when the student generated from
+ * inside a deck and the cards belong in THAT deck. A local draft id would
+ * otherwise reach the database as an unknown deck.
+ */
+export const validateDeckWithCardsTarget = [
+  body('deckId')
+    .optional({ values: 'null' })
+    .isUUID()
+    .withMessage(
+      'deckId must be a saved deck id. A local draft id (temp_…) cannot be saved to the server.'
+    ),
+];
+
 export const validateDeckUpdate = [
   body('name').optional().trim().isLength({ min: 1, max: 200 }),
   body('description').optional().isString().isLength({ max: 2000 }),
@@ -423,7 +472,14 @@ export const validateDeckUpdate = [
 ];
 
 export const validateFlashcardCreate = [
-  body('deckId').isUUID().withMessage('deckId must be a valid UUID'),
+  // A queued offline card whose deck was never synced carries a local
+  // `temp_…` id. Saying so turns a permanent 400 into something the client can
+  // recognise and drop instead of replaying it forever.
+  body('deckId')
+    .isUUID()
+    .withMessage(
+      'deckId must be a saved deck id. A local draft id (temp_…) cannot be saved to the server.'
+    ),
   body('type').optional().isIn(['BASIC', 'CLOZE', 'IMAGE_OCCLUSION']),
   // IMAGE_OCCLUSION / CLOZE send null for unused sides; optional() alone does not skip null.
   body('front').optional({ values: 'null' }).isString().isLength({ max: 10000 }),

@@ -68,6 +68,7 @@ import { DailyQuestsWidget } from '../../components/DailyQuestsWidget';
 
 import { DailyQuizWidget } from '../../components/DailyQuizWidget';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
+import { InFlightJobsCard } from '../../components/jobs';
 import { CollapsibleSection } from '../../components/CollapsibleSection';
 import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
 
@@ -821,6 +822,11 @@ export function DashboardScreen({ navigation }: Props) {
             (root as { navigate?: (name: string) => void } | undefined)?.navigate?.('Offline');
           }}
         />
+
+        {/* Wave G: everything the AI is making, or just made, in one place —
+            the in-app half of the delivery promise, for when a notification is
+            denied, missed or swiped away. Renders nothing when idle. */}
+        <InFlightJobsCard />
 
         {pausedSessions.length > 0 ? (
           <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">

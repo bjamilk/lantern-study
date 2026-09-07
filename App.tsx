@@ -6,6 +6,7 @@ import { useToastStore } from './stores/toastStore';
 import { confirmDialog, useConfirmStore } from './stores/confirmStore';
 import { useLectureRecordingStore } from './stores/lectureRecordingStore';
 import { ToastBanner } from './components/ui/ToastBanner';
+import AiJobProgressPanel from './components/jobs/AiJobProgressPanel';
 import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
 import { useFeatureTipStore } from './stores/featureTipStore';
@@ -3066,6 +3067,7 @@ export const App: React.FC = () => {
                 onCancel={globalConfirm.handleCancel}
             />
             <ToastBanner toast={toast} onDismiss={dismissToast} />
+            <AiJobProgressPanel />
             <AccountSuspendedNotice variant="modal" />
             <FeatureTipsHost
                 onboardingComplete={!showOnboarding && typeof localStorage !== 'undefined' && isOnboardingCompleteFlag(localStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY))}

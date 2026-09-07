@@ -463,6 +463,22 @@ interface TestState {
   deleteTestPreset: (userId: string, presetId: string) => Promise<void>;
   deleteAttempt: (userId: string, sessionId: string) => Promise<void>;
   clearTestHistory: (userId: string) => Promise<void>;
+  /**
+   * File a test the SERVER has already written into the Tests list.
+   *
+   * The landing half of a generated test (services/jobArtifacts.ts). Not
+   * optimistic and not a create: the id and the questions came back from the
+   * API, so this only makes them visible without waiting for the next
+   * `fetchTests`. A quiz generated from a note used to be handed to the daily
+   * quiz store instead, which is why it appeared nowhere in Tests and its
+   * notification opened the dashboard.
+   */
+  insertPersonalTest: (input: {
+    id: string;
+    name: string;
+    questions: unknown[];
+    createdAt?: string;
+  }) => Promise<Test>;
   createTestFromDeck: (deckId: string, deckName: string, userId: string, config: {
     questionCount: number;
     timeLimit: number;
@@ -1910,6 +1926,28 @@ export const useTestStore = create<TestState>((set, get) => ({
     clearTestResultsCache();
     set({ attempts: [] });
     await get().saveToStorage();
+  },
+
+  insertPersonalTest: async (input) => {
+    const questions = normalizeApiQuestions(input.questions);
+    const test: Test = {
+      id: input.id,
+      name: input.name,
+      questionCount: questions.length,
+      // A test made from a note is untimed: nothing chose a limit, and
+      // inventing one would start a clock the student never asked for.
+      timeLimit: 0,
+      passingScore: 70,
+      createdAt: input.createdAt || new Date().toISOString(),
+    };
+    set(state => ({
+      tests: [...state.tests.filter(t => t.id !== test.id), test],
+      testQuestionsById: questions.length
+        ? { ...state.testQuestionsById, [test.id]: questions }
+        : state.testQuestionsById,
+    }));
+    await get().saveToStorage();
+    return test;
   },
 
   createTestFromDeck: async (deckId: string, deckName: string, userId: string, config: { questionCount: number; timeLimit: number; passingScore: number }) => {
