@@ -11,6 +11,7 @@ import type {
   ClassMaterialKind,
   ClassRole,
   Course,
+  CourseTopic,
   InstitutionStaffRole,
 } from '@lantern/shared/types';
 import {
@@ -27,6 +28,7 @@ import {
   MAX_CLASSES_CREATED_PER_USER,
   canonicalizeJoinCode,
   currentAcademicYear,
+  defaultClassTitle,
   generateJoinCode,
   isClassRole,
   isClassStaffRole,
@@ -41,11 +43,13 @@ import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
   getAcademicCoursesService,
+  isMissingColumnError,
   isMissingRelationError,
   isUuid,
   mapCourseRow,
   type CourseRecord,
 } from './academicCourses';
+import { getCourseTopicsService } from './courseTopics';
 import { generateFlashcardsFromNotes, generateQuestionsFromNotes } from './aiService';
 import { recordLearningEvent } from './learningEvents';
 
@@ -72,7 +76,9 @@ function newJoinCode(): string {
 }
 
 const COURSE_EMBED = 'id, institution_id, code, title, faculty, level, semester, is_canonical';
-const SECTION_SELECT = `id, course_id, institution_id, title, academic_year, semester, join_code, created_by, archived_at, created_at, courses(${COURSE_EMBED})`;
+const TOPIC_EMBED = 'id, course_id, title, position';
+const SECTION_SELECT_BASE = `id, course_id, institution_id, title, academic_year, semester, join_code, created_by, archived_at, created_at, courses(${COURSE_EMBED})`;
+const SECTION_SELECT = `${SECTION_SELECT_BASE}, topic_id, course_topics(${TOPIC_EMBED})`;
 const MEMBER_SELECT = 'class_id, user_id, role, status, joined_at, profiles!class_members_user_id_fkey(id, name, username, avatar_url)';
 const MATERIAL_SELECT = 'id, class_id, note_id, kind, title, body_snapshot, published_at, created_by, created_at';
 const ASSIGNMENT_SELECT = 'id, class_id, created_by, title, kind, due_at, note_id, deck_id, payload, created_at';
@@ -87,6 +93,27 @@ function mapCourse(row: Record<string, unknown> | null | undefined): Course {
   const mapped = mapCourseRow(row as CourseRecord & Record<string, unknown>);
   if (!mapped) classFail('Course is missing', 404);
   return mapped;
+}
+
+function isTopicSchemaError(error: { code?: string; message?: string } | null | undefined): boolean {
+  if (!error) return false;
+  const message = error.message || '';
+  if (error.code === 'PGRST200' && /course_topics|topic_id/i.test(message)) return true;
+  if (/could not find a relationship between .* and 'course_topics'/i.test(message)) return true;
+  return isMissingColumnError(error) && /topic_id|course_topics/i.test(message);
+}
+
+function mapTopicEmbed(row: Record<string, unknown>): CourseTopic | null {
+  const raw = Array.isArray(row.course_topics) ? row.course_topics[0] : row.course_topics;
+  if (!raw || typeof raw !== 'object') return null;
+  const topic = raw as Record<string, unknown>;
+  if (!topic.id) return null;
+  return {
+    id: String(topic.id),
+    courseId: String(topic.course_id ?? row.course_id ?? ''),
+    title: String(topic.title ?? ''),
+    position: typeof topic.position === 'number' ? topic.position : Number(topic.position ?? 0) || 0,
+  };
 }
 
 function profileFromEmbed(raw: unknown): { name: string; username: string | null; avatarUrl: string | null } {
@@ -109,6 +136,18 @@ export class ClassSectionsService {
 
   private courses() {
     return getAcademicCoursesService(this.supabaseService);
+  }
+
+  private topics() {
+    return getCourseTopicsService(this.supabaseService);
+  }
+
+  private async withSectionSelect(
+    run: (select: string) => any
+  ): Promise<{ data: unknown; error: { code?: string; message?: string } | null }> {
+    const first = await run(SECTION_SELECT);
+    if (!first.error || !isTopicSchemaError(first.error)) return first;
+    return run(SECTION_SELECT_BASE);
   }
 
   private async membership(classId: string, userId: string): Promise<Membership | null> {
@@ -155,12 +194,15 @@ export class ClassSectionsService {
     row: Record<string, unknown>,
     role: ClassRole,
     memberCount: number,
-    includeJoinCode: boolean
+    includeJoinCode: boolean,
+    topicOverride?: CourseTopic | null
   ) {
     const joined = Array.isArray(row.courses) ? row.courses[0] : row.courses;
+    const topic = topicOverride !== undefined ? topicOverride : mapTopicEmbed(row);
     const section = {
       id: String(row.id),
       course: mapCourse((joined as Record<string, unknown>) ?? null),
+      topic: topic ?? null,
       institutionId: row.institution_id ? String(row.institution_id) : null,
       title: String(row.title ?? ''),
       academicYear: String(row.academic_year ?? ''),
@@ -188,19 +230,22 @@ export class ClassSectionsService {
   }
 
   async listForUser(userId: string, roleFilter: 'instructor' | 'student' | 'all' = 'all') {
-    let query = this.db
-      .from('class_members')
-      .select(`role, status, class_id, class_sections(${SECTION_SELECT})`)
-      .eq('user_id', userId)
-      .eq('status', 'active');
-    if (roleFilter === 'instructor') query = query.in('role', ['instructor', 'ta']);
-    if (roleFilter === 'student') query = query.eq('role', 'student');
-    const { data, error } = await query.order('joined_at', { ascending: false });
+    const run = (select: string) => {
+      let query = this.db
+        .from('class_members')
+        .select(`role, status, class_id, class_sections(${select})`)
+        .eq('user_id', userId)
+        .eq('status', 'active');
+      if (roleFilter === 'instructor') query = query.in('role', ['instructor', 'ta']);
+      if (roleFilter === 'student') query = query.eq('role', 'student');
+      return query.order('joined_at', { ascending: false });
+    };
+    const { data, error } = await this.withSectionSelect(run);
     if (error) {
       if (isMissingRelationError(error)) return [];
       throw error;
     }
-    const rows = (data || []) as Record<string, unknown>[];
+    const rows = ((data || []) as unknown as Record<string, unknown>[]);
     const out = [];
     for (const row of rows) {
       const section = Array.isArray(row.class_sections) ? row.class_sections[0] : row.class_sections;
@@ -222,25 +267,66 @@ export class ClassSectionsService {
       const { data, error } = await this.db
         .from('class_sections')
         .insert({ ...payload, join_code })
-        .select(SECTION_SELECT)
+        .select(SECTION_SELECT_BASE)
         .single();
       if (!error && data) return data as Record<string, unknown>;
       if (error?.code === '23505') continue;
       if (error && isMissingRelationError(error)) {
         classFail('Classes are not available yet — apply the class_sections migration', 503);
       }
+      if (error && isMissingColumnError(error) && payload.topic_id) {
+        classFail(
+          'Topic-scoped classes need a database update — apply 20260907170000_class_section_topic.sql',
+          503
+        );
+      }
       throw error;
     }
     classFail('Could not allocate a join code — try again');
   }
 
+  private async resolveTopic(
+    userId: string,
+    courseId: string,
+    input: { topicId?: unknown; topicTitle?: unknown }
+  ): Promise<CourseTopic | null> {
+    const topicId = input.topicId;
+    const topicTitle = typeof input.topicTitle === 'string' ? input.topicTitle.trim() : '';
+    try {
+      if (topicId != null && topicId !== '') {
+        if (!isUuid(topicId)) classFail('Pick a topic from this course');
+        const topic = await this.topics().get(String(topicId));
+        if (!topic) classFail('That topic no longer exists', 404);
+        if (topic.courseId !== courseId) classFail('That topic is not in this course');
+        return topic;
+      }
+      if (!topicTitle) return null;
+      return await this.topics().findOrCreate(courseId, topicTitle, userId);
+    } catch (err) {
+      if (err instanceof PublicError) {
+        const status = (err as unknown as { statusCode?: number }).statusCode;
+        classFail(err.message, typeof status === 'number' ? status : 400);
+      }
+      throw err;
+    }
+  }
+
   async create(
     userId: string,
-    input: { courseId: unknown; title?: unknown; academicYear?: unknown; semester?: unknown }
+    input: {
+      courseId: unknown;
+      title?: unknown;
+      academicYear?: unknown;
+      semester?: unknown;
+      topicId?: unknown;
+      topicTitle?: unknown;
+    }
   ) {
     if (!isUuid(input.courseId)) classFail('Pick a course');
     const course = await this.courses().getCourseById(String(input.courseId));
     if (!course) classFail('That course no longer exists', 404);
+
+    const topic = await this.resolveTopic(userId, course.id, input);
 
     const { count, error: countError } = await this.db
       .from('class_sections')
@@ -256,7 +342,7 @@ export class ClassSectionsService {
     const title =
       titleRaw.length >= CLASS_TITLE_MIN_LENGTH
         ? titleRaw.slice(0, CLASS_TITLE_MAX_LENGTH)
-        : `${course.code} — ${course.title}`.slice(0, CLASS_TITLE_MAX_LENGTH);
+        : defaultClassTitle(course, topic);
 
     let academicYear = currentAcademicYear();
     if (input.academicYear != null && input.academicYear !== '') {
@@ -277,6 +363,7 @@ export class ClassSectionsService {
       academic_year: academicYear,
       semester,
       created_by: userId,
+      ...(topic ? { topic_id: topic.id } : {}),
     });
 
     const { error: memberError } = await this.db.from('class_members').insert({
@@ -288,22 +375,20 @@ export class ClassSectionsService {
     if (memberError) throw memberError;
 
     await this.courses().ensureEnrolment(userId, course.id, academicYear, semester);
-    return this.mapSection(row, 'instructor', 1, true);
+    return this.mapSection(row, 'instructor', 1, true, topic);
   }
 
   private async findSectionByJoinCode(code: string): Promise<Record<string, unknown> | null> {
     const normalised = canonicalizeJoinCode(code);
     if (!isValidJoinCode(normalised)) return null;
-    const { data, error } = await this.db
-      .from('class_sections')
-      .select(SECTION_SELECT)
-      .eq('join_code', normalised)
-      .maybeSingle();
+    const { data, error } = await this.withSectionSelect((select) =>
+      this.db.from('class_sections').select(select).eq('join_code', normalised).maybeSingle()
+    );
     if (error) {
       if (isMissingRelationError(error)) return null;
       throw error;
     }
-    return (data as Record<string, unknown> | null) ?? null;
+    return (data as unknown as Record<string, unknown> | null) ?? null;
   }
 
   async previewByCode(code: unknown) {
@@ -323,6 +408,7 @@ export class ClassSectionsService {
       course: mapCourse(
         (Array.isArray(section.courses) ? section.courses[0] : section.courses) as Record<string, unknown>
       ),
+      topic: mapTopicEmbed(section),
       instructorName: name,
       memberCount: await this.memberCount(String(section.id)),
       academicYear: String(section.academic_year),
@@ -374,11 +460,13 @@ export class ClassSectionsService {
 
   async getById(userId: string, classId: string) {
     const member = await this.requireMember(classId, userId);
-    const { data, error } = await this.db.from('class_sections').select(SECTION_SELECT).eq('id', classId).maybeSingle();
+    const { data, error } = await this.withSectionSelect((select) =>
+      this.db.from('class_sections').select(select).eq('id', classId).maybeSingle()
+    );
     if (error) throw error;
     if (!data) classFail('Class not found', 404);
     return this.mapSection(
-      data as Record<string, unknown>,
+      data as unknown as Record<string, unknown>,
       member.role,
       await this.memberCount(classId),
       isClassStaffRole(member.role)
@@ -407,16 +495,13 @@ export class ClassSectionsService {
     if (input.archived === true) updates.archived_at = new Date().toISOString();
     if (input.archived === false) updates.archived_at = null;
     if (Object.keys(updates).length === 0) classFail('Nothing to update');
-    const { data, error } = await this.db
-      .from('class_sections')
-      .update(updates)
-      .eq('id', classId)
-      .select(SECTION_SELECT)
-      .single();
+    const { data, error } = await this.withSectionSelect((select) =>
+      this.db.from('class_sections').update(updates).eq('id', classId).select(select).single()
+    );
     if (error) throw error;
     const member = await this.requireMember(classId, userId);
     return this.mapSection(
-      data as Record<string, unknown>,
+      data as unknown as Record<string, unknown>,
       member.role,
       await this.memberCount(classId),
       true

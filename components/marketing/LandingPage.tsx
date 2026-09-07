@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   SparklesIcon,
   RectangleStackIcon,
@@ -10,10 +10,12 @@ import {
 import { APP_STORE_URL, PLAY_STORE_URL } from '@lantern/shared';
 import { Button, Card, LanternIcon } from '../ui';
 import { usePageSeo } from '../../hooks/usePageSeo';
+import { clearTeachSignupIntent } from '../../utils/teachIntent';
 
 interface LandingPageProps {
   onSignIn: () => void;
   onContinue: () => void;
+  onOpenTeach?: () => void;
 }
 
 // Stable URL: always resolves to the newest APK asset named lantern-study.apk
@@ -46,7 +48,10 @@ const faqs = [
   { q: 'Is there a mobile app?', a: 'Yes. The Android app is available to download directly from this site — tests, flashcards, and offline study included. iOS is coming via TestFlight.' },
 ];
 
-export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }) => {
+export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue, onOpenTeach }) => {
+  useEffect(() => {
+    clearTeachSignupIntent();
+  }, []);
   const seo = useMemo(
     () => ({
       title: 'Lantern Study — Flashcards, tests, groups & AI study tools',
@@ -88,6 +93,9 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
           <span className="font-display text-xl font-semibold tracking-tight">Lantern Study</span>
         </div>
         <div className="flex gap-2">
+          {onOpenTeach ? (
+            <Button variant="ghost" size="sm" onClick={onOpenTeach}>For instructors</Button>
+          ) : null}
           <Button variant="ghost" size="sm" onClick={onSignIn}>Sign in</Button>
           <Button size="sm" onClick={onContinue}>Get started</Button>
         </div>
@@ -141,6 +149,18 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
               : 'Free on Android and iOS.'
           : 'Android APK (~81 MB), direct download — no store account needed. Google Play and App Store listings are in progress.'}
       </p>
+      <p className="relative mt-4 text-sm text-lantern-text-tertiary">
+        Instructor or lecturer?{' '}
+        {onOpenTeach ? (
+          <button type="button" className="text-lantern-primary font-medium" onClick={onOpenTeach}>
+            Open the Teach portal
+          </button>
+        ) : (
+          <a href="/teach" className="text-lantern-primary font-medium">
+            Open the Teach portal
+          </a>
+        )}
+      </p>
     </section>
 
     <section className="max-w-6xl mx-auto px-4 py-12">
@@ -180,6 +200,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue }
 
     <footer className="border-t border-lantern-border py-6 text-center text-sm text-lantern-text-tertiary space-y-2">
       <nav className="flex flex-wrap justify-center gap-x-4 gap-y-1">
+        <a href="/teach" className="hover:text-lantern-text-secondary transition-colors">For instructors</a>
         <a href="/marketplace" className="hover:text-lantern-text-secondary transition-colors">Explore marketplace</a>
         <a href={PLAY_STORE_URL ?? ANDROID_APK_URL} className="hover:text-lantern-text-secondary transition-colors">Android app</a>
         {APP_STORE_URL !== null && (

@@ -14,11 +14,17 @@ import {
   COURSE_TITLE_MAX_LENGTH,
   COURSE_TITLE_MIN_LENGTH,
   currentAcademicYear,
+  isSchoolKind,
   isValidAcademicYear,
   isValidCourseCode,
   isValidCourseSemester,
+  isValidSchoolName,
   isValidStudyLevel,
   normalizeCourseCode,
+  normalizeSchoolName,
+  SCHOOL_CITY_MAX_LENGTH,
+  slugifySchoolName,
+  type SchoolKind,
 } from '@lantern/shared/academic';
 
 export const MAX_USER_COURSES_PER_YEAR = 40;
@@ -54,6 +60,7 @@ export interface InstitutionSummary {
   id: string;
   name: string;
   slug: string;
+  kind?: string | null;
 }
 
 export interface CreateCourseInput {
@@ -272,7 +279,7 @@ export class AcademicCoursesService {
     const kind = row.kind as string | undefined;
     const isSentinel = kind ? kind === 'other' : slug === 'other-city-nigeria' || slug.startsWith('other-');
     if (isSentinel) return null;
-    return { id: String(row.id), name: String(row.name ?? ''), slug };
+    return { id: String(row.id), name: String(row.name ?? ''), slug, kind: kind || null };
   }
 
   /** 400 unless the id is a real, active, non-sentinel institution. */
@@ -286,9 +293,114 @@ export class AcademicCoursesService {
     }
     const institution = this.toInstitutionSummary(row);
     if (!institution) {
-      throw new PublicError('Pick a university, polytechnic or college — "Other" is not an institution');
+      throw new PublicError('Pick a school — the marketplace "Other city" option is not a school');
     }
     return institution;
+  }
+
+  async searchSchools(options: {
+    q?: string;
+    kind?: SchoolKind | null;
+    limit?: number;
+  } = {}): Promise<Array<InstitutionSummary & { city?: string; state?: string }>> {
+    const limit = Math.min(30, Math.max(1, Number(options.limit) || 20));
+    const term = sanitizeSearchTerm(String(options.q ?? ''));
+    let query = this.db
+      .from('marketplace_campuses')
+      .select('id, name, slug, kind, city, state, active')
+      .eq('active', true)
+      .neq('kind', 'other')
+      .order('name', { ascending: true })
+      .limit(limit);
+    if (options.kind && isSchoolKind(options.kind)) {
+      query = query.eq('kind', options.kind);
+    } else {
+      query = query.in('kind', ['university', 'polytechnic', 'college', 'primary', 'secondary']);
+    }
+    if (term) {
+      query = query.or(`name.ilike.%${term}%,city.ilike.%${term}%,slug.ilike.%${term}%`);
+    }
+    const { data, error } = await query;
+    if (error) {
+      if (isMissingRelationError(error) || isMissingColumnError(error)) return [];
+      throw error;
+    }
+    return (data || [])
+      .map((row: Record<string, any>) => {
+        const summary = this.toInstitutionSummary(row);
+        if (!summary) return null;
+        return {
+          ...summary,
+          city: row.city ? String(row.city) : undefined,
+          state: row.state ? String(row.state) : undefined,
+        };
+      })
+      .filter(Boolean) as Array<InstitutionSummary & { city?: string; state?: string }>;
+  }
+
+  async findOrCreateSchool(
+    _userId: string,
+    input: { name: string; kind: unknown; city?: string | null; state?: string | null }
+  ): Promise<{ school: InstitutionSummary; created: boolean }> {
+    if (!isSchoolKind(input.kind)) {
+      throw new PublicError('School type must be primary, secondary, college, polytechnic or university');
+    }
+    const name = normalizeSchoolName(input.name);
+    if (!isValidSchoolName(name)) {
+      throw new PublicError('School name must be 2–120 characters');
+    }
+    const city = String(input.city ?? '').trim().slice(0, SCHOOL_CITY_MAX_LENGTH) || '—';
+    const state = String(input.state ?? '').trim().slice(0, SCHOOL_CITY_MAX_LENGTH) || '—';
+
+    const { data: existingRows, error: existingError } = await this.db
+      .from('marketplace_campuses')
+      .select('id, name, slug, kind, active')
+      .eq('kind', input.kind)
+      .eq('active', true)
+      .ilike('name', name)
+      .limit(5);
+    if (existingError && !isMissingColumnError(existingError) && !isMissingRelationError(existingError)) {
+      throw existingError;
+    }
+    const matched = (existingRows || []).find(
+      (row: Record<string, any>) => String(row.name ?? '').trim().toLowerCase() === name.toLowerCase()
+    );
+    if (matched) {
+      const school = this.toInstitutionSummary(matched);
+      if (school) return { school, created: false };
+    }
+
+    const baseSlug = slugifySchoolName(name);
+    let slug = baseSlug;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const { data, error } = await this.db
+        .from('marketplace_campuses')
+        .insert({
+          name,
+          city,
+          state,
+          country_code: 'NG',
+          slug,
+          kind: input.kind,
+          active: true,
+        })
+        .select('id, name, slug, kind, active')
+        .single();
+      if (!error) {
+        const school = this.toInstitutionSummary(data as Record<string, any>);
+        if (!school) throw new Error('School insert returned no row');
+        return { school, created: true };
+      }
+      if (error.code === '23505') {
+        slug = `${baseSlug}-${attempt + 2}`;
+        continue;
+      }
+      if (isMissingColumnError(error)) {
+        throw new PublicError('School registration is not available yet — apply the school_kinds migration');
+      }
+      throw error;
+    }
+    throw new PublicError('Could not register that school. Try a slightly different name.');
   }
 
   // ---------- Courses ----------

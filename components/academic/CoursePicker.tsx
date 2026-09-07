@@ -26,6 +26,8 @@ export interface CoursePickerProps {
   clearable?: boolean;
   /** Extra hint under the control. */
   hint?: React.ReactNode;
+  /** Allow adding letter-only subject codes (MATH), for the teach portal. */
+  allowLetterOnlyCreate?: boolean;
 }
 
 /**
@@ -46,6 +48,7 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
   compact = false,
   clearable = true,
   hint,
+  allowLetterOnlyCreate = false,
 }) => {
   const autoId = useId();
   const controlId = id || `course-picker-${autoId}`;
@@ -72,6 +75,7 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
   const { query, setQuery, options, offer, searching, creating, error, create } = useCourseSearch({
     institutionId: effectiveInstitutionId,
     enabled: open,
+    allowLetterOnlyCreate,
   });
 
   useEffect(() => {
@@ -151,7 +155,11 @@ export const CoursePicker: React.FC<CoursePickerProps> = ({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by code or title (e.g. BIO 201)"
+              placeholder={
+                allowLetterOnlyCreate
+                  ? 'Search or add a subject (e.g. Mathematics, BIO 201)'
+                  : 'Search by code or title (e.g. BIO 201)'
+              }
               className="w-full pl-9 pr-3 py-2.5 bg-transparent text-lantern-text text-sm focus:outline-none"
               aria-label="Search courses"
               autoFocus

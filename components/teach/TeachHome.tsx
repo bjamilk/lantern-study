@@ -1,13 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ClassSection } from '@lantern/shared';
-import { teachClassPath, teachNewClassPath } from '@lantern/shared/academic';
+import { classSubjectLine, teachClassPath, teachNewClassPath } from '@lantern/shared/academic';
 import { AcademicCapIcon } from '@heroicons/react/24/outline';
 import { Button, Card, EmptyState, ScreenHeader } from '../ui';
 import { fetchMyClasses } from '../../services/classes';
+import { TeachAffiliationForm } from './TeachAffiliationForm';
+import { useAuthStore } from '../../stores/authStore';
 
 export const TeachHome: React.FC = () => {
   const navigate = useNavigate();
+  const institutionId = useAuthStore((s) => s.currentUser?.institutionId ?? null);
   const [classes, setClasses] = useState<ClassSection[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -40,13 +43,14 @@ export const TeachHome: React.FC = () => {
           </Button>
         }
       />
+      {!institutionId ? <TeachAffiliationForm /> : null}
       {error ? <p className="text-body text-lantern-error">{error}</p> : null}
       {loading ? <p className="text-body text-lantern-text-secondary">Loading classes…</p> : null}
       {!loading && classes.length === 0 ? (
         <EmptyState
           icon={<AcademicCapIcon className="h-8 w-8" />}
           title="No classes yet"
-          description="Create a class, show the QR in the lecture hall, and students join on Lantern the same day."
+          description="Create a class for a whole subject or just one topic, show the QR in the hall, and students join on Lantern the same day."
           actionLabel="Create a class"
           onAction={() => navigate(teachNewClassPath())}
         />
@@ -61,7 +65,7 @@ export const TeachHome: React.FC = () => {
             >
               <Card padding="md" className="hover:border-lantern-primary/40 transition-colors">
                 <p className="text-caption text-lantern-text-secondary">
-                  {cls.course.code} · {cls.academicYear}
+                  {classSubjectLine(cls.course, cls.topic)} · {cls.academicYear}
                 </p>
                 <p className="text-title font-semibold text-lantern-text">{cls.title}</p>
                 <p className="text-caption text-lantern-text-secondary mt-1">

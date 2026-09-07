@@ -12248,7 +12248,7 @@ export class SupabaseService {
   async getMarketplaceCampuses(countryCode = "NG"): Promise<any[]> {
     const { data, error } = await this.supabase
       .from("marketplace_campuses")
-      .select("id, name, city, state, country_code, slug, geopolitical_zone")
+      .select("id, name, city, state, country_code, slug, geopolitical_zone, kind")
       .eq("active", true)
       .eq("country_code", countryCode)
       .order("name", { ascending: true });

@@ -24,6 +24,11 @@ import { useAuthStore } from './stores/authStore';
 import { useAcademicStore } from './stores/academicStore';
 import { useLibraryStore } from './stores/libraryStore';
 import { activeUserCourses, readAcademicSetupDismissed, shouldOpenAcademicSetup } from './utils/academicSetup';
+import {
+    completeTeachOnboarding,
+    consumeTeachSignupIntent,
+    isTeachAuthRequest,
+} from './utils/teachIntent';
 import { setSentryUser } from './services/sentry';
 import { useGroupStore } from './stores/groupStore';
 import { useFlashcardStore } from './stores/flashcardStore';
@@ -132,6 +137,7 @@ const TestsHomeScreen = lazyWithRetry(() => import('./components/TestsHomeScreen
 const TestBuilderScreen = lazyWithRetry(() => import('./components/TestBuilderScreen'));
 const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
 const LandingPage = lazyWithRetry(() => import('./components/marketing/LandingPage'));
+const TeachLandingPage = lazyWithRetry(() => import('./components/marketing/TeachLandingPage'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
 import { useAuthHandlers, INITIAL_BOOTSTRAP_LOAD_STATE } from './hooks/useAuthHandlers';
@@ -664,6 +670,10 @@ export const App: React.FC = () => {
     }, [communityRouteSlug, setActiveCommunity]);
     const [showOnboarding, setShowOnboarding] = React.useState(() => {
         if (typeof window === 'undefined') return false;
+        if (isTeachAuthRequest(window.location.pathname, window.location.search)) {
+            completeTeachOnboarding();
+            return false;
+        }
         return !isOnboardingCompleteFlag(localStorage.getItem(ONBOARDING_COMPLETE_STORAGE_KEY));
     });
     // Starter-deck pre-seed: the first active enrolment (Phase 1 onboarding).
@@ -1356,8 +1366,10 @@ export const App: React.FC = () => {
         const isAuthPath =
             path === '/login' ||
             path === '/signup' ||
+            path === '/signup/teach' ||
             path === '/forgot-password' ||
             path === '/verify-email';
+        const isTeachLanding = path === '/teach';
 
         if (isLandingPath) {
             return (
@@ -1365,7 +1377,16 @@ export const App: React.FC = () => {
                     <LandingPage
                         onSignIn={() => navigateToPath('/login')}
                         onContinue={() => navigateToPath('/signup')}
+                        onOpenTeach={() => navigateToPath('/teach')}
                     />
+                </Suspense>
+            );
+        }
+
+        if (isTeachLanding) {
+            return (
+                <Suspense fallback={null}>
+                    <TeachLandingPage />
                 </Suspense>
             );
         }
@@ -1377,9 +1398,13 @@ export const App: React.FC = () => {
                         bootstrapAuthFromStorage();
                         setCurrentUser(user);
                         setAuthLoading(false);
+                        const teach = consumeTeachSignupIntent(user.id);
+                        if (teach) setShowOnboarding(false);
                         const next = new URLSearchParams(location.search).get('next');
                         if (next && next.startsWith('/') && !next.startsWith('//') && !next.includes('://') && !next.includes('\\')) {
                             navigateToPath(next, { replace: true });
+                        } else if (teach) {
+                            navigateToPath('/teach', { replace: true });
                         } else {
                             navigateToPath('/dashboard', { replace: true });
                         }

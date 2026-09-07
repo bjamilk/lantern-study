@@ -7,6 +7,7 @@ import {
   isValidStudyLevel,
   normalizeCourseCode,
   studyLevelLabel,
+  suggestCourseCodeFromTitle,
 } from './courses';
 
 describe('normalizeCourseCode', () => {
@@ -48,6 +49,23 @@ describe('isValidCourseCode', () => {
     expect(isValidCourseCode('A'.repeat(21))).toBe(false);
     expect(isValidCourseCode('BIO 201!')).toBe(false);
     expect(isValidCourseCode(' BIO 201')).toBe(false);
+  });
+});
+
+describe('suggestCourseCodeFromTitle', () => {
+  it('keeps a single-word subject as an uppercase code', () => {
+    expect(suggestCourseCodeFromTitle('Mathematics')).toBe('MATHEMATICS');
+    expect(suggestCourseCodeFromTitle('english')).toBe('ENGLISH');
+  });
+
+  it('uses initials for multi-word titles', () => {
+    expect(suggestCourseCodeFromTitle('Primary 5 Science')).toBe('P5S');
+    expect(suggestCourseCodeFromTitle('Cell Biology')).toBe('CB');
+  });
+
+  it('returns empty for blank input', () => {
+    expect(suggestCourseCodeFromTitle('')).toBe('');
+    expect(suggestCourseCodeFromTitle('   ')).toBe('');
   });
 });
 

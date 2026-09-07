@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { ClassJoinPreview } from '@lantern/shared';
-import { canonicalizeJoinCode, isValidJoinCode } from '@lantern/shared/academic';
+import { canonicalizeJoinCode, classSubjectLine, isValidJoinCode } from '@lantern/shared/academic';
 import { Button, Card, Input, ScreenHeader } from '../ui';
 import { joinClassByCode, previewClassByCode } from '../../services/classes';
 
@@ -60,7 +60,7 @@ export const JoinClassPage: React.FC<JoinClassPageProps> = ({ code, onJoined }) 
           <div>
             <p className="text-title font-semibold text-lantern-text">{preview.title}</p>
             <p className="text-caption text-lantern-text-secondary">
-              {preview.course.code} · {preview.instructorName} · {preview.memberCount} already in
+              {classSubjectLine(preview.course, preview.topic)} · {preview.instructorName} · {preview.memberCount} already in
             </p>
           </div>
         ) : null}

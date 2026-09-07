@@ -19,6 +19,8 @@ import {
   RESEND_COOLDOWN_SECONDS,
   formatSupabaseClientAuthError,
 } from '@lantern/shared';
+import { TEACH_LOGIN_PATH, TEACH_SIGNUP_PATH } from '@lantern/shared/academic';
+import { isTeachAuthRequest, markTeachSignupIntent, clearTeachSignupIntent } from '../utils/teachIntent';
 
 interface AuthScreenProps {
   onAuthSuccess: (user: User) => void;
@@ -193,9 +195,22 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const authView = pathToAuthView(location.pathname);
+  const isTeachAuth = isTeachAuthRequest(location.pathname, location.search);
   const setAuthView = (view: AuthView) => {
+    if (isTeachAuth && view === 'signup') {
+      navigate(TEACH_SIGNUP_PATH, { replace: false });
+      return;
+    }
+    if (isTeachAuth && view === 'login') {
+      navigate(TEACH_LOGIN_PATH, { replace: false });
+      return;
+    }
     navigate(`${authViewToPath(view)}${location.search}`, { replace: false });
   };
+  useEffect(() => {
+    if (isTeachAuth) markTeachSignupIntent();
+  }, [isTeachAuth]);
+
   const isLoginView = authView === 'login';
   const isForgotPasswordView = authView === 'forgotPassword';
   const isVerifyEmailView = authView === 'verifyEmail';
@@ -343,7 +358,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         options: {
           // Return to /login with the original query so ?next= deep links
           // (group invites, note shares) survive the OAuth round-trip.
-          redirectTo: `${window.location.origin}/login${window.location.search}`,
+          redirectTo: `${window.location.origin}/login${
+            isTeachAuth ? '?next=/teach' : window.location.search
+          }`,
           queryParams: provider === 'google' ? {
             access_type: 'offline',
             prompt: 'consent',
@@ -646,8 +663,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                       : isForgotPasswordView
                         ? 'Reset Password'
                         : isLoginView
-                          ? 'Welcome Back'
-                          : 'Create an Account'}
+                          ? isTeachAuth
+                            ? 'Sign in to Teach'
+                            : 'Welcome Back'
+                          : isTeachAuth
+                            ? 'Create an instructor account'
+                            : 'Create an Account'}
                 </h1>
                 <p className="mt-2 text-sm text-lantern-text-secondary">
                     {isVerifyEmailView
@@ -655,8 +676,12 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
                       : isForgotPasswordView
                         ? 'Enter your email to receive a reset link.'
                         : isLoginView
-                          ? 'Sign in to continue your journey.'
-                          : 'Join us to illuminate your mind.'}
+                          ? isTeachAuth
+                            ? 'Primary, secondary and university instructors can sign in here.'
+                            : 'Sign in to continue your journey.'
+                          : isTeachAuth
+                            ? 'Register any school. Students stay free. No Canvas required.'
+                            : 'Join us to illuminate your mind.'}
                 </p>
 
                 <form className="mt-8 space-y-5 min-w-0" onSubmit={handleAuthAction} noValidate aria-describedby={error ? 'auth-form-error' : undefined}>
@@ -935,10 +960,37 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
 
                 <div className="mt-8 text-sm text-center">
                     {!isForgotPasswordView && !isVerifyEmailView && (
-                        <button onClick={toggleView} className="font-medium text-lantern-primary hover:text-lantern-primary">
+                        <button type="button" onClick={toggleView} className="font-medium text-lantern-primary hover:text-lantern-primary">
                             {isLoginView ? "Don't have an account? Sign up" : 'Already have an account? Sign in'}
                         </button>
                     )}
+                    {!isForgotPasswordView && !isVerifyEmailView ? (
+                      <p className="mt-3">
+                        {isTeachAuth ? (
+                          <button
+                            type="button"
+                            className="text-lantern-text-secondary hover:text-lantern-text"
+                            onClick={() => {
+                              clearTeachSignupIntent();
+                              navigate(isLoginView ? '/login' : '/signup');
+                            }}
+                          >
+                            I’m a student
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="text-lantern-text-secondary hover:text-lantern-text"
+                            onClick={() => {
+                              markTeachSignupIntent();
+                              navigate(isLoginView ? TEACH_LOGIN_PATH : TEACH_SIGNUP_PATH);
+                            }}
+                          >
+                            I’m an instructor
+                          </button>
+                        )}
+                      </p>
+                    ) : null}
                 </div>
             </div>
         </div>

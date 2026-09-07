@@ -52,6 +52,7 @@ import type {
   ClassSection,
   InstitutionClassAnalytics,
   InstitutionStaff,
+  InstitutionSummary,
   LmsConnectorStatus,
   LibraryOverview,
   LibrarySearchResult,
@@ -4515,6 +4516,8 @@ export function createApiEndpoints(client: ApiClient) {
       title?: string;
       academicYear?: string;
       semester?: 1 | 2 | null;
+      topicId?: string | null;
+      topicTitle?: string | null;
     }) =>
       apiRequest<ClassSection>("/classes", {
         method: "POST",
@@ -4648,6 +4651,20 @@ export function createApiEndpoints(client: ApiClient) {
         `/institutions/${encodeURIComponent(institutionId)}/analytics`,
       ),
     fetchLmsConnectors: () => apiRequest<LmsConnectorStatus>("/lms/connectors"),
+    fetchSchools: (filters: { q?: string; kind?: string } = {}) => {
+      const params = new URLSearchParams();
+      if (filters.q && filters.q.trim()) params.set("q", filters.q.trim());
+      if (filters.kind) params.set("kind", filters.kind);
+      const qs = params.toString();
+      return apiRequest<(InstitutionSummary & { city?: string; state?: string })[]>(
+        `/schools${qs ? `?${qs}` : ""}`,
+      );
+    },
+    createSchool: (input: { name: string; kind: string; city?: string; state?: string }) =>
+      apiRequest<InstitutionSummary>("/schools", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
 
     // ========== CONCEPTS (/api/v1/concepts) ==========
     // Thin clients for the knowledge-network vocabulary (Phase 1 · C). The

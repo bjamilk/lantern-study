@@ -760,9 +760,10 @@ export function useAppEffects({
         // moment onboarding finishes, so anything still missing (a username, on
         // an account that never had one) is asked for exactly once, afterwards.
         if (isOnboardingPending()) return;
-        // Opens "Set up your profile" when the username is missing (original
-        // trigger) OR when the institution is known-missing and the user has not
-        // pressed "Skip for now" (utils/academicSetup.ts).
+        if (typeof window !== 'undefined' && window.location.pathname.startsWith('/teach')) {
+            if (!currentUser.username) openModal('usernameRequired');
+            return;
+        }
         if (shouldOpenAcademicSetup(currentUser, readAcademicSetupDismissed(currentUser.id))) {
             openModal('usernameRequired');
         }

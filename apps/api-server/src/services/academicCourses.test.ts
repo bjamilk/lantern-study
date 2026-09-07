@@ -195,7 +195,7 @@ describe('AcademicCoursesService.findOrCreateCourse — normalised find-or-creat
     await expect(service(db).findOrCreateCourse(USER, { code: '!!', title: 'Nope' })).rejects.toBeInstanceOf(PublicError);
     await expect(
       service(db).findOrCreateCourse(USER, { institutionId: OTHER_LAGOS, code: 'BIO 201', title: 'Genetics' })
-    ).rejects.toThrow(/"Other" is not an institution/);
+    ).rejects.toThrow(/not a school/);
     expect(db.calls.filter((c) => c.table === 'courses')).toHaveLength(0);
   });
 
@@ -325,5 +325,52 @@ describe('AcademicCoursesService.archiveSemester', () => {
       ['eq', 'academic_year', '2025/2026'],
       ['eq', 'status', 'active'],
     ]);
+  });
+});
+
+describe('AcademicCoursesService.findOrCreateSchool', () => {
+  it('creates a primary school when none matches', async () => {
+    const db = makeDb({
+      marketplace_campuses: (call) => {
+        if (call.op === 'insert') {
+          expect(call.payload).toMatchObject({
+            name: 'St Marys Primary',
+            kind: 'primary',
+            city: '—',
+            country_code: 'NG',
+          });
+          return {
+            data: {
+              id: '33333333-3333-4333-8333-333333333333',
+              name: 'St Marys Primary',
+              slug: 'st-marys-primary',
+              kind: 'primary',
+              active: true,
+            },
+          };
+        }
+        return { data: [] };
+      },
+    });
+    const result = await service(db).findOrCreateSchool(USER, { name: 'St Marys Primary', kind: 'primary' });
+    expect(result.created).toBe(true);
+    expect(result.school).toMatchObject({ name: 'St Marys Primary', kind: 'primary' });
+  });
+
+  it('returns an existing school of the same kind and name', async () => {
+    const existing = {
+      id: UNILAG,
+      name: 'Kings College',
+      slug: 'kings-college',
+      kind: 'secondary',
+      active: true,
+    };
+    const db = makeDb({
+      marketplace_campuses: { data: [existing] },
+    });
+    const result = await service(db).findOrCreateSchool(USER, { name: 'Kings College', kind: 'secondary' });
+    expect(result.created).toBe(false);
+    expect(result.school.id).toBe(UNILAG);
+    expect(db.calls.some((c) => c.op === 'insert')).toBe(false);
   });
 });

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { canonicalizeJoinCode, isValidJoinCode } from '@lantern/shared/academic';
+import { canonicalizeJoinCode, classSubjectLine, isValidJoinCode } from '@lantern/shared/academic';
 import type { ClassJoinPreview } from '@lantern/shared/types';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { Button } from '../../components/ui';
@@ -75,7 +75,8 @@ export default function JoinClassScreen({ navigation, route }: JoinClassScreenPr
           <View className="mb-4">
             <Text className="text-title font-semibold text-lantern-text">{preview.title}</Text>
             <Text className="text-caption text-lantern-text-secondary">
-              {preview.course.code} · {preview.instructorName} · {preview.memberCount} already in
+              {classSubjectLine(preview.course, preview.topic)} · {preview.instructorName} · {preview.memberCount} already
+              in
             </Text>
           </View>
         ) : null}

@@ -5,7 +5,7 @@
  * auth-header / session-expiry plumbing like services/gamificationStreak.ts.
  */
 import { getApiBaseUrl } from '@lantern/shared';
-import type { Course, CourseTopic, User, UserCourse } from '@lantern/shared';
+import type { Course, CourseTopic, InstitutionSummary, User, UserCourse } from '@lantern/shared';
 import { mapUserFromApi } from '@lantern/shared/utils/apiMappers';
 import { getAuthHeaders, fetchMarketplaceCampuses } from './supabase';
 import { handleApiAuthFailure } from './sessionHandler';
@@ -207,8 +207,21 @@ export const updateAcademicProfile = async (userId: string, patch: AcademicProfi
 
 // ---------- Institutions ----------
 
-/** Campuses minus the "Other …" sentinels — the only rows a profile may reference. */
+/** Campuses minus sentinels and non-tertiary kinds — student onboarding only. */
 export const fetchInstitutions = async (country = 'NG'): Promise<InstitutionOption[]> => {
   const campuses = (await fetchMarketplaceCampuses(country)) as InstitutionOption[];
   return filterInstitutions(campuses);
 };
+
+export const fetchSchools = (filters: { q?: string; kind?: string } = {}) => {
+  const params = new URLSearchParams();
+  if (filters.q && filters.q.trim()) params.set('q', filters.q.trim());
+  if (filters.kind) params.set('kind', filters.kind);
+  const qs = params.toString();
+  return academicRequest<(InstitutionSummary & { city?: string; state?: string })[]>(
+    `/schools${qs ? `?${qs}` : ''}`
+  ).then((rows) => rows || []);
+};
+
+export const createSchool = (input: { name: string; kind: string; city?: string; state?: string }) =>
+  academicRequest<InstitutionSummary>('/schools', { method: 'POST', body: JSON.stringify(input) });

@@ -89,6 +89,7 @@ import courseTopicRoutes, { initializeCourseTopicRoutes } from './routes/courseT
 import studyRoomRoutes, { initializeStudyRoomRoutes } from './routes/studyRooms';
 import classRoutes, { initializeClassRoutes } from './routes/classes';
 import institutionStaffRoutes, { initializeInstitutionStaffRoutes } from './routes/institutionStaff';
+import schoolRoutes, { initializeSchoolRoutes } from './routes/schools';
 import cookieParser from 'cookie-parser';
 import { isBullMqEnabled } from './queue/connection';
 
@@ -202,6 +203,7 @@ async function initializeServices() {
     initializeStudyRoomRoutes(supabaseService);
     initializeClassRoutes(supabaseService);
     initializeInstitutionStaffRoutes(supabaseService);
+    initializeSchoolRoutes(supabaseService);
 
     const { initializeWalletService } = await import('./services/walletService');
     initializeWalletService(supabaseService, cacheService);
@@ -415,6 +417,7 @@ async function startServer() {
     app.use('/api/v1/communities', communityRoutes);
     app.use('/api/v1/study-rooms', studyRoomRoutes);
     app.use('/api/v1/classes', classRoutes);
+    app.use('/api/v1/schools', schoolRoutes);
     app.use('/api/v1', institutionStaffRoutes);
     app.use('/api/v1/discover', discoverRouter);
     app.use('/api/v1/feed', feedRoutes);

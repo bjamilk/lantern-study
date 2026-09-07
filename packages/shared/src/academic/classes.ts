@@ -85,6 +85,36 @@ export function isInstitutionCatalogAdmin(role: InstitutionStaffRole | null | un
   return role === 'department_admin' || role === 'institution_admin';
 }
 
+/**
+ * Default class name: the topic when the lecturer only teaches that slice,
+ * otherwise "CODE — Course title".
+ */
+export function defaultClassTitle(
+  course: { code: string; title: string },
+  topic?: { title: string } | null
+): string {
+  const fromTopic = topic?.title?.trim().replace(/\s+/g, ' ') ?? '';
+  const raw =
+    fromTopic.length >= CLASS_TITLE_MIN_LENGTH
+      ? fromTopic
+      : `${course.code} — ${course.title}`.trim().replace(/\s+/g, ' ');
+  if (raw.length < CLASS_TITLE_MIN_LENGTH) {
+    return (course.code || course.title).slice(0, CLASS_TITLE_MAX_LENGTH);
+  }
+  return raw.slice(0, CLASS_TITLE_MAX_LENGTH);
+}
+
+/** Caption under a class title: "MATH · Fractions" or just "BIO 201". */
+export function classSubjectLine(
+  course: { code: string } | null | undefined,
+  topic?: { title: string } | null
+): string {
+  const code = course?.code?.trim() ?? '';
+  const topicTitle = topic?.title?.trim() ?? '';
+  if (code && topicTitle) return `${code} · ${topicTitle}`;
+  return code || topicTitle;
+}
+
 function randomAlphabetChar(random: () => number): string {
   const index = Math.floor(random() * JOIN_CODE_ALPHABET.length);
   return JOIN_CODE_ALPHABET[Math.min(index, JOIN_CODE_ALPHABET.length - 1)]!;

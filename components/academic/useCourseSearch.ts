@@ -17,6 +17,11 @@ interface UseCourseSearchOptions {
   /** Skip the "my courses first" prefix (e.g. when picking courses *for* the enrolment list). */
   includeMyCourses?: boolean;
   enabled?: boolean;
+  /**
+   * Offer "Add ‘MATH’" for letter-only codes. Student pickers keep the default
+   * (letters + digits, e.g. BIO 201) so a title like "biology" is not created.
+   */
+  allowLetterOnlyCreate?: boolean;
 }
 
 /**
@@ -29,6 +34,7 @@ export function useCourseSearch({
   excludeIds,
   includeMyCourses = true,
   enabled = true,
+  allowLetterOnlyCreate = false,
 }: UseCourseSearchOptions) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Course[]>([]);
@@ -73,7 +79,10 @@ export function useCourseSearch({
     [myCourses, results, query, excludeIds, includeMyCourses]
   );
 
-  const offer: CreateCourseOffer | null = useMemo(() => createCourseOffer(query, options), [query, options]);
+  const offer: CreateCourseOffer | null = useMemo(
+    () => createCourseOffer(query, options, { requireDigit: allowLetterOnlyCreate ? false : undefined }),
+    [query, options, allowLetterOnlyCreate]
+  );
 
   const create = useCallback(
     async (code: string, title?: string): Promise<Course> => {

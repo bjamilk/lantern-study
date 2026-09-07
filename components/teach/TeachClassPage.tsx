@@ -9,7 +9,7 @@ import type {
   ClassSection,
   StudyNote,
 } from '@lantern/shared';
-import { classJoinPath, teachClassPath, teachHomePath } from '@lantern/shared/academic';
+import { classJoinPath, classSubjectLine, teachClassPath, teachHomePath } from '@lantern/shared/academic';
 import { Button, Card, Input, Tabs, TabList, Tab, TabPanel } from '../ui';
 import { useNotesStore } from '../../stores/notesStore';
 import {
@@ -81,7 +81,7 @@ export const TeachClassPage: React.FC<TeachClassPageProps> = ({ classId, tab }) 
     <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 p-4 md:p-8">
       <div>
         <p className="text-caption text-lantern-text-secondary">
-          {cls.course.code} · {cls.academicYear}
+          {classSubjectLine(cls.course, cls.topic)} · {cls.academicYear}
         </p>
         <h1 className="text-title font-semibold text-lantern-text">{cls.title}</h1>
       </div>

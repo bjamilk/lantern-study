@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseAppRoute } from './appRoutes';
+import { parseAppRoute, isAuthAppPath, isPublicAppPath } from './appRoutes';
 
 describe('teach portal and class join routes', () => {
   it('parses /teach as a standalone route with no student AppMode', () => {
@@ -25,5 +25,12 @@ describe('teach portal and class join routes', () => {
   it('does not bounce teach or join to the dashboard', () => {
     expect(parseAppRoute('/teach').redirect).toBeUndefined();
     expect(parseAppRoute('/join/ABC234').redirect).toBeUndefined();
+  });
+
+  it('treats guest /teach as public and /signup/teach as auth', () => {
+    expect(isPublicAppPath('/teach')).toBe(true);
+    expect(isPublicAppPath('/teach/new')).toBe(false);
+    expect(isAuthAppPath('/signup/teach')).toBe(true);
+    expect(isAuthAppPath('/signup')).toBe(true);
   });
 });

@@ -7,11 +7,12 @@ Students stay free. Lecturers start a class without university IT and without Ca
 Decisions:
 
 - **D1** Capability is class-scoped (`instructor` | `ta` | `student` on `class_members`). There is no global `is_teacher` flag and nothing is stored in `profiles.settings`.
-- **D2** `courses` stays the shared catalogue (BIO 201 at UNILAG). `class_sections` is one lecturer’s instance of that course for a session.
+- **D2** `courses` stays the shared catalogue (BIO 201 at UNILAG, or a letter-only subject such as MATH). `class_sections` is one lecturer’s instance of that course for a session. `class_sections.topic_id` is **optional**: when set, the class covers one `course_topics` row (Fractions) rather than the whole course. A primary or secondary teacher who only teaches a topic still names the parent subject.
 - **D3** Join is a short code / `/join/:code` / QR. No LMS, no bulk CSV in v1.
 - **D4** Lecturers do **not** read private student notes. They see roster identity, published official materials, assignment progress, and aggregated study telemetry for **that class only**.
 - **D5** Official materials prefer a snapshot of an existing note (`body_snapshot`) so the student corpus is grounded in what the lecturer published, not the live private note.
 - **D6** Platform admin (`app_metadata.is_platform_admin`) can still act; university staff live in `institution_staff`, not JWT metadata.
+- **D7** Instructor affiliation is a school on `profiles.institution_id`, not a teacher flag. Primary and secondary schools are allowed (`marketplace_campuses.kind`). The student `institutions` view stays tertiary-only. Guest `/teach` is an instructor landing; `/signup/teach` is instructor signup.
 
 ---
 
@@ -34,9 +35,10 @@ One lecturer-owned class instance.
 | `join_code` | text NOT NULL UNIQUE | 6 chars, alphabet `23456789ABCDEFGHJKMNPQRSTUVWXYZ` |
 | `created_by` | uuid NOT NULL → `profiles` ON DELETE RESTRICT | Original instructor |
 | `archived_at` | timestamptz NULL | Soft-close; join disabled |
+| `topic_id` | uuid NULL → `course_topics` ON DELETE SET NULL | When set, this class is one topic, not the whole course. Added in `20260907170000_class_section_topic.sql`. |
 | `created_at` / `updated_at` | timestamptz | `update_updated_at_column()` |
 
-Indexes: `course_id`, `institution_id`, `created_by`, unique `join_code`.
+Indexes: `course_id`, `institution_id`, `created_by`, unique `join_code`, partial `topic_id`.
 
 ### 1b. `class_members`
 
@@ -163,8 +165,8 @@ Roster privacy: **never return email**. Students and instructors see `id, name, 
 | Method & path | Body / query | Returns | Authz |
 |---|---|---|---|
 | `GET /classes` | `?role=instructor\|student\|all` | `{ classes: ClassSectionSummary[] }` | Membership |
-| `POST /classes` | `{ courseId, title?, academicYear?, semester? }` | `ClassSection` 201 | Any authenticated user. Creator → instructor. Also `ensureEnrolment` for the creator. Caps: 40 classes created / user. |
-| `GET /classes/preview?code=` | | `{ title, course, instructorName, memberCount, academicYear }` | Auth required; does not join |
+| `POST /classes` | `{ courseId, title?, academicYear?, semester?, topicId?, topicTitle? }` | `ClassSection` 201 | Any authenticated user. Creator → instructor. Also `ensureEnrolment` for the creator. Caps: 40 classes created / user. `topicId` must belong to `courseId`. `topicTitle` find-or-creates a `course_topics` row when `topicId` is omitted. Default title is the topic title when scoped, otherwise `CODE — course title`. |
+| `GET /classes/preview?code=` | | `{ title, course, topic, instructorName, memberCount, academicYear }` | Auth required; does not join |
 | `POST /classes/join` | `{ code }` | `ClassSection` | Inserts `student` (or invite `role`). Idempotent if already active. `ensureEnrolment` on the course. 404 invalid/expired; 409 archived. |
 | `GET /classes/:classId` | | `ClassSection` + `membership` + `joinCode` (staff only) | Member |
 | `PATCH /classes/:classId` | `{ title?, semester?, archived? }` | `ClassSection` | Instructor / TA |
@@ -183,6 +185,8 @@ Roster privacy: **never return email**. Students and instructors see `id, name, 
 | `POST /classes/:classId/assignments/:id/complete` | `{ score? }` | `ClassAssignmentProgress` | Student member of the class. Records a learning event. |
 | `GET /classes/:classId/analytics` | | `ClassAnalytics` | Instructor / TA |
 | `GET /lms/connectors` | | `{ available: false, connectors: [] }` | Auth. Documents that Moodle / Classroom / Canvas are not v1. |
+| `GET /schools` | `?q=&kind=` | School summaries | Auth. Search campuses of kind primary/secondary/college/polytechnic/university. |
+| `POST /schools` | `{ name, kind, city?, state? }` | School summary 200/201 | Auth. Find-or-create. City/state default `—`. Client then PUTs `institutionId` on the profile. |
 
 `joinCode` is omitted from payloads sent to students.
 
@@ -205,9 +209,11 @@ On join / create: `AcademicCoursesService.ensureEnrolment(userId, courseId, acad
 
 ```
 ClassSection {
-  id; course: Course; institutionId; title; academicYear; semester; archivedAt;
+  id; course: Course; topic: CourseTopic | null; institutionId; title; academicYear; semester; archivedAt;
   createdAt; memberCount; role: ClassRole; joinCode?: string; // staff only
 }
+
+ClassJoinPreview { title; course; topic: CourseTopic | null; instructorName; memberCount; academicYear; semester }
 
 ClassMember { userId; name; username; avatarUrl; role; status; joinedAt }
 
@@ -235,7 +241,11 @@ InstitutionStaff { institutionId; userId; role; status; createdAt }
 ## 5. Web
 
 - Isolated tree: `components/teach/TeachApp.tsx`, lazy-loaded when the path is `/teach` or `/teach/*`. **No** student AppShell, marketplace, jobs, campus social, or gamification chrome.
-- `/join/:code` — standalone join page (post-login redirect if signed out).
+- Guest `/teach` — instructor landing (primary/secondary/tertiary). CTAs: `/signup/teach`, `/login?next=/teach`. Student home `/` has a **For instructors** link.
+- `/signup/teach` — same auth screen, instructor copy. After success, skip student onboarding and open `/teach`. No `is_teacher` flag.
+- Affiliation form on Teach home / New class when `institutionId` is missing: search or create a school of any allowed kind, then `PUT` profile `institutionId`.
+- `/teach/new` — create a class. Instructors choose **whole course** or **one topic**, type a subject title + short code (created if not listed), and a topic name when scoped. Catalogue pick is secondary.
+- `/join/:code` — standalone join page (post-login redirect if signed out). Preview shows the topic when the class is topic-scoped.
 - Me → “Teach” opens `/teach`.
 - Dashboard: join-class card + assigned work (`ClassWorkCard`).
 - Library: “From your lecturer” list of published materials for the selected course (`ClassOfficialMaterials`).
@@ -253,4 +263,4 @@ Community, marketplace, jobs inside `/teach`. Gradebook, attendance, SSO, LTI, S
 
 ## 8. Gates
 
-`packages/shared`: join-code unit tests. `apps/api-server`: class authz tests (student cannot see `joinCode` or another student’s private notes; join upserts enrolment; last instructor cannot be removed). Root typecheck for new files. No commit.
+`apps/api-server`: class authz tests (student cannot see `joinCode` or another student’s private notes; join upserts enrolment; last instructor cannot be removed; topic-scoped create stores `topic_id` and rejects a topic from another course). Root typecheck for new files. No commit.

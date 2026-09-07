@@ -678,6 +678,7 @@ export const PUBLIC_PATH_PREFIXES = [
   '/welcome',
   '/login',
   '/signup',
+  '/signup/teach',
   '/forgot-password',
   '/verify-email',
 ];
@@ -703,6 +704,8 @@ export function isPublicAppPath(pathname: string): boolean {
   const path = normalizePath(pathname);
   if (PUBLIC_PATH_PREFIXES.includes(path)) return true;
   if (path === '/' || path.startsWith('/invite/') || path.startsWith('/notes/share/')) return true;
+  // Guest instructor landing only — /teach/new still requires sign-in.
+  if (path === '/teach') return true;
   // Phase 4 R: campus pages are the SEO surface — they MUST render for a
   // logged-out visitor, or the crawler's link goes to a login wall.
   if (path.startsWith('/campus/')) return true;
@@ -715,6 +718,7 @@ export function isAuthAppPath(pathname: string): boolean {
   return (
     path === '/login' ||
     path === '/signup' ||
+    path === '/signup/teach' ||
     path === '/forgot-password' ||
     path === '/verify-email'
   );

@@ -67,7 +67,11 @@ export function useRouteSync() {
     // them to the screen they left.
     if (parsed.standalone) {
       if (!currentUserId) {
-        storePostLoginRedirect(location.pathname + location.search);
+        const path = location.pathname.replace(/\/$/, '') || '/';
+        // Guest /teach is the instructor marketing page, not a login wall.
+        if (!(parsed.standalone === 'teach' && path === '/teach')) {
+          storePostLoginRedirect(location.pathname + location.search);
+        }
       }
       return;
     }

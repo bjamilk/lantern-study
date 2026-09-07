@@ -84,6 +84,22 @@ export class CourseTopicsService {
     return (data || []).map(mapRow);
   }
 
+  async get(topicId: string): Promise<CourseTopic | null> {
+    this.assertUuid(topicId, 'topic id');
+    const { data, error } = await this.db
+      .from('course_topics')
+      .select('id, course_id, title, position')
+      .eq('id', topicId)
+      .maybeSingle();
+    if (error) {
+      if (isMissingRelationError(error)) {
+        throw new PublicError('Topics are not available yet');
+      }
+      throw error;
+    }
+    return data ? mapRow(data) : null;
+  }
+
   /**
    * Find-or-create by title, the same shape `courses` uses. Typing a topic that
    * already exists must select it, not create a near-duplicate — the unique
@@ -94,12 +110,18 @@ export class CourseTopicsService {
     this.assertUuid(courseId, 'course id');
     const title = this.normalizeTitle(rawTitle);
 
-    const { data: existing } = await this.db
+    const { data: existing, error: existingError } = await this.db
       .from('course_topics')
       .select('id, course_id, title, position')
       .eq('course_id', courseId)
       .ilike('title', title)
       .maybeSingle();
+    if (existingError) {
+      if (isMissingRelationError(existingError)) {
+        throw new PublicError('Topics are not available yet');
+      }
+      throw existingError;
+    }
     if (existing) return mapRow(existing);
 
     const { count } = await this.db

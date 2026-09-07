@@ -44,6 +44,16 @@ describe('institution filtering', () => {
       ]).map((c) => c.id),
     ).toEqual(['1']);
   });
+
+  it('drops primary and secondary schools from the student picker when kind is set', () => {
+    expect(
+      filterInstitutions([
+        { id: '1', name: 'University of Lagos', slug: 'unilag', kind: 'university' },
+        { id: '2', name: 'Kings College', slug: 'kings-college', kind: 'secondary' },
+        { id: '3', name: 'St Marys', slug: 'st-marys', kind: 'primary' },
+      ]).map((c) => c.id),
+    ).toEqual(['1']);
+  });
 });
 
 describe('validateProfileSetup', () => {
@@ -124,6 +134,12 @@ describe('course picker helpers', () => {
     expect(createCourseOffer('201', [])).toBeNull();
     expect(createCourseOffer('', [])).toBeNull();
     expect(createCourseOffer('x'.repeat(30), [])).toBeNull();
+  });
+
+  it('can offer a letter-only subject code for instructors', () => {
+    expect(createCourseOffer('MATH', [], { requireDigit: false })).toEqual({ code: 'MATH' });
+    expect(createCourseOffer('biology', [], { requireDigit: false })).toEqual({ code: 'BIOLOGY' });
+    expect(createCourseOffer('MATH', [{ code: 'MATH' }], { requireDigit: false })).toBeNull();
   });
 });
 

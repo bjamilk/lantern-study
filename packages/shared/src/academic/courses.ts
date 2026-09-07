@@ -41,6 +41,29 @@ export function isValidCourseCode(code: string): boolean {
   return COURSE_CODE_ALLOWED_RE.test(code);
 }
 
+/**
+ * Short code from a subject title so primary/secondary lecturers can create
+ * "Mathematics" without a university-style "BIO 201". Single words keep a
+ * sliced uppercase form (MATHEMATICS → MATHEMATICS); multi-word titles use
+ * initials (Primary 5 Science → P5S).
+ */
+export function suggestCourseCodeFromTitle(raw: unknown): string {
+  const cleaned = String(raw ?? '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ');
+  if (!cleaned) return '';
+  const words = cleaned.split(' ').filter(Boolean);
+  const first = words[0] ?? '';
+  if (words.length === 1) return normalizeCourseCode(first.slice(0, COURSE_CODE_MAX_LENGTH));
+  const initials = words.map((word) => word[0] ?? '').join('').slice(0, COURSE_CODE_MAX_LENGTH);
+  // Initials such as P5S must not pass through normalizeCourseCode — that helper
+  // inserts a space before digits for catalogue codes (BIO201 → BIO 201).
+  if (isValidCourseCode(initials)) return initials;
+  return normalizeCourseCode(first.slice(0, COURSE_CODE_MAX_LENGTH));
+}
+
 export const ACADEMIC_YEAR_RE = /^(\d{4})\/(\d{4})$/;
 export const ACADEMIC_YEAR_MIN = 1990;
 export const ACADEMIC_YEAR_MAX = 2100;

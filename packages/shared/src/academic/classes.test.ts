@@ -11,6 +11,8 @@ import {
   parseJoinPath,
   parseTeachPath,
   teachClassPath,
+  classSubjectLine,
+  defaultClassTitle,
 } from './classes';
 
 describe('canonicalizeJoinCode', () => {
@@ -63,6 +65,29 @@ describe('roles', () => {
     expect(isInstitutionCatalogAdmin('department_admin')).toBe(true);
     expect(isInstitutionCatalogAdmin('institution_admin')).toBe(true);
     expect(isInstitutionCatalogAdmin('instructor')).toBe(false);
+  });
+});
+
+describe('defaultClassTitle', () => {
+  const course = { code: 'MATH', title: 'Mathematics' };
+
+  it('uses the topic title when the class is one topic', () => {
+    expect(defaultClassTitle(course, { title: 'Fractions' })).toBe('Fractions');
+  });
+
+  it('falls back to code — title for a whole-course class', () => {
+    expect(defaultClassTitle(course, null)).toBe('MATH — Mathematics');
+    expect(defaultClassTitle(course)).toBe('MATH — Mathematics');
+  });
+});
+
+describe('classSubjectLine', () => {
+  it('shows code · topic when scoped', () => {
+    expect(classSubjectLine({ code: 'MATH' }, { title: 'Fractions' })).toBe('MATH · Fractions');
+  });
+
+  it('shows only the code for a whole-course class', () => {
+    expect(classSubjectLine({ code: 'BIO 201' }, null)).toBe('BIO 201');
   });
 });
 

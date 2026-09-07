@@ -195,6 +195,8 @@ export interface InstitutionSummary {
   id: string;
   name: string;
   slug: string;
+  /** university | polytechnic | college | primary | secondary */
+  kind?: string;
 }
 
 /** One shared row per (institution, normalised code). */
@@ -248,6 +250,8 @@ export type InstitutionStaffRole = 'instructor' | 'department_admin' | 'institut
 export interface ClassSection {
   id: string;
   course: Course;
+  /** Set when the class covers one syllabus topic rather than the whole course. */
+  topic: CourseTopic | null;
   institutionId: string | null;
   title: string;
   academicYear: string;
@@ -263,6 +267,7 @@ export interface ClassSection {
 export interface ClassJoinPreview {
   title: string;
   course: Course;
+  topic: CourseTopic | null;
   instructorName: string;
   memberCount: number;
   academicYear: string;

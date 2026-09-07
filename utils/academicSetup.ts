@@ -11,6 +11,7 @@ import {
   type Course,
   type UserCourse,
 } from '@lantern/shared';
+import { isTertiarySchoolKind } from '@lantern/shared/academic';
 
 /** localStorage flag set by "Skip for now" on the profile-setup step. */
 export const ACADEMIC_SETUP_DISMISSED_KEY = 'lantern_academic_setup_dismissed';
@@ -35,8 +36,15 @@ export function isSentinelCampus(campus: { slug?: string | null; name?: string }
   return (campus.name || '').trim().toLowerCase() === 'other (city in nigeria)';
 }
 
-export function filterInstitutions<T extends { slug?: string | null; name?: string }>(campuses: T[]): T[] {
-  return (Array.isArray(campuses) ? campuses : []).filter((c) => !isSentinelCampus(c));
+export function filterInstitutions<T extends { slug?: string | null; name?: string; kind?: string | null }>(
+  campuses: T[]
+): T[] {
+  return (Array.isArray(campuses) ? campuses : []).filter((c) => {
+    if (isSentinelCampus(c)) return false;
+    // When kind is present, student pickers stay tertiary-only.
+    if (c.kind && !isTertiarySchoolKind(c.kind)) return false;
+    return true;
+  });
 }
 
 /** Levels offered in the setup / settings selects (100–700 per the contract). */
@@ -235,11 +243,17 @@ export interface CreateCourseOffer {
  * query: the query must normalise to a valid code that no visible option
  * already has.
  */
-export function createCourseOffer(query: string, options: ReadonlyArray<Pick<Course, 'code'>>): CreateCourseOffer | null {
+export function createCourseOffer(
+  query: string,
+  options: ReadonlyArray<Pick<Course, 'code'>>,
+  flags: { requireDigit?: boolean } = {}
+): CreateCourseOffer | null {
   const code = normalizeCourseCode(query);
   if (!code || !isValidCourseCode(code)) return null;
-  // A title-less "add" is only offered for code-shaped queries (letters + digits).
-  if (!/[A-Z]/.test(code) || !/\d/.test(code)) return null;
+  // Student pickers only offer "add" for catalogue-shaped codes (letters + digits).
+  // Instructors may add letter-only subjects (MATH, ENGLISH) when requireDigit is false.
+  if (!/[A-Z]/.test(code)) return null;
+  if (flags.requireDigit !== false && !/\d/.test(code)) return null;
   const exists = options.some((o) => normalizeCourseCode(o.code) === code);
   return exists ? null : { code };
 }

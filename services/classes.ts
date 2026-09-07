@@ -29,6 +29,8 @@ export const createClass = (input: {
   title?: string;
   academicYear?: string;
   semester?: 1 | 2 | null;
+  topicId?: string | null;
+  topicTitle?: string | null;
 }) => academicRequest<ClassSection>('/classes', { method: 'POST', body: JSON.stringify(input) });
 
 export const previewClassByCode = (code: string) =>

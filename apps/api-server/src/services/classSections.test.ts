@@ -19,6 +19,8 @@ jest.mock('./learningEvents', () => ({
 
 const ensureEnrolment = jest.fn(async () => null);
 const getCourseById = jest.fn();
+const getTopic = jest.fn();
+const findOrCreateTopic = jest.fn();
 
 jest.mock('./academicCourses', () => {
   const actual = jest.requireActual('./academicCourses');
@@ -30,6 +32,13 @@ jest.mock('./academicCourses', () => {
     }),
   };
 });
+
+jest.mock('./courseTopics', () => ({
+  getCourseTopicsService: () => ({
+    get: getTopic,
+    findOrCreate: findOrCreateTopic,
+  }),
+}));
 
 type Result = { data: unknown; error?: unknown; count?: number };
 type Call = {
@@ -246,6 +255,91 @@ describe('LMS connectors', () => {
   });
 });
 
+describe('topic-scoped class', () => {
+  const courseRecord = {
+    id: COURSE_ID,
+    institutionId: courseEmbed.institution_id,
+    code: 'MATH',
+    title: 'Mathematics',
+    faculty: null,
+    level: null,
+    semester: 1,
+    isCanonical: false,
+  };
+  const topic = {
+    id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee',
+    courseId: COURSE_ID,
+    title: 'Fractions',
+    position: 10,
+  };
+
+  beforeEach(() => {
+    getCourseById.mockReset();
+    getTopic.mockReset();
+    findOrCreateTopic.mockReset();
+    ensureEnrolment.mockClear();
+    getCourseById.mockResolvedValue(courseRecord);
+  });
+
+  it('stores topic_id and defaults the class title to the topic', async () => {
+    getTopic.mockResolvedValue(topic);
+    const db = makeDb({
+      class_sections: (call) => {
+        if (call.op === 'insert') {
+          expect(call.payload).toMatchObject({
+            course_id: COURSE_ID,
+            topic_id: topic.id,
+            title: 'Fractions',
+          });
+          return {
+            data: {
+              ...sectionRow,
+              title: 'Fractions',
+              topic_id: topic.id,
+              courses: { ...courseEmbed, code: 'MATH', title: 'Mathematics' },
+            },
+          };
+        }
+        return { count: 0, data: null };
+      },
+      class_members: { data: null },
+    });
+    const created = await service(db).create(USER, { courseId: COURSE_ID, topicId: topic.id });
+    expect(created.title).toBe('Fractions');
+    expect(created.topic).toMatchObject({ id: topic.id, title: 'Fractions' });
+    expect(ensureEnrolment).toHaveBeenCalledWith(USER, COURSE_ID, expect.any(String), 1);
+  });
+
+  it('find-or-creates a topic from topicTitle', async () => {
+    findOrCreateTopic.mockResolvedValue(topic);
+    const db = makeDb({
+      class_sections: (call) => {
+        if (call.op === 'insert') {
+          expect(call.payload).toMatchObject({ topic_id: topic.id, title: 'Fractions' });
+          return {
+            data: {
+              ...sectionRow,
+              title: 'Fractions',
+              courses: { ...courseEmbed, code: 'MATH', title: 'Mathematics' },
+            },
+          };
+        }
+        return { count: 0, data: null };
+      },
+      class_members: { data: null },
+    });
+    await service(db).create(USER, { courseId: COURSE_ID, topicTitle: 'Fractions' });
+    expect(findOrCreateTopic).toHaveBeenCalledWith(COURSE_ID, 'Fractions', USER);
+  });
+
+  it('rejects a topic that belongs to another course', async () => {
+    getTopic.mockResolvedValue({ ...topic, courseId: 'ffffffff-ffff-4fff-8fff-ffffffffffff' });
+    await expect(
+      service(makeDb({})).create(USER, { courseId: COURSE_ID, topicId: topic.id })
+    ).rejects.toMatchObject({ message: 'That topic is not in this course' });
+  });
+});
+
 describe('classes router registration', () => {
   it('registers join/preview before /:classId so they are not captured as ids', () => {
     const { readFileSync } = require('fs');
@@ -269,6 +363,7 @@ describe('classes router registration', () => {
     const { join } = require('path');
     const server = readFileSync(join(__dirname, '../server.ts'), 'utf8') as string;
     expect(server).toMatch(/app\.use\('\/api\/v1\/classes'/);
+    expect(server).toMatch(/app\.use\('\/api\/v1\/schools'/);
     expect(server).toMatch(/app\.use\('\/api\/v1', institutionStaffRoutes\)/);
   });
 });
