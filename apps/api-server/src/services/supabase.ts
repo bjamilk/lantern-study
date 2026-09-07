@@ -547,6 +547,162 @@ async function assertSellerListingUpdateAllowed(
   if (refusal) throw listingStateError(refusal, 403);
 }
 
+/**
+ * A source-note title as clients may print it: a non-empty trimmed string, or
+ * null. Anything else (undefined, "", a number a bad write left in config)
+ * becomes null so no client ever interpolates it into "From undefined".
+ */
+export function normalizeSourceNoteTitle(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed.slice(0, 200) : null;
+}
+
+/**
+ * One row of GET /api/v1/tests, as every client reads it.
+ *
+ * Pure and exported because this shape is a contract, not an implementation
+ * detail: mobile's "Available Tests" list reads the FLAT fields and web reads
+ * the nested `session`, and a personal test that satisfies only one of them
+ * is invisible on the other side.
+ */
+export function mapTestListRow(session: any, lean: boolean): any {
+  const result = Array.isArray(session.test_results)
+    ? session.test_results[0]
+    : session.test_results;
+  const questions = Array.isArray(session.questions)
+    ? session.questions
+    : [];
+  const answers = coerceRawUserAnswers(session.user_answers, questions);
+  const answeredCount = Object.keys(answers).length;
+  const sessionStatus = session.status ||
+    (session.end_time ? "completed" : "in_progress");
+
+  // Fold per-answer timings into a sum and a count. Lean responses drop
+  // user_answers, so without these the dashboards cannot compute
+  // "Avg / question" or total study time and render a dash. Answers with
+  // no recorded time are excluded from both, so the client can divide
+  // them directly. Kept as sum+count rather than a pre-divided average so
+  // the client can weight correctly when it aggregates across tests.
+  let timeSpentSeconds = 0;
+  let questionsWithTime = 0;
+  for (const answer of Object.values(answers) as any[]) {
+    const spent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
+    if (typeof spent === "number" && Number.isFinite(spent)) {
+      timeSpentSeconds += spent;
+      questionsWithTime++;
+    }
+  }
+
+  if (
+    lean &&
+    (sessionStatus === "paused" || sessionStatus === "in_progress")
+  ) {
+    return {
+      id: session.id,
+      sessionKind: session.session_kind || "test",
+      status: sessionStatus,
+      title:
+        session.title ||
+        session.config?.groupName ||
+        (session.session_kind === "study" ? "Study session" : "Test"),
+      answeredCount,
+      totalQuestions: questions.length,
+      currentQuestionIndex: session.current_question_index || 0,
+      remainingTimeSeconds: session.remaining_time_seconds ?? null,
+      startTime: session.start_time || new Date().toISOString(),
+      updatedAt: session.updated_at || session.start_time || new Date().toISOString(),
+      pausedAt: session.paused_at ?? null,
+      groupId: session.config?.groupId ?? null,
+      sourceNoteId: session.config?.sourceNoteId ?? null,
+      sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
+    };
+  }
+
+  // A launchable test: unfinished and carrying questions — exactly what the
+  // mobile "Available Tests" tab lists.
+  const launchable = !session.end_time && questions.length > 0;
+
+  return {
+    id: session.id,
+    // --- Flat mirror: the "Available Tests" contract ---------------------
+    //
+    // The nested `session` below is what web reads. Mobile reads the FLAT row
+    // — `t.questions`, `t.config`, `t.end_time` — so every personal test was
+    // filtered out before it was ever drawn: its questions sat one level in,
+    // `questions.length` was 0, and a quiz saved from a note appeared nowhere
+    // while "No Tests Available" stayed on screen. Same data, one more shape.
+    //
+    // `questions` is mirrored ONLY for a launchable session; a page of
+    // completed history would otherwise carry every question twice.
+    config: session.config || {},
+    questions: lean || !launchable ? [] : questions,
+    title:
+      session.title ||
+      session.config?.name ||
+      session.config?.title ||
+      null,
+    status: sessionStatus,
+    /** What a client may DO with it, independent of the db status. */
+    availability: launchable
+      ? sessionStatus === "paused"
+        ? "paused"
+        : "available"
+      : session.end_time
+        ? "completed"
+        : "empty",
+    session_kind: session.session_kind || "test",
+    sessionKind: session.session_kind || "test",
+    questionCount: questions.length || session.config?.numberOfQuestions || 0,
+    /** Provenance for a quiz generated from a note (config.sourceNoteId). */
+    sourceNoteId: session.config?.sourceNoteId ?? null,
+    /**
+     * The note's own title, persisted into config at creation and backfilled
+     * on read when absent. The list prints "From <title>" under a note quiz,
+     * so a missing field rendered the literal "From undefined" on device
+     * (build 159). Always a string or null — never absent, never undefined.
+     */
+    sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
+    sourceJobId: session.config?.sourceJobId ?? null,
+    start_time: session.start_time ?? null,
+    end_time: session.end_time ?? null,
+    // test_sessions has no `created_at` column: `start_time` (DEFAULT NOW()
+    // on insert) is the row's creation date and what the list sorts by. Named
+    // `created_at` because that is the field shipped clients read.
+    created_at: session.start_time ?? session.updated_at ?? null,
+    updated_at: session.updated_at ?? null,
+    // ---------------------------------------------------------------
+    session: {
+      id: session.id,
+      config: session.config || {},
+      questions: lean ? [] : questions,
+      userAnswers: lean ? {} : answers,
+      currentQuestionIndex: session.current_question_index || 0,
+      startTime: session.start_time
+        ? new Date(session.start_time)
+        : new Date(),
+      endTime: session.end_time
+        ? new Date(session.end_time)
+        : undefined,
+      isOffline: session.is_offline || false,
+      sessionKind: session.session_kind || "test",
+      status: sessionStatus,
+      title: session.title || undefined,
+      updatedAt: session.updated_at || undefined,
+      pausedAt: session.paused_at || undefined,
+      remainingTime: session.remaining_time_seconds ?? undefined,
+    },
+    score: result?.score || 0,
+    totalQuestions:
+      result?.total_questions ||
+      questions.length ||
+      0,
+    correctAnswersCount: result?.correct_answers_count || 0,
+    timeSpentSeconds,
+    questionsWithTime,
+  };
+}
+
 export class SupabaseService {
   private supabase;
   private supabaseUrl: string;
@@ -6973,89 +7129,14 @@ export class SupabaseService {
 
         if (error) throw error;
 
-        const tests = (data || []).map((session: any) => {
-          const result = Array.isArray(session.test_results)
-            ? session.test_results[0]
-            : session.test_results;
-          const questions = Array.isArray(session.questions)
-            ? session.questions
-            : [];
-          const answers = coerceRawUserAnswers(session.user_answers, questions);
-          const answeredCount = Object.keys(answers).length;
-          const sessionStatus = session.status ||
-            (session.end_time ? "completed" : "in_progress");
+        const tests = (data || []).map((session: any) =>
+          mapTestListRow(session, lean),
+        );
 
-          // Fold per-answer timings into a sum and a count. Lean responses drop
-          // user_answers, so without these the dashboards cannot compute
-          // "Avg / question" or total study time and render a dash. Answers with
-          // no recorded time are excluded from both, so the client can divide
-          // them directly. Kept as sum+count rather than a pre-divided average so
-          // the client can weight correctly when it aggregates across tests.
-          let timeSpentSeconds = 0;
-          let questionsWithTime = 0;
-          for (const answer of Object.values(answers) as any[]) {
-            const spent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
-            if (typeof spent === "number" && Number.isFinite(spent)) {
-              timeSpentSeconds += spent;
-              questionsWithTime++;
-            }
-          }
-
-          if (
-            lean &&
-            (sessionStatus === "paused" || sessionStatus === "in_progress")
-          ) {
-            return {
-              id: session.id,
-              sessionKind: session.session_kind || "test",
-              status: sessionStatus,
-              title:
-                session.title ||
-                session.config?.groupName ||
-                (session.session_kind === "study" ? "Study session" : "Test"),
-              answeredCount,
-              totalQuestions: questions.length,
-              currentQuestionIndex: session.current_question_index || 0,
-              remainingTimeSeconds: session.remaining_time_seconds ?? null,
-              startTime: session.start_time || new Date().toISOString(),
-              updatedAt: session.updated_at || session.start_time || new Date().toISOString(),
-              pausedAt: session.paused_at ?? null,
-              groupId: session.config?.groupId,
-            };
-          }
-
-          return {
-            id: session.id,
-            session: {
-              id: session.id,
-              config: session.config || {},
-              questions: lean ? [] : questions,
-              userAnswers: lean ? {} : answers,
-              currentQuestionIndex: session.current_question_index || 0,
-              startTime: session.start_time
-                ? new Date(session.start_time)
-                : new Date(),
-              endTime: session.end_time
-                ? new Date(session.end_time)
-                : undefined,
-              isOffline: session.is_offline || false,
-              sessionKind: session.session_kind || "test",
-              status: sessionStatus,
-              title: session.title || undefined,
-              updatedAt: session.updated_at || undefined,
-              pausedAt: session.paused_at || undefined,
-              remainingTime: session.remaining_time_seconds ?? undefined,
-            },
-            score: result?.score || 0,
-            totalQuestions:
-              result?.total_questions ||
-              questions.length ||
-              0,
-            correctAnswersCount: result?.correct_answers_count || 0,
-            timeSpentSeconds,
-            questionsWithTime,
-          };
-        });
+        // Rows saved before the title was persisted at creation carry only
+        // the note id. One batched query per page fills them in, and the
+        // result is cached with the page, so this costs nothing on a hit.
+        await this.attachSourceNoteTitles(tests, userId);
 
         return {
           tests,
@@ -7182,6 +7263,20 @@ export class SupabaseService {
       courseId,
     });
 
+    const sourceNoteId =
+      typeof payload.sourceNoteId === "string" && payload.sourceNoteId
+        ? payload.sourceNoteId
+        : null;
+    // Resolve the note's title ONCE, here, so every later read is a plain
+    // config read. The client prints "From <title>" under a note quiz; without
+    // this the field was absent and the list rendered "From undefined".
+    // A client-supplied title is only a fallback, and only for a note the
+    // caller actually linked: it is never trusted over the note's own row.
+    const sourceNoteTitle = sourceNoteId
+      ? (await this.fetchNoteTitles([sourceNoteId], userId)).get(sourceNoteId) ??
+        normalizeSourceNoteTitle((payload.config as any)?.sourceNoteTitle)
+      : null;
+
     const config = {
       ...(payload.config && typeof payload.config === "object" ? payload.config : {}),
       title: payload.title,
@@ -7193,9 +7288,12 @@ export class SupabaseService {
       courseId,
       // Provenance lives in config, not a column: no migration is needed for
       // the note link, and the client reads it straight back off the session.
-      ...(payload.sourceNoteId ? { sourceNoteId: payload.sourceNoteId } : {}),
+      ...(sourceNoteId ? { sourceNoteId } : {}),
+      // Always written, so a client-supplied value can never outlive the
+      // resolved one (or survive on a test that links to no note at all).
+      sourceNoteTitle,
       ...(payload.sourceJobId ? { sourceJobId: payload.sourceJobId } : {}),
-      source: payload.sourceNoteId ? "note" : (payload.config as any)?.source || "personal",
+      source: sourceNoteId ? "note" : (payload.config as any)?.source || "personal",
     };
 
     const { data, error } = await writeWithTopicFallback(
@@ -7254,7 +7352,77 @@ export class SupabaseService {
       updatedAt: session.updated_at || undefined,
       pausedAt: session.paused_at || undefined,
       userId: session.user_id,
+      // Everything a launch needs without a second read: how many questions
+      // there are, and where the test came from. `sourceNoteId` is how a
+      // generated quiz links back to the note that produced it.
+      questionCount: questions.length || session.config?.numberOfQuestions || 0,
+      sourceNoteId: session.config?.sourceNoteId ?? null,
+      /** @see mapTestListRow — same contract: a string or null, never absent. */
+      sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
+      sourceJobId: session.config?.sourceJobId ?? null,
     };
+  }
+
+  /**
+   * The titles of `noteIds` this user owns, as an id → title map. One query,
+   * whatever the page size; ids with no readable note are simply absent.
+   * Never throws: a missing title degrades the "From <note>" line, it does
+   * not fail the test list.
+   */
+  private async fetchNoteTitles(
+    noteIds: string[],
+    userId: string,
+  ): Promise<Map<string, string>> {
+    const titles = new Map<string, string>();
+    const ids = Array.from(
+      new Set(noteIds.filter((id): id is string => typeof id === "string" && !!id)),
+    );
+    if (ids.length === 0 || !userId) return titles;
+    try {
+      const { data, error } = await this.supabase
+        .from("notes")
+        .select("id, title")
+        .eq("user_id", userId)
+        .in("id", ids);
+      if (error) throw error;
+      for (const note of (data || []) as any[]) {
+        const title = normalizeSourceNoteTitle(note?.title);
+        if (note?.id && title) titles.set(String(note.id), title);
+      }
+    } catch (err) {
+      logger.warn("Could not resolve source note titles", {
+        userId,
+        count: ids.length,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return titles;
+  }
+
+  /**
+   * Backfill `sourceNoteTitle` on mapped test rows written before the title
+   * was persisted at creation. One batched note query per page, and only for
+   * the rows that actually link to a note and lack a title.
+   */
+  async attachSourceNoteTitles<
+    T extends { sourceNoteId?: string | null; sourceNoteTitle?: string | null },
+  >(rows: T[], userId: string): Promise<T[]> {
+    const missing = rows.filter(
+      (row) =>
+        row &&
+        typeof row.sourceNoteId === "string" &&
+        !!row.sourceNoteId &&
+        !row.sourceNoteTitle,
+    );
+    if (missing.length === 0) return rows;
+    const titles = await this.fetchNoteTitles(
+      missing.map((row) => row.sourceNoteId as string),
+      userId,
+    );
+    for (const row of missing) {
+      row.sourceNoteTitle = titles.get(row.sourceNoteId as string) ?? null;
+    }
+    return rows;
   }
 
   async createTestDraft(

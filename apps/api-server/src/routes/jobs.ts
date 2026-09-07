@@ -33,10 +33,18 @@ router.get(
     // progress a student sees, resultRef says where the work landed, and
     // credit is the ledger. `errorMessage` is the flat string older shipped
     // builds read off `error`.
+    //
+    // `push` (what happened to the completion notification) is the owner's
+    // alone: it names their device registration and their notification
+    // preferences, so an admin reading someone else's job never sees it.
+    const isOwner = !!job.userId && job.userId === userId;
+    const { push, ...rest } = job as typeof job & { push?: unknown };
+
     res.json({
       success: true,
       data: {
-        ...job,
+        ...rest,
+        ...(isOwner && push ? { push } : {}),
         errorMessage: job.error?.message,
       },
     });

@@ -118,6 +118,47 @@ export interface JobResultRef {
   route?: string;
 }
 
+/**
+ * Why a terminal job's push never reached a device, when it did not.
+ *
+ * `claimed` is not a failure: another writer of the same terminal transition
+ * already sent it. The rest each name a real, fixable condition, which is the
+ * point — on device a quiz finished and no notification ever arrived, and the
+ * job record could not say whether the server had skipped, tried, or been
+ * rejected by Expo.
+ */
+export type JobPushSkipReason =
+  | 'disabled'
+  | 'no_owner'
+  | 'no_token'
+  | 'prefs_off'
+  | 'not_pushable'
+  | 'claimed'
+  | 'error';
+
+/** One Expo receipt line, as Expo returns it. */
+export interface JobPushTicket {
+  status: 'ok' | 'error';
+  id?: string;
+  message?: string;
+}
+
+/**
+ * What the server actually did about notifying this job's owner. Written onto
+ * the job record when it becomes terminal and served by GET /jobs/:id to the
+ * OWNER only, so "we told you" is checkable rather than assumed.
+ */
+export interface JobPushAudit {
+  attemptedAt: string;
+  skippedReason?: JobPushSkipReason;
+  /** How many devices the envelope went to (0 when nothing was sent). */
+  tokenCount?: number;
+  expoTickets?: JobPushTicket[];
+  /** The deep link the notification carries, so the client can verify routing. */
+  url?: string;
+  error?: string;
+}
+
 /** The honest credit ledger for this job. */
 export interface JobCredit {
   charged: number;
@@ -142,6 +183,8 @@ export interface JobRecordView {
   resultRef?: JobResultRef;
   error?: JobError;
   credit?: JobCredit;
+  /** Owner-only: what happened to this job's completion push. */
+  push?: JobPushAudit;
 }
 
 /** A job stuck in a non-terminal stage for this long is reported timed out. */

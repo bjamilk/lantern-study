@@ -11,16 +11,24 @@
  * It selects its own job out of the store, so a screen only has to render
  * `<JobProgressSheet />` once — there is nothing to wire per call site.
  */
-import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Modal, PanResponder, Pressable, Text, View } from 'react-native';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { Animated, Linking, Modal, PanResponder, Pressable, Text, View } from 'react-native';
 import { featureAccentsDark, featureAccentsLight, type FeatureKey } from '@lantern/shared/design';
 import { useTheme } from '../../theme';
 import { AppIcon } from '../ui/AppIcon';
 import { useJobsStore } from '../../stores/jobsStore';
 import { JOB_TIME_BUDGET_MS, findJob, type JobKind } from '../../stores/jobsCore';
-import { jobActionLabel, jobSheetState, type JobSheetAction } from './jobSheetModel';
+import {
+  jobActionLabel,
+  jobSheetState,
+  shouldClaimSheetDrag,
+  shouldDismissSheet,
+  type JobSheetAction,
+} from './jobSheetModel';
 import { openJobResult } from './openJobResult';
 import { retrySaveJob } from '../../services/jobArtifacts';
+import { areJobNotificationsReady, enableJobNotifications } from '../../services/pushNotifications';
+import { syncService } from '../../services/syncService';
 
 /** Which feature accent a generation belongs to. */
 export const featureKeyForJob = (kind: JobKind): FeatureKey => {
@@ -38,8 +46,8 @@ export const featureKeyForJob = (kind: JobKind): FeatureKey => {
   }
 };
 
-/** How far the sheet has to be dragged down before it counts as "swiped away". */
-const DISMISS_DISTANCE = 60;
+/** How often an open sheet re-reads the server record of its job. */
+const SHEET_REFRESH_MS = 5_000;
 
 /**
  * Nothing to wire.
@@ -52,12 +60,70 @@ export function JobProgressSheet() {
   const { colors, isDark } = useTheme();
   const sheetJobId = useJobsStore((s) => s.sheetJobId);
   const jobs = useJobsStore((s) => s.jobs);
-  const stopWatching = useJobsStore((s) => s.stopWatching);
   const dismissJob = useJobsStore((s) => s.dismissJob);
   const retryGenerate = useJobsStore((s) => s.retryGenerate);
+  const refreshActiveJobs = useJobsStore((s) => s.refreshActiveJobs);
 
   const job = sheetJobId ? findJob(jobs, sheetJobId) : undefined;
   const [now, setNow] = useState(() => Date.now());
+  const [offline, setOffline] = useState(false);
+  const [notificationsOff, setNotificationsOff] = useState(false);
+
+  /** Closing is unconditional: the sheet reports on work, it never holds it. */
+  const close = useCallback(() => {
+    const id = useJobsStore.getState().sheetJobId;
+    if (id) useJobsStore.getState().stopWatching(id);
+    // Even if the job vanished from the store between render and press, the
+    // sheet goes away — the device run found one that only the hardware Back
+    // key would close (F6).
+    useJobsStore.getState().closeSheet();
+  }, []);
+
+  // The sheet is opened by a student who wants to know where the work got to,
+  // so it asks the server rather than showing whatever was last cached — and
+  // keeps asking while it is on screen. The in-process runner can be stuck on
+  // a request the OS killed in the background; the sheet must not be stuck
+  // with it, which is what left one sitting at "Saving your quiz" for four
+  // minutes after the server had saved it (F6).
+  useEffect(() => {
+    if (!sheetJobId) return;
+    void refreshActiveJobs();
+    const timer = setInterval(() => void refreshActiveJobs(), SHEET_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [sheetJobId, refreshActiveJobs]);
+
+  // Whether the bar is allowed to say "Waiting for connection…" rather than
+  // "Still working…". Neither invents movement.
+  useEffect(() => {
+    if (!sheetJobId) return;
+    let alive = true;
+    const apply = (isOnline: boolean) => {
+      if (alive) setOffline(!isOnline);
+    };
+    try {
+      apply(syncService.getStatus().isOnline);
+    } catch {
+      // Sync not started yet; assume online until told otherwise.
+    }
+    const unsubscribe = syncService.onStatusChange((isOnline) => apply(isOnline));
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+  }, [sheetJobId]);
+
+  // Can this device be told when the job lands? If not, the sheet stops
+  // promising it will be.
+  useEffect(() => {
+    if (!sheetJobId) return;
+    let alive = true;
+    void areJobNotificationsReady().then((ready) => {
+      if (alive) setNotificationsOff(!ready);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sheetJobId]);
   // "Keep waiting" pushes the budget out rather than closing the sheet — the
   // prompt would otherwise reappear on the next tick.
   const [budgetMs, setBudgetMs] = useState(JOB_TIME_BUDGET_MS);
@@ -79,16 +145,34 @@ export function JobProgressSheet() {
 
   const panResponder = useRef(
     PanResponder.create({
-      onMoveShouldSetPanResponder: (_e, gesture) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+      // A tap must still reach the buttons, so the sheet never claims a touch
+      // on contact — only a movement.
+      onStartShouldSetPanResponderCapture: () => false,
+      // CAPTURE, not the bubbling form. Most of this sheet is Pressables, and
+      // a Pressable becomes the responder the moment a finger lands on it: the
+      // parent is then never asked, which is why the sheet could not be swiped
+      // away at all once the drag began on a button (D6). The capture handler
+      // is consulted on every move regardless of who holds the responder, and
+      // the slop in shouldClaimSheetDrag is what keeps taps working.
+      onMoveShouldSetPanResponderCapture: (_e, gesture) =>
+        shouldClaimSheetDrag(gesture.dy, gesture.dx),
+      onMoveShouldSetPanResponder: (_e, gesture) =>
+        shouldClaimSheetDrag(gesture.dy, gesture.dx),
       onPanResponderMove: (_e, gesture) => {
         if (gesture.dy > 0) translateY.setValue(gesture.dy);
       },
       onPanResponderRelease: (_e, gesture) => {
-        if (gesture.dy > DISMISS_DISTANCE) {
+        if (shouldDismissSheet(gesture.dy)) {
           const id = useJobsStore.getState().sheetJobId;
           if (id) useJobsStore.getState().stopWatching(id);
+          useJobsStore.getState().closeSheet();
           return;
         }
+        Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+      },
+      // A gesture the OS takes away (the Modal's own back handling, a system
+      // sheet) leaves the card wherever it was dragged to; put it back.
+      onPanResponderTerminate: () => {
         Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
       },
     })
@@ -96,16 +180,26 @@ export function JobProgressSheet() {
 
   if (!job) return null;
 
-  const state = jobSheetState(job, now, budgetMs);
+  const state = jobSheetState(job, now, budgetMs, { offline, notificationsOff });
   const accent = (isDark ? featureAccentsDark : featureAccentsLight)[featureKeyForJob(job.kind)];
 
   const runAction = (action: JobSheetAction) => {
     switch (action) {
       case 'stop-watching':
-        stopWatching(job.id);
+        close();
         break;
       case 'keep-waiting':
         setBudgetMs((ms) => ms + JOB_TIME_BUDGET_MS);
+        // Still waiting means still asking: the budget moves, and so does the
+        // question to the server.
+        void refreshActiveJobs();
+        break;
+      case 'enable-notifications':
+        void enableJobNotifications().then((enabled) => {
+          setNotificationsOff(!enabled);
+          // A hard refusal can only be undone in the system settings.
+          if (!enabled) void Linking.openSettings().catch(() => undefined);
+        });
         break;
       case 'retry':
         retryGenerate(job.id);
@@ -132,13 +226,13 @@ export function JobProgressSheet() {
     state.tone === 'failed' ? colors.error : state.tone === 'done' ? colors.success : accent.ink;
 
   return (
-    <Modal visible transparent animationType="slide" onRequestClose={() => stopWatching(job.id)}>
+    <Modal visible transparent animationType="slide" onRequestClose={close}>
       <View className="flex-1 justify-end">
         {/* Tapping outside stops WATCHING, never the work. */}
         <Pressable
           className="flex-1"
           accessibilityLabel="Stop watching this generation"
-          onPress={() => stopWatching(job.id)}
+          onPress={close}
         />
         <Animated.View
           {...panResponder.panHandlers}
@@ -236,7 +330,7 @@ export function JobProgressSheet() {
                     className="text-body font-semibold"
                     style={{ color: primary ? '#ffffff' : colors.text }}
                   >
-                    {jobActionLabel(action)}
+                    {jobActionLabel(action, { notificationsOff })}
                   </Text>
                 </Pressable>
               );

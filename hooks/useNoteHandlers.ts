@@ -70,8 +70,10 @@ export function useNoteHandlers(currentUserId?: string) {
     [loadNote, navigateTo, loadComments, setDailyQuiz]
   );
 
-  const handleCreateNote = useCallback(async () => {
-    const note = await createNote({ title: 'Untitled Note', body: '' });
+  /** `title` is for the doors that create a note FOR something (the lecture
+   *  recorder), so the note is recognisable in the list a week later. */
+  const handleCreateNote = useCallback(async (title?: string) => {
+    const note = await createNote({ title: title || 'Untitled Note', body: '' });
     setSelectedNote(note);
     navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
     trackQuestProgress('create_note');

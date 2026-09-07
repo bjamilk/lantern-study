@@ -2251,7 +2251,18 @@ router.post('/:noteId/quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRa
     'notes.ai.quiz',
     // surface/courseId ride on the payload so the queued path can emit the
     // same learning event from the worker.
-    { content: sliced, studyGoal, count, noteId: note.id, courseId: note.courseId ?? null, surface },
+    // `sourceTitle` is what the completion push is named after ("5-question
+    // quiz · SDOH"). Without it every quiz notification read "Your quiz",
+    // because this payload carried no `title` for enqueue to pick up.
+    {
+      content: sliced,
+      studyGoal,
+      count,
+      noteId: note.id,
+      courseId: note.courseId ?? null,
+      surface,
+      sourceTitle: note.title || undefined,
+    },
     userId,
     async () => {
       const result = await generateDailyQuiz(sliced, { studyGoal, count });
@@ -2326,7 +2337,16 @@ router.post('/:noteId/generate-flashcards', requirePermission('ai'), aiPostBurst
     'notes.ai.flashcards',
     // noteId/courseId/surface ride on the payload so the queued path can emit
     // the same learning event from the worker.
-    { content: sliced, count, style, noteId: note.id, courseId: note.courseId ?? null, surface },
+    {
+      content: sliced,
+      count,
+      style,
+      noteId: note.id,
+      courseId: note.courseId ?? null,
+      surface,
+      // Names the completion push after the note it came from.
+      sourceTitle: note.title || undefined,
+    },
     userId,
     async () => {
       const generated = await generateFlashcardsFromNotes(sliced, { count, style });

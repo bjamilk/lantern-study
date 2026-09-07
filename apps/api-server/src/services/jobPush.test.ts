@@ -3,11 +3,13 @@ import {
   isExpoPushToken,
   isJobPushEnabled,
   notifyJobTerminal,
+  parseExpoTickets,
   sendExpoPush,
   toExpoEnvelope,
   type ExpoPushEnvelope,
   type JobPushRecipient,
 } from "./jobPush";
+import type { JobPushAudit } from "@lantern/shared/jobs/jobState";
 
 const RECIPIENT: JobPushRecipient = {
   tokens: ["ExponentPushToken[abc]"],
@@ -235,5 +237,152 @@ describe("notifyJobTerminal", () => {
     await expect(
       notifyJobTerminal({ id: "j", userId: "u", kind: "flashcards", stage: "done" }, brokenLookup.deps),
     ).resolves.toBe("error");
+  });
+});
+
+describe("parseExpoTickets", () => {
+  it("reads Expo's per-message verdicts", () => {
+    expect(
+      parseExpoTickets({
+        data: [
+          { status: "ok", id: "ticket-1" },
+          { status: "error", message: "DeviceNotRegistered" },
+        ],
+      }),
+    ).toEqual([
+      { status: "ok", id: "ticket-1" },
+      { status: "error", message: "DeviceNotRegistered" },
+    ]);
+  });
+
+  it("never returns a silent error", () => {
+    // An error line with no message would look like a success in the audit.
+    expect(parseExpoTickets({ data: [{ status: "error" }] })).toEqual([
+      { status: "error", message: "Expo returned an error with no message." },
+    ]);
+  });
+
+  it("shrugs at a body it does not recognise", () => {
+    expect(parseExpoTickets(null)).toEqual([]);
+    expect(parseExpoTickets({ data: "nope" })).toEqual([]);
+  });
+});
+
+/**
+ * On device a quiz finished and NO notification ever arrived — and nothing
+ * anywhere could say whether the server had skipped the push, sent it, or been
+ * refused by Expo. Every exit now writes that answer onto the job record.
+ */
+describe("notifyJobTerminal audit", () => {
+  function auditDeps(overrides: Partial<Parameters<typeof notifyJobTerminal>[1]> = {}) {
+    const written: Array<{ jobId: string; push: JobPushAudit }> = [];
+    const base = deps(overrides);
+    return {
+      written,
+      deps: {
+        ...base.deps,
+        recordPush: jest.fn(async (jobId: string, push: JobPushAudit) => {
+          written.push({ jobId, push });
+        }),
+        now: () => new Date("2026-09-05T10:00:00.000Z"),
+      },
+      sent: base.sent,
+    };
+  }
+
+  it("records the attempt, the device count, the link and Expo's tickets", async () => {
+    const { deps: d, written } = auditDeps({
+      send: jest.fn(async () => ({
+        delivered: 1,
+        tickets: [{ status: "ok" as const, id: "ticket-1" }],
+      })),
+    });
+    await expect(
+      notifyJobTerminal(
+        {
+          id: "job-q",
+          userId: "u",
+          kind: "quiz",
+          stage: "done",
+          resultRef: { type: "test", id: "test-9" },
+        },
+        d,
+      ),
+    ).resolves.toBe("sent");
+
+    expect(written).toHaveLength(1);
+    expect(written[0].jobId).toBe("job-q");
+    expect(written[0].push).toEqual({
+      attemptedAt: "2026-09-05T10:00:00.000Z",
+      url: "lanternstudy://test/test-9",
+      tokenCount: 1,
+      expoTickets: [{ status: "ok", id: "ticket-1" }],
+    });
+    // A sent push has no skip reason — the tickets are the verdict.
+    expect(written[0].push.skippedReason).toBeUndefined();
+  });
+
+  it("names the reason for every push that never left", async () => {
+    const cases: Array<[Partial<Parameters<typeof notifyJobTerminal>[1]>, unknown, string]> = [
+      [{ getRecipient: jest.fn(async () => ({ tokens: [], settings: {} })) }, {}, "no_token"],
+      [
+        {
+          getRecipient: jest.fn(async () => ({
+            tokens: ["ExponentPushToken[abc]"],
+            settings: { notifications: { pushEnabled: false } },
+          })),
+        },
+        {},
+        "prefs_off",
+      ],
+      [{ claim: jest.fn(async () => false) }, {}, "claimed"],
+      [{}, { kind: "tutor" }, "not_pushable"],
+    ];
+
+    for (const [overrides, jobPatch, expected] of cases) {
+      const { deps: d, written } = auditDeps(overrides);
+      await notifyJobTerminal(
+        { id: "j", userId: "u", kind: "flashcards", stage: "done", ...(jobPatch as object) },
+        d,
+      );
+      expect(written[0].push.skippedReason).toBe(expected);
+    }
+  });
+
+  it("records a job with no owner, and the kill switch", async () => {
+    const noOwner = auditDeps();
+    await notifyJobTerminal({ id: "j", kind: "flashcards", stage: "done" }, noOwner.deps);
+    expect(noOwner.written[0].push.skippedReason).toBe("no_owner");
+
+    process.env.JOB_PUSH_ENABLED = "false";
+    const disabled = auditDeps();
+    await notifyJobTerminal({ id: "j", userId: "u", kind: "flashcards", stage: "done" }, disabled.deps);
+    expect(disabled.written[0].push.skippedReason).toBe("disabled");
+    delete process.env.JOB_PUSH_ENABLED;
+  });
+
+  it("keeps the thrown message, and a failed audit write never fails the push", async () => {
+    const { deps: d, written } = auditDeps({
+      send: jest.fn(async () => {
+        throw new Error("expo exploded");
+      }),
+    });
+    await expect(
+      notifyJobTerminal({ id: "j", userId: "u", kind: "flashcards", stage: "done" }, d),
+    ).resolves.toBe("error");
+    expect(written[0].push).toMatchObject({ skippedReason: "error", error: "expo exploded" });
+
+    const broken = deps();
+    await expect(
+      notifyJobTerminal(
+        { id: "j", userId: "u", kind: "flashcards", stage: "done" },
+        {
+          ...broken.deps,
+          recordPush: async () => {
+            throw new Error("redis down");
+          },
+        },
+      ),
+    ).resolves.toBe("sent");
   });
 });

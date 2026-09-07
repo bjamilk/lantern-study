@@ -9,6 +9,10 @@ import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { buildMeSections, type MeRow, type MeRowId } from './meRows';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { FeatureDisc } from '../../components/ui';
+import { useAIUsage } from '../../components/AIUsageBadge';
+import { getAIResetLabel } from '@lantern/shared/utils';
+import { typeScale, tabularNums } from '../../design/typeScale';
 
 interface Props {
   navigation: {
@@ -39,6 +43,9 @@ export function MeScreen({ navigation }: Props) {
   const signOut = useAuthStore((s) => s.signOut);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const { lowDataMode, toggleLowDataMode } = useLowDataMode();
+  // The credits row is a READOUT: the same figures the top bar's sparkle
+  // carries, printed where a student goes looking for what is theirs.
+  const aiUsage = useAIUsage();
 
   const darkMode = theme === 'dark';
 
@@ -50,6 +57,9 @@ export function MeScreen({ navigation }: Props) {
   const onRow = useCallback(
     (id: MeRowId) => {
       switch (id) {
+        case 'credits':
+          // A readout, not a door. Nothing to navigate to.
+          return;
         case 'academic':
           navigateFromRoot('AcademicSettings');
           return;
@@ -82,35 +92,77 @@ export function MeScreen({ navigation }: Props) {
 
   const sections = buildMeSections({ darkMode, lowDataMode });
 
+  const creditsHint =
+    aiUsage.limit > 0
+      ? getAIResetLabel(aiUsage.resetsAt, { used: aiUsage.used, limit: aiUsage.limit })
+      : '';
+
   const renderRow = (row: MeRow) => {
     const destructive = row.kind === 'destructive';
     const isSwitch = row.kind === 'switch';
+    const isReadout = row.kind === 'readout';
+    // A readout is not pressable, so it must not be a Pressable: RN would
+    // still announce it as a button and a reader would tap it expecting a
+    // screen. `View` is the honest element.
+    const Row = isReadout ? View : Pressable;
+    const hint = row.id === 'credits' ? creditsHint || row.hint : row.hint;
     return (
-      <Pressable
+      <Row
         key={row.id}
-        onPress={() => onRow(row.id)}
+        {...(isReadout
+          ? // A plain View speaks its accessibilityLabel only when it is an
+            // accessible element; without this the counter (hidden below) is
+            // silent to a screen reader.
+            { accessible: true }
+          : {
+              onPress: () => onRow(row.id),
+              accessibilityRole: isSwitch ? ('switch' as const) : ('button' as const),
+              accessibilityState: isSwitch ? { checked: row.value === true } : undefined,
+            })}
         style={{ minHeight: ROW_MIN_HEIGHT }}
-        accessibilityRole={isSwitch ? 'switch' : 'button'}
-        accessibilityLabel={row.accessibilityLabel}
-        accessibilityState={isSwitch ? { checked: row.value === true } : undefined}
-        className="flex-row items-center gap-3 px-4 py-3 active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
+        accessibilityLabel={
+          isReadout && row.id === 'credits' && aiUsage.limit > 0
+            ? `${row.accessibilityLabel}, ${aiUsage.remaining} of ${aiUsage.limit} left${creditsHint ? `. ${creditsHint}` : ''}`
+            : row.accessibilityLabel
+        }
+        className={`flex-row items-center gap-3 px-4 py-3 ${
+          isReadout ? '' : 'active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary'
+        }`}
       >
-        <AppIcon
-          name={row.icon}
-          size={22}
-          color={destructive ? colors.error : colors.primary}
-        />
+        {/* Neutral everywhere except the two rows §5.7 accents: Downloads on
+            amber, Credits on indigo. Everything else is a plain glyph in the
+            secondary ink — the whole row list used to be primary indigo, which
+            made nine equally loud rows and so highlighted nothing. */}
+        {row.feature ? (
+          <FeatureDisc feature={row.feature} icon={row.icon} size={32} />
+        ) : (
+          <View className="w-8 items-center">
+            <AppIcon
+              name={row.icon}
+              size={22}
+              color={destructive ? colors.error : colors.textSecondary}
+            />
+          </View>
+        )}
         <View className="flex-1 min-w-0">
           <Text
             className={`text-body font-medium ${destructive ? 'text-red-500' : 'text-lantern-text'}`}
           >
             {row.label}
           </Text>
-          {row.hint ? (
-            <Text className="text-caption text-lantern-text-secondary mt-0.5">{row.hint}</Text>
+          {hint ? (
+            <Text className="text-caption text-lantern-text-secondary mt-0.5">{hint}</Text>
           ) : null}
         </View>
-        {isSwitch ? (
+        {isReadout ? (
+          // Tabular numerals so the counter does not jitter as it ticks down.
+          <Text
+            style={[typeScale.body, tabularNums, { color: colors.text, fontWeight: '700' }]}
+            importantForAccessibility="no"
+          >
+            {aiUsage.limit > 0 ? `${aiUsage.remaining}/${aiUsage.limit}` : '—'}
+          </Text>
+        ) : isSwitch ? (
           <Switch
             value={row.value === true}
             onValueChange={() => onRow(row.id)}
@@ -128,7 +180,7 @@ export function MeScreen({ navigation }: Props) {
         ) : destructive ? null : (
           <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
         )}
-      </Pressable>
+      </Row>
     );
   };
 

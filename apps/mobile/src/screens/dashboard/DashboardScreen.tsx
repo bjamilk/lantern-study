@@ -14,8 +14,6 @@ import {
 
   View,
 
-  useWindowDimensions,
-
 } from 'react-native';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -50,7 +48,7 @@ import { KeyboardAwareScrollView, useScreenBottomPadding } from '../../component
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTestStore } from '../../stores/testStore';
 
-import { Card, Button } from '../../components/ui';
+import { Card, Button, FeatureRow, FeatureTile } from '../../components/ui';
 
 import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard';
 
@@ -100,6 +98,9 @@ import { AppIcon, isAppIconName } from '../../components/ui/AppIcon';
 
 
 import { toTab } from '../../navigation/nestedTab';
+import { recorderDoorPrompt, shouldCreateLectureNote } from '../study/recorderDoor';
+import { confirmSheet } from '../../stores/confirmStore';
+import { tabularNums } from '../../design/typeScale';
 
 type Props = CompositeScreenProps<
 
@@ -192,8 +193,6 @@ export function DashboardScreen({ navigation }: Props) {
   // system inset, not tab-bar clearance.
   const sheetPadding = useScreenBottomPadding({ bottom: 'safe' });
   const { onScroll: chromeOnScroll } = useChrome();
-  const { width: windowWidth } = useWindowDimensions();
-  const heroQuestsSideBySide = windowWidth >= 768;
 
   const user = useAuthStore(s => s.user);
   const profileName = useAuthStore(s => s.profileName);
@@ -209,7 +208,7 @@ export function DashboardScreen({ navigation }: Props) {
   const budget = useBudgetStore(s => s.budget);
   const transactions = useBudgetStore(s => s.transactions);
 
-  const { notes, loadNotes } = useNotesStore();
+  const { notes, loadNotes, createNote } = useNotesStore();
 
   const { stats, leanTestResults, selectedPeriod, isLoading: statsLoading, error: statsError, fetchStats, setSelectedPeriod } = useStatsStore();
   /**
@@ -280,6 +279,7 @@ export function DashboardScreen({ navigation }: Props) {
 
   const [groupPickerOpen, setGroupPickerOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const [openingRecorder, setOpeningRecorder] = useState(false);
 
   const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [recentSort, setRecentSort] = useState<'newest' | 'oldest' | 'highestScore'>('newest');
@@ -630,6 +630,45 @@ export function DashboardScreen({ navigation }: Props) {
 
   const parent = navigation.getParent();
 
+  /**
+   * The Record door. Recording has no screen of its own — a lecture is
+   * recorded INTO a note — so this lands on the editor with its mic in reach.
+   *
+   * It ASKS first. Creating the note on the tap itself meant every mis-tap and
+   * every curious first tap left an empty "Lecture — 6 Sep" in the library
+   * (D4); nothing is written until the student says yes, and when they do the
+   * editor opens with the recorder already running, so the note that lands has
+   * a recording in it. The prompt is planned in recorderDoor.ts, where it is
+   * unit-tested.
+   */
+  const openRecorder = async () => {
+    if (openingRecorder) return;
+    // Held for the whole flow, prompt included: a second tap while the sheet
+    // is up would otherwise stack two prompts and create two notes.
+    setOpeningRecorder(true);
+    try {
+      const prompt = recorderDoorPrompt();
+      const confirmed = await confirmSheet({
+        title: prompt.title,
+        message: prompt.message,
+        confirmLabel: prompt.confirmLabel,
+        cancelLabel: prompt.cancelLabel,
+      });
+      if (!shouldCreateLectureNote(confirmed)) return;
+      const note = await createNote({ title: prompt.noteTitle, body: '' });
+      parent?.navigate(
+        'StudyTab',
+        toTab('NoteEditor', { noteId: note.id, startRecording: true })
+      );
+    } catch {
+      useToastStore
+        .getState()
+        .showToast('Could not start a lecture note. Check your connection and try again.', 'error');
+    } finally {
+      setOpeningRecorder(false);
+    }
+  };
+
   const { isDark, colors } = useTheme();
 
   const studyActivityStreak = useMemo(
@@ -756,12 +795,25 @@ export function DashboardScreen({ navigation }: Props) {
         contentContainerStyle={{ paddingBottom: tabBarClearance, paddingHorizontal: 16 }}
         onScroll={chromeOnScroll}
         scrollEventThrottle={16}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+        refreshControl={
+          /* Themed, not platform-default: the stock spinner is white on both
+             platforms, which vanished into the dark surface and dragged a
+             white puck across the greeting (device pass on build 159, D8).
+             `tintColor` is iOS, `colors`/`progressBackgroundColor` Android. */
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.primaryText}
+            colors={[colors.primaryText]}
+            progressBackgroundColor={colors.surface}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
 
-        <View className={heroQuestsSideBySide ? 'flex-row gap-3 mb-4 items-stretch' : undefined}>
-        <View className={heroQuestsSideBySide ? 'flex-1' : undefined}>
+        {/* CARD 1 — the greeting. Neutral, one amber chip, no button of its
+            own: the doors below are the action, and a hero CTA plus a Review
+            tile was the same tap offered twice. */}
         <DashboardHeroCard
           userName={displayName}
           streak={streak}
@@ -776,31 +828,53 @@ export function DashboardScreen({ navigation }: Props) {
           progressNote={
             progress.mode === 'stale' ? lastSyncedLabel(progress.syncedAt) : undefined
           }
-          className={heroQuestsSideBySide ? 'mb-0 h-full' : undefined}
-          onPrimaryAction={() => {
-            if (dueCount > 0) {
-              parent?.navigate('StudyTab', toTab('FlashcardsList'));
-            } else {
-              setImportOpen(true);
-            }
-          }}
-          primaryActionLabel={
-            dueCount > 0
-              ? `Review ${dueCount} due card${dueCount !== 1 ? 's' : ''}`
-              : 'Import & study'
-          }
         />
+
+        {/* CARD 2 — the screen's ONE tint panel, in the tests family's sky.
+            Spec §5.7: the single coloured thing above the fold answers "am I
+            ready", and it keeps its honest empty and failed states. */}
+        <CourseReadinessCard />
+
+        {/* The four doors. Review is lime because it IS flashcards; the three
+            siblings each carry their own feature hue, which is four hues on
+            the screen and none of them repeated. */}
+        <View className="flex-row gap-3 mb-3">
+          <FeatureTile
+            feature="flashcards"
+            icon="layers"
+            title={dueCount > 0 ? 'Review' : 'Flashcards'}
+            subtitle={dueCount > 0 ? 'Cards ready now' : 'Nothing due right now'}
+            count={dueCount}
+            countLabel={`${dueCount} due`}
+            onPress={() => parent?.navigate('StudyTab', toTab('FlashcardsList'))}
+            testID="home-tile-review"
+          />
+          <FeatureTile
+            feature="notes"
+            icon="cloud-upload"
+            title="Import"
+            subtitle="Paste material, get cards"
+            onPress={() => setImportOpen(true)}
+            testID="home-tile-import"
+          />
         </View>
-        <View className={heroQuestsSideBySide ? 'flex-1' : undefined}>
-        <DailyQuestsWidget
-          quests={quests}
-          streak={streak}
-          streakFreezes={streakFreezes}
-          onPurchaseFreeze={() => void handlePurchaseFreeze()}
-          purchasingFreeze={purchasingFreeze}
-          className={heroQuestsSideBySide ? 'mb-0 h-full' : undefined}
-        />
-        </View>
+        <View className="flex-row gap-3 mb-4">
+          <FeatureTile
+            feature="recording"
+            icon="mic"
+            title="Record"
+            subtitle="Capture a lecture"
+            onPress={() => void openRecorder()}
+            testID="home-tile-record"
+          />
+          <FeatureTile
+            feature="tests"
+            icon="clipboard"
+            title="Test"
+            subtitle="Practise under time"
+            onPress={() => parent?.navigate('StudyTab', toTab('TestsList'))}
+            testID="home-tile-test"
+          />
         </View>
 
         <GettingStartedChecklist
@@ -829,30 +903,42 @@ export function DashboardScreen({ navigation }: Props) {
         <InFlightJobsCard />
 
         {pausedSessions.length > 0 ? (
-          <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">
-            <Text className="font-semibold text-amber-900 dark:text-amber-100 mb-2">
-              Saved sessions ({pausedSessions.length})
+          // A NEUTRAL card. The whole thing used to be an amber panel, which
+          // spent a saturated state colour on a list of ordinary work in
+          // progress. The hue that matters is per-ROW — sky for a paused test,
+          // lime for a paused study run — and it is carried by the disc.
+          <Card className="mb-4">
+            <Text className="text-caption font-semibold text-lantern-text-secondary mb-1">
+              Saved sessions
             </Text>
-            {pausedSessions.map((session) => (
+            {pausedSessions.map((session, index) => (
               <View
                 key={session.id}
-                className="flex-row items-center justify-between gap-2 py-2 border-t border-amber-200/60 dark:border-amber-800/60"
+                className={index > 0 ? 'border-t border-lantern-border' : undefined}
               >
-                <View className="flex-1 min-w-0">
-                  <Text className="font-medium text-amber-900 dark:text-amber-100" numberOfLines={1}>
-                    {session.title}
-                  </Text>
-                  <Text className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
-                    {session.sessionKind === 'study' ? 'Study' : 'Test'} · {session.answeredCount}/
-                    {session.totalQuestions} answered
-                  </Text>
-                </View>
-                <Button size="sm" variant="secondary" onPress={() => void abandonPausedSession(session.id)}>
-                  Discard
-                </Button>
-                <Button size="sm" onPress={() => void handleResumePaused(session.id)}>
-                  Resume
-                </Button>
+                <FeatureRow
+                  feature={session.sessionKind === 'study' ? 'flashcards' : 'tests'}
+                  icon={session.sessionKind === 'study' ? 'layers' : 'clipboard'}
+                  title={session.title}
+                  subtitle={`${session.sessionKind === 'study' ? 'Study' : 'Test'} · ${session.answeredCount} of ${session.totalQuestions} answered`}
+                  onPress={() => void handleResumePaused(session.id)}
+                  accessibilityLabel={`Resume ${session.title}, ${session.answeredCount} of ${session.totalQuestions} answered`}
+                  right={
+                    <View className="flex-row items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onPress={() => void abandonPausedSession(session.id)}
+                        accessibilityLabel={`Discard ${session.title}`}
+                      >
+                        Discard
+                      </Button>
+                      <Button size="sm" onPress={() => void handleResumePaused(session.id)}>
+                        Resume
+                      </Button>
+                    </View>
+                  }
+                />
               </View>
             ))}
           </Card>
@@ -998,7 +1084,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-3">
 
-            <Text className="text-2xl font-bold text-lantern-primary-text">{shownStats?.totalTestsTaken ?? '—'}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary-text" style={tabularNums}>{shownStats?.totalTestsTaken ?? '—'}</Text>
 
             <Text className="text-xs text-lantern-text-secondary mt-1">Tests taken</Text>
 
@@ -1006,7 +1092,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-3">
 
-            <Text className="text-2xl font-bold text-lantern-accent">
+            <Text className="text-2xl font-bold text-lantern-accent" style={tabularNums}>
 
               {shownStats?.averageTimePerQuestion ? `${shownStats.averageTimePerQuestion}s` : '—'}
 
@@ -1022,7 +1108,7 @@ export function DashboardScreen({ navigation }: Props) {
 
               <AppIcon name="flame" size={16} color="#f97316" />
 
-              <Text className="text-2xl font-bold text-emerald-600">{progressKnown && !progressPending ? streak : '—'}</Text>
+              <Text className="text-2xl font-bold text-emerald-600" style={tabularNums}>{progressKnown && !progressPending ? streak : '—'}</Text>
 
             </View>
 
@@ -1037,7 +1123,16 @@ export function DashboardScreen({ navigation }: Props) {
 
         <AIStudyCoachCard stats={shownStats} streak={streak} />
 
-        <CourseReadinessCard />
+        {/* Quests, the heatmap and badges are the LOOKING-BACK half of Home,
+            so they sit below the doors, the readiness panel and the stats —
+            never above the one thing a student came here to do. */}
+        <DailyQuestsWidget
+          quests={quests}
+          streak={streak}
+          streakFreezes={streakFreezes}
+          onPurchaseFreeze={() => void handlePurchaseFreeze()}
+          purchasingFreeze={purchasingFreeze}
+        />
 
 
 
@@ -1249,7 +1344,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-4">
 
-            <Text className="text-2xl font-bold text-lantern-primary-text">{dueCount}</Text>
+            <Text className="text-2xl font-bold text-lantern-primary-text" style={tabularNums}>{dueCount}</Text>
 
             <Text className="text-xs text-lantern-text-secondary mt-1">Due cards</Text>
 
@@ -1257,7 +1352,7 @@ export function DashboardScreen({ navigation }: Props) {
 
           <Card className="flex-1 items-center py-4">
 
-            <Text className="text-2xl font-bold text-lantern-accent">{groups.length}</Text>
+            <Text className="text-2xl font-bold text-lantern-accent" style={tabularNums}>{groups.length}</Text>
 
             <Text className="text-xs text-lantern-text-secondary mt-1">Groups</Text>
 

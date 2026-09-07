@@ -125,12 +125,14 @@ const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
 import NoteEditorScreen from './components/NoteEditorScreen';
 const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
 const StudyHubScreen = lazyWithRetry(() => import('./components/StudyHubScreen'));
+const TestsHomeScreen = lazyWithRetry(() => import('./components/TestsHomeScreen'));
 const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
 const LandingPage = lazyWithRetry(() => import('./components/marketing/LandingPage'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
 import { useAuthHandlers, INITIAL_BOOTSTRAP_LOAD_STATE } from './hooks/useAuthHandlers';
 import { useGroupHandlers } from './hooks/useGroupHandlers';
+import { newLectureNoteTitle } from './components/study/recorderDoor';
 import { useTestHandlers } from './hooks/useTestHandlers';
 import { useGameHandlers } from './hooks/useGameHandlers';
 import { useFlashcardHandlers } from './hooks/useFlashcardHandlers';
@@ -1018,6 +1020,38 @@ export const App: React.FC = () => {
     }, [navigateTo]);
 
     const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
+    /**
+     * The Tests home's "New test": the web's only authoring path is the group
+     * test-config modal, so this needs a group. With none, it says so and sends
+     * the student where a group is made rather than opening a modal that cannot
+     * be filled in.
+     */
+    const handleStartNewTest = () => {
+        const group = groups.find(g => !g.isArchived) ?? groups[0];
+        if (!group) {
+            showToast('Tests are built from a group\u2019s questions. Join or create a group first.', 'info');
+            navigateTo(AppMode.CHAT);
+            return;
+        }
+        handleOpenQuickTest(group.id);
+    };
+
+    /**
+     * The Record door (Home tile and Study hub tile). Parity with mobile
+     * (`apps/mobile/src/screens/study/recorderDoor.ts`): the note is named for
+     * the lecture it is about to hold, not "Untitled Note", so it is findable
+     * in the Library afterwards.
+     *
+     * The toast names "Record" — the label the button actually carries on a
+     * phone, where "Record lecture" is the wide-screen label and pointing at it
+     * sent students looking for a control that was not on their screen.
+     */
+    const handleRecordLecture = () => {
+        void noteHandlers.handleCreateNote(newLectureNoteTitle())
+            .then(() => showToast('New note ready \u2014 press Record to start.', 'info'))
+            .catch((e: any) => showToast(e?.message || 'Failed to create note', 'error'));
+    };
+
     const handleOpenQuickTest = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
     const handleOpenQuickStudy = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
     const handleFlashcardStudy = () => {
@@ -1827,6 +1861,8 @@ export const App: React.FC = () => {
                     }}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
+                    onNavigateToTests={() => navigateTo(AppMode.TESTS_HOME)}
+                    onRecordLecture={handleRecordLecture}
                     onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
                     onNavigateToOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
                     onToggleCompanion={toggleCompanion}
@@ -1922,7 +1958,7 @@ export const App: React.FC = () => {
                             else navigateTo(AppMode.DECK_DETAIL, { deckId });
                         }}
                         onOpenOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
-                        onOpenTests={() => navigateTo(AppMode.DASHBOARD)}
+                        onOpenTests={() => navigateTo(AppMode.TESTS_HOME)}
                         onCreateStudyPackFromCourse={(courseId, courseLabel) => {
                             setStudyProductSource({ courseId, title: courseLabel });
                             setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
@@ -1952,7 +1988,24 @@ export const App: React.FC = () => {
                         onResumePausedSession={handleResumePausedSession}
                         onAbandonPausedSession={handleAbandonPausedSession}
                         recentTestCount={testResults.length}
-                        onViewRecentTests={() => navigateTo(AppMode.DASHBOARD)}
+                        onViewRecentTests={() => navigateTo(AppMode.TESTS_HOME)}
+                        onOpenFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
+                        onOpenTests={() => navigateTo(AppMode.TESTS_HOME)}
+                        onRecordLecture={handleRecordLecture}
+                        noteCount={notes.length}
+                    />
+                );
+            case AppMode.TESTS_HOME:
+                return (
+                    <TestsHomeScreen
+                        results={testResults}
+                        pausedSessions={pausedSessions}
+                        onResumePausedSession={handleResumePausedSession}
+                        onAbandonPausedSession={handleAbandonPausedSession}
+                        availableBundles={offlineBundles}
+                        onStartBundle={(bundleId) => handleStartOfflineSession(bundleId, 'test')}
+                        onNewTest={handleStartNewTest}
+                        onViewResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
                     />
                 );
             case AppMode.AI_TOOLS:

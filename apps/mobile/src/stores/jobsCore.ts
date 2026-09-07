@@ -196,7 +196,13 @@ export const patchJob = (
     if (
       isTerminal(job.status) &&
       patch.status !== undefined &&
-      patch.status !== job.status
+      patch.status !== job.status &&
+      // …except the one promotion that is always true: a job whose output has
+      // actually reached the library IS done, whatever it was before. A save
+      // retried after a failure used to be swallowed here — the write landed,
+      // the material was cleared, and the card went on saying "That didn't
+      // finish" over a deck the student now had (F8).
+      !(patch.status === 'done' && job.status !== 'done')
     ) {
       // Keep the outcome; still let flags like `notified` be recorded.
       const { status: _ignored, ...rest } = patch;
@@ -298,6 +304,18 @@ export const planSave = (job: TrackedJob | undefined): SavePlan =>
 export const hasUnsavedGeneration = (job: TrackedJob | undefined): boolean =>
   Boolean(job?.pendingSave) && !job?.savedRef;
 
+/**
+ * Jobs holding generated material that never reached the library.
+ *
+ * The list the app finishes by itself the moment the network comes back: the
+ * work is already paid for and already on the device, so a student who turned
+ * airplane mode off should not have to find the card and tap "Save to
+ * library" (D7). A job that has already saved is not in it, and neither is one
+ * that never generated anything — retrying either would be a second charge.
+ */
+export const jobsAwaitingSave = (jobs: TrackedJob[]): TrackedJob[] =>
+  jobs.filter((job) => hasUnsavedGeneration(job));
+
 /** What "Try again" should actually do. */
 export type RetryPlan = 'save' | 'generate' | 'none';
 
@@ -329,6 +347,29 @@ export const claimSave = (
     claimed: true,
   };
 };
+
+/**
+ * The patch that finishes a job whose save has just landed.
+ *
+ * Promotion, not a mere status change: the material is in the library, so the
+ * job is `done` no matter what it was showing a moment ago. A job that had
+ * already been reported as failed also gets its notification claim released,
+ * or the student would be told about the failure and never about the finish.
+ */
+export const savedSettlePatch = (
+  job: TrackedJob | undefined,
+  ref: JobArtifactRef,
+  count: number
+): Partial<TrackedJob> => ({
+  status: 'done',
+  artifact: ref,
+  savedRef: ref,
+  savedCount: count,
+  resultCount: count,
+  error: undefined,
+  pendingSave: undefined,
+  ...(job && (job.status === 'failed' || job.status === 'lost') ? { notified: false } : {}),
+});
 
 /** What a deck write produced, as counted from the ids that came back. */
 export interface DeckSaveTally {
@@ -374,6 +415,44 @@ export const planDeckSave = (tally: DeckSaveTally): DeckSavePlan => {
 export const jobsOwnedBy = (jobs: TrackedJob[], userId: string): TrackedJob[] =>
   jobs.filter((j) => j.userId === userId);
 
+/**
+ * Live jobs this account owns — ADOPTING the ones that started before it was
+ * known who was signed in.
+ *
+ * `startJob` stamps `userId: ''` when a generate button is pressed before the
+ * auth store has answered, which is ordinary on a cold start: the note editor
+ * is restored by nav-restore and a generation can begin before Home ever
+ * mounts. The very next hydrate then filtered that RUNNING job out of memory
+ * as somebody else's, so Home's card listed only finished work while a
+ * generation was in flight (D6) — and the job could never be persisted either,
+ * because `persist` filters by owner too.
+ *
+ * An empty owner is not another account's: it is this process's own job,
+ * started a moment ago, and it is stamped with the account that has now
+ * arrived. A job stamped with a DIFFERENT id is still never adopted.
+ */
+export const adoptOwnerlessJobs = (jobs: TrackedJob[], userId: string): TrackedJob[] =>
+  jobs
+    .filter((j) => j.userId === userId || !j.userId)
+    .map((j) => (j.userId ? j : { ...j, userId }));
+
+/**
+ * Is this finished job recent enough to still be shown?
+ *
+ * Both clocks have to agree. `updatedAt` alone is not enough: a job that is
+ * re-settled on every launch (a `lost` one is patched again each hydrate)
+ * kept moving its own timestamp forward and never aged out, which is why two
+ * "We lost track of this one" cards from an earlier build were still sitting
+ * on Home a day later (F9). `startedAt` never moves, so it is the one that
+ * decides when a card is stale.
+ */
+export const isRecentTerminalJob = (
+  job: TrackedJob,
+  now: number,
+  windowMs = RECENT_JOB_WINDOW_MS
+): boolean =>
+  now - job.updatedAt <= windowMs && now - job.startedAt <= windowMs;
+
 /** Drop stale finished jobs and cap the list. Running jobs are never pruned. */
 export const pruneJobs = (
   jobs: TrackedJob[],
@@ -382,7 +461,7 @@ export const pruneJobs = (
   max = MAX_TRACKED_JOBS
 ): TrackedJob[] => {
   const kept = jobs.filter(
-    (j) => !isTerminal(j.status) || now - j.updatedAt <= windowMs
+    (j) => !isTerminal(j.status) || isRecentTerminalJob(j, now, windowMs)
   );
   const sorted = [...kept].sort((a, b) => b.startedAt - a.startedAt);
   return sorted.slice(0, max);
@@ -398,9 +477,7 @@ export const runningJobs = (jobs: TrackedJob[]): TrackedJob[] =>
  */
 export const visibleJobs = (jobs: TrackedJob[], now: number): TrackedJob[] => {
   const running = runningJobs(jobs);
-  const recent = jobs.filter(
-    (j) => isTerminal(j.status) && now - j.updatedAt <= RECENT_JOB_WINDOW_MS
-  );
+  const recent = jobs.filter((j) => isTerminal(j.status) && isRecentTerminalJob(j, now));
   return [...running, ...recent].sort((a, b) => b.startedAt - a.startedAt);
 };
 
@@ -471,7 +548,9 @@ export const planHydration = (
   userId: string,
   now: number
 ): ResumePlan => {
-  const owned = jobsOwnedBy(live, userId);
+  // Live jobs win, and an ownerless one is adopted rather than dropped: it is
+  // this process's own in-flight generation (see adoptOwnerlessJobs).
+  const owned = adoptOwnerlessJobs(live, userId);
   const liveIds = new Set(owned.map((j) => j.id));
   const plan = planResume(
     jobsOwnedBy(stored, userId).filter((j) => !liveIds.has(j.id)),

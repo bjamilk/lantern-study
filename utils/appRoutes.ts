@@ -225,6 +225,8 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return params.slug
         ? `/campus/${encodeURIComponent(params.slug)}${params.programme ? `/${encodeURIComponent(params.programme)}` : ''}`
         : '/campus';
+    case AppMode.TESTS_HOME:
+      return '/tests';
     case AppMode.TEST_ACTIVE:
       return '/tests/active';
     case AppMode.TEST_REVIEW:
@@ -383,6 +385,8 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/flashcards/cram') return { mode: AppMode.FLASHCARD_CRAM, params: {} };
   if (path === '/flashcards/match') return { mode: AppMode.FLASHCARD_MATCH, params: {} };
   if (path === '/flashcards/learn') return { mode: AppMode.FLASHCARD_LEARN, params: {} };
+  // The specific routes first: `/tests` is the home, not a prefix of them.
+  if (path === '/tests') return { mode: AppMode.TESTS_HOME, params: {} };
   if (path === '/tests/active') return { mode: AppMode.TEST_ACTIVE, params: {} };
   if (path === '/tests/review') return { mode: AppMode.TEST_REVIEW, params: {} };
   if (path === '/study/session') return { mode: AppMode.STUDY_ACTIVE, params: {} };

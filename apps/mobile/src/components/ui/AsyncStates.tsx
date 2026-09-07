@@ -15,6 +15,11 @@
 
 import React from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import {
+  featureAccentsDark,
+  featureAccentsLight,
+  type FeatureKey,
+} from '@lantern/shared/design';
 import { useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
 
@@ -116,31 +121,92 @@ export function InlineErrorBanner({
   );
 }
 
-/** Genuinely nothing here — and we are confident of that, because there is no error. */
+/**
+ * Genuinely nothing here — and we are confident of that, because there is no
+ * error.
+ *
+ * Spec §5.7 anatomy: a disc, a title that names the BENEFIT (not the absence),
+ * ONE sentence, and ONE action. Never a second "or…" button, never a
+ * paragraph, never an illustration — imagery is Wave V2.
+ *
+ * THE SHAPE, and why it changed: this used to be a full-tint panel with 28 px
+ * of vertical padding, which on a 360x640 screen painted about 40% of the
+ * viewport in one hue — four to seven times the chromatic budget for an empty
+ * list (§5.6: hubs 8–15%, and an empty state is not a hub). It is now a
+ * NEUTRAL card with a single tint BAND across its top: the band carries the
+ * glyph and the title in the feature's ink, the sentence and the action sit on
+ * the surface below, and the whole card lands near 120 dp instead of filling
+ * the screen. Colour still says which feature you are in; it just stops being
+ * the loudest thing on a screen whose news is that there is nothing here.
+ *
+ * `feature` is what makes the band a colour rather than a grey; without it the
+ * band falls back to the neutral secondary ground so the ~40 older call sites
+ * keep rendering sensibly.
+ */
+
+/**
+ * The band is the ONE tinted area on the screen, and its height is the whole
+ * budget conversation. On a 360x640 viewport a full-width list gives the card
+ * about 288 dp, so 52 dp of band is ~6.5% chromatic — inside the 6–9% an empty
+ * state gets, with room left for the single ink-filled action (~2.3%) that
+ * some call sites pass. It also holds a 22 px glyph and a heading line.
+ */
+const EMPTY_BAND_MIN_HEIGHT = 52;
+
 export function EmptyState({
   icon,
   title,
   description,
   action,
+  feature,
 }: {
   icon?: AppIconName;
+  /** Name the benefit: "Turn slides into cards", not "No decks". */
   title: string;
+  /** One sentence. Two is a paragraph, and a paragraph is not an empty state. */
   description?: string;
+  /** Exactly one control. */
   action?: React.ReactNode;
+  feature?: FeatureKey;
 }) {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const accent = feature ? (isDark ? featureAccentsDark : featureAccentsLight)[feature] : null;
   return (
-    <View className="flex-1 items-center justify-center px-6 py-16">
-      {icon ? (
-        <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/40 items-center justify-center mb-4">
-          <AppIcon name={icon} size={32} color={colors.primaryText} />
+    <View className="px-4 py-6 items-center">
+      <View className="w-full max-w-md rounded-lantern-xl overflow-hidden border border-lantern-border bg-lantern-surface">
+        <View
+          className="flex-row items-center gap-2.5 px-3.5 py-2.5"
+          style={{
+            minHeight: EMPTY_BAND_MIN_HEIGHT,
+            backgroundColor: accent ? accent.tint : colors.backgroundSecondary,
+          }}
+        >
+          {icon ? (
+            <AppIcon
+              name={icon}
+              size={22}
+              color={accent ? accent.ink : colors.primaryText}
+              importantForAccessibility="no"
+            />
+          ) : null}
+          <Text
+            accessibilityRole="header"
+            numberOfLines={2}
+            className="flex-1 text-heading font-semibold"
+            style={{ color: accent ? accent.ink : colors.text }}
+          >
+            {title}
+          </Text>
         </View>
-      ) : null}
-      <Text className="text-base font-semibold text-lantern-text mb-1 text-center">{title}</Text>
-      {description ? (
-        <Text className="text-sm text-lantern-text-secondary text-center mb-6">{description}</Text>
-      ) : null}
-      {action}
+        {description || action ? (
+          <View className="px-3.5 py-3">
+            {description ? (
+              <Text className="text-caption text-lantern-text-secondary">{description}</Text>
+            ) : null}
+            {action ? <View className="mt-3 flex-row">{action}</View> : null}
+          </View>
+        ) : null}
+      </View>
     </View>
   );
 }

@@ -171,3 +171,62 @@ describe('buildJobPushMessage', () => {
     expect(jobFallbackDeepLink('a b')).toBe('lanternstudy://jobs/a%20b');
   });
 });
+
+/**
+ * The note-quiz journey, end to end on the pure half.
+ *
+ * On device a quiz generated from a note finished, was saved as a personal
+ * test, and its notification still pointed at `jobs/<id>` — the app had to
+ * resolve it from its own store, and if that store had been cleared the
+ * student landed nowhere. The server now stamps the saved test onto the job
+ * record (POST /tests/personal → attachJobResultRef), so the SAME job record
+ * produces a link straight to the test.
+ */
+describe('quiz job → personal test', () => {
+  const record = {
+    jobId: 'job-quiz-1',
+    kind: 'quiz' as const,
+    stage: 'done' as const,
+    sourceTitle: 'SDOH',
+    result: { questions: new Array(5).fill({ text: 'q' }) },
+  };
+
+  it('is a kind students are told about', () => {
+    expect(isPushableJobKind('quiz')).toBe(true);
+  });
+
+  it('links straight to the test once the record names one', () => {
+    const message = buildJobPushMessage({
+      ...record,
+      resultRef: { type: 'test', id: 'test-77', route: '/tests/test-77' },
+    });
+    expect(message?.data.url).toBe('lanternstudy://test/test-77');
+    expect(message?.data.kind).toBe('quiz');
+    expect(message?.data.pending).toBeUndefined();
+    // The count comes off the result, and the note names it.
+    expect(message?.title).toBe('5-question quiz ready · SDOH');
+  });
+
+  it('routes that link to the test screen', () => {
+    const url = jobArtefactDeepLink({ type: 'test', id: 'test-77' });
+    expect(url).toBe('lanternstudy://test/test-77');
+    // The app's own parser has to recognise it as a test, not a stray host.
+    expect(parseDeepLink(url!)).toMatchObject({ type: 'test', id: 'test-77' });
+  });
+
+  it('promises only generation while no test id exists yet', () => {
+    // The window between "job done" and "the app saved it": the server has
+    // made questions but nothing is launchable, so the copy must not say
+    // "ready" and the link must not point at a test that does not exist.
+    const message = buildJobPushMessage(record);
+    expect(message?.data.url).toBe('lanternstudy://jobs/job-quiz-1');
+    expect(message?.data.pending).toBe(true);
+    expect(message?.title).toBe('5-question quiz generated · SDOH');
+  });
+
+  it('does not point at the note the quiz came from', () => {
+    // A quiz notification that opened the note editor read as the wrong
+    // screen on device; a `quiz` ref carries the NOTE id, so it stays unlinked.
+    expect(jobArtefactDeepLink({ type: 'quiz', id: 'note-1' })).toBeNull();
+  });
+});

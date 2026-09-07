@@ -95,12 +95,18 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           <span className="text-body font-bold tabular-nums text-lantern-text">
             Level {xpLevel} — {xpTitle}
           </span>
-          <span className="text-caption text-lantern-text-secondary">
+          <span className="text-caption tabular-nums text-lantern-text-secondary">
             {pointsToNextLevel > 0 ? `${pointsToNextLevel.toLocaleString()} XP to next level` : 'Max level'}
           </span>
         </div>
         <div className="w-full bg-lantern-background-secondary rounded-full h-2.5 overflow-hidden">
-          <div className="h-full rounded-full bg-lantern-primary-fill transition-all duration-700" style={{ width: `${xpProgressPercent}%` }} />
+          {/* Clamped: the XP maths can hand this a negative or a >100 value
+              (a level boundary crossed between two fetches), and an unclamped
+              width paints the bar past its track or collapses it to nothing. */}
+          <div
+            className="h-full rounded-full bg-lantern-primary-fill transition-all duration-700"
+            style={{ width: `${Math.max(0, Math.min(100, xpProgressPercent))}%` }}
+          />
         </div>
       </div>
     </Card>

@@ -8,6 +8,14 @@ import { useToastStore } from '../../stores/toastStore';
 import { useConfirmStore } from '../../stores/confirmStore';
 import { BackButton } from './BackButton';
 import { useTheme } from '../../theme';
+import {
+  featureAccentsDark,
+  featureAccentsLight,
+  type FeatureKey,
+} from '@lantern/shared/design';
+import { FeatureDisc, smallTextInk } from './FeatureDisc';
+import { type AppIconName } from './AppIcon';
+import { Heading, Label } from './Text';
 
 type Variant = 'primary' | 'secondary' | 'accent' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
@@ -86,7 +94,94 @@ export function Button({
   );
 }
 
-export function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+export interface CardProps {
+  children: React.ReactNode;
+  className?: string;
+  /**
+   * `feature` draws the spec §5.6 container for a feature-owned card: ONE
+   * tint band across the top carrying the feature's disc, its title and an
+   * optional count pill, with the body below on the plain surface. The band is
+   * the card's only colour, which keeps tint under the 25%-of-a-card budget
+   * and keeps the reading surface uncoloured.
+   */
+  variant?: 'default' | 'feature';
+  /** Which hue this card belongs to. Required by `variant="feature"`. */
+  feature?: FeatureKey;
+  /** Band title. Feature variant only. */
+  title?: string;
+  /** Glyph on the band's disc. Feature variant only. */
+  icon?: AppIconName;
+  /** Tint pill at the band's right edge. `0`/`undefined` draws nothing. */
+  count?: number;
+  /** Spoken form of `count`, e.g. "4 due". */
+  countLabel?: string;
+  /**
+   * Wave V2 slot: a flat, two-tone mark drawn in the band's ink. Left empty
+   * today — the imagery rule is explicitly NOT this wave.
+   */
+  illustration?: React.ReactNode;
+}
+
+export function Card({
+  children,
+  className = '',
+  variant = 'default',
+  feature,
+  title,
+  icon,
+  count,
+  countLabel,
+  illustration,
+}: CardProps) {
+  const { isDark } = useTheme();
+  const accent =
+    variant === 'feature' && feature
+      ? (isDark ? featureAccentsDark : featureAccentsLight)[feature]
+      : null;
+
+  if (accent && feature) {
+    const showCount = typeof count === 'number' && count > 0;
+    return (
+      <View
+        className={`bg-lantern-surface rounded-lantern-xl border border-lantern-border overflow-hidden ${className}`}
+        style={{
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.06,
+          shadowRadius: 8,
+          elevation: 2,
+        }}
+      >
+        <View
+          style={{ backgroundColor: accent.tint }}
+          className="flex-row items-center gap-3 px-4 py-3"
+        >
+          {icon ? <FeatureDisc feature={feature} icon={icon} size={32} /> : null}
+          {title ? (
+            <Heading style={{ color: accent.ink, flex: 1 }} numberOfLines={1}>
+              {title}
+            </Heading>
+          ) : (
+            <View className="flex-1" />
+          )}
+          {illustration}
+          {showCount ? (
+            <View className="px-2 py-0.5 rounded-full bg-lantern-surface">
+              <Label
+                tabular
+                style={{ color: smallTextInk(feature, accent, isDark), fontWeight: '700' }}
+                accessibilityLabel={countLabel}
+              >
+                {count > 99 ? '99+' : count}
+              </Label>
+            </View>
+          ) : null}
+        </View>
+        <View className="p-4">{children}</View>
+      </View>
+    );
+  }
+
   return (
     <View
       className={`bg-lantern-surface rounded-lantern-xl border border-lantern-border p-4 ${className}`}
@@ -269,7 +364,23 @@ export { ActionSheet, type ActionSheetItem } from './ActionSheet';
 export { LoadingState, ErrorState, InlineErrorBanner, EmptyState } from './AsyncStates';
 export { IconButton } from './IconButton';
 export { BackButton } from './BackButton';
-export { AppIcon, type AppIconName, isAppIconName, strokeWidthForSize } from './AppIcon';
+export {
+  AppIcon,
+  type AppIconName,
+  type AppIconTone,
+  isAppIconName,
+  strokeWidthForSize,
+} from './AppIcon';
+// What a row is ABOUT, printed once on the right. Neutral by design.
+export { CourseChip } from './CourseChip';
+// The feature mark, and the two doors built out of it.
+export {
+  FeatureDisc,
+  FeatureTile,
+  FeatureRow,
+  useFeatureAccent,
+  type FeatureDiscSize,
+} from './FeatureDisc';
 // The six type steps, for screens built out of StyleSheet rather than classes.
 export {
   T,

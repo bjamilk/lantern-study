@@ -21,6 +21,7 @@ import {
 } from '../services/academicCourses';
 import { getTopicMasteryService } from '../services/topicMastery';
 import { PublicError } from '../utils/safeError';
+import { attachJobResultRef } from '../queue/jobStatus';
 
 /** A rejected topic (wrong course, no course, unusable id) is the caller's mistake — 400, not 500. */
 const respondPublicError = (err: unknown, res: any): boolean => {
@@ -281,6 +282,25 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         throw err;
       }
 
+      // The generating job knew it had made a quiz but not WHERE it landed:
+      // a note quiz is written as a launchable test only here, by the client,
+      // minutes after the job went terminal. Stamping the ref now makes the
+      // job record resolvable — `lanternstudy://test/<id>` instead of the
+      // `jobs/<id>` fallback the notification had to fall back to, which is
+      // what a student tapping a stale notification (or a second device) gets.
+      // Never fails the save: the test exists either way.
+      if (typeof sourceJobId === 'string' && sourceJobId && payload?.id) {
+        try {
+          await attachJobResultRef(sourceJobId, {
+            type: 'test',
+            id: String(payload.id),
+            route: `/tests/${payload.id}`,
+          });
+        } catch (err) {
+          logger.warn('Could not stamp personal test onto its job record', { err });
+        }
+      }
+
       res.status(201).json({ success: true, data: payload });
     })
   );
@@ -339,6 +359,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       // Same camelCase + coerced userAnswers map as GET /tests/:id so mobile
       // hydrate matches web (legacy array user_answers become a questionId map).
       const mapped = supabaseService.mapTestSessionRowToClient(data);
+      await supabaseService.attachSourceNoteTitles([mapped as any], userId);
       res.json({
         success: true,
         data: {
@@ -643,6 +664,12 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         test && typeof test === 'object' && 'user_id' in (test as object)
           ? supabaseService.mapTestSessionRowToClient(test)
           : test;
+
+      // Same contract as the list: a note quiz names the note it came from,
+      // even if it was saved before that title was persisted into config.
+      if (mapped && typeof mapped === 'object') {
+        await supabaseService.attachSourceNoteTitles([mapped as any], userId);
+      }
 
       res.json({
         success: true,

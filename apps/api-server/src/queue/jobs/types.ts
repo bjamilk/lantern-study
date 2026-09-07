@@ -2,6 +2,7 @@ import type {
   JobCredit,
   JobError,
   JobKind,
+  JobPushAudit,
   JobResultRef,
   JobStage,
 } from "@lantern/shared/jobs/jobState";
@@ -56,6 +57,8 @@ export interface JobRecord {
   credit?: JobCredit;
   /** Set once the failure refund has been issued, so retries can't double-refund. */
   chargeRefunded?: boolean;
+  /** What happened to this job's completion push. Served to the OWNER only. */
+  push?: JobPushAudit;
 }
 
 export type AIJobName =

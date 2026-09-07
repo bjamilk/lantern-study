@@ -32,9 +32,13 @@ import { hapticSuccess } from '../../utils/haptics';
 import { formatCorrectAnswerDisplay } from '../../utils/questionHelpers';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { T } from '../../components/ui';
 import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
 import { toTab } from '../../navigation/nestedTab';
 import { planTestExit, type ReturnToTarget } from './testSessionExit';
+
+/** Footer dots never exceed this; beyond it the window slides and counts. */
+const MAX_QUESTION_DOTS = 10;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -697,6 +701,29 @@ export default function TestTakingScreen() {
     return Object.keys(activeTest.answers).length;
   }, [activeTest]);
 
+  /**
+   * The footer dots are a MAP of the test, so their count has to be the
+   * question count. The old footer hard-sliced a five-wide window around the
+   * current question, which drew three dots for a five-question test and told
+   * the student the test was shorter than it is (device pass on build 159,
+   * D9). Up to ten questions every question gets its dot; beyond that the
+   * window slides and the hidden questions are counted at each end, so the
+   * total still reads off the footer.
+   */
+  const dotWindow = useMemo(() => {
+    const total = activeTest?.questions.length ?? 0;
+    const current = activeTest?.currentQuestionIndex ?? 0;
+    if (total <= MAX_QUESTION_DOTS) {
+      return { start: 0, end: total, hiddenBefore: 0, hiddenAfter: 0 };
+    }
+    const start = Math.max(
+      0,
+      Math.min(current - Math.floor(MAX_QUESTION_DOTS / 2), total - MAX_QUESTION_DOTS)
+    );
+    const end = start + MAX_QUESTION_DOTS;
+    return { start, end, hiddenBefore: start, hiddenAfter: total - end };
+  }, [activeTest]);
+
   // Check if current question has been answered (for study mode)
   const hasAnsweredCurrent = useMemo(() => {
     if (!activeTest || !currentQuestion) return false;
@@ -1277,11 +1304,13 @@ export default function TestTakingScreen() {
         })()}
 
         <View style={s(colors).questionDots}>
-          {activeTest.questions.slice(
-            Math.max(0, activeTest.currentQuestionIndex - 2),
-            Math.min(activeTest.questions.length, activeTest.currentQuestionIndex + 3)
-          ).map((q, i) => {
-            const actualIndex = Math.max(0, activeTest.currentQuestionIndex - 2) + i;
+          {dotWindow.hiddenBefore > 0 ? (
+            <T.Label tone="tertiary" tabular importantForAccessibility="no">
+              +{dotWindow.hiddenBefore}
+            </T.Label>
+          ) : null}
+          {activeTest.questions.slice(dotWindow.start, dotWindow.end).map((q, i) => {
+            const actualIndex = dotWindow.start + i;
             const isAnswered = !!activeTest.answers[q.id];
             const isCurrent = actualIndex === activeTest.currentQuestionIndex;
             const isRevealed = activeTest.revealedAnswers.has(q.id);
@@ -1309,6 +1338,11 @@ export default function TestTakingScreen() {
               </TouchableOpacity>
             );
           })}
+          {dotWindow.hiddenAfter > 0 ? (
+            <T.Label tone="tertiary" tabular importantForAccessibility="no">
+              +{dotWindow.hiddenAfter}
+            </T.Label>
+          ) : null}
         </View>
 
         {/* Next/Finish button */}
@@ -1966,7 +2000,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   questionDots: {
     flexDirection: 'row',
-    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+    // Ten 8 dp dots plus their gaps have to survive between Previous and
+    // Next on a 360 dp screen, so the strip shrinks rather than pushing a
+    // nav button off the row.
+    flexShrink: 1,
+    gap: 5,
   },
   dot: {
     width: 8,

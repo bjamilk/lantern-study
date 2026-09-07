@@ -1,9 +1,11 @@
 import React from 'react';
 import { View, Text } from 'react-native';
 import { UNAVAILABLE_PROGRESS_COPY } from '@lantern/shared/network';
-import { Card, Button } from '../ui';
+import { Card, Button, useFeatureAccent } from '../ui';
 import type { UserLevel } from '../../types/dashboardStats';
 import { AppIcon } from '../ui/AppIcon';
+import { tabularNums } from '../../design/typeScale';
+import { clampProgressPercent } from './progressBar';
 
 interface DashboardHeroCardProps {
   userName: string;
@@ -28,8 +30,12 @@ interface DashboardHeroCardProps {
   progressPending?: boolean;
   /** e.g. "Last synced 2h ago" — shown when the figures are real but old. */
   progressNote?: string;
-  onPrimaryAction: () => void;
-  primaryActionLabel: string;
+  /**
+   * Optional: Home now carries its doors as feature tiles below the greeting,
+   * so the hero has no button at all there. Other callers may still pass one.
+   */
+  onPrimaryAction?: () => void;
+  primaryActionLabel?: string;
   className?: string;
 }
 
@@ -71,6 +77,8 @@ export function DashboardHeroCard({
   // Figures are drawn only when they are real AND here: not offline with
   // nothing cached, and not before the first snapshot has landed.
   const showFigures = progressKnown && !progressPending;
+  const budgetAccent = useFeatureAccent('budget');
+  const levelPercent = clampProgressPercent(level?.progressToNextLevel);
 
   // Plain surface: no accent rail, no tinted fill. The greeting is the first
   // thing on the dashboard and a coloured edge made it shout.
@@ -84,13 +92,44 @@ export function DashboardHeroCard({
 
       {showFigures ? (
         <View className="flex-row flex-wrap gap-2 mt-3">
-          <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-accent-background">
-            <AppIcon name="flame" size={14} color="#d97706" />
-            <Text className="text-xs font-semibold text-lantern-accent">{streak}d streak</Text>
-          </View>
-          <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-primary-background">
-            <AppIcon name="sparkle" size={14} color="#4f46e5" />
-            <Text className="text-xs font-semibold text-lantern-primary-text">{points.toLocaleString()} pts</Text>
+          {/* ONE chip, in the money/streak amber family. Streak, level and
+              points were three chips in three hues on the very first row of
+              the app, which spent the screen's whole colour budget before the
+              student had read a word. They are one fact — "how you are doing"
+              — so they are one chip. */}
+          <View
+            className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full"
+            style={{ backgroundColor: budgetAccent.tint }}
+            // Its children are hidden from the reader, so the chip itself has
+            // to be an accessible element or the label is never spoken.
+            accessible
+            accessibilityLabel={[
+              `${streak} day streak`,
+              level ? `level ${level.level}, ${level.name}` : null,
+              `${points.toLocaleString()} points`,
+            ]
+              .filter(Boolean)
+              .join(', ')}
+          >
+            <AppIcon
+              name="flame"
+              size={14}
+              color={budgetAccent.ink}
+              importantForAccessibility="no"
+            />
+            <Text
+              className="text-caption font-semibold"
+              style={{ color: budgetAccent.ink }}
+              importantForAccessibility="no"
+            >
+              {[
+                `${streak}d streak`,
+                level ? `Lv ${level.level}` : null,
+                `${points.toLocaleString()} pts`,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
           </View>
           {progressNote ? (
             <View className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary">
@@ -101,9 +140,11 @@ export function DashboardHeroCard({
         </View>
       ) : null}
 
-      <Button size="lg" onPress={onPrimaryAction} className="mt-4">
-        {primaryActionLabel}
-      </Button>
+      {primaryActionLabel && onPrimaryAction ? (
+        <Button size="lg" onPress={onPrimaryAction} className="mt-4">
+          {primaryActionLabel}
+        </Button>
+      ) : null}
 
       {level && showFigures ? (
         <View className="mt-4 pt-4 border-t border-lantern-border">
@@ -112,16 +153,23 @@ export function DashboardHeroCard({
               <Text className="text-xs text-lantern-text-tertiary uppercase tracking-wide">Level {level.level}</Text>
               <Text className="text-base font-bold text-lantern-primary-text">{level.name}</Text>
             </View>
-            <Text className="text-sm font-semibold text-lantern-text-secondary">{level.currentXP} XP</Text>
+            <Text
+              className="text-caption font-semibold text-lantern-text-secondary"
+              style={tabularNums}
+            >
+              {level.currentXP} XP
+            </Text>
           </View>
           <View className="h-2 rounded-full bg-lantern-background-secondary overflow-hidden">
+            {/* Clamped: a raw ratio put "1200%" here, which draws a fill wider
+                than its own track. */}
             <View
               className="h-full bg-lantern-primary-fill rounded-full"
-              style={{ width: `${level.progressToNextLevel}%` }}
+              style={{ width: `${levelPercent}%` }}
             />
           </View>
-          <Text className="text-xs text-lantern-text-tertiary mt-1">
-            {Math.round(level.progressToNextLevel)}% to next level
+          <Text className="text-caption text-lantern-text-tertiary mt-1" style={tabularNums}>
+            {levelPercent}% to next level
           </Text>
         </View>
       ) : null}

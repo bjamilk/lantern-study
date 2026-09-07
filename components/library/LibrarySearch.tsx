@@ -9,6 +9,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline';
 import type { LibrarySearchResult } from '../../types';
+import { CourseChip, FeatureDisc } from '../ui';
 import { searchLibrary } from '../../services/library';
 import { useAcademicStore } from '../../stores/academicStore';
 import {
@@ -188,11 +189,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
   const courseTag = (row: LibrarySearchResult) => {
     if (courseId) return null; // already scoped — no need to repeat the code on every row
     const course = resolveCourse(row.courseId);
-    return course ? (
-      <span className="shrink-0 rounded-full bg-lantern-primary/10 px-1.5 py-0.5 text-label tracking-normal font-semibold text-lantern-primary-text">
-        {course.code}
-      </span>
-    ) : null;
+    return course ? <CourseChip code={course.code} title={course.title} /> : null;
   };
 
   const rowClass =
@@ -202,7 +199,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
     const label = searchMatchLabel(row);
     if (!row.snippet && !label) return null;
     return (
-      <p className="mt-0.5 text-xs text-lantern-text-secondary line-clamp-2 break-words">
+      <p className="mt-0.5 text-caption text-lantern-text-secondary line-clamp-2 break-words">
         {label ? <span className="font-medium text-lantern-text-tertiary">{label}: </span> : null}
         {row.snippet}
       </p>
@@ -257,7 +254,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
             <section aria-labelledby="library-search-notes">
               <h3
                 id="library-search-notes"
-                className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
+                className="mb-1 flex items-center gap-1.5 px-1 text-label uppercase text-lantern-text-tertiary"
               >
                 <DocumentTextIcon className="h-3.5 w-3.5" aria-hidden /> Notes · {groups.notes.length}
               </h3>
@@ -265,10 +262,10 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 {groups.notes.map((row) => (
                   <li key={`note-${row.id}`}>
                     <button type="button" onClick={() => onOpenNote(row.id)} className={rowClass}>
-                      <DocumentTextIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-primary-text" aria-hidden />
+                      <FeatureDisc feature="notes" size={32} icon={<DocumentTextIcon className="h-5 w-5" />} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium text-lantern-text">{row.title || 'Untitled note'}</span>
+                          <span className="truncate text-body font-medium text-lantern-text">{row.title || 'Untitled note'}</span>
                           {courseTag(row)}
                           <span className="ml-auto shrink-0 text-label tracking-normal text-lantern-text-tertiary">{formatUpdated(row.updatedAt)}</span>
                         </span>
@@ -285,7 +282,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
             <section aria-labelledby="library-search-decks">
               <h3
                 id="library-search-decks"
-                className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
+                className="mb-1 flex items-center gap-1.5 px-1 text-label uppercase text-lantern-text-tertiary"
               >
                 <RectangleStackIcon className="h-3.5 w-3.5" aria-hidden /> Flashcards · {groups.decks.length} deck
                 {groups.decks.length === 1 ? '' : 's'}
@@ -294,10 +291,10 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 {groups.decks.map((group) => (
                   <li key={`deck-${group.deckId}`} className="rounded-xl border border-lantern-border bg-lantern-surface">
                     <button type="button" onClick={() => onOpenDeck(group.deckId)} className={rowClass}>
-                      <RectangleStackIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-accent" aria-hidden />
+                      <FeatureDisc feature="flashcards" size={32} icon={<RectangleStackIcon className="h-5 w-5" />} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium text-lantern-text">{group.title || 'Deck'}</span>
+                          <span className="truncate text-body font-medium text-lantern-text">{group.title || 'Deck'}</span>
                           {group.deck ? courseTag(group.deck) : group.cards[0] ? courseTag(group.cards[0]) : null}
                           {group.cards.length > 0 ? (
                             <span className="shrink-0 text-label tracking-normal text-lantern-text-tertiary">
@@ -318,9 +315,9 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                         {group.cards.map((card) => (
                           <li key={`card-${card.id}`} className="border-b border-lantern-border/40 last:border-b-0">
                             <button type="button" onClick={() => onOpenDeck(card.deckId || group.deckId)} className={rowClass}>
-                              <Square2StackIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-text-tertiary" aria-hidden />
+                              <Square2StackIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-feature-flashcards-ink" aria-hidden />
                               <span className="min-w-0 flex-1">
-                                <span className="block truncate text-sm text-lantern-text">{card.title || 'Card'}</span>
+                                <span className="block truncate text-body text-lantern-text">{card.title || 'Card'}</span>
                                 {renderSnippet(card)}
                               </span>
                             </button>
@@ -338,7 +335,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
             <section aria-labelledby="library-search-bundles">
               <h3
                 id="library-search-bundles"
-                className="mb-1 flex items-center gap-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
+                className="mb-1 flex items-center gap-1.5 px-1 text-label uppercase text-lantern-text-tertiary"
               >
                 <CloudArrowDownIcon className="h-3.5 w-3.5" aria-hidden /> Offline bundles · {groups.bundles.length}
               </h3>
@@ -346,10 +343,10 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
                 {groups.bundles.map((row) => (
                   <li key={`bundle-${row.id}`}>
                     <button type="button" onClick={() => onOpenBundle(row)} className={rowClass}>
-                      <CloudArrowDownIcon className="mt-0.5 h-4 w-4 shrink-0 text-lantern-feature-offline" aria-hidden />
+                      <FeatureDisc feature="budget" size={32} icon={<CloudArrowDownIcon className="h-5 w-5" />} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
-                          <span className="truncate text-sm font-medium text-lantern-text">{row.title || 'Bundle'}</span>
+                          <span className="truncate text-body font-medium text-lantern-text">{row.title || 'Bundle'}</span>
                           {isPurchasedBundleId(row.id) ? (
                             <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-lantern-accent/10 px-1.5 py-0.5 text-label tracking-normal font-semibold text-lantern-accent">
                               <ShoppingBagIcon className="h-3 w-3" aria-hidden /> Purchased

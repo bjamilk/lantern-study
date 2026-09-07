@@ -3,9 +3,16 @@ import { JOB_TIME_BUDGET_MS, createJob, type TrackedJob } from '../../stores/job
 import {
   JOB_STAGE_BANDS,
   KEEP_WORKING_COPY,
+  NO_NOTIFICATIONS_COPY,
   OVER_BUDGET_COPY,
+  STILL_WORKING_COPY,
+  WAITING_FOR_CONNECTION_COPY,
   formatElapsed,
   jobActionLabel,
+  SHEET_DISMISS_DISTANCE,
+  SHEET_DRAG_SLOP,
+  shouldClaimSheetDrag,
+  shouldDismissSheet,
   jobArtefactLabel,
   jobArtifactLink,
   jobNotification,
@@ -64,17 +71,18 @@ describe('jobArtefactLabel', () => {
 });
 
 describe('stageIndexFor', () => {
-  it('starts at the first stage', () => {
-    expect(stageIndexFor(0, 3)).toBe(0);
+  it('starts at the first stage when the server has said nothing', () => {
+    expect(stageIndexFor(3)).toBe(0);
   });
 
   it('never runs past the last stage', () => {
-    expect(stageIndexFor(JOB_TIME_BUDGET_MS * 10, 3)).toBe(2);
-    expect(stageIndexFor(0, 3, 5)).toBe(2);
+    expect(stageIndexFor(3, 5)).toBe(2);
+    expect(stageIndexFor(3, 1)).toBe(2);
   });
 
-  it('prefers a server fraction over the clock', () => {
-    expect(stageIndexFor(0, 3, 0.7)).toBe(2);
+  it('reads the server fraction, and nothing else', () => {
+    expect(stageIndexFor(3, 0.7)).toBe(2);
+    expect(stageIndexFor(3, 0.5)).toBe(1);
   });
 });
 
@@ -82,21 +90,29 @@ describe('percentFor', () => {
   it('never claims completion before the work is done', () => {
     // The failure this wave exists to beat: a tray that says 100% (or
     // "Completed") on work that has not landed.
-    expect(percentFor(job({ status: 'running' }), NOW + JOB_TIME_BUDGET_MS * 4)).toBe(95);
-    expect(percentFor(job({ status: 'running', progress: 1 }), NOW)).toBe(95);
+    expect(percentFor(job({ status: 'running', progress: 1 }))).toBe(95);
   });
 
   it('is 100 only once the job reports done', () => {
-    expect(percentFor(job({ status: 'done' }), NOW)).toBe(100);
+    expect(percentFor(job({ status: 'done' }))).toBe(100);
   });
 
   it('is 0 for a job that stopped badly', () => {
-    expect(percentFor(job({ status: 'failed' }), NOW)).toBe(0);
-    expect(percentFor(job({ status: 'lost' }), NOW)).toBe(0);
+    expect(percentFor(job({ status: 'failed' }))).toBe(0);
+    expect(percentFor(job({ status: 'lost' }))).toBe(0);
   });
 
-  it('tracks elapsed time when the server gives no fraction', () => {
-    expect(percentFor(job({ status: 'running' }), NOW + JOB_TIME_BUDGET_MS / 2)).toBe(50);
+  it('does not move with the clock — F7', () => {
+    // Airplane mode walked the bar 8% → 64% → 93% through "Writing 10 cards"
+    // while no request could be in flight. Nothing but the server moves it.
+    const running = job({ status: 'running' });
+    expect(percentFor(running)).toBe(0);
+    expect(percentFor({ ...running, startedAt: NOW - JOB_TIME_BUDGET_MS * 4 })).toBe(0);
+  });
+
+  it('rests on the floor of the furthest step something actually reported', () => {
+    expect(percentFor(job({ status: 'running', serverStage: 'generating' }))).toBe(45);
+    expect(percentFor(job({ status: 'running', serverStage: 'saving' }))).toBe(85);
   });
 });
 
@@ -121,7 +137,7 @@ describe('jobSheetState while running', () => {
   });
 
   it('shows the current stage', () => {
-    const state = jobSheetState(job({ status: 'running' }), NOW + 1_000);
+    const state = jobSheetState(job({ status: 'running', serverStage: 'reading' }), NOW + 1_000);
     expect(state.detail).toBe('Reading your notes');
     expect(state.stageIndex).toBe(0);
   });
@@ -141,6 +157,11 @@ describe('jobSheetState while running', () => {
     const state = jobSheetState(job({ status: 'running' }), NOW + JOB_TIME_BUDGET_MS);
     expect(state.overBudget).toBe(true);
     expect(state.actions).toEqual(['keep-waiting', 'stop-watching']);
+    // The way out is on every running sheet, over budget or not: the device
+    // run found one that only the hardware Back key would close (F6).
+    expect(
+      jobSheetState(job({ status: 'running' }), NOW + 1_000).actions
+    ).toContain('stop-watching');
     // Never Retry while the first attempt is still running: it cannot be
     // cancelled, so a retry would charge twice and produce two decks.
     expect(state.actions).not.toContain('retry');
@@ -288,7 +309,7 @@ describe('jobResultLink', () => {
 describe('jobProgressView — F4: one value behind the subtitle, the ticks and the bar', () => {
   it('the subtitle IS the active checklist row', () => {
     for (const at of [0, 5_000, 30_000, 60_000, JOB_TIME_BUDGET_MS * 2]) {
-      const state = jobSheetState(job({ status: 'running' }), NOW + at);
+      const state = jobSheetState(job({ status: 'running', serverStage: 'generating' }), NOW + at);
       expect(state.detail === OVER_BUDGET_COPY || state.detail === state.stages[state.stageIndex]).toBe(
         true
       );
@@ -299,7 +320,7 @@ describe('jobProgressView — F4: one value behind the subtitle, the ticks and t
     // The device run showed "Saving to your deck" at 11% while the checklist
     // still had "Reading your notes" active.
     for (const progress of [0, 0.1, 0.3, 0.5, 0.9, 1]) {
-      const view = jobProgressView(job({ status: 'running', progress }), NOW);
+      const view = jobProgressView(job({ status: 'running', progress }));
       const [floor, ceiling] = JOB_STAGE_BANDS[view.stageIndex];
       expect(view.percent).toBeGreaterThanOrEqual(floor);
       expect(view.percent).toBeLessThanOrEqual(Math.min(95, ceiling));
@@ -307,10 +328,7 @@ describe('jobProgressView — F4: one value behind the subtitle, the ticks and t
   });
 
   it("takes the furthest step any signal claims, so it never goes backwards", () => {
-    const view = jobProgressView(
-      job({ status: 'running', serverStage: 'saving', progress: 0.1 }),
-      NOW
-    );
+    const view = jobProgressView(job({ status: 'running', serverStage: 'saving', progress: 0.1 }));
     expect(view.stage).toBe('Saving to your deck');
     expect(view.stageIndex).toBe(2);
     expect(view.percent).toBe(85);
@@ -318,24 +336,71 @@ describe('jobProgressView — F4: one value behind the subtitle, the ticks and t
 
   it('maps the server stage words onto the three steps the sheet shows', () => {
     const at = (serverStage: string) =>
-      jobProgressView(job({ status: 'running', serverStage }), NOW).stage;
+      jobProgressView(job({ status: 'running', serverStage })).stage;
     expect(at('queued')).toBe('Reading your notes');
     expect(at('reading')).toBe('Reading your notes');
     expect(at('generating')).toBe('Writing 20 cards');
     expect(at('saving')).toBe('Saving to your deck');
   });
 
-  it('an old server — status only, no stage — still lands on one consistent stage', () => {
-    // Nothing but the clock to go on. The subtitle, the tick and the bar are
-    // all derived from that one number rather than from three of them.
-    const view = jobProgressView(job({ status: 'running' }), NOW + JOB_TIME_BUDGET_MS / 2);
+  it('a server fraction alone lands on one consistent stage', () => {
+    // The subtitle, the tick and the bar are all derived from that one number
+    // rather than from three of them.
+    const view = jobProgressView(job({ status: 'running', progress: 0.5 }));
     expect(view.stageIndex).toBe(1);
     expect(view.stage).toBe('Writing 20 cards');
     expect(view.percent).toBe(50);
-    const state = jobSheetState(job({ status: 'running' }), NOW + JOB_TIME_BUDGET_MS / 2);
+    const state = jobSheetState(job({ status: 'running', progress: 0.5 }), NOW + 10_000);
     expect(state.detail).toBe(view.stage);
     expect(state.stageIndex).toBe(view.stageIndex);
     expect(state.percent).toBe(view.percent);
+  });
+
+  it('says there is no news rather than inventing some — F7', () => {
+    // Nothing has reported: not the server, not a runner. The bar holds at
+    // the floor of the first step and the subtitle names the situation.
+    const state = jobSheetState(job({ status: 'running' }), NOW + 40_000);
+    expect(state.waiting).toBe(true);
+    expect(state.detail).toBe(STILL_WORKING_COPY);
+    expect(state.percent).toBe(0);
+
+    const offline = jobSheetState(job({ status: 'running' }), NOW + 40_000, undefined, {
+      offline: true,
+    });
+    expect(offline.detail).toBe(WAITING_FOR_CONNECTION_COPY);
+    expect(offline.percent).toBe(0);
+  });
+
+  it('stops waiting the moment the server says anything', () => {
+    const state = jobSheetState(job({ status: 'running', serverStage: 'generating' }), NOW);
+    expect(state.waiting).toBe(false);
+    expect(state.detail).toBe('Writing 20 cards');
+  });
+
+  it('a runner stage counts as news — the client IS doing that step', () => {
+    const state = jobSheetState(job({ status: 'running', stage: 'Saving to your deck' }), NOW);
+    expect(state.waiting).toBe(false);
+    expect(state.detail).toBe('Saving to your deck');
+  });
+});
+
+describe('a device that cannot be notified — F6', () => {
+  it('stops promising a notification it cannot deliver, and offers to fix it', () => {
+    const state = jobSheetState(job({ status: 'running' }), NOW + 1_000, undefined, {
+      notificationsOff: true,
+    });
+    expect(state.actions).toContain('enable-notifications');
+    expect(jobActionLabel('stop-watching', { notificationsOff: true })).toBe(NO_NOTIFICATIONS_COPY);
+    expect(jobActionLabel('stop-watching', { notificationsOff: true })).not.toContain(
+      "we'll tell you"
+    );
+    expect(jobActionLabel('enable-notifications')).toBe('Turn on notifications');
+  });
+
+  it('keeps the promise when notifications are on', () => {
+    const state = jobSheetState(job({ status: 'running' }), NOW + 1_000);
+    expect(state.actions).not.toContain('enable-notifications');
+    expect(jobActionLabel('stop-watching')).toBe(KEEP_WORKING_COPY);
   });
 
   it('a runner stage that is not one of this list is ignored rather than shown', () => {
@@ -343,7 +408,11 @@ describe('jobProgressView — F4: one value behind the subtitle, the ticks and t
       job({ status: 'running', stage: 'Doing something else entirely' }),
       NOW + 1_000
     );
-    expect(state.detail).toBe(state.stages[state.stageIndex]);
+    // Not one of the three steps, so it says nothing about which step is
+    // running — and the sheet reports no news rather than a word off a list
+    // the checklist does not share.
+    expect(state.stages).not.toContain(state.detail);
+    expect(state.detail).toBe(STILL_WORKING_COPY);
   });
 });
 
@@ -429,5 +498,34 @@ describe('a saved note quiz', () => {
     expect(parsed?.id).toBe('test-7');
     expect(parsed?.extra?.name).toBe('Quiz · SDOH');
     expect(jobNotification(done)?.url).toBe(link);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// D6 — the sheet closes on a swipe down, not only on a button
+// ─────────────────────────────────────────────────────────────
+
+describe('swiping the progress sheet away', () => {
+  it('claims an unmistakable downward drag', () => {
+    expect(shouldClaimSheetDrag(20, 2)).toBe(true);
+  });
+
+  it('leaves a tap alone, so the sheet\'s buttons still work', () => {
+    // Every action on this sheet is a Pressable; a gesture that claimed on
+    // contact would make "Save to library" untappable.
+    expect(shouldClaimSheetDrag(0, 0)).toBe(false);
+    expect(shouldClaimSheetDrag(SHEET_DRAG_SLOP, 0)).toBe(false);
+  });
+
+  it('leaves an upward or sideways drag alone', () => {
+    expect(shouldClaimSheetDrag(-30, 0)).toBe(false);
+    expect(shouldClaimSheetDrag(10, 40)).toBe(false);
+  });
+
+  it('dismisses past the threshold and springs back short of it', () => {
+    expect(shouldDismissSheet(SHEET_DISMISS_DISTANCE + 1)).toBe(true);
+    expect(shouldDismissSheet(SHEET_DISMISS_DISTANCE)).toBe(false);
+    expect(shouldDismissSheet(10)).toBe(false);
   });
 });

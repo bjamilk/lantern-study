@@ -1,14 +1,17 @@
 import React from 'react';
 import {
   AcademicCapIcon,
+  ArrowDownOnSquareIcon,
+  ClipboardDocumentCheckIcon,
+  ClockIcon,
+  MicrophoneIcon,
   PlayIcon,
   RectangleStackIcon,
-  SparklesIcon,
-  ClockIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
 import { getStudyAllDueLabel, getStudyCtaLabel, FLASHCARD_MODE_LABELS, isCardDue } from '@lantern/shared';
-import { ScreenHeader, Card, Button, StatPill } from './ui';
+import { ScreenHeader, Card, Button, StatPill, FeatureDisc, DoorTile } from './ui';
 import SavedSessionsList from './SavedSessionsList';
 
 interface StudyHubScreenProps {
@@ -30,6 +33,12 @@ interface StudyHubScreenProps {
   onAbandonPausedSession?: (sessionId: string) => void;
   recentTestCount?: number;
   onViewRecentTests?: () => void;
+  /** Wave 1 doors. Each tile renders only when its route is actually wired. */
+  onOpenFlashcards?: () => void;
+  onOpenTests?: () => void;
+  /** Opens a fresh note with the lecture recorder — the web's only recording path. */
+  onRecordLecture?: () => void;
+  noteCount?: number;
 }
 
 export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
@@ -50,6 +59,10 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   onAbandonPausedSession,
   recentTestCount = 0,
   onViewRecentTests,
+  onOpenFlashcards,
+  onOpenTests,
+  onRecordLecture,
+  noteCount,
 }) => {
   const hasPausedSession = Boolean(activeTestSession || activeStudySession);
   const topDecks = decks.slice(0, 4);
@@ -83,9 +96,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           <Card padding="md">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/40 text-amber-600">
-                  <ClockIcon className="w-5 h-5" />
-                </div>
+                <FeatureDisc feature="budget" icon={<ClockIcon className="w-5 h-5" />} />
                 <div>
                   <p className="text-heading text-lantern-text">
                     {activeTestSession ? 'Test paused' : 'Study session paused'}
@@ -135,25 +146,54 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           </div>
         </Card>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <button
-            type="button"
-            onClick={onOpenAITools}
-            className="text-left p-4 rounded-xl border border-lantern-border bg-lantern-surface hover:border-lantern-primary transition-colors"
-          >
-            <SparklesIcon className="w-6 h-6 text-lantern-primary-text mb-2" />
-            <p className="text-heading text-lantern-text">AI Tools</p>
-            <p className="text-caption text-lantern-text-secondary mt-1">Import PDFs, paste notes, generate flashcards</p>
-          </button>
-          <button
-            type="button"
+        {/* ─── The doors (§5.7 Study hub). Five tiles, one hue each, no more. ─── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+          <DoorTile
+            feature="notes"
+            icon={<Squares2X2Icon className="w-6 h-6" />}
+            title="Library"
+            promise="Turn slides into cards"
+            count={
+              noteCount !== undefined
+                ? `${noteCount + decks.length} item${noteCount + decks.length === 1 ? '' : 's'}`
+                : undefined
+            }
             onClick={onOpenLibrary}
-            className="text-left p-4 rounded-xl border border-lantern-border bg-lantern-surface hover:border-lantern-primary transition-colors"
-          >
-            <RectangleStackIcon className="w-6 h-6 text-emerald-600 mb-2" />
-            <p className="text-heading text-lantern-text">Library</p>
-            <p className="text-caption text-lantern-text-secondary mt-1">Browse notes and flashcard decks</p>
-          </button>
+          />
+          <DoorTile
+            feature="flashcards"
+            icon={<RectangleStackIcon className="w-6 h-6" />}
+            title="Flashcards"
+            promise="Spaced repetition that remembers for you"
+            count={dueCardsCount > 0 ? `${dueCardsCount} due` : undefined}
+            onClick={onOpenFlashcards ?? onOpenLibrary}
+          />
+          {onOpenTests && (
+            <DoorTile
+              feature="tests"
+              icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}
+              title="Tests"
+              promise="Sit a practice test, see what to fix"
+              count={recentTestCount > 0 ? `${recentTestCount} saved` : undefined}
+              onClick={onOpenTests}
+            />
+          )}
+          {onRecordLecture && (
+            <DoorTile
+              feature="recording"
+              icon={<MicrophoneIcon className="w-6 h-6" />}
+              title="Record"
+              promise="Record a lecture, get a note back"
+              onClick={onRecordLecture}
+            />
+          )}
+          <DoorTile
+            feature="notes"
+            icon={<ArrowDownOnSquareIcon className="w-6 h-6" />}
+            title="Import & study"
+            promise="PDF, slides or pasted notes — one step"
+            onClick={onOpenAITools}
+          />
         </div>
 
         {topDecks.length > 0 && (
@@ -169,9 +209,14 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                   key={deck.id}
                   className="flex items-center justify-between gap-3 p-3 rounded-xl border border-lantern-border bg-lantern-surface"
                 >
-                  <button type="button" onClick={() => onSelectDeck(deck)} className="text-left min-w-0 flex-1">
-                    <p className="text-body font-semibold text-lantern-text truncate">{deck.name}</p>
-                    <p className="text-caption text-lantern-text-secondary truncate">{deck.description || 'Flashcard deck'}</p>
+                  <button type="button" onClick={() => onSelectDeck(deck)} className="text-left min-w-0 flex-1 flex items-center gap-3">
+                    <FeatureDisc feature="flashcards" icon={<RectangleStackIcon className="w-5 h-5" />} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body font-semibold text-lantern-text truncate">{deck.name}</span>
+                      <span className="block text-caption text-lantern-text-secondary truncate">
+                        {deck.description || 'Flashcard deck'}
+                      </span>
+                    </span>
                   </button>
                   {canStartSrsReview ? (
                     <div className="flex items-center gap-2 flex-shrink-0">

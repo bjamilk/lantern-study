@@ -37,6 +37,8 @@ import {
   type CampusSegment,
 } from './campusSegments';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { FeatureDisc, useFeatureAccent } from '../../components/ui';
+import { communityRowIcon } from './communityRowIcon';
 
 interface NavigationProp {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -123,6 +125,9 @@ function SegmentBar({
  */
 function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
   const { colors } = useTheme();
+  // Violet is the Campus family. It appears exactly twice on this panel: on
+  // the row discs, and on the one coaching card below.
+  const campusAccent = useFeatureAccent('campus');
   const listBottomPadding = useScreenBottomPadding();
   const myCommunities = useCommunityStore((s) => s.myCommunities);
   const loadMine = useCommunityStore((s) => s.loadMine);
@@ -243,9 +248,11 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
         style={{ minHeight: 56 }}
         className="flex-row items-center gap-3 px-4 py-3 border-b border-lantern-border"
       >
-        <View className="w-10 h-10 rounded-xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 items-center justify-center">
-          <AppIcon name="people" size={20} color={colors.primaryText} />
-        </View>
+        {/* Violet is the Campus family, and the GLYPH is what says which kind
+            of room this is — a course, a campus, an interest. The indigo
+            square this replaced was the app's primary colour used as
+            decoration, identical on every row. */}
+        <FeatureDisc feature="campus" icon={communityRowIcon(community.kind)} size={40} />
         <View className="flex-1 min-w-0">
           <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
             {community.name}
@@ -327,6 +334,34 @@ function CommunitiesPanel({ navigation }: { navigation: NavigationProp }) {
                   detail="Showing the communities saved on this device."
                 />
               ) : null}
+              {/* Nothing joined yet: ONE violet coaching card (spec v3 §5.7),
+                  which says what a room is FOR rather than that the list is
+                  empty. Never drawn on the back of a failed load — the banner
+                  above has already said what really happened, and "you have
+                  joined nothing" would be a claim we cannot make. */}
+              {!listUnknown && myCommunities.length === 0 ? (
+                <View
+                  style={{ backgroundColor: campusAccent.tint }}
+                  className="mx-4 mt-3 mb-1 rounded-2xl p-4"
+                  accessibilityRole="summary"
+                >
+                  <View className="flex-row items-center gap-3 mb-2">
+                    <FeatureDisc feature="campus" icon="book" size={32} />
+                    <Text
+                      style={{ color: campusAccent.ink }}
+                      className="flex-1 text-heading font-bold"
+                    >
+                      Your course room is where past questions get verified
+                    </Text>
+                  </View>
+                  <Text className="text-caption text-lantern-text">
+                    Join the room for a course you are taking: members mark which past
+                    questions are real, and what they verify is what shows up in your
+                    tests.
+                  </Text>
+                </View>
+              ) : null}
+
               {myCommunities.length > 0 ? (
                 <>
                   <Text className="px-4 pt-3 pb-1 text-xs font-semibold uppercase text-lantern-text-tertiary">

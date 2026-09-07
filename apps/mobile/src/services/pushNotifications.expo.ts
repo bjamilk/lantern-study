@@ -33,3 +33,16 @@ export function addNotificationReceivedListener(
 ): () => void {
   return () => {};
 }
+
+/** Expo Go delivers nothing, and says so rather than promising. */
+export async function areJobNotificationsReady(): Promise<boolean> {
+  return false;
+}
+
+export async function fetchPushTokenRegistered(): Promise<boolean | null> {
+  return null;
+}
+
+export async function enableJobNotifications(): Promise<boolean> {
+  return false;
+}

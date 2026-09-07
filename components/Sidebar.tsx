@@ -324,13 +324,16 @@ const Sidebar: React.FC<SidebarProps> = ({
       aria-current={isActive ? 'page' : undefined}
       className={`w-full flex items-center p-3 rounded-xl text-lantern-text-secondary hover:bg-lantern-surface hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
           isActive
-            ? 'bg-lantern-primary-background text-lantern-primary font-semibold shadow-lantern'
+            // Duotone active treatment: tint fill on the row, ink on the
+            // glyph and the label. `primary-text` (not bare `primary`) is the
+            // TEXT half of the Wave 0 split — bare primary is the fill role.
+            ? 'bg-lantern-primary-background text-lantern-primary-text font-semibold shadow-lantern'
             : ''
       } ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''} ${!showText && 'justify-center'}`}
       disabled={!canInteractWithChats && !isSessionPaused}
       title={label}
     >
-      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${isActive ? 'text-lantern-primary' : ''}`} aria-hidden="true" />
+      <Icon className={`w-5 h-5 flex-shrink-0 ${showText && 'mr-3'} ${isActive ? 'text-lantern-primary-text' : ''}`} aria-hidden="true" />
       {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
       {showText && countLabel ? (
         <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-lantern-background-secondary px-2 py-0.5 text-label tracking-normal text-lantern-text-secondary">

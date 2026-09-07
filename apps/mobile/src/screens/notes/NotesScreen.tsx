@@ -34,10 +34,19 @@ import {
   uploadNoteImagesViaApi,
 } from '../../services/notes';
 import { trackNoteCreated } from '../../services/productAnalytics';
-import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import {
+  ActionSheet,
+  Button,
+  Card,
+  CourseChip,
+  FeatureDisc,
+  ScreenHeader,
+  type ActionSheetItem,
+} from '../../components/ui';
+import { noteRowMark } from './noteRowMark';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
-import { courseHasTopics } from '../../services/academic';
+import { courseHasTopics, getMyActiveCourses } from '../../services/academic';
 import { useUIStore } from '../../stores/uiStore';
 import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import type { Course, CourseTopic } from '@lantern/shared/types';
@@ -90,15 +99,6 @@ type PendingImport =
       mode: 'photos';
       assets: PendingPhotoAsset[];
     };
-
-function sourceBadge(note: StudyNote): string {
-  if (note.sourceType === 'youtube') return 'YouTube';
-  if (note.sourceType === 'pdf') return 'PDF';
-  if (note.sourceType === 'presentation') return 'Slides';
-  if (note.sourceType === 'photos') return 'Photos';
-  if (note.sourceType === 'audio') return 'Audio';
-  return 'Note';
-}
 
 function FolderChip({
   folder,
@@ -158,20 +158,32 @@ function FolderChip({
   );
 }
 
+/**
+ * One Library row. Spec v3 §5.7: a NEUTRAL card, a 40px feature disc on the
+ * left saying what the thing is, the course chip on the right saying what it
+ * is about, and no band — bands belong on heroes and doors, never in a list.
+ *
+ * The indigo "PDF"/"Slides" pill this replaced was a word doing an icon's job,
+ * and it was the same indigo on every row, so it said nothing at a glance.
+ */
 function NoteCard({
   note,
+  courseCode,
   onPress,
   onLongPress,
   selectMode,
   selected,
 }: {
   note: StudyNote;
+  /** `Course.code` for `note.courseId`, when the enrolment list knows it. */
+  courseCode?: string;
   onPress: () => void;
   onLongPress?: () => void;
   selectMode?: boolean;
   selected?: boolean;
 }) {
   const isShared = note.accessRole && note.accessRole !== 'owner';
+  const mark = noteRowMark(note.sourceType);
   return (
     <Pressable
       onPress={onPress}
@@ -181,47 +193,58 @@ function NoteCard({
       accessibilityState={selectMode ? { selected: Boolean(selected) } : undefined}
     >
       <Card className={selected ? 'border-lantern-primary' : 'border-lantern-border'}>
-        <View className="flex-row items-start justify-between gap-2 mb-2">
-          <View className="flex-1 flex-row items-start gap-1.5 min-w-0">
-            {selectMode ? (
-              <AppIcon
-                name={selected ? 'checkbox' : 'square'}
-                size={20}
-                color={selected ? '#6366f1' : '#94a3b8'}
-                style={{ marginTop: 1 }}
-              />
-            ) : null}
-            {note.isPinned ? (
-              <AppIcon name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
-            ) : null}
-            <Text className="flex-1 text-body font-semibold text-lantern-text" numberOfLines={2}>
-              {note.title}
+        <View className="flex-row items-start gap-3">
+          {selectMode ? (
+            <AppIcon
+              name={selected ? 'checkbox' : 'square'}
+              size={20}
+              color={selected ? '#6366f1' : '#94a3b8'}
+              style={{ marginTop: 10 }}
+            />
+          ) : null}
+          {/* The type, as a shape. Labelled for a screen reader because the
+              row no longer prints the word anywhere. */}
+          <FeatureDisc
+            feature={mark.feature}
+            icon={mark.icon}
+            size={40}
+            accessibilityLabel={mark.label}
+          />
+          <View className="flex-1 min-w-0">
+            <View className="flex-row items-start gap-2">
+              <View className="flex-1 flex-row items-start gap-1.5 min-w-0">
+                {note.isPinned ? (
+                  <AppIcon name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
+                ) : null}
+                <Text
+                  className="flex-1 text-body font-semibold text-lantern-text"
+                  numberOfLines={2}
+                >
+                  {note.title}
+                </Text>
+              </View>
+              <CourseChip code={courseCode} />
+            </View>
+            {isShared ? (
+              <View className="flex-row items-center gap-1 mt-1">
+                <AppIcon name="people" size={13} color="#6366f1" />
+                <Text className="text-caption text-lantern-text-secondary">
+                  Shared by {note.owner?.name || note.owner?.username || 'another member'} · {note.accessRole}
+                </Text>
+              </View>
+            ) : (
+              <Text className="text-caption text-lantern-text-tertiary mt-1">Mine</Text>
+            )}
+            <Text className="text-body text-lantern-text-secondary mt-1" numberOfLines={2}>
+              {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
             </Text>
-          </View>
-          <View className="bg-lantern-primary-background px-2 py-0.5 rounded-full shrink-0">
-            <Text className="text-label font-semibold text-lantern-primary-text">
-              {sourceBadge(note)}
-            </Text>
+            {note.updatedAt ? (
+              <Text className="text-caption text-lantern-text-tertiary mt-3">
+                Updated {new Date(note.updatedAt).toLocaleDateString()}
+              </Text>
+            ) : null}
           </View>
         </View>
-        {isShared ? (
-          <View className="flex-row items-center gap-1 mb-2">
-            <AppIcon name="people" size={13} color="#6366f1" />
-            <Text className="text-caption text-lantern-text-secondary">
-              Shared by {note.owner?.name || note.owner?.username || 'another member'} · {note.accessRole}
-            </Text>
-          </View>
-        ) : (
-          <Text className="text-caption text-lantern-text-tertiary mb-2">Mine</Text>
-        )}
-        <Text className="text-body text-lantern-text-secondary" numberOfLines={2}>
-          {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
-        </Text>
-        {note.updatedAt ? (
-          <Text className="text-caption text-lantern-text-tertiary mt-3">
-            Updated {new Date(note.updatedAt).toLocaleDateString()}
-          </Text>
-        ) : null}
       </Card>
     </Pressable>
   );
@@ -258,6 +281,35 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
   /** New notes are filed under the active course filter (never under "Unfiled"). */
   const defaultCourseId =
     courseFilterId && courseFilterId !== UNFILED_COURSE_ID ? courseFilterId : undefined;
+
+  /**
+   * `courseId` → the printed code ("BIO 201") for the row chips.
+   *
+   * Read from the enrolment list, which `getMyActiveCourses` already caches
+   * for a minute behind every course picker in the app — so this costs the
+   * screen nothing on a warm cache and one request on a cold one. A note filed
+   * under a course this student is no longer enrolled in simply has no chip;
+   * an empty chip would be a label on an absence.
+   */
+  const [courseCodes, setCourseCodes] = useState<Record<string, string>>({});
+  useEffect(() => {
+    let alive = true;
+    getMyActiveCourses()
+      .then((rows) => {
+        if (!alive) return;
+        const map: Record<string, string> = {};
+        for (const row of rows) {
+          if (row.course?.id && row.course.code) map[row.course.id] = row.course.code;
+        }
+        setCourseCodes(map);
+      })
+      // A chip is decoration on a row that already reads correctly without
+      // it: a failed lookup must never banner or block the Library.
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const [ownSearch, setOwnSearch] = useState('');
   // One box per screen: the Library's when embedded, this screen's otherwise.
@@ -1488,6 +1540,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
             return (
               <NoteCard
                 note={item}
+                courseCode={item.courseId ? courseCodes[item.courseId] : undefined}
                 selectMode={selectMode && manageable}
                 selected={selected}
                 onPress={() => {

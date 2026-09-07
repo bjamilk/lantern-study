@@ -29,6 +29,18 @@ jest.mock('../services/idempotency', () => ({
   },
 }));
 
+/** The job record store lives in Redis; the route only ever adds a pointer. */
+const stampedRefs: Array<{ jobId: string; ref: unknown }> = [];
+let stampThrows = false;
+
+jest.mock('../queue/jobStatus', () => ({
+  attachJobResultRef: async (jobId: string, ref: unknown) => {
+    stampedRefs.push({ jobId, ref });
+    if (stampThrows) throw new Error('redis down');
+    return null;
+  },
+}));
+
 import { setIdempotencyClient } from '../middleware/idempotency';
 import router, {
   initializeTestRoutes,
@@ -39,7 +51,11 @@ import router, {
 // resolves the client before calling through.
 setIdempotencyClient(() => ({}) as any);
 
-beforeEach(() => idempotencyStore.clear());
+beforeEach(() => {
+  idempotencyStore.clear();
+  stampedRefs.length = 0;
+  stampThrows = false;
+});
 
 async function runRoute(path: string, req: any) {
   const layer = (router as any).stack.find(
@@ -194,6 +210,48 @@ describe('POST /tests/personal', () => {
     expect(second.statusCode).toBe(201);
     expect(second.body.data).toEqual(first.body.data);
     expect(createPersonalTest).toHaveBeenCalledTimes(1);
+  });
+
+  it('stamps the saved test onto the job that generated it', async () => {
+    // Until this landed the job record only knew it had made "a quiz", so its
+    // notification could offer nothing better than lanternstudy://jobs/<id>.
+    const createPersonalTest = jest.fn(async () => okRow);
+    initWith(createPersonalTest);
+
+    const res = await runRoute(
+      '/personal',
+      request({
+        title: 'Quiz',
+        sourceJobId: 'srv-job-9',
+        questions: [question(1)],
+      }),
+    );
+
+    expect(res.statusCode).toBe(201);
+    expect(stampedRefs).toEqual([
+      { jobId: 'srv-job-9', ref: { type: 'test', id: 'test-1', route: '/tests/test-1' } },
+    ]);
+  });
+
+  it('saves the test even when the job record cannot be stamped', async () => {
+    stampThrows = true;
+    const createPersonalTest = jest.fn(async () => okRow);
+    initWith(createPersonalTest);
+
+    const res = await runRoute(
+      '/personal',
+      request({ title: 'Quiz', sourceJobId: 'srv-job-9', questions: [question(1)] }),
+    );
+
+    expect(res.statusCode).toBe(201);
+    expect(res.body.data).toMatchObject({ id: 'test-1' });
+  });
+
+  it('stamps nothing when the save did not come from a job', async () => {
+    const createPersonalTest = jest.fn(async () => okRow);
+    initWith(createPersonalTest);
+    await runRoute('/personal', request({ title: 'Quiz', questions: [question(1)] }));
+    expect(stampedRefs).toEqual([]);
   });
 
   it('falls back to the generating job id as the key when no clientKey is sent', async () => {

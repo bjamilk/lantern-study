@@ -47,7 +47,12 @@ export type StudyStackParamList = {
   MatchStudy: { deckId: string; deckName?: string };
   LearnStudy: { deckId: string; deckName?: string };
   NotesList: undefined;
-  NoteEditor: { noteId: string };
+  /**
+   * `startRecording` is the Record door's handover: the door has already
+   * asked, created the note and named it, and the editor starts the recorder
+   * on arrival so the note that lands has a lecture in it.
+   */
+  NoteEditor: { noteId: string; startRecording?: boolean };
   NoteShareAccept: { token: string };
   /** Library tree → History filtered to a course (`'null'` = unfiled sessions). */
   TestsList:

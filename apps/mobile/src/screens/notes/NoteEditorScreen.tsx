@@ -54,7 +54,9 @@ import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifact
 import { JobProgressSheet } from '../../components/jobs';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
-import { Button, Card } from '../../components/ui';
+import { Body, Button, Caption, Card, FeatureDisc, Heading } from '../../components/ui';
+import type { AppIconName } from '../../components/ui';
+import type { FeatureKey } from '@lantern/shared/design';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -64,7 +66,11 @@ import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal'
 import AIUsageBadge from '../../components/AIUsageBadge';
 import { getLatestAIUsage, subscribeToAIUsage } from '../../services/ai';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
-import { SMART_NOTES_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
+import {
+  AI_CREDIT_COSTS,
+  SMART_NOTES_CREDIT_COST,
+  formatCreditCost,
+} from '@lantern/shared/utils/aiCredits';
 import { SMART_NOTES_GUIDANCE_MAX_CHARS } from '@lantern/shared/utils/smartNotes';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -92,8 +98,65 @@ interface Props {
 
   navigation: NavigationProp;
 
-  route: { params: { noteId: string } };
+  route: { params: { noteId: string; startRecording?: boolean } };
 
+}
+
+/**
+ * One "Turn into" option: a neutral tile carrying its feature's disc, what it
+ * makes, and what it costs.
+ *
+ * The cost is printed, always, from `formatCreditCost` over the SAME constants
+ * the server charges (`aiCredits.ts`) — a number typed in here is how the
+ * counter starts lying. A tile whose cost the student cannot cover is disabled
+ * and says so, rather than failing at the far end of a spinner.
+ */
+function TurnIntoOption({
+  feature,
+  icon,
+  label,
+  cost,
+  hint,
+  disabled,
+  disabledReason,
+  onPress,
+}: {
+  feature: FeatureKey;
+  icon: AppIconName;
+  label: string;
+  /** Printed cost, or null for an action that spends no credit up front. */
+  cost: string | null;
+  hint?: string;
+  disabled?: boolean;
+  disabledReason?: string;
+  onPress: () => void;
+}) {
+  const detail = disabled && disabledReason ? disabledReason : (hint ?? cost ?? '');
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={disabled}
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityLabel={[label, detail].filter(Boolean).join('. ')}
+      style={{ minHeight: 64, flexBasis: '48%' }}
+      className={`flex-1 flex-row items-center gap-2.5 p-3 rounded-lantern-xl border border-lantern-border bg-lantern-surface active:opacity-90 ${
+        disabled ? 'opacity-50' : ''
+      }`}
+    >
+      <FeatureDisc feature={feature} icon={icon} size={32} />
+      <View className="flex-1 min-w-0">
+        <Body style={{ fontWeight: '600' }} numberOfLines={1} importantForAccessibility="no">
+          {label}
+        </Body>
+        {detail ? (
+          <Caption tone="secondary" numberOfLines={2} importantForAccessibility="no">
+            {detail}
+          </Caption>
+        ) : null}
+      </View>
+    </Pressable>
+  );
 }
 
 
@@ -588,6 +651,30 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     else startRecording();
   };
 
+  /**
+   * The Record door's second half.
+   *
+   * The door asks, creates the note and hands over `startRecording: true`; the
+   * mic then opens by itself, so a note created by that door is never an empty
+   * one the student has to notice and delete. Once per arrival, and only once
+   * the note is actually loaded and editable — `startedFromDoorRef` makes a
+   * re-render, a Fast Refresh or a returning screen unable to start a second
+   * recording over a running one.
+   */
+  const startedFromDoorRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!route.params?.startRecording) return;
+    if (startedFromDoorRef.current === noteId) return;
+    if (!canEdit) return;
+    if (!selectedNote || selectedNote.id !== noteId) return;
+    if (lectureStatus !== 'idle') return;
+    startedFromDoorRef.current = noteId;
+    startRecording();
+    // `startRecording` is re-created every render; the ref above is the guard,
+    // so it is deliberately not a dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.params?.startRecording, noteId, canEdit, selectedNote, lectureStatus]);
+
 
 
   const handleRetryYoutubeTranscript = async () => {
@@ -980,7 +1067,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </Card>
           ) : null}
 
-          {canEdit ? <View className="flex-row flex-wrap gap-2 py-2 mb-2">
+          {/* The live recording controls. They appear only once a session on
+              THIS note is running: the door into recording is the "Turn into"
+              row below, so an idle note no longer shows two ways in. */}
+          {canEdit && (isRecording || transcribing) ? <View className="flex-row flex-wrap gap-2 py-2 mb-2">
 
             <Button
 
@@ -992,8 +1082,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
               disabled={
                 transcribing ||
-                (isRecording && recordingSeconds * 1000 < MIN_MOBILE_LECTURE_RECORD_MS) ||
-                (lectureStatus !== 'idle' && lectureNoteId !== noteId)
+                (isRecording && recordingSeconds * 1000 < MIN_MOBILE_LECTURE_RECORD_MS)
               }
 
             >
@@ -1002,11 +1091,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 ? lectureStatus === 'uploading'
                   ? 'Uploading...'
                   : 'Transcribing...'
-                : isRecording
-                  ? recordingSeconds < 2
-                    ? `Wait ${2 - recordingSeconds}s`
-                    : 'Stop & transcribe'
-                  : 'Record lecture'}
+                : recordingSeconds < 2
+                  ? `Wait ${2 - recordingSeconds}s`
+                  : 'Stop & transcribe'}
 
             </Button>
 
@@ -1032,6 +1119,82 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           </View> : null}
 
+          {/* TURN INTO — spec v3 §3.1. The note is a source; these are the
+              four things a student can make out of it, each with the credit it
+              costs printed before the tap rather than discovered after it.
+              Every option routes into the generation path that already exists
+              (jobsStore for flashcards and quizzes, summarizeNote for Smart
+              notes, the lecture store for recording); nothing new generates
+              here — Wave G owns delivery. */}
+          {canEdit ? (
+            <View className="mb-4">
+              <Heading className="mb-0.5">Turn into</Heading>
+              <Caption tone="secondary" className="mb-2">
+                This creates a new thing — your note stays as it is
+              </Caption>
+              <View className="flex-row flex-wrap gap-2">
+                <TurnIntoOption
+                  feature="flashcards"
+                  icon="albums"
+                  label="Flashcards"
+                  cost={formatCreditCost(AI_CREDIT_COSTS.generate_flashcards)}
+                  disabled={isAILoading || !canGenerateStudyMaterials || shortForOneCredit}
+                  disabledReason={
+                    shortForOneCredit
+                      ? 'No credits left today'
+                      : !canGenerateStudyMaterials
+                        ? 'Needs more content in the note'
+                        : undefined
+                  }
+                  onPress={handleGenerateFlashcards}
+                />
+                <TurnIntoOption
+                  feature="tests"
+                  icon="document-text"
+                  label="Quiz"
+                  cost={formatCreditCost(AI_CREDIT_COSTS.generate_questions)}
+                  disabled={!canGenerateStudyMaterials || shortForOneCredit}
+                  disabledReason={
+                    shortForOneCredit
+                      ? 'No credits left today'
+                      : !canGenerateStudyMaterials
+                        ? 'Needs more content in the note'
+                        : undefined
+                  }
+                  onPress={handleGenerateQuiz}
+                />
+                <TurnIntoOption
+                  feature="ai"
+                  icon="sparkles"
+                  label="Smart notes"
+                  cost={formatCreditCost(SMART_NOTES_CREDIT_COST[smartNotesDepth])}
+                  disabled={summarizing || shortForSmartNote}
+                  disabledReason={shortForSmartNote ? 'Not enough credits left today' : undefined}
+                  onPress={() => void handleSummarize()}
+                />
+                <TurnIntoOption
+                  feature="recording"
+                  icon="mic"
+                  label="Record"
+                  cost={null}
+                  // The exception to the line above, said plainly rather than
+                  // left to be discovered: a recording lands IN this note.
+                  // Nothing is charged to start; the transcript costs a credit
+                  // when you stop.
+                  hint="Records into this note"
+                  disabled={isRecording || transcribing || lectureStatus !== 'idle'}
+                  disabledReason={
+                    isRecording || transcribing
+                      ? 'Recording — controls are above'
+                      : lectureStatus !== 'idle'
+                        ? 'Another note is recording'
+                        : undefined
+                  }
+                  onPress={handleRecordPress}
+                />
+              </View>
+            </View>
+          ) : null}
 
 
           {/* Academic archive: file this note under a course (owner/editor only). */}

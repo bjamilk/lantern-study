@@ -233,6 +233,13 @@ export interface PersonalTestRequest {
   title: string;
   /** The note this was generated from. */
   sourceNoteId?: string;
+  /**
+   * The SERVER job that generated these questions. The route stamps the saved
+   * test onto that job record (`attachJobResultRef`), which is what turns the
+   * completion push's `lanternstudy://jobs/<id>` into `lanternstudy://test/<id>`
+   * and lets a resumed app settle the job from the record alone.
+   */
+  sourceJobId?: string;
   questions: unknown[];
 }
 

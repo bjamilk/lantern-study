@@ -11,11 +11,13 @@
  * nothing is pulled in at runtime and an icon name that does not exist is a
  * compile error rather than a blank row.
  */
+import type { FeatureKey } from '@lantern/shared/design';
 import type { AppIconName } from '../../components/ui/appIconMap';
 
 export type MeRowId =
   | 'academic'
   | 'budget'
+  | 'credits'
   | 'downloads'
   | 'darkMode'
   | 'lowData'
@@ -24,9 +26,12 @@ export type MeRowId =
 
 /**
  * `link` pushes or opens something. `switch` flips a setting in place — it is
- * a mode, so it must never be a destination. `destructive` is Log out.
+ * a mode, so it must never be a destination. `readout` is a figure to read and
+ * nothing more: it is not pressable, because a row that looks like a door and
+ * opens nothing is worse than a row that never claimed to. `destructive` is
+ * Log out.
  */
-export type MeRowKind = 'link' | 'switch' | 'destructive';
+export type MeRowKind = 'link' | 'switch' | 'readout' | 'destructive';
 
 export interface MeRow {
   id: MeRowId;
@@ -36,6 +41,13 @@ export interface MeRow {
   hint?: string;
   /** Name from APP_ICONS — see components/ui/appIconMap.ts. */
   icon: AppIconName;
+  /**
+   * Spec v3 §5.7: Me stays neutral, with exactly TWO accented rows — Downloads
+   * on amber and Credits on indigo. A row with no `feature` draws a plain
+   * glyph in the secondary ink, which is what the other seven do. A loud Me
+   * screen is a Me screen that is selling.
+   */
+  feature?: FeatureKey;
   kind: MeRowKind;
   /** Present only on `switch` rows: the current state. */
   value?: boolean;
@@ -86,10 +98,22 @@ export function buildMeSections({ darkMode, lowDataMode }: MeState): MeSection[]
         {
           id: 'downloads',
           label: 'Downloads',
-          hint: 'Practice tests and material saved to this device',
+          // The two things a student on a metered plan needs to know, said
+          // before they tap rather than after: it is on the phone, and reading
+          // it costs nothing.
+          hint: 'Saved on this phone only — costs no data',
           icon: 'cloud-download',
+          feature: 'budget',
           kind: 'link',
           accessibilityLabel: 'Downloads',
+        },
+        {
+          id: 'credits',
+          label: 'Lantern AI credits',
+          icon: 'sparkles',
+          feature: 'ai',
+          kind: 'readout',
+          accessibilityLabel: 'Lantern AI credits',
         },
       ],
     },

@@ -34,6 +34,7 @@ export function InFlightJobsCard({ className }: Props) {
   const openSheet = useJobsStore((s) => s.openSheet);
   const dismissJob = useJobsStore((s) => s.dismissJob);
   const retryGenerate = useJobsStore((s) => s.retryGenerate);
+  const refreshActiveJobs = useJobsStore((s) => s.refreshActiveJobs);
   const [now, setNow] = useState(() => Date.now());
 
   // Home is the app's initial route, so this is where persisted jobs are
@@ -51,6 +52,12 @@ export function InFlightJobsCard({ className }: Props) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [hasRunning]);
+
+  // Home is also where a job that finished in the background is first seen
+  // again, so this is a second catch-up point beyond the foreground one.
+  useEffect(() => {
+    if (hasRunning) void refreshActiveJobs();
+  }, [hasRunning, refreshActiveJobs]);
 
   if (shown.length === 0) return null;
 
@@ -112,7 +119,7 @@ export function InFlightJobsCard({ className }: Props) {
           </Pressable>
         ) : null}
 
-        {state.tone === 'failed' ? (
+        {state.tone === 'failed' && planRetry(job) !== 'none' ? (
           <Pressable
             onPress={() => {
               // Whichever half is missing: the save, when the material is
@@ -129,6 +136,21 @@ export function InFlightJobsCard({ className }: Props) {
             <Text className="text-label" style={{ color: accent.ink }}>
               {jobActionLabel(planRetry(job) === 'save' ? 'save-to-library' : 'retry')}
             </Text>
+          </Pressable>
+        ) : null}
+
+        {/* Every finished card can be cleared. Two "We lost track of this
+            one" cards from an earlier build sat on Home with no way to remove
+            them (F9); a card the student has read is theirs to dismiss. */}
+        {!running ? (
+          <Pressable
+            onPress={() => dismissJob(job.id)}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel={`Dismiss ${state.headline}`}
+            className="h-8 w-8 items-center justify-center rounded-full"
+          >
+            <AppIcon name="close" size={16} color={colors.textTertiary} />
           </Pressable>
         ) : null}
       </Pressable>

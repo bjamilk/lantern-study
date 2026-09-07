@@ -270,6 +270,7 @@ class RealtimeSubscriptionManager {
         }
       )
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') this.noteChannelHealthy(channelName);
         console.log(`[Realtime] Notifications channel status: ${status}`);
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void this.recoverChannel(channelName, () => this.subscribeToNotifications(userId));
@@ -279,13 +280,44 @@ class RealtimeSubscriptionManager {
     this.channels.set(channelName, channel);
   }
 
+  // Reconnect attempts per channel, reset when a channel reaches SUBSCRIBED
+  // (see noteChannelHealthy). Without backoff a persistent cause (an expired
+  // socket JWT after a token refresh, an RLS denial) became a hot loop:
+  // 18 CHANNEL_ERROR / 12 SUBSCRIBED in 30 minutes on build 158.
+  private recoverAttempts = new Map<string, number>();
+  private recoverTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private static readonly RECOVER_BASE_MS = 2000;
+  private static readonly RECOVER_MAX_MS = 5 * 60 * 1000;
+  private static readonly RECOVER_MAX_ATTEMPTS = 8;
+
+  /** Call when a channel reports SUBSCRIBED so the next failure starts fresh. */
+  protected noteChannelHealthy(channelName: string): void {
+    this.recoverAttempts.delete(channelName);
+  }
+
   private async recoverChannel(channelName: string, recreate: () => void): Promise<void> {
     const existing = this.channels.get(channelName);
     if (existing) {
       await supabase.removeChannel(existing);
       this.channels.delete(channelName);
     }
-    recreate();
+    if (this.recoverTimers.has(channelName)) return; // a retry is already scheduled
+    const attempt = (this.recoverAttempts.get(channelName) ?? 0) + 1;
+    if (attempt > RealtimeSubscriptionManager.RECOVER_MAX_ATTEMPTS) {
+      // Give up until the next foreground/user change re-subscribes; a stale
+      // channel is better than a socket storm on a metered connection.
+      return;
+    }
+    this.recoverAttempts.set(channelName, attempt);
+    const delay = Math.min(
+      RealtimeSubscriptionManager.RECOVER_MAX_MS,
+      RealtimeSubscriptionManager.RECOVER_BASE_MS * 2 ** (attempt - 1)
+    );
+    const timer = setTimeout(() => {
+      this.recoverTimers.delete(channelName);
+      recreate();
+    }, delay);
+    this.recoverTimers.set(channelName, timer);
   }
 
   /** Single channel for all group messages (RLS scopes rows; client filters by membership). */
@@ -325,6 +357,7 @@ class RealtimeSubscriptionManager {
         (payload) => emit(payload as RealtimePostgresChangesPayload<Message>, true)
       )
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') this.noteChannelHealthy(channelName);
         console.log(`[Realtime] Group messages (all) status: ${status}`);
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void this.recoverChannel(channelName, () => this.subscribeToAllGroupMessages(userId));
@@ -385,6 +418,7 @@ class RealtimeSubscriptionManager {
           emitDmMessage(payload as RealtimePostgresChangesPayload<RawDmMessage>, true)
       )
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') this.noteChannelHealthy(channelName);
         console.log(`[Realtime] DM messages (all) status: ${status}`);
         if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
           void this.recoverChannel(channelName, () => this.subscribeToAllDmMessages(userId));
@@ -416,6 +450,7 @@ class RealtimeSubscriptionManager {
         }
       )
       .subscribe((status) => {
+        if (status === 'SUBSCRIBED') this.noteChannelHealthy(channelName);
         console.log(`[Realtime] Settings channel status: ${status}`);
       });
 

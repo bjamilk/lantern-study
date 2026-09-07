@@ -15,6 +15,18 @@ export { NotificationRow } from './NotificationRow';
 export { Toggle } from './Toggle';
 export { LanternIcon } from './LanternIcon';
 export { EmptyState } from './EmptyState';
+export { DoorTile } from './DoorTile';
+export type { DoorTileProps } from './DoorTile';
+export { FeatureDisc } from './FeatureDisc';
+export type { FeatureDiscProps, FeatureDiscSize } from './FeatureDisc';
+export { CourseChip } from './CourseChip';
+export type { CourseChipProps } from './CourseChip';
+export {
+  FEATURE_INK_TEXT,
+  FEATURE_TINT_BG,
+  FEATURE_INK_BG,
+} from './featureClasses';
+export type { FeatureKey } from './featureClasses';
 export { FolderNameModal } from './FolderNameModal';
 export { ConfirmDialog } from './ConfirmDialog';
 export { Modal } from './Modal';

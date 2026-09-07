@@ -12,7 +12,13 @@ import GroupPerformanceChart, { ChartDataPoint } from './GroupPerformanceChart';
 import { useUIStore } from '../stores/uiStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import type { AIStudyPerformanceData } from '@lantern/shared/api';
-import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow } from './ui';
+import { ScreenHeader, Card, StatPill, Button, SkeletonStatRow, DoorTile } from './ui';
+import {
+  ArrowDownOnSquareIcon,
+  ClipboardDocumentCheckIcon,
+  MicrophoneIcon,
+  RectangleStackIcon as RectangleStackOutline,
+} from '@heroicons/react/24/outline';
 import { syncCopy } from '@lantern/shared/design';
 import {
   buildActivityMap,
@@ -267,6 +273,9 @@ interface DashboardScreenProps {
   onOpenImportAndStudy?: () => void;
   onNavigateToAITools?: () => void;
   onReviewDueCards?: () => void;
+  /** Wave 1 doors on Home. Each tile renders only when its route is wired. */
+  onNavigateToTests?: () => void;
+  onRecordLecture?: () => void;
   onViewTestResult?: (result: TestResult) => void;
   dailyQuests?: Array<{ id: string; questType: string; targetCount: number; progressCount: number; completed: boolean; rewardXp: number }>;
   questsLoaded?: boolean;
@@ -410,6 +419,8 @@ export default function DashboardScreen({
   onOpenImportAndStudy,
   onNavigateToAITools,
   onReviewDueCards,
+  onNavigateToTests,
+  onRecordLecture,
   onViewTestResult,
   dailyQuests = [],
   questsLoaded = false,
@@ -1234,9 +1245,12 @@ export default function DashboardScreen({
       {/* ─── Academic profile setup nudge (Phase 1) ─── */}
       <AcademicSetupBanner currentUser={currentUser} />
 
-      {/* ═══════════════ HERO + DAILY QUESTS ═══════════════ */}
+      {/* ═══════════════ HERO ═══════════════ */}
+      {/* §5.7 Home: greeting first, readiness SECOND, the doors third, and
+          gamification below all of it. Quests used to sit beside the hero,
+          which put the day's XP above the day's work. */}
       <div className="px-4 md:px-8 pt-6 w-full">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-stretch">
+        <div className="w-full">
           <DashboardHero
             userName={getDashboardFirstName({
               firstName: currentUser.firstName,
@@ -1261,7 +1275,63 @@ export default function DashboardScreen({
             onResumeSession={onResumeSession}
             lowDataMode={lowDataMode}
           />
-          {(dailyQuests.length > 0 || questsLoaded) ? (
+        </div>
+      </div>
+
+      {/* ═══════════════ READINESS (second card) ═══════════════ */}
+      {/* The syllabus-aware rollup (course outline × mastery graph). It used to
+          sit three screens down inside "Progress & analytics"; it is the honest
+          answer to "am I ready?", so it goes where that question is asked. */}
+      <div className="px-4 md:px-8 mt-4 w-full">
+        <CourseReadinessCard />
+      </div>
+
+      {/* ═══════════════ DOORS ═══════════════ */}
+      <div className="px-4 md:px-8 mt-4 w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+          {onReviewDueCards && (
+            <DoorTile
+              feature="flashcards"
+              icon={<RectangleStackOutline className="w-6 h-6" />}
+              title="Review"
+              promise={dueCardsCount > 0 ? 'Cards are ready now' : 'Nothing due — get ahead'}
+              count={dueCardsCount > 0 ? `${dueCardsCount} due` : undefined}
+              onClick={onReviewDueCards}
+            />
+          )}
+          {(onOpenImportAndStudy || onNavigateToAITools) && (
+            <DoorTile
+              feature="notes"
+              icon={<ArrowDownOnSquareIcon className="w-6 h-6" />}
+              title="Import"
+              promise="PDF or slides into cards"
+              onClick={() => (onOpenImportAndStudy ?? onNavigateToAITools)!()}
+            />
+          )}
+          {onRecordLecture && (
+            <DoorTile
+              feature="recording"
+              icon={<MicrophoneIcon className="w-6 h-6" />}
+              title="Record"
+              promise="A lecture becomes a note"
+              onClick={onRecordLecture}
+            />
+          )}
+          {onNavigateToTests && (
+            <DoorTile
+              feature="tests"
+              icon={<ClipboardDocumentCheckIcon className="w-6 h-6" />}
+              title="Test"
+              promise="Find the gaps before the exam"
+              onClick={onNavigateToTests}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* ═══════════════ GAMIFICATION (below the work) ═══════════════ */}
+      <div className="px-4 md:px-8 mt-4 w-full">
+        {(dailyQuests.length > 0 || questsLoaded) ? (
             <DailyQuestsWidget
               quests={dailyQuests.map((q) => ({
                 id: q.id,
@@ -1278,10 +1348,9 @@ export default function DashboardScreen({
               onRefresh={onRefreshGamification}
               theme={theme}
             />
-          ) : (
-            <SkeletonStatRow />
-          )}
-        </div>
+        ) : (
+          <SkeletonStatRow />
+        )}
       </div>
 
       {/* In-flight AI work: renders nothing unless something is actually running. */}
@@ -1548,13 +1617,6 @@ export default function DashboardScreen({
           Achievements & Topic Insights. The FEED does not belong here and is
           rendered above, outside the collapsible.
         */}
-        {/* Exam readiness: the syllabus-aware rollup (course outline ×
-            mastery graph), useful from day one — a new student sees each
-            course's outline and a Start-here pointer before any activity. */}
-        <div className="mb-6">
-          <CourseReadinessCard />
-        </div>
-
         {SHOW_DASHBOARD_MASTERY_PANEL && (
           <div className="mb-6">
             <MasteryPanel />

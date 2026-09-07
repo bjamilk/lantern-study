@@ -258,10 +258,27 @@ function tokenSource() {
   )) {
     typeSteps[name] = { fontSize: Number(fontSize), lineHeight: Number(lineHeight), fontWeight, letterSpacing };
   }
+  /**
+   * `featureSmallTextInkLight` / `-Dark` — the inks the 11 px label step swaps
+   * in (spec §5.6). Read from the token file, never re-typed here, so this
+   * gate cannot drift from what `smallTextInk` actually paints.
+   */
+  const smallInks = (mapName) => {
+    const start = src.indexOf(`export const ${mapName}`);
+    if (start === -1) throw new Error(`tokens.ts has no ${mapName}`);
+    const body = src.slice(start, src.indexOf('};', start));
+    const out = {};
+    for (const [, key, value] of body.matchAll(/(\w+):\s*'(#[0-9a-fA-F]{3,8})'/g)) {
+      out[key] = value;
+    }
+    return out;
+  };
   return {
     type: typeSteps,
     light: pairs('featureAccentsLight'),
     dark: pairs('featureAccentsDark'),
+    smallInkLight: smallInks('featureSmallTextInkLight'),
+    smallInkDark: smallInks('featureSmallTextInkDark'),
     lightPalette: palette('lightBase'),
     darkPalette: palette('darkBase'),
   };
@@ -346,6 +363,33 @@ function run() {
       check(`${t.name} feature ${key} ink`, 'surface', ink, t.surface);
       check(`${t.name} feature ${key} ink`, t.thirdLabel, ink, t.third);
       check(`${t.name} body ink`, `feature ${key} tint`, t.body, tint);
+      // A feature ink used as a BUTTON FILL — the one action on an empty-state
+      // panel (spec v5.6 "Empty state"; Tests uses it today). The label on it
+      // is the surface colour, not white: in dark mode every ink is a light
+      // hue, so a white label on it would be the 1.x:1 failure. Checked from
+      // the label's side, the way the primary fill is.
+      check(`${t.name} surface label`, `feature ${key} ink fill`, t.surface, ink);
+    }
+
+    // The 11px override. Lime ink clears AA on its own tint by 0.10 (4.60:1),
+    // which the spec calls too tight to set anything under 12px in — so the
+    // mobile `label` step swaps in a darker lime (components/ui/FeatureDisc.tsx
+    // `smallTextInk`). This asserts the substitute is actually better, on both
+    // grounds a count pill sits on.
+    const overrides = t.name === 'dark' ? tokens.smallInkDark : tokens.smallInkLight;
+    for (const [key, smallInk] of Object.entries(overrides)) {
+      if (!FEATURE_KEYS.includes(key)) {
+        drift.push(`tokens.ts featureSmallTextInk${t.name === 'dark' ? 'Dark' : 'Light'} has unknown feature "${key}"`);
+        continue;
+      }
+      const tint = t.vars[`--color-feature-${key}-tint`];
+      check(`${t.name} ${key} small-text ink`, `${key} tint`, smallInk, tint);
+      check(`${t.name} ${key} small-text ink`, 'surface', smallInk, t.surface);
+      // An override that is no better than the ink it replaces is noise.
+      const inkRatio = ratio(parseChannels(t.vars[`--color-feature-${key}-ink`]), parseChannels(tint));
+      if (ratio(parseChannels(smallInk), parseChannels(tint)) <= inkRatio) {
+        drift.push(`${t.name} ${key} small-text ink ${smallInk} is no darker on its own tint than the ink it replaces`);
+      }
     }
 
     // Every --color-* that carries text, on the two grounds it renders on.

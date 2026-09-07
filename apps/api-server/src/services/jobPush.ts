@@ -18,7 +18,12 @@ import {
   jobPushIdempotencyKey,
   type JobPushMessage,
 } from "@lantern/shared/jobs/jobPush";
-import type { JobStage } from "@lantern/shared/jobs/jobState";
+import {
+  type JobPushAudit,
+  type JobPushSkipReason,
+  type JobPushTicket,
+  type JobStage,
+} from "@lantern/shared/jobs/jobState";
 import { getRedisClient, redisKey } from "./redisStore";
 import { shouldSendExpoPush } from "../utils/userSettingsPolicy";
 import { logger } from "../utils/logger";
@@ -83,21 +88,46 @@ export function toExpoEnvelope(token: string, message: JobPushMessage): ExpoPush
   };
 }
 
-type FetchLike = (input: string, init: Record<string, unknown>) => Promise<{ ok: boolean; status: number; text?: () => Promise<string> }>;
+type FetchLike = (input: string, init: Record<string, unknown>) => Promise<{ ok: boolean; status: number; text?: () => Promise<string>; json?: () => Promise<unknown> }>;
+
+export interface ExpoSendReport {
+  /** Envelopes Expo accepted with a 2xx. */
+  delivered: number;
+  /** One line per envelope Expo answered for, in the order it answered. */
+  tickets: JobPushTicket[];
+}
+
+/** Expo answers `{ data: [{ status, id } | { status, message, details }] }`. */
+export function parseExpoTickets(body: unknown): JobPushTicket[] {
+  const rows = (body as { data?: unknown } | null)?.data;
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const ticket = (row ?? {}) as Record<string, unknown>;
+    const status = ticket.status === "ok" ? "ok" : "error";
+    const out: JobPushTicket = { status };
+    if (typeof ticket.id === "string") out.id = ticket.id;
+    if (typeof ticket.message === "string") out.message = ticket.message;
+    if (status === "error" && !out.message) out.message = "Expo returned an error with no message.";
+    return out;
+  });
+}
 
 /**
- * POST the envelopes to Expo, 100 at a time. Receipts are deliberately ignored
- * for now: a receipt poll is a second background job, and a completion push
- * that silently fails is no worse than today's nothing.
+ * POST the envelopes to Expo, 100 at a time, and keep what it said back.
  *
- * Never throws. Returns how many envelopes were accepted by a 2xx response.
+ * Receipts (the second, asynchronous half of Expo's delivery report) are still
+ * not polled — but the TICKETS are now recorded, because on device a push that
+ * never arrived was indistinguishable from a push the server never sent.
+ *
+ * Never throws. A batch whose transport failed contributes one `error` ticket.
  */
-export async function sendExpoPush(
+export async function sendExpoPushDetailed(
   envelopes: ExpoPushEnvelope[],
   fetchImpl: FetchLike = fetch as unknown as FetchLike,
-): Promise<number> {
-  if (!envelopes.length) return 0;
+): Promise<ExpoSendReport> {
+  if (!envelopes.length) return { delivered: 0, tickets: [] };
   let delivered = 0;
+  const tickets: JobPushTicket[] = [];
   for (const batch of chunkPushMessages(envelopes)) {
     try {
       const response = await fetchImpl(EXPO_PUSH_ENDPOINT, {
@@ -111,14 +141,41 @@ export async function sendExpoPush(
       });
       if (response.ok) {
         delivered += batch.length;
+        let parsed: JobPushTicket[] = [];
+        try {
+          parsed = response.json ? parseExpoTickets(await response.json()) : [];
+        } catch {
+          parsed = [];
+        }
+        tickets.push(...parsed);
+        const errors = parsed.filter((t) => t.status === "error");
+        if (errors.length) {
+          logger.warn("Expo job push returned error tickets", {
+            count: errors.length,
+            messages: errors.map((t) => t.message).slice(0, 5),
+          });
+        }
       } else {
         logger.warn("Expo job push rejected", { status: response.status });
+        tickets.push({ status: "error", message: `Expo HTTP ${response.status}` });
       }
     } catch (err) {
       logger.warn("Expo job push failed", { err });
+      tickets.push({
+        status: "error",
+        message: err instanceof Error ? err.message : "Expo request failed",
+      });
     }
   }
-  return delivered;
+  return { delivered, tickets };
+}
+
+/** Back-compat wrapper: how many envelopes a 2xx accepted. */
+export async function sendExpoPush(
+  envelopes: ExpoPushEnvelope[],
+  fetchImpl: FetchLike = fetch as unknown as FetchLike,
+): Promise<number> {
+  return (await sendExpoPushDetailed(envelopes, fetchImpl)).delivered;
 }
 
 /**
@@ -206,25 +263,93 @@ export type JobPushOutcome =
   | "already_sent"
   | "error";
 
+/**
+ * The record-facing reason for an outcome that did NOT reach a device.
+ * `sent` has no reason — the tickets speak for it.
+ */
+export function pushSkipReasonFor(outcome: JobPushOutcome): JobPushSkipReason | undefined {
+  switch (outcome) {
+    case "sent":
+      return undefined;
+    case "disabled":
+      return "disabled";
+    case "no_message":
+      return "not_pushable";
+    case "no_owner":
+      return "no_owner";
+    case "no_token":
+      return "no_token";
+    case "settings_off":
+      return "prefs_off";
+    case "already_sent":
+      return "claimed";
+    default:
+      return "error";
+  }
+}
+
 export interface NotifyJobDeps {
   claim?: (jobId: string, stage: JobStage) => Promise<boolean>;
   getRecipient?: (userId: string) => Promise<JobPushRecipient | null>;
-  send?: (envelopes: ExpoPushEnvelope[]) => Promise<number>;
+  send?: (envelopes: ExpoPushEnvelope[]) => Promise<number | ExpoSendReport>;
+  /**
+   * Persist the audit onto the job record. Injected by the queue (the only
+   * module that owns the record store) so this service stays I/O-testable.
+   */
+  recordPush?: (jobId: string, push: JobPushAudit) => Promise<void>;
+  now?: () => Date;
+}
+
+function normalizeSendResult(result: number | ExpoSendReport): ExpoSendReport {
+  return typeof result === "number" ? { delivered: result, tickets: [] } : result;
 }
 
 /**
- * Push a finished job to its owner's devices.
+ * Push a finished job to its owner's devices, and RECORD what happened.
  *
  * Never throws — the caller is the queue's terminal transition, and a job the
- * student paid for must not fail because a notification did.
+ * student paid for must not fail because a notification did. Every exit writes
+ * a `push` audit onto the record (best effort) so GET /jobs/:id can tell its
+ * owner "no device is registered" instead of leaving them staring at a screen
+ * that promised a notification and never buzzed.
  */
 export async function notifyJobTerminal(
   job: JobPushJob,
   deps: NotifyJobDeps = {},
 ): Promise<JobPushOutcome> {
+  const attemptedAt = (deps.now ? deps.now() : new Date()).toISOString();
+  let audit: JobPushAudit = { attemptedAt };
+
+  const finish = async (outcome: JobPushOutcome): Promise<JobPushOutcome> => {
+    const skippedReason = pushSkipReasonFor(outcome);
+    const push: JobPushAudit = {
+      ...audit,
+      ...(skippedReason ? { skippedReason } : {}),
+    };
+    logger.info("Job completion push", {
+      jobId: job.id,
+      userId: job.userId,
+      kind: job.kind,
+      stage: job.stage,
+      outcome,
+      skippedReason,
+      tokenCount: push.tokenCount ?? 0,
+      ticketErrors: (push.expoTickets ?? []).filter((t) => t.status === "error").length,
+      url: push.url,
+    });
+    if (deps.recordPush) {
+      try {
+        await deps.recordPush(job.id, push);
+      } catch (err) {
+        logger.warn("Job push audit could not be recorded", { jobId: job.id, err });
+      }
+    }
+    return outcome;
+  };
+
   try {
-    if (!isJobPushEnabled()) return "disabled";
-    if (!job.userId) return "no_owner";
+    if (!isJobPushEnabled()) return await finish("disabled");
+    if (!job.userId) return await finish("no_owner");
 
     const message = buildJobPushMessage({
       jobId: job.id,
@@ -235,22 +360,30 @@ export async function notifyJobTerminal(
       error: job.error,
       sourceTitle: job.sourceTitle,
     });
-    if (!message) return "no_message";
+    if (!message) return await finish("no_message");
+    audit = { ...audit, url: message.data.url };
 
     const recipient = await (deps.getRecipient ?? getJobPushRecipient)(job.userId);
-    if (!recipient || recipient.tokens.length === 0) return "no_token";
-    if (!shouldSendExpoPush(recipient.settings, message.data.type)) return "settings_off";
+    audit = { ...audit, tokenCount: recipient?.tokens.length ?? 0 };
+    if (!recipient || recipient.tokens.length === 0) return await finish("no_token");
+    if (!shouldSendExpoPush(recipient.settings, message.data.type)) {
+      return await finish("settings_off");
+    }
 
     // Claimed last, so a student whose settings or tokens change later is not
     // permanently barred from a push that was never actually sent.
     const claimed = await (deps.claim ?? claimJobPush)(job.id, job.stage);
-    if (!claimed) return "already_sent";
+    if (!claimed) return await finish("already_sent");
 
     const envelopes = recipient.tokens.map((token) => toExpoEnvelope(token, message));
-    await (deps.send ?? sendExpoPush)(envelopes);
-    return "sent";
+    const report = normalizeSendResult(
+      await (deps.send ?? sendExpoPushDetailed)(envelopes),
+    );
+    audit = { ...audit, expoTickets: report.tickets };
+    return await finish("sent");
   } catch (err) {
     logger.warn("Job completion push failed", { jobId: job.id, stage: job.stage, err });
-    return "error";
+    audit = { ...audit, error: err instanceof Error ? err.message : String(err) };
+    return await finish("error");
   }
 }

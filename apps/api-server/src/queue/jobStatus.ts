@@ -9,6 +9,7 @@ import {
   stageToLegacyStatus,
   timeOutJobRecord,
   type JobError,
+  type JobPushAudit,
   type JobRecordView,
   type JobResultRef,
   type JobStage,
@@ -65,20 +66,62 @@ export async function setJobStage(
   return updated;
 }
 
+/**
+ * Write the completion push's audit onto the job record.
+ *
+ * Re-read first: the push runs after the terminal write, and a refund (or a
+ * late resultRef stamp) may have landed in between — writing the stale blob
+ * back would erase it.
+ */
+export async function recordJobPushAudit(jobId: string, push: JobPushAudit): Promise<void> {
+  const latest = await getJobRecord(jobId);
+  if (!latest) return;
+  await saveJobRecord({ ...latest, push });
+}
+
 /** Announce a finished job to its owner's devices. Never throws. */
 function pushJobCompletion(record: JobRecord): Promise<unknown> {
-  return notifyJobTerminal({
-    id: record.id,
-    userId: record.userId,
-    kind: record.kind,
-    stage: record.stage,
-    result: record.result,
-    resultRef: record.resultRef,
-    error: record.error,
-    sourceTitle: record.sourceTitle,
-  }).catch((err) => {
+  return notifyJobTerminal(
+    {
+      id: record.id,
+      userId: record.userId,
+      kind: record.kind,
+      stage: record.stage,
+      result: record.result,
+      resultRef: record.resultRef,
+      error: record.error,
+      sourceTitle: record.sourceTitle,
+    },
+    { recordPush: recordJobPushAudit },
+  ).catch((err) => {
     console.error(`[queue] Completion push failed for job ${record.id}:`, err);
   });
+}
+
+/**
+ * Point a finished job at the artefact a CLIENT saved from it.
+ *
+ * A note quiz is generated server-side but becomes a launchable test only when
+ * the app POSTs /tests/personal, so at terminal time the record could name no
+ * test and its notification fell back to `lanternstudy://jobs/<id>`. Stamping
+ * the ref afterwards makes the record itself resolvable — including for a
+ * student who opens the notification minutes later, and for a second device.
+ *
+ * Deliberately NOT `setJobStage`: that (correctly) refuses to touch a terminal
+ * record. This only ever adds a pointer; stage, credit and error are untouched.
+ */
+export async function attachJobResultRef(
+  jobId: string,
+  resultRef: JobResultRef,
+): Promise<JobRecord | null> {
+  if (!jobId || !resultRef?.id) return null;
+  const latest = await getJobRecord(jobId);
+  if (!latest) return null;
+  // First writer wins: a retried save must not repoint a job at a duplicate.
+  if (latest.resultRef?.type === resultRef.type && latest.resultRef?.id) return latest;
+  const updated: JobRecord = { ...latest, resultRef, updatedAt: new Date().toISOString() };
+  await saveJobRecord(updated);
+  return updated;
 }
 
 /**

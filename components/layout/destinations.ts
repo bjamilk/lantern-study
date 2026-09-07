@@ -57,6 +57,7 @@ const MODE_OWNER: Partial<Record<AppMode, DestinationId>> = {
   [AppMode.FLASHCARD_MATCH]: 'study',
   [AppMode.FLASHCARD_LEARN]: 'study',
   [AppMode.AI_TOOLS]: 'study',
+  [AppMode.TESTS_HOME]: 'study',
   [AppMode.TEST_ACTIVE]: 'study',
   [AppMode.TEST_REVIEW]: 'study',
   [AppMode.STUDY_ACTIVE]: 'study',

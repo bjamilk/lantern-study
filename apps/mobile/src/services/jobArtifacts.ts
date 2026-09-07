@@ -42,6 +42,7 @@ import { useFlashcardStore, type Deck } from '../stores/flashcardStore';
 import { useJobsStore } from '../stores/jobsStore';
 import { useTestStore } from '../stores/testStore';
 import {
+  findJob,
   isPersistedId,
   planDeckSave,
   type GeneratedCard,
@@ -295,10 +296,15 @@ async function writeTest(
   jobId: string,
   payload: Extract<PendingSave, { kind: 'test' }>
 ): Promise<SavedTest> {
+  // The server keys the job record by ITS id, not this client's: without it
+  // the route has nothing to stamp, the job never learns which test it became,
+  // and its notification and any later catch-up fall back to `jobs/<id>`.
+  const serverJobId = findJob(useJobsStore.getState().jobs, jobId)?.serverJobId;
   const response = await createPersonalTest({
     clientKey: jobId,
     title: payload.title,
     sourceNoteId: payload.sourceNoteId,
+    ...(serverJobId ? { sourceJobId: serverJobId } : {}),
     questions: payload.questions,
   }).catch((error: unknown) => {
     throw asSaveError(error);

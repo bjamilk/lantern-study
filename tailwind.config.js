@@ -87,6 +87,28 @@ module.exports = {
           'error-strong': 'rgb(var(--color-error-strong) / <alpha-value>)',
           border: 'rgb(var(--color-border) / <alpha-value>)',
           feature: {
+            // Wave V1: the eight `{ink, tint}` pairs Wave 0 put in index.css as
+            // RGB channels. `ink` is the stroke/label colour, `tint` the wash a
+            // disc or a hero band sits in. Flat `<key>-ink` keys rather than a
+            // nested object so the deprecated single-colour names below can
+            // keep their own spelling (`text-lantern-feature-tests`) while
+            // `text-lantern-feature-tests-ink` resolves to the pair.
+            'notes-ink': 'rgb(var(--color-feature-notes-ink) / <alpha-value>)',
+            'notes-tint': 'rgb(var(--color-feature-notes-tint) / <alpha-value>)',
+            'flashcards-ink': 'rgb(var(--color-feature-flashcards-ink) / <alpha-value>)',
+            'flashcards-tint': 'rgb(var(--color-feature-flashcards-tint) / <alpha-value>)',
+            'tests-ink': 'rgb(var(--color-feature-tests-ink) / <alpha-value>)',
+            'tests-tint': 'rgb(var(--color-feature-tests-tint) / <alpha-value>)',
+            'recording-ink': 'rgb(var(--color-feature-recording-ink) / <alpha-value>)',
+            'recording-tint': 'rgb(var(--color-feature-recording-tint) / <alpha-value>)',
+            'ai-ink': 'rgb(var(--color-feature-ai-ink) / <alpha-value>)',
+            'ai-tint': 'rgb(var(--color-feature-ai-tint) / <alpha-value>)',
+            'groups-ink': 'rgb(var(--color-feature-groups-ink) / <alpha-value>)',
+            'groups-tint': 'rgb(var(--color-feature-groups-tint) / <alpha-value>)',
+            'campus-ink': 'rgb(var(--color-feature-campus-ink) / <alpha-value>)',
+            'campus-tint': 'rgb(var(--color-feature-campus-tint) / <alpha-value>)',
+            'budget-ink': 'rgb(var(--color-feature-budget-ink) / <alpha-value>)',
+            'budget-tint': 'rgb(var(--color-feature-budget-tint) / <alpha-value>)',
             dashboard: 'rgb(var(--color-feature-dashboard) / <alpha-value>)',
             library: 'rgb(var(--color-feature-library) / <alpha-value>)',
             admin: 'rgb(var(--color-feature-admin) / <alpha-value>)',

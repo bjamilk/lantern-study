@@ -22,6 +22,11 @@ import { normalizeApiQuestions, flashcardsToQuestions, filterTestQuestions, form
 import { normalizeUserQuestionStats } from '../utils/buildDashboardStats';
 import { useOfflineStore } from './offlineStore';
 import {
+  availableTestName,
+  isAvailableTestRow,
+  mergeAvailableTests,
+} from './availableTests';
+import {
   normalizeTestQuestionForSession,
   toUserAnswerRecord,
   shuffleArray,
@@ -754,13 +759,13 @@ export const useTestStore = create<TestState>((set, get) => ({
     try {
       const apiTests = await api.fetchTests(userId);
       const testQuestionsById: Record<string, TestQuestion[]> = { ...get().testQuestionsById };
-      const tests: Test[] = apiTests
-        .filter((t: any) => {
-          const questions = t.questions || [];
-          const isCompleted = !!(t.end_time || t.endTime);
-          const questionCount = questions.length || t.config?.numberOfQuestions || 0;
-          return !isCompleted && questionCount > 0;
-        })
+      const fetched: Test[] = apiTests
+        // One rule for what is startable, shared with the tests that assert it
+        // (availableTests.ts). A personal test — a quiz saved from a note —
+        // is `session_kind: 'test'`, `in_progress`, no end_time, questions
+        // present; the old inline filter kept those, but nothing kept them
+        // through the NEXT fetch, and the name came from `config` alone.
+        .filter((t: any) => isAvailableTestRow(t))
         .map((t: any) => {
         const questions = normalizeApiQuestions(t.questions || []);
         if (questions.length > 0) {
@@ -768,10 +773,19 @@ export const useTestStore = create<TestState>((set, get) => ({
         }
         return {
           id: t.id,
-          name: t.config?.name || t.config?.testName || 'Untitled Test',
+          name: availableTestName(t),
           description: t.config?.description,
           deckId: t.config?.deckId,
-          deckName: t.config?.deckName || t.config?.groupName,
+          // `sourceNoteTitle` is what a note quiz has instead of a deck; without
+          // it the list printed the literal "From undefined" (D3). The server
+          // puts it at the TOP of the row (`string | null`, backfilled from the
+          // note for quizzes saved before the title was persisted); the config
+          // copy exists only for quizzes saved after that change.
+          deckName:
+            t.config?.deckName ||
+            t.config?.groupName ||
+            t.sourceNoteTitle ||
+            t.config?.sourceNoteTitle,
           questionCount: questions.length || t.config?.numberOfQuestions || 0,
           // `timerDuration` is SECONDS: reading it straight into `timeLimit`
           // (minutes) turned a 5-minute test into a 300-minute one on the
@@ -782,6 +796,10 @@ export const useTestStore = create<TestState>((set, get) => ({
           createdAt: t.created_at,
         };
       });
+      // A test this device filed a moment ago outlives a fetch that has not
+      // caught up with it yet (a cached list, a read replica): the Tests list
+      // said "No Tests Available" over a quiz the student had just saved.
+      const tests = mergeAvailableTests(get().tests, fetched, Date.now());
       set({ tests, testQuestionsById, isLoading: false });
       await get().saveToStorage();
     } catch (error: any) {

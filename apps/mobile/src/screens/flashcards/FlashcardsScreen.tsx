@@ -12,14 +12,13 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from '../../components/layout';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
-import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import { ActionSheet, Button, Card, ScreenHeader, T, type ActionSheetItem } from '../../components/ui';
+import { FeatureDisc, smallTextInk, useFeatureAccent } from '../../components/ui/FeatureDisc';
 import { useUIStore } from '../../stores/uiStore';
 import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import type { Course, CourseTopic } from '@lantern/shared/types';
 import { useTheme } from '../../theme';
-import { featureAccents } from '@lantern/shared/design';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { exportDeck } from '../../services/api';
 import { shareTextFile, toSafeFileName, SharingUnavailableError } from '../../utils/shareFile';
@@ -34,6 +33,7 @@ import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
+import { confirmSheet } from '../../stores/confirmStore';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
@@ -54,154 +54,124 @@ interface Props {
   listQuery?: string;
 }
 
-const ACCENT_GRADIENTS: [string, string, ...string[]][] = [
-  ['#f43f5e', '#ec4899', '#d946ef'],
-  ['#fb7185', '#f43f5e', '#e11d48'],
-  ['#f472b6', '#fb7185', '#fda4af'],
-  ['#e11d48', '#f43f5e', '#fb923c'],
-  ['#d946ef', '#ec4899', '#f43f5e'],
-  ['#fb923c', '#f43f5e', '#fda4af'],
-];
-
+/**
+ * `DeckCard` — one deck in the Library's Flashcards list.
+ *
+ * Spec §5.6 "list row": a NEUTRAL card with a 40 px feature disc, not a
+ * painted header. What shipped before was six rose/pink/magenta LINEAR
+ * GRADIENTS keyed off the row index, four white-on-tint chip buttons riding
+ * on them and an amber CTA underneath — a hue that means nothing (index is
+ * not identity), a gradient (§5.8 forbids them outright), and the loudest
+ * surface in the app sitting in a list whose budget is 3–6% chromatic
+ * (device pass on build 159, D2).
+ *
+ * Now: lime, because lime IS flashcards, and only in the 40 px disc and the
+ * due pill. The stats line carries the numbers in `tabular-nums`; the row
+ * itself opens the deck; ONE primaryFill action studies it; everything else
+ * (generate, offline, share, move, delete) lives in the row's action sheet,
+ * which is where it was already reachable by long-press.
+ */
 function DeckCard({
   deck,
-  index,
   onPress,
-  onAIGenerate,
   onStudy,
   isOffline,
-  onToggleOffline,
-  onShare,
   onMore,
 }: {
   deck: Deck;
-  index: number;
   onPress: () => void;
-  onAIGenerate: () => void;
   onStudy?: () => void;
   isOffline?: boolean;
-  onToggleOffline?: () => void;
-  onShare?: () => void;
-  /** Row action sheet (Move to course…, offline, share). Also on long-press. */
+  /** Row action sheet (study, generate, move, offline, share, delete). */
   onMore?: () => void;
 }) {
+  const { colors, isDark } = useTheme();
+  const accent = useFeatureAccent('flashcards');
   const cardCount = deck.card_count ?? 0;
   const dueCount = deck.due_count ?? 0;
-  const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];
+  const duePillInk = smallTextInk('flashcards', accent, isDark);
 
   return (
     <Pressable
       onPress={onPress}
       onLongPress={onMore}
       delayLongPress={350}
-      className="mb-3 active:opacity-90"
+      className="mb-3 rounded-2xl border border-lantern-border bg-lantern-surface p-3 active:opacity-90"
       accessibilityRole="button"
-      accessibilityLabel={`Deck ${deck.name}`}
+      accessibilityLabel={`Deck ${deck.name}. ${getDeckListStatsLine(dueCount, cardCount)}`}
       accessibilityHint={onMore ? 'Long press for more actions' : undefined}
     >
-      <View className="rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface shadow-sm">
-        <LinearGradient
-          colors={gradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 0 }}
-          style={{ height: 56, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-        >
-          <View className="flex-row items-center gap-2 flex-1 min-w-0">
-            <AppIcon name="layers" size={18} color="rgba(255,255,255,0.9)" />
-            <Text className="text-sm font-bold text-white flex-1" numberOfLines={1}>
+      <View className="flex-row items-center gap-3">
+        <FeatureDisc feature="flashcards" icon="layers" size={40} />
+        <View className="flex-1 min-w-0">
+          <View className="flex-row items-center gap-2">
+            <T.Body style={{ fontWeight: '600' }} numberOfLines={1} className="flex-1">
               {deck.name}
-            </Text>
-            {deck.is_shared ? (
-              <View className="bg-white/20 px-2 py-0.5 rounded-full">
-                <Text className="text-label font-bold text-white">Shared</Text>
-              </View>
-            ) : null}
-          </View>
-          <View className="flex-row items-center gap-1.5 ml-2 flex-shrink-0">
-            {dueCount > 0 ? (
-              <View className="bg-white/25 px-2 py-0.5 rounded-full">
-                <Text className="text-label font-bold text-white">{dueCount} due</Text>
-              </View>
-            ) : null}
-            <Pressable
-              onPress={e => {
-                e.stopPropagation?.();
-                onToggleOffline?.();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={isOffline ? 'Remove from offline' : 'Save for offline'}
-              className="px-2 py-1 rounded-full bg-white/20"
-              hitSlop={8}
-            >
+            </T.Body>
+            {isOffline ? (
               <AppIcon
-                name={isOffline ? 'cloud-done' : 'cloud-download'}
+                name="cloud-done"
                 size={14}
-                color="#ffffff"
+                color={accent.ink}
+                accessibilityLabel="Saved for offline"
               />
-            </Pressable>
-            <Pressable
-              onPress={e => {
-                e.stopPropagation?.();
-                onShare?.();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Share this deck"
-              className="px-2 py-1 rounded-full bg-white/20"
-              hitSlop={8}
-            >
-              <AppIcon name="share" size={14} color="#ffffff" />
-            </Pressable>
-            <Pressable
-              onPress={e => {
-                e.stopPropagation?.();
-                onAIGenerate();
-              }}
-              className="flex-row items-center gap-1 px-2 py-1 rounded-full bg-white/20"
-              hitSlop={8}
-            >
-              <AppIcon name="sparkles" size={14} color="#ffffff" />
-              <Text className="text-label font-bold text-white">Generate</Text>
-            </Pressable>
-            {onMore ? (
-              <Pressable
-                onPress={e => {
-                  e.stopPropagation?.();
-                  onMore();
-                }}
-                accessibilityRole="button"
-                accessibilityLabel={`More actions for ${deck.name}`}
-                className="px-2 py-1 rounded-full bg-white/20"
-                hitSlop={8}
-              >
-                <AppIcon name="ellipsis-horizontal" size={14} color="#ffffff" />
-              </Pressable>
+            ) : null}
+            {deck.is_shared ? (
+              <T.Label tone="secondary" importantForAccessibility="no">
+                Shared
+              </T.Label>
             ) : null}
           </View>
-        </LinearGradient>
-        <View className="px-4 py-3">
-          {deck.description ? (
-            <Text className="text-xs text-lantern-text-secondary mb-2" numberOfLines={2}>
-              {deck.description}
-            </Text>
-          ) : null}
-          <Text className="text-xs text-lantern-text-secondary mb-3">
+          <T.Caption tone="secondary" tabular numberOfLines={1} importantForAccessibility="no">
             {getDeckListStatsLine(dueCount, cardCount)}
-          </Text>
-          {onStudy ? (
-            <Pressable
-              onPress={e => {
-                e.stopPropagation?.();
-                onStudy();
-              }}
-              className="px-4 py-2.5 rounded-xl bg-amber-500 active:opacity-90"
-            >
-              <Text className="text-sm font-bold text-white text-center">
-                {getStudyCtaLabel(dueCount, cardCount)}
-              </Text>
-            </Pressable>
-          ) : null}
+          </T.Caption>
         </View>
+        {dueCount > 0 ? (
+          <View
+            style={{ backgroundColor: accent.tint }}
+            className="px-2 py-0.5 rounded-full"
+          >
+            <T.Label
+              tabular
+              style={{ color: duePillInk, fontWeight: '700' }}
+              importantForAccessibility="no"
+            >
+              {dueCount > 99 ? '99+' : dueCount} due
+            </T.Label>
+          </View>
+        ) : null}
+        {onMore ? (
+          <Pressable
+            onPress={e => {
+              e.stopPropagation?.();
+              onMore();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`More actions for ${deck.name}`}
+            hitSlop={8}
+          >
+            <AppIcon name="ellipsis-vertical" size={18} color={colors.textSecondary} />
+          </Pressable>
+        ) : null}
       </View>
+      {deck.description ? (
+        <T.Caption tone="secondary" numberOfLines={2} className="mt-2">
+          {deck.description}
+        </T.Caption>
+      ) : null}
+      {onStudy && dueCount > 0 ? (
+        /* The ONE saturated thing in the row, and only when there is
+           something to do: a full-width primary button on every row put the
+           list far over the 3% saturated-ink budget, and "Start studying" on
+           a deck with nothing due was an action that opened a session with no
+           cards. A deck with nothing ready is opened by its row; the sheet
+           still carries the study CTA for it. */
+        <View className="flex-row justify-end mt-2">
+          <Button size="sm" onPress={onStudy} accessibilityLabel={getStudyCtaLabel(dueCount, cardCount)}>
+            Study
+          </Button>
+        </View>
+      ) : null}
     </Pressable>
   );
 }
@@ -222,6 +192,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
     offlineDeckIds,
     markDeckOffline,
     unmarkDeckOffline,
+    deleteDeck,
   } = useFlashcardStore();
   /** Cards cached per deck; what the in-place search can match without the API. */
   const cardsByDeck = useFlashcardStore(s => s.flashcards);
@@ -393,6 +364,31 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
     }
   };
 
+  /**
+   * Delete a deck from the list's own sheet.
+   *
+   * Only Deck detail could do this, so a deck a student did not want — a
+   * generation they no longer need, an empty shell from a failed save — could
+   * not be removed without opening it first. The card count is named in the
+   * confirmation because that is what is actually being destroyed.
+   */
+  const handleDeleteDeck = async (deck: Deck) => {
+    if (!user?.id) return;
+    const count = deck.card_count ?? 0;
+    const ok = await confirmSheet({
+      title: 'Delete deck?',
+      message: `"${deck.name}" and its ${count} card${count === 1 ? '' : 's'} will be permanently deleted. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await deleteDeck(deck.id, user.id);
+    } catch (e) {
+      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+    }
+  };
+
   const handleAIGenerated = async (generated: AIGeneratedFlashcard[]) => {
     if (!user?.id || !aiDeckId || generated.length === 0) return;
     for (const card of generated) {
@@ -420,13 +416,21 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           onPress: () => navigation.navigate('DeckDetail', { deckId: deckActions.id, deckName: deckActions.name }),
         },
         {
-          section: 'Deck',
+          section: 'Study',
           label: getStudyCtaLabel(deckActions.due_count ?? 0, deckActions.card_count ?? 0),
           icon: 'play-circle',
           onPress: () => navigation.navigate('FlashcardReview', { deckId: deckActions.id, deckName: deckActions.name }),
         },
         {
-          section: 'Organise',
+          // Was a chip on the old gradient header; the row is neutral now, so
+          // the sheet is where it lives.
+          section: 'Study',
+          label: 'Generate cards with AI',
+          icon: 'sparkles',
+          onPress: () => openAiForDeck(deckActions.id),
+        },
+        {
+          section: 'Manage',
           label: 'Move to course…',
           icon: 'school',
           hint: deckActions.course_id ? 'Filed under a course — pick another or clear it' : 'Not filed under a course yet',
@@ -438,7 +442,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         ...(deckActions.course_id
           ? [
               {
-                section: 'Organise',
+                section: 'Manage',
                 label: 'Move to topic…',
                 icon: 'list' as ActionSheetItem['icon'],
                 hint: 'Where this sits in the course outline',
@@ -455,16 +459,24 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
             ]
           : []),
         {
-          section: 'Organise',
+          section: 'Manage',
           label: offlineDeckIds.includes(deckActions.id) ? 'Remove from offline' : 'Save for offline',
           icon: offlineDeckIds.includes(deckActions.id) ? 'cloud-offline' : 'cloud-download',
           onPress: () => void handleToggleOffline(deckActions.id),
         },
         {
-          section: 'Organise',
+          section: 'Manage',
           label: 'Share as JSON',
           icon: 'share',
           onPress: () => void handleShareDeck(deckActions.id, deckActions.name),
+        },
+        {
+          section: 'Manage',
+          label: 'Delete deck',
+          icon: 'trash',
+          hint: `${deckActions.card_count ?? 0} card${(deckActions.card_count ?? 0) === 1 ? '' : 's'} will be deleted`,
+          destructive: true,
+          onPress: () => setTimeout(() => void handleDeleteDeck(deckActions), 50),
         },
       ]
     : [];
@@ -588,7 +600,15 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           data={visibleDecks}
           keyExtractor={item => item.id}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primaryText} />}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primaryText}
+              colors={[colors.primaryText]}
+              progressBackgroundColor={colors.surface}
+            />
+          }
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               {/* With a query typed, "No decks yet" would read as if the decks
@@ -617,16 +637,12 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
               )}
             </View>
           }
-          renderItem={({ item, index }) => (
+          renderItem={({ item }) => (
             <DeckCard
               deck={item}
-              index={index}
               onPress={() => navigation.navigate('DeckDetail', { deckId: item.id, deckName: item.name })}
-              onAIGenerate={() => openAiForDeck(item.id)}
               onStudy={() => navigation.navigate('FlashcardReview', { deckId: item.id, deckName: item.name })}
               isOffline={offlineDeckIds.includes(item.id)}
-              onToggleOffline={() => void handleToggleOffline(item.id)}
-              onShare={() => void handleShareDeck(item.id, item.name)}
               onMore={() => setDeckActions(item)}
             />
           )}

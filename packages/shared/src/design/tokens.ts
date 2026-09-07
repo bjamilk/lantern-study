@@ -232,6 +232,33 @@ export const featureAccentsDark: Record<FeatureKey, FeatureAccentPair> = {
 };
 
 /**
+ * Small-text ink overrides (spec v3 §5.6). An `ink` that clears AA on its own
+ * tint by a hair is still legal at body size and NOT legal at the 11 px
+ * `label` step, where the spec forbids the raw hue. Light lime is the one such
+ * case: `#4d7c0f` is 4.60:1 on `#ecfccb`, so anything under 12 px darkens to
+ * `#3f6212`. Every other feature — and every dark ink, all of which are light
+ * hues far above the bar — falls through to its own `ink`.
+ *
+ * This map, not a literal at a call site, is the single source: `smallTextInk`
+ * in apps/mobile/src/components/ui/FeatureDisc.tsx reads it, the CSS bridge
+ * emits it as `--color-feature-<key>-small-ink`, and `scripts/design/
+ * contrast.mjs` parses it out of this file to gate the substitute.
+ */
+export const featureSmallTextInkLight: Partial<Record<FeatureKey, string>> = {
+  flashcards: '#3f6212',
+};
+
+/** Dark needs no override; kept so the two themes stay symmetric. */
+export const featureSmallTextInkDark: Partial<Record<FeatureKey, string>> = {};
+
+/** The ink to set text UNDER 12 px in, for one feature in one theme. */
+export function featureSmallTextInk(feature: FeatureKey, mode: 'light' | 'dark'): string {
+  const overrides = mode === 'dark' ? featureSmallTextInkDark : featureSmallTextInkLight;
+  const base = mode === 'dark' ? featureAccentsDark : featureAccentsLight;
+  return overrides[feature] ?? base[feature].ink;
+}
+
+/**
  * @deprecated Use `featureAccentsLight` / `featureAccentsDark` and their
  * `{ ink, tint }` pairs. Kept for ONE release so the ~38 existing call sites
  * keep compiling; delete with the Wave V1 call-site migration.
@@ -541,6 +568,23 @@ export function featureAccentPairsToCssVars(
 }
 
 /**
+ * `--color-feature-<key>-small-ink` for one theme, as RGB CHANNELS.
+ *
+ * Separate from `featureAccentPairsToCssVars` on purpose: that function's
+ * output is exactly two vars per feature and a test pins that shape.
+ */
+export function featureSmallTextInkCssVars(
+  mode: 'light' | 'dark',
+  prefix = '--color-feature'
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const key of FEATURE_KEYS) {
+    out[`${prefix}-${key}-small-ink`] = hexChannels(featureSmallTextInk(key, mode));
+  }
+  return out;
+}
+
+/**
  * `--type-<step>-size/-lh/-weight/-tracking`, plus the family stacks that are
  * theme-independent. `--font-sans` is NOT emitted here: it is owned by the
  * user's font-mode setting (`useFontMode`), which would fight this.
@@ -564,6 +608,7 @@ export function lanternCssVars(mode: 'light' | 'dark'): Record<string, string> {
   return {
     ...paletteToCssVars(mode === 'dark' ? darkTheme : lightTheme),
     ...featureAccentPairsToCssVars(mode === 'dark' ? featureAccentsDark : featureAccentsLight),
+    ...featureSmallTextInkCssVars(mode),
     ...typeScaleToCssVars(),
   };
 }

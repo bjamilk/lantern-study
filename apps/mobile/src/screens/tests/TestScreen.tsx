@@ -22,11 +22,12 @@ import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
-import { BackButton } from '../../components/ui';
+import { BackButton, EmptyState, FeatureDisc, useFeatureAccent } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { resolveTestTimeLimitMinutes } from './testConfigRules';
+import { testSourceLine } from '../../stores/availableTests';
 // Wave T: the six type steps replace this file's eleven ad-hoc sizes.
 import { typeScale, tabularNums } from '../../design/typeScale';
 
@@ -88,6 +89,10 @@ export default function TestScreen() {
   const { user } = useAuthStore();
   const defaultTestMode = useSettingsStore(s => s.settings.study.defaultTestMode);
   const { colors } = useTheme();
+  // Sky is the Tests family (spec v3 §5.6). Every hue on this screen comes
+  // from this one pair — discs, the current segment, the empty panel — so
+  // "which world am I in" is answered by colour and nothing else is.
+  const testsAccent = useFeatureAccent('tests');
   const insets = useScreenInsets();
   // `paddingBottom: 100` was a guess at the absolutely positioned bottom tab
   // bar, which is 102px at minimum and ~118px with Android 3-button nav — so
@@ -263,6 +268,21 @@ export default function TestScreen() {
     );
   }, [user?.id, deleteAttempt]);
 
+  /**
+   * The only door into authoring a test that exists on mobile today: a group
+   * chat. Landing on the Chat tab's ROOT (the group list) rather than naming a
+   * screen inside it is the navigation rule — `toTab` is for a nested target,
+   * and there is no group id to push here.
+   *
+   * Wave 2 replaces this with a real creation flow; until then the button
+   * takes the student to where the thing actually happens instead of nowhere.
+   */
+  const handleNewTest = useCallback(() => {
+    const parent = navigation.getParent?.();
+    if (parent) parent.navigate('ChatTab');
+    else navigation.navigate('ChatTab');
+  }, [navigation]);
+
   const handleClearHistory = useCallback(() => {
     if (!user?.id || attempts.length === 0) return;
     Alert.alert(
@@ -302,15 +322,22 @@ export default function TestScreen() {
       onPress={() => setSelectedTest(item)}
       activeOpacity={0.7}
     >
-      <View style={[styles.testIcon, { backgroundColor: colors.primaryBackground }]}>
-        <AppIcon name="document-text" size={24} color={colors.primaryText} />
-      </View>
+      {/* The sky disc says "this is a test" in one shape; the row itself
+          stays neutral, which is what keeps a long list inside the 4-6%
+          chromatic budget for a list. */}
+      <FeatureDisc feature="tests" icon="document-text" size={40} />
+      <View style={{ width: 12 }} />
       
       <View style={styles.testInfo}>
         <Text style={[styles.testName, { color: colors.text }]} numberOfLines={1}>{item.name}</Text>
-        <Text style={[styles.testDescription, { color: colors.textSecondary }]} numberOfLines={1}>
-          {item.description || `From ${item.deckName}`}
-        </Text>
+        {/* Never "From undefined": a note quiz has no deck and no group, and
+            the row said so out loud (D3). testSourceLine omits the line when
+            there is no source to name. */}
+        {item.description || testSourceLine(item.deckName) ? (
+          <Text style={[styles.testDescription, { color: colors.textSecondary }]} numberOfLines={1}>
+            {item.description || testSourceLine(item.deckName)}
+          </Text>
+        ) : null}
         
         <View style={styles.testMeta}>
           <View style={styles.metaItem}>
@@ -341,41 +368,62 @@ export default function TestScreen() {
         onPress={() => handleViewAttempt(item)}
         activeOpacity={0.7}
       >
-        <View style={[
-          styles.attemptIcon,
-          { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
-        ]}>
-          <AppIcon 
-            name={item.passed ? 'checkmark-circle' : 'close-circle'} 
-            size={24} 
-            color={item.passed ? '#10b981' : '#ef4444'} 
-          />
-        </View>
+        {/* The disc says WHAT this is (a test), not how it went: a row that
+            paints itself green or red at 40px reads as a verdict on the
+            student. Pass/fail is said below, in a word, with its own glyph. */}
+        <FeatureDisc feature="tests" icon="document-text" size={40} />
+        <View style={{ width: 12 }} />
         
         <View style={styles.attemptInfo}>
           <Text style={[styles.attemptName, { color: colors.text }]} numberOfLines={1}>{item.testName}</Text>
-          {item.groupName ? (
+          {testSourceLine(item.groupName) ? (
             <Text style={[styles.attemptSource, { color: colors.textSecondary }]} numberOfLines={1}>
-              From {item.groupName}
+              {testSourceLine(item.groupName)}
             </Text>
           ) : null}
           <Text style={[styles.attemptDate, { color: colors.textSecondary }]}>{formatDate(item.completedAt || item.startedAt)}</Text>
           
+          {/* Score as TEXT plus a 4px rail (spec v3 §5.7). The tinted pill it
+              replaced spent a saturated fill on every row of the list; the
+              rail carries the same figure as a length, which is the thing a
+              student actually compares between attempts. */}
           <View style={styles.attemptStats}>
-            <View style={[
-              styles.scoreBadge,
-              { backgroundColor: item.passed ? '#10b98120' : '#ef444420' }
-            ]}>
-              <Text style={[
-                styles.scoreText,
-                { color: item.passed ? '#10b981' : '#ef4444' }
-              ]}>
-                {item.percentage}%
+            <Text style={[styles.scoreText, { color: colors.text }]}>
+              {item.percentage}%
+            </Text>
+            <View style={styles.attemptVerdict}>
+              <AppIcon
+                name={item.passed ? 'checkmark-circle' : 'close-circle'}
+                size={14}
+                color={item.passed ? colors.success : colors.error}
+                importantForAccessibility="no"
+              />
+              <Text
+                style={[
+                  styles.attemptMeta,
+                  { color: item.passed ? colors.success : colors.error },
+                ]}
+              >
+                {item.passed ? 'Passed' : 'Not passed'}
               </Text>
             </View>
             <Text style={[styles.attemptMeta, { color: colors.textSecondary }]}>
               {item.score}/{item.totalPoints} pts • {formatTime(item.timeSpent)}
             </Text>
+          </View>
+          <View
+            style={[styles.scoreRailTrack, { backgroundColor: colors.border }]}
+            importantForAccessibility="no-hide-descendants"
+          >
+            <View
+              style={[
+                styles.scoreRailFill,
+                {
+                  width: `${Math.max(0, Math.min(100, item.percentage))}%`,
+                  backgroundColor: testsAccent.ink,
+                },
+              ]}
+            />
           </View>
         </View>
         
@@ -403,34 +451,51 @@ export default function TestScreen() {
     </View>
   ), [handleViewAttempt, handleRetake, handleDeleteAttempt, colors]);
 
+  /**
+   * The empty state: the shared `EmptyState` card — a neutral panel with ONE
+   * sky-tint band across its top (spec v3 §5.6 "Empty state"), a benefit
+   * rather than a restatement of the emptiness, one sentence, and — on the
+   * Available tab — one action. It replaced a full-tint panel that painted
+   * roughly 40% of the viewport in sky; the band is about 6%.
+   *
+   * That action is deliberately modest. Lantern has no creation door of its
+   * own on mobile yet (Wave 2 builds it), and the only place a test is
+   * actually authored today is a group chat. So the button says where it is
+   * taking you and takes you there, rather than pretending to a wizard that
+   * does not exist.
+   */
   const ListEmptyComponent = useMemo(() => (
     <View style={styles.emptyContainer}>
-      {/* `primaryLight` is the SOLID brand colour in the light palette — the
-          same value as `primary` — so this painted a 120px filled purple disc
-          with a purple glyph invisible inside it. `primaryBackground` is the
-          tint token the rest of the app uses behind a primary-coloured icon. */}
-      <View style={[styles.emptyIcon, { backgroundColor: colors.primaryBackground }]}>
-        <AppIcon 
-          name={activeTab === 'tests' ? 'document-text' : 'time'} 
-          size={64} 
-          color={colors.primaryText} 
-        />
-      </View>
-      <Text style={[styles.emptyTitle, { color: colors.text }]}>
-        {activeTab === 'tests' ? 'No Tests Available' : 'No Test History'}
-      </Text>
-      <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-        {activeTab === 'tests'
-          ? 'Saved deck quizzes you can launch appear here. Group chat tests show up in History after you finish them.'
-          : historyCourse
-            ? historyCourse.topicId
-              ? `No completed tests under ${historyTopicLabel(historyCourse)} in ${historyCourse.label} yet. Pick the topic when you start a test and it will show up here.`
-              : `No completed tests filed under ${historyCourse.label} yet. Pick the course when you start a test and it will show up here.`
-            : 'Your completed tests and scores appear here. Tap a result to review answers or retake.'
+      <EmptyState
+        feature="tests"
+        icon={activeTab === 'tests' ? 'document-text' : 'time'}
+        title={activeTab === 'tests' ? 'Practise before it counts' : 'Every score you have earned'}
+        description={
+          activeTab === 'tests'
+            ? 'Timed, scored and repeatable — the closest thing to sitting the real one.'
+            : historyCourse
+              ? historyCourse.topicId
+                ? `Nothing under ${historyTopicLabel(historyCourse)} in ${historyCourse.label} yet — pick the topic when you start a test.`
+                : `Nothing filed under ${historyCourse.label} yet — pick the course when you start a test.`
+              : 'Completed tests land here. Tap a result to review answers or retake.'
         }
-      </Text>
+        action={
+          activeTab === 'tests' ? (
+            <TouchableOpacity
+              onPress={handleNewTest}
+              activeOpacity={0.8}
+              style={[styles.emptyAction, { backgroundColor: testsAccent.ink }]}
+              accessibilityRole="button"
+              accessibilityLabel="New test. Opens Chat, where a test is started from a group."
+            >
+              <AppIcon name="add" size={16} color={colors.card} importantForAccessibility="no" />
+              <Text style={[styles.emptyActionText, { color: colors.card }]}>New test</Text>
+            </TouchableOpacity>
+          ) : null
+        }
+      />
     </View>
-  ), [activeTab, colors, historyCourse]);
+  ), [activeTab, colors, historyCourse, testsAccent, handleNewTest]);
 
   return (
     <Screen edges={['top']} bottom="none" className="flex-1" style={{ backgroundColor: colors.background }}>
@@ -451,20 +516,43 @@ export default function TestScreen() {
       </View>
 
       {/* Tabs */}
-      <View style={[styles.tabContainer, { backgroundColor: colors.card }]}>
+      {/* Available / History: a segmented control whose current segment is a
+          sky TINT with its label in sky ink — the feature's own hue, not the
+          app's indigo, and a filled shape rather than a colour swap alone.
+          `+ '20'` on a hex was an 8-digit RGBA the theme never defined. */}
+      <View
+        style={[styles.tabContainer, { backgroundColor: colors.card }]}
+        accessibilityRole="tablist"
+      >
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'tests' && [styles.activeTab, { backgroundColor: colors.primaryFill + '20' }]]}
+          style={[styles.tab, activeTab === 'tests' && { backgroundColor: testsAccent.tint }]}
           onPress={() => setActiveTab('tests')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'tests' }}
         >
-          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'tests' && { color: colors.primaryText }]}>
+          <Text
+            style={[
+              styles.tabText,
+              { color: colors.textSecondary },
+              activeTab === 'tests' && { color: testsAccent.ink, fontWeight: '700' },
+            ]}
+          >
             Available Tests
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.tab, activeTab === 'history' && [styles.activeTab, { backgroundColor: colors.primaryFill + '20' }]]}
+          style={[styles.tab, activeTab === 'history' && { backgroundColor: testsAccent.tint }]}
           onPress={() => setActiveTab('history')}
+          accessibilityRole="tab"
+          accessibilityState={{ selected: activeTab === 'history' }}
         >
-          <Text style={[styles.tabText, { color: colors.textSecondary }, activeTab === 'history' && { color: colors.primaryText }]}>
+          <Text
+            style={[
+              styles.tabText,
+              { color: colors.textSecondary },
+              activeTab === 'history' && { color: testsAccent.ink, fontWeight: '700' },
+            ]}
+          >
             History
           </Text>
         </TouchableOpacity>
@@ -835,16 +923,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 10,
   },
-  activeTab: {
-    backgroundColor: '#6366f1',
-  },
   tabText: {
     ...typeScale.body,
     fontWeight: '600',
     color: '#9ca3af',
-  },
-  activeTabText: {
-    color: '#ffffff',
   },
   listContent: {
     paddingHorizontal: 20,
@@ -856,15 +938,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
-  },
-  testIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#6366f120',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
   },
   testInfo: {
     flex: 1,
@@ -904,14 +977,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
   },
-  attemptIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
   attemptInfo: {
     flex: 1,
   },
@@ -935,10 +1000,21 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
   },
-  scoreBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
+  attemptVerdict: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  /** 4px is the rail everywhere in this app: a measure, never a fill. */
+  scoreRailTrack: {
+    height: 4,
+    borderRadius: 2,
+    marginTop: 8,
+    overflow: 'hidden',
+  },
+  scoreRailFill: {
+    height: 4,
+    borderRadius: 2,
   },
   scoreText: {
     ...typeScale.body,
@@ -983,29 +1059,22 @@ const styles = StyleSheet.create({
     color: '#ef4444',
   },
   emptyContainer: {
-    alignItems: 'center',
-    paddingTop: 60,
-    paddingHorizontal: 40,
+    paddingTop: 24,
   },
-  emptyIcon: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#6366f120',
+  /** The one saturated fill on the screen, and it is a 44 dp control. */
+  emptyAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    minHeight: 44,
   },
-  emptyTitle: {
-    ...typeScale.title,
-    fontWeight: '600',
-    color: '#ffffff',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
+  emptyActionText: {
     ...typeScale.body,
-    color: '#9ca3af',
-    textAlign: 'center',
+    fontWeight: '700',
   },
   // Modal styles
   modalOverlay: {

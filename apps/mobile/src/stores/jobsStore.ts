@@ -15,8 +15,10 @@
  * the wiring, which mobile jest never imports.
  */
 import { create } from 'zustand';
+import { AppState, type AppStateStatus } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
+  adoptOwnerlessJobs,
   claimNotification,
   claimSave,
   claimUsage,
@@ -24,6 +26,8 @@ import {
   dismissJob as dismissJobIn,
   findJob,
   findJobByAnyId,
+  hasUnsavedGeneration,
+  jobsAwaitingSave,
   isTerminal,
   planSave,
   planServerSettle,
@@ -33,6 +37,8 @@ import {
   patchJob,
   planHydration,
   pruneJobs,
+  runningJobs,
+  savedSettlePatch,
   upsertJob,
   toJobStatusSnapshot,
   UNSAVED_GENERATION_ERROR,
@@ -55,6 +61,7 @@ import { API_BASE_URL, getAuthHeaders } from '../services/supabase';
 import { fetchAIUsage } from '../services/ai';
 import { isJobStillRunningError } from '../services/jobWatch';
 import { useAuthStore } from './authStore';
+import { syncService } from '../services/syncService';
 
 // ─────────────────────────────────────────────────────────────
 // Lane A's job client, as the minimum this store needs.
@@ -150,6 +157,87 @@ const pollTimers = new Map<string, ReturnType<typeof setInterval>>();
 /** Which account the persisted list was last loaded for. */
 let hydratedFor: string | null = null;
 
+/** The AppState subscription that catches up after a background spell. */
+let foregroundSub: { remove: () => void } | null = null;
+
+/**
+ * Catch up with the server every time the app comes back to the foreground.
+ *
+ * Registered once, lazily — the first hydrate or the first generation — so
+ * importing the store does not subscribe to anything, and so a process that
+ * never runs a job never listens.
+ */
+const ensureForegroundCatchUp = (run: () => void): void => {
+  if (foregroundSub) return;
+  foregroundSub = AppState.addEventListener('change', (next: AppStateStatus) => {
+    if (next === 'active') run();
+  });
+};
+
+/** The connectivity subscription that finishes held saves on reconnect. */
+let reconnectSub: (() => void) | null = null;
+
+/** Save retries already running, so a flapping connection cannot double-post. */
+const reconnectSaves = new Set<string>();
+
+/**
+ * Finish the saves the network interrupted, without asking.
+ *
+ * A generation that could not reach the library holds its material on the job
+ * record and offers "Save to library". On the device run the student turned
+ * airplane mode off and the held job just sat there until they found the
+ * button (D7) — the work was done, paid for, and one request away from being
+ * theirs. So the app does it: on every offline → online transition, every job
+ * with unsaved generated material is saved once. The button stays, for the
+ * failures that are not about the network.
+ *
+ * `retrySaveJob` is imported lazily because services/jobArtifacts imports this
+ * store; the same dance the catch-up path does.
+ */
+const ensureReconnectSaves = (): void => {
+  if (reconnectSub) return;
+  let wasOnline = true;
+  try {
+    wasOnline = syncService.getStatus().isOnline;
+  } catch {
+    // Sync not started yet; assume online until told otherwise.
+  }
+  try {
+    reconnectSub = syncService.onStatusChange((isOnline: boolean) => {
+      const cameBack = isOnline && !wasOnline;
+      wasOnline = isOnline;
+      if (!cameBack) return;
+      void runHeldSaves();
+    });
+  } catch {
+    // No sync service in this process (a test, an early boot). The manual
+    // "Save to library" button is unaffected.
+  }
+};
+
+/** Save every job holding generated material, once each. */
+const runHeldSaves = async (): Promise<void> => {
+  const held = jobsAwaitingSave(useJobsStore.getState().jobs);
+  if (held.length === 0) return;
+  const { retrySaveJob } = await import('../services/jobArtifacts');
+  await Promise.all(
+    held.map(async (job) => {
+      // One attempt in flight per job: the status callback can fire twice on a
+      // flapping connection, and a second POST would be a second deck.
+      if (reconnectSaves.has(job.id)) return;
+      reconnectSaves.add(job.id);
+      try {
+        await retrySaveJob(job.id);
+      } catch {
+        // Still no good. The material stays on the record and the card's own
+        // "Save to library" is still true (jobArtifacts records the reason).
+      } finally {
+        reconnectSaves.delete(job.id);
+      }
+    })
+  );
+};
+
 const POLL_INTERVAL_MS = 1500;
 
 interface JobsState {
@@ -181,6 +269,17 @@ interface JobsState {
   settleSaveFailed: (id: string, message: string) => void;
   /** A push arrived about `serverOrClientJobId` — dedupe it and catch up. */
   onJobPush: (serverOrClientJobId: string) => Promise<void>;
+  /**
+   * Read every unfinished job back from the server, now.
+   *
+   * The JS thread is frozen while the app is backgrounded, so a job that
+   * finished there is still shown as running when the student comes back —
+   * the device run found a quiz sitting at "Saving your quiz" for four
+   * minutes after the server had saved it (F6). Called on every foreground
+   * and whenever the sheet opens, so the sheet can never sit at a stage the
+   * server has already passed.
+   */
+  refreshActiveJobs: () => Promise<void>;
   /** Resolve `lanternstudy://jobs/<id>` to the artefact link, if there is one. */
   resolveJobLink: (serverOrClientJobId: string) => Promise<string | null>;
   dismissJob: (id: string) => void;
@@ -278,6 +377,67 @@ export const useJobsStore = create<JobsState>((set, get) => {
     return true;
   };
 
+  /**
+   * Read one job's server record and fold it in.
+   *
+   * `onlyIfFinished` is for the resume path: while a runner for this job is
+   * still alive in this process, only a completion the SERVER can point at an
+   * artefact for is acted on. Declaring it lost or failed from here would
+   * overrule a runner that is still legitimately working.
+   */
+  // One catch-up per job at a time: the sheet ticks every 5 s, the Home card
+  // and every foreground also call it, and without this guard a save the
+  // server keeps rejecting was re-POSTed on every tick (review residual).
+  const catchUpInFlight = new Set<string>();
+  const catchUp = async (job: TrackedJob, onlyIfFinished: boolean): Promise<void> => {
+    if (!job.serverJobId) return;
+    if (catchUpInFlight.has(job.id)) return;
+    catchUpInFlight.add(job.id);
+    try {
+      await catchUpOnce(job, onlyIfFinished);
+    } finally {
+      catchUpInFlight.delete(job.id);
+    }
+  };
+  const catchUpOnce = async (job: TrackedJob, onlyIfFinished: boolean): Promise<void> => {
+    if (!job.serverJobId) return;
+    try {
+      const snapshot = await jobClient.getJobStatus(job.serverJobId);
+      const current = findJob(get().jobs, job.id) ?? job;
+      const plan = planServerSettle(current, snapshot);
+      if (plan) {
+        if (onlyIfFinished && plan.status !== 'done') return;
+        // The server has finished and this device is still holding what it
+        // produced. Park it behind a button and the student comes back to a
+        // sheet that says "Ready to save" about work that is done — so the
+        // save is finished here instead, and the job lands on `done`.
+        if (plan.status === 'failed' && hasUnsavedGeneration(current)) {
+          const { retrySaveJob } = await import('../services/jobArtifacts');
+          await retrySaveJob(job.id).catch(() => {
+            // The material is still on the record and the sheet's "Save to
+            // library" is still true; retrySaveJob recorded the reason.
+          });
+          return;
+        }
+        settle(job.id, plan);
+        return;
+      }
+      // Still running: carry the server's own stage and percent across, so
+      // the sheet moves only when the server has actually moved.
+      update((jobs) =>
+        patchJob(
+          jobs,
+          job.id,
+          { status: 'running', serverStage: snapshot.stage, progress: snapshot.progress },
+          Date.now()
+        )
+      );
+    } catch {
+      // Offline, or a transient failure. The sheet holds where it was and
+      // says so; it does not invent movement.
+    }
+  };
+
   const poll = (id: string) => {
     stopPolling(id);
     const tick = async () => {
@@ -319,6 +479,18 @@ export const useJobsStore = create<JobsState>((set, get) => {
     sheetJobId: null,
 
     hydrate: async (userId: string) => {
+      ensureForegroundCatchUp(() => void get().refreshActiveJobs());
+      ensureReconnectSaves();
+      // A generation started before auth answered carries no owner, and every
+      // owner filter — this one, and `persist` — would otherwise drop it while
+      // it was still running (D6). Adopt first, on every call: hydrate returns
+      // early once the account is loaded, and that early return was one of the
+      // places the running job disappeared.
+      const adopted = adoptOwnerlessJobs(get().jobs, userId);
+      if (adopted.some((job, i) => job !== get().jobs[i]) || adopted.length !== get().jobs.length) {
+        set({ userId, jobs: adopted });
+        persist();
+      }
       if (hydratedFor === userId) return;
       hydratedFor = userId;
       let stored: TrackedJob[] = [];
@@ -345,6 +517,11 @@ export const useJobsStore = create<JobsState>((set, get) => {
     },
 
     clear: () => {
+      foregroundSub?.remove();
+      foregroundSub = null;
+      reconnectSub?.();
+      reconnectSub = null;
+      reconnectSaves.clear();
       for (const id of Array.from(pollTimers.keys())) stopPolling(id);
       runners.clear();
       resetJobPushDeliveries();
@@ -376,6 +553,8 @@ export const useJobsStore = create<JobsState>((set, get) => {
         now,
       });
       const watch = spec.watch !== false;
+      ensureForegroundCatchUp(() => void get().refreshActiveJobs());
+      ensureReconnectSaves();
       runners.set(id, spec);
       update((jobs) => pruneJobs(upsertJob(jobs, { ...job, watching: watch }), now));
       if (watch) set({ sheetJobId: id });
@@ -447,8 +626,14 @@ export const useJobsStore = create<JobsState>((set, get) => {
       // Cleared only now. Until this line the material is the student's only
       // copy, and a crash between the two leaves them a Save button, not a
       // second bill.
-      update((jobs) => patchJob(jobs, id, { pendingSave: undefined }, Date.now()));
-      settle(id, { status: 'done', artifact: ref, resultCount: count });
+      //
+      // `savedSettlePatch` promotes the job to `done` even from a failed or
+      // lost record: this runs after a retried save, and the old rule that
+      // kept the first outcome left the card reading "That didn't finish"
+      // over material that was, by then, in the library (F8).
+      const patch = savedSettlePatch(findJob(get().jobs, id), ref, count);
+      update((jobs) => patchJob(jobs, id, patch, Date.now()));
+      settle(id, patch);
     },
 
     settleSaveFailed: (id: string, message: string) => {
@@ -481,6 +666,11 @@ export const useJobsStore = create<JobsState>((set, get) => {
       } catch {
         // The push stands on its own; a failed read is not a failed job.
       }
+    },
+
+    refreshActiveJobs: async () => {
+      const active = runningJobs(get().jobs).filter((j) => j.serverJobId);
+      await Promise.all(active.map((job) => catchUp(job, runners.has(job.id))));
     },
 
     resolveJobLink: async (serverOrClientJobId: string) => {

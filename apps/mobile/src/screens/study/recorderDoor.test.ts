@@ -1,0 +1,43 @@
+/**
+ * The Record door writes nothing until the student says yes (D4).
+ *
+ * The device run of 2026-09-05 found that both Record doors created and opened
+ * "Lecture — 6 Sep" on the tap itself, so an empty lecture note landed in the
+ * library before anything was recorded — the "Untitled Lecture" junk this app
+ * exists to not have. The editor is keyed on a real note id throughout, so an
+ * id-less draft mode is a rewrite of that screen; the door asks first instead,
+ * and these are the rules it asks by.
+ */
+import {
+  newLectureNoteTitle,
+  recorderDoorPrompt,
+  shouldCreateLectureNote,
+} from './recorderDoor';
+
+describe('recorderDoorPrompt', () => {
+  it('names the note it is about to create, and nothing else', () => {
+    const prompt = recorderDoorPrompt(new Date(2026, 8, 6));
+    expect(prompt.noteTitle).toBe('Lecture — 6 Sep');
+    // The student can see the exact title before it exists.
+    expect(prompt.message).toContain('Lecture — 6 Sep');
+    expect(prompt.confirmLabel).toBe('Start');
+    expect(prompt.cancelLabel).toBe('Cancel');
+  });
+
+  it('quotes the same title the door would create', () => {
+    const now = new Date(2026, 0, 31);
+    expect(recorderDoorPrompt(now).noteTitle).toBe(newLectureNoteTitle(now));
+  });
+});
+
+describe('shouldCreateLectureNote', () => {
+  it('creates the note only on an explicit yes', () => {
+    expect(shouldCreateLectureNote(true)).toBe(true);
+  });
+
+  it('writes nothing when the sheet is cancelled or dismissed', () => {
+    // A cancel, a back press and a tap outside all resolve false; none of
+    // them may leave a note behind.
+    expect(shouldCreateLectureNote(false)).toBe(false);
+  });
+});

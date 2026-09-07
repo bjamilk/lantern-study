@@ -19,6 +19,10 @@ import {
   MicrophoneIcon,
   StopIcon,
   ArrowPathIcon,
+  RectangleStackIcon,
+  QuestionMarkCircleIcon,
+  SparklesIcon,
+  ChatBubbleLeftRightIcon,
 } from '@heroicons/react/24/outline';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
@@ -27,6 +31,7 @@ import { useAiJobUserId } from '../hooks/useAiJobs';
 import {
   SMART_NOTES_CREDIT_COST,
   AI_CREDIT_COSTS,
+  formatCreditCost,
   getSmartNotesCreditCost,
 } from '@lantern/shared/utils/aiCredits';
 import DailyQuizWidget from './DailyQuizWidget';
@@ -39,6 +44,7 @@ import Modal from './ui/Modal';
 import NotePdfViewer from './NotePdfViewer';
 import NoteImageGallery from './NoteImageGallery';
 import { Button } from './ui';
+import { FEATURE_INK_TEXT } from './ui/featureClasses';
 import * as notesApi from '../services/notes';
 import {
   formatRecordingDuration,
@@ -222,6 +228,9 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   }).length;
 
   const aiJobUserId = useAiJobUserId();
+  /** One flag for the Turn-into row: never offer a second job while one runs. */
+  const turnIntoBusy = generatingCards || generatingQuiz || transcribingForThisNote;
+
 
   /**
    * The three note-level generators, each filed as a tracked AI job.
@@ -958,6 +967,54 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               />
             </div>
           </div>
+
+          {/* ─── Turn into ───────────────────────────────────────────────
+              The four things a note becomes, at the top of the note rather
+              than only in the right-hand panel — which on a phone is below the
+              whole editor, so the actions a student came for were the last
+              thing on the page. The pills are NEUTRAL — the editor is a
+              reading surface, which §5.6 keeps flat (no tint, ≤2% chromatic) —
+              and each glyph is stroked in the ink of the thing it makes, the
+              same as the mobile "Turn into" tiles.
+
+              Each pill prints what it costs, from `formatCreditCost` over the
+              SAME constants the server charges (`aiCredits.ts`) — a number
+              typed in here is how the counter starts lying. Smart note quotes
+              the standard depth because that is what this shortcut runs; the
+              panel below owns depth, guidance and the counter, and this row
+              disables itself while a job is running so it cannot
+              double-charge. */}
+          {canEdit && studyContentLength > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-label uppercase text-lantern-text-secondary">Turn into</span>
+              {([
+                { key: 'cards', label: 'Cards', cost: formatCreditCost(AI_CREDIT_COSTS.generate_flashcards), feature: 'flashcards', icon: <RectangleStackIcon className="w-4 h-4" />, run: () => { setGeneratingCards(true); void runFlashcardJob().finally(() => setGeneratingCards(false)); } },
+                { key: 'test', label: 'Test', cost: formatCreditCost(AI_CREDIT_COSTS.generate_questions), feature: 'tests', icon: <QuestionMarkCircleIcon className="w-4 h-4" />, run: () => { setGeneratingQuiz(true); void runQuizJob().finally(() => setGeneratingQuiz(false)); } },
+                { key: 'smart', label: 'Smart note', cost: formatCreditCost(SMART_NOTES_CREDIT_COST.standard), feature: 'ai', icon: <SparklesIcon className="w-4 h-4" />, run: () => { void runSmartNoteJob({ title, body }); } },
+                // Opening the companion spends nothing; the reply is charged in
+                // the chat's own counter, so promising "free" here would be a
+                // lie by omission.
+                { key: 'ai', label: 'Ask AI', cost: 'no credit to open', feature: 'ai', icon: <ChatBubbleLeftRightIcon className="w-4 h-4" />, run: onChatWithNote },
+              ] as const).map((action) => (
+                <button
+                  key={action.key}
+                  type="button"
+                  onClick={action.run}
+                  disabled={turnIntoBusy}
+                  aria-label={`${action.label} — ${action.cost}`}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text transition-colors hover:border-lantern-text-tertiary disabled:opacity-50"
+                >
+                  <span className={FEATURE_INK_TEXT[action.feature]} aria-hidden="true">
+                    {action.icon}
+                  </span>
+                  {action.label}
+                  <span className="text-caption font-normal text-lantern-text-tertiary" aria-hidden="true">
+                    · {action.cost}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
 
           {note.youtubeVideoId && (
             <YouTubeEmbed videoId={note.youtubeVideoId} title={title || note.title} />

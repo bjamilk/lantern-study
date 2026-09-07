@@ -52,7 +52,6 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/CommunityDetailScreen.tsx': 13,
   'components/ContactForm.tsx': 12,
   'components/CookieNoticeBanner.tsx': 18,
-  'components/CourseReadinessCard.tsx': 14,
   'components/CramSessionScreen.tsx': 20,
   'components/CreateDeckModal.tsx': 7,
   'components/CreateFlashcardModal.tsx': 45,

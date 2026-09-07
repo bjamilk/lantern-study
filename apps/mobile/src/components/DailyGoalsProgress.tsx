@@ -4,6 +4,7 @@ import type { StudyActivityDay } from '@lantern/shared';
 import { getDailyGoalProgress } from '@lantern/shared/settings';
 import type { StudySettings } from '@lantern/shared/settings';
 import { useTheme } from '../theme';
+import { clampProgressPercent, goalCountLabel } from './dashboard/progressBar';
 
 interface Props {
   study: Pick<StudySettings, 'dailyCardGoal' | 'dailyTestGoal'>;
@@ -73,12 +74,19 @@ function GoalBar({
     <View style={styles.goalBlock}>
       <View style={styles.goalLabels}>
         <Text style={{ color: colors.textSecondary, fontSize: 12 * fontScale }}>{label}</Text>
+        {/* "12 of 1", not a 1200%-wide fill: the overshoot is text, because
+            a bar can only ever be full. */}
         <Text style={{ color: colors.textSecondary, fontSize: 12 * fontScale }}>
-          {done}/{goal}
+          {goalCountLabel(done, goal)}
         </Text>
       </View>
       <View style={[styles.track, { backgroundColor: colors.backgroundSecondary }]}>
-        <View style={[styles.fill, { width: `${percent}%`, backgroundColor: fillColor }]} />
+        <View
+          style={[
+            styles.fill,
+            { width: `${clampProgressPercent(percent)}%`, backgroundColor: fillColor },
+          ]}
+        />
       </View>
     </View>
   );

@@ -24,6 +24,13 @@ import { fetchCourseReadiness, refreshMasteryGraph } from '../services/supabase'
  *
  * Honesty rule inherited from the mastery graph: a missing score renders as
  * "not enough data yet", never as 0%.
+ *
+ * And the card never disappears. It has the same three honest states as the
+ * mobile card (`apps/mobile/src/components/dashboard/CourseReadinessCard.tsx`):
+ * courses, no courses yet (say what would fill it), and could-not-load (say
+ * so). A card that renders nothing is indistinguishable from a card that
+ * failed, and both read to a student as "the app forgot my exams" — which is
+ * also why Home's second card must not silently become its first.
  */
 
 const BAND_BAR_CLASSES: Record<string, string> = {
@@ -54,7 +61,7 @@ export const CourseReadinessCard: React.FC = () => {
       setError(null);
     } catch (e) {
       console.error('Error loading course readiness:', e);
-      setError('Could not load readiness right now.');
+      setError('We could not load your readiness just now. Your study still counts — try Refresh.');
     }
   }, []);
 
@@ -87,24 +94,18 @@ export const CourseReadinessCard: React.FC = () => {
     }
   };
 
-  if (courses !== null && courses.length === 0 && !error) {
-    // No enrolled courses: the academic-profile nudge above this card already
-    // sells that setup — an extra empty card here would just be noise.
-    return null;
-  }
-
   return (
     <div className="bg-lantern-surface rounded-2xl p-4 sm:p-5 ring-1 ring-lantern-border/60">
       <div className="flex items-center justify-between gap-2 mb-3">
         <div className="flex items-center gap-2 min-w-0">
           <AcademicCapIcon className="w-5 h-5 text-lantern-primary shrink-0" aria-hidden />
-          <h2 className="text-base font-bold text-lantern-text truncate">Exam readiness</h2>
+          <h2 className="text-heading font-bold text-lantern-text truncate">Exam readiness</h2>
         </div>
         <button
           type="button"
           onClick={() => void handleRefresh()}
           disabled={refreshing}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors disabled:opacity-60"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-caption font-medium text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-background-secondary transition-colors disabled:opacity-60"
           aria-label="Recompute readiness from your latest tests and reviews"
         >
           <ArrowPathIcon className={`w-3.5 h-3.5 ${refreshing ? 'animate-spin' : ''}`} aria-hidden />
@@ -113,10 +114,16 @@ export const CourseReadinessCard: React.FC = () => {
       </div>
 
       {error ? (
-        <p className="text-sm text-lantern-text-secondary py-2">{error}</p>
+        <p className="text-body text-lantern-text-secondary py-2">{error}</p>
       ) : courses === null ? (
-        <p className="text-sm text-lantern-text-tertiary py-2" role="status">
+        <p className="text-body text-lantern-text-tertiary py-2" role="status">
           Working out where you stand…
+        </p>
+      ) : courses.length === 0 ? (
+        // No enrolled courses. The nudge says what would fill the card rather
+        // than what is missing from it, and the card keeps its place.
+        <p className="text-body text-lantern-text-secondary py-2">
+          Add your courses and exam dates and this becomes a per-course readiness score.
         </p>
       ) : (
         <div className="space-y-3">
@@ -147,13 +154,13 @@ export const CourseReadinessCard: React.FC = () => {
                   className="w-full text-left"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <p className="min-w-0 text-sm font-semibold text-lantern-text truncate">
+                    <p className="min-w-0 text-body font-semibold text-lantern-text truncate">
                       {course.courseCode || 'Course'}
                       {course.courseTitle ? (
                         <span className="font-normal text-lantern-text-secondary"> — {course.courseTitle}</span>
                       ) : null}
                     </p>
-                    <span className="flex items-center gap-1.5 shrink-0 text-xs text-lantern-text-tertiary">
+                    <span className="flex items-center gap-1.5 shrink-0 text-caption text-lantern-text-tertiary">
                       {course.daysUntil != null ? examCountdownLabel(course.daysUntil) : null}
                       {expanded ? (
                         <ChevronDownIcon className="w-4 h-4" aria-hidden />
@@ -170,16 +177,16 @@ export const CourseReadinessCard: React.FC = () => {
                     />
                   </div>
                   <div className="mt-1.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-                    <span className="text-xs text-lantern-text-secondary">{statusLine}</span>
+                    <span className="text-caption text-lantern-text-secondary">{statusLine}</span>
                     {course.coveragePct != null && course.readinessScore != null ? (
-                      <span className="text-[11px] text-lantern-text-tertiary">
+                      <span className="text-label text-lantern-text-tertiary">
                         {course.coveredCount}/{course.outlineTotal} topics · syllabus {course.coveragePct}%
                       </span>
                     ) : null}
                   </div>
 
                   {course.nextTopic ? (
-                    <p className="mt-1.5 text-xs text-lantern-primary font-medium">
+                    <p className="mt-1.5 text-caption text-lantern-primary font-medium">
                       Start here: {course.nextTopic.title}
                     </p>
                   ) : null}
@@ -188,7 +195,7 @@ export const CourseReadinessCard: React.FC = () => {
                 {expanded ? (
                   <div className="mt-3 pt-3 border-t border-lantern-border/60">
                     {course.topics.length === 0 ? (
-                      <p className="text-xs text-lantern-text-tertiary">
+                      <p className="text-caption text-lantern-text-tertiary">
                         No outline or study data for this course yet. Add topics from the course
                         outline in your Library, or just start studying — readiness fills in on its
                         own.
@@ -200,7 +207,7 @@ export const CourseReadinessCard: React.FC = () => {
                             key={topic.topicId ?? `tag:${topic.title}`}
                             className="flex items-center justify-between gap-2"
                           >
-                            <span className="min-w-0 truncate text-xs text-lantern-text">
+                            <span className="min-w-0 truncate text-caption text-lantern-text">
                               {topic.title}
                               {!topic.inOutline ? (
                                 <span className="ml-1 text-label tracking-normal text-lantern-text-tertiary">(outside outline)</span>
@@ -222,17 +229,17 @@ export const CourseReadinessCard: React.FC = () => {
 
                     <div className="mt-3">
                       {signal === 'loading' ? (
-                        <p className="text-[11px] text-lantern-text-tertiary" role="status">
+                        <p className="text-label text-lantern-text-tertiary" role="status">
                           Checking what the class finds hard…
                         </p>
                       ) : signal && signal.available && signal.topics && signal.topics.length > 0 ? (
-                        <p className="text-[11px] text-lantern-text-secondary">
+                        <p className="text-label text-lantern-text-secondary">
                           <span className="font-semibold">Your class finds hardest:</span>{' '}
                           {signal.topics.slice(0, 3).map(t => t.topic).join(', ')}
                           <span className="text-lantern-text-tertiary"> · {signal.cohortSize} students</span>
                         </p>
                       ) : signal ? (
-                        <p className="text-[11px] text-lantern-text-tertiary">
+                        <p className="text-label text-lantern-text-tertiary">
                           Class insights unlock once 20+ students on this course have study data.
                         </p>
                       ) : null}

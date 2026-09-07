@@ -8,13 +8,6 @@ import {
     UserCircleIcon,
 } from '@heroicons/react/24/outline';
 import {
-    HomeIcon as HomeIconSolid,
-    ChatBubbleLeftRightIcon as ChatBubbleLeftRightIconSolid,
-    AcademicCapIcon as AcademicCapIconSolid,
-    BuildingLibraryIcon as BuildingLibraryIconSolid,
-    UserCircleIcon as UserCircleIconSolid,
-} from '@heroicons/react/24/solid';
-import {
     DESTINATION_LABELS,
     resolveActiveDestination,
     type DestinationId,
@@ -34,7 +27,6 @@ interface BottomNavProps {
 interface NavTab {
     id: DestinationId;
     icon: React.ElementType;
-    activeIcon: React.ElementType;
     onSelect: () => void;
     badge?: number;
     badgeSuffix?: string;
@@ -68,13 +60,11 @@ const BottomNav: React.FC<BottomNavProps> = ({
         {
             id: 'home',
             icon: HomeIcon,
-            activeIcon: HomeIconSolid,
             onSelect: () => onNavigate(AppMode.DASHBOARD),
         },
         {
             id: 'study',
             icon: AcademicCapIcon,
-            activeIcon: AcademicCapIconSolid,
             onSelect: () => onNavigate(AppMode.STUDY_HUB),
             badge: dueCardsCount,
             badgeSuffix: 'due',
@@ -83,7 +73,6 @@ const BottomNav: React.FC<BottomNavProps> = ({
         {
             id: 'chat',
             icon: ChatBubbleLeftRightIcon,
-            activeIcon: ChatBubbleLeftRightIconSolid,
             onSelect: () => onNavigate(AppMode.CHAT),
             badge: unreadChatCount,
             badgeSuffix: 'unread',
@@ -92,14 +81,12 @@ const BottomNav: React.FC<BottomNavProps> = ({
         {
             id: 'campus',
             icon: BuildingLibraryIcon,
-            activeIcon: BuildingLibraryIconSolid,
             onSelect: onNavigateToCampus,
             tipId: 'nav.marketplace',
         },
         {
             id: 'me',
             icon: UserCircleIcon,
-            activeIcon: UserCircleIconSolid,
             onSelect: onNavigateToMe,
         },
     ];
@@ -113,7 +100,7 @@ const BottomNav: React.FC<BottomNavProps> = ({
                 {tabs.map((tab) => {
                     const label = DESTINATION_LABELS[tab.id];
                     const isActive = active === tab.id;
-                    const Icon = isActive ? tab.activeIcon : tab.icon;
+                    const Icon = tab.icon;
                     const badgeCount = tab.badge && tab.badge > 0 ? tab.badge : 0;
                     const shown = badgeCount > 99 ? '99+' : String(badgeCount);
                     const accessibleName = badgeCount > 0
@@ -128,18 +115,19 @@ const BottomNav: React.FC<BottomNavProps> = ({
                             data-tip-id={tab.tipId}
                             onClick={tab.onSelect}
                             className={`flex flex-col items-center justify-center flex-1 min-h-[44px] relative transition-colors ${
-                                isActive ? 'text-lantern-primary' : 'text-lantern-text-secondary hover:text-lantern-text'
+                                isActive ? 'text-lantern-primary-text' : 'text-lantern-text-secondary hover:text-lantern-text'
                             }`}
                         >
-                            {/* The lit tab is named as well as coloured, and carries
-                                the bar above it — never colour alone. */}
-                            {isActive && (
-                                <span
-                                    className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-lantern-primary"
-                                    aria-hidden="true"
-                                />
-                            )}
-                            <div className="relative">
+                            {/* Duotone active treatment (§5.6): one outline glyph
+                                in every state — the solid swap made the lit tab a
+                                different shape — carried in a tint pill, with the
+                                label kept and bolded. Shape + weight + aria-current,
+                                so the lit tab is never colour alone. */}
+                            <div
+                                className={`relative flex items-center justify-center rounded-full px-3 py-0.5 ${
+                                    isActive ? 'bg-lantern-primary-background' : ''
+                                }`}
+                            >
                                 <Icon className="w-6 h-6" aria-hidden="true" />
                                 {badgeCount > 0 ? (
                                     <span

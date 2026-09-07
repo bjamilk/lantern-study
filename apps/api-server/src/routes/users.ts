@@ -30,6 +30,7 @@ import { getStudyPresenceService } from '../services/studyPresence';
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
 import { getAcademicCoursesService } from '../services/academicCourses';
 import { PublicError } from '../utils/safeError';
+import { getRedisClient, redisKey } from '../services/redisStore';
 
 const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
@@ -1516,6 +1517,57 @@ router.put(
   })
 );
 
+/**
+ * When this account last registered a push token.
+ *
+ * `profiles` has no `expo_push_token_updated_at` column and adding one is a
+ * migration this fix does not need: the stamp is a diagnostic, so it lives in
+ * Redis and simply reads back null when Redis (or the stamp) is absent.
+ */
+const PUSH_TOKEN_STAMP_TTL_SECONDS = 60 * 60 * 24 * 400;
+
+/** Expo only delivers to its own token format; anything else on file is dead. */
+function isExpoPushTokenFormat(token: string): boolean {
+  return token.startsWith('ExponentPushToken') || token.startsWith('ExpoPushToken');
+}
+
+function pushTokenStampKey(userId: string): string {
+  return redisKey(`user:${userId}:push-token:registeredAt`);
+}
+
+async function rememberPushTokenRegistration(userId: string): Promise<void> {
+  try {
+    const client = await getRedisClient();
+    if (!client) return;
+    await client.set(pushTokenStampKey(userId), new Date().toISOString(), {
+      EX: PUSH_TOKEN_STAMP_TTL_SECONDS,
+    });
+  } catch (error) {
+    // A diagnostic stamp must never fail the registration it describes.
+    logger.warn('Push token stamp write failed', { error });
+  }
+}
+
+async function readPushTokenRegistration(userId: string): Promise<string | null> {
+  try {
+    const client = await getRedisClient();
+    if (!client) return null;
+    return (await client.get(pushTokenStampKey(userId))) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+async function forgetPushTokenRegistration(userId: string): Promise<void> {
+  try {
+    const client = await getRedisClient();
+    if (!client) return;
+    await client.del(pushTokenStampKey(userId));
+  } catch {
+    // Nothing to do: a stale stamp is only ever reported alongside hasToken.
+  }
+}
+
 // POST /api/v1/users/push-token - Register Expo push token for mobile notifications
 router.post(
   '/push-token',
@@ -1538,7 +1590,65 @@ router.post(
     }
 
     await supabaseService.updateExpoPushToken(userId, token.trim());
+    await rememberPushTokenRegistration(userId);
     res.json({ success: true, message: 'Push token registered' });
+  })
+);
+
+/**
+ * GET /api/v1/users/push-token/status — can this account actually be pushed?
+ *
+ * On device a generation finished and no notification ever arrived, and the
+ * app had no way to tell "the server never sent one" from "this phone was
+ * never registered". This is that answer, for the signed-in user only:
+ *
+ *   hasToken   — a usable Expo token is on file for this account
+ *   pushEnabled — the master notification toggle in their settings
+ *   updatedAt  — when the token was last registered (null when unknown: the
+ *                registration stamp lives in Redis, which is optional, and
+ *                tokens registered before this endpoint shipped have none)
+ *
+ * With both true and a job whose `push` audit says `sent`, the failure is
+ * downstream (Expo/OS) rather than something the app can fix by re-asking for
+ * permission — so the client can say something true either way.
+ */
+router.get(
+  '/push-token/status',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    // Read the profile row directly rather than through getUserById: the
+    // mapped User shape drops `expo_push_token` entirely (it would have made
+    // this endpoint answer "no token" for every account), and a diagnostic
+    // should not be served from a ten-minute cache.
+    const { data, error } = await supabaseService
+      .getClient()
+      .from('profiles')
+      .select('expo_push_token, settings')
+      .eq('id', userId)
+      .maybeSingle();
+    if (error) throw error;
+
+    const rawToken = (data as { expo_push_token?: unknown } | null)?.expo_push_token;
+    const token = typeof rawToken === 'string' ? rawToken.trim() : '';
+    // Only an Expo-format token can be delivered to; anything else on file is
+    // dead weight and must not be reported as "set up".
+    const hasToken = isExpoPushTokenFormat(token);
+
+    res.json({
+      success: true,
+      data: {
+        hasToken,
+        /** Alias: what the mobile client asks for. Same answer, older name. */
+        registered: hasToken,
+        updatedAt: await readPushTokenRegistration(userId),
+        pushEnabled: isPushEnabledInSettings(
+          ((data as { settings?: unknown } | null)?.settings ?? null) as Record<string, unknown> | null
+        ),
+      },
+    });
   })
 );
 
@@ -1551,6 +1661,7 @@ router.delete(
     if (!userId) return;
 
     await supabaseService.clearExpoPushToken(userId);
+    await forgetPushTokenRegistration(userId);
     res.json({ success: true, message: 'Push token cleared' });
   })
 );

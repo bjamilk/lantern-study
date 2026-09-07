@@ -9,6 +9,7 @@ describe('the Me tab', () => {
       'academic',
       'budget',
       'downloads',
+      'credits',
       'darkMode',
       'lowData',
       'settings',
@@ -52,6 +53,30 @@ describe('the Me tab', () => {
     }
     expect(off.find((row) => row.id === 'darkMode')?.label).toBe('Dark mode');
     expect(off.find((row) => row.id === 'lowData')?.label).toBe('Low-data mode');
+  });
+
+  it('accents exactly two rows, and they are Downloads and Credits', () => {
+    // §5.7: a loud Me screen is a Me screen that is selling. Everything else
+    // draws a neutral glyph.
+    const accented = sections()
+      .flatMap((section) => section.rows)
+      .filter((row) => row.feature);
+    expect(accented.map((row) => row.id)).toEqual(['downloads', 'credits']);
+    expect(accented.map((row) => row.feature)).toEqual(['budget', 'ai']);
+  });
+
+  it('makes Credits a readout, never a door', () => {
+    const credits = sections()
+      .flatMap((section) => section.rows)
+      .find((row) => row.id === 'credits');
+    expect(credits?.kind).toBe('readout');
+  });
+
+  it('says what Downloads costs before the tap', () => {
+    const downloads = sections()
+      .flatMap((section) => section.rows)
+      .find((row) => row.id === 'downloads');
+    expect(downloads?.hint).toBe('Saved on this phone only — costs no data');
   });
 
   it('uses the single shared vocabulary for the moved rows', () => {

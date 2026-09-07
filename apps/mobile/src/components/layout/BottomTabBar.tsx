@@ -51,11 +51,23 @@ function TabButton({
       accessibilityLabel={tab.label}
     >
       <View className="relative">
-        {/* No strokeWidth: appIconStroke.ts owns the ramp. */}
+        {/* No strokeWidth: appIconStroke.ts owns the ramp.
+
+            The current tab is DUOTONE — an indigo stroke over an indigo tint
+            fill — rather than the solid it used to be. Solid worked as a shape
+            change but it also erased the glyph's interior, so House and
+            MessagesSquare both read as a blob at 24px. The tone rule keeps the
+            shape change (empty outline vs filled) AND the drawing.
+
+            One hue for all five, and it is the `ai` pair because that pair IS
+            `tabBarActive` in both themes (#4f46e5 / #818cf8): the bar is
+            chrome, not a feature surface, so it must not repaint itself five
+            different colours as you move around. */}
         <AppIcon
           name={tab.icon}
           size={24}
-          filled={active}
+          tone={active ? 'active' : 'neutral'}
+          feature="ai"
           color={active ? activeColor : inactiveColor}
         />
         {tab.badge ? <Badge count={tab.badge} /> : null}

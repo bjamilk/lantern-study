@@ -59,24 +59,18 @@ export const jobArtefactLabel = (kind: JobKind, count?: number): string => {
 };
 
 /**
- * Which stage to show.
+ * Which stage a server-supplied fraction is inside.
  *
- * A server-supplied fraction wins. Without one the stage is estimated from
- * elapsed time — and estimation stops at the LAST stage rather than running
- * off the end, because "Saving" that never finishes is honest and a fourth
- * invented stage is not.
+ * The fraction is the SERVER's, or there is none: the clock is not a source
+ * of progress. Airplane mode used to walk the bar 8% → 64% → 93% through
+ * "Writing 10 cards" while no request could possibly be in flight (F7), which
+ * is the same lie StudyFetch's tray tells — a number that describes a timer
+ * rather than the work.
  */
-export const stageIndexFor = (
-  elapsedMs: number,
-  stageCount: number,
-  progress?: number
-): number => {
+export const stageIndexFor = (stageCount: number, progress?: number): number => {
   if (stageCount <= 0) return 0;
-  const fraction =
-    typeof progress === 'number' && progress >= 0
-      ? Math.min(1, progress)
-      : Math.min(1, Math.max(0, elapsedMs) / JOB_TIME_BUDGET_MS);
-  return Math.min(stageCount - 1, Math.floor(fraction * stageCount));
+  if (typeof progress !== 'number' || progress < 0) return 0;
+  return Math.min(stageCount - 1, Math.floor(Math.min(1, progress) * stageCount));
 };
 
 /**
@@ -129,6 +123,23 @@ export interface JobProgressView {
   stage: string;
   /** 0..100, always inside `stageIndex`'s band. */
   percent: number;
+  /**
+   * Nothing has reported since the last thing shown — no server record, no
+   * runner stage. The bar holds where it is and the subtitle says so.
+   */
+  waiting: boolean;
+}
+
+/** What the subtitle says when there is no news and no connection to get any. */
+export const WAITING_FOR_CONNECTION_COPY = 'Waiting for connection…';
+
+/** What it says when there is a connection but nothing new has been reported. */
+export const STILL_WORKING_COPY = 'Still working…';
+
+/** Whether the device can currently be told anything. */
+export interface JobProgressContext {
+  /** No connection: the bar holds and the subtitle names the reason. */
+  offline?: boolean;
 }
 
 /**
@@ -145,17 +156,13 @@ export interface JobProgressView {
  */
 export const jobProgressView = (
   job: TrackedJob,
-  now: number,
   stages: string[] = jobStages(job.kind, job.requestedCount)
 ): JobProgressView => {
   const count = stages.length;
-  const elapsed = Math.max(0, now - job.startedAt);
   const fraction =
-    typeof job.progress === 'number' && job.progress >= 0
-      ? Math.min(1, job.progress)
-      : Math.min(1, elapsed / JOB_TIME_BUDGET_MS);
+    typeof job.progress === 'number' && job.progress >= 0 ? Math.min(1, job.progress) : undefined;
 
-  const signals = [stageIndexFor(elapsed, count, job.progress)];
+  const signals = [stageIndexFor(count, fraction)];
   const fromServer = job.serverStage ? SERVER_STAGE_INDEX[job.serverStage] : undefined;
   if (typeof fromServer === 'number') signals.push(fromServer);
   // A runner's own stage counts only when it is one of THIS list's steps —
@@ -165,26 +172,33 @@ export const jobProgressView = (
 
   const stageIndex = Math.max(0, Math.min(count - 1, Math.max(...signals)));
   const [floor, ceiling] = bandFor(stageIndex, count);
-  const percent = Math.min(
-    95,
-    Math.max(floor, Math.min(ceiling, Math.round(fraction * 100)))
-  );
+  // Without a fraction the bar rests on the floor of the step something has
+  // actually reported. It moves when the work does, and not otherwise.
+  const percent =
+    fraction === undefined
+      ? Math.min(95, floor)
+      : Math.min(95, Math.max(floor, Math.min(ceiling, Math.round(fraction * 100))));
 
-  return { stageIndex, stage: stages[stageIndex] ?? stages[0] ?? '', percent };
+  return {
+    stageIndex,
+    stage: stages[stageIndex] ?? stages[0] ?? '',
+    percent,
+    waiting: fraction === undefined && typeof fromServer !== 'number' && fromClient < 0,
+  };
 };
 
 /**
  * The bar, 0..100.
  *
- * Without a server fraction this is a time estimate, and a time estimate must
- * never reach the end: it is capped at 95 until the job actually reports done.
- * Delegates to `jobProgressView`, so the number can never disagree with the
- * step the checklist has ticked.
+ * Never a time estimate: without a server fraction it rests on the floor of
+ * the furthest step something reported, and it is capped at 95 until the job
+ * actually reports done. Delegates to `jobProgressView`, so the number can
+ * never disagree with the step the checklist has ticked.
  */
-export const percentFor = (job: TrackedJob, now: number): number => {
+export const percentFor = (job: TrackedJob): number => {
   if (job.status === 'done') return 100;
   if (job.status === 'failed' || job.status === 'lost') return 0;
-  return jobProgressView(job, now).percent;
+  return jobProgressView(job).percent;
 };
 
 /** m:ss, for the elapsed readout. */
@@ -198,6 +212,17 @@ export const formatElapsed = (ms: number): string => {
 /** Leaving the sheet does not stop the work, and the button says so. */
 export const KEEP_WORKING_COPY = "Keep working, we'll tell you when it's ready";
 
+/**
+ * The same button when nothing can be delivered.
+ *
+ * With notification permission refused, or no push token registered, "we'll
+ * tell you when it's ready" is a promise the app cannot keep — the device run
+ * waited 212 s in the background and was told nothing (F6). It says what will
+ * actually happen instead, and the sheet offers to fix it.
+ */
+export const NO_NOTIFICATIONS_COPY =
+  'Come back to this screen to see it finish — notifications are off';
+
 /** After the budget: honest about the wait, not about a death that has not happened. */
 export const OVER_BUDGET_COPY =
   "This is taking longer than usual. It's still running and you've only been charged once — keep waiting, or carry on and we'll tell you when it's ready.";
@@ -206,6 +231,8 @@ export type JobSheetAction =
   | 'stop-watching'
   | 'keep-waiting'
   | 'retry'
+  /** Notifications are off, so the promise the sheet makes is not true yet. */
+  | 'enable-notifications'
   /**
    * Save material that was generated but never filed. A second SAVE, not a
    * second generation: the AI call has happened and has been charged, so
@@ -228,6 +255,8 @@ export interface JobSheetState {
   elapsedLabel: string;
   /** Past the 90 s client budget and still running. */
   overBudget: boolean;
+  /** Nothing new has been reported: the bar holds where it is. */
+  waiting: boolean;
   /** Buttons, in order. */
   actions: JobSheetAction[];
   tone: 'running' | 'done' | 'failed';
@@ -238,10 +267,19 @@ export interface JobSheetState {
  *   to the 90 s client budget; the sheet extends it when the student presses
  *   "Keep waiting", so the prompt does not immediately reappear.
  */
+export interface JobSheetContext extends JobProgressContext {
+  /**
+   * This device cannot be notified — permission refused, or no push token.
+   * The sheet stops promising and offers to turn notifications on.
+   */
+  notificationsOff?: boolean;
+}
+
 export const jobSheetState = (
   job: TrackedJob,
   now: number,
-  budgetMs: number = JOB_TIME_BUDGET_MS
+  budgetMs: number = JOB_TIME_BUDGET_MS,
+  context: JobSheetContext = {}
 ): JobSheetState => {
   const stages = jobStages(job.kind, job.requestedCount);
   const elapsed = Math.max(0, now - job.startedAt);
@@ -258,6 +296,7 @@ export const jobSheetState = (
       percent: 100,
       elapsedLabel,
       overBudget: false,
+      waiting: false,
       // Always both. Every finished job now has somewhere to go — its
       // artefact, or the job itself on Home — so a done sheet whose only
       // button is "Dismiss" (which is what a finished quiz used to offer)
@@ -281,6 +320,7 @@ export const jobSheetState = (
       percent: 0,
       elapsedLabel,
       overBudget: false,
+      waiting: false,
       actions: ['save-to-library', 'dismiss'],
       tone: 'failed',
     };
@@ -299,6 +339,7 @@ export const jobSheetState = (
       percent: 0,
       elapsedLabel,
       overBudget: false,
+      waiting: false,
       actions: ['retry', 'dismiss'],
       tone: 'failed',
     };
@@ -318,6 +359,7 @@ export const jobSheetState = (
       percent: 0,
       elapsedLabel,
       overBudget: false,
+      waiting: false,
       actions: ['retry', 'dismiss'],
       tone: 'failed',
     };
@@ -325,30 +367,51 @@ export const jobSheetState = (
 
   // One reducer, three readouts: the subtitle IS the ticked step, and the bar
   // is inside that step's band.
-  const progress = jobProgressView(job, now, stages);
+  const progress = jobProgressView(job, stages);
   const overBudget = elapsed >= budgetMs;
+  // No news is described as no news. The clock does not stand in for it.
+  const waitingCopy = context.offline ? WAITING_FOR_CONNECTION_COPY : STILL_WORKING_COPY;
   return {
     headline: `${jobArtefactLabel(job.kind, job.requestedCount)} · ${job.sourceTitle}`,
-    detail: overBudget ? OVER_BUDGET_COPY : progress.stage,
+    detail: overBudget ? OVER_BUDGET_COPY : progress.waiting ? waitingCopy : progress.stage,
     stages,
     stageIndex: progress.stageIndex,
     percent: progress.percent,
     elapsedLabel,
     overBudget,
+    waiting: progress.waiting,
     // No Retry while the work is still running: a second attempt cannot
     // cancel the first, so the original would land anyway and the student
     // would be charged twice for two decks. Retry is offered once a job has
     // actually failed (web makes the same call).
-    actions: overBudget ? ['keep-waiting', 'stop-watching'] : ['stop-watching'],
+    //
+    // "Keep working" is on EVERY running sheet, over budget or not: the sheet
+    // is a report, never a cell, and the device run found one with no way out
+    // but the hardware Back key (F6).
+    actions: [
+      ...(overBudget ? (['keep-waiting'] as JobSheetAction[]) : []),
+      'stop-watching' as JobSheetAction,
+      ...(context.notificationsOff ? (['enable-notifications'] as JobSheetAction[]) : []),
+    ],
     tone: 'running',
   };
 };
 
-/** Label for each action, so the sheet and the Home card agree. */
-export const jobActionLabel = (action: JobSheetAction): string => {
+/**
+ * Label for each action, so the sheet and the Home card agree.
+ *
+ * `notificationsOff` changes exactly one label: the promise this app cannot
+ * keep without notification permission.
+ */
+export const jobActionLabel = (
+  action: JobSheetAction,
+  context: { notificationsOff?: boolean } = {}
+): string => {
   switch (action) {
     case 'stop-watching':
-      return KEEP_WORKING_COPY;
+      return context.notificationsOff ? NO_NOTIFICATIONS_COPY : KEEP_WORKING_COPY;
+    case 'enable-notifications':
+      return 'Turn on notifications';
     case 'keep-waiting':
       return 'Keep waiting';
     case 'retry':
@@ -459,3 +522,29 @@ export const jobNotification = (job: TrackedJob): JobNotification | null => {
   }
   return null;
 };
+
+// ─────────────────────────────────────────────────────────────
+// Swiping the sheet away
+// ─────────────────────────────────────────────────────────────
+
+/** How far the sheet has to be dragged down before it counts as dismissed. */
+export const SHEET_DISMISS_DISTANCE = 60;
+
+/** A drag has to be this far down before the sheet takes the gesture at all. */
+export const SHEET_DRAG_SLOP = 6;
+
+/**
+ * Does this movement belong to the sheet rather than to what is under it?
+ *
+ * Downward, past the slop, and more vertical than horizontal. The slop is what
+ * lets a TAP on one of the sheet's buttons still be a tap: the sheet only
+ * claims the gesture once it is unmistakably a drag.
+ */
+export const shouldClaimSheetDrag = (dy: number, dx: number): boolean =>
+  dy > SHEET_DRAG_SLOP && Math.abs(dy) > Math.abs(dx);
+
+/** Did the student let go far enough down to mean "close this"? */
+export const shouldDismissSheet = (
+  dy: number,
+  distance: number = SHEET_DISMISS_DISTANCE
+): boolean => dy > distance;

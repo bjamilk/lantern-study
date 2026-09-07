@@ -11,6 +11,8 @@ import {
   isTerminal,
   jobsKey,
   jobsOwnedBy,
+  adoptOwnerlessJobs,
+  jobsAwaitingSave,
   parseJobs,
   patchJob,
   planResume,
@@ -31,6 +33,8 @@ import {
   hasUnsavedGeneration,
   planRetry,
   UNSAVED_GENERATION_ERROR,
+  isRecentTerminalJob,
+  savedSettlePatch,
 } from './jobsCore';
 
 const NOW = 1_700_000_000_000;
@@ -553,5 +557,150 @@ describe('generated material that has not been saved', () => {
       status: 'failed',
       error: UNSAVED_GENERATION_ERROR,
     });
+  });
+});
+
+describe('a save that lands after the job was reported failed — F8', () => {
+  const ref = { type: 'deck' as const, id: 'd1', name: 'From: SDOH' };
+
+  it('promotes the job to done: the material IS in the library', () => {
+    // The cold start reported it failed ("we made this but hadn't saved it"),
+    // the student pressed Save to library, the write landed — and the sticky
+    // terminal rule threw the `done` away, so the card went on reading "That
+    // didn't finish" over a deck they now had.
+    const failed = [job({ status: 'failed', error: UNSAVED_GENERATION_ERROR })];
+    const patched = patchJob(failed, 'j1', savedSettlePatch(failed[0], ref, 9), NOW + 5_000);
+    expect(patched[0].status).toBe('done');
+    expect(patched[0].artifact).toEqual(ref);
+    expect(patched[0].savedRef).toEqual(ref);
+    expect(patched[0].resultCount).toBe(9);
+    expect(patched[0].error).toBeUndefined();
+    expect(patched[0].pendingSave).toBeUndefined();
+  });
+
+  it('lets the completion be announced even though the failure already was', () => {
+    expect(savedSettlePatch(job({ status: 'failed', notified: true }), ref, 9).notified).toBe(false);
+    expect(savedSettlePatch(job({ status: 'running' }), ref, 9).notified).toBeUndefined();
+  });
+
+  it('still refuses every other move out of a terminal state', () => {
+    const done = [job({ status: 'done' })];
+    expect(patchJob(done, 'j1', { status: 'failed' }, NOW + 1).at(0)?.status).toBe('done');
+    const lost = [job({ status: 'lost' })];
+    expect(patchJob(lost, 'j1', { status: 'running' }, NOW + 1).at(0)?.status).toBe('lost');
+  });
+});
+
+describe('stale finished cards — F9', () => {
+  const dayOld = job({
+    status: 'lost',
+    startedAt: NOW - RECENT_JOB_WINDOW_MS - 1,
+    // Re-settled on the last launch, so its own updatedAt is recent. This is
+    // exactly the state the two build-157 cards were stuck in.
+    updatedAt: NOW - 1_000,
+  });
+
+  it('ages a card out on the clock that does not move', () => {
+    expect(isRecentTerminalJob(dayOld, NOW)).toBe(false);
+    expect(isRecentTerminalJob(job({ status: 'done' }), NOW + 1_000)).toBe(true);
+  });
+
+  it('is pruned on hydrate rather than shown for ever', () => {
+    expect(pruneJobs([dayOld], NOW)).toEqual([]);
+    expect(visibleJobs([dayOld], NOW)).toEqual([]);
+    expect(planHydration([], [dayOld], 'u1', NOW).jobs).toEqual([]);
+  });
+
+  it('never prunes work that is still running', () => {
+    const running = job({ status: 'running', startedAt: NOW - RECENT_JOB_WINDOW_MS * 2 });
+    expect(pruneJobs([running], NOW)).toEqual([running]);
+  });
+
+  it('is removed outright when the student dismisses it', () => {
+    expect(dismissJob([job({ status: 'lost' })], 'j1')).toEqual([]);
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────
+// D6 — a RUNNING job belongs on Home while it is running
+// ─────────────────────────────────────────────────────────────
+
+const runningJob = (over: Partial<TrackedJob> = {}): TrackedJob => ({
+  ...createJob({
+    id: 'job_running',
+    userId: 'u1',
+    kind: 'flashcards',
+    sourceTitle: 'SDOH',
+    now: 1_000,
+  }),
+  status: 'running',
+  ...over,
+});
+
+describe('what Home lists while work is in flight', () => {
+  it('lists a running job, not only finished ones', () => {
+    const done: TrackedJob = {
+      ...runningJob({ id: 'job_done' }),
+      status: 'done',
+      startedAt: 500,
+      updatedAt: 900,
+    };
+    const shown = visibleJobs([done, runningJob()], 2_000);
+    expect(shown.map((j) => j.id)).toContain('job_running');
+    expect(shown.some((j) => j.status === 'running')).toBe(true);
+  });
+
+  it('adopts a job that started before auth answered, instead of dropping it', () => {
+    // startJob stamps `userId: ''` when a generate button is pressed before
+    // the auth store has replied — ordinary when nav-restore lands the app on
+    // the note editor. The owner filter then removed the RUNNING job from
+    // memory on the next hydrate, so Home listed only finished work (D6).
+    const ownerless = runningJob({ userId: '' });
+    const adopted = adoptOwnerlessJobs([ownerless], 'u1');
+    expect(adopted).toHaveLength(1);
+    expect(adopted[0].userId).toBe('u1');
+    expect(adopted[0].status).toBe('running');
+  });
+
+  it('still refuses another account\'s job', () => {
+    const theirs = runningJob({ id: 'job_theirs', userId: 'u2' });
+    expect(adoptOwnerlessJobs([theirs], 'u1')).toEqual([]);
+  });
+
+  it('keeps a live ownerless job through hydration', () => {
+    const plan = planHydration([runningJob({ userId: '' })], [], 'u1', 2_000);
+    expect(plan.jobs.map((j) => j.id)).toEqual(['job_running']);
+    expect(plan.jobs[0].userId).toBe('u1');
+    // A live job is never re-read from disk and declared lost.
+    expect(plan.lost).toEqual([]);
+  });
+});
+
+describe('jobsAwaitingSave', () => {
+  const withPending = (over: Partial<TrackedJob> = {}): TrackedJob => ({
+    ...runningJob({ id: 'job_held', status: 'failed' }),
+    pendingSave: {
+      kind: 'deck',
+      deckName: 'From: SDOH',
+      cards: [{ front: 'a', back: 'b' }],
+    },
+    ...over,
+  });
+
+  it('finds the work the network interrupted', () => {
+    expect(jobsAwaitingSave([withPending()]).map((j) => j.id)).toEqual(['job_held']);
+  });
+
+  it('leaves a job that already saved alone — a second save is a second deck', () => {
+    const saved = withPending({
+      savedRef: { type: 'deck', id: 'deck_1' },
+      savedCount: 10,
+    });
+    expect(jobsAwaitingSave([saved])).toEqual([]);
+  });
+
+  it('leaves a job with nothing generated alone — that retry costs a credit', () => {
+    expect(jobsAwaitingSave([runningJob({ status: 'failed' })])).toEqual([]);
   });
 });

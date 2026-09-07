@@ -12,7 +12,10 @@
  * components/ui, class-based screens use `text-body`.
  *
  * Seeded 2026-09-06 from the tree as it stood after the Wave T chrome, Library,
- * Tests, Me and chart migrations: 206 files, 2260 occurrences.
+ * Tests, Me and chart migrations: 206 files, 2260 occurrences. Wave V1 polish
+ * then dropped the two rows whose files no longer set any raw size —
+ * StudyHubScreen.tsx and CourseReadinessCard.tsx, 5 each — leaving 200 rows
+ * and a 2154 budget against 2147 actual.
  */
 export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/components/AICompanionPanel.tsx': 17,
@@ -85,7 +88,6 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/components/community/RoomRow.tsx': 3,
   'src/components/community/StudyGroupRow.tsx': 2,
   'src/components/dashboard/AIStudyCoachCard.tsx': 9,
-  'src/components/dashboard/CourseReadinessCard.tsx': 5,
   'src/components/dashboard/DashboardHeroCard.tsx': 9,
   'src/components/dashboard/DashboardInsights.tsx': 7,
   'src/components/dashboard/DashboardQuickLinks.tsx': 1,
@@ -213,7 +215,6 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/screens/settings/PublishQuestionBankModal.tsx': 22,
   'src/screens/settings/PublishStudyPackModal.tsx': 21,
   'src/screens/settings/SettingsScreen.tsx': 21,
-  'src/screens/study/StudyHubScreen.tsx': 5,
   'src/screens/study/StudyRoomScreen.tsx': 10,
   'src/screens/tests/TestAnalysisScreen.tsx': 4,
   'src/screens/tests/TestTakingScreen.tsx': 44,
