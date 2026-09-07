@@ -128,9 +128,8 @@ router.patch(
       res.json({ success: true, data: course });
     } catch (err: any) {
       if (err instanceof PublicError) {
-        const code = typeof (err as { statusCode?: number }).statusCode === 'number'
-          ? (err as { statusCode: number }).statusCode
-          : 400;
+        const status = (err as unknown as { statusCode?: number }).statusCode;
+        const code = typeof status === 'number' ? status : 400;
         return res.status(code).json({ success: false, error: err.message });
       }
       throw err;
