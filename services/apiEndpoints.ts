@@ -62,8 +62,8 @@ export const createPersonalTest = endpoints.createPersonalTest;
  * `reason` is not decoration: a document uploaded before the page model
  * existed comes back `schema_missing` with no pages, and a walk-through that
  * treated that as an error would tell students their file was broken. See
- * `utils/walkthroughModel.pagesUnavailableMessage` for the wording each state
- * gets.
+ * `@lantern/shared/notes/walkthroughCopy` for the wording each state gets —
+ * the same module mobile reads, so the two clients cannot drift again.
  */
 export interface NoteAttachmentPagesResult {
   attachmentId: string;
@@ -102,11 +102,20 @@ export async function fetchNoteAttachmentPages(
 
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(
-      (typeof body?.error === 'string' && body.error) ||
-        (typeof body?.message === 'string' && body.message) ||
-        `Could not load this document's pages (${response.status}).`
-    );
+    // The STATUS and the BODY ride along; the server's sentence does not reach
+    // the screen. It used to: this throw carried `body.error` verbatim, and a
+    // server without the pages route answers
+    // "Not found - /api/v1/notes/<uuid>/attachments/<uuid>/pages?images=1",
+    // which the walk-through then printed at the student. `pagesUnavailableCopy`
+    // reads `status` (404 → "not split into pages yet", no retry) and `body`
+    // (a `reason` the server named), and writes the sentence itself. The
+    // message below is a developer's line for a console, never a student's.
+    const error = new Error(
+      `Note attachment pages request failed (${response.status})`
+    ) as Error & { status?: number; body?: unknown };
+    error.status = response.status;
+    error.body = body;
+    throw error;
   }
 
   const data = (body?.data ?? body) as Partial<NoteAttachmentPagesResult>;

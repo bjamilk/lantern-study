@@ -29,6 +29,8 @@ import { CoursePicker } from './CoursePicker';
 import { TopicPicker } from './TopicPicker';
 import { topicIdAfterCourseChange } from '../utils/topicSelection';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
+import { planBottomSheetKeyboard } from './ui/bottomSheetKeyboard';
+import { useKeyboardOverlap } from './ui/useKeyboardOverlap';
 // The start rules are pure and live beside the tests screens, where mobile
 // jest (node env, *.test.ts only) can reach them: this modal renders what
 // they return and holds no judgement of its own.
@@ -197,7 +199,23 @@ export default function TestConfigModal({
   // build 146). The group-actions sheet uses the same pixel formula and never
   // misplaces.
   const { height: windowHeight } = useWindowDimensions();
-  const sheetHeight = Math.round(windowHeight * 0.92);
+  // And what the keyboard does to it. This sheet has a preset-name field and a
+  // question-count field; with nothing handling the keyboard they were simply
+  // covered, and with the KeyboardAvoidingView its siblings used they would have
+  // been stranded instead — on Android RN feeds `keyboardDidHide` through the
+  // same handler as the show event and recomputes the padding from the hide
+  // frame, which under edge-to-edge is the window minus the gesture bar, so the
+  // lift never returns to 0 (build 171, the generate sheet: header and close X
+  // pinned under the status bar, untappable). `planBottomSheetKeyboard` returns
+  // the resting geometry whenever the overlap is 0, and the overlap is 0 on
+  // every hide path — BACK, tap-away, the done key.
+  const keyboardOverlap = useKeyboardOverlap(visible);
+  const sheet = planBottomSheetKeyboard({
+    windowHeight,
+    restingHeight: Math.round(windowHeight * 0.92),
+    keyboardOverlap,
+    topInset: insets.top,
+  });
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
 
   /**
@@ -575,11 +593,19 @@ export default function TestConfigModal({
       navigationBarTranslucent
       onRequestClose={handleClose}
     >
-      <View style={styles.overlay}>
-        <View style={[styles.container, { backgroundColor: colors.card, height: sheetHeight, maxHeight: sheetHeight }]}>
+      <View style={[styles.overlay, { paddingBottom: sheet.liftBy }]}>
+        <View style={[styles.container, { backgroundColor: colors.card, height: sheet.height }]}>
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={handleClose} style={[styles.closeButton, { backgroundColor: colors.background }]}>
+            {/* The hit area is part of the header, so it moves with the sheet
+                and never has to be aimed at where the sheet used to be. */}
+            <TouchableOpacity
+              onPress={handleClose}
+              style={[styles.closeButton, { backgroundColor: colors.background }]}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel="Close"
+            >
               <AppIcon name="close" size={24} color={colors.textSecondary} />
             </TouchableOpacity>
             <View style={styles.headerCenter}>
@@ -1096,7 +1122,18 @@ export default function TestConfigModal({
           </ScrollView>
 
           {/* Footer */}
-          <View style={[styles.footer, { borderTopColor: colors.border, backgroundColor: colors.card, paddingBottom: Math.max(32, insets.bottom + 16) }]}>
+          <View
+            style={[
+              styles.footer,
+              {
+                borderTopColor: colors.border,
+                backgroundColor: colors.card,
+                // With the sheet lifted, the gesture bar is behind the keyboard:
+                // paying its inset too would strand Start in a dead gap.
+                paddingBottom: sheet.liftBy > 0 ? 16 : Math.max(32, insets.bottom + 16),
+              },
+            ]}
+          >
             {/* What you are about to start, in one line.
                 The sheet is long enough that the question count set at the top
                 is off-screen by the time Start is in reach — which is how a

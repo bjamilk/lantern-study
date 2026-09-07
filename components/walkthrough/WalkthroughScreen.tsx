@@ -12,6 +12,7 @@ import NarrationPlayer from '../narration/NarrationPlayer';
 import { aiGenerateQuestions, type AIGeneratedQuestion } from '../../services/ai';
 import { useCompanionStore } from '../../stores/companionStore';
 import {
+  MIN_PAGE_QUIZ_CHARS,
   WALKTHROUGH_GROUNDING_LABELS,
   buildPageQuestion,
   checkpointDue,
@@ -22,12 +23,14 @@ import {
   pageGrounding,
   pageHasText,
   pageHeadings,
-  pagesUnavailableMessage,
+  pagesUnavailableCopy,
   shouldRetryPages,
   stepPageIndex,
   walkthroughProgress,
   type PageHeading,
+  type PagesUnavailableCopy,
 } from '../../utils/walkthroughModel';
+import { requestFailureSentence } from '@lantern/shared/network';
 import {
   EMPTY_RECORD,
   loadWalkthroughRecord,
@@ -79,7 +82,19 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
 
   const [result, setResult] = useState<NoteAttachmentPagesResult | null>(null);
   const [loading, setLoading] = useState(false);
-  const [loadError, setLoadError] = useState<string | null>(null);
+  /**
+   * What to SAY when the pages could not be loaded — never what the server
+   * said. Holding the sentence rather than the raw message is the point: the
+   * previous version stored `err.message` and rendered it, so a server without
+   * the pages route showed the student its endpoint path and two UUIDs.
+   */
+  const [loadError, setLoadError] = useState<PagesUnavailableCopy | null>(null);
+  /**
+   * Bumped by the Try again button. The copy says whether a retry can help
+   * (offline, a server fault); this is how the student takes it up on that.
+   * A 404 carries no button, so it never reaches here.
+   */
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [record, setRecord] = useState(() => ({ ...EMPTY_RECORD }));
   const [pageIndex, setPageIndex] = useState(0);
@@ -122,7 +137,11 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
   const grounding = pageGrounding(headings, pageIndex);
   const hasText = pageHasText(headings, pageIndex);
 
-  const unavailable = result ? pagesUnavailableMessage(result.reason, result.pageCount) : null;
+  const unavailable: PagesUnavailableCopy | null = useMemo(() => {
+    if (!result) return null;
+    if (result.available && result.pageCount > 0) return null;
+    return pagesUnavailableCopy({ available: result.available, reason: result.reason });
+  }, [result]);
 
   // ── Load ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -150,7 +169,10 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
         }
       } catch (err) {
         if (cancelled || controller.signal.aborted) return;
-        setLoadError(err instanceof Error ? err.message : 'Could not load this document.');
+        // `pagesUnavailableCopy` reads the status and the body this throw now
+        // carries: a 404 means this server has no pages route, which is the
+        // same fact as schema_missing and gets the same sentence and no retry.
+        setLoadError(pagesUnavailableCopy(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -162,7 +184,7 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
       controller.abort();
       if (retryTimer) clearTimeout(retryTimer);
     };
-  }, [isOpen, noteId, attachmentId]);
+  }, [isOpen, noteId, attachmentId, reloadKey]);
 
   // Resume where they left off, clamped onto the document as it is NOW: a
   // re-upload with fewer pages must not open on a page that no longer exists.
@@ -249,6 +271,13 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
         .filter(Boolean)
         .join('\n\n');
       if (!text) return;
+      if (text.length < MIN_PAGE_QUIZ_CHARS) {
+        // Asking anyway earns a 400 whose body is a server sentence. Saying it
+        // here is both truer and the only wording a student can act on.
+        setCheckQuestions(null);
+        setCheckError('There is not enough text on these pages to build a check.');
+        return;
+      }
       setCheckBusy(true);
       setCheckError(null);
       setCheckQuestions(null);
@@ -258,7 +287,10 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
         setCheckQuestions(questions);
         setCheckLabel(label);
       } catch (err) {
-        setCheckError(err instanceof Error ? err.message : 'Could not build a check just now.');
+        // One sentence from the shared failure vocabulary, chosen by the
+        // status the AI client now attaches. The server's own words never
+        // reach the student.
+        setCheckError(requestFailureSentence(err));
       } finally {
         setCheckBusy(false);
       }
@@ -401,13 +433,26 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
               <p className={`text-body ${subtleText}`}>Opening the document…</p>
             )}
             {loadError && (
-              <p className="text-body text-lantern-error" role="alert">
-                {loadError}
-              </p>
+              <div className={`rounded-lg border border-lantern-border p-4 ${panelTone}`} role="alert">
+                <p className="text-body font-medium text-lantern-text">{loadError.title}</p>
+                <p className={`mt-1 text-body ${subtleText}`}>{loadError.detail}</p>
+                {loadError.retryable && (
+                  <button
+                    type="button"
+                    onClick={() => setReloadKey((k) => k + 1)}
+                    disabled={loading}
+                    className="mt-3 flex items-center gap-1 rounded-lg border border-lantern-border px-2 py-1 text-caption text-lantern-text-secondary hover:text-lantern-text disabled:opacity-60"
+                  >
+                    <AppIcon name="refresh" size={14} />
+                    {loadError.retryLabel ?? 'Try again'}
+                  </button>
+                )}
+              </div>
             )}
             {result && unavailable && (
               <div className={`rounded-lg border border-lantern-border p-4 ${panelTone}`}>
-                <p className="text-body text-lantern-text">{unavailable}</p>
+                <p className="text-body font-medium text-lantern-text">{unavailable.title}</p>
+                <p className={`mt-1 text-body ${subtleText}`}>{unavailable.detail}</p>
                 {shouldRetryPages(result.reason) && (
                   <p className={`mt-1 text-caption ${subtleText}`}>Checking again in a few seconds…</p>
                 )}

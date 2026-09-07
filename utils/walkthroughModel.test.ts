@@ -11,8 +11,9 @@ import {
   pageExcerpt,
   pageGrounding,
   pageHeadings,
-  pagesUnavailableMessage,
+  pagesUnavailableCopy,
   shouldRetryPages,
+  walkthroughUnavailableCopy,
   stepPageIndex,
   walkthroughProgress,
 } from './walkthroughModel';
@@ -136,17 +137,45 @@ describe('checkpoints', () => {
 });
 
 describe('unavailable pages', () => {
-  it('says nothing when pages are there', () => {
-    expect(pagesUnavailableMessage('ok', 4)).toBeNull();
-  });
+  /** A throw shaped the way `fetchNoteAttachmentPages` now shapes one. */
+  const requestError = (message: string, status: number) =>
+    Object.assign(new Error(message), { status });
+
+  const RAW_404 =
+    'Not found - /api/v1/notes/11111111-1111-4111-8111-111111111111/attachments/22222222-2222-4222-8222-222222222222/pages?images=1';
 
   it('explains each honest not-available state without calling it an error', () => {
-    for (const reason of ['schema_missing', 'unsupported', 'source_missing', 'unreadable', 'preview_pending'] as const) {
-      const message = pagesUnavailableMessage(reason);
-      expect(message, reason).toBeTruthy();
-      expect(message!.toLowerCase(), reason).not.toContain('error');
+    for (const reason of [
+      'schema_missing',
+      'unsupported',
+      'source_missing',
+      'unreadable',
+      'preview_pending',
+      'ok',
+    ] as const) {
+      const copy = walkthroughUnavailableCopy(reason);
+      expect(copy.detail, reason).toBeTruthy();
+      expect(copy.detail.toLowerCase(), reason).not.toContain('error');
     }
-    expect(pagesUnavailableMessage('ok', 0)).toBeTruthy();
+  });
+
+  it('never puts the server sentence, an endpoint path or a UUID on screen', () => {
+    const copy = pagesUnavailableCopy(requestError(RAW_404, 404));
+    const shown = `${copy.title} ${copy.detail} ${copy.retryLabel ?? ''}`;
+    expect(shown).not.toContain('/api/');
+    expect(shown).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
+  });
+
+  it('offers no retry for a server that has no pages route', () => {
+    const copy = pagesUnavailableCopy(requestError(RAW_404, 404));
+    expect(copy.retryable).toBe(false);
+    expect(copy.retryLabel).toBeNull();
+  });
+
+  it('says the same thing web and mobile now say for the same fact', () => {
+    expect(pagesUnavailableCopy(requestError(RAW_404, 404))).toEqual(
+      walkthroughUnavailableCopy('schema_missing')
+    );
   });
 
   it('retries only the state that resolves on its own', () => {

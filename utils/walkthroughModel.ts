@@ -25,14 +25,27 @@ import {
 export { pageHeadings, walkthroughCheckpoint };
 export type { PageHeading, PageLike };
 
-/** Why the pages route returned what it returned. Mirrors the route contract. */
-export type WalkthroughPagesReason =
-  | 'ok'
-  | 'schema_missing'
-  | 'unsupported'
-  | 'source_missing'
-  | 'preview_pending'
-  | 'unreadable';
+/**
+ * The empty-state wording is NOT written here.
+ *
+ * It lives in `@lantern/shared/notes/walkthroughCopy`, which mobile reads too.
+ * This file used to carry its own `pagesUnavailableMessage`, and the two
+ * clients had already drifted — web still told students "This deck is still
+ * being converted…" for a reason mobile phrased differently, and web had no
+ * answer at all for a server that refuses the route, so it printed the
+ * refusal: an endpoint path and two UUIDs, in red, under a Try again button
+ * that could never work. One module, one set of sentences, one honest
+ * `retryable`.
+ */
+export {
+  pagesUnavailableCopy,
+  shouldRetryPages,
+  walkthroughUnavailableCopy,
+} from '@lantern/shared/notes/walkthroughCopy';
+export type {
+  PagesUnavailableCopy,
+  WalkthroughReason as WalkthroughPagesReason,
+} from '@lantern/shared/notes/walkthroughCopy';
 
 /** Where an answer about the current page can honestly come from. */
 export type WalkthroughGrounding = 'page' | 'general';
@@ -57,6 +70,17 @@ export const MAX_PAGE_EXCERPT_CHARS = 4000;
 
 /** Default spacing for the optional understanding check. 0 turns checks off. */
 export const DEFAULT_CHECK_EVERY_N_PAGES = 3;
+
+/**
+ * `/generate-questions` refuses less than this, so the screen must too.
+ *
+ * The refusal comes back as a 400 whose body is a server sentence, and a
+ * server sentence is exactly what this round is removing from the screen. The
+ * honest fix is not to prettify the refusal but to not earn it: a block of
+ * pages with almost no text cannot be quizzed, and the button says so before
+ * it is pressed. Matches mobile's MIN_PAGE_QUIZ_CHARS.
+ */
+export const MIN_PAGE_QUIZ_CHARS = 50;
 
 /** A set of 0-based page indexes the student has marked done. */
 export type DonePages = ReadonlySet<number>;
@@ -220,40 +244,6 @@ export function checkpointDue({
   if (!done.has(Math.floor(pageIndex))) return false;
   if (satisfied?.has(Math.floor(pageIndex))) return false;
   return checkpointPageIndexes(headings, pageIndex, everyN).length > 0;
-}
-
-/**
- * What to tell the student when the route came back without pages.
- *
- * Null means "there is nothing to explain" — the pages are there. Every other
- * branch is a sentence a student can act on, and none of them is the word
- * "error": a document that has not been split yet, or a photo that never will
- * be, is a normal state of the app, not a fault.
- */
-export function pagesUnavailableMessage(
-  reason: WalkthroughPagesReason,
-  pageCount = 0
-): string | null {
-  if (reason === 'ok' && pageCount > 0) return null;
-  switch (reason) {
-    case 'schema_missing':
-      return 'This document has not been split into pages yet, so there is nothing to walk through.';
-    case 'preview_pending':
-      return 'This deck is still being converted. Open it again once the preview is ready.';
-    case 'unsupported':
-      return 'Walk-through works on uploaded documents. This attachment is a photo, an audio file or a video link.';
-    case 'source_missing':
-      return 'The original file is no longer stored, so its pages cannot be rebuilt.';
-    case 'unreadable':
-      return 'The pages of this file could not be read.';
-    default:
-      return 'This document has no pages to walk through.';
-  }
-}
-
-/** Should the screen keep polling? Only the "still converting" case. */
-export function shouldRetryPages(reason: WalkthroughPagesReason): boolean {
-  return reason === 'preview_pending';
 }
 
 /**
