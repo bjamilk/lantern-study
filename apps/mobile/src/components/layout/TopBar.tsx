@@ -7,6 +7,8 @@ import { ResolvedAvatar } from '../ResolvedAvatar';
 import AIUsageBadge, { useAIUsage } from '../AIUsageBadge';
 import { useChrome } from './ChromeContext';
 import { tabTitle } from './tabRouting';
+import { replacesGlobalBar } from '../../navigation/contextualBars';
+import { campusAppBarTitleOverride } from '../../screens/campus/campusSegments';
 import { AppIcon } from '../ui/AppIcon';
 
 /**
@@ -44,12 +46,23 @@ interface Props {
  * chat that draws its own header — renders without it.
  */
 export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCount }: Props) {
-  const { activeTab, immersive, profileAvatarUri, profileName } = useChrome();
+  const { activeTab, immersive, contextual, profileAvatarUri, profileName } = useChrome();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const usage = useAIUsage();
 
   if (immersive) return null;
+
+  // The one place the title is not just the section name: while Shop's row has
+  // taken the whole bottom bar (founder replace-mode), the section the student
+  // is in is Shop, not its parent Campus, so the app-bar must say "Shop". The
+  // decision — and the reason it is Shop's alone — lives in the pure planner;
+  // this reads the same `replacesGlobalBar(contextual)` the bottom bar itself
+  // reads, so the title and the bar can never disagree. Leaving Shop (the
+  // global five come back → no replace row) restores the "Campus" title.
+  const title =
+    campusAppBarTitleOverride({ activeTab, shopOwnsBottomBar: replacesGlobalBar(contextual) }) ??
+    tabTitle(activeTab);
 
   const creditLabel =
     usage.limit > 0
@@ -93,7 +106,7 @@ export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCoun
           // `heading` step: 17/24/-0.011em/600. `text-lg` was 15.75 sp here.
           className="flex-1 min-w-0 px-1 text-heading font-semibold text-lantern-text"
         >
-          {tabTitle(activeTab)}
+          {title}
         </Text>
 
         <Pressable

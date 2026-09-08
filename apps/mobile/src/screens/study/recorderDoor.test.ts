@@ -12,6 +12,7 @@ import {
   newLectureNoteTitle,
   recorderDoorPrompt,
   shouldCreateLectureNote,
+  shouldDeleteDoorNoteOnDiscard,
 } from './recorderDoor';
 
 describe('recorderDoorPrompt', () => {
@@ -39,5 +40,75 @@ describe('shouldCreateLectureNote', () => {
     // A cancel, a back press and a tap outside all resolve false; none of
     // them may leave a note behind.
     expect(shouldCreateLectureNote(false)).toBe(false);
+  });
+});
+
+describe('shouldDeleteDoorNoteOnDiscard', () => {
+  const DOOR_TITLE = 'Lecture — 6 Sep';
+
+  it('a cancelled start leaves nothing behind', () => {
+    // The whole door reduces to two rules working together: the sheet's "no"
+    // never creates a note (shouldCreateLectureNote), and if a note WAS
+    // created on "yes" and then thrown away untouched, it is deleted too.
+    // Between them, no cancelled or discarded start can leave a note behind.
+    expect(shouldCreateLectureNote(false)).toBe(false);
+    expect(
+      shouldDeleteDoorNoteOnDiscard({
+        openedByDoor: true,
+        title: DOOR_TITLE,
+        body: '',
+        doorTitle: DOOR_TITLE,
+      })
+    ).toBe(true);
+  });
+
+  it('deletes the untouched shell a discarded door recording leaves behind', () => {
+    // Start → (realise the mis-tap) → Discard: the empty "Lecture — 6 Sep"
+    // must not survive in the library.
+    expect(
+      shouldDeleteDoorNoteOnDiscard({
+        openedByDoor: true,
+        title: DOOR_TITLE,
+        body: '   ', // whitespace is not content
+        doorTitle: DOOR_TITLE,
+      })
+    ).toBe(true);
+  });
+
+  it('keeps a door note the student has typed into', () => {
+    // Their words are the commit. Discarding the audio must not delete them.
+    expect(
+      shouldDeleteDoorNoteOnDiscard({
+        openedByDoor: true,
+        title: DOOR_TITLE,
+        body: 'mitochondria is the powerhouse',
+        doorTitle: DOOR_TITLE,
+      })
+    ).toBe(false);
+  });
+
+  it('keeps a door note the student has renamed', () => {
+    // A title of their own is intent to keep the note, recording or not.
+    expect(
+      shouldDeleteDoorNoteOnDiscard({
+        openedByDoor: true,
+        title: 'Bio 101 — cells',
+        body: '',
+        doorTitle: DOOR_TITLE,
+      })
+    ).toBe(false);
+  });
+
+  it('never deletes a note the door did not open', () => {
+    // Recording into an existing note and discarding leaves that note exactly
+    // where it was — even if it happens to be empty.
+    expect(
+      shouldDeleteDoorNoteOnDiscard({
+        openedByDoor: false,
+        title: DOOR_TITLE,
+        body: '',
+        doorTitle: DOOR_TITLE,
+      })
+    ).toBe(false);
   });
 });

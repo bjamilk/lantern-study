@@ -74,6 +74,60 @@ export function shouldShowSegmentBar(available: readonly CampusSegment[]): boole
 }
 
 /**
+ * The app-bar title OVERRIDE while the Campus tab is lit — `null` to keep the
+ * default (`tabTitle('Campus')` → "Campus"), a string to replace it.
+ *
+ * THE TWO-BAR RULE (TopBar.tsx, tabRouting.ts): the app-bar names the SECTION
+ * you are in — the lit bottom tab — not the individual screen. Pushed, non-tab
+ * screens draw their OWN header with a back arrow and their real name; the
+ * shared app-bar only ever names the destination. Under that rule the Campus
+ * tab's title is simply "Campus", one string per feature, and that is exactly
+ * what Communities and Jobs get.
+ *
+ * SHOP IS THE ONE EXCEPTION, and only because of the founder's replace-mode
+ * decision (contextualBars.ts, 2026-09-08). Shop is a SEGMENT of Campus, but
+ * its contextual row is `replace`: while you are in Shop the global five-tab bar
+ * is gone and the bottom row is Shop's own Browse · Cart · You. Every OTHER
+ * replace-mode section satisfies the two-bar rule for free, because the section
+ * is itself a tab — Study is `replace` and the lit tab is already Study, so the
+ * title, the bottom bar and the section all say "Study" with no help. Shop is
+ * the only replace section nested INSIDE a tab, so the lit tab (Campus) is
+ * Shop's PARENT: the app-bar names Campus while the whole bottom bar has become
+ * Shop's, under an in-screen segment strip that still frames Shop as a mere peer
+ * of Communities and Jobs — three signals disagreeing about one screen (the
+ * 14-shop-browse-root finding).
+ *
+ * So the title rule is the one Study meets without trying: NAME THE SECTION THAT
+ * OWNS THE BOTTOM BAR. When Shop has taken the global bar the section is Shop,
+ * so the title reads "Shop"; the instant the global five return — a listing
+ * detail with no row, switching to the Communities or Jobs segment, or leaving
+ * Campus altogether — the section is Campus again and so is the title. This is
+ * not a second rule bolted on for Shop; it is the SAME rule, made to hold for
+ * the one case that silently broke it. (The cleaner fix would be for Shop not to
+ * be `replace` at all — see the handover finding — but that mode is declared in
+ * navigation/contextualBars.ts, which this lane does not own.)
+ *
+ * `shopOwnsBottomBar` is the chrome's own `replacesGlobalBar(contextual)` for
+ * the focused route, passed in rather than computed here so this stays pure and
+ * import-free and a node test can exercise it (house rule: the rule is pure, the
+ * shell is thin). It is meaningful only under the Campus tab — Study's replace
+ * row is Study's, and `tabTitle('Study')` already names it — so any other lit
+ * tab returns `null` and keeps its own name untouched.
+ */
+export function campusAppBarTitleOverride({
+  activeTab,
+  shopOwnsBottomBar,
+}: {
+  /** The lit bottom tab (tabRouting `TabKey`), e.g. 'Campus'. */
+  activeTab: string;
+  /** `replacesGlobalBar(contextual)` for the focused route. */
+  shopOwnsBottomBar: boolean;
+}): string | null {
+  if (activeTab !== 'Campus') return null;
+  return shopOwnsBottomBar ? CAMPUS_SEGMENT_LABELS.shop : null;
+}
+
+/**
  * Whether the screen should write `active` back into its own route params.
  *
  * The params are how the chrome sees which segment is showing (the Shop

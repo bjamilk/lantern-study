@@ -80,6 +80,7 @@ import {
 } from '../../stores/lectureRecordingStore';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
 import { recordCardBlockedReason } from '../../components/lecture/lectureStatusCopy';
+import { shouldDeleteDoorNoteOnDiscard } from '../study/recorderDoor';
 import * as ImagePicker from 'expo-image-picker';
 import type { NoteAttachment } from '../../services/notes';
 import { readCachedScript } from '../../services/narration';
@@ -93,6 +94,7 @@ const NOTE_TEST_QUESTION_CEILING = 10;
 type NavigationProp = {
 
   goBack: () => void;
+  canGoBack?: () => boolean;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 
 };
@@ -152,6 +154,28 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS = 4000;
   const bodyRef = useRef(body);
   bodyRef.current = body;
+  /**
+   * The title field's LIVE value, for the same reason `bodyRef` exists.
+   *
+   * The "leave while recording" listener is registered once per recording (its
+   * effect does not depend on `title`), so a `title` read out of that closure is
+   * the one from the render the listener was built in — the door's own title.
+   * Reading the state directly there would tell `shouldDeleteDoorNoteOnDiscard`
+   * that a note the student RENAMED mid-recording is still the door's untouched
+   * shell, and delete it: the exact "keeps a door note the student has renamed"
+   * rule, defeated by a stale closure. The ref is always current.
+   */
+  const titleRef = useRef(title);
+  titleRef.current = title;
+  /**
+   * The note this editor was opened for BY THE RECORD DOOR, and the exact title
+   * the door wrote, captured the moment recording auto-starts (see the door
+   * effect below). It is what `shouldDeleteDoorNoteOnDiscard` needs to tell an
+   * untouched throwaway shell from a note the student has since made theirs.
+   * Declared up here so every exit path — the recording bar's Cancel and the
+   * "leave while recording" prompt alike — can read it.
+   */
+  const doorNoteRef = useRef<{ noteId: string; doorTitle: string } | null>(null);
 
   const [summarizing, setSummarizing] = useState(false);
 
@@ -671,7 +695,32 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             text: 'Discard',
             style: 'destructive',
             onPress: () => {
-              void discardLectureRecording().then(() => {
+              // Leaving mid-recording and discarding is the same commitment as
+              // the bar's Cancel: if the note is still the door's untouched
+              // shell, it goes with the audio rather than being left behind.
+              const door = doorNoteRef.current;
+              void discardLectureRecording().then(async () => {
+                if (
+                  door &&
+                  door.noteId === noteId &&
+                  shouldDeleteDoorNoteOnDiscard({
+                    openedByDoor: true,
+                    // The REF, never the closed-over state: this listener was
+                    // built when recording started, so `title` here would be
+                    // the door's title even after the student renamed the note.
+                    title:
+                      titleRef.current || useNotesStore.getState().selectedNote?.title,
+                    body: bodyRef.current,
+                    doorTitle: door.doorTitle,
+                  })
+                ) {
+                  doorNoteRef.current = null;
+                  try {
+                    await removeNote(noteId);
+                  } catch {
+                    // A stray empty row, not lost work — let them leave anyway.
+                  }
+                }
                 nav.dispatch?.(e.data.action);
               });
             },
@@ -699,8 +748,50 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     });
   };
 
+  /**
+   * Discard is where "nothing exists until the student commits" is finished.
+   *
+   * The door creates the note before a second is recorded, so a Start-then-
+   * Discard (the mis-tap-twice case) would otherwise leave the empty
+   * "Lecture — 6 Sep" behind — the exact junk the door exists to prevent. When
+   * the discarded note is still the door's untouched shell, delete it and step
+   * back out. The rule lives in `shouldDeleteDoorNoteOnDiscard`; this is its
+   * thin shell.
+   */
+  const cleanupDiscardedDoorNote = async (): Promise<boolean> => {
+    const door = doorNoteRef.current;
+    if (!door || door.noteId !== noteId) return false;
+    const remove = shouldDeleteDoorNoteOnDiscard({
+      openedByDoor: true,
+      title: titleRef.current || selectedNote?.title,
+      body: bodyRef.current,
+      doorTitle: door.doorTitle,
+    });
+    if (!remove) return false;
+    // One shot: whatever happens next, this note is no longer the door's shell.
+    doorNoteRef.current = null;
+    cancelPendingSave();
+    try {
+      await removeNote(noteId);
+      return true;
+    } catch {
+      // A note we could not delete is a stray empty row, not lost work; the
+      // student can still delete it by hand. Do not trap them on the editor.
+      return false;
+    }
+  };
+
   const discardRecording = () => {
-    void discardLectureRecording();
+    void discardLectureRecording().then(() => {
+      void cleanupDiscardedDoorNote().then((deleted) => {
+        // Only a note we actually deleted sends the student back out; a note
+        // they kept (typed into, renamed) or never a door note stays put. The
+        // door always pushes the editor onto a stack, so there is somewhere to
+        // go back to.
+        if (!deleted) return;
+        if (navigation.canGoBack?.() ?? true) navigation.goBack();
+      });
+    });
   };
 
   const stopRecording = () => {
@@ -736,6 +827,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     if (!selectedNote || selectedNote.id !== noteId) return;
     if (lectureStatus !== 'idle') return;
     startedFromDoorRef.current = noteId;
+    // Remember this is the door's note, and the title the door wrote, so a
+    // later discard can tell an untouched shell from a note now made theirs.
+    doorNoteRef.current = { noteId, doorTitle: (selectedNote.title ?? '').trim() };
     startRecording();
     // `startRecording` is re-created every render; the ref above is the guard,
     // so it is deliberately not a dependency.

@@ -1,5 +1,6 @@
 import {
   CAMPUS_SEGMENT_LABELS,
+  campusAppBarTitleOverride,
   resolveCampusSegment,
   resolveCampusSegments,
   shouldPublishCampusSegment,
@@ -110,5 +111,32 @@ describe('shouldPublishCampusSegment', () => {
 
   it('has nothing to publish when Campus is empty', () => {
     expect(shouldPublishCampusSegment({ requested: undefined, picked: null, active: null })).toBe(false);
+  });
+});
+
+describe('campusAppBarTitleOverride', () => {
+  it('renames the app bar to "Shop" while Shop owns the whole bottom bar', () => {
+    // The finding (14-shop-browse-root): the bottom bar is Browse · Cart · You
+    // and the section the student is in is Shop, so the title must say so
+    // instead of naming Shop's parent, Campus.
+    expect(campusAppBarTitleOverride({ activeTab: 'Campus', shopOwnsBottomBar: true })).toBe('Shop');
+    // The exact word the segment strip and the shared web page already use.
+    expect(campusAppBarTitleOverride({ activeTab: 'Campus', shopOwnsBottomBar: true })).toBe(
+      CAMPUS_SEGMENT_LABELS.shop
+    );
+  });
+
+  it('keeps the Campus title (no override) for the segments that keep the global five', () => {
+    // Communities and Jobs carry no replace row: the global five stay, so
+    // "Campus" — the section — is the honest name, and this returns null.
+    expect(campusAppBarTitleOverride({ activeTab: 'Campus', shopOwnsBottomBar: false })).toBeNull();
+  });
+
+  it('leaves every other lit tab to name itself, even one whose row also replaces the bar', () => {
+    // Study is `replace` too, but the lit tab is already Study, so tabTitle
+    // names it — this override is Campus's alone and must not touch Study.
+    expect(campusAppBarTitleOverride({ activeTab: 'Study', shopOwnsBottomBar: true })).toBeNull();
+    expect(campusAppBarTitleOverride({ activeTab: 'Home', shopOwnsBottomBar: false })).toBeNull();
+    expect(campusAppBarTitleOverride({ activeTab: 'Me', shopOwnsBottomBar: false })).toBeNull();
   });
 });

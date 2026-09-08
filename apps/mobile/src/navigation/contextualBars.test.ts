@@ -882,6 +882,38 @@ describe('replace vs above: where each row sits (founder decision, 2026-09-08)',
   });
 });
 
+describe('every row names its place (build 175, "name the current place, always")', () => {
+  it('makes every registry state a non-empty section name beside its mode', () => {
+    // Naming only the selected item left six of eight rows nameless, because
+    // most rows never have a selected item. The fix requires every registry —
+    // present and future — to state what its place is called, right where the
+    // mode lives, so a fifth registry cannot skip the decision. FAILS the moment
+    // a spec is added (or edited) without a name.
+    for (const [route, spec] of entries()) {
+      expect(typeof spec.name).toBe('string');
+      expect(spec.name.length).toBeGreaterThan(0);
+      expect(typeof route).toBe('string');
+    }
+  });
+
+  it('names the two sections after themselves — Study and Shop', () => {
+    // These are the replace-mode rows whose root shows the name as a title when
+    // no door is the current screen.
+    expect(studyBar().name).toBe('Study');
+    expect(shopBar().name).toBe('Shop');
+  });
+
+  it('gives every above-mode row its own identity too, even though it draws per-icon labels', () => {
+    // An above row labels each icon rather than drawing the section title, but
+    // it still states its name — the requirement is uniform so the decision is
+    // never skipped.
+    expect(deckBar().name.length).toBeGreaterThan(0);
+    expect(noteBar().name.length).toBeGreaterThan(0);
+    expect(walkthroughBar().name.length).toBeGreaterThan(0);
+    expect(barFor('CommunityDetail').name.length).toBeGreaterThan(0);
+  });
+});
+
 describe('the exit control of a replace-mode row (founder decision 2)', () => {
   it('is Back when the focused stack has a screen to pop', () => {
     expect(contextualExitControl(true)).toBe('back');
@@ -909,6 +941,21 @@ describe('the community row', () => {
       'rooms',
       'members',
     ]);
+  });
+
+  it('labels its live chat "Lounge", not "Chat", so it cannot be the global Chat tab', () => {
+    // The community row is `above` mode, so the global bar — whose second tab is
+    // the app-wide "Chat" — sits directly below it. With the row's labels
+    // restored (build 175), a door still labelled "Chat" reads as a second,
+    // broken copy of that tab. The door opens the community's own lounge
+    // (`communityChat` → openLounge → the `General` channel), which is what
+    // "Lounge" names. This FAILS the moment the label goes back to "Chat".
+    const chat = itemById(communityBar(), 'chat');
+    expect(chat.label).toBe('Lounge');
+    expect(chat.label).not.toBe('Chat');
+    expect(chat.target).toEqual({ kind: 'screenAction', action: 'communityChat' });
+    // And no door on this row may collide with the global "Chat" tab's word.
+    expect(communityBar().items.map(item => item.label)).not.toContain('Chat');
   });
 
   it('carries the campus accent, because the student stands on the community', () => {
