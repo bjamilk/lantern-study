@@ -18,6 +18,44 @@
  * store itself pulls in expo-secure-store, which jest cannot transform.
  */
 import { formatChatSenderLabel } from '@lantern/shared/utils';
+import { isLiteralEmailAddress } from '../hooks/profileIdentity';
+
+/**
+ * The first candidate that is a real display value, or null.
+ *
+ * A literal email address is NOT one: the shared label helpers reduce it to its
+ * local part ('nimaj22@x.com' → 'nimaj22'), which paints an address's local
+ * part on a chat row or board card and leaks the account's email to everyone
+ * who can read it. Dropping an address here lets resolution fall through to the
+ * next source — a genuine name, an @username, or finally 'Member' — so the
+ * address (and the local part it collapses to) is never surfaced, while the
+ * ordinary priority between real names is preserved.
+ */
+export function firstNonEmailValue(
+  ...candidates: Array<string | null | undefined>
+): string | null {
+  for (const candidate of candidates) {
+    const trimmed = candidate?.trim();
+    if (trimmed && !isLiteralEmailAddress(trimmed)) return trimmed;
+  }
+  return null;
+}
+
+/**
+ * A roster/sender entry with any email-shaped `name`/`username` dropped, so it
+ * can be handed to the shared roster-aware label helpers
+ * (`resolveGroupChatSenderLabel`) without them collapsing an address to its
+ * local part. Non-identity fields (id, userId, avatarUrl) are preserved.
+ */
+export function withEmailSafeName<
+  T extends { name?: string | null; username?: string | null }
+>(entry: T): Omit<T, 'name' | 'username'> & { name: string | null; username: string | null } {
+  return {
+    ...entry,
+    name: firstNonEmailValue(entry.name),
+    username: firstNonEmailValue(entry.username),
+  };
+}
 
 export interface SenderIdentitySource {
   username?: string | null;
@@ -46,9 +84,13 @@ export function resolveSenderIdentity(input: {
   const isOwnRow = !!viewer?.id && !!senderId && viewer.id === senderId;
   const own = isOwnRow ? viewer : null;
 
+  // Pick the first REAL value per field across the sources, in priority order,
+  // skipping any that is a literal email address — so a legacy `profiles.name`
+  // holding an address never reaches the label helper to be reduced to its
+  // local part.
   const name = formatChatSenderLabel({
-    username: sender?.username || rosterMember?.username || own?.username || null,
-    name: sender?.name || rosterMember?.name || own?.name || null,
+    username: firstNonEmailValue(sender?.username, rosterMember?.username, own?.username),
+    name: firstNonEmailValue(sender?.name, rosterMember?.name, own?.name),
   });
 
   const avatarUrl =

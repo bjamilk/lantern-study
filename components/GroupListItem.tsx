@@ -151,6 +151,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
       {isGroup ? (
         <Avatar
           name={name}
+          id={chat.id}
           src={resolveAvatarSrc(avatarUrl, lowDataMode)}
           size="md"
           localOnly={lowDataMode}
@@ -159,6 +160,7 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
       ) : (
         <Avatar
           name={name}
+          id={otherParticipantId}
           src={resolveAvatarSrc(avatarUrl, lowDataMode)}
           size="md"
           localOnly={lowDataMode}

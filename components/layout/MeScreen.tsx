@@ -121,6 +121,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
         <div className="flex items-center gap-4 px-4 py-6">
           <Avatar
             name={currentUser.name}
+            id={currentUser.id}
             src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
             size="lg"
             localOnly={lowDataMode}

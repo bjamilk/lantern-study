@@ -29,7 +29,7 @@ import { isTransientSyncError } from '@lantern/shared';
 import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
 import { useAuthStore } from './authStore';
-import { resolveSenderIdentity } from '../utils/senderIdentity';
+import { resolveSenderIdentity, firstNonEmailValue } from '../utils/senderIdentity';
 import {
   isQueueableSendError,
   queuedOutcome,
@@ -1169,9 +1169,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const myUsername = isMe
       ? ((auth.user?.user_metadata as { username?: string | null } | undefined)?.username ?? null)
       : null;
+    // Skip an email-shaped `profiles.name`/`profileName` so the stamped sender
+    // name can never be an address reduced to its local part ('nimaj22@x.com' →
+    // 'nimaj22'); resolution then falls to the @username or "Member".
     const senderName = formatChatSenderLabel({
-      username: member?.username ?? myUsername,
-      name: member?.name ?? (isMe ? auth.profileName : null),
+      username: firstNonEmailValue(member?.username, myUsername),
+      name: firstNonEmailValue(member?.name, isMe ? auth.profileName : null),
     });
     let parsed: any = {};
     if (!options?.plainText && text.trim().startsWith('{')) {

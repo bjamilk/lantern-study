@@ -318,6 +318,7 @@ export const ManageCommunityPanel: React.FC<ManageCommunityPanelProps> = ({
                 <li key={member.id} className="flex flex-wrap items-center gap-2 px-3 py-2">
                   <Avatar
                     name={member.name}
+                    id={member.id}
                     src={resolveAvatarSrc(member.avatarUrl ?? undefined, lowDataMode)}
                     size="sm"
                     localOnly={lowDataMode}

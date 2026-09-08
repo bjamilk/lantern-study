@@ -113,7 +113,7 @@ export const BlockedUsersModal: React.FC<BlockedUsersModalProps> = ({ open, onCl
           <ul className="divide-y divide-lantern-border">
             {blocked.map((item) => (
               <li key={item.id} className="flex items-center gap-3 py-3">
-                <Avatar name={item.name} src={item.avatarUrl || undefined} size="md" />
+                <Avatar name={item.name} id={item.id} src={item.avatarUrl || undefined} size="md" />
                 <span className="flex-1 min-w-0 truncate text-sm font-medium text-lantern-text">
                   {item.name}
                 </span>

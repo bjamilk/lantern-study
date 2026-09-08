@@ -5,6 +5,7 @@ import {
   NEUTRAL_DISPLAY_NAME,
   resolveAvatarIdentity,
   resolveDisplayName,
+  withEmailSafeName,
 } from './displayIdentity';
 
 describe('resolveDisplayName', () => {
@@ -76,5 +77,32 @@ describe('resolveAvatarIdentity', () => {
 
   it('seeds the label from the resolved name only (not a raw email)', () => {
     expect(resolveAvatarIdentity('Grace Hopper').label).toBe('Grace Hopper');
+  });
+});
+
+describe('withEmailSafeName', () => {
+  it('drops an email-shaped name so the shared label helper cannot show its local part', () => {
+    // The shared helper collapses 'nimaj22@gmail.com' to 'nimaj22'. Nulling the
+    // field here is what stops that local part reaching a chat row.
+    const safe = withEmailSafeName({ id: 'u1', name: 'nimaj22@gmail.com', username: null });
+    expect(safe.name).toBeNull();
+    expect(safe.name).not.toBe('nimaj22');
+  });
+
+  it('preserves the id so avatar and roster matching still work', () => {
+    const safe = withEmailSafeName({ id: 'u1', userId: 'u1', name: 'a@b.co', avatarUrl: 'x' });
+    expect(safe.id).toBe('u1');
+    expect(safe.userId).toBe('u1');
+    expect(safe.avatarUrl).toBe('x');
+  });
+
+  it('keeps a genuine name and username untouched', () => {
+    const safe = withEmailSafeName({ name: 'Grace Hopper', username: 'grace' });
+    expect(safe.name).toBe('Grace Hopper');
+    expect(safe.username).toBe('grace');
+  });
+
+  it('keeps a real name that merely contains an @', () => {
+    expect(withEmailSafeName({ name: 'DJ @ Night' }).name).toBe('DJ @ Night');
   });
 });

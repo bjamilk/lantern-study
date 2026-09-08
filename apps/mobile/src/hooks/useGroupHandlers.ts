@@ -4,7 +4,7 @@
 import { useCallback } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { DMThread } from '@lantern/shared/types';
-import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
+import { profileDisplayName } from './profileIdentity';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore, type Group } from '../stores/groupStore';
 
@@ -14,7 +14,7 @@ function buildThreadId(userId: string, otherUserId: string): string {
 
 export function useGroupHandlers() {
   const navigation = useNavigation<any>();
-  const { user } = useAuthStore();
+  const { user, profileName } = useAuthStore();
   // Per-value selectors: the whole-store destructure re-ran GroupsScreen on any
   // store mutation, including chat traffic in a group that is not even open.
   const dmThreads = useGroupStore(s => s.dmThreads);
@@ -58,11 +58,20 @@ export function useGroupHandlers() {
         participantIds: [user.id, otherUserId].sort() as [string, string],
         participants: {
           [user.id]: {
-            // Never the address (see scrubEmailFromDisplayName).
+            // Never the address, nor the local part it collapses to: resolved
+            // through the same pure planner every mobile surface uses. A
+            // nameless account resolves to '' and the neutral self-label 'You'
+            // stands in — never "nimaj22".
             name:
-              scrubEmailFromDisplayName(user.user_metadata?.full_name) ||
-              scrubEmailFromDisplayName(user.email) ||
-              'You',
+              profileDisplayName({
+                profileName,
+                metadataName:
+                  (typeof user.user_metadata?.name === 'string' && user.user_metadata.name) ||
+                  (typeof user.user_metadata?.full_name === 'string' &&
+                    user.user_metadata.full_name) ||
+                  null,
+                email: user.email ?? null,
+              }) || 'You',
           },
           // Carry the avatar from the contact row — a client-pending thread has
           // no server row to hydrate it from, so without this the peer shows
@@ -87,7 +96,7 @@ export function useGroupHandlers() {
       fetchDirectMessagesForThread(user.id, otherUserId, thread.id),
       markDMAsRead(thread.id, user.id),
     ]);
-  }, [user, dmThreads, navigation, fetchDirectMessagesForThread, markDMAsRead]);
+  }, [user, profileName, dmThreads, navigation, fetchDirectMessagesForThread, markDMAsRead]);
 
   return {
     handleSelectGroup,

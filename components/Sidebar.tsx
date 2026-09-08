@@ -282,6 +282,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     <span className={`inline-flex items-center justify-center ${className}`} aria-hidden="true">
       <Avatar
         name={currentUser.name}
+        id={currentUser.id}
         src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
         size="xs"
         localOnly={lowDataMode}
@@ -509,6 +510,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         <div className="relative group mt-2 flex justify-center" title="Change profile picture">
           <Avatar
             name={currentUser.name}
+            id={currentUser.id}
             src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
             size="sm"
             localOnly={lowDataMode}

@@ -1,10 +1,23 @@
 import React, { useMemo } from 'react';
 import { avatarColorFromSeed } from '@lantern/shared/design';
-import { resolveAvatarIdentity } from '../../utils/displayIdentity';
+import { realNameOrNull, resolveAvatarIdentity } from '../../utils/displayIdentity';
 import { useResolvedAvatarSrc } from '../../hooks/useResolvedAvatarSrc';
 
 interface AvatarProps {
   name: string;
+  /**
+   * Stable per-account identifier, used ONLY to seed the background colour.
+   * The colour must not be seeded from the display name: every nameless account
+   * resolves to the same neutral label ("User"), so a name/label seed paints
+   * them all one colour — a wall of identical chips in a member list. It must
+   * not be seeded from the email either (nothing a reader can see should be
+   * derived from the address). Pass the account id here for a colour that is
+   * unique per account and unchanged by renames. Optional so existing callers
+   * keep working; when it is absent the colour falls back to the raw name (see
+   * below), which separates distinct accounts but still collapses genuinely
+   * nameless ones — pass `id` in member lists to avoid that.
+   */
+  id?: string;
   src?: string | null;
   size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
@@ -25,6 +38,7 @@ const sizeClasses = {
 
 export const Avatar: React.FC<AvatarProps> = ({
   name,
+  id,
   src,
   size = 'md',
   className = '',
@@ -35,7 +49,17 @@ export const Avatar: React.FC<AvatarProps> = ({
   // neutral mark ("?") and reads as the neutral placeholder — the email is never
   // turned into fake initials, nor spoken by a screen reader.
   const { initials, label } = useMemo(() => resolveAvatarIdentity(name), [name]);
-  const bgColor = useMemo(() => avatarColorFromSeed(label), [label]);
+  // Colour seed — a stable, per-account value that is deliberately NOT the
+  // resolved `label`. Seeding from the label painted every nameless account the
+  // same colour, because they all resolve to the one neutral label. Prefer the
+  // account `id` (unique per account, unchanged by renames, never shown to a
+  // reader); fall back to a GENUINE name so distinct named accounts still
+  // separate, and finally to the label so an avatar is never left seedless. The
+  // fallback is a real name only: an email-shaped `name` is dropped, because the
+  // colour must not be derived from the address (`realNameOrNull` returns null
+  // for one, and the label — 'User' — is used instead).
+  const colorSeed = id?.trim() || realNameOrNull(name) || label;
+  const bgColor = useMemo(() => avatarColorFromSeed(colorSeed), [colorSeed]);
   const resolvedSrc = useResolvedAvatarSrc(localOnly ? null : src);
   const showImage = resolvedSrc && !localOnly;
 

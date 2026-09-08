@@ -1,4 +1,4 @@
-import { resolveSenderIdentity } from './senderIdentity';
+import { resolveSenderIdentity, firstNonEmailValue, withEmailSafeName } from './senderIdentity';
 
 const ME = 'user-me-1';
 const viewer = {
@@ -71,29 +71,81 @@ describe('resolveSenderIdentity', () => {
  * put there. The post's tombstone then carried "nimaj22@gmail.com" and its
  * initials next to live cards showing the same person's real name.
  */
-describe('an email address never becomes a sender label', () => {
-  it('shows the local part, not the address, for the viewer\'s own row', () => {
+describe('an email address never becomes a sender label — not even its local part', () => {
+  it('drops the address entirely for the viewer\'s own row, never its local part', () => {
+    // A nameless viewer whose only "name" is the address: the label falls
+    // through to the neutral "Member", never "nimaj22". Reducing the address to
+    // its local part is exactly the leak this rule kills.
     const r = resolveSenderIdentity({
       senderId: ME,
       viewer: { id: ME, name: 'nimaj22@gmail.com', username: null, avatarUrl: null },
     });
-    expect(r.name).toBe('nimaj22');
+    expect(r.name).toBe('Member');
+    expect(r.name).not.toBe('nimaj22');
   });
 
-  it('refuses an address coming from the server\'s embedded sender too', () => {
+  it('skips an address from the embedded sender and falls to a genuine later source', () => {
+    // The server's embedded sender carries an address, but the viewer (this is
+    // their own row) has a real name — resolution skips the address and uses it
+    // rather than collapsing the address to its local part.
     const r = resolveSenderIdentity({
       senderId: ME,
       sender: { name: 'nimaj22@gmail.com' },
       viewer,
     });
-    expect(r.name).toBe('nimaj22');
+    expect(r.name).toBe('Benjamin Amadi');
+    expect(r.name).not.toBe('nimaj22');
   });
 
-  it('refuses an address coming from the roster', () => {
+  it('drops an address coming from the roster, never its local part', () => {
     const r = resolveSenderIdentity({
       senderId: 'user-other',
       rosterMember: { name: 'someone@example.com' },
     });
-    expect(r.name).toBe('someone');
+    expect(r.name).toBe('Member');
+    expect(r.name).not.toBe('someone');
+  });
+});
+
+describe('firstNonEmailValue', () => {
+  it('returns the first non-empty, non-email candidate in order', () => {
+    expect(firstNonEmailValue(null, '  ', 'Ada', 'Ben')).toBe('Ada');
+  });
+
+  it('skips a literal email address and keeps looking', () => {
+    // The core rule: an address is not a display value, so it is passed over —
+    // never reduced to its local part.
+    expect(firstNonEmailValue('nimaj22@example.com', 'Benjamin Amadi')).toBe('Benjamin Amadi');
+  });
+
+  it('returns null when every candidate is empty or an address', () => {
+    expect(firstNonEmailValue(null, undefined, 'a@b.co')).toBeNull();
+  });
+
+  it('keeps a real name that merely contains an @', () => {
+    // A nickname is allowed to be odd; only a strict address is refused.
+    expect(firstNonEmailValue('DJ @ Night')).toBe('DJ @ Night');
+  });
+});
+
+describe('withEmailSafeName', () => {
+  it('drops an email-shaped name but preserves id and avatarUrl', () => {
+    const safe = withEmailSafeName({
+      id: 'u1',
+      userId: 'u1',
+      name: 'nimaj22@example.com',
+      username: null,
+      avatarUrl: 'https://example.test/a.png',
+    });
+    expect(safe.name).toBeNull();
+    expect(safe.id).toBe('u1');
+    expect(safe.userId).toBe('u1');
+    expect(safe.avatarUrl).toBe('https://example.test/a.png');
+  });
+
+  it('keeps a genuine name untouched', () => {
+    const safe = withEmailSafeName({ id: 'u1', name: 'Benjamin Amadi', username: 'ben' });
+    expect(safe.name).toBe('Benjamin Amadi');
+    expect(safe.username).toBe('ben');
   });
 });

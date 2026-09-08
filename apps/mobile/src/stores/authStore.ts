@@ -17,7 +17,7 @@ import { fetchUserProfile } from '../services/api';
 import { signInWithGoogleOAuth, signInWithAppleNative } from '../services/socialAuth';
 import type { User, Session } from '@supabase/supabase-js';
 import { isEmailNotConfirmedError } from '@lantern/shared';
-import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
+import { profileDisplayName } from '../hooks/profileIdentity';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 import { PENDING_RESULTS_LEGACY_KEY, pendingResultsKey } from './pendingResultsScope';
 import { SYNC_QUEUE_LEGACY_KEY, syncQueueKey } from '@lantern/shared/sync';
@@ -97,19 +97,22 @@ const BOOT_TIMEOUT_MARKER = 'auth-init-timeout';
 /**
  * Fallback display name so a restoring boot greets the student, not "User".
  *
- * `user_metadata.name` is whatever the sign-up flow wrote, and for an email
- * sign-up that is routinely the address itself. This name is not only a
- * greeting: it is the identity the app stamps on the viewer's own chat and
- * board cards until the server's copy lands, and a board shows those to
- * everyone who can read it. An address never survives this function.
+ * This name is not only a greeting: it is the identity the app stamps on the
+ * viewer's own chat and board cards until the server's copy lands, and a board
+ * shows those to everyone who can read it. So it goes through the SAME pure
+ * planner every mobile surface uses (`profileDisplayName`): a genuine metadata
+ * name survives — including one that merely equals the email local part — while
+ * a literal address, and the bare local part on its own, resolve to '' (→
+ * null). The email local part is never dressed up as a name, so the old
+ * top-bar "NI" can no longer be seeded from here.
  */
-function displayNameFromUser(user: User): string | null {
-  const metadataName = user.user_metadata?.name;
-  if (typeof metadataName === 'string') {
-    const scrubbed = scrubEmailFromDisplayName(metadataName);
-    if (scrubbed) return scrubbed;
-  }
-  return user.email?.split('@')[0] ?? null;
+export function displayNameFromUser(user: User): string | null {
+  return (
+    profileDisplayName({
+      metadataName: typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : null,
+      email: user.email ?? null,
+    }) || null
+  );
 }
 
 /**

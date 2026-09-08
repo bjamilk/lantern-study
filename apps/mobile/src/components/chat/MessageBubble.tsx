@@ -10,6 +10,7 @@ import {
   resolveGroupChatMentionUsername,
   resolveGroupChatSenderLabel,
 } from '@lantern/shared/utils';
+import { withEmailSafeName } from '../../utils/senderIdentity';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { ChatImageThumbnail, ChatTextBody } from './ChatMessageBody';
@@ -134,9 +135,16 @@ function MessageBubbleComponent({
       username: storedLabel.startsWith('@') ? storedLabel.slice(1) : undefined,
       name: storedLabel && !storedLabel.startsWith('@') ? storedLabel : undefined,
     };
+    // Drop an email-shaped stored label or roster name before the roster-aware
+    // label helper sees it, so a legacy `profiles.name` holding an address is
+    // never reduced to its local part ('nimaj22@x.com' → 'nimaj22') on a chat
+    // row or board card. Ids and avatars are preserved, so avatar resolution is
+    // unchanged.
+    const safeSender = withEmailSafeName(sender);
+    const safeMembers = members?.map(withEmailSafeName);
     return {
-      authorLabel: resolveGroupChatSenderLabel(sender, members),
-      mentionUsername: resolveGroupChatMentionUsername(sender, members),
+      authorLabel: resolveGroupChatSenderLabel(safeSender, safeMembers),
+      mentionUsername: resolveGroupChatMentionUsername(safeSender, safeMembers),
       avatarUrl: resolveGroupChatAvatarUrl(
         { id: message.senderId, avatarUrl: message.senderAvatar },
         members

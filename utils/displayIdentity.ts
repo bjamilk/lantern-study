@@ -35,7 +35,7 @@ export const NEUTRAL_AVATAR_MARK = '?';
  * so a value the scrubber *changed* was email-shaped and is dropped, while a
  * value it left alone is a genuine name.
  */
-function realNameOrNull(candidate: string | null | undefined): string | null {
+export function realNameOrNull(candidate: string | null | undefined): string | null {
   const trimmed = candidate?.trim();
   if (!trimmed) return null;
   const scrubbed = scrubEmailFromDisplayName(trimmed);
@@ -80,4 +80,27 @@ export function resolveAvatarIdentity(
     return { initials: NEUTRAL_AVATAR_MARK, label: NEUTRAL_DISPLAY_NAME };
   }
   return { initials: initialsFromName(real), label: real };
+}
+
+/**
+ * A sender or roster entry with an email-shaped `name`/`username` dropped,
+ * ready to hand to the shared roster-aware label helpers
+ * (`resolveGroupChatSenderLabel`, `resolveGroupChatMentionUsername`).
+ *
+ * Those helpers collapse a strict address to its local part
+ * ('nimaj22@x.com' → 'nimaj22'), which paints an address's local part on a chat
+ * row for everyone in the group to read. A legacy `profiles.name` can still
+ * hold an address, so drop it here and let resolution fall through to the next
+ * source — an @username, another roster field, or the neutral "Member".
+ * Non-identity fields (id, userId, avatarUrl) are preserved, so avatar
+ * resolution is unaffected.
+ */
+export function withEmailSafeName<
+  T extends { name?: string | null; username?: string | null },
+>(entry: T): T & { name: string | null; username: string | null } {
+  return {
+    ...entry,
+    name: realNameOrNull(entry.name),
+    username: realNameOrNull(entry.username),
+  };
 }

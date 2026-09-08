@@ -20,6 +20,9 @@ import { Avatar } from '../ui';
 export interface BoardComposerProps {
   groupId: string;
   authorName: string;
+  /** The author's account id — seeds the avatar colour so a nameless author is
+   *  not painted the same as every other nameless one (never shown to a reader). */
+  authorId?: string;
   authorAvatarUrl?: string | null;
   lowDataMode: boolean;
   mentionCandidates: MentionCandidate[];
@@ -45,6 +48,7 @@ export interface BoardComposerProps {
 export const BoardComposer: React.FC<BoardComposerProps> = ({
   groupId,
   authorName,
+  authorId,
   authorAvatarUrl,
   lowDataMode,
   mentionCandidates,
@@ -129,7 +133,7 @@ export const BoardComposer: React.FC<BoardComposerProps> = ({
           aria-expanded={false}
           className="flex w-full min-h-[44px] items-center gap-2 rounded-full border border-lantern-border bg-lantern-background px-3 text-left text-sm text-lantern-text-tertiary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
         >
-          <Avatar name={authorName} src={authorAvatarUrl} size="xs" localOnly={lowDataMode} />
+          <Avatar name={authorName} id={authorId} src={authorAvatarUrl} size="xs" localOnly={lowDataMode} />
           <span className="flex-1 truncate">{COMMUNITY_BOARD_COPY.composerPlaceholder}</span>
           <AppIcon name="image" size={16} className="shrink-0" />
         </button>

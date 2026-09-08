@@ -37,6 +37,7 @@ export const LegacyQuestionCard: React.FC<LegacyQuestionCardProps> = ({
       <div className="flex items-center gap-2">
         <Avatar
           name={post.senderName}
+          id={post.senderId}
           src={post.senderAvatarUrl}
           size="sm"
           localOnly={lowDataMode}

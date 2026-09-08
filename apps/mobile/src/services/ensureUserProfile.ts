@@ -1,5 +1,5 @@
 import type { User } from '@supabase/supabase-js';
-import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
+import { profileDisplayName } from '../hooks/profileIdentity';
 import { createUserProfile, fetchUserProfile } from './api';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 
@@ -23,10 +23,15 @@ export async function ensureUserProfile(user: User): Promise<{
   try {
     const profile = await fetchUserProfile(user.id);
     return {
-      // A profiles row created from an address can hold the address itself.
-      // This name is what the app writes onto the viewer's own cards before
-      // the server's copy arrives, and a board publishes those to everyone.
-      displayName: scrubEmailFromDisplayName(profile.name) || resolveFallbackName(user),
+      // The one honest name for the signed-in student, resolved in the SAME
+      // pure planner every mobile surface uses. `profile.name` came from a
+      // successful server read, so it is a GENUINE source (mapped to
+      // lastKnownName, not the ambiguous offline profileName slot): a real name
+      // that merely equals the email local part — 'ada' for ada@uni.edu —
+      // survives, while a literal address in the row is dropped. The email
+      // local part is NEVER a name here, so this value cannot stamp an
+      // email-derived identity onto the viewer's own cards or a board.
+      displayName: resolveDisplayName(profile.name, user),
       firstName: resolveProfileFirstName(profile, user),
       academic: extractAcademicProfile(profile),
     };
@@ -35,7 +40,14 @@ export async function ensureUserProfile(user: User): Promise<{
       throw error;
     }
 
-    const name = resolveFallbackName(user);
+    // The WRITE. This name is persisted into profiles.name — exactly what the
+    // server trigger was just stopped from deriving from the email address, so
+    // it must never be email-derived either. The planner returns '' when the
+    // account has no genuine name (no metadata name, or only the address), and
+    // '' is what we write: a fresh mobile signup leaves NO email-derived name
+    // in the database, and the profile resolver renders the neutral '?' mark
+    // for it rather than inventing initials from the address.
+    const name = resolveCreatedName(user);
     await createUserProfile({ id: user.id, name });
     return {
       displayName: name,
@@ -43,6 +55,40 @@ export async function ensureUserProfile(user: User): Promise<{
       academic: null,
     };
   }
+}
+
+/**
+ * The display name for an EXISTING profile row.
+ *
+ * `profile.name` is a genuine server value on this path, so it rides the
+ * lastKnownName slot (genuine names, only literal addresses refused) rather
+ * than the ambiguous profileName slot the offline stand-in travels on.
+ */
+function resolveDisplayName(profileName: string | null | undefined, user: User): string {
+  return profileDisplayName({
+    lastKnownName: profileName ?? null,
+    metadataName: metadataName(user),
+    email: user.email ?? null,
+  });
+}
+
+/**
+ * The name WRITTEN when no profile row exists yet.
+ *
+ * Only the sign-up metadata name and the email are known here. The planner
+ * keeps a genuine metadata name (including one that equals the email local
+ * part) and returns '' for a bare or address-only account — never the email
+ * local part.
+ */
+function resolveCreatedName(user: User): string {
+  return profileDisplayName({
+    metadataName: metadataName(user),
+    email: user.email ?? null,
+  });
+}
+
+function metadataName(user: User): string | null {
+  return typeof user.user_metadata?.name === 'string' ? user.user_metadata.name : null;
 }
 
 function resolveProfileFirstName(
@@ -58,20 +104,4 @@ function resolveProfileFirstName(
     return fromMeta.trim();
   }
   return undefined;
-}
-
-/**
- * The name to show when the profile has none.
- *
- * `user_metadata.name` is whatever the sign-up flow put there, and for an
- * email sign-up that is routinely the address — so it goes through the same
- * scrub as every other candidate. The local part is the deliberate landing
- * place, not a leak: it is the fallback name the rest of the app already uses.
- */
-function resolveFallbackName(user: User): string {
-  const fromMetadata =
-    typeof user.user_metadata?.name === 'string'
-      ? scrubEmailFromDisplayName(user.user_metadata.name)
-      : null;
-  return fromMetadata || user.email?.split('@')[0] || 'User';
 }

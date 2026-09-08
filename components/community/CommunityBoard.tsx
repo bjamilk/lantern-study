@@ -1411,6 +1411,7 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
         <BoardComposer
           groupId={groupId}
           authorName={currentUser?.name || 'You'}
+          authorId={currentUser?.id}
           authorAvatarUrl={currentUser?.avatarUrl}
           lowDataMode={lowDataMode}
           mentionCandidates={mentionCandidates}

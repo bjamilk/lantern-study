@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RealtimeChannel } from '@supabase/supabase-js';
-import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
+import { profileDisplayName } from './profileIdentity';
 import { communityPresenceChannel, type CommunityPresencePayload } from '@lantern/shared/network';
 import { userShowsOnlineStatus } from '@lantern/shared/settings';
 import { supabase } from '../services/supabase';
@@ -160,14 +160,19 @@ export function useCommunityPresence(
   opts: { enabled: boolean }
 ): CommunityPresenceSnapshot {
   const userId = useAuthStore((s) => s.user?.id);
-  const userName = useAuthStore(
-    (s) =>
-      // Never the address: this name is tracked on the presence channel that
-      // every member of the community reads.
-      s.profileName ||
-      scrubEmailFromDisplayName(s.user?.user_metadata?.name as string | undefined) ||
-      scrubEmailFromDisplayName(s.user?.email) ||
-      ''
+  const userName = useAuthStore((s) =>
+    // Never the address, nor the local part it collapses to: this name is
+    // tracked on the presence channel that every member of the community reads,
+    // so it goes through the same pure planner every mobile surface uses. A
+    // nameless account resolves to '' (the neutral placeholder) — profileName
+    // can now be '' for such an account, and this must not fall through to the
+    // email the way a bare `|| scrubEmail(...)` chain did.
+    profileDisplayName({
+      profileName: s.profileName,
+      metadataName:
+        (typeof s.user?.user_metadata?.name === 'string' && s.user.user_metadata.name) || null,
+      email: s.user?.email ?? null,
+    })
   );
   const avatarUrl = useAuthStore(
     (s) => (s.user?.user_metadata?.avatar_url as string | undefined) ?? null

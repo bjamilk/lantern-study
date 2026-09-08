@@ -228,6 +228,7 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
             <div className="flex items-center gap-2">
               <Avatar
                 name={post.senderName}
+                id={post.senderId}
                 src={post.senderAvatarUrl}
                 size="sm"
                 localOnly={lowDataMode}
@@ -286,6 +287,7 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
                 <li key={comment.id} className="flex items-start gap-2">
                   <Avatar
                     name={comment.senderName}
+                    id={comment.senderId}
                     src={comment.senderAvatarUrl}
                     size="xs"
                     localOnly={lowDataMode}

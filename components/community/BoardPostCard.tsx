@@ -399,7 +399,7 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
       ) : null}
 
       <div className="flex items-start gap-2">
-        <Avatar name={post.senderName} src={post.senderAvatarUrl} size="sm" localOnly={lowDataMode} />
+        <Avatar name={post.senderName} id={post.senderId} src={post.senderAvatarUrl} size="sm" localOnly={lowDataMode} />
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
             <span className="truncate">{post.senderName}</span>

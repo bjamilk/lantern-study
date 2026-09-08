@@ -48,6 +48,7 @@ const MemberRow: React.FC<{
     <span className="relative shrink-0">
       <Avatar
         name={member.name}
+        id={member.id}
         src={resolveAvatarSrc(member.avatarUrl ?? undefined, lowDataMode)}
         size="sm"
         localOnly={lowDataMode}

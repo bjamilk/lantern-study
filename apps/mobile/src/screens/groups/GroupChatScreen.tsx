@@ -101,7 +101,7 @@ import { findMyCommunity } from '../../utils/communityOverlay';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
-import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
+import { profileDisplayName } from '../../hooks/profileIdentity';
 
 export type GroupChatNavigation = {
   goBack: () => void;
@@ -433,6 +433,7 @@ export function GroupChatView({
    */
   const studySurface = host !== 'community';
   const user = useAuthStore(s => s.user);
+  const profileName = useAuthStore(s => s.profileName);
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
   const { isConnected } = useNetworkStatus();
@@ -1469,16 +1470,32 @@ export function GroupChatView({
         groupId,
         markdown,
         user.id,
-        // Never the address: this name is stamped on a message everyone in the
-        // group reads (see scrubEmailFromDisplayName).
-        scrubEmailFromDisplayName(user.user_metadata?.full_name) ||
-          scrubEmailFromDisplayName(user.email) ||
-          'User',
+        // Never the address, nor the local part it collapses to: this name is
+        // stamped on a message everyone in the group reads, so it goes through
+        // the same pure planner every mobile surface uses. A nameless account
+        // resolves to '' and 'User' stands in — never "nimaj22".
+        profileDisplayName({
+          profileName,
+          metadataName:
+            (typeof user.user_metadata?.name === 'string' && user.user_metadata.name) ||
+            (typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name) ||
+            null,
+          email: user.email ?? null,
+        }) || 'User',
         { replyToMessageId: replyTo?.id }
       );
       setReplyTo(null);
     },
-    [groupId, replyTo?.id, sendMessage, user?.id, user?.email, user?.user_metadata?.full_name]
+    [
+      groupId,
+      replyTo?.id,
+      sendMessage,
+      user?.id,
+      user?.email,
+      user?.user_metadata?.name,
+      user?.user_metadata?.full_name,
+      profileName,
+    ]
   );
 
   const attachImage = useChatImageAttach({

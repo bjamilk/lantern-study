@@ -309,7 +309,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                     <div className="flex items-center gap-5">
                         <div className="relative group">
-                            <Avatar name={currentUser.name} src={avatarPreview || currentUser.avatarUrl} size="xl" />
+                            <Avatar name={currentUser.name} id={currentUser.id} src={avatarPreview || currentUser.avatarUrl} size="xl" />
                             <button type="button" onClick={() => avatarInputRef.current?.click()}
                                 className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer" title="Change photo">
                                 <AppIcon name="camera" size={24} className="text-white" />

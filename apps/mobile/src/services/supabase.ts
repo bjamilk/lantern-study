@@ -17,6 +17,7 @@ import { Platform } from 'react-native';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { classifyRefreshError, OfflineAuthError } from './authFailure';
+import { profileDisplayName } from '../hooks/profileIdentity';
 
 const isAndroidEmulator = () => {
   if (Platform.OS !== 'android') return false;
@@ -408,16 +409,24 @@ export const signInWithEmail = async (email: string, password: string) => {
 };
 
 export const signUpWithEmail = async (email: string, password: string, name?: string) => {
+  // Never seed the display name from the email address. The old
+  // `name || email.split('@')[0]` wrote the email local part into
+  // `user_metadata.name`, which then became a fake avatar chip and, once
+  // copied into `profiles.name`, exactly the leak the server trigger was just
+  // stopped from doing. The shared planner keeps a genuine name (including one
+  // that equals the local part) and drops a literal address or an empty name;
+  // when it resolves to nothing we omit the field entirely so no email-derived
+  // name is ever stored. (This path is currently unreachable from the UI —
+  // SignUpScreen calls `supabase.auth.signUp` directly — but the guard stands.)
+  const resolvedName = profileDisplayName({ metadataName: name ?? null, email });
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
-      data: {
-        name: name || email.split('@')[0],
-      },
+      data: resolvedName ? { name: resolvedName } : {},
     },
   });
-  
+
   if (error) throw error;
   return data;
 };

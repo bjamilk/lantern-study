@@ -4,6 +4,7 @@ import { Message, MessageType, QuestionType, MatchingItem, User, Group, Question
 import { Avatar } from './ui';
 import { ResolvedStorageImg } from './ui/ResolvedStorageImg';
 import { resolveAvatarSrc } from '../utils/avatar';
+import { withEmailSafeName } from '../utils/displayIdentity';
 import { useUIStore } from '../stores/uiStore';
 import { useResolvedStorageUrl } from '../hooks/useResolvedStorageUrl';
 import { featureAccents } from '@lantern/shared/design';
@@ -36,7 +37,15 @@ function formatSenderLabel(
   sender: { id?: string; username?: string | null; name?: string | null } | undefined,
   members?: Group['members']
 ): string {
-  return resolveGroupChatSenderLabel(sender ?? {}, members);
+  // Drop an email-shaped name from the sender and the roster BEFORE the shared
+  // helper sees it: the helper collapses an address to its local part
+  // ('nimaj22@x.com' -> 'nimaj22'), which would paint an address's local part on
+  // a chat row that everyone in the group reads. Resolution then falls through
+  // to an @username or the neutral "Member". Ids and avatars are untouched.
+  return resolveGroupChatSenderLabel(
+    withEmailSafeName(sender ?? {}),
+    members?.map(withEmailSafeName)
+  );
 }
 
 interface MessageItemProps {
@@ -417,6 +426,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
         ) : (
           <Avatar
             name={formatSenderLabel(message.sender, group?.members)}
+            id={message.sender?.id ?? message.senderId}
             src={resolveAvatarSrc(
               resolveGroupChatAvatarUrl(message.sender ?? {}, group?.members),
               lowDataMode

@@ -29,7 +29,7 @@ import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discove
 import type { ChatStackParamList } from '../../navigation/types';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { toTab } from '../../navigation/nestedTab';
-import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
+import { profileDisplayName } from '../../hooks/profileIdentity';
 
 type CreateGroupParams = ChatStackParamList['CreateGroup'];
 
@@ -102,6 +102,7 @@ function StepFooter({ children }: { children: React.ReactNode }) {
 
 export function CreateGroupScreen({ navigation, route }: Props) {
   const user = useAuthStore(s => s.user);
+  const profileName = useAuthStore(s => s.profileName);
   const createGroup = useGroupStore(s => s.createGroup);
   const parentId = route.params?.parentId;
   const parentName = route.params?.parentName;
@@ -250,12 +251,19 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
     setIsCreating(true);
     try {
-      // Never the address: every member of the new group sees this name.
+      // Never the address, nor the local part it collapses to: every member of
+      // the new group sees this name, so it goes through the same pure planner
+      // every mobile surface uses. A genuine name survives; a nameless account
+      // resolves to '' and the neutral 'User' stands in — never "nimaj22".
       const ownerName =
-        scrubEmailFromDisplayName(user.user_metadata?.name) ||
-        scrubEmailFromDisplayName(user.user_metadata?.full_name) ||
-        scrubEmailFromDisplayName(user.email) ||
-        'User';
+        profileDisplayName({
+          profileName,
+          metadataName:
+            (typeof user.user_metadata?.name === 'string' && user.user_metadata.name) ||
+            (typeof user.user_metadata?.full_name === 'string' && user.user_metadata.full_name) ||
+            null,
+          email: user.email ?? null,
+        }) || 'User';
 
       const created = await createGroup({
         name: groupName.trim(),

@@ -1723,6 +1723,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <div className="relative flex-shrink-0">
               <Avatar
                 name={name}
+                id={isGroup ? chat.id : dmPeerId}
                 src={resolveAvatarSrc(avatarUrl, lowDataMode)}
                 size="md"
                 localOnly={lowDataMode}

@@ -85,6 +85,7 @@ function FormattedBubbleText({ content, color }: { content: string; color: strin
   );
 }
 import { useAuthStore } from '../stores/authStore';
+import { profileDisplayName } from '../hooks/profileIdentity';
 import { useAppTheme } from '../theme';
 import { Button } from './ui';
 import { transcribeAudioForNote } from '../services/notes';
@@ -145,6 +146,7 @@ const COMPOSER_KEYBOARD_BEHAVIOR: 'padding' | undefined =
 export function AICompanionPanel({ context }: Props) {
   const theme = useAppTheme();
   const user = useAuthStore(s => s.user);
+  const profileName = useAuthStore(s => s.profileName);
   const showToast = useToastStore(s => s.showToast);
   const {
     isOpen,
@@ -206,11 +208,19 @@ export function AICompanionPanel({ context }: Props) {
   const secondsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const transcribeAbortRef = useRef<AbortController | null>(null);
 
+  // Resolved through the same pure planner every mobile surface uses, so the
+  // companion greets a genuine name — including one that equals the email local
+  // part — but never the email address itself. 'Student' is the neutral
+  // fallback when nothing genuine is known; the local part is never used.
   const userName =
-    user?.user_metadata?.name ||
-    user?.user_metadata?.first_name ||
-    user?.email?.split('@')[0] ||
-    'Student';
+    profileDisplayName({
+      profileName,
+      metadataName:
+        (typeof user?.user_metadata?.name === 'string' && user.user_metadata.name) ||
+        (typeof user?.user_metadata?.first_name === 'string' && user.user_metadata.first_name) ||
+        null,
+      email: user?.email ?? null,
+    }) || 'Student';
 
   const enrichedContext: CompanionUserContext = useMemo(
     () => ({
