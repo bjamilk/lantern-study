@@ -146,6 +146,10 @@ export default function AddExpenseScreen() {
                     category === cat.id && styles.categoryNameActive,
                   ]}
                   numberOfLines={2}
+                  // A long single word ("Accommodation") shrinks to fit its
+                  // tile rather than breaking mid-word into "Accomm odation …".
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
                 >
                   {cat.label}
                 </Text>

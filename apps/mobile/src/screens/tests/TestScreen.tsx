@@ -19,6 +19,7 @@ import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../
 import { matchesCourseFilter, matchesTopicFilter, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import { getMyActiveCourses } from '../../services/academic';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
+import { pluralize } from '@lantern/shared/utils/plural';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
@@ -459,7 +460,7 @@ export default function TestScreen() {
         <View style={styles.testMeta}>
           <View style={styles.metaItem}>
             <AppIcon name="help-circle" size={14} color={colors.textSecondary} />
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{item.questionCount} questions</Text>
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>{pluralize(item.questionCount, 'question')}</Text>
           </View>
           <View style={styles.metaItem}>
             <AppIcon name="time" size={14} color={colors.textSecondary} />

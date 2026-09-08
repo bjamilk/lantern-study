@@ -19,6 +19,7 @@ import { BUYER_ACTION_ORDER_STATUSES, orderNeedsSeller } from '../../stores/mark
 import type { MarketplaceOrder } from '@lantern/shared/types';
 import { Button } from '../../components/ui';
 import { formatPrice, ListingImage } from './marketplaceHelpers';
+import { orderRowMeta } from './orderRowDisplay';
 import { OrderStatusPill } from './components/OrderStatusPill';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -280,6 +281,13 @@ export function OrdersScreen({
                         <Text className="text-xs text-lantern-text-tertiary">Qty {item.quantity}</Text>
                       ) : null}
                     </View>
+                    {/* A reference and the date, so three same-item orders are
+                        told apart and a buyer can quote one to the seller. */}
+                    {orderRowMeta(item) ? (
+                      <Text className="text-caption text-lantern-text-tertiary mt-0.5">
+                        {orderRowMeta(item)}
+                      </Text>
+                    ) : null}
                   </View>
                 </Pressable>
                 {action ? (

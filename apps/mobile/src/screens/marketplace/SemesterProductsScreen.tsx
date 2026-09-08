@@ -10,6 +10,7 @@ import {
   type SemesterPackProposal,
   type SemesterPackProposalResponse,
 } from '@lantern/shared/marketplace';
+import { pluralize } from '@lantern/shared/utils/plural';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
@@ -107,7 +108,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
         ) : (
           <>
             <Text className="text-xs text-lantern-text-tertiary mb-3">
-              {remaining} credits left · max {cap} pack{cap === 1 ? '' : 's'} today
+              {pluralize(remaining, 'credit')} left · max {pluralize(cap, 'pack')} today
             </Text>
             {proposals.map((p: SemesterPackProposal) => {
               const checked = selected.has(p.courseId);
@@ -125,7 +126,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
                   <View className="flex-1">
                     <Text className="text-sm font-semibold text-lantern-text">{p.suggestedTitle}</Text>
                     <Text className="text-xs text-lantern-text-tertiary mt-0.5">
-                      {p.courseCode} · {p.noteCount} notes · {p.creditCost} credits
+                      {p.courseCode} · {pluralize(p.noteCount, 'note')} · {pluralize(p.creditCost, 'credit')}
                     </Text>
                   </View>
                 </Pressable>
@@ -133,11 +134,11 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
             })}
             {overCap ? (
               <Text className="text-sm text-red-500 mt-2">
-                Selected cost {totalCredits} credits; you have {remaining}. Uncheck some courses.
+                Selected cost {pluralize(totalCredits, 'credit')}; you have {remaining}. Uncheck some courses.
               </Text>
             ) : (
               <Text className="text-sm text-lantern-text-secondary mt-2">
-                Total: {totalCredits} credits
+                Total: {pluralize(totalCredits, 'credit')}
               </Text>
             )}
             <Pressable

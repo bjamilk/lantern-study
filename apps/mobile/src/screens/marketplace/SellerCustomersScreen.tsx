@@ -4,6 +4,8 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { fetchSellerBuyers } from '../../services/api';
 import type { SellerBuyerContact, SellerCustomerSegment } from '@lantern/shared/types';
+import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
+import { pluralize } from '@lantern/shared/utils/plural';
 import { formatPrice } from './marketplaceHelpers';
 import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -125,11 +127,11 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
                 <View className="flex-1">
                   <Text className="font-semibold text-lantern-text">{item.name}</Text>
                   <Text className="text-xs text-lantern-text-secondary mt-1">
-                    Last active {new Date(item.lastInteractionAt).toLocaleDateString()}
+                    Last active {formatDisplayDate(item.lastInteractionAt)}
                   </Text>
                 </View>
                 <View className="items-end">
-                  <Text className="text-sm">{item.completedPurchases} purchases</Text>
+                  <Text className="text-sm">{pluralize(item.completedPurchases, 'purchase')}</Text>
                   <Text className="text-sm text-lantern-primary-text">{formatPrice(item.totalSpent)} spent</Text>
                 </View>
               </View>

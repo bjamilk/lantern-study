@@ -44,6 +44,7 @@ export * from './groupPerformanceSeries';
 export * from './marketplaceOfferTurn';
 export * from './aiChatQuery';
 export * from './dateOnly';
+export * from './displayDate';
 export * from './markdownPreview';
 export * from './questionVerification';
 export * from './plural';

@@ -22,6 +22,7 @@ import {
 import { uploadMarketplaceImage } from '../../services/marketplaceImageUpload';
 import type { MarketplaceOrder } from '@lantern/shared/types';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
+import { useTheme } from '../../theme';
 import { Button } from '../../components/ui';
 import { formatPrice } from './marketplaceHelpers';
 import { buildOrderReceiptText } from './orderReceipt';
@@ -29,6 +30,13 @@ import { OpenDisputeModal } from './OpenDisputeModal';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { OrderStatusPill, orderNextStep } from './components/OrderStatusPill';
 import { AppIcon } from '../../components/ui/AppIcon';
+import {
+  ORDER_NOT_FOUND_BODY,
+  ORDER_NOT_FOUND_TITLE,
+  ORDERS_ROUTE,
+  orderBackTarget,
+  orderDetailView,
+} from './orderDetailState';
 
 const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
 
@@ -43,6 +51,11 @@ function timelineIndexForStatus(status: string): number {
 
 type NavigationProp = {
   goBack: () => void;
+  // On a cold-start deep link (linking.ts maps marketplace/orders/:orderId)
+  // this screen can be the ONLY route on the stack, so goBack() is a no-op.
+  // canGoBack() lets the header fall back to the Orders list instead of a
+  // dead button — the guard MarketplaceGate.tsx already uses.
+  canGoBack: () => boolean;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
 };
 
@@ -62,7 +75,16 @@ export function OrderDetailScreen({
   };
 }) {
   const { user } = useAuthStore();
+  const { colors } = useTheme();
   const insets = useScreenInsets();
+
+  // Back always means something: pop the stack when there is one, else go to
+  // the Orders list. On a cold-start deep link this screen is the only route,
+  // so goBack() would be a no-op and the button would do nothing.
+  const goBackOrOrders = useCallback(() => {
+    if (orderBackTarget({ canGoBack: navigation.canGoBack() }) === 'pop') navigation.goBack();
+    else navigation.navigate(ORDERS_ROUTE);
+  }, [navigation]);
   // The old `className="px-4 pb-8"` put 28px of padding on the ScrollView's
   // OWN style (which clips the scrollable extent on Android) and did not clear
   // the ~102px absolute bottom tab bar, burying 'Leave a review'.
@@ -244,11 +266,44 @@ export function OrderDetailScreen({
     }
   };
 
-  if (loading || !order) {
+  // Loading and not-found used to render a bare centred string with no header
+  // and no back button — the tab bar was the only chrome, so a completed order
+  // the server no longer had a record of was a dead end (hardware BACK only).
+  // Give both states the same header + back affordance every pushed screen has.
+  const view = orderDetailView({ loading, hasOrder: Boolean(order) });
+  if (view !== 'ready' || !order) {
     return (
       <Screen bottom="safe">
-        <View className="flex-1 items-center justify-center">
-          {loading ? <ActivityIndicator /> : <Text>Order not found</Text>}
+        <View className="px-4 py-3 flex-row items-center">
+          <Pressable
+            hitSlop={10}
+            onPress={goBackOrOrders}
+            className="p-2 -ml-2"
+            accessibilityRole="button"
+            accessibilityLabel="Go back"
+          >
+            <AppIcon name="arrow-back" size={24} color={colors.textSecondary} />
+          </Pressable>
+          <Text className="text-heading font-bold flex-1 ml-2" numberOfLines={1}>
+            Order
+          </Text>
+        </View>
+        <View className="flex-1 items-center justify-center px-8">
+          {view === 'loading' ? (
+            <ActivityIndicator />
+          ) : (
+            <>
+              <Text className="text-heading font-bold text-lantern-text text-center">
+                {ORDER_NOT_FOUND_TITLE}
+              </Text>
+              <Text className="text-caption text-lantern-text-secondary text-center mt-2">
+                {ORDER_NOT_FOUND_BODY}
+              </Text>
+              <Button className="mt-5" onPress={goBackOrOrders}>
+                Back to orders
+              </Button>
+            </>
+          )}
         </View>
       </Screen>
     );
@@ -267,10 +322,16 @@ export function OrderDetailScreen({
         }}
       />
       <View className="px-4 py-3 flex-row items-center">
-        <Pressable hitSlop={10} onPress={() => navigation.goBack()} className="p-2 -ml-2">
-          <AppIcon name="arrow-back" size={24} color="#64748b" />
+        <Pressable
+          hitSlop={10}
+          onPress={goBackOrOrders}
+          className="p-2 -ml-2"
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+        >
+          <AppIcon name="arrow-back" size={24} color={colors.textSecondary} />
         </Pressable>
-        <Text className="text-lg font-bold flex-1 ml-2" numberOfLines={1}>
+        <Text className="text-heading font-bold flex-1 ml-2" numberOfLines={1}>
           {order.listing?.title || 'Order'}
         </Text>
         <ShopHeaderActions navigate={(screen, params) => navigation.navigate(screen, params)} />

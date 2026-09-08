@@ -80,6 +80,7 @@ import {
   savedSessionsOverflowLabel,
 } from '@lantern/shared/utils';
 import { isCardDue } from '@lantern/shared/utils/srs';
+import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import { isQuizzableNote } from '@lantern/shared/utils/noteStudyContent';
 import { useToastStore } from '../../stores/toastStore';
 
@@ -1277,7 +1278,7 @@ export function DashboardScreen({ navigation }: Props) {
                       <Text className="text-xs text-lantern-text-secondary mt-0.5">
                         {analysisLoadingId === test.id
                           ? 'Loading analysis…'
-                          : `${new Date(test.completedAt).toLocaleDateString()} · ${formatDuration(test.timeSpent)}`}
+                          : `${formatDisplayDate(test.completedAt)} · ${formatDuration(test.timeSpent)}`}
                       </Text>
                     </View>
                     <View

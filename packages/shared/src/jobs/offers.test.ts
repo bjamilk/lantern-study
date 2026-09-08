@@ -167,13 +167,13 @@ describe("describeJobOffer", () => {
         { compensation: offer().compensation, startDate: "2026-09-01" },
         { locale: "en-US" },
       ),
-    ).toBe("NGN 150000 · starts Sep 1");
+    ).toBe("₦150,000 · starts Sep 1");
   });
 
   it("omits the start date when none was agreed", () => {
     expect(
       describeJobOffer({ compensation: offer().compensation, startDate: null }),
-    ).toBe("NGN 150000");
+    ).toBe("₦150,000");
   });
 });
 

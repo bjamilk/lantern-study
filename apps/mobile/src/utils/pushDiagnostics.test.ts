@@ -11,6 +11,7 @@ import {
   jobPushFailureDetail,
   jobPushFailureRows,
   describeRegisterOutcome,
+  registerOutcomeParts,
   maskToken,
   identityMatches,
   pushDiagnosticRows,
@@ -20,6 +21,7 @@ import {
   hasPushDetails,
   pushReadiness,
   pushReadinessSummary,
+  notificationCategoriesState,
   type PushReadinessInput,
 } from './pushDiagnostics';
 
@@ -223,6 +225,43 @@ describe('describeRegisterOutcome', () => {
   });
 });
 
+describe('registerOutcomeParts', () => {
+  // The exact string the device printed at a student after one press of
+  // "Re-register this device": a docs URL, a build id, and an internal
+  // Firebase message. None of it may appear in the half that is always shown.
+  const RAW =
+    'Encountered an error: Make sure to complete the guide at ' +
+    'https://docs.expo.dev/push-notifications/fcm-credentials/ — ' +
+    'Default FirebaseApp is not initialized in this process com.lanternstudy.app.';
+
+  it('shows a plain sentence and keeps the raw text for the disclosure', () => {
+    const parts = registerOutcomeParts({ token: null, uploaded: false, error: RAW });
+    expect(parts.value).toBe('Notifications are not set up for this build yet.');
+    expect(parts.value).not.toMatch(/http|firebase|com\.lanternstudy/i);
+    expect(parts.detail).toBe(RAW);
+  });
+
+  it('falls back to an honest generic line when the shape is unrecognised', () => {
+    const parts = registerOutcomeParts({
+      token: null,
+      uploaded: false,
+      error: 'something nobody has seen before',
+    });
+    expect(parts.value).toBe('This phone could not get a notification token.');
+    expect(parts.value).not.toContain('something nobody has seen before');
+    expect(parts.detail).toBe('something nobody has seen before');
+  });
+
+  it('leaves the non-failure outcomes exactly as they were, with no detail', () => {
+    expect(registerOutcomeParts({ token: null, uploaded: false })).toEqual({
+      value: describeRegisterOutcome({ token: null, uploaded: false }),
+    });
+    expect(
+      registerOutcomeParts({ token: 'ExponentPushToken[abcdef123456]', uploaded: true })
+    ).toEqual({ value: 'Registered …123456 with the server.' });
+  });
+});
+
 describe('push app identity', () => {
   it('says nothing when the identity is unknown', () => {
     expect(pushIdentityRows(null)).toEqual([]);
@@ -283,11 +322,42 @@ describe('pushErrorRows', () => {
     expect(pushErrorRows('')).toEqual([]);
   });
 
-  it('tells the student it failed and keeps the build words for the disclosure', () => {
-    const [row] = pushErrorRows('Default FirebaseApp is not initialized');
-    expect(row.value).toBe('This phone could not get a notification token.');
+  it('classifies the FirebaseApp failure the same way a job push failure is', () => {
+    // The device defect: "Last registration error: Make sure to complete the
+    // guide at https://docs.expo.dev/push-notifications/fcm-credentials/ :
+    // Default FirebaseApp is not initialized in this process
+    // com.lanternstudy.app. Make sure to call FirebaseApp.initializeApp(...)"
+    // was printed straight at a student — an Expo docs URL and a bundle id.
+    const raw =
+      'Make sure to complete the guide at ' +
+      'https://docs.expo.dev/push-notifications/fcm-credentials/ : ' +
+      'Default FirebaseApp is not initialized in this process com.lanternstudy.app.';
+    const [row] = pushErrorRows(raw);
+    // The student's half: a plain, classified sentence, no build words.
+    expect(row.value).toBe('Notifications are not set up for this build yet.');
+    expect(row.value).not.toMatch(/firebase/i);
+    expect(row.value).not.toContain('com.lanternstudy');
+    expect(row.value).not.toContain('docs.expo.dev');
     // Verbatim, still — behind "Show details", where a bug report can reach it.
-    expect(row.detail).toBe('Default FirebaseApp is not initialized');
+    expect(row.detail).toBe(raw);
+    expect(row.state).toBe('bad');
+  });
+
+  it('never leaks the Expo account handle into the plain sentence', () => {
+    const raw =
+      'Could not find APNs credentials for com.lanternstudy.app.dev ' +
+      '(@bjamilk/lantern-study). You may need to generate or upload new push credentials.';
+    const [row] = pushErrorRows(raw);
+    expect(row.value).toBe('Notifications are not set up for this build yet.');
+    expect(row.value).not.toContain('@bjamilk');
+    expect(row.value).not.toContain('APNs');
+    expect(row.detail).toBe(raw);
+  });
+
+  it('keeps the honest generic line when the error is unrecognised', () => {
+    const [row] = pushErrorRows('502 Bad Gateway');
+    expect(row.value).toBe('This phone could not get a notification token.');
+    expect(row.detail).toBe('502 Bad Gateway');
     expect(row.state).toBe('bad');
   });
 });
@@ -303,6 +373,25 @@ describe('classifyPushFailure', () => {
     expect(classifyPushFailure('DeviceNotRegistered')).toBe('device-not-registered');
     expect(classifyPushFailure('InvalidCredentials')).toBe('invalid-credentials');
     expect(classifyPushFailure('MessageRateExceeded')).toBe('rate-limited');
+  });
+
+  it('reads the Android FCM / Firebase shapes as their own kind', () => {
+    // The exact Android emulator strings, both of which name Firebase or FCM,
+    // never Apple. Kept distinct from the APNs kind so the disclosure line does
+    // not tell an Android student their Apple credentials are missing.
+    expect(classifyPushFailure('Default FirebaseApp is not initialized in this process')).toBe(
+      'fcm-credentials'
+    );
+    expect(
+      classifyPushFailure(
+        'Make sure to complete the guide at https://docs.expo.dev/push-notifications/fcm-credentials/'
+      )
+    ).toBe('fcm-credentials');
+    // The FCM URL must not be mistaken for the Apple branch, even though "push
+    // credentials" appears elsewhere in Expo's prose.
+    expect(classifyPushFailure('no FCM credentials configured for this build')).toBe(
+      'fcm-credentials'
+    );
   });
 
   it('is case-insensitive, because these arrive from three different layers', () => {
@@ -415,5 +504,78 @@ describe('pushToggleState', () => {
     const state = pushToggleState(true, { ...ready, supported: false });
     expect(state.value).toBe(false);
     expect(state.subtitle).toContain('cannot receive push');
+  });
+});
+
+describe('notificationCategoriesState', () => {
+  const live: PushReadinessInput = {
+    supported: true,
+    permission: 'granted',
+    deviceToken: 'ExponentPushToken[abcdef]',
+    server: { hasToken: true, pushEnabled: true },
+  };
+
+  it('lets the switches be live when the OS has allowed notifications', () => {
+    const state = notificationCategoriesState(live);
+    expect(state.disabled).toBe(false);
+    expect(state.note).toBe('');
+  });
+
+  it('disables the group when the OS has not allowed notifications yet', () => {
+    // The device defect: ten switches read ON directly under "Permission on
+    // this phone: Not allowed yet".
+    const state = notificationCategoriesState({ ...live, permission: 'undetermined', deviceToken: null });
+    expect(state.disabled).toBe(true);
+    expect(state.note).toMatch(/hasn't allowed notifications yet/i);
+    // Plain copy: no internal key, handle, filename or raw server text.
+    expect(state.note).not.toMatch(/permission|granted|token/i);
+  });
+
+  it('points a hard refusal at system settings', () => {
+    const state = notificationCategoriesState({ ...live, permission: 'denied', deviceToken: null });
+    expect(state.disabled).toBe(true);
+    expect(state.note).toMatch(/system settings/i);
+  });
+
+  it('disables the group when the build cannot show notifications at all', () => {
+    const state = notificationCategoriesState({
+      supported: false,
+      permission: 'unavailable',
+      deviceToken: null,
+      server: null,
+    });
+    expect(state.disabled).toBe(true);
+    expect(state.note).toMatch(/can't show notifications/i);
+  });
+
+  it('keeps the switches live for a merely-unregistered device, so local reminders still fire', () => {
+    // Gated on OS permission, NOT the server token: a local reminder needs no
+    // token, so a granted-but-unregistered phone keeps its category switches.
+    expect(
+      notificationCategoriesState({ ...live, server: { hasToken: false, pushEnabled: true } }).disabled
+    ).toBe(false);
+    // And when the server simply could not be reached.
+    expect(notificationCategoriesState({ ...live, server: null }).disabled).toBe(false);
+  });
+});
+
+describe('jobPushFailureRows — Android FCM', () => {
+  it('tells the student it is not set up, and keeps FCM words for the founder', () => {
+    const rows = jobPushFailureRows(
+      audit({
+        skippedReason: 'error',
+        error:
+          'Make sure to complete the guide at ' +
+          'https://docs.expo.dev/push-notifications/fcm-credentials/ : ' +
+          'Default FirebaseApp is not initialized in this process com.lanternstudy.app.',
+      })
+    );
+    expect(rows).toHaveLength(1);
+    // Same plain sentence as the APNs case: it is not set up for this build.
+    expect(rows[0].value).toBe('Notifications are not set up for this build yet.');
+    // But the disclosure names the ANDROID cause, not an Apple one.
+    expect(rows[0].detail).toContain('FCM');
+    expect(rows[0].detail).not.toContain('Apple');
+    expect(rows[0].detail).toContain('Default FirebaseApp is not initialized');
   });
 });

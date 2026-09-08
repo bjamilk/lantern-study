@@ -43,6 +43,7 @@ import {
 import * as api from '../../services/api';
 import { featureAccents } from '@lantern/shared/design';
 import StudyWalletPanel from './StudyWalletPanel';
+import { budgetSpendStatus } from './budgetOverviewPlanner';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
@@ -262,6 +263,12 @@ export default function BudgetScreen() {
       ? (monthExpenses / activeBudget.monthlyLimit) * 100
       : 0;
 
+  // A budget row can exist with a zero cap (category plan but no monthly
+  // limit). That is "no budget set", not "₦0 budget", so the card is a pure
+  // planner then: no denominator, no bar, and never a negative "left to spend".
+  const spendStatus = budgetSpendStatus(activeBudget?.monthlyLimit, monthExpenses);
+  const hasBudgetCap = spendStatus.kind !== 'none';
+
   const handleDeleteTransaction = useCallback((transaction: Transaction) => {
     appAlert(
       'Delete Transaction',
@@ -444,31 +451,49 @@ export default function BudgetScreen() {
             <>
               <View style={styles.budgetAmounts}>
                 <Text style={[styles.spentAmount, { color: colors.text }]}>{formatCurrency(monthExpenses)}</Text>
-                <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(activeBudget.monthlyLimit)}</Text>
+                {hasBudgetCap && (
+                  <Text style={[styles.totalAmount, { color: colors.textSecondary }]}>/ {formatCurrency(activeBudget.monthlyLimit)}</Text>
+                )}
               </View>
 
-              <View style={styles.progressContainer}>
-                <View style={[styles.progressBackground, { backgroundColor: colors.border }]}>
-                  <View
-                    style={[
-                      styles.progressBar,
-                      {
-                        width: `${Math.min(monthProgress, 100)}%`,
-                        backgroundColor: getProgressBarColor(monthProgress),
-                      },
-                    ]}
-                  />
+              {hasBudgetCap && (
+                <View style={styles.progressContainer}>
+                  <View style={[styles.progressBackground, { backgroundColor: colors.border }]}>
+                    <View
+                      style={[
+                        styles.progressBar,
+                        {
+                          width: `${Math.min(monthProgress, 100)}%`,
+                          backgroundColor: getProgressBarColor(monthProgress),
+                        },
+                      ]}
+                    />
+                  </View>
                 </View>
-              </View>
+              )}
 
-              <Text style={[styles.budgetStatus, { color: colors.textSecondary }]}>
-                {monthProgress <= 100
-                  ? `${formatCurrency(activeBudget.monthlyLimit - monthExpenses)} left to spend`
-                  : `${formatCurrency(monthExpenses - activeBudget.monthlyLimit)} over budget`}
-              </Text>
+              {spendStatus.kind === 'none' ? (
+                isCurrentMonth ? (
+                  <TouchableOpacity onPress={() => navigation.navigate('SetBudget')}>
+                    <Text style={[styles.budgetStatus, { color: featureAccents.budget, fontWeight: '600' }]}>
+                      No budget set yet — set one
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={[styles.budgetStatus, { color: colors.textSecondary }]}>No budget set</Text>
+                )
+              ) : spendStatus.kind === 'over' ? (
+                <Text style={[styles.budgetStatus, { color: '#ef4444' }]}>
+                  {formatCurrency(spendStatus.amount)} over budget
+                </Text>
+              ) : (
+                <Text style={[styles.budgetStatus, { color: colors.textSecondary }]}>
+                  {formatCurrency(spendStatus.amount)} left to spend
+                </Text>
+              )}
 
               {/* Pace — "85% spent" means nothing without knowing it is day 3. */}
-              {spendPace.verdict !== 'no-budget' && (
+              {hasBudgetCap && spendPace.verdict !== 'no-budget' && (
                 <View style={styles.paceRow}>
                   <AppIcon
                     name={

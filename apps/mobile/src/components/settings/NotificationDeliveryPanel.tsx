@@ -22,7 +22,7 @@ import {
   reRegisterPushToken,
 } from '../../services/pushNotifications';
 import {
-  describeRegisterOutcome,
+  registerOutcomeParts,
   hasPushDetails,
   pushDiagnosticRows,
   pushErrorRows,
@@ -98,7 +98,10 @@ export function NotificationDeliveryPanel() {
   // is only known once a token has actually been asked for.
   const { state, checking, identity, registerError, check } = usePushDeliveryState();
   const [working, setWorking] = useState(false);
+  // Split the same way the rows are: the plain half is always on screen, the
+  // verbatim OS/Expo sentence only behind "Show details".
   const [outcome, setOutcome] = useState<string | null>(null);
+  const [outcomeDetail, setOutcomeDetail] = useState<string | null>(null);
   /**
    * Whether the build-facing text is on screen.
    *
@@ -110,10 +113,10 @@ export function NotificationDeliveryPanel() {
 
   const reRegister = useCallback(async () => {
     setWorking(true);
-    // The outcome is shown verbatim — including the server's own refusal
-    // text, which is the sentence that actually explains the failure.
     const result = await reRegisterPushToken();
-    setOutcome(describeRegisterOutcome(result));
+    const parts = registerOutcomeParts(result);
+    setOutcome(parts.value);
+    setOutcomeDetail(parts.detail ?? null);
     setWorking(false);
     await check();
   }, [check]);
@@ -137,15 +140,31 @@ export function NotificationDeliveryPanel() {
     ...jobPushFailureRows(latestJobPushAudit),
   ];
   const readiness = pushReadiness(state);
+  /**
+   * The header tick, which is a claim about THIS phone.
+   *
+   * `pushReadiness` asks the server, and the server holds ONE token per
+   * account — so "a token is on file" can be a token minted on another phone,
+   * or a stale one from before this build. When registration has failed in
+   * this process, this device demonstrably could not get a token, and a green
+   * tick over that red row is the exact contradiction the screenshot showed.
+   * Green means every check this panel can make agrees.
+   */
+  const headerReady = readiness === 'ready' && !registerError;
   const blocked = state.permission === 'denied' || state.permission === 'unavailable';
 
   return (
     <View className="mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4">
       <View className="flex-row items-center gap-2">
         <AppIcon
-          name={readiness === 'ready' ? 'checkmark-circle' : 'alert-circle'}
+          name={headerReady ? 'checkmark-circle' : 'alert-circle'}
           size={18}
-          color={readiness === 'ready' ? colors.success : colors.textSecondary}
+          // Green tick ONLY when this phone will genuinely be reached. On
+          // device the header showed a green tick above "Push token on this
+          // device: None yet" and two red error rows. Anything short of ready
+          // — "off" or "couldn't check" — is an honest amber warning, never a
+          // grey that reads as neutral.
+          color={headerReady ? colors.success : colors.warning}
         />
         <Text className="text-heading text-lantern-text flex-1">
           Notification delivery
@@ -154,7 +173,13 @@ export function NotificationDeliveryPanel() {
       </View>
 
       <Text className="mt-1 text-caption text-lantern-text-secondary">
-        {pushReadinessSummary(state)}
+        {/* The sentence follows the tick: it must not promise this phone will
+            be reached while this phone's own registration has just failed. */}
+        {headerReady
+          ? pushReadinessSummary(state)
+          : readiness === 'ready'
+            ? "This phone couldn't finish setting up notifications. Try re-registering it below."
+            : pushReadinessSummary(state)}
       </Text>
 
       <View className="mt-3 gap-2">
@@ -193,7 +218,7 @@ export function NotificationDeliveryPanel() {
         ))}
       </View>
 
-      {hasPushDetails(rows) ? (
+      {hasPushDetails(rows) || outcomeDetail ? (
         <Pressable
           onPress={() => setShowDetails((open) => !open)}
           accessibilityRole="button"
@@ -207,9 +232,16 @@ export function NotificationDeliveryPanel() {
       ) : null}
 
       {outcome ? (
-        <Text className="mt-3 text-caption text-lantern-text" accessibilityLiveRegion="polite">
-          {outcome}
-        </Text>
+        <View className="mt-3">
+          <Text className="text-caption text-lantern-text" accessibilityLiveRegion="polite">
+            {outcome}
+          </Text>
+          {outcomeDetail && showDetails ? (
+            <Text className="mt-1 text-caption text-lantern-text-tertiary" selectable>
+              {outcomeDetail}
+            </Text>
+          ) : null}
+        </View>
       ) : null}
 
       <View className="mt-3 flex-row flex-wrap gap-2">

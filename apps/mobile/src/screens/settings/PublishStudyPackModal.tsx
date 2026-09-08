@@ -13,6 +13,7 @@ import {
 import { appAlert } from '../../components/ui/appDialog';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { CampusPicker } from '../marketplace/CampusPicker';
+import { deriveStudyProductTitle } from '../marketplace/studyProductTitle';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
@@ -82,7 +83,9 @@ export function PublishStudyPackModal({
 }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const [title, setTitle] = useState(defaultTitle || '');
+  // A pack seeded from a deck arrives named `From: <upload filename>`; the
+  // seller sees a human title to edit, never the raw filename.
+  const [title, setTitle] = useState(deriveStudyProductTitle(defaultTitle));
   const [description, setDescription] = useState(defaultDescription || '');
   const [price, setPrice] = useState(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
   const [campusId, setCampusId] = useState('');
@@ -96,7 +99,7 @@ export function PublishStudyPackModal({
 
   useEffect(() => {
     if (!visible) return;
-    setTitle(defaultTitle || '');
+    setTitle(deriveStudyProductTitle(defaultTitle));
     setDescription(defaultDescription || '');
     setPrice(defaultPrice != null && defaultPrice > 0 ? String(defaultPrice) : '');
     setCampusId('');
@@ -128,6 +131,9 @@ export function PublishStudyPackModal({
     !sourcesError &&
     hasContent &&
     !!title.trim() &&
+    // A study pack sold with "No description provided" reads like an abandoned
+    // listing; buyers get one sentence about what is inside before they pay.
+    !!description.trim() &&
     !!campusId &&
     !priceInvalid &&
     !courseError;
@@ -248,19 +254,22 @@ export function PublishStudyPackModal({
             </View>
 
             <View style={{ gap: 6 }}>
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
-                Description (optional)
-              </Text>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>Description</Text>
               <TextInput
                 value={description}
                 onChangeText={setDescription}
                 multiline
                 numberOfLines={3}
                 maxLength={1000}
-                placeholder="What's covered…"
+                placeholder="What's covered, and who it's for…"
                 placeholderTextColor={colors.textTertiary}
                 style={{ ...inputStyle, minHeight: 72, textAlignVertical: 'top' }}
               />
+              {!description.trim() ? (
+                <Text className="text-caption text-lantern-text-tertiary">
+                  Tell buyers what's inside — one line is enough.
+                </Text>
+              ) : null}
             </View>
 
             <View style={{ gap: 6 }}>

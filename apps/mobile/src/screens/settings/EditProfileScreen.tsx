@@ -197,8 +197,10 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
       >
         <View className="items-center py-6">
           <Pressable onPress={() => void handlePickAvatar()} className="relative">
+            {/* Never the email: an initials chip built from an address is a
+                person who does not exist. No name draws a neutral "?". */}
             <ResolvedAvatar
-              name={name || user?.email || 'U'}
+              name={name}
               uri={previewUrl || avatarUrl}
               size={96}
             />

@@ -61,6 +61,7 @@ export const PUSH_FAILED_STUDENT_COPY =
  */
 export type PushFailureKind =
   | 'apns-credentials'
+  | 'fcm-credentials'
   | 'device-not-registered'
   | 'invalid-credentials'
   | 'rate-limited'
@@ -75,6 +76,7 @@ export type PushFailureKind =
  */
 export const PUSH_FAILURE_KIND_PLAIN_COPY: Record<PushFailureKind, string> = {
   'apns-credentials': 'Notifications are not set up for this build yet.',
+  'fcm-credentials': 'Notifications are not set up for this build yet.',
   'invalid-credentials': 'Notifications are not set up for this build yet.',
   'device-not-registered': 'This phone needs to register for notifications again.',
   'rate-limited': 'Too many notifications at once — this one was dropped.',
@@ -84,6 +86,9 @@ export const PUSH_FAILURE_KIND_PLAIN_COPY: Record<PushFailureKind, string> = {
 /** What each kind means, for the diagnostics panel only. */
 export const PUSH_FAILURE_KIND_COPY: Record<PushFailureKind, string> = {
   'apns-credentials': 'No Apple push credentials are uploaded for this build.',
+  // The Android twin of the APNs case: a build with no google-services / FCM
+  // key, or one where Firebase was never initialised, is not set up for push.
+  'fcm-credentials': 'Android push (FCM) is not configured for this build.',
   'device-not-registered': 'This phone\u2019s push token is no longer valid — re-register it.',
   'invalid-credentials': 'The push credentials for this build were rejected.',
   'rate-limited': 'Expo was sending too fast and dropped this one.',
@@ -102,7 +107,14 @@ export const classifyPushFailure = (
 ): PushFailureKind => {
   const text = (raw ?? '').toLowerCase();
   if (!text.trim()) return 'unknown';
-  if (text.includes('apns') || text.includes('fcm credentials') || text.includes('push credentials')) {
+  // Android's "not configured" shapes: a missing google-services / FCM key, or
+  // Firebase never initialised in this build. Checked BEFORE the APNs branch so
+  // the FCM guide URL Expo returns (…/push-notifications/fcm-credentials/) is
+  // read as an Android problem, not mistaken for an Apple one.
+  if (text.includes('firebase') || text.includes('fcm')) {
+    return 'fcm-credentials';
+  }
+  if (text.includes('apns') || text.includes('push credentials')) {
     return 'apns-credentials';
   }
   if (text.includes('devicenotregistered')) return 'device-not-registered';
@@ -378,6 +390,41 @@ export const describeRegisterOutcome = (outcome: PushRegisterOutcome): string =>
   return `Registered ${maskToken(outcome.token)} with the server.`;
 };
 
+/**
+ * The same outcome, split the way every other row on this panel is split.
+ *
+ * `describeRegisterOutcome` returns one string that begins "Failed: " and then
+ * pastes the OS/Expo sentence straight after it — which is how the panel came
+ * to print "Failed: Make sure to complete the guide at https://docs.expo.dev/…
+ * Default FirebaseApp is not initialized in this process com.lanternstudy.app"
+ * at a student who had only pressed "Re-register this device". The verbatim
+ * text is not deleted: it moves behind the panel's existing "Show details"
+ * disclosure, where a bug report can still reach it. `describeRegisterOutcome`
+ * is left alone for callers that want the single joined string.
+ */
+export interface PushRegisterOutcomeParts {
+  /** The half a student reads. Never carries a URL, a build id or a handle. */
+  value: string;
+  /** The build-facing half, for the disclosure only. */
+  detail?: string;
+}
+
+export const registerOutcomeParts = (
+  outcome: PushRegisterOutcome
+): PushRegisterOutcomeParts => {
+  if (outcome.error) {
+    const kind = classifyPushFailure(outcome.error);
+    return {
+      value:
+        kind === 'unknown'
+          ? 'This phone could not get a notification token.'
+          : PUSH_FAILURE_KIND_PLAIN_COPY[kind],
+      detail: outcome.error,
+    };
+  }
+  return { value: describeRegisterOutcome(outcome) };
+};
+
 // ─────────────────────────────────────────────────────────────
 // Which app is this token for?
 // ─────────────────────────────────────────────────────────────
@@ -466,13 +513,23 @@ export const pushIdentityRows = (
  */
 export const pushErrorRows = (error: string | null | undefined): PushDiagnosticRow[] => {
   if (!error) return [];
+  // Same split, and the SAME classifier, as a job push failure. On device this
+  // row printed the raw "Make sure to complete the guide at
+  // https://docs.expo.dev/… Default FirebaseApp is not initialized in this
+  // process com.lanternstudy.app" — an Expo docs URL and a build id — straight
+  // at a student. A recognised shape now gets its plain, classified sentence
+  // ("Notifications are not set up for this build yet."); an unrecognised one
+  // keeps the honest generic line. The verbatim text stays behind the
+  // disclosure either way, where a bug report can reach it.
+  const kind = classifyPushFailure(error);
   return [
     {
       key: 'register-error',
       label: 'Last registration error',
-      // Same split as the failure row: the student is told THAT it failed;
-      // the OS/Expo sentence that says why is for the disclosure.
-      value: 'This phone could not get a notification token.',
+      value:
+        kind === 'unknown'
+          ? 'This phone could not get a notification token.'
+          : PUSH_FAILURE_KIND_PLAIN_COPY[kind],
       detail: error,
       state: 'bad',
     },
@@ -578,4 +635,56 @@ export const pushToggleState = (
     needsPermission: false,
     blockedInSystemSettings,
   };
+};
+
+// ─────────────────────────────────────────────────────────────
+// The per-category switches, and whether they can do anything
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * Whether the ten per-category notification switches can deliver anything.
+ *
+ * Settings listed a "Push & in-app" group — Daily Reminders, Group Activity,
+ * Test Results and seven more — every switch reading ON, directly beneath a
+ * panel that said "Permission on this phone: Not allowed yet". None of them
+ * could deliver a thing, local OR push, because the OS had allowed no
+ * notification at all. A switch that writes a preference nothing will ever
+ * read is a promise the app cannot keep.
+ *
+ * The group is gated on the one precondition every category shares: this build
+ * supports notifications AND the OS has granted permission. It is deliberately
+ * NOT gated on the server token — a local reminder still fires without one —
+ * so a device that is merely unregistered keeps its reminders. When this
+ * returns `disabled`, Settings dims the group and shows `note`; the master
+ * Push switch above it stays live so the student can grant permission there.
+ */
+export interface NotificationCategoriesState {
+  /** The category switches cannot deliver anything — render them inert. */
+  disabled: boolean;
+  /** One line saying why, or '' when the switches are live. */
+  note: string;
+}
+
+export const notificationCategoriesState = (
+  input: PushReadinessInput
+): NotificationCategoriesState => {
+  if (!input.supported) {
+    return {
+      disabled: true,
+      note: "This build can't show notifications, so these choices won't take effect here.",
+    };
+  }
+  if (input.permission === 'denied' || input.permission === 'unavailable') {
+    return {
+      disabled: true,
+      note: "Notifications are blocked in your phone's system settings, so none of these can be delivered yet.",
+    };
+  }
+  if (input.permission !== 'granted') {
+    return {
+      disabled: true,
+      note: "This phone hasn't allowed notifications yet, so none of these can be delivered.",
+    };
+  }
+  return { disabled: false, note: '' };
 };

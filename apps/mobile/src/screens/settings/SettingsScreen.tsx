@@ -50,12 +50,14 @@ import { useChatWallpaperStore } from '../../stores/chatWallpaperStore';
 import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner';
 import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
+import { pluralize } from '@lantern/shared/utils/plural';
+import { dailyGoalSummary } from './dailyGoalSummary';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 import {
   NotificationDeliveryPanel,
   usePushDeliveryState,
 } from '../../components/settings/NotificationDeliveryPanel';
-import { pushToggleState } from '../../utils/pushDiagnostics';
+import { pushToggleState, notificationCategoriesState } from '../../utils/pushDiagnostics';
 import { reRegisterPushToken } from '../../services/pushNotifications';
 
 // First entry must match DEFAULT_USER_SETTINGS.appearance.accentColor so a fresh
@@ -401,6 +403,14 @@ export default function SettingsScreen() {
    */
   const { state: pushDelivery, check: recheckPushDelivery } = usePushDeliveryState();
   const pushToggle = pushToggleState(settings.notifications.pushEnabled, pushDelivery);
+  /**
+   * Whether the per-category switches below the master toggle can deliver
+   * anything on this phone. They read ON while the OS had allowed no
+   * notification at all; when nothing can be delivered they are dimmed and made
+   * inert, with one line saying why. The master Push switch stays live so the
+   * student can grant permission from here.
+   */
+  const notifCategories = notificationCategoriesState(pushDelivery);
 
   /**
    * Turning push on has two halves, and only one of them is a setting.
@@ -494,8 +504,13 @@ export default function SettingsScreen() {
             so an account whose profile said "Benjamin Amadi" showed "User"
             and an orange "NI" chip one tap later. */}
         <View style={[styles.profileSection, { backgroundColor: colors.card }]}>
+          {/* The seed is the RESOLVED name only. Falling back to the email
+              handed the initials chip letters from an address ("nimaj22@…" →
+              "NI") and read the whole address aloud as the avatar's label —
+              the same fake identity `profileIdentity` exists to kill. With no
+              name, ResolvedAvatar draws a neutral "?". */}
           <ResolvedAvatar
-            name={identity.displayName || identity.email || ''}
+            name={identity.displayName}
             uri={identity.avatarUrl}
             size={56}
           />
@@ -555,6 +570,28 @@ export default function SettingsScreen() {
               }
               showChevron={false}
             />
+            {/*
+              The ten category switches below the master toggle read ON while
+              the OS had allowed no notification at all — nothing they turn on
+              could ever be delivered. When this phone cannot show a
+              notification, the group is dimmed, made inert and hidden from the
+              screen reader, with one line saying why. The master Push switch
+              above stays live so permission can be granted from here.
+            */}
+            {notifCategories.disabled ? (
+              <Text
+                style={[styles.settingSubtitle, styles.pushCategoryNote, { color: colors.textSecondary }]}
+              >
+                {notifCategories.note}
+              </Text>
+            ) : null}
+            <View
+              pointerEvents={notifCategories.disabled ? 'none' : 'auto'}
+              style={{ opacity: notifCategories.disabled ? 0.45 : 1 }}
+              importantForAccessibility={
+                notifCategories.disabled ? 'no-hide-descendants' : 'auto'
+              }
+            >
             <SettingItem
               colors={colors}
               icon="calendar"
@@ -695,6 +732,7 @@ export default function SettingsScreen() {
               }
               showChevron={false}
             />
+            </View>
           </View>
           <Text style={[styles.subGroupTitle, { color: colors.textTertiary }]}>Email</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
@@ -726,7 +764,7 @@ export default function SettingsScreen() {
               icon="timer"
               iconColor="#f97316"
               title="Daily Goal"
-              subtitle={`${settings.study.dailyCardGoal} cards, ${settings.study.dailyTestGoal} test(s)`}
+              subtitle={dailyGoalSummary(settings.study.dailyCardGoal, settings.study.dailyTestGoal)}
               onPress={() => {
                 setTempDailyCardGoal(settings.study.dailyCardGoal);
                 setTempDailyTestGoal(settings.study.dailyTestGoal);
@@ -1664,7 +1702,7 @@ export default function SettingsScreen() {
 
             <View style={styles.goalSection}>
               <Text style={[styles.goalLabel, modalTheme.label]}>Daily Test Goal</Text>
-              <Text style={[styles.goalValue, modalTheme.value]}>{tempDailyTestGoal} test(s)</Text>
+              <Text style={[styles.goalValue, modalTheme.value]}>{pluralize(tempDailyTestGoal, 'test')}</Text>
               <Slider
                 style={styles.slider}
                 minimumValue={0}
@@ -2015,6 +2053,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#9ca3af',
     marginTop: 2,
+  },
+  // Composed onto styles.settingSubtitle so it reuses that row's text size
+  // (adds no new raw size to the type-scale budget); only spacing lives here.
+  pushCategoryNote: {
+    lineHeight: 18,
+    marginTop: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 4,
   },
   signOutButton: {
     flexDirection: 'row',

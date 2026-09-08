@@ -26,6 +26,7 @@ import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
 import { humanizeFailureMessage } from '@lantern/shared/network';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
+import { formatNoteUpdatedLabel } from './notesFormat';
 import { useNotesStore } from '../../stores/notesStore';
 import type { NoteFolder, StudyNote } from '../../services/notes';
 import {
@@ -239,9 +240,9 @@ function NoteCard({
             <Text className="text-body text-lantern-text-secondary mt-1" numberOfLines={2}>
               {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
             </Text>
-            {note.updatedAt ? (
+            {formatNoteUpdatedLabel(note.updatedAt) ? (
               <Text className="text-caption text-lantern-text-tertiary mt-3">
-                Updated {new Date(note.updatedAt).toLocaleDateString()}
+                Updated {formatNoteUpdatedLabel(note.updatedAt)}
               </Text>
             ) : null}
           </View>

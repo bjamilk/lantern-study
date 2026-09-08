@@ -10,6 +10,7 @@ import { SellerPayoutSetup } from './SellerPayoutSetup';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 
 type NavigationProp = {
   goBack: () => void;
@@ -57,7 +58,7 @@ function describePayment(p: PaymentRow): { label: string; tone: Tone } {
 const shortDate = (iso: string | null): string | null => {
   if (!iso) return null;
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? null : d.toLocaleDateString();
+  return formatDisplayDate(d) || null;
 };
 
 /**

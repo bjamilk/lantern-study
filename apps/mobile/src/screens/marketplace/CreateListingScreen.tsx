@@ -26,7 +26,6 @@ import { aiGenerateListingDescription } from '../../services/ai';
 import { HEIC_IMAGE_UPLOAD_ERROR, isHeicImageUpload } from '@lantern/shared';
 import {
   getTaxonomyNode,
-  DEFAULT_LISTING_NODE_ID,
   OTHER_TAXONOMY_NODE_ID,
   PRINTED_PAST_QUESTIONS_NODE_ID,
   toCustomListingCategory,
@@ -43,6 +42,7 @@ import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { CampusPicker } from './CampusPicker';
+import { isListingTypeChosen } from './createListingPlanner';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ATTESTATION_REQUIRED_MESSAGE, isAcademicListing } from '@lantern/shared/moderation';
 import { RightsAttestationCheckbox } from '../../components/moderation/RightsAttestationCheckbox';
@@ -56,7 +56,8 @@ const MAX_IMAGES = 5;
 
 interface ListingDraft {
   title: string;
-  category: MarketplaceCategory;
+  /** Null while the seller has not yet picked a listing type. */
+  category: MarketplaceCategory | null;
   price: string;
   salePrice: string;
   saleEndsPreset: 'none' | '24h' | '7d';
@@ -111,11 +112,14 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   );
 
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState<MarketplaceCategory>('textbook_exchange');
+  // Null until the seller picks a listing type. It used to open pre-set to
+  // "Course textbook", so a seller who never touched it published into a
+  // category they never chose; publish is now blocked until one is picked.
+  const [category, setCategory] = useState<MarketplaceCategory | null>(null);
   // Set when the seller picks "Something else": they name the type themselves
   // and it is stored as a custom:<name> category, the same as on web.
   const [customCategory, setCustomCategory] = useState('');
-  const [taxonomyNodeId, setTaxonomyNodeId] = useState(DEFAULT_LISTING_NODE_ID);
+  const [taxonomyNodeId, setTaxonomyNodeId] = useState('');
   const [price, setPrice] = useState('');
   const [salePrice, setSalePrice] = useState('');
   const [saleEndsPreset, setSaleEndsPreset] = useState<'none' | '24h' | '7d'>('none');
@@ -143,9 +147,6 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
   /** Server refusal shown inline (attestation missing, blocked content). */
   const [submitError, setSubmitError] = useState<string | null>(null);
   const isCustomType = taxonomyNodeId === OTHER_TAXONOMY_NODE_ID;
-  const submitCategory = isCustomType
-    ? (toCustomListingCategory(customCategory.trim()) as MarketplaceCategory)
-    : category;
   const needsAttestation = isAcademicListing({ category });
 
   // Draft persistence: survive app switches / process death mid-creation.
@@ -176,7 +177,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           draft.title || draft.description || draft.price || (draft.images?.length ?? 0) > 0;
         if (!hasContent) return;
         setTitle(draft.title || '');
-        setCategory(draft.category || 'textbook_exchange');
+        setCategory(draft.category ?? null);
         if (typeof (draft as ListingDraft).taxonomyNodeId === 'string') {
           setTaxonomyNodeId((draft as ListingDraft).taxonomyNodeId as string);
         }
@@ -269,7 +270,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const resetForm = () => {
     setTitle('');
-    setCategory('textbook_exchange');
+    setCategory(null);
+    setTaxonomyNodeId('');
     setCustomCategory('');
     setPrice('');
     setSalePrice('');
@@ -340,8 +342,8 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     try {
       const { description: generated } = await aiGenerateListingDescription({
         title: title.trim(),
-        category: selectedNode?.label ?? category,
-        subcategory: category,
+        category: selectedNode?.label ?? category ?? '',
+        subcategory: category ?? undefined,
         price: price.trim() || undefined,
       });
       if (generated) setDescription(generated);
@@ -362,6 +364,15 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     }
     if (!title.trim()) {
       appAlert('Missing title', 'Please enter a title for your listing.');
+      return;
+    }
+    // `|| !category` is logically covered by the planner but lets the compiler
+    // see `category` is non-null for the rest of this function.
+    if (!isListingTypeChosen({ category, taxonomyNodeId }) || !category) {
+      appAlert(
+        'Choose a listing type',
+        'Pick what kind of thing you are selling so buyers can find it.'
+      );
       return;
     }
     if (isCustomType && !customCategory.trim()) {
@@ -447,7 +458,9 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       const { listing, queued } = await createListing(
         {
           user_id: user.id,
-          category: submitCategory,
+          category: isCustomType
+            ? (toCustomListingCategory(customCategory.trim()) as MarketplaceCategory)
+            : category,
           title: title.trim(),
           description: description.trim() || undefined,
           price: parsedPrice,

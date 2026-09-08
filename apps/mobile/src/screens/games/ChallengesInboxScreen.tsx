@@ -22,6 +22,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
 
 import type { GroupChallenge } from '@lantern/shared/types';
+import { pluralize } from '@lantern/shared/utils/plural';
 
 import { useTheme } from '../../theme';
 import { appAlert } from '../../components/ui/appDialog';
@@ -209,7 +210,7 @@ export default function ChallengesInboxScreen() {
 
         <Text style={[styles.meta, { color: colors.textSecondary }]}>
 
-          {item.status} · {item.config.numberOfQuestions} questions
+          {item.status} · {pluralize(item.config.numberOfQuestions, 'question')}
 
         </Text>
 

@@ -3,12 +3,14 @@ import {
   ActivityIndicator,
   Image,
   Linking,
+  Modal,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   useNavigation,
   useRoute,
@@ -31,7 +33,7 @@ import {
   type JobPosting,
   type JobReportReason,
 } from "@lantern/shared";
-import { Card, ScreenHeader } from "../../components/ui";
+import { Button, Card, ScreenHeader } from "../../components/ui";
 import { Screen } from "../../components/layout";
 import {
   applyToJob,
@@ -83,9 +85,42 @@ export function JobDetailScreen() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
-  const [reportReason, setReportReason] = useState<JobReportReason>("scam");
+  // Nothing preselected: a report should not open already accusing the poster
+  // of fraud, and Submit stays disabled until the reporter picks a reason.
+  const [reportReason, setReportReason] = useState<JobReportReason | null>(null);
   const [reportDetails, setReportDetails] = useState("");
   const [reportBusy, setReportBusy] = useState(false);
+  const reportInsets = useSafeAreaInsets();
+
+  const openReport = () => {
+    setReportReason(null);
+    setReportDetails("");
+    setError(null);
+    setReportOpen(true);
+  };
+  const closeReport = () => {
+    if (reportBusy) return;
+    setReportOpen(false);
+  };
+  const submitReport = () => {
+    if (!job || !reportReason || reportBusy) return;
+    void (async () => {
+      setReportBusy(true);
+      setError(null);
+      try {
+        await reportJobPosting(job.id, {
+          reason: reportReason,
+          details: reportDetails.trim() || undefined,
+        });
+        setSuccess("Report submitted. Thanks for flagging this.");
+        setReportOpen(false);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not submit report");
+      } finally {
+        setReportBusy(false);
+      }
+    })();
+  };
 
   const toggleSaved = async (posting: JobPosting) => {
     const nextSaved = !posting.isSaved;
@@ -522,77 +557,122 @@ export function JobDetailScreen() {
                 • {tip}
               </Text>
             ))}
-            {!reportOpen ? (
-              <Pressable className="mt-3" onPress={() => setReportOpen(true)}>
-                <Text className="text-xs text-lantern-text-tertiary underline">
-                  Report this job
-                </Text>
-              </Pressable>
-            ) : (
-              <View className="mt-3">
-                <Text className="text-xs font-semibold text-lantern-text mb-1">
-                  Why are you reporting?
-                </Text>
-                <View className="flex-row flex-wrap gap-2 mb-2">
-                  {JOB_REPORT_REASONS.map((r) => (
-                    <Pressable
-                      key={r}
-                      onPress={() => setReportReason(r)}
-                      className={`rounded-full border px-2 py-1 ${
-                        reportReason === r
-                          ? "border-lantern-primary bg-lantern-primary/10"
-                          : "border-lantern-border"
-                      }`}
-                    >
-                      <Text className="text-[11px] text-lantern-text">
-                        {JOB_REPORT_REASON_LABELS[r]}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-                <TextInput
-                  className="rounded-lg border border-lantern-border px-3 py-2 text-sm text-lantern-text mb-2"
-                  placeholder="Optional details"
-                  placeholderTextColor="#94a3b8"
-                  value={reportDetails}
-                  onChangeText={setReportDetails}
-                  multiline
-                />
-                <Pressable
-                  disabled={reportBusy}
-                  className="rounded-lg bg-lantern-primary-fill py-2 items-center"
-                  onPress={() =>
-                    void (async () => {
-                      setReportBusy(true);
-                      setError(null);
-                      try {
-                        await reportJobPosting(job.id, {
-                          reason: reportReason,
-                          details: reportDetails.trim() || undefined,
-                        });
-                        setSuccess("Report submitted. Thanks for flagging this.");
-                        setReportOpen(false);
-                      } catch (e) {
-                        setError(
-                          e instanceof Error
-                            ? e.message
-                            : "Could not submit report",
-                        );
-                      } finally {
-                        setReportBusy(false);
-                      }
-                    })()
-                  }
-                >
-                  <Text className="text-white text-sm font-semibold">
-                    {reportBusy ? "Sending…" : "Submit report"}
-                  </Text>
-                </Pressable>
-              </View>
-            )}
+            <Pressable className="mt-3" onPress={openReport}>
+              <Text className="text-xs text-lantern-text-tertiary underline">
+                Report this job
+              </Text>
+            </Pressable>
           </Card>
         ) : null}
       </ScrollView>
+
+      {/* Report sheet — mirrors the Shop's report sheet: nothing preselected,
+          Submit disabled until a reason, an explicit Cancel and close, and the
+          hardware BACK button dismisses it (Modal onRequestClose). */}
+      <Modal
+        visible={reportOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={closeReport}
+      >
+        <Pressable className="flex-1 bg-black/50 justify-end" onPress={closeReport}>
+          <Pressable
+            accessibilityViewIsModal
+            onPress={(e) => e.stopPropagation?.()}
+            className="bg-lantern-surface rounded-t-3xl pt-4 max-h-[88%]"
+            style={{ paddingBottom: reportInsets.bottom + 24 }}
+          >
+            <View className="flex-row items-center px-5 mb-1">
+              <AppIcon name="flag" size={18} color="#f59e0b" />
+              <Text
+                className="text-heading font-bold text-lantern-text ml-2 flex-1"
+                accessibilityRole="header"
+              >
+                Report this job
+              </Text>
+              <Pressable
+                onPress={closeReport}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel="Close"
+              >
+                <AppIcon name="close" size={22} color="#94a3b8" />
+              </Pressable>
+            </View>
+            <ScrollView
+              className="px-5"
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <Text className="text-label font-semibold uppercase tracking-wide text-lantern-text-tertiary mt-2 mb-2">
+                Why are you reporting?
+              </Text>
+              <View className="flex-row flex-wrap gap-2 mb-4">
+                {JOB_REPORT_REASONS.map((r) => {
+                  const selected = reportReason === r;
+                  return (
+                    <Pressable
+                      key={r}
+                      onPress={() => setReportReason(r)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected }}
+                      className={`px-3 py-1.5 rounded-full border ${
+                        selected ? "bg-red-600 border-red-600" : "border-lantern-border"
+                      }`}
+                    >
+                      <Text
+                        className={`text-label font-medium ${
+                          selected ? "text-white" : "text-lantern-text-secondary"
+                        }`}
+                      >
+                        {JOB_REPORT_REASON_LABELS[r]}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text className="text-label font-semibold uppercase tracking-wide text-lantern-text-tertiary mb-2">
+                Details (optional)
+              </Text>
+              <TextInput
+                className="min-h-[84px] p-3 rounded-xl border border-lantern-border text-lantern-text mb-3"
+                placeholder="Anything that helps our team understand the problem"
+                placeholderTextColor="#94a3b8"
+                value={reportDetails}
+                onChangeText={setReportDetails}
+                multiline
+                textAlignVertical="top"
+              />
+              {error ? (
+                <Text className="text-caption text-red-500 mb-3">{error}</Text>
+              ) : null}
+              <View className="flex-row gap-3 mb-2">
+                <Button
+                  variant="secondary"
+                  className="flex-1"
+                  onPress={closeReport}
+                  disabled={reportBusy}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="danger"
+                  className="flex-1"
+                  loading={reportBusy}
+                  disabled={!reportReason}
+                  onPress={submitReport}
+                >
+                  Submit report
+                </Button>
+              </View>
+              <Text className="text-label text-lantern-text-tertiary mb-2">
+                Reports are confidential. False reports may count against your
+                account.
+              </Text>
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }

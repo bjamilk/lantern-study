@@ -1,12 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, TouchableOpacity } from 'react-native';
-import { appAlert } from '../../components/ui/appDialog';
+import { appAlert, confirmAsync } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../stores/authStore';
 import { useBudgetStore, formatCurrency, type SavingsGoal } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
+import { formatBudgetDate } from './budgetFormat';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 const GOAL_ICONS = ['🎯', '📱', '💻', '📚', '✈️', '🏠', '🚗', '👕', '🎓', '💰', '🎁', '⚽'];
@@ -61,6 +62,21 @@ export default function SavingsGoalsScreen() {
     setContributeAmount('');
   };
 
+  // Deleting a goal throws away every naira saved toward it, so it confirms
+  // first — naming the goal and the amount at stake — rather than vanishing on
+  // a mis-tap the way the red trash used to.
+  const handleRemoveGoal = async (goal: SavingsGoal) => {
+    const saved = goal.currentAmount > 0
+      ? `You've saved ${formatCurrency(goal.currentAmount)} toward it. `
+      : '';
+    const ok = await confirmAsync(
+      'Delete this goal?',
+      `"${goal.name}" will be removed. ${saved}This can't be undone.`,
+      { confirmLabel: 'Delete', destructive: true }
+    );
+    if (ok) void removeSavingsGoal(goal.id);
+  };
+
   const renderGoal = (goal: SavingsGoal) => {
     const pct = goal.targetAmount > 0 ? Math.min(100, (goal.currentAmount / goal.targetAmount) * 100) : 0;
     const done = !!goal.completedAt;
@@ -82,11 +98,11 @@ export default function SavingsGoalsScreen() {
                 {formatCurrency(goal.currentAmount)} / {formatCurrency(goal.targetAmount)}
               </Text>
               {goal.deadline && !done && (
-                <Text className="text-xs text-lantern-text-tertiary mt-0.5">Due {goal.deadline}</Text>
+                <Text className="text-xs text-lantern-text-tertiary mt-0.5">Due {formatBudgetDate(goal.deadline)}</Text>
               )}
             </View>
           </View>
-          <Pressable onPress={() => void removeSavingsGoal(goal.id)} hitSlop={8}>
+          <Pressable onPress={() => void handleRemoveGoal(goal)} hitSlop={8} accessibilityRole="button" accessibilityLabel={`Delete ${goal.name}`}>
             <AppIcon name="trash" size={20} color="#ef4444" />
           </Pressable>
         </View>
@@ -139,7 +155,7 @@ export default function SavingsGoalsScreen() {
             className="flex-row items-center justify-between border border-lantern-border rounded-xl px-4 py-3 bg-lantern-surface"
           >
             <Text className={deadline ? 'text-lantern-text dark:text-white' : 'text-lantern-text-tertiary'}>
-              {deadline ? `Target date: ${deadline.toISOString().slice(0, 10)}` : 'Target date (optional)'}
+              {deadline ? `Target date: ${formatBudgetDate(deadline)}` : 'Target date (optional)'}
             </Text>
             <AppIcon name="calendar" size={18} color="#94a3b8" />
           </TouchableOpacity>

@@ -19,7 +19,7 @@ import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
-import { MessageActionBar } from '../../components/chat/MessageActionBar';
+import { MessageActionSheet } from '../../components/chat/MessageActionSheet';
 import {
   ActionSheet,
   type ActionSheetItem,
@@ -70,7 +70,7 @@ import {
 import { useNetworkStatus } from '../../hooks/useSync';
 import { planReconnectRetry } from './reconnectRetry';
 import { applyReactionLocally } from '@lantern/shared/chat';
-import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
+import { MessageReactions } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
 import * as api from '../../services/api';
@@ -509,7 +509,6 @@ export function GroupChatView({
   const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   /** In-chat search over the loaded window, with next/prev jumping. */
-  const [msgOverflowOpen, setMsgOverflowOpen] = useState(false);
   const [chatSearchOpen, setChatSearchOpen] = useState(false);
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const [chatSearchIndex, setChatSearchIndex] = useState(0);
@@ -1893,51 +1892,9 @@ export function GroupChatView({
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
-      {messageActionTarget ? (
-        <>
-        <ReactionPickerRow
-          mine={myReactions[messageActionTarget.id]}
-          onPick={(emoji, added) => {
-            const target = messageActionTarget;
-            setMessageActionTarget(null);
-            void handleToggleReaction(target, emoji, added);
-          }}
-        />
-        <MessageActionBar
-          onClose={closeMessageActions}
-          onReply={() => handleSheetReply(messageActionTarget)}
-          onForward={
-            (messageActionTarget.questionStem || messageActionTarget.text || '').trim() &&
-            !isChatAudioMessage(messageActionTarget.text) &&
-            !isChatImageMessage(messageActionTarget.text)
-              ? () => handleSheetForward(messageActionTarget)
-              : undefined
-          }
-          onCopy={
-            (messageActionTarget.questionStem || messageActionTarget.text || '').trim() &&
-            !isChatAudioMessage(messageActionTarget.text) &&
-            !isChatImageMessage(messageActionTarget.text)
-              ? () => handleSheetCopy(messageActionTarget)
-              : undefined
-          }
-          onStar={() => handleSheetStar(messageActionTarget)}
-          onPin={() => handleSheetPin(messageActionTarget)}
-          starred={starredIds.has(messageActionTarget.id)}
-          pinned={pinnedMessage?.id === messageActionTarget.id}
-          // Delete is first-class now (web has always had a one-click trash).
-          // It used to live only inside the overflow sheet, whose button is
-          // hidden when the sheet would be empty — so for an own message with
-          // nothing else applicable, delete vanished entirely.
-          onDelete={
-            canRemoveChatMessage(messageActionTarget, user?.id)
-              ? () => handleSheetRemove(messageActionTarget)
-              : undefined
-          }
-          deleteBlockedReason={deleteBlockedReason(messageActionTarget, user?.id)}
-          onMore={msgOverflowItems.length > 0 ? () => setMsgOverflowOpen(true) : undefined}
-        />
-        </>
-      ) : (
+      {/* The long-press actions live in a bottom sheet now (see
+          <MessageActionSheet> below), so the header stays put while a message
+          is selected — it no longer swaps out for a top-anchored icon bar. */}
       <GroupChatHeader
         displayName={displayName}
         avatarUrl={group?.avatarUrl}
@@ -1954,7 +1911,6 @@ export function GroupChatView({
         contextLabel={communityContext?.label}
         onContextPress={communityContext?.onPress}
       />
-      )}
 
       {chatSearchOpen ? (
         <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
@@ -2292,17 +2248,62 @@ export function GroupChatView({
         )}
       </KeyboardAvoidingView>
 
-      <ActionSheet
-        visible={msgOverflowOpen}
-        title="More"
-        items={msgOverflowItems.map((item) => ({
-          ...item,
-          onPress: () => {
-            setMsgOverflowOpen(false);
-            item.onPress();
-          },
-        }))}
-        onClose={() => setMsgOverflowOpen(false)}
+      <MessageActionSheet
+        visible={!!messageActionTarget}
+        onClose={closeMessageActions}
+        myReactions={messageActionTarget ? myReactions[messageActionTarget.id] : undefined}
+        onReact={(emoji, added) => {
+          const m = messageActionTarget;
+          if (!m) return;
+          setMessageActionTarget(null);
+          void handleToggleReaction(m, emoji, added);
+        }}
+        onReply={() => {
+          if (messageActionTarget) handleSheetReply(messageActionTarget);
+        }}
+        onForward={
+          messageActionTarget &&
+          (messageActionTarget.questionStem || messageActionTarget.text || '').trim() &&
+          !isChatAudioMessage(messageActionTarget.text) &&
+          !isChatImageMessage(messageActionTarget.text)
+            ? () => {
+                if (messageActionTarget) handleSheetForward(messageActionTarget);
+              }
+            : undefined
+        }
+        onCopy={
+          messageActionTarget &&
+          (messageActionTarget.questionStem || messageActionTarget.text || '').trim() &&
+          !isChatAudioMessage(messageActionTarget.text) &&
+          !isChatImageMessage(messageActionTarget.text)
+            ? () => {
+                if (messageActionTarget) handleSheetCopy(messageActionTarget);
+              }
+            : undefined
+        }
+        onStar={() => {
+          if (messageActionTarget) handleSheetStar(messageActionTarget);
+        }}
+        onPin={() => {
+          if (messageActionTarget) handleSheetPin(messageActionTarget);
+        }}
+        starred={!!messageActionTarget && starredIds.has(messageActionTarget.id)}
+        pinned={!!messageActionTarget && pinnedMessage?.id === messageActionTarget.id}
+        // Delete is first-class now (web has always had a one-click trash).
+        // It used to live only inside the overflow sheet, whose button is
+        // hidden when the sheet would be empty — so for an own message with
+        // nothing else applicable, delete vanished entirely.
+        onDelete={
+          messageActionTarget && canRemoveChatMessage(messageActionTarget, user?.id)
+            ? () => {
+                if (messageActionTarget) handleSheetRemove(messageActionTarget);
+              }
+            : undefined
+        }
+        deleteBlockedReason={
+          messageActionTarget ? deleteBlockedReason(messageActionTarget, user?.id) : undefined
+        }
+        extraItems={msgOverflowItems}
       />
       <ChatWallpaperSheet
         visible={wallpaperSheetOpen}

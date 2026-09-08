@@ -10,7 +10,6 @@ import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useShopBadges } from '../../hooks/useShopBadges';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
-import { buildQuickActions, ShopQuickActions, type QuickAction } from './components/ShopQuickActions';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
 type NavigationProp = {
@@ -119,6 +118,15 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       icon: 'receipt',
       badge: badges.buyerActionOrders,
       onPress: go('Orders', { role: 'buyer' }),
+    },
+    {
+      // Kept as a row now that the duplicate quick-tile band is gone — it is
+      // the one buyer destination the band reached that no row did.
+      key: 'buy-again',
+      label: 'Buy Again',
+      detail: 'Reorder something you bought before',
+      icon: 'repeat',
+      onPress: go('Orders', { role: 'buyer', view: 'buy_again' }),
     },
     {
       key: 'cart',
@@ -244,55 +252,6 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
     },
   ];
 
-  // Card rows: the band's own cards for Buying (same hints, same badges), and
-  // the seller's four queues for Selling, rendered through the same tile.
-  const bandCards = buildQuickActions(badges);
-  const buyingCards = ['orders', 'buy-again', 'cart', 'saved']
-    .map((key) => bandCards.find((a) => a.key === key))
-    .filter((a): a is QuickAction => Boolean(a));
-  const sellingCards: QuickAction[] = [
-    {
-      key: 'hand-over',
-      label: 'Hand over',
-      hint: badges.sellerActionOrders > 0 ? `${badges.sellerActionOrders} waiting` : 'Nothing waiting',
-      icon: 'cube',
-      badge: badges.sellerActionOrders,
-      screen: 'Orders',
-      params: { role: 'seller' },
-    },
-    {
-      key: 'offers-received',
-      label: 'Offers',
-      hint: badges.offersAwaitingMe > 0 ? `${badges.offersAwaitingMe} to answer` : 'None waiting',
-      icon: 'pricetags',
-      badge: badges.offersAwaitingMe,
-      screen: 'Offers',
-      params: { tab: 'seller' },
-    },
-    {
-      key: 'questions',
-      label: 'Questions',
-      hint:
-        badges.unreadSellerInquiries > 0
-          ? `${badges.unreadSellerInquiries} unread`
-          : badges.openInquiries > 0
-            ? `${badges.openInquiries} open`
-            : 'All answered',
-      icon: 'chatbubbles',
-      badge: badges.unreadSellerInquiries,
-      screen: 'Inquiries',
-      params: { tab: 'seller' },
-    },
-    {
-      key: 'payouts',
-      label: 'Payouts',
-      hint: payoutActive === true ? 'Bank on file' : payoutMissing ? 'Not set up' : 'Earnings',
-      icon: 'card',
-      badge: payoutMissing ? 1 : 0,
-      screen: 'SellerPayout',
-    },
-  ];
-
   const renderRow = (row: Row) => (
     <Pressable
       key={row.key}
@@ -399,23 +358,11 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       <ScrollView contentContainerStyle={{ paddingBottom: tabBarClearance }}>
         {side === 'buying' ? (
           <>
-            <ShopQuickActions
-              badges={badges}
-              layout="grid"
-              actions={buyingCards}
-              onNavigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
-            />
             {sectionTitle('Buying')}
             <View className="bg-lantern-surface border-t border-lantern-border">{buying.map(renderRow)}</View>
           </>
         ) : (
           <>
-            <ShopQuickActions
-              badges={badges}
-              layout="grid"
-              actions={sellingCards}
-              onNavigate={(screen, params) => navigation.navigate(screen, params, { pop: true })}
-            />
             {sectionTitle('Your Seller Account')}
             <View className="bg-lantern-surface border-t border-lantern-border">{selling.map(renderRow)}</View>
           </>

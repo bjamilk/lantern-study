@@ -13,6 +13,7 @@ import {
 import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
+import { formatBudgetDate } from './budgetFormat';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 interface RecurringRule {
@@ -138,7 +139,7 @@ export default function RecurringScreen() {
                   {rule.description || `${getCategoryIcon(rule.category || '', rule.type === 'income' ? 'INCOME' : 'EXPENSE')} ${rule.category || (rule.type === 'income' ? 'Income' : 'Expense')}`}
                 </Text>
                 <Text className="text-xs text-lantern-text-tertiary mt-0.5">
-                  {getCategoryIcon(rule.category || '', rule.type === 'income' ? 'INCOME' : 'EXPENSE')} · {rule.frequency === 'monthly' ? 'Monthly' : 'Weekly'} · next {rule.nextDate}
+                  {getCategoryIcon(rule.category || '', rule.type === 'income' ? 'INCOME' : 'EXPENSE')} · {rule.frequency === 'monthly' ? 'Monthly' : 'Weekly'} · next {formatBudgetDate(rule.nextDate)}
                 </Text>
               </View>
               <Text className={`text-sm font-semibold mr-3 ${rule.type === 'income' ? 'text-lantern-success' : 'text-red-500'}`}>
@@ -207,7 +208,7 @@ export default function RecurringScreen() {
             className="flex-row items-center justify-between border border-lantern-border rounded-xl px-4 py-3 bg-lantern-surface"
           >
             <Text className="text-lantern-text dark:text-white">
-              {frequency === 'monthly' ? `Repeats on day ${date.getDate()} — from ${ymd(date)}` : `First / next date: ${ymd(date)}`}
+              {frequency === 'monthly' ? `Repeats on day ${date.getDate()} — from ${formatBudgetDate(date)}` : `First / next date: ${formatBudgetDate(date)}`}
             </Text>
             <AppIcon name="calendar" size={18} color="#94a3b8" />
           </TouchableOpacity>

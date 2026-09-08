@@ -12,6 +12,7 @@ import {
 } from '../../stores/budgetStore';
 import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
+import { splitHeadcountLabel, splitPerPersonShare } from './expenseSplitPlanner';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 export default function ExpenseSplitScreen() {
@@ -34,9 +35,8 @@ export default function ExpenseSplitScreen() {
   }, [userId, loadExpenseSplits]);
 
   const namedOthers = others.map(o => o.trim()).filter(Boolean);
-  const headcount = namedOthers.length + 1; // + creator
   const amountNum = parseFloat(total) || 0;
-  const perPerson = amountNum > 0 ? amountNum / headcount : 0;
+  const perPerson = splitPerPersonShare(amountNum, namedOthers.length);
 
   const activeSplits = useMemo(() => expenseSplits.filter(s => s.status === 'active'), [expenseSplits]);
   const settledSplits = useMemo(() => expenseSplits.filter(s => s.status === 'settled'), [expenseSplits]);
@@ -95,7 +95,7 @@ export default function ExpenseSplitScreen() {
           </ScrollView>
 
           {/* Participants */}
-          <Text className="text-xs font-medium text-lantern-text-secondary">Split between you + {namedOthers.length} other{namedOthers.length === 1 ? '' : 's'}</Text>
+          <Text className="text-xs font-medium text-lantern-text-secondary">{splitHeadcountLabel(namedOthers.length)}</Text>
           <View className="flex-row items-center gap-2 bg-lantern-primary-background rounded-xl px-3 py-2.5">
             <AppIcon name="person-circle" size={18} color="#6366f1" />
             <Text className="text-sm text-lantern-primary-text font-medium">{userName} (you)</Text>

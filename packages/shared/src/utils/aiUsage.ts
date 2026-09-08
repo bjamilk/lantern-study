@@ -1,9 +1,117 @@
 /**
  * Format AI quota reset as a relative countdown (e.g. "Resets in 4h 23m").
  */
+import type { AIUsageInfo } from '../types';
 
 /** Default daily AI request quota per user (overridable via API `AI_DAILY_LIMIT` env). */
 export const DEFAULT_AI_DAILY_LIMIT = 20;
+
+// ─────────────────────────────────────────────────────────────
+// "We haven't been told the allowance" — an honest unknown
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * The usage the app shows when the server has NOT told it the truth.
+ *
+ * `limit: 0` is this codebase's established "we don't know" reading, and every
+ * consumer of `AIUsageInfo` already honours it: the badge hides itself
+ * (`if (!usage.limit) return null`), the Me screen drops its reset hint
+ * (`limit > 0 ? … : ''`), the note-editor confirm prints only the COST and no
+ * balance (`creditsLeftLine` returns '' when `limit <= 0`), and — the part that
+ * matters most — every generation gate is written `limit > 0 && remaining < …`,
+ * so an unknown allowance NEVER blocks a student (the server stays the real
+ * gate). `getAIResetLabel` also returns '' at `limit <= 0`, so the reset line
+ * makes no midnight claim it cannot back up.
+ *
+ * This is the deliberate opposite of the old fallback, which reached for
+ * `DEFAULT_AI_DAILY_LIMIT` and asserted a confident "20 of 20" the app had
+ * never been told — collapsing a real "100 of 100" to 20 after a cold start.
+ */
+export const AI_USAGE_UNKNOWN: AIUsageInfo = {
+  used: 0,
+  limit: 0,
+  remaining: 0,
+  resetsAt: '',
+};
+
+/** True only when a snapshot carries a real, server-reported allowance. */
+export function isAIUsageKnown(usage: AIUsageInfo | null | undefined): boolean {
+  return Boolean(usage && usage.limit > 0);
+}
+
+/**
+ * What to show when a usage fetch fails or times out.
+ *
+ * Repeats the last server-known figures when we still hold them — a slow
+ * refresh must not flicker a real "83 of 100" to some other number — and
+ * otherwise reports the honest unknown. It must NEVER synthesise a balance from
+ * `DEFAULT_AI_DAILY_LIMIT`: that constant is the API's default, not THIS
+ * account's allowance (production runs 100), and printing it as "20 of 20" is
+ * the exact collapse the badge showed. Pure so the whole decision, including
+ * the 100-then-cold-start-to-unknown sequence from the finding, is unit-tested
+ * rather than read off a screenshot.
+ */
+export function resolveAIUsageFallback(
+  cachedUsage: AIUsageInfo | null | undefined
+): AIUsageInfo {
+  return isAIUsageKnown(cachedUsage) ? (cachedUsage as AIUsageInfo) : AI_USAGE_UNKNOWN;
+}
+
+/** Said while the first read of the allowance is still in flight. */
+export const AI_USAGE_CHECKING_LABEL = 'Checking your AI uses…';
+/** Said when that read failed and this device holds no figures at all. */
+export const AI_USAGE_UNCHECKED_LABEL = "We couldn't check your AI uses just now";
+/** Said when a read failed but the screen is still drawing real, older figures. */
+export const AI_USAGE_STALE_FIGURES_NOTE =
+  'Could not reach the server. These are the last figures this phone saw.';
+/** Said when a read failed and there are no figures to be stale about. */
+export const AI_USAGE_NO_FIGURES_NOTE =
+  'Could not reach the server, so there are no figures to show yet.';
+
+/** The two lines the counter draws: the number, and why it might be missing. */
+export interface AIUsageCounterCopy {
+  countLine: string;
+  /** null when nothing failed — the screen shows no note at all. */
+  offlineNote: string | null;
+}
+
+/**
+ * What the Usage & limits counter says, including when it knows nothing.
+ *
+ * `buildAIUsageView` reads a limit of 0 as "this account has no allowance" and
+ * says so — which is TRUE of a server that answered with zero, and a lie about
+ * a phone that has simply not been told yet. The two are told apart by
+ * `serverAnswered`, so a cold start with a dead network says it is checking (or
+ * that it could not check), never that the student's AI was taken away, and
+ * never a number nobody sent. The offline note follows the same split: "the
+ * last figures this phone saw" is only honest when there ARE figures.
+ */
+export function aiUsageCounterCopy(input: {
+  /** The label the view built from whatever figures it had. */
+  knownLabel: string;
+  /** The limit the view resolved; 0 means no figures. */
+  limit: number;
+  /** True once the server has answered this screen, even with a zero allowance. */
+  serverAnswered: boolean;
+  /** True while the first read is still in flight. */
+  loading: boolean;
+  /** True when the read failed. */
+  failed: boolean;
+}): AIUsageCounterCopy {
+  const hasFigures = input.serverAnswered || input.limit > 0;
+  return {
+    countLine: hasFigures
+      ? input.knownLabel
+      : input.loading
+        ? AI_USAGE_CHECKING_LABEL
+        : AI_USAGE_UNCHECKED_LABEL,
+    offlineNote: !input.failed
+      ? null
+      : hasFigures
+        ? AI_USAGE_STALE_FIGURES_NOTE
+        : AI_USAGE_NO_FIGURES_NOTE,
+  };
+}
 
 /** Default per-feature daily AI quotas (overridable via `AI_LIMIT_<FEATURE>` env vars). */
 export const DEFAULT_AI_FEATURE_LIMITS = {

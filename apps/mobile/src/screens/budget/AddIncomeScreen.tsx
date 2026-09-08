@@ -146,6 +146,10 @@ export default function AddIncomeScreen() {
                     category === cat.id && styles.categoryNameActive,
                   ]}
                   numberOfLines={2}
+                  // A long label ("Allowance (Parents/Guardian)") shrinks to
+                  // fit its tile rather than breaking a word mid-way.
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.7}
                 >
                   {cat.label}
                 </Text>

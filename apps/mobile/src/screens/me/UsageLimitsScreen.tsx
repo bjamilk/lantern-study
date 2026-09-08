@@ -20,6 +20,7 @@ import {
   type AIUsageSnapshot,
   type AIUsageView,
 } from '@lantern/shared/ai';
+import { aiUsageCounterCopy } from '@lantern/shared/utils/aiUsage';
 import { ScreenScroll } from '../../components/layout';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 import { FeatureDisc, useFeatureAccent, smallTextInk } from '../../components/ui/FeatureDisc';
@@ -98,7 +99,7 @@ export function UsageLimitsScreen() {
   const badgeUsage = useAIUsage();
   const [snapshot, setSnapshot] = useState<AIUsageSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const load = useCallback(async () => {
@@ -107,9 +108,9 @@ export function UsageLimitsScreen() {
       // This also republishes the global counts to every subscriber, so
       // opening the screen re-syncs the top bar's badge with the server.
       setSnapshot(await fetchAIUsageDetail());
-      setError(null);
+      setFailed(false);
     } catch {
-      setError('Could not reach the server. These are the last figures this phone saw.');
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -133,6 +134,23 @@ export function UsageLimitsScreen() {
     { nowMs }
   );
 
+  /*
+   * What the counter is allowed to say.
+   *
+   * The badge's figures start at the honest unknown (limit 0) until the server
+   * answers, and `buildAIUsageView` reads a 0 as "AI uses are not available on
+   * this account" — true of a server that answered zero, a lie about a phone
+   * that has not been told yet. This planner tells the two apart, so a cold
+   * start says it is checking rather than inventing a number OR revoking one.
+   */
+  const counter = aiUsageCounterCopy({
+    knownLabel: view.countLabel,
+    limit: view.limit,
+    serverAnswered: snapshot !== null,
+    loading,
+    failed,
+  });
+
   return (
     <ScreenScroll>
       <View className="flex-row items-center gap-2 px-4 py-3">
@@ -146,7 +164,7 @@ export function UsageLimitsScreen() {
           <View className="flex-row items-center gap-3 pb-3">
             <FeatureDisc feature="ai" icon="sparkles" size={40} />
             <View className="flex-1 min-w-0">
-              <Text className="text-heading text-lantern-text">{view.countLabel}</Text>
+              <Text className="text-heading text-lantern-text">{counter.countLine}</Text>
               {/* Referral rewards, if the server reports any. Absent field =
                   no line at all: a "+0" would be a balance we never measured. */}
               {view.bonusLabel ? (
@@ -162,9 +180,9 @@ export function UsageLimitsScreen() {
             {loading ? <ActivityIndicator color={accent.ink} /> : null}
           </View>
           <UsageBar view={view} />
-          {error ? (
+          {counter.offlineNote ? (
             <Text className="text-caption mt-2" style={{ color: colors.warning }}>
-              {error}
+              {counter.offlineNote}
             </Text>
           ) : null}
         </Card>

@@ -6,7 +6,7 @@ import type {
   AIUsageInfo,
   CompanionUserContext,
 } from '../types';
-import { DEFAULT_AI_DAILY_LIMIT } from '../utils/aiUsage';
+import { resolveAIUsageFallback } from '../utils/aiUsage';
 import type { AIUsageSnapshot } from '../ai/aiUsageView';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 import {
@@ -232,15 +232,10 @@ export function createAIClient(config: AIClientConfig) {
         notifyUsage(usage);
         return usage;
       })()
-        .catch(
-          () =>
-            cachedUsage || {
-              used: 0,
-              limit: DEFAULT_AI_DAILY_LIMIT,
-              remaining: DEFAULT_AI_DAILY_LIMIT,
-              resetsAt: '',
-            }
-        )
+        // A failed or timed-out usage fetch must never invent an allowance.
+        // Repeat the last server-known figures if we hold them, otherwise
+        // report the honest unknown (limit 0) — see resolveAIUsageFallback.
+        .catch(() => resolveAIUsageFallback(cachedUsage))
         .finally(() => {
           usageInFlight = null;
         });

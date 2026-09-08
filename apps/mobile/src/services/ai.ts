@@ -3,6 +3,7 @@
  */
 import { createLanternAI, parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
 import type { AIUsageInfo } from '@lantern/shared';
+import { isAIUsageKnown } from '@lantern/shared/utils/aiUsage';
 import type {
   FlashcardGenerationDifficulty,
   FlashcardTypeMix,
@@ -34,22 +35,46 @@ export function applyAIUsageFromResponse(response: Response): void {
 }
 
 /**
- * Apply usage from a 429 error body ({ used, limit, resetsAt }) so a refused
- * request corrects the badge. Feature denials (body.feature set) use a
- * different scale and are skipped.
+ * Decide what a 429 error body should do to the usage badge — PURE, so every
+ * branch is unit-tested without the AI client or the store.
+ *
+ * A 429 is the ONE moment the server states this account's real figures on a
+ * cold start whose usage fetch failed. The rules:
+ *  - the body must carry numeric `used` and `limit`, or it says nothing;
+ *  - a feature denial (`body.feature` set) counts on a DIFFERENT, per-feature
+ *    scale and must never be written to the global badge;
+ *  - when the current figures are NOT known (the store starts at the explicit
+ *    unknown, limit 0), accept the body — this is the truth we were missing;
+ *  - when they ARE known, a body whose `limit` differs is STALE and is refused,
+ *    so a lagging refusal cannot clobber a known-good allowance.
+ *
+ * Returns the usage to publish, or null to leave the badge untouched.
  */
-export function applyAIUsageFromErrorBody(data: unknown): void {
+export function planAIUsageFromErrorBody(
+  data: unknown,
+  latest: AIUsageInfo
+): AIUsageInfo | null {
   const body = data as { used?: number; limit?: number; resetsAt?: string; feature?: string };
-  if (!body || typeof body.used !== 'number' || typeof body.limit !== 'number') return;
-  if (body.feature) return;
-  const latest = getLatestAIUsage();
-  if (body.limit !== latest.limit) return;
-  updateUsage({
+  if (!body || typeof body.used !== 'number' || typeof body.limit !== 'number') return null;
+  if (body.feature) return null;
+  // Only reject a differing limit once we actually KNOW the current one; before
+  // that, a mismatch is exactly the figure we lacked, not a stale one.
+  if (isAIUsageKnown(latest) && body.limit !== latest.limit) return null;
+  return {
     used: body.used,
     limit: body.limit,
     remaining: Math.max(0, body.limit - body.used),
     resetsAt: body.resetsAt || latest.resetsAt,
-  });
+  };
+}
+
+/**
+ * Apply usage from a 429 error body ({ used, limit, resetsAt }) so a refused
+ * request corrects the badge. See {@link planAIUsageFromErrorBody} for the rules.
+ */
+export function applyAIUsageFromErrorBody(data: unknown): void {
+  const next = planAIUsageFromErrorBody(data, getLatestAIUsage());
+  if (next) updateUsage(next);
 }
 
 async function getCurrentUserId(): Promise<string | undefined> {

@@ -14,6 +14,7 @@ import {
 import { appAlert } from './ui/appDialog';
 import * as Clipboard from 'expo-clipboard';
 import { generateNoteShareLink } from '@lantern/shared';
+import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import { Button } from './ui';
 import { searchUsers } from '../services/api';
 import {
@@ -296,7 +297,7 @@ export function NoteCollaboratorsModal({
                   <View className="flex-1">
                     <Text className="text-sm text-lantern-text capitalize">{link.role} link</Text>
                     <Text className="text-xs text-lantern-text-secondary">
-                      {link.expiresAt ? `Expires ${new Date(link.expiresAt).toLocaleDateString()}` : 'No expiry'}
+                      {link.expiresAt ? `Expires ${formatDisplayDate(link.expiresAt)}` : 'No expiry'}
                     </Text>
                   </View>
                   <View className="flex-row items-center gap-3">

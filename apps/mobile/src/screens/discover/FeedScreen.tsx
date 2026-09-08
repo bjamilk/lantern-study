@@ -6,6 +6,7 @@ import {
   type FeedItem,
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
+import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import { fetchFeed, fetchLearningConnections } from '../../services/api';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -30,7 +31,7 @@ function relativeTime(iso: string): string {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
-  return days < 7 ? `${days}d ago` : new Date(then).toLocaleDateString();
+  return days < 7 ? `${days}d ago` : formatDisplayDate(then);
 }
 
 function targetFor(item: FeedItem): { screen: string; params: Record<string, unknown> } | null {

@@ -211,10 +211,20 @@ export const supabaseErrorHandler = (
     // foreign key to, without naming which constraint to resolve through.
     // That is a bug in OUR query, not in the client's request — the fix is to
     // write `other!this_table_column_fkey(...)` at the call site. See
-    // services/communities.membersEmbed.test.ts for the 2026-09-08 outage this
-    // caused, and note the 400 below flatters the client: a client cannot
-    // cause or fix this.
-    const apiError = new ApiError('Invalid reference or relationship', 400);
+    // services/postgrestEmbedDisambiguation.test.ts for the 2026-09-08 roster
+    // outage this caused.
+    //
+    // It is a 500, not a 400. A client cannot cause or fix an ambiguous embed,
+    // so a 400 both blames the student's request and — because 5xx is what our
+    // alerting watches — hid the outage until a manual device pass found it.
+    // isOperational=false marks it a genuine server fault (same path as an
+    // unhandled 500): errorHandler renders 'Something went wrong' to students
+    // instead of leaking 'Invalid reference or relationship', and the shared
+    // request-failure vocabulary maps the 5xx to its own "this one is on our
+    // side" copy. The Sentry express handler (registered before this one in
+    // server.ts) already reports the raw status-less throw; the status change
+    // here is what moves the FAILED RESPONSE into 5xx alerting.
+    const apiError = new ApiError('Something went wrong', 500, false);
     next(apiError);
   } else if (err.code === '23505') {
     // Unique violation

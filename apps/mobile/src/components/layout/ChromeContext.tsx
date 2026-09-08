@@ -21,6 +21,7 @@ import {
   screenActionEntries,
   type ScreenActionHandler,
 } from './screenActionDispatch';
+import { NO_PROFILE_NAME } from '../../hooks/profileIdentity';
 
 /**
  * Shared state for the app chrome: the top bar and the bottom tab bar.
@@ -186,7 +187,11 @@ const inertValue: ChromeContextValue = {
   subscribeScrollToTop: () => () => {},
   withinChrome: false,
   setTopBarSuppressed: () => {},
-  profileName: 'Your profile',
+  // A genuine absence, not the stand-in 'Your profile': the avatar draws
+  // `name || '?'`, so '' is the neutral placeholder for the frame before the
+  // real profile lands, while 'Your profile' would draw an invented 'YP' chip —
+  // the same fabricated-initials defect as the 'NI' from an email.
+  profileName: NO_PROFILE_NAME,
   profileAvatarUri: null,
   profileEmail: null,
   setProfile: () => {},
@@ -216,7 +221,9 @@ export function ChromeProvider({ children }: { children: React.ReactNode }) {
     name: string;
     avatarUri: string | null;
     email: string | null;
-  }>({ name: 'Your profile', avatarUri: null, email: null });
+    // Genuine absence before the shell publishes the real profile — the avatar
+    // renders '' as its neutral '?', never a fabricated 'YP'.
+  }>({ name: NO_PROFILE_NAME, avatarUri: null, email: null });
 
   const noop = useCallback(() => {}, []);
 

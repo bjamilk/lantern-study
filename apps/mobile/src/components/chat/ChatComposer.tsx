@@ -69,7 +69,6 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { colors } = useTheme();
   const [attaching, setAttaching] = useState(false);
-  const [trayOpen, setTrayOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -148,12 +147,6 @@ export function ChatComposer({
     onChangeText(replaced);
     setMentionQuery(null);
   };
-
-  // Keep the insert tray from lingering open when the composer switches into
-  // edit mode (where insert actions are hidden).
-  useEffect(() => {
-    if (editingMessage) setTrayOpen(false);
-  }, [editingMessage?.id]);
 
   const pickImage = async () => {
     if (!onAttachImage || attaching) return;
@@ -264,12 +257,11 @@ export function ChatComposer({
 
   const busy = sending || attaching || uploadingAudio;
   const showMic = !editingMessage && !value.trim() && !!onSendAudioMarkdown;
-  // Insert actions (image today, more later) collapse behind one "+" tray so the
-  // resting composer stays [+] [input] [mic/send] as more types are added.
+  // A photo attach button, shown while composing (hidden in edit mode). Photo
+  // is the only attachment type, so it is a direct action, not a menu.
   const showAttachTray = !!onAttachImage && !editingMessage;
 
   const handleTrayPickImage = () => {
-    setTrayOpen(false);
     void pickImage();
   };
 
@@ -338,51 +330,22 @@ export function ChatComposer({
         style={{ borderTopColor: colors.border }}
       >
         {showAttachTray ? (
-          <View className="relative mb-0.5">
-            {trayOpen ? (
-              <View
-                className="absolute rounded-xl border overflow-hidden"
-                style={{
-                  bottom: 56,
-                  left: 0,
-                  minWidth: 168,
-                  borderColor: colors.border,
-                  backgroundColor: colors.surface,
-                  zIndex: 20,
-                }}
-              >
-                <Pressable
-                  onPress={handleTrayPickImage}
-                  disabled={busy || isRecording}
-                  className="flex-row items-center gap-3 px-4 py-3"
-                  accessibilityLabel="Attach image"
-                >
-                  <AppIcon name="image" size={22} color={featureAccents.groups} />
-                  <Text className="text-sm font-medium" style={{ color: colors.text }}>
-                    Photo
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null}
-            <Pressable
-              onPress={() => setTrayOpen((open) => !open)}
-              disabled={busy || isRecording}
-              className="p-2 min-w-[48px] min-h-[48px] items-center justify-center"
-              accessibilityRole="button"
-              accessibilityLabel={trayOpen ? 'Close attachment menu' : 'Add attachment'}
-              accessibilityState={{ expanded: trayOpen }}
-            >
-              {attaching ? (
-                <ActivityIndicator size="small" color={colors.primaryText} />
-              ) : (
-                <AppIcon
-                  name={trayOpen ? 'close' : 'add'}
-                  size={26}
-                  color={featureAccents.groups}
-                />
-              )}
-            </Pressable>
-          </View>
+          // Photo is the only attachment type today, so the "+" opens the
+          // picker directly rather than a one-item disclosure menu. If a second
+          // type is ever added, restore a tray here.
+          <Pressable
+            onPress={handleTrayPickImage}
+            disabled={busy || isRecording}
+            className="p-2 mb-0.5 min-w-[48px] min-h-[48px] items-center justify-center"
+            accessibilityRole="button"
+            accessibilityLabel="Attach photo"
+          >
+            {attaching ? (
+              <ActivityIndicator size="small" color={colors.primaryText} />
+            ) : (
+              <AppIcon name="image" size={24} color={featureAccents.groups} />
+            )}
+          </Pressable>
         ) : null}
 
         {showMic || isRecording ? (

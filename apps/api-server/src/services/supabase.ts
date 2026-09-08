@@ -11308,7 +11308,15 @@ export class SupabaseService {
     // typically has a handful of bookmarks.
     const { data, error } = await (this.supabase as any)
       .from("message_bookmarks")
-      .select("message_id, messages!inner(group_id)")
+      // Name the FK constraint (message_bookmarks.message_id -> messages.id,
+      // auto-named message_bookmarks_message_id_fkey). Today message_bookmarks
+      // has a single FK to messages so a bare `messages!inner` resolves, but
+      // that is exactly the state community_members was in the day before a
+      // second FK made its bare embed ambiguous (PGRST201) and broke the
+      // roster. Naming it keeps this query correct if messages ever gains a
+      // second relationship from message_bookmarks. The resource is still
+      // called `messages`, so the `.eq("messages.group_id", ...)` below holds.
+      .select("message_id, messages!message_bookmarks_message_id_fkey!inner(group_id)")
       .eq("user_id", userId)
       .eq("messages.group_id", groupId);
     if (error) {
@@ -16389,7 +16397,14 @@ export class SupabaseService {
   async getNoteCollaborators(noteId: string) {
     const { data, error } = await this.supabase
       .from("note_collaborators")
-      .select("*, profiles(id, name, avatar_url)")
+      // Name the FK constraint (note_collaborators.user_id -> profiles.id,
+      // auto-named note_collaborators_user_id_fkey). note_collaborators has a
+      // single FK to profiles today, so a bare `profiles(...)` resolves — the
+      // same single-FK state community_members was in before a second FK made
+      // its bare embed ambiguous (PGRST201) and broke the roster. Naming it now
+      // keeps this correct if profiles ever gains a second relationship here.
+      // The resource is still called `profiles`, so `row.profiles` below holds.
+      .select("*, profiles!note_collaborators_user_id_fkey(id, name, avatar_url)")
       .eq("note_id", noteId);
     if (error) throw error;
     return (data || []).map((row: any) => ({

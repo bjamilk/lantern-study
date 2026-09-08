@@ -22,7 +22,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 import { ForwardMessageSheet } from '../../components/chat/ForwardMessageSheet';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
-import { MessageActionBar } from '../../components/chat/MessageActionBar';
+import { MessageActionSheet } from '../../components/chat/MessageActionSheet';
+import { planDateSeparators } from '../../components/chat/chatDateHelpers';
 import { useToastStore } from '../../stores/toastStore';
 import {
   canEditChatMessage,
@@ -86,7 +87,7 @@ import {
 } from '@lantern/shared';
 import { useTheme, withAlpha } from '../../theme';
 import { applyReactionLocally } from '@lantern/shared/chat';
-import { MessageReactions, ReactionPickerRow } from '../../components/chat/MessageReactions';
+import { MessageReactions } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { AppIcon } from '../../components/ui/AppIcon';
 
@@ -107,6 +108,26 @@ type NavigationProp = {
 interface Props {
   navigation: NavigationProp;
   route: { params: { threadId: string; recipientId: string; recipientName?: string } };
+}
+
+function ChatDateSeparator({ label, pillStyle }: { label: string; pillStyle?: ViewStyle }) {
+  if (!label) return null;
+  return (
+    <View className="items-center my-3">
+      {/* The default pill is translucent, which washes out over a photo — a
+          wallpaper swaps it for an opaque one via `pillStyle`. */}
+      <View
+        className={
+          pillStyle
+            ? 'px-3 py-1 rounded-full'
+            : 'px-3 py-1 rounded-full bg-lantern-background-secondary/80 dark:bg-lantern-surface-secondary/80'
+        }
+        style={pillStyle}
+      >
+        <Text className="text-caption font-medium text-lantern-text-secondary">{label}</Text>
+      </View>
+    </View>
+  );
 }
 
 function NewMessagesDivider({ pillStyle }: { pillStyle?: ViewStyle }) {
@@ -139,6 +160,8 @@ interface DmMessageRowProps {
   senderName?: string;
   senderAvatar?: string | null;
   showUnreadDivider: boolean;
+  /** Day separator to draw above this message ("Today" / "Mon 1 Sep"), or null. */
+  dateLabel: string | null;
   /** Opaque pill behind the unread divider when a wallpaper is showing. */
   wallpaperPillStyle?: ViewStyle;
   onReplyToMessage: (message: DirectMessage) => void;
@@ -167,6 +190,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
   senderName,
   senderAvatar,
   showUnreadDivider,
+  dateLabel,
   wallpaperPillStyle,
   onReplyToMessage,
   onSwipeReplyToMessage,
@@ -215,10 +239,14 @@ const DmMessageRow = React.memo(function DmMessageRow({
   const handleRetry = useCallback(() => onRetryMessage(message), [message, onRetryMessage]);
 
   return (
-    // Full-row selection highlight (negative margin cancels the list padding)
-    // so the action bar visibly belongs to the message it will act on. Inline
-    // style, not `bg-lantern-primary/15`: that class compiles to nothing (the
-    // lantern palette is var()-backed, so Tailwind drops opacity modifiers).
+    <>
+    {/* Day separator sits outside the selection highlight so it never looks
+        like part of the long-pressed message. */}
+    {dateLabel ? <ChatDateSeparator label={dateLabel} pillStyle={wallpaperPillStyle} /> : null}
+    {/* Full-row selection highlight (negative margin cancels the list padding)
+        so the action bar visibly belongs to the message it will act on. Inline
+        style, not `bg-lantern-primary/15`: that class compiles to nothing (the
+        lantern palette is var()-backed, so Tailwind drops opacity modifiers). */}
     <View
       className={selected ? '-mx-4 px-4 py-1' : undefined}
       style={
@@ -255,6 +283,7 @@ const DmMessageRow = React.memo(function DmMessageRow({
         onToggle={(emoji, added) => onToggleReaction(message, emoji, added)}
       />
     </View>
+    </>
   );
 });
 
@@ -537,7 +566,6 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   // sheet's Modal is gone first — iOS will not stack an Alert under a Modal.
   const [chatMenuOpen, setChatMenuOpen] = useState(false);
   const [dmMessageTarget, setDmMessageTarget] = useState<DirectMessage | null>(null);
-  const [dmMessageOverflowOpen, setDmMessageOverflowOpen] = useState(false);
   const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   /** Filter the thread down to starred messages — stars were unfindable without it. */
   const [starredOnly, setStarredOnly] = useState(false);
@@ -549,6 +577,14 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   const visibleMessages = useMemo(
     () => (starredOnly ? messages.filter((m) => starredIds.has(m.id)) : messages),
     [messages, starredOnly, starredIds]
+  );
+  // Day separators, planned once over the list, so a thread never reads
+  // 3:56 PM → 2:17 PM → 5:01 AM as if it ran backwards when those times sat on
+  // different days. Parallel to `visibleMessages`; index i is the label above
+  // message i (or null).
+  const dateLabels = useMemo(
+    () => planDateSeparators(visibleMessages.map((m) => m.timestamp)),
+    [visibleMessages]
   );
   const [pinnedMessage, setPinnedMessage] = useState<{ id: string; text: string } | null>(null);
   const [forwardMessage, setForwardMessage] = useState<DirectMessage | null>(null);
@@ -1149,76 +1185,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top', 'bottom']}>
-      {dmMessageTarget ? (
-        <>
-        <ReactionPickerRow
-          mine={myReactions[dmMessageTarget.id]}
-          onPick={(emoji, added) => {
-            const target = dmMessageTarget;
-            setDmMessageTarget(null);
-            void handleToggleReaction(target, emoji, added);
-          }}
-        />
-        <MessageActionBar
-          onClose={() => setDmMessageTarget(null)}
-          onReply={() => {
-            const m = dmMessageTarget;
-            setDmMessageTarget(null);
-            beginReply(m);
-          }}
-          onForward={
-            (dmMessageTarget.text || '').trim() &&
-            !isChatAudioMessage(dmMessageTarget.text) &&
-            !isChatImageMessage(dmMessageTarget.text)
-              ? () => {
-                  const m = dmMessageTarget;
-                  setDmMessageTarget(null);
-                  setForwardMessage(m);
-                }
-              : undefined
-          }
-          onCopy={
-            (dmMessageTarget.text || '').trim() &&
-            !isChatAudioMessage(dmMessageTarget.text) &&
-            !isChatImageMessage(dmMessageTarget.text)
-              ? () => {
-                  const m = dmMessageTarget;
-                  setDmMessageTarget(null);
-                  void Clipboard.setStringAsync((m.text || '').trim());
-                }
-              : undefined
-          }
-          onStar={() => {
-            const m = dmMessageTarget;
-            setDmMessageTarget(null);
-            toggleStarMessage(m);
-          }}
-          onPin={() => {
-            const m = dmMessageTarget;
-            setDmMessageTarget(null);
-            togglePinMessage(m);
-          }}
-          starred={starredIds.has(dmMessageTarget.id)}
-          pinned={pinnedMessage?.id === dmMessageTarget.id}
-          // First-class Delete: the DM overflow could only ever hold Edit and
-          // Remove, so its button — and delete with it — disappeared for every
-          // message that was not your own and recent.
-          onDelete={
-            canRemoveChatMessage(dmMessageTarget, user?.id)
-              ? () => {
-                  const m = dmMessageTarget;
-                  setDmMessageTarget(null);
-                  afterSheet(() => confirmRemoveMessage(m));
-                }
-              : undefined
-          }
-          deleteBlockedReason={deleteBlockedReason(dmMessageTarget, user?.id)}
-          onMore={dmMessageItems.length > 0 ? () => {
-            setDmMessageOverflowOpen(true);
-          } : undefined}
-        />
-        </>
-      ) : (
+      {/* The long-press actions live in a bottom sheet now (see
+          <MessageActionSheet> below), so the header stays put while a message
+          is selected — it no longer swaps out for a top-anchored icon bar. */}
       <View className="flex-row items-center gap-2 px-3 py-2 border-b border-lantern-border bg-lantern-surface">
         <Pressable hitSlop={10}
           onPress={handleBack}
@@ -1243,7 +1212,6 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           <AppIcon name="ellipsis-vertical" size={22} color={colors.textSecondary} />
         </Pressable>
       </View>
-      )}
 
       {thread?.isArchived || chatMuted ? (
         <View className="flex-row items-center gap-2 px-3 py-1.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
@@ -1603,7 +1571,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               }
               // DmMessageRow is memoized and closes over none of these.
               extraData={listExtraData}
-              renderItem={({ item }) => (
+              renderItem={({ item, index }) => (
                 <DmMessageRow
                   message={item}
                   selected={dmMessageTarget?.id === item.id}
@@ -1617,6 +1585,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                       : peerAvatarUrl || item.senderAvatar || undefined
                   }
                   showUnreadDivider={firstUnreadId === item.id}
+                  dateLabel={dateLabels[index] ?? null}
                   wallpaperPillStyle={wallpaper.pillStyle}
                   onReplyToMessage={showMessageActions}
                   onSwipeReplyToMessage={beginReply}
@@ -1818,18 +1787,69 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         otherAvatarUrl={peerAvatarUrl}
         threadId={threadId}
       />
-      <ActionSheet
-        visible={dmMessageOverflowOpen}
-        title="More"
-        items={dmMessageItems.map((item) => ({
-          ...item,
-          onPress: () => {
-            setDmMessageOverflowOpen(false);
-            setDmMessageTarget(null);
-            item.onPress();
-          },
-        }))}
-        onClose={() => setDmMessageOverflowOpen(false)}
+      <MessageActionSheet
+        visible={!!dmMessageTarget}
+        onClose={() => setDmMessageTarget(null)}
+        myReactions={dmMessageTarget ? myReactions[dmMessageTarget.id] : undefined}
+        onReact={(emoji, added) => {
+          const m = dmMessageTarget;
+          if (!m) return;
+          setDmMessageTarget(null);
+          void handleToggleReaction(m, emoji, added);
+        }}
+        onReply={() => {
+          const m = dmMessageTarget;
+          if (m) beginReply(m);
+        }}
+        onForward={
+          dmMessageTarget &&
+          (dmMessageTarget.text || '').trim() &&
+          !isChatAudioMessage(dmMessageTarget.text) &&
+          !isChatImageMessage(dmMessageTarget.text)
+            ? () => {
+                const m = dmMessageTarget;
+                // Let this sheet finish animating out before the forward sheet
+                // slides in — stacking two modals in one tick glitches on iOS.
+                if (m) afterSheet(() => setForwardMessage(m));
+              }
+            : undefined
+        }
+        onCopy={
+          dmMessageTarget &&
+          (dmMessageTarget.text || '').trim() &&
+          !isChatAudioMessage(dmMessageTarget.text) &&
+          !isChatImageMessage(dmMessageTarget.text)
+            ? () => {
+                const m = dmMessageTarget;
+                if (m) void Clipboard.setStringAsync((m.text || '').trim());
+              }
+            : undefined
+        }
+        onStar={() => {
+          const m = dmMessageTarget;
+          if (m) toggleStarMessage(m);
+        }}
+        onPin={() => {
+          const m = dmMessageTarget;
+          if (m) togglePinMessage(m);
+        }}
+        starred={!!dmMessageTarget && starredIds.has(dmMessageTarget.id)}
+        pinned={!!dmMessageTarget && pinnedMessage?.id === dmMessageTarget.id}
+        // First-class Delete: the DM overflow could only ever hold Edit and
+        // Remove, so its button — and delete with it — disappeared for every
+        // message that was not your own and recent.
+        onDelete={
+          dmMessageTarget && canRemoveChatMessage(dmMessageTarget, user?.id)
+            ? () => {
+                const m = dmMessageTarget;
+                if (m) afterSheet(() => confirmRemoveMessage(m));
+              }
+            : undefined
+        }
+        deleteBlockedReason={
+          dmMessageTarget ? deleteBlockedReason(dmMessageTarget, user?.id) : undefined
+        }
+        extraItems={dmMessageItems}
       />
       <ForwardMessageSheet
         visible={!!forwardMessage}

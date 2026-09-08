@@ -56,15 +56,19 @@ export function isValidJobEngagementDuration(value: unknown): value is JobEngage
 export function formatJobCompensation(c: JobCompensation | null | undefined): string {
   if (!c || c.kind === 'discuss') return 'Pay: discuss';
   if (c.kind === 'unpaid') return 'Unpaid';
-  const cur = c.currency || 'NGN';
   const period =
     c.period && isJobCompensationPeriod(c.period)
       ? ` / ${JOB_COMPENSATION_PERIOD_LABELS[c.period].replace(/^Per /i, '').toLowerCase()}`
       : '';
+  // Naira is written with its symbol; any other currency keeps its code as a
+  // prefix. Amounts always carry thousands separators — "₦30,000", never the
+  // raw "NGN 30000" a reader has to parse digit by digit.
+  const prefix = c.currency && c.currency !== 'NGN' ? `${c.currency} ` : '₦';
+  const amount = (n: number) => `${prefix}${n.toLocaleString('en-NG')}`;
   if (c.amountMin != null && c.amountMax != null) {
-    return `${cur} ${c.amountMin}–${c.amountMax}${period}`;
+    return `${amount(c.amountMin)}–${c.amountMax.toLocaleString('en-NG')}${period}`;
   }
-  if (c.amountMin != null) return `${cur} ${c.amountMin}${period}`;
+  if (c.amountMin != null) return `${amount(c.amountMin)}${period}`;
   return `Paid${period}`;
 }
 

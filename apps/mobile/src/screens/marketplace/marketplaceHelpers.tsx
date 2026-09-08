@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Image, View } from 'react-native';
 import { normalizeStorageUrl } from '@lantern/shared/utils';
+import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import type { MarketplaceListing } from '../../stores';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 
@@ -17,7 +18,7 @@ export function timeAgo(dateStr: string): string {
   if (hours < 24) return `${hours}h ago`;
   const days = Math.floor(hours / 24);
   if (days < 7) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
+  return formatDisplayDate(dateStr);
 }
 
 type ListingImageProps = {

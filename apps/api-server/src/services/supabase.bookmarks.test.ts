@@ -191,8 +191,13 @@ describe('getBookmarkedMessageIdsForGroup', () => {
     const h = harness({ data: [{ message_id: POST }], error: null });
     expect(await h.read()).toEqual({ messageIds: [POST], serverBacked: true });
     // The inner join is what keeps this one query instead of listing every
-    // message id in a board that may hold thousands of posts.
-    expect(h.calls[0]!.select).toContain('messages!inner');
+    // message id in a board that may hold thousands of posts. The embed names
+    // its FK constraint (message_bookmarks_message_id_fkey) rather than a bare
+    // `messages!inner`, so a future second FK to messages cannot make it
+    // ambiguous (PGRST201) — see postgrestEmbedDisambiguation.test.ts.
+    expect(h.calls[0]!.select).toContain(
+      'messages!message_bookmarks_message_id_fkey!inner'
+    );
   });
 
   it('answers serverBacked:false, never a throw, before the migration', async () => {
