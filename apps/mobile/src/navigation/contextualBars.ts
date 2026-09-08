@@ -198,33 +198,6 @@ export interface ContextualBarSpec {
    * 2026-09-08). No default — see {@link ContextualBarMode}.
    */
   mode: ContextualBarMode;
-  /**
-   * The section's own display NAME — the place this row IS ("Study", "Shop",
-   * "Deck"…) — the founder's decision "name the current place, always"
-   * (2026-09-08).
-   *
-   * Required, and deliberately placed beside {@link mode}: build 175's device
-   * pass found that naming only the SELECTED item left six of eight rows with no
-   * name at all, because most rows never have a selected item. So a row must be
-   * able to name the place itself, and a fifth registry cannot be added without
-   * stating BOTH where its row sits (`mode`) and what its place is called.
-   *
-   * WHERE the name is drawn is decided in contextualBarPresentation.ts
-   * (`planContextualRow`), which is pure and tested:
-   *
-   * - A `replace`-mode row with NO active item — the Study hub or
-   *   a Study surface reached sideways like Notes — draws this name as the row's
-   *   leading title, because there is no selected door to name and the honest
-   *   answer to "where am I" is the section itself.
-   * - A `replace`-mode row WITH a selection names the selected DOOR instead (its
-   *   pill), so this name is not drawn there.
-   * - An `above`-mode row (a deck, a note, a document, a community — a screen you
-   *   pass THROUGH, not a section) names each of its own ITEMS under their icons;
-   *   its place is the screen's own header, so this name is not drawn on the row.
-   *   It is still stated: the requirement is uniform so the decision is never
-   *   skipped, and it is the row's honest identity.
-   */
-  name: string;
   items: readonly ContextualBarItem[];
   /**
    * The row's accent when NO item is the current screen.
@@ -252,9 +225,6 @@ const STUDY_BAR: ContextualBarSpec = {
   // Study is a SECTION: five co-equal doors. The row takes the global bar's
   // place and the leading exit control is the way out (founder decision 1-2).
   mode: 'replace',
-  // Named on its hub and on Notes, where no door is the current screen: the row
-  // says "Study" rather than showing five nameless icons (founder decision 2).
-  name: 'Study',
   items: [
     {
       id: 'library',
@@ -314,10 +284,6 @@ const DECK_BAR: ContextualBarSpec = {
   // One deck you pass through, not a section: the row stays ABOVE the global
   // bar so a student is never stranded inside a single deck (founder decision 3).
   mode: 'above',
-  // Above rows label each icon (Review · Learn · Match · Cram), so this is the
-  // row's identity rather than a drawn title; still stated so the decision is
-  // never skipped.
-  name: 'Deck',
   accent: 'flashcards',
   items: [
     {
@@ -388,9 +354,6 @@ const NOTE_BAR: ContextualBarSpec = {
   // One note you pass through: ABOVE the global bar, for the same reason the
   // deck row is (founder decision 3).
   mode: 'above',
-  // Above rows label each icon (Learn · Cards · Test · AI); name is the row's
-  // identity, not a drawn title.
-  name: 'Note',
   accent: 'notes',
   items: [
     {
@@ -447,9 +410,6 @@ const WALKTHROUGH_BAR: ContextualBarSpec = {
   stack: 'StudyTab',
   // One document you read through: ABOVE the global bar (founder decision 3).
   mode: 'above',
-  // Above rows label each icon (Plan · Ask · Quiz · Done); name is the row's
-  // identity, not a drawn title.
-  name: 'Document',
   accent: 'notes',
   items: [
     {
@@ -521,9 +481,6 @@ const COMMUNITY_BAR: ContextualBarSpec = {
   // One community you pass through, not a section of Campus: ABOVE the global
   // bar so the student can always step back out to Campus (founder decision 3).
   mode: 'above',
-  // Above rows label each icon (Lounge · Boards · Rooms · Members); name is the
-  // row's identity, not a drawn title.
-  name: 'Community',
   accent: 'campus',
   items: [
     {
@@ -587,15 +544,13 @@ const SHOP_BAR: ContextualBarSpec = {
   // the global bar's place, with the leading exit control as the way out
   // (founder decision 1-2).
   mode: 'replace',
-  // Shop's own name. Note that today it is not DRAWN on the row: every keyed
-  // Shop surface has an active door (Browse is `activeFor` the Campus shop
-  // segment and the two course rooms), so the row always names the place with
-  // a selected pill and the no-selection title branch is never reached here.
-  // The word the student sees above it is this same one — `campusAppBarTitleOverride`
-  // puts "Shop" in the app bar while this replace row owns the bottom bar. It is
-  // stated because the field is required of every registry, and because a future
-  // Shop key with no active door must not fall back to a nameless row.
-  name: 'Shop',
+  // The word "Shop" the student sees above this row comes from the app bar, not
+  // from this registry: `campusAppBarTitleOverride` (screens/campus/campusSegments.ts)
+  // puts it there while this replace row owns the bottom bar. In practice every
+  // keyed Shop surface has an active door (Browse is `activeFor` the Campus shop
+  // segment and the two course rooms), so the row draws a selected pill; a Shop
+  // key with no active door would label every door instead, exactly as the Study
+  // hub now does.
   accent: 'campus',
   items: [
     {

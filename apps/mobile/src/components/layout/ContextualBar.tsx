@@ -25,7 +25,6 @@ import {
   CONTEXTUAL_PILL_LABEL,
   planContextualRow,
   type ContextualPillPlan,
-  type ContextualSectionPlan,
 } from './contextualBarPresentation';
 
 /**
@@ -38,8 +37,9 @@ import {
  * note, walk-through, community) sits above an unchanged global bar. This file
  * draws both.
  *
- * HOW an item is drawn — founder decision 4, amended by "name the current place,
- * always" (build 175). One of three surfaces, chosen by `planContextualRow`:
+ * HOW an item is drawn — founder decision 4, amended by "label every door on a
+ * no-selection surface" (build 176). One of two surfaces, chosen by
+ * `planContextualRow`:
  *
  * - A `replace` row WITH a selection: the selected door shows its label beside
  *   its icon inside a filled pill; every other item is its icon alone. The
@@ -48,22 +48,20 @@ import {
  *   asserts clears 4.5:1 in BOTH themes. The word is `text-body` (15 sp), one
  *   line, tail-ellipsised and font-capped so "Flashcards" (the worst case) stays
  *   inside the row even at a large accessibility text size.
- * - A `replace` row with NO selection (the Study hub and Notes):
- *   a leading TITLE names the section itself ("Study", "Shop"), so the row is
- *   never a strip of nameless icons. It is drawn as a title — strong neutral
- *   text, no fill — deliberately NOT like the selected pill's button, because it
- *   is not a control: you are already here, so it does nothing and must not look
- *   as though it should. The doors beside it are their icons alone.
- * - An `above` row (deck, note, walk-through, community): a small label UNDER
- *   every icon, because a pass-through screen has no door to promote and its
- *   glyphs (Match vs Cram, Rooms vs Members) are ambiguous without their words.
+ * - Every OTHER row — an `above` row (deck, note, walk-through, community), OR a
+ *   `replace` row with NO selection (the Study hub, Notes, the Shop root): a
+ *   small label UNDER every icon. Build 175 tried a leading section TITLE on the
+ *   no-selection replace rows; build 176's device pass rejected it — it spent a
+ *   third of the bar naming a section the app bar already names, and squeezed the
+ *   five doors narrower. So a no-selection surface now shares the pass-through
+ *   row's one code path: every door names itself, because a student there lacks
+ *   what each icon DOES, not which section they are in.
  *
  * The hidden labels never leave the accessibility tree — every item keeps its
- * full label as an accessible name, and the section title is announced as a
- * heading (see planContextualRow). The which-surface / accessible-name /
- * long-word decisions are pure in contextualBarPresentation.ts (tested); this
- * file is the untestable shell over them, because mobile jest is node-env and
- * cannot render a native component.
+ * full label as an accessible name (see planContextualRow). The which-surface /
+ * accessible-name / long-word decisions are pure in contextualBarPresentation.ts
+ * (tested); this file is the untestable shell over them, because mobile jest is
+ * node-env and cannot render a native component.
  *
  * A `replace`-mode row also carries ONE leading exit control (founder decision
  * 2): Back when the focused stack can pop, Home at the section root — never
@@ -152,12 +150,14 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
           </Text>
         </View>
       ) : plan.variant === 'labeledIcon' ? (
-        // An `above` row's item: icon with a small label UNDER it, no fill — the
-        // same shape the global tab labels use (`text-label`, 11 sp), so a
-        // pass-through toolbar reads as a labelled row rather than nameless
-        // glyphs. Icon and word share the feature `ink`, as the icon-only items
-        // already do on this bar. The word is capped and tail-ellipsised so a
-        // long one stays on its single line inside the 44 dp row.
+        // An `above` row's item, OR a door on a no-selection `replace` row (the
+        // Study hub, the Shop root): icon with a small label UNDER it, no fill —
+        // the same shape the global tab labels use (`text-label`, 11 sp), so a
+        // pass-through toolbar and a section hub alike read as a labelled row
+        // rather than nameless glyphs. Icon and word share the feature `ink`, as
+        // the icon-only items already do on this bar. The word is capped and
+        // tail-ellipsised so a long one ("Flashcards" on the tight Study row)
+        // stays on its single line inside the 44 dp row.
         <View className="items-center">
           <AppIcon
             name={item.icon}
@@ -178,9 +178,11 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
           </Text>
         </View>
       ) : (
-        // Every non-selected door on a `replace` row: its icon alone, stroked in
-        // its own identity. No label on screen — but the accessible name above
-        // still carries it, and the leading section title names the place.
+        // Every non-selected door on a `replace` row WITH a selection: its icon
+        // alone, stroked in its own identity. No label on screen — but the
+        // accessible name above still carries it, and the selected door's pill
+        // names the place. (A replace row with NO selection never reaches here:
+        // there every door is a `labeledIcon`.)
         <AppIcon
           name={item.icon}
           size={18}
@@ -191,43 +193,6 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
         />
       )}
     </Pressable>
-  );
-}
-
-/**
- * The leading TITLE that names the section on a `replace` row with no selected
- * door — the Study hub and Notes (founder decision "name the current
- * place, always").
- *
- * It is NOT a control: you are already in the section, so tapping it has nothing
- * real to do, and it is drawn as a title (strong neutral text, no fill, no pill)
- * so it cannot read as the selected pill's button. `accessibilityRole="header"`
- * announces it as the place, and the name is capped / tail-ellipsised on its one
- * line exactly as the drawn words are, so a long section name never wraps the
- * 44 dp row.
- */
-function SectionTitle({ plan, color }: { plan: ContextualSectionPlan; color: string }) {
-  return (
-    <View
-      style={{ flex: plan.flex, minHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
-      className="items-center justify-center px-2.5"
-      accessibilityRole="header"
-      // The planned name, not whatever the truncated glyphs happen to be: a
-      // section name long enough to ellipsise must still be ANNOUNCED whole,
-      // the same promise every item's `accessibleName` makes.
-      accessible
-      accessibilityLabel={plan.accessibleName}
-    >
-      <Text
-        numberOfLines={CONTEXTUAL_PILL_LABEL.numberOfLines}
-        ellipsizeMode={CONTEXTUAL_PILL_LABEL.ellipsizeMode}
-        maxFontSizeMultiplier={CONTEXTUAL_PILL_LABEL.maxFontSizeMultiplier}
-        className="text-body text-center font-semibold"
-        style={{ color }}
-      >
-        {plan.name}
-      </Text>
-    </View>
   );
 }
 
@@ -401,14 +366,14 @@ export function ContextualBar({
   // shell with an empty registry is byte-for-byte today's shell.
   if (!rendered) return null;
 
-  // Name the current place, always: the row's mode and section name decide
-  // whether the place is the selected door's pill, a leading section title, or a
-  // label under every icon. Every item still keeps its full label as an
-  // accessible name. (The replace-mode exit control is drawn by BottomTabBar —
-  // see this file's header for why it cannot live here.)
+  // The row's mode and its selection decide the surface: the selected door's
+  // pill on a replace row that has one, or a label under every icon everywhere
+  // else (an above row, or a no-selection replace row like the Study hub). Every
+  // item keeps its full label as an accessible name. (The replace-mode exit
+  // control is drawn by BottomTabBar — see this file's header for why it cannot
+  // live here.)
   const rowPlan = planContextualRow({
     mode: rendered.mode,
-    sectionName: rendered.name,
     items: rendered.items,
     selectedId: current?.id,
   });
@@ -432,12 +397,6 @@ export function ContextualBar({
         className="flex-row"
         style={{ height: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
       >
-        {rowPlan.section ? (
-          // The leading section title, on a replace row with no selected door.
-          // `colors.text` is the bar's strong neutral ink — a title, not a
-          // feature chip and not a button.
-          <SectionTitle plan={rowPlan.section} color={colors.text} />
-        ) : null}
         {rendered.items.map((item) => {
           const plan = planById.get(item.id);
           if (!plan) return null;

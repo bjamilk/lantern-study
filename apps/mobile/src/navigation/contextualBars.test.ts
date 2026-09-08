@@ -882,37 +882,10 @@ describe('replace vs above: where each row sits (founder decision, 2026-09-08)',
   });
 });
 
-describe('every row names its place (build 175, "name the current place, always")', () => {
-  it('makes every registry state a non-empty section name beside its mode', () => {
-    // Naming only the selected item left six of eight rows nameless, because
-    // most rows never have a selected item. The fix requires every registry —
-    // present and future — to state what its place is called, right where the
-    // mode lives, so a fifth registry cannot skip the decision. FAILS the moment
-    // a spec is added (or edited) without a name.
-    for (const [route, spec] of entries()) {
-      expect(typeof spec.name).toBe('string');
-      expect(spec.name.length).toBeGreaterThan(0);
-      expect(typeof route).toBe('string');
-    }
-  });
-
-  it('names the two sections after themselves — Study and Shop', () => {
-    // These are the replace-mode rows whose root shows the name as a title when
-    // no door is the current screen.
-    expect(studyBar().name).toBe('Study');
-    expect(shopBar().name).toBe('Shop');
-  });
-
-  it('gives every above-mode row its own identity too, even though it draws per-icon labels', () => {
-    // An above row labels each icon rather than drawing the section title, but
-    // it still states its name — the requirement is uniform so the decision is
-    // never skipped.
-    expect(deckBar().name.length).toBeGreaterThan(0);
-    expect(noteBar().name.length).toBeGreaterThan(0);
-    expect(walkthroughBar().name.length).toBeGreaterThan(0);
-    expect(barFor('CommunityDetail').name.length).toBeGreaterThan(0);
-  });
-});
+// Build 175 gave every registry a `name` and drew it as a leading section title
+// on the no-selection replace rows; build 176's device pass removed both — a
+// no-selection row now labels every door instead (contextualBarPresentation.ts).
+// The registry no longer carries a `name`, so there is nothing to assert here.
 
 describe('the exit control of a replace-mode row (founder decision 2)', () => {
   it('is Back when the focused stack has a screen to pop', () => {

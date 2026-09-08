@@ -4,10 +4,8 @@ import {
   CONTEXTUAL_SEGMENT_FLEX,
   LONGEST_LABELED_ICON_WIDTH,
   LONGEST_PILL_LABEL_WIDTH,
-  LONGEST_SECTION_LABEL_WIDTH,
   contextualLabeledIconLabelSpace,
   contextualPillLabelSpace,
-  contextualSectionLabelSpace,
   planContextualRow,
   type ContextualPillInput,
 } from './contextualBarPresentation';
@@ -30,21 +28,19 @@ const ABOVE: ContextualPillInput[] = [
 ];
 
 const replace = (items: readonly ContextualPillInput[], selectedId: string | null | undefined) =>
-  planContextualRow({ mode: 'replace', sectionName: 'Study', items, selectedId });
+  planContextualRow({ mode: 'replace', items, selectedId });
 
 const above = (items: readonly ContextualPillInput[]) =>
-  planContextualRow({ mode: 'above', sectionName: 'Community', items, selectedId: null });
+  planContextualRow({ mode: 'above', items, selectedId: null });
 
 describe('planContextualRow: a replace row WITH a selection (founder decision 4)', () => {
   it('draws the selected door as a pill and every other door icon-only', () => {
-    const { section, items } = replace(STUDY, 'flashcards');
-    // No section title when a door is the current screen — the door names it.
-    expect(section).toBeNull();
+    const { items } = replace(STUDY, 'flashcards');
     expect(items.filter((p) => p.variant === 'selectedPill').map((p) => p.id)).toEqual([
       'flashcards',
     ]);
     // Every other item is icon-only — the whole of decision 4, which FAILS the
-    // moment the row goes back to a label under every door here.
+    // moment the selected row goes back to a label under every door here.
     expect(items.filter((p) => p.variant === 'iconOnly').map((p) => p.id)).toEqual([
       'library',
       'tests',
@@ -72,67 +68,50 @@ describe('planContextualRow: a replace row WITH a selection (founder decision 4)
   });
 });
 
-describe('planContextualRow: a replace row with NO selection names the SECTION', () => {
-  it('draws a leading section title and leaves every door icon-only', () => {
-    // The Study hub, the Shop root, Notes: no door is the current screen, so the
-    // row names the place itself instead of showing nameless icons. This is the
-    // build-175 fix — it FAILS the instant the no-selection branch stops
-    // emitting a section.
+describe('planContextualRow: a replace row with NO selection labels every door (build 176)', () => {
+  it('draws a label under every door, no pill and no icon-only strip', () => {
+    // The Study hub, the Shop root, Notes: no door is the current screen. Build
+    // 175 drew a leading section title here; build 176 labels every door instead
+    // — the same treatment an above row gets. This FAILS the instant the
+    // no-selection branch goes back to bare icons (or a section title).
     for (const selectedId of [null, undefined, 'not-on-this-row']) {
-      const { section, items } = replace(STUDY, selectedId);
-      expect(section).not.toBeNull();
-      expect(section!.name).toBe('Study');
-      expect(items.every((p) => p.variant === 'iconOnly')).toBe(true);
-      expect(items.some((p) => p.showLabel)).toBe(false);
+      const { items } = replace(STUDY, selectedId);
+      expect(items.every((p) => p.variant === 'labeledIcon')).toBe(true);
+      expect(items.every((p) => p.showLabel)).toBe(true);
       expect(items.some((p) => p.selected)).toBe(false);
     }
   });
 
-  it('carries the section name straight from the registry, not a door label', () => {
-    const { section } = planContextualRow({
-      mode: 'replace',
-      sectionName: 'Shop',
-      items: [{ id: 'browse', label: 'Browse' }],
-      selectedId: null,
-    });
-    expect(section!.name).toBe('Shop');
-  });
-
-  it('gives the section title the bigger share, the doors the equal one', () => {
-    const { section, items } = replace(STUDY, null);
-    expect(section!.flex).toBe(CONTEXTUAL_SEGMENT_FLEX.selected);
+  it('gives every labelled door the equal share — no bigger slice for anyone', () => {
+    const { items } = replace(STUDY, null);
     expect(new Set(items.map((p) => p.flex))).toEqual(
       new Set([CONTEXTUAL_SEGMENT_FLEX.unselected]),
     );
   });
 
-  it('announces the section title even though it is not a control', () => {
-    const { section } = replace(STUDY, null);
-    expect(section!.accessibleName).toBe('Study');
-    expect(section!.accessibleName.length).toBeGreaterThan(0);
+  it('is the SAME presentation an above row of the same items would get', () => {
+    // The founder's "one code path": a no-selection replace row and an above row
+    // draw identically. If the two ever diverge into look-alike branches, this
+    // catches it.
+    const asReplace = replace(STUDY, null).items;
+    const asAbove = planContextualRow({ mode: 'above', items: STUDY, selectedId: null }).items;
+    expect(asReplace).toEqual(asAbove);
   });
 });
 
 describe('planContextualRow: an above row labels EVERY icon (founder decision 3)', () => {
-  it('draws a label under every item and never a selection or a section', () => {
-    const { section, items } = above(ABOVE);
-    // A pass-through screen has no door to promote and no section title; its
-    // ambiguous glyphs (Match vs Cram, Rooms vs Members) each keep their word.
-    // FAILS if an above row is ever reduced to bare icons again.
-    expect(section).toBeNull();
+  it('draws a label under every item and never a selection', () => {
+    const { items } = above(ABOVE);
+    // A pass-through screen has no door to promote; its ambiguous glyphs (Match
+    // vs Cram, Rooms vs Members) each keep their word. FAILS if an above row is
+    // ever reduced to bare icons again.
     expect(items.every((p) => p.variant === 'labeledIcon')).toBe(true);
     expect(items.every((p) => p.showLabel)).toBe(true);
     expect(items.some((p) => p.selected)).toBe(false);
   });
 
   it('ignores any stray selectedId — an above item is never the current screen', () => {
-    const { section, items } = planContextualRow({
-      mode: 'above',
-      sectionName: 'Deck',
-      items: ABOVE,
-      selectedId: 'a',
-    });
-    expect(section).toBeNull();
+    const { items } = planContextualRow({ mode: 'above', items: ABOVE, selectedId: 'a' });
     expect(items.every((p) => p.variant === 'labeledIcon')).toBe(true);
     expect(items.some((p) => p.selected)).toBe(false);
   });
@@ -147,7 +126,7 @@ describe('planContextualRow: an above row labels EVERY icon (founder decision 3)
 
 describe('every item keeps a full accessible name on every surface', () => {
   it('keeps it whether the word is drawn or hidden', () => {
-    // The accessibility half of the decision on all three surfaces: hiding a
+    // The accessibility half of the decision on all three variants: hiding a
     // word visually must not strip it from the screen reader. If accessibleName
     // were ever derived from showLabel (blank when hidden), this fails.
     const rows = [replace(STUDY, 'tests'), replace(STUDY, null), above(ABOVE)];
@@ -174,8 +153,8 @@ describe('the drawn word has room to BE a word', () => {
   const EXIT_WIDTH = 48;
 
   it('fits the longest door label in the selected pill — Study, five doors, with an exit', () => {
-    // Study is five items AND a replace-mode exit, so it is the tightest row in
-    // the app. If the selected share is dropped back to an equal one, this is
+    // Study is five items AND a replace-mode exit, so it is the tightest pill row
+    // in the app. If the selected share is dropped back to an equal one, this is
     // ~14 dp and FAILS: the promoted label would ellipsise to "L…".
     const space = contextualPillLabelSpace({
       rowWidth: NARROW_PHONE,
@@ -194,22 +173,40 @@ describe('the drawn word has room to BE a word', () => {
     ).toBeGreaterThanOrEqual(LONGEST_PILL_LABEL_WIDTH);
   });
 
-  it('fits the section title on the tightest replace row — five doors plus the title, with an exit', () => {
-    // The section title is an EXTRA leading segment, so Study's no-selection row
-    // is the title plus five icon doors plus the exit. "Study"/"Shop" still fit.
-    const space = contextualSectionLabelSpace({
-      rowWidth: NARROW_PHONE,
-      exitWidth: EXIT_WIDTH,
-      itemCount: 5,
-    });
-    expect(space).toBeGreaterThanOrEqual(LONGEST_SECTION_LABEL_WIDTH);
-  });
-
-  it('fits the longest above label under its icon on a four-item row', () => {
+  it('fits the longest labelled word under its icon on a four-item above row', () => {
+    // An above row carries no exit, so its four doors split the whole bar: even
+    // the longest labelled word in the app ("Flashcards") clears the ceiling
+    // here with room to spare.
     const space = contextualLabeledIconLabelSpace({ rowWidth: NARROW_PHONE, itemCount: 4 });
     expect(space).toBeGreaterThanOrEqual(LONGEST_LABELED_ICON_WIDTH);
     // Sanity: the chrome is the slim per-segment padding, not the pill's.
     expect(CONTEXTUAL_LABELED_ICON_CHROME_WIDTH).toBeLessThan(20);
+  });
+
+  it('subtracts the leading exit on a no-selection replace row, so its labels are tighter', () => {
+    // The no-selection Study row labels FIVE doors AND carries the exit — the
+    // tightest labelled row in the app. The exit must come out of the doors'
+    // width; if a future change forgets to pass it, this FAILS and the doors
+    // would silently overlap the exit. `contextualLabeledIconLabelSpace` takes
+    // the exit, so the same one function serves the above rows (exit 0) and this.
+    const withExit = contextualLabeledIconLabelSpace({
+      rowWidth: NARROW_PHONE,
+      itemCount: 5,
+      exitWidth: EXIT_WIDTH,
+    });
+    const withoutExit = contextualLabeledIconLabelSpace({
+      rowWidth: NARROW_PHONE,
+      itemCount: 5,
+    });
+    expect(withExit).toBeLessThan(withoutExit);
+    // The exit costs exactly its width, spread across the five doors.
+    expect(withoutExit - withExit).toBeCloseTo(EXIT_WIDTH / 5, 5);
+    // And that tight row sits BELOW the pessimistic ceiling — the documented
+    // reality on LONGEST_LABELED_ICON_WIDTH: measured 11 sp "Flashcards" is
+    // right on the boundary on the narrowest phone and may lose its last glyph
+    // to the tail ellipsis there, which is the accepted trade. If this ever
+    // rises above the ceiling, that comment is stale and should be revisited.
+    expect(withExit).toBeLessThan(LONGEST_LABELED_ICON_WIDTH);
   });
 
   it('gives the selected segment a bigger share than any icon-only one', () => {
@@ -221,7 +218,7 @@ describe('CONTEXTUAL_PILL_LABEL — one rule for every drawn word', () => {
   it('keeps the long word on one line and caps its growth', () => {
     // A second line has nowhere to go in a 44 dp row; the word truncates
     // instead, and the font is capped so it cannot grow past the row. This
-    // governs the selected pill, the section title AND the labelled icon.
+    // governs the selected pill AND the labelled icon.
     expect(CONTEXTUAL_PILL_LABEL.numberOfLines).toBe(1);
     expect(CONTEXTUAL_PILL_LABEL.ellipsizeMode).toBe('tail');
     expect(CONTEXTUAL_PILL_LABEL.maxFontSizeMultiplier).toBeGreaterThan(1);

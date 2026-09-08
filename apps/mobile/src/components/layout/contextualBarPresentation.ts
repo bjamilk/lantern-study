@@ -1,49 +1,50 @@
 /**
  * The contextual row's PRESENTATION decisions, as pure data — founder decision 4
- * (2026-09-08) as amended by the "name the current place, always" decision that
- * build 175's device pass forced.
+ * (2026-09-08) as amended by the "label every door on a no-selection surface"
+ * decision that build 176's device pass forced.
  *
  * THE PROBLEM this file now solves. Decision 4 said "draw the label on the
  * SELECTED item only; every other item is its icon alone." That is right where a
  * row HAS a selected item — one of Study's five doors, one of Shop's three — but
- * six of the eight surfaces never have one, and there the rule gave no name at
- * all: the Study hub and Notes are Study surfaces that none of the row's five
- * doors is (no door is the current screen), and the four `above` rows (deck,
- * note, walk-through, community) can NEVER have a selection, because their items
- * are actions and routes that lead elsewhere. (Shop is the one `replace` row
- * that always HAS a selection — Browse is `activeFor` its root — so its name is
- * carried by the app bar instead; see `campusAppBarTitleOverride`.) On the
- * device those six read as bare, unlabelled icon strips — the
- * four above ones stacked on the fully-labelled global bar looked like a top row
- * whose labels had failed to render.
+ * two of the eight surfaces never have one: the Study hub and Notes are Study
+ * surfaces that none of the row's five doors IS (no door is the current screen).
+ * Build 175 tried a leading SECTION TITLE there ("Study"), and build 176's
+ * device pass rejected it: the title spent a third of the bar on a word the
+ * screen already carries twice (the app bar and the page heading both read
+ * "Study") while squeezing the five doors NARROWER than before. The information
+ * a student lacks on that surface is what the five icons ARE, not which section
+ * they are in.
  *
- * THE FOUNDER'S DECISION, encoded here as three surfaces one planner chooses
- * between ({@link planContextualRow}):
+ * THE FOUNDER'S DECISION, encoded here: on a NO-SELECTION surface, label every
+ * door — the exact `labeledIcon` treatment the four `above` rows already use, so
+ * it is a reuse, not a new variant. That collapses the surfaces to two planner
+ * branches ({@link planContextualRow}):
  *
  *  1. A `replace` row WITH a selection keeps decision 4 exactly: the selected
  *     door shows its label in a filled pill, every other item is icon-only.
- *  2. A `replace` row with NO selection — the Study hub and Notes —
- *     draws a leading title that names the SECTION itself ("Study", "Shop"). It
- *     is not a control (you are already here); it is a title, so it must not look
- *     like the selected pill's button.
- *  3. An `above` row keeps a small label under EVERY icon — it is a screen you
- *     pass through, not a section, so there is no door to promote and every one
- *     of its ambiguous glyphs (Match vs Cram, Rooms vs Members) needs its word.
+ *  2. Every OTHER row — an `above` row, OR a `replace` row with NO selection
+ *     (the Study hub, Notes, the Shop root) — draws every item as icon + its
+ *     small label. One code path: a no-selection replace row is presented the
+ *     same way a pass-through row is, because in both the honest answer is "here
+ *     is what each door does," not "here is the door you are on" (there is none)
+ *     and not "here is the section" (the app bar already names it).
  *
- * This file owns, for all three, the same three questions it always has —
+ * This file owns, for both, the same three questions it always has —
  *
- *  1. WHICH element carries a visible word (the selected door, or the section
- *     title, or every item), and
- *  2. what each item's and the title's ACCESSIBLE NAME is (always its full label
- *     / the section name, even when nothing is drawn — hiding a word visually
- *     must never hide it from a screen reader), and
+ *  1. WHICH element carries a visible word (the selected door, or every item),
+ *     and
+ *  2. what each item's ACCESSIBLE NAME is (always its full label, even when the
+ *     word is not drawn — hiding a word visually must never hide it from a
+ *     screen reader), and
  *  3. how a long word BEHAVES ({@link CONTEXTUAL_PILL_LABEL}).
  *
  * The leading EXIT control is not here. It is not part of an item's
  * presentation: it belongs to the bottom bar, which outlives this row (the row
  * unmounts while the keyboard is up), so BottomTabBar draws it from the rules
  * lane's `contextualExitControl` and `canPopFocusedStack` directly. One exit, in
- * one file.
+ * one file. Its width DOES matter to the arithmetic here, though: a no-selection
+ * `replace` row carries the exit AND labels every door, so it is the tightest
+ * labelled row in the app — {@link contextualLabeledIconLabelSpace} subtracts it.
  *
  * Pure and node-testable, with no imports at all: ContextualBar.tsx is a thin
  * shell over these numbers, the same bargain contextualBarLayout.ts already
@@ -63,10 +64,11 @@ export interface ContextualPillInput {
  * - `selectedPill` — icon + label inside the feature's filled tint pill. The one
  *   door that IS the current screen, on a `replace` row (decision 1).
  * - `iconOnly` — the icon alone, its word carried only as an accessible name.
- *   Every non-selected door on a `replace` row.
+ *   Every non-selected door on a `replace` row WITH a selection.
  * - `labeledIcon` — icon with a small label UNDER it, no fill. Every item of an
- *   `above` row, so a pass-through screen's toolbar never reads as a strip of
- *   nameless glyphs (decision 3).
+ *   `above` row AND every door of a `replace` row with NO selection, so a
+ *   pass-through toolbar and a section hub alike read as a labelled row rather
+ *   than a strip of nameless glyphs (decision 2).
  */
 export type ContextualItemVariant = 'selectedPill' | 'iconOnly' | 'labeledIcon';
 
@@ -92,69 +94,57 @@ export interface ContextualPillPlan {
   /**
    * The segment's flex share of the row ({@link CONTEXTUAL_SEGMENT_FLEX}).
    *
-   * The one that carries the selected pill's word needs more room than a glyph,
-   * and this is not a nicety: five EQUAL segments on a 360 dp phone leave about
-   * 14 dp for the word once the pill's own chrome is paid, which ellipsises
-   * "Flashcards" down to nothing and ships a promoted label no one can read.
-   * {@link contextualPillLabelSpace} is the number the test measures. Every
-   * `labeledIcon` and `iconOnly` segment gets the equal `unselected` share.
+   * Only the SELECTED PILL takes the bigger share, and it is not a nicety: five
+   * EQUAL segments on a 360 dp phone leave about 14 dp for the pill's word once
+   * its own chrome is paid, which ellipsises "Flashcards" down to nothing and
+   * ships a promoted label no one can read ({@link contextualPillLabelSpace} is
+   * the number the test measures). Every `labeledIcon` and `iconOnly` segment
+   * gets the equal `unselected` share — a labelled word sits UNDER its icon and
+   * so spends the segment's height, not a bigger width slice.
    */
   flex: number;
 }
 
-/**
- * The leading title that names the SECTION, drawn ONLY on a `replace` row with
- * no selected door (the Study hub and Notes). Null on every other
- * surface — a selected door or the items themselves carry the name there.
- */
-export interface ContextualSectionPlan {
-  /** The section's display name — the place you are on ("Study", "Shop"). */
-  name: string;
-  /** Always the section name; a title is never announced blank. */
-  accessibleName: string;
-  /** Its flex share — the same bigger share the selected pill would take. */
-  flex: number;
-}
-
-/** The whole row: an optional leading section title, then the items. */
+/** The whole row: just its items — every one carries its own presentation. */
 export interface ContextualRowPlan {
-  section: ContextualSectionPlan | null;
   items: ContextualPillPlan[];
 }
 
 /**
- * Choose the row's presentation from its mode, its section name, its items and
- * which item (if any) is the current screen — "name the current place, always".
+ * Choose the row's presentation from its mode, its items and which item (if any)
+ * is the current screen.
  *
  * `selectedId` is the id of the active item — the door whose target IS the
  * focused route — or null/undefined when nothing on the row is the current
- * screen (Study's hub, Notes, and every `above` row, none of whose items
- * is ever a place you stand on).
+ * screen (Study's hub, Notes, the Shop root, and every `above` row, none of
+ * whose items is ever a place you stand on).
  *
- * The three surfaces, in the order the branches test them:
+ * The two surfaces, in the order the branches test them:
  *
- * - `above` → every item is a `labeledIcon`, equal shares. No section title (a
- *   pass-through screen names itself in its own header) and never a selection.
- * - `replace` with no matching selection → a section title carrying `sectionName`
- *   plus icon-only items. The honest answer to "where am I" when no door is the
- *   current screen.
- * - `replace` with a selection → the selected door is a `selectedPill`, the rest
- *   icon-only. Decision 4, unchanged.
+ * - A `replace` row WITH a matching selection → the selected door is a
+ *   `selectedPill`, the rest icon-only. Decision 4, unchanged.
+ * - Everything else (an `above` row, or a `replace` row with no selection) →
+ *   every item is a `labeledIcon`, equal shares. The founder's decision: a
+ *   no-selection surface names each door rather than the section, and it shares
+ *   the pass-through row's one code path.
  */
 export function planContextualRow({
   mode,
-  sectionName,
   items,
   selectedId,
 }: {
   mode: 'replace' | 'above';
-  sectionName: string;
   items: readonly ContextualPillInput[];
   selectedId: string | null | undefined;
 }): ContextualRowPlan {
-  if (mode === 'above') {
+  const selected =
+    mode === 'replace' && selectedId != null && items.some(item => item.id === selectedId);
+
+  if (!selected) {
+    // An `above` row, or a `replace` row with no door selected: label every
+    // item, one code path. `above` never has a selection to begin with, so a
+    // stray selectedId on it is ignored here too.
     return {
-      section: null,
       items: items.map(item => ({
         id: item.id,
         label: item.label,
@@ -167,29 +157,7 @@ export function planContextualRow({
     };
   }
 
-  const selected = selectedId != null && items.some(item => item.id === selectedId);
-
-  if (!selected) {
-    return {
-      section: {
-        name: sectionName,
-        accessibleName: sectionName,
-        flex: CONTEXTUAL_SEGMENT_FLEX.selected,
-      },
-      items: items.map(item => ({
-        id: item.id,
-        label: item.label,
-        selected: false,
-        variant: 'iconOnly',
-        showLabel: false,
-        accessibleName: item.label,
-        flex: CONTEXTUAL_SEGMENT_FLEX.unselected,
-      })),
-    };
-  }
-
   return {
-    section: null,
     items: items.map(item => {
       const isSelected = item.id === selectedId;
       return {
@@ -206,13 +174,13 @@ export function planContextualRow({
 }
 
 /**
- * How the row divides its width: the labelled segment takes a bigger share.
+ * How the row divides its width: the SELECTED PILL takes a bigger share.
  *
  * With everything icon-only (a selection's non-selected doors) or every item a
- * `labeledIcon` (an `above` row), the shares are equal and the row divides
- * exactly as it always has — no gap, no left-packing. The `selected` share goes
- * to whichever ONE element carries a horizontal word: the selected pill, or the
- * section title.
+ * `labeledIcon` (an `above` row, or a no-selection `replace` row), the shares
+ * are equal and the row divides exactly as it always has — no gap, no
+ * left-packing. The `selected` share goes only to the one door that carries the
+ * pill's horizontal word.
  */
 export const CONTEXTUAL_SEGMENT_FLEX = {
   selected: 3,
@@ -229,15 +197,6 @@ export const CONTEXTUAL_SEGMENT_FLEX = {
  * as a failing number rather than as a screenshot no one takes.
  */
 export const CONTEXTUAL_PILL_CHROME_WIDTH = 48;
-
-/**
- * The chrome a SECTION TITLE spends before its first letter, in dp.
- *
- * A title has no icon and no pill fill — just its segment `px-2.5` (8.75 each
- * side) — so it clears far less than the selected pill, which is why "Study" and
- * "Shop" sit comfortably even on the tightest replace row.
- */
-export const CONTEXTUAL_SECTION_CHROME_WIDTH = 18;
 
 /**
  * The chrome a LABELED ICON spends on either side of its (vertically stacked)
@@ -272,45 +231,27 @@ export function contextualPillLabelSpace({
 }
 
 /**
- * The dp left for the SECTION TITLE's word on a `replace` row with no selection.
+ * The dp left for a LABELED ICON's word on a row of `itemCount` equal segments.
  *
- * Here the title is an EXTRA leading segment ADDED to the `itemCount` icon-only
- * doors, so the shares are `selected` plus `itemCount` unselected — one more
- * unselected share than the selected-pill case, because the title does not take
- * a door's place, it precedes them all.
- */
-export function contextualSectionLabelSpace({
-  rowWidth,
-  exitWidth,
-  itemCount,
-}: {
-  rowWidth: number;
-  exitWidth: number;
-  itemCount: number;
-}): number {
-  if (itemCount < 0) return 0;
-  const shares = CONTEXTUAL_SEGMENT_FLEX.selected + itemCount * CONTEXTUAL_SEGMENT_FLEX.unselected;
-  const sectionWidth = ((rowWidth - exitWidth) * CONTEXTUAL_SEGMENT_FLEX.selected) / shares;
-  return sectionWidth - CONTEXTUAL_SECTION_CHROME_WIDTH;
-}
-
-/**
- * The dp left for a LABELED ICON's word on an `above` row of `itemCount` equal
- * segments (an above row never carries an exit control).
- *
- * Equal shares, so each segment is simply `rowWidth / itemCount` less its slim
- * chrome. The worst real above row is four items; the test asserts even the
- * longest above label clears it.
+ * `exitWidth` defaults to 0 — an `above` row carries no exit, so each segment is
+ * simply `rowWidth / itemCount` less its slim chrome, exactly as before. A
+ * no-selection `replace` row is the new caller: it DOES carry the leading exit
+ * (BottomTabBar draws it), so it passes the exit's width and the doors divide
+ * only what is left of the bar. That makes Study's five labelled doors plus the
+ * exit the tightest labelled row in the app — see {@link LONGEST_LABELED_ICON_WIDTH}
+ * for what happens to "Flashcards" there.
  */
 export function contextualLabeledIconLabelSpace({
   rowWidth,
   itemCount,
+  exitWidth = 0,
 }: {
   rowWidth: number;
   itemCount: number;
+  exitWidth?: number;
 }): number {
   if (itemCount <= 0) return 0;
-  return rowWidth / itemCount - CONTEXTUAL_LABELED_ICON_CHROME_WIDTH;
+  return (rowWidth - exitWidth) / itemCount - CONTEXTUAL_LABELED_ICON_CHROME_WIDTH;
 }
 
 /**
@@ -322,24 +263,40 @@ export function contextualLabeledIconLabelSpace({
 export const LONGEST_PILL_LABEL_WIDTH = 75;
 
 /**
- * The longest SECTION name a `replace` row draws ("Study", 5 characters) at the
- * title's 15 sp semibold, same pessimistic 7.5 dp per character. ("Shop" is
- * shorter; the `above` rows' names are never drawn as titles.)
+ * The longest label drawn UNDER an icon, app-wide: "Flashcards" (10 characters),
+ * which the Study hub's no-selection `replace` row now labels. Taken at the same
+ * deliberately pessimistic 7.5 dp per character as the pill.
+ *
+ * WHAT FITS, and what does not — measured, not assumed. The four `above` rows
+ * (longest word "Members", seven chars) clear this comfortably: four doors, no
+ * exit, so on a 360 dp phone each label gets 360/4 − 8 = 82 dp, well over the
+ * 75 dp ceiling — the fit test asserts exactly this.
+ *
+ * The tight case is the no-selection Study row: FIVE doors PLUS the leading exit
+ * (BottomTabBar's ExitControl is a fixed square of the row height, 44 dp; the
+ * tests feed a pessimistic 48). Each label gets (360 − 44)/5 − 8 ≈ 55 dp, BELOW
+ * this pessimistic ceiling — and unlike the pill, the shortfall is real rather
+ * than only nominal. "Flashcards" at 11 sp measures ~55 dp in the iOS system
+ * face at regular weight and a few dp MORE at the medium/semibold this actually
+ * renders in (Android's Roboto is wider again, ~59 dp). So on the NARROWEST
+ * phone the word sits right on the boundary at the default text size and may
+ * tail-truncate by a glyph ("Flashcard…"); every wider phone draws it whole. At
+ * the LARGEST supported scale it grows to the {@link CONTEXTUAL_PILL_LABEL} cap
+ * (~71 dp) and certainly truncates.
+ *
+ * That is accepted, not overlooked: a truncated tenth character beats five
+ * nameless icons, the word never wraps and never grows the 44 dp row
+ * (`numberOfLines` is 1 and the font is capped), and the FULL word is always
+ * announced through the accessible name. The five doors are also strictly wider
+ * here than under build 175's title, which spent three of eight shares on the
+ * section word and left each door ~40 dp.
  */
-export const LONGEST_SECTION_LABEL_WIDTH = 38;
-
-/**
- * The longest label an `above` row draws under an icon ("Members", 7 characters)
- * at the same pessimistic 7.5 dp per character. Above rows never carry
- * "Flashcards"; their words are all short, but the row still has to fit the
- * longest of them.
- */
-export const LONGEST_LABELED_ICON_WIDTH = 53;
+export const LONGEST_LABELED_ICON_WIDTH = 75;
 
 /**
  * How a DRAWN word behaves when it is long ("Flashcards" is the worst case) and
- * at a large accessibility text size. One rule for all three drawn words — the
- * selected pill, the section title, the labelled icon.
+ * at a large accessibility text size. One rule for both drawn words — the
+ * selected pill and the labelled icon.
  *
  * One line, tail-ellipsised: the word grows to its space and, past the width the
  * row can give it, truncates rather than wrapping onto a second line the 44 dp
