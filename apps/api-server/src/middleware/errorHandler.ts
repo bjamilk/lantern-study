@@ -206,7 +206,14 @@ export const supabaseErrorHandler = (
     const apiError = new ApiError('Resource not found', 404);
     next(apiError);
   } else if (err.code === 'PGRST201') {
-    // Foreign key violation
+    // NOT a foreign key violation (that is 23503). PGRST201 is PostgREST's
+    // AMBIGUOUS EMBEDDING: the query embedded a table we have more than one
+    // foreign key to, without naming which constraint to resolve through.
+    // That is a bug in OUR query, not in the client's request — the fix is to
+    // write `other!this_table_column_fkey(...)` at the call site. See
+    // services/communities.membersEmbed.test.ts for the 2026-09-08 outage this
+    // caused, and note the 400 below flatters the client: a client cannot
+    // cause or fix this.
     const apiError = new ApiError('Invalid reference or relationship', 400);
     next(apiError);
   } else if (err.code === '23505') {

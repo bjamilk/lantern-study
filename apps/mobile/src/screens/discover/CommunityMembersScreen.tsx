@@ -11,6 +11,7 @@ import {
   COMMUNITY_COPY,
   COMMUNITY_MEMBERS_PAGE,
   isMemberOnline,
+  requestFailureSentence,
   shouldSubscribeCommunityPresence,
   splitMembers,
   type CommunityMember,
@@ -87,7 +88,10 @@ function CommunityMembersList({
   useEffect(() => {
     if (detail) return;
     void loadCommunity(slug).catch((err: unknown) => {
-      setError(err instanceof Error ? err.message : 'Community not found');
+      // Same rule as the roster catch below: no raw server phrase reaches a
+      // student. A 404 still reads as "we couldn't find this" — the shared
+      // vocabulary classifies it — so nothing is lost by dropping err.message.
+      setError(requestFailureSentence(err));
       setLoading(false);
     });
   }, [detail, slug, loadCommunity]);
@@ -117,12 +121,14 @@ function CommunityMembersList({
         setNextCursor(page.nextCursor);
         setError(null);
       } catch (err) {
+        // A raw server phrase (e.g. PostgREST's "Invalid reference or
+        // relationship") must never reach a student. Forbidden stays bespoke
+        // ("join to see members"); every other failure speaks the shared
+        // request-failure vocabulary instead of echoing err.message.
         setError(
           isForbiddenError(err)
             ? COMMUNITY_COPY.joinToSeeMembers
-            : err instanceof Error
-              ? err.message
-              : 'Could not load members'
+            : requestFailureSentence(err)
         );
       }
     },

@@ -359,7 +359,7 @@ export class CommunitiesService {
       const since = new Date(Date.now() - ONLINE_THRESHOLD_MS).toISOString();
       const { data, error } = await this.db
         .from('community_members')
-        .select('user_id, profiles!inner(settings, last_seen_at)')
+        .select('user_id, profiles!community_members_user_id_fkey!inner(settings, last_seen_at)')
         .eq('community_id', communityId)
         .is('opted_out_at', null)
         .gt('profiles.last_seen_at', since)
@@ -1365,7 +1365,7 @@ export class CommunitiesService {
     const wantsMute = viewerModerates && (await hasCommunityMemberMute(this.db).catch(() => false));
 
     const rosterColumns = (withMute: boolean) =>
-      `user_id, source, role, joined_at${withMute ? ', muted_until' : ''}, profiles!inner(id, name, avatar_url, programme, settings, last_seen_at)`;
+      `user_id, source, role, joined_at${withMute ? ', muted_until' : ''}, profiles!community_members_user_id_fkey!inner(id, name, avatar_url, programme, settings, last_seen_at)`;
     const runRoster = (withMute: boolean) => {
       let query = this.db
         .from('community_members')

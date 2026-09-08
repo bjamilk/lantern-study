@@ -204,3 +204,22 @@ describe('humanizeFailureMessage', () => {
     );
   });
 });
+
+describe('a raw server phrase never reaches a student verbatim', () => {
+  // 2026-09-08: an ambiguous PostgREST embed answered PGRST201, the API mapped
+  // it to a 400 "Invalid reference or relationship", and the community roster
+  // rendered that string in red. The roster now speaks the shared vocabulary
+  // for every non-forbidden failure instead of echoing err.message; this pins
+  // that an unrecognised (400/unknown) server error becomes app copy.
+  const rawEmbedError = { status: 400, message: 'Invalid reference or relationship' };
+
+  it('classifies an unrecognised 4xx as unknown, not as a specific kind', () => {
+    expect(classifyRequestFailure(rawEmbedError)).toBe('unknown');
+  });
+
+  it('renders the shared unknown sentence, not the raw phrase', () => {
+    const sentence = requestFailureSentence(rawEmbedError);
+    expect(sentence).toBe('We couldn’t load this. Something went wrong on the way to Lantern. Try again.');
+    expect(sentence).not.toContain('Invalid reference or relationship');
+  });
+});

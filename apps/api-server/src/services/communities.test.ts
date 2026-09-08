@@ -181,7 +181,11 @@ describe('listMembers privacy', () => {
 describe('listMembers mute state', () => {
   const MUTED_UNTIL = '2099-01-01T00:00:00Z';
   const rosterSelect = (selects: Array<{ table: string; columns: string }>) =>
-    selects.find((s) => s.columns.includes('profiles!inner'))?.columns ?? '';
+    // The roster embed names the fkey (community_members has two FKs to
+    // profiles since 20260908120000's muted_by), so match the disambiguated
+    // hint rather than the old ambiguous `profiles!inner`.
+    selects.find((s) => s.columns.includes('profiles!community_members_user_id_fkey'))?.columns ??
+    '';
 
   it('a moderator sees mutedUntil on every row, null for a member who is not muted', async () => {
     const { service, selects } = makeService({
