@@ -25,7 +25,26 @@ import { MIGRATED_FILES, TYPE_SCALE_ALLOWLIST } from '../../../design/typeScaleA
  * This is a ratchet, not a wall: `design/typeScaleAllowlist.ts` records what
  * each file had when Wave T landed. A file may not gain violations, an unlisted
  * file may not have any, and a file that has been migrated may not regress.
- * `components/ui/**` is exempt — it is where the primitives live.
+ *
+ * Two directories are exempt, for opposite reasons:
+ *
+ *   `components/ui/**`        — it is where the primitives live, so it is what
+ *                               everything else defers TO.
+ *   `components/marketing/**` — it is not the product. These six steps are an
+ *                               in-product scale, mirrored pixel for pixel with
+ *                               the mobile app because a phone screen and a
+ *                               browser tab of the same app must agree; the top
+ *                               step is 28px, which is a heading, not a hero. A
+ *                               signed-out landing page is a different medium
+ *                               with different typographic needs, and forcing
+ *                               its hero down to 28px would be the lint making
+ *                               a design decision it has no standing to make.
+ *                               The exemption is deliberate, not a licence:
+ *                               these pages want their own scale, and until
+ *                               someone writes one this lint should stay quiet
+ *                               about them rather than be silenced file by file
+ *                               through the allowlist, which is a record of debt
+ *                               and must only ever shrink.
  */
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -33,7 +52,7 @@ const ROOT = path.resolve(HERE, '../../..');
 
 const SCAN_DIRS = ['components', 'hooks', 'utils', 'stores', 'services'];
 const SCAN_FILES = ['App.tsx', 'index.tsx'];
-const EXEMPT_PREFIXES = ['components/ui/'];
+const EXEMPT_PREFIXES = ['components/ui/', 'components/marketing/'];
 
 const PATTERNS: ReadonlyArray<{ name: string; re: RegExp }> = [
   { name: 'arbitrary px size', re: /(?<![\w-])text-\[\d+(?:\.\d+)?px\]/g },

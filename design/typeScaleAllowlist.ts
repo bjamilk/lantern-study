@@ -208,7 +208,6 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/layout/Breadcrumb.tsx': 1,
   'components/library/LibraryRail.tsx': 11,
   'components/library/LibrarySearch.tsx': 14,
-  'components/marketing/LandingPage.tsx': 14,
   'components/marketplace/CampusSearchSelect.tsx': 8,
   'components/marketplace/CourseBrowsePanel.tsx': 24,
   'components/marketplace/CreateBundleModal.tsx': 7,
