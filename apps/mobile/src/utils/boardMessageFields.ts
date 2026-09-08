@@ -14,6 +14,12 @@ export type BoardActionFields = {
   repostOf?: BoardQuotedPost | null;
   repostedByMe?: boolean;
   bookmarked?: boolean;
+  /**
+   * The accepted-answer id (`messages.answered_message_id`). Nullable — `null`
+   * is a real, meaningful value here (the answer was cleared), which is exactly
+   * why the reader below keys on PRESENCE, not truthiness.
+   */
+  answeredMessageId?: string | null;
 };
 
 /**
@@ -45,5 +51,19 @@ export function boardActionFields(row: unknown): BoardActionFields {
   }
   if (typeof m.repostedByMe === 'boolean') fields.repostedByMe = m.repostedByMe;
   if (typeof m.bookmarked === 'boolean') fields.bookmarked = m.bookmarked;
+  // Accepted answer (§4 questions). PRESENCE is authoritative, `null` included:
+  // a row that carries the key sets the answered state, a row that omits it
+  // leaves a known answer untouched — the same merge contract the fields above
+  // rely on. This IS a real `messages` column, so a realtime UPDATE carries its
+  // true value (possibly `null`, a genuine clear). Over HTTP the API drops a
+  // `null` (`?? undefined`, supabase.ts), so an HTTP row carries the key only
+  // when there IS an answer; either way the mapped value is honest. Both casings
+  // because the HTTP payload is camelCased and a realtime row is snake_case.
+  if (m.answered_message_id !== undefined || m.answeredMessageId !== undefined) {
+    fields.answeredMessageId =
+      (m.answered_message_id as string | null) ??
+      (m.answeredMessageId as string | null) ??
+      null;
+  }
   return fields;
 }

@@ -30,16 +30,22 @@ import { normalizeUserSettings } from '@lantern/shared/settings';
 import { formatSupabaseClientAuthError } from '@lantern/shared';
 import { shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
 import { resetSessionExpiredGuard } from '../services/sessionHandler';
+import { resolveDisplayName } from '../utils/displayIdentity';
 
+/**
+ * Display name from Supabase auth metadata, for the brief window before the
+ * server profile lands. The account email is deliberately NOT a name source:
+ * an account with no metadata name falls back to the neutral placeholder, never
+ * to the email's local part ("nimaj22"), which an avatar would otherwise turn
+ * into invented initials ("NI") on the person's own cards.
+ */
 function displayNameFromMeta(
   meta: Record<string, unknown> | undefined,
-  email: string | undefined,
+  _email?: string | undefined,
   fallback = 'User',
 ): string {
   const raw = meta?.name;
-  if (typeof raw === 'string' && raw.trim()) return raw.trim();
-  const fromEmail = email?.split('@')[0];
-  return fromEmail || fallback;
+  return resolveDisplayName([typeof raw === 'string' ? raw : null], fallback);
 }
 
 function getInitialAuthState(): {
@@ -207,7 +213,7 @@ export const useAuthStore = create<AuthState>()(
 
             const userObj: User = profile ? {
               id: profile.id,
-              name: profile.name || 'User',
+              name: resolveDisplayName([profile.name], 'User'),
               email: email,
               isAdmin: authUser.app_metadata?.is_platform_admin === true,
               avatarUrl: profile.avatarUrl || '',
@@ -357,7 +363,7 @@ export const useAuthStore = create<AuthState>()(
             set({
               currentUser: {
                 ...currentUser,
-                name: profile.name || currentUser.name,
+                name: resolveDisplayName([profile.name, currentUser.name], currentUser.name),
                 avatarUrl: profile.avatarUrl || currentUser.avatarUrl,
                 points: profile.points ?? currentUser.points,
                 badges: profile.badges || currentUser.badges,
@@ -500,7 +506,7 @@ export const useAuthStore = create<AuthState>()(
 
             const userObj: User = profile ? {
               id: profile.id,
-              name: profile.name || 'User',
+              name: resolveDisplayName([profile.name], 'User'),
               email: session.user.email || '',
               isAdmin: session.user.app_metadata?.is_platform_admin === true,
               avatarUrl: profile.avatarUrl || '',

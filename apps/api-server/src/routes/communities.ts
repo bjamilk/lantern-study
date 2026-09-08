@@ -290,6 +290,33 @@ router.delete(
   })
 );
 
+// POST /api/v1/communities/:communityId/posts/:postId/answered { answerMessageId }
+//
+// Mark a QUESTION post answered by pointing at the reply that answered it, or
+// clear it with answerMessageId: null. Author or moderator only — the server
+// re-derives that from the shared boardPostRules, never a client flag. The
+// answering reply must be a real comment in this question's thread.
+router.post(
+  '/:communityId/posts/:postId/answered',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const actorId = requireAuthUserId(req, res);
+    if (!actorId) return;
+    try {
+      const body = (req.body ?? {}) as { answerMessageId?: unknown };
+      const data = await getCommunityModerationService(supabaseService).markPostAnswered(
+        actorId,
+        req.params.communityId,
+        req.params.postId,
+        body.answerMessageId ?? null
+      );
+      res.json({ success: true, data });
+    } catch (err) {
+      handle(err, res);
+    }
+  })
+);
+
 // GET /api/v1/communities/:slug
 router.get(
   '/:slug',

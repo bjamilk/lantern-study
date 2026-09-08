@@ -18,13 +18,38 @@
  * composer may offer, and which actions a card may show — without mounting a
  * screen.
  *
- * WHAT IS DELIBERATELY ABSENT: "Mark answered". `boardPostRules` computes
- * `canMarkAnswered` and this file passes it through in `boardPostActions`, but
- * the composer/card matrix below never turns it into a menu row, because the
- * API has no route that writes `messages.answered_message_id` — the column
- * exists (migration 20260908120000) and the read path maps it, and that is
- * all. A menu row that cannot change anything is a dead feature, and this
- * codebase has shipped three of those already.
+ * MARK ANSWERED — what is wired on mobile, and what is not. `boardPostRules`
+ * computes `canMarkAnswered`, this file surfaces it — with the derived answered
+ * state — through `boardPostActions`, and the API owns the route that writes
+ * `messages.answered_message_id`
+ * (POST /communities/:id/posts/:postId/answered, migration 20260908120000;
+ * `endpoints.markCommunityPostAnswered`).
+ *
+ * REACHABLE on mobile today: exactly one thing — CLEARING an accepted answer,
+ * through `CommunityBoardScreen`'s "Clear accepted answer" row, live now that
+ * `mapApiMessage`/`boardActionFields` map `answered_message_id` onto
+ * `Message.answeredMessageId` so the answered map actually seeds. Un-answering
+ * needs no reply, only the question id, which the card already has.
+ *
+ * NOT on mobile: the answered BADGE. `deriveBoardAnsweredState` is the one
+ * derivation behind it, and web's card and thread render it, but no mobile
+ * component draws it — `boardPostActions` is this file's only caller, so on
+ * mobile the derivation currently decides a menu row and nothing visual. Do
+ * not describe a mobile badge until a mobile card renders one.
+ *
+ * NOT yet reachable on mobile: ACCEPTING a specific reply. That means pointing
+ * at ONE reply, and a reply can only be pointed at where it is shown — never on
+ * the board card, which does not render the thread. It belongs on the reply's
+ * OWN long-press inside the thread; `replyAnswerMenuAction` below is the pure,
+ * tested matrix for that row, but `CommunityPostScreen` does not mount it yet,
+ * so from mobile a question gains its accepted answer on web or via the API,
+ * and mobile reads and clears it. Do not describe the accept path as wired
+ * until a thread screen calls `replyAnswerMenuAction`.
+ *
+ * The rule that outlived the old dead-feature note still binds: a menu row must
+ * be able to CHANGE something. `replyAnswerMenuAction` never yields a no-op — it
+ * hides for a viewer who cannot mark, offers `clear` only on the reply that is
+ * currently accepted, and offers `mark` only on a reply that is not already it.
  */
 import {
   BOARD_POST_KINDS,
@@ -185,11 +210,17 @@ export interface BoardPostActions extends BoardPostPermissions {
    */
   canModerateRemove: boolean;
   isAuthor: boolean;
+  /** Whether this post reads as an answered question — see `deriveBoardAnsweredState`. */
+  isAnswered: boolean;
+  /** The accepted reply's id, or null. Only ever set on an answerable, live post. */
+  acceptedAnswerId: string | null;
 }
 
 /**
- * One card's actions. `boardPostRules` decides all six permissions; the only
- * thing added is WHICH removal endpoint a Remove tap belongs to.
+ * One card's actions. `boardPostRules` decides all six permissions; this adds
+ * WHICH removal endpoint a Remove tap belongs to, and folds in the answered
+ * state derived from the post's `answeredMessageId` so a card resolves
+ * "can I accept an answer?" and "is one already accepted?" from a single call.
  */
 export function boardPostActions(
   role: CommunityRole | null | undefined,
@@ -204,13 +235,90 @@ export function boardPostActions(
     post.boardAdmin && !isModeratingRole(role ?? null)
       ? boardPostRules('moderator', post)
       : null;
+  const answered = deriveBoardAnsweredState(post);
   return {
     ...rules,
     canPin: rules.canPin || !!asBoardAdmin?.canPin,
     canUnpin: rules.canUnpin || !!asBoardAdmin?.canUnpin,
     isAuthor,
     canModerateRemove: rules.canRemove && !isAuthor,
+    isAnswered: answered.isAnswered,
+    acceptedAnswerId: answered.acceptedAnswerId,
   };
+}
+
+/** The answered state of a board post, as data — for the card and the thread. */
+export interface BoardAnsweredState {
+  /** Only a question can be answered; nothing else ever reads as answered. */
+  isAnswerable: boolean;
+  /** The id of the reply accepted as the answer, or null. */
+  acceptedAnswerId: string | null;
+  /** Whether the question reads as answered right now. */
+  isAnswered: boolean;
+}
+
+/**
+ * Does this post read as an answered question, and if so, which reply answered
+ * it? The ONE derivation the card badge, the thread's "Answered" banner and the
+ * per-reply "Answer" badge all agree through.
+ *
+ * A removed post reads as NOT answered whatever its column says: the card is a
+ * tombstone, and "Answered" over "Removed by a moderator" is nonsense. Only an
+ * answerable kind (a question) can carry an accepted answer — a discussion with
+ * a stray `answered_message_id` is not a question and does not read as one.
+ */
+export function deriveBoardAnsweredState(input: {
+  postKind?: BoardPostKind | string | null;
+  answeredMessageId?: string | null;
+  removedAt?: string | null;
+}): BoardAnsweredState {
+  const isAnswerable = boardPostKindMeta(normalizeBoardPostKind(input.postKind)).answerable;
+  const removed = !!input.removedAt;
+  const raw = typeof input.answeredMessageId === 'string' ? input.answeredMessageId : null;
+  const acceptedAnswerId = isAnswerable && !removed && raw ? raw : null;
+  return {
+    isAnswerable,
+    acceptedAnswerId,
+    isAnswered: acceptedAnswerId !== null,
+  };
+}
+
+/** The answered-related row a single reply's long-press should show, if any. */
+export type ReplyAnswerAction =
+  | { show: false }
+  | { show: true; kind: 'mark'; answerMessageId: string }
+  | { show: true; kind: 'clear' };
+
+/**
+ * What the ACCEPT/CLEAR row on one reply does — the pure matrix the thread's
+ * reply long-press is drawn from. This is where "Mark answered" actually lives,
+ * because this is the only place a specific reply can be pointed at.
+ *
+ * The one invariant: every row it returns CHANGES the accepted answer.
+ *  - Hidden entirely for a viewer the shared `canMarkAnswered` refuses — they
+ *    still SEE the badge (that comes from `deriveBoardAnsweredState`, no
+ *    permission), they just cannot move it.
+ *  - `clear` only on the reply that is currently accepted: clearing anything
+ *    else is already clear, a row that does nothing.
+ *  - `mark` only on a reply that is NOT already the accepted one — marking the
+ *    accepted reply as the answer again is the definitional no-op this codebase
+ *    keeps shipping. Marking a reply while a DIFFERENT one is accepted is a real
+ *    change (it moves the answer), so that row stays.
+ *  - Nothing to point at (an empty reply id) shows nothing.
+ */
+export function replyAnswerMenuAction(input: {
+  /** `boardPostRules(role, question).canMarkAnswered` for the reply's question. */
+  canMarkAnswered: boolean;
+  /** This reply's own message id. */
+  replyId: string;
+  /** The question's currently accepted answer id (from `deriveBoardAnsweredState`). */
+  acceptedAnswerId: string | null;
+}): ReplyAnswerAction {
+  if (!input.canMarkAnswered) return { show: false };
+  const replyId = typeof input.replyId === 'string' ? input.replyId : '';
+  if (!replyId) return { show: false };
+  if (input.acceptedAnswerId === replyId) return { show: true, kind: 'clear' };
+  return { show: true, kind: 'mark', answerMessageId: replyId };
 }
 
 /** Whether this post pins itself to the top of the board list. */

@@ -36,6 +36,7 @@ export interface ImportCardsState {
 export type ImportCardsEvent =
   | { type: 'text_changed'; text: string }
   | { type: 'file_picked'; text: string; fileName: string }
+  | { type: 'file_rejected'; message: string }
   | { type: 'parse' }
   | { type: 'deck_name_changed'; name: string }
   | { type: 'edit_source' }
@@ -78,6 +79,13 @@ export function importCardsReducer(
       };
     }
 
+    case 'file_rejected':
+      // The picked file is a format this offline door cannot read (an Anki
+      // package — see importFileRefusal). Stay on `input` so the paste box and
+      // the file button are still there, drop any prior parse, and show the
+      // plain message that names what to bring instead.
+      return { ...state, stage: 'input', parsed: null, error: event.message };
+
     case 'parse': {
       const parsed = parseDeckImport(state.text, state.fileName ?? undefined);
       return {
@@ -117,6 +125,33 @@ export function importCardsReducer(
     default:
       return state;
   }
+}
+
+/**
+ * The file kinds this offline door can actually read — named here so the door
+ * copy and the refusal message cannot drift apart.
+ */
+export const IMPORT_ACCEPTS = ['.txt', '.csv', '.tsv'] as const;
+
+/**
+ * Whether a picked file is one this door must refuse, and the plain words to
+ * say when it is. Returns `null` when the file is fine to read.
+ *
+ * Quizlet and Anki both export to plain text, and text is all this door reads:
+ * every card is parsed on the phone by `parseDeckImport`, with no request and
+ * no AI use. Anki's OTHER export — the `.apkg`/`.colpkg` package — is a zipped
+ * SQLite database, not text. The on-device parser cannot open it (read as a
+ * string it is binary noise that yields "no cards found"), and the only reader
+ * for it lives on the server (`apkgImport`), which this no-request door does not
+ * call. So a package is turned away HERE, with words the student can act on,
+ * rather than silently mis-parsed.
+ */
+export function importFileRefusal(fileName: string | null | undefined): string | null {
+  const name = (fileName ?? '').toLowerCase().trim();
+  if (/\.(apkg|colpkg)$/.test(name)) {
+    return 'An Anki .apkg is a packaged deck, and this import reads text files (.txt, .csv, .tsv). In Anki, choose Export and pick “Notes in Plain Text (.txt)”, then bring that file in here.';
+  }
+  return null;
 }
 
 /** The cards this state would save — capped at what the server accepts. */

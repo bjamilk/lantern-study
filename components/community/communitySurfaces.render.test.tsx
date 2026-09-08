@@ -6,9 +6,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import type { CommunityDetail } from '@lantern/shared/network';
 
+import type { BoardPost } from '@lantern/shared/network';
+
 import CreateCommunityModal from './CreateCommunityModal';
 import JoinByCodeModal from './JoinByCodeModal';
 import ManageCommunityPanel from './ManageCommunityPanel';
+import BoardPostCard, { BOARD_ANSWER_COPY } from './BoardPostCard';
+import BoardPostPanel, { CommentAnswer } from './BoardPostPanel';
 import { COMMUNITY_MANAGE_COPY, COMMUNITY_MANAGE_INTRO } from './manageCommunity';
 import { JOIN_BY_CODE_HINT } from './joinByCode';
 import { CREATE_COMMUNITY_VISIBILITY_NOTE } from './createCommunityPlan';
@@ -31,12 +35,18 @@ vi.mock('../../services/apiEndpoints', () => ({
   createCommunityInvite: vi.fn(),
   joinCommunityByCode: vi.fn(),
   listCommunityInvites: vi.fn(),
+  markCommunityPostAnswered: vi.fn(),
   muteCommunityMember: vi.fn(),
   removeCommunityPost: vi.fn(),
   revokeCommunityInvite: vi.fn(),
   setCommunityMemberRole: vi.fn(),
   unmuteCommunityMember: vi.fn(),
 }));
+
+// BoardPostPanel mounts the composer, which reaches for native modules on
+// import; it is never rendered by these static tests, so a stub keeps the
+// import graph light.
+vi.mock('../MessageInputBar', () => ({ default: () => null }));
 
 /**
  * Render smoke tests. The value is the wiring and the promises the copy makes:
@@ -138,5 +148,158 @@ describe('ManageCommunityPanel', () => {
     );
     expect(html).toContain(COMMUNITY_MANAGE_COPY.invitesTab);
     expect(html).toContain(COMMUNITY_MANAGE_COPY.membersTab);
+  });
+});
+
+const boardPost = (over: Partial<BoardPost> = {}): BoardPost => ({
+  id: 'post-1',
+  groupId: 'g1',
+  senderId: 'author',
+  senderName: 'Ada',
+  senderAvatarUrl: null,
+  subject: 'When is the resit?',
+  text: 'Does anyone know the resit date?',
+  timestamp: new Date('2026-09-01T10:00:00Z').toISOString(),
+  editedAt: null,
+  removedAt: null,
+  replyCount: 2,
+  reactions: {},
+  pinnedAt: null,
+  pinnedBy: null,
+  isLegacyQuestion: false,
+  legacyQuestionStem: null,
+  imageUrl: null,
+  favoriteCount: 0,
+  favorited: false,
+  bookmarked: false,
+  repostCount: 0,
+  repostedByMe: false,
+  repostOf: null,
+  ...over,
+});
+
+const cardProps = (over: Partial<React.ComponentProps<typeof BoardPostCard>> = {}) =>
+  ({
+    post: boardPost(),
+    currentUserId: 'viewer',
+    canPin: false,
+    lowDataMode: false,
+    saved: false,
+    bookmarked: false,
+    bookmarksAvailable: false,
+    favoriteCount: 0,
+    commentCount: 2,
+    onToggleReaction: () => undefined,
+    onOpenComments: () => undefined,
+    onRepost: () => undefined,
+    onToggleBookmark: () => undefined,
+    onShare: () => undefined,
+    onCopyText: () => undefined,
+    onToggleSave: () => undefined,
+    onReport: () => undefined,
+    onEdit: () => undefined,
+    onDelete: () => undefined,
+    onTogglePin: () => undefined,
+    onStartStudyGroup: () => undefined,
+    ...over,
+  }) satisfies React.ComponentProps<typeof BoardPostCard>;
+
+describe('BoardPostCard — answered', () => {
+  it('reads as answered in the timeline once a question is resolved', () => {
+    const html = renderToStaticMarkup(
+      <BoardPostCard {...cardProps({ answered: true, postKindLabel: 'Question' })} />
+    );
+    expect(html).toContain(BOARD_ANSWER_COPY.answeredBadge);
+  });
+
+  it('carries no answered badge on an unresolved question — the default', () => {
+    const html = renderToStaticMarkup(
+      <BoardPostCard {...cardProps({ postKindLabel: 'Question' })} />
+    );
+    expect(html).not.toContain(BOARD_ANSWER_COPY.answeredBadge);
+  });
+});
+
+describe('CommentAnswer', () => {
+  it('marks the accepted reply as the answer for every reader', () => {
+    const html = renderToStaticMarkup(
+      <CommentAnswer isAnswer canMark={false} onMark={() => undefined} onClear={() => undefined} />
+    );
+    // The badge is present; the action is not, because this viewer may not mark.
+    expect(html).toContain(BOARD_ANSWER_COPY.answerBadge);
+    expect(html).not.toContain(BOARD_ANSWER_COPY.markAnswer);
+    expect(html).not.toContain(BOARD_ANSWER_COPY.clearAnswer);
+  });
+
+  it('offers "Mark as answer" on an un-accepted reply only to a marker', () => {
+    const html = renderToStaticMarkup(
+      <CommentAnswer isAnswer={false} canMark onMark={() => undefined} onClear={() => undefined} />
+    );
+    expect(html).toContain(BOARD_ANSWER_COPY.markAnswer);
+    expect(html).not.toContain(BOARD_ANSWER_COPY.clearAnswer);
+  });
+
+  it('lets a marker clear the answer on the accepted reply — un-answering', () => {
+    const html = renderToStaticMarkup(
+      <CommentAnswer isAnswer canMark onMark={() => undefined} onClear={() => undefined} />
+    );
+    expect(html).toContain(BOARD_ANSWER_COPY.answerBadge);
+    expect(html).toContain(BOARD_ANSWER_COPY.clearAnswer);
+  });
+
+  it('shows nothing to a viewer who cannot mark on an ordinary reply', () => {
+    // If the canMark gate were dropped, this reply would sprout a control the
+    // server would refuse — so this must stay empty.
+    const html = renderToStaticMarkup(
+      <CommentAnswer
+        isAnswer={false}
+        canMark={false}
+        onMark={() => undefined}
+        onClear={() => undefined}
+      />
+    );
+    expect(html).toBe('');
+  });
+});
+
+describe('BoardPostPanel — answered thread', () => {
+  it('says the question is answered at the top of its own thread', () => {
+    const html = renderToStaticMarkup(
+      <BoardPostPanel
+        groupId="g1"
+        post={boardPost()}
+        lowDataMode={false}
+        mentionCandidates={[]}
+        onClose={() => undefined}
+        myReactions={{}}
+        onToggleFavorite={async () => null}
+        onSendComment={async () => undefined}
+        onReplyCountChange={() => undefined}
+        answeredMessageId="reply-9"
+        canMarkAnswered
+        onSetAnswer={() => undefined}
+      />
+    );
+    expect(html).toContain(BOARD_ANSWER_COPY.answeredBadge);
+  });
+
+  it('reads as unanswered when no reply has been accepted', () => {
+    const html = renderToStaticMarkup(
+      <BoardPostPanel
+        groupId="g1"
+        post={boardPost()}
+        lowDataMode={false}
+        mentionCandidates={[]}
+        onClose={() => undefined}
+        myReactions={{}}
+        onToggleFavorite={async () => null}
+        onSendComment={async () => undefined}
+        onReplyCountChange={() => undefined}
+        answeredMessageId={null}
+        canMarkAnswered
+        onSetAnswer={() => undefined}
+      />
+    );
+    expect(html).not.toContain(BOARD_ANSWER_COPY.answeredBadge);
   });
 });

@@ -13,7 +13,7 @@ import { toBoardPost } from '../../utils/boardPosts';
 import { useModalFocusTrap } from '../../hooks/useModalFocusTrap';
 import type { MentionCandidate, SendMessageOptions } from '../MessageInputBar';
 import MessageInputBar from '../MessageInputBar';
-import { BoardPostMedia, boardPostText } from './BoardPostCard';
+import { AnsweredChip, BOARD_ANSWER_COPY, BoardPostMedia, boardPostText } from './BoardPostCard';
 import { Avatar } from '../ui';
 
 /**
@@ -42,6 +42,43 @@ const FavoriteButton: React.FC<{
   </button>
 );
 
+/**
+ * The mark-answered controls on one reply.
+ *
+ * The "Answer" badge renders for EVERYONE when this reply is the accepted one —
+ * that is what makes the answer identifiable. The action button appears only
+ * when `canMark` (the shared rule already decided the viewer may): "Mark as
+ * answer" on any other reply, "Clear answer" on the accepted one, so
+ * un-answering is available to exactly whoever could answer.
+ */
+export const CommentAnswer: React.FC<{
+  isAnswer: boolean;
+  canMark: boolean;
+  onMark: () => void;
+  onClear: () => void;
+}> = ({ isAnswer, canMark, onMark, onClear }) => {
+  if (!isAnswer && !canMark) return null;
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2">
+      {isAnswer ? (
+        <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-lantern-success/10 px-2 py-0.5 text-label font-medium text-lantern-success">
+          <AppIcon name="checkmark-circle" size={13} filled aria-hidden />
+          {BOARD_ANSWER_COPY.answerBadge}
+        </span>
+      ) : null}
+      {canMark ? (
+        <button
+          type="button"
+          onClick={isAnswer ? onClear : onMark}
+          className="inline-flex min-h-[44px] items-center gap-1 rounded-lantern px-2 text-label font-semibold text-lantern-primary hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
+        >
+          {isAnswer ? BOARD_ANSWER_COPY.clearAnswer : BOARD_ANSWER_COPY.markAnswer}
+        </button>
+      ) : null}
+    </div>
+  );
+};
+
 export interface BoardPostPanelProps {
   groupId: string;
   post: BoardPost;
@@ -67,6 +104,25 @@ export interface BoardPostPanelProps {
   onSendComment: (text: string, options: SendMessageOptions) => Promise<void>;
   /** Keeps the card's `N comments` in step without a manual refetch (§11.7). */
   onReplyCountChange: (postId: string, replyCount: number) => void;
+  /**
+   * The reply currently accepted as the answer (the root's
+   * `answered_message_id`), or null. Drives the "Answer" badge on the reply and
+   * the "Answered" chip above the thread — for EVERY reader, marker or not, so
+   * an answered question is identifiable without any permission.
+   */
+  answeredMessageId?: string | null;
+  /**
+   * May THIS viewer accept or clear an answer? Decided once by the parent from
+   * the shared `boardPostRules(...).canMarkAnswered` — never re-derived here, so
+   * the panel cannot drift from the card or the server.
+   */
+  canMarkAnswered?: boolean;
+  /**
+   * Accept `messageId` as the answer, or clear it with `null`. The parent owns
+   * the write (one shared endpoint) and the optimistic state; the panel only
+   * says which reply.
+   */
+  onSetAnswer?: (messageId: string | null) => void;
 }
 
 /**
@@ -85,6 +141,9 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
   onToggleFavorite,
   onSendComment,
   onReplyCountChange,
+  answeredMessageId = null,
+  canMarkAnswered = false,
+  onSetAnswer,
 }) => {
   const [comments, setComments] = useState<BoardPost[]>([]);
   const [loading, setLoading] = useState(true);
@@ -174,7 +233,12 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
                 localOnly={lowDataMode}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-lantern-text">{post.senderName}</p>
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
+                  <span className="truncate">{post.senderName}</span>
+                  {/* The question reads as answered at the top of its own
+                      thread, for every reader. */}
+                  {answeredMessageId ? <AnsweredChip /> : null}
+                </p>
                 <p className="text-[11px] text-lantern-text-tertiary">
                   {boardRelativeTime(post.timestamp)}
                 </p>
@@ -253,6 +317,14 @@ export const BoardPostPanel: React.FC<BoardPostPanelProps> = ({
                           count={boardFavoriteCount(comment.reactions)}
                           mine={isBoardFavorited(myReactions[comment.id])}
                           onToggle={(added) => void handleFavorite(comment.id, added)}
+                        />
+                        {/* Which reply answered the question, and — for the
+                            author or a moderator — the accept/clear control. */}
+                        <CommentAnswer
+                          isAnswer={answeredMessageId === comment.id}
+                          canMark={canMarkAnswered}
+                          onMark={() => onSetAnswer?.(comment.id)}
+                          onClear={() => onSetAnswer?.(null)}
                         />
                       </>
                     )}

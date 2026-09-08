@@ -17,7 +17,7 @@ import type { SupabaseService } from './supabase';
 import { getWalletService, type WalletService } from './walletService';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
-import { grantBonusUses } from './aiBonusUses';
+import { grantBonusUses, type BonusGrantResult } from './aiBonusUses';
 import {
   REFERRAL_BONUS_AI_USES,
   REFERRAL_BONUS_AI_USES_CAP,
@@ -167,10 +167,23 @@ export class ReferralsService {
    * Never throws: this runs off the back of an ordinary request, and a reward
    * failure must not break whatever the user was actually doing.
    *
+   * A referral pays in two currencies, and `rewarded_at` is honest about only
+   * one of them: it records that the COINS were paid, because that is the half
+   * `reward_amount` and `wallet_award_once` represent. The AI-use half lives in
+   * its own ledger (`ai_bonus_grants`, keyed by source id) and is recorded
+   * separately, so a `rewarded_at` stamp never claims an AI grant that did not
+   * happen.
+   *
    * Idempotency is layered:
-   *   1. `rewarded_at` short-circuits the common case without touching the wallet;
-   *   2. `wallet_award_once` is the real guard — the award key is derived from
-   *      the referral id, so even a concurrent double-call grants once.
+   *   1. `wallet_award_once` is the coin guard — the award key is derived from
+   *      the referral id, so even a concurrent double-call grants once;
+   *   2. the UNIQUE `ai_bonus_grants.source_id` is the AI-use guard, so the same
+   *      grant re-attempted over an already-paid pair is a no-op.
+   *
+   * Because the AI-use guard lives in the database, a pair already stamped
+   * `rewarded_at` but missing its AI grant (every pair rewarded before the
+   * 20260907140000 migration existed) can be healed forward: re-attempting the
+   * grant on a later check is exactly-once and needs no backfill.
    */
   async checkActivation(refereeId: string): Promise<{ rewarded: boolean }> {
     if (!UUID_RE.test(String(refereeId))) return { rewarded: false };
@@ -205,27 +218,42 @@ export class ReferralsService {
           .is('activated_at', null);
       }
 
-      if (!row || row.rewarded_at) return { rewarded: false };
+      if (!row) return { rewarded: false };
 
       // Stale referrals stop costing a query on every request.
       const ageDays = (Date.now() - new Date(row.created_at).getTime()) / 86_400_000;
-      if (ageDays > REFERRAL_QUALIFY_WINDOW_DAYS) return { rewarded: false };
+      const withinWindow = ageDays <= REFERRAL_QUALIFY_WINDOW_DAYS;
+
+      // Already paid in coins. Do NOT return early — the AI-use half may be
+      // absent (every pair rewarded before the 20260907140000 migration existed
+      // got coins and no AI uses, and the old early return meant it could never
+      // retry). Re-attempt the grant: the UNIQUE `ai_bonus_grants.source_id`
+      // makes this exactly-once, so it is a no-op once the grant is present and
+      // safe to run over already-paid pairs. Bounded by the qualify window so it
+      // stops chasing ancient pairs; older debts are the founder's backfill call.
+      if (row.rewarded_at) {
+        if (withinWindow) {
+          const [referrerUses, refereeUses] = await this.grantReferralBonusUses(row);
+          if (referrerUses.granted || refereeUses.granted) {
+            logger.info('referral bonus AI uses self-healed', {
+              referralId: row.id,
+              referrerAiUses: referrerUses.amount,
+              refereeAiUses: refereeUses.amount,
+            });
+          }
+        }
+        return { rewarded: false };
+      }
+
+      if (!withinWindow) return { rewarded: false };
 
       if (activated !== true) return { rewarded: false };
 
       const now = new Date().toISOString();
-      // The award key is the referral id, so the pair can never be paid twice
-      // even if two requests race past the rewarded_at check above.
-      // Coins and AI uses are granted in the same breath, under the same
-      // exactly-once guard. Both are keyed on the referral id — `wallet_award_once`
-      // for coins, the UNIQUE `ai_bonus_grants.source_id` for AI uses — so a
-      // concurrent double-activation pays each side once, in both currencies.
-      //
-      // The AI-use grant is deliberately NOT allowed to fail the coin grant:
-      // `grantBonusUses` never throws, and until the 20260907140000 migration
-      // is hand-applied it reports itself unavailable and grants nothing. A
-      // referral still pays its coins in that window.
-      const [referrerAward, refereeAward, referrerUses, refereeUses] = await Promise.all([
+      // Coins first, each under `wallet_award_once` keyed on the referral id, so
+      // the pair can never be paid twice even if two requests race past the
+      // rewarded_at check above.
+      const [referrerAward, refereeAward] = await Promise.all([
         this.wallet.awardWalletOnce(
           row.referrer_id,
           `referral:referrer:${row.id}`,
@@ -238,20 +266,12 @@ export class ReferralsService {
           REFERRAL_REWARD_REFEREE,
           'Welcome bonus'
         ),
-        grantBonusUses(row.referrer_id, {
-          source: 'referral',
-          sourceId: `referral:referrer:${row.id}`,
-          amount: REFERRAL_BONUS_AI_USES_EACH,
-          cap: REFERRAL_BONUS_AI_USES_CAP,
-        }),
-        grantBonusUses(row.referee_id, {
-          source: 'referral',
-          sourceId: `referral:referee:${row.id}`,
-          amount: REFERRAL_BONUS_AI_USES_EACH,
-          cap: REFERRAL_BONUS_AI_USES_CAP,
-        }),
       ]);
 
+      // Stamp for the COIN reward and nothing else: `rewarded_at`/`reward_amount`
+      // are honest only about the half `wallet_award_once` just paid. The stamp
+      // goes on before the AI grant so that if the AI ledger is absent, the
+      // rewarded_at branch above heals it forward on a later check.
       await this.db
         .from('referrals')
         .update({
@@ -260,6 +280,13 @@ export class ReferralsService {
           reward_amount: REFERRAL_REWARD_REFERRER,
         })
         .eq('id', row.id);
+
+      // AI uses are a separate ledger and are NEVER allowed to fail or reverse
+      // the coins above: `grantReferralBonusUses` cannot throw, and when the
+      // ledger is absent it reports itself unavailable and grants nothing — the
+      // coins still stand, and the self-heal will land the grant once the
+      // migration is applied.
+      const [referrerUses, refereeUses] = await this.grantReferralBonusUses(row);
 
       logger.info('referral rewarded', {
         referralId: row.id,
@@ -277,6 +304,55 @@ export class ReferralsService {
         error: err instanceof Error ? err.message : String(err),
       });
       return { rewarded: false };
+    }
+  }
+
+  /**
+   * Grant the referral's AI-use half to both sides, exactly once.
+   *
+   * Keyed on the referral id — the same key the coin awards use — so the DB's
+   * UNIQUE `ai_bonus_grants.source_id` makes a re-attempt over an already-paid
+   * pair a no-op. Used both when a referral first activates and when an older
+   * pair is healed forward.
+   *
+   * This can never throw: `grantBonusUses` already swallows its own faults, and
+   * the try/catch here is belt-and-suspenders so the AI-use half can never fail
+   * or reverse the coin half of the reward, whatever a future change to
+   * `grantBonusUses` might do.
+   */
+  private async grantReferralBonusUses(row: {
+    id: string;
+    referrer_id: string;
+    referee_id: string;
+  }): Promise<[BonusGrantResult, BonusGrantResult]> {
+    try {
+      return await Promise.all([
+        grantBonusUses(row.referrer_id, {
+          source: 'referral',
+          sourceId: `referral:referrer:${row.id}`,
+          amount: REFERRAL_BONUS_AI_USES_EACH,
+          cap: REFERRAL_BONUS_AI_USES_CAP,
+        }),
+        grantBonusUses(row.referee_id, {
+          source: 'referral',
+          sourceId: `referral:referee:${row.id}`,
+          amount: REFERRAL_BONUS_AI_USES_EACH,
+          cap: REFERRAL_BONUS_AI_USES_CAP,
+        }),
+      ]);
+    } catch (err) {
+      logger.warn('referral bonus AI grant threw', {
+        referralId: row.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      const unavailable: BonusGrantResult = {
+        granted: false,
+        amount: 0,
+        balance: 0,
+        capped: false,
+        unavailable: true,
+      };
+      return [unavailable, unavailable];
     }
   }
 

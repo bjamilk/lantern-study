@@ -20,6 +20,12 @@ import {
     fetchTestDraft,
 } from '../services/testDrafts';
 import { syncGamificationProgress } from '../services/gamificationStreak';
+import { confirmDialog } from '../stores/confirmStore';
+import {
+    planCancelSessionConfirm,
+    planDiscardActiveSessionConfirm,
+    planDiscardSavedSessionConfirm,
+} from '../utils/destructiveConfirm';
 import {
     formatActivityLocalDate,
     loadQuestionVisibilityMode,
@@ -62,19 +68,27 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
 
     const isSubmittingTestRef = useRef(false);
     const [isSubmittingTest, setIsSubmittingTest] = useState(false);
+    // Guards the "discard active session?" confirm so a second Start tap while the
+    // dialog is open cannot open a second dialog or race session construction.
+    const startConfirmPendingRef = useRef(false);
 
-    const handleTestSubmit = useCallback((config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
+    const handleTestSubmit = useCallback(async (config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
         // Only block when a session is already open in the runner (not merely paused in the list).
         if (
             (appMode === AppMode.TEST_ACTIVE && activeTestSession) ||
             (appMode === AppMode.STUDY_ACTIVE && activeStudySession)
         ) {
-            if (window.confirm("You already have an active session open. Pause or finish it first, or discard it to start a new one. Discard active session?")) {
-                setActiveTestSession(null);
-                setActiveStudySession(null);
-            } else {
-                return;
+            if (startConfirmPendingRef.current) return;
+            startConfirmPendingRef.current = true;
+            let discard: boolean;
+            try {
+                discard = await confirmDialog(planDiscardActiveSessionConfirm());
+            } finally {
+                startConfirmPendingRef.current = false;
             }
+            if (!discard) return;
+            setActiveTestSession(null);
+            setActiveStudySession(null);
         }
 
         if (!selectedChat || selectedChat.chatType !== 'group') return;
@@ -630,19 +644,27 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         setAppMode(AppMode.CHAT);
     }, [activeStudySession, isOnline, setActiveStudySession, setAppMode, removePausedSession]);
 
-    const handleCancelActiveSession = useCallback(() => {
-        if (window.confirm("Are you sure you want to cancel this session? Your progress will be lost and this session will not be recorded.")) {
-            cancelScheduledSessionDraftAutosave();
-            const session = activeTestSession || activeStudySession;
-            if (session?.id && !String(session.id).startsWith('local-')) {
-                void abandonTestDraft(session.id).then(() => removePausedSession(session.id!));
-            } else if (session?.id) {
-                removePausedSession(session.id);
-            }
-            setActiveTestSession(null);
-            setActiveStudySession(null);
-            setAppMode(AppMode.CHAT);
+    const cancelConfirmPendingRef = useRef(false);
+    const handleCancelActiveSession = useCallback(async () => {
+        if (cancelConfirmPendingRef.current) return;
+        cancelConfirmPendingRef.current = true;
+        let cancel: boolean;
+        try {
+            cancel = await confirmDialog(planCancelSessionConfirm());
+        } finally {
+            cancelConfirmPendingRef.current = false;
         }
+        if (!cancel) return;
+        cancelScheduledSessionDraftAutosave();
+        const session = activeTestSession || activeStudySession;
+        if (session?.id && !String(session.id).startsWith('local-')) {
+            void abandonTestDraft(session.id).then(() => removePausedSession(session.id!));
+        } else if (session?.id) {
+            removePausedSession(session.id);
+        }
+        setActiveTestSession(null);
+        setActiveStudySession(null);
+        setAppMode(AppMode.CHAT);
     }, [activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession]);
 
     const handlePauseSession = useCallback(() => {
@@ -722,7 +744,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     }, [setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession, refreshPausedSessions]);
 
     const handleAbandonPausedSession = useCallback(async (sessionId: string) => {
-        if (!window.confirm('Discard this saved session? Progress will not be recorded.')) return;
+        if (!(await confirmDialog(planDiscardSavedSessionConfirm()))) return;
         try {
             if (!String(sessionId).startsWith('local-')) {
                 await abandonTestDraft(sessionId);

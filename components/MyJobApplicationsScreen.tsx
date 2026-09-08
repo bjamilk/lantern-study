@@ -21,6 +21,8 @@ import { JobsWorkspaceNav } from "./jobs/JobsWorkspaceNav";
 import { JobInterviewInvite } from "./jobs/JobInterviewInvite";
 import { JobOfferCard } from "./jobs/JobOfferCard";
 import { ResumeUploadField } from "./jobs/ResumeUploadField";
+import { confirmDialog } from "../stores/confirmStore";
+import { planWithdrawApplicationConfirm } from "../utils/destructiveConfirm";
 
 const CLOSED_STATUSES = new Set<JobApplicationStatus>([
   "hired",
@@ -238,15 +240,11 @@ export default function MyJobApplicationsScreen({
     }
   };
 
-  const withdraw = async (applicationId: string) => {
-    // Withdrawing is permanent and blocks re-applying — never one stray click.
-    if (
-      !confirm(
-        "Withdraw this application? This cannot be undone and you will not be able to re-apply to this job.",
-      )
-    ) {
-      return;
-    }
+  const withdraw = async (applicationId: string, jobTitle?: string | null) => {
+    // Withdrawing is permanent and blocks re-applying — never one stray click,
+    // and never the browser's native confirm chrome.
+    const ok = await confirmDialog(planWithdrawApplicationConfirm({ title: jobTitle }));
+    if (!ok) return;
     setWithdrawingId(applicationId);
     setError(null);
     try {
@@ -559,7 +557,7 @@ export default function MyJobApplicationsScreen({
                           type="button"
                           disabled={withdrawingId === application.id}
                           className="rounded-lg border border-lantern-border px-3 py-2 text-sm font-medium text-lantern-text-secondary hover:text-lantern-text disabled:opacity-50"
-                          onClick={() => void withdraw(application.id)}
+                          onClick={() => void withdraw(application.id, posting?.title)}
                         >
                           {withdrawingId === application.id
                             ? "Withdrawing…"

@@ -14,6 +14,8 @@ import { saveOfflineBundle, deleteOfflineBundle } from '../services/supabase';
 import { syncPendingFlashcardReviews } from '../services/offlineFlashcardSync';
 import { syncPendingTestResults } from '../services/offlineTestSync';
 import { useFlashcardStore } from '../stores/flashcardStore';
+import { confirmDialog } from '../stores/confirmStore';
+import { planDeleteOfflineBundleConfirm } from '../utils/destructiveConfirm';
 import { v4 as uuidv4 } from 'uuid';
 
 interface UseOfflineHandlersParams {
@@ -271,19 +273,21 @@ export function useOfflineHandlers({ addNotification }: UseOfflineHandlersParams
         }
     }, [isOnline, addNotification]);
 
-    const handleDeleteBundle = useCallback((bundleId: string) => {
-        if (window.confirm("Are you sure you want to delete this downloaded test bundle?")) {
-            updateOfflineBundles(prev => prev.filter(b => b.bundleId !== bundleId));
-            
-            if (currentUser) {
-                deleteOfflineBundle(currentUser.id, bundleId).then(() => {
-                    console.log('[Offline Sync] Bundle deleted from cloud:', bundleId);
-                }).catch(error => {
-                    console.error('[Offline Sync] Failed to delete bundle from cloud:', error);
-                });
-            }
+    const handleDeleteBundle = useCallback(async (bundleId: string) => {
+        const bundle = offlineBundles.find(b => b.bundleId === bundleId);
+        const bundleName = bundle?.displayName || bundle?.groupName;
+        if (!(await confirmDialog(planDeleteOfflineBundleConfirm({ name: bundleName })))) return;
+
+        updateOfflineBundles(prev => prev.filter(b => b.bundleId !== bundleId));
+
+        if (currentUser) {
+            deleteOfflineBundle(currentUser.id, bundleId).then(() => {
+                console.log('[Offline Sync] Bundle deleted from cloud:', bundleId);
+            }).catch(error => {
+                console.error('[Offline Sync] Failed to delete bundle from cloud:', error);
+            });
         }
-    }, [currentUser, updateOfflineBundles]);
+    }, [currentUser, offlineBundles, updateOfflineBundles]);
 
     const handleSyncResults = useCallback(async () => {
         if (!isOnline) {

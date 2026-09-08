@@ -379,6 +379,13 @@ export const muteCommunityMember = endpoints.muteCommunityMember;
 export const unmuteCommunityMember = endpoints.unmuteCommunityMember;
 /** Soft-remove a board post; the card stays as a tombstone carrying the reason. */
 export const removeCommunityPost = endpoints.removeCommunityPost;
+/**
+ * Accept a reply as a question's answer (or clear it with `null`). The server
+ * is the gate — it re-derives `canMarkAnswered` from the shared board rules and
+ * checks the reply belongs to the question — and answers 503 until the
+ * 20260908120000 migration is applied, so the board never sees a 500.
+ */
+export const markCommunityPostAnswered = endpoints.markCommunityPostAnswered;
 export const createCommunityInvite = endpoints.createCommunityInvite;
 export const listCommunityInvites = endpoints.listCommunityInvites;
 export const revokeCommunityInvite = endpoints.revokeCommunityInvite;

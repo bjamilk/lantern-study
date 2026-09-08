@@ -3,6 +3,8 @@ import Modal from './ui/Modal';
 import { Avatar, Button } from './ui';
 import { listBlockedUsers, unblockUser, fetchUserProfile } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
+import { confirmDialog } from '../stores/confirmStore';
+import { planUnblockUserConfirm } from '../utils/destructiveConfirm';
 
 interface BlockedUser {
   id: string;
@@ -60,7 +62,8 @@ export const BlockedUsersModal: React.FC<BlockedUsersModalProps> = ({ open, onCl
 
   const handleUnblock = async (target: BlockedUser) => {
     if (busyId) return;
-    if (!window.confirm(`Unblock ${target.name}? They will be able to message you again.`)) return;
+    const ok = await confirmDialog(planUnblockUserConfirm({ name: target.name }));
+    if (!ok) return;
     setBusyId(target.id);
     try {
       await unblockUser(userId, target.id);

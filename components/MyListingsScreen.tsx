@@ -33,6 +33,8 @@ import {
 } from '@lantern/shared';
 import AppealListingModal from './moderation/AppealListingModal';
 import { AppIcon } from './ui/AppIcon';
+import { confirmDialog } from '../stores/confirmStore';
+import { planDeleteListingConfirm } from '../utils/destructiveConfirm';
 
 interface MyListingsScreenProps {
   onNavigate: (screen: string, params?: any) => void;
@@ -170,7 +172,9 @@ const MyListingsScreen: React.FC<MyListingsScreenProps> = ({ onNavigate, onBack,
   };
 
   const handleDelete = async (listingId: string) => {
-    if (!confirm('Are you sure you want to delete this listing?')) return;
+    const listing = listings.find((l) => l.id === listingId);
+    const ok = await confirmDialog(planDeleteListingConfirm({ title: listing?.title }));
+    if (!ok) return;
     try {
       await deleteMarketplaceListing(listingId);
       await loadListings();

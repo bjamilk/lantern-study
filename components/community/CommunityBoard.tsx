@@ -20,6 +20,7 @@ import {
   canRepostBoardPost,
   normalizeBoardPostKind,
   pinnedPostAccessibilityLabel,
+  requestFailureCopy,
   studyGroupNameFromPost,
   type BoardBookmarkEntry,
   type BoardPost,
@@ -54,7 +55,7 @@ import {
   undoBoardRepost,
   unmuteGroupChat,
 } from '../../services/supabase';
-import { removeCommunityPost } from '../../services/apiEndpoints';
+import { markCommunityPostAnswered, removeCommunityPost } from '../../services/apiEndpoints';
 import { manageCommunityErrorCopy } from './manageCommunity';
 import { mergeBoardPosts, mergeRealtimeBoardPost, toBoardPost } from '../../utils/boardPosts';
 import {
@@ -218,6 +219,16 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
    * to `discussion`, which is exactly what a legacy row is.
    */
   const [postKinds, setPostKinds] = useState<Record<string, BoardPostKind>>({});
+  /**
+   * Each question's accepted answer — the reply id in `answered_message_id`, or
+   * null. Kept beside the posts for the same reason as `postKinds`: `BoardPost`
+   * carries no answered field, the shared model is written once for both
+   * clients, and widening it is not this lane's to do. Fed from the RAW rows,
+   * which carry `answeredMessageId` / `answered_message_id` only after the
+   * 20260908120000 migration; a row without it stays out of the map, which
+   * reads as "not answered" — exactly what a pre-migration row is.
+   */
+  const [answeredByPost, setAnsweredByPost] = useState<Record<string, string | null>>({});
 
   const listTopRef = useRef<HTMLDivElement>(null);
   const commentsOpenerRef = useRef<HTMLElement | null>(null);
@@ -303,6 +314,42 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
     };
   }, [userId, bookmarksAvailable, groupId]);
 
+  /** Remember what each raw row says it is; unknown rows are discussions. */
+  const rememberKinds = useCallback((rows: any[]) => {
+    setPostKinds((prev) => {
+      const next = { ...prev };
+      for (const row of rows) {
+        const id = String(row?.id ?? '');
+        if (!id) continue;
+        next[id] = normalizeBoardPostKind(row?.postKind ?? row?.post_kind);
+      }
+      return next;
+    });
+    // The accepted answer travels on the same rows. Presence of the key — even
+    // as null (a cleared answer) — is authoritative; a row that omits it
+    // entirely (a pre-migration row, or a realtime patch that did not carry it)
+    // leaves whatever was known before, so a live favorite never blanks an
+    // answer.
+    setAnsweredByPost((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const row of rows) {
+        if (!row || typeof row !== 'object') continue;
+        const id = String(row?.id ?? '');
+        if (!id) continue;
+        const hasKey = 'answeredMessageId' in row || 'answered_message_id' in row;
+        if (!hasKey) continue;
+        const raw = row.answeredMessageId ?? row.answered_message_id ?? null;
+        const value = typeof raw === 'string' && raw ? raw : null;
+        if (next[id] !== value) {
+          next[id] = value;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, []);
+
   /**
    * Resolve a post named in the URL but absent from every loaded page.
    *
@@ -324,9 +371,11 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
     void fetchGroupThread(groupId, openPostId)
       .then((rows: any[]) => {
         if (cancelled) return;
-        const root = (Array.isArray(rows) ? rows : []).find(
-          (row: any) => String(row?.id) === openPostId
-        );
+        const list = Array.isArray(rows) ? rows : [];
+        // A link can open a post that no loaded page carries, so this is the
+        // only place its kind and its accepted answer become known.
+        rememberKinds(list);
+        const root = list.find((row: any) => String(row?.id) === openPostId);
         setLinkedPost(root ? toBoardPost(root, groupId) : null);
       })
       .catch(() => {
@@ -335,20 +384,8 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [openPostId, groupId, posts, linkedPost?.id]);
+  }, [openPostId, groupId, posts, linkedPost?.id, rememberKinds]);
 
-  /** Remember what each raw row says it is; unknown rows are discussions. */
-  const rememberKinds = useCallback((rows: any[]) => {
-    setPostKinds((prev) => {
-      const next = { ...prev };
-      for (const row of rows) {
-        const id = String(row?.id ?? '');
-        if (!id) continue;
-        next[id] = normalizeBoardPostKind(row?.postKind ?? row?.post_kind);
-      }
-      return next;
-    });
-  }, []);
 
   const loadPage = useCallback(
     async (nextPage: number, replace: boolean) => {
@@ -659,6 +696,28 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
       );
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not edit that post', 'error');
+    }
+  };
+
+  /**
+   * Accept a reply as the answer to a question, or clear it (`null`).
+   *
+   * The gate is the server's: it re-derives `canMarkAnswered` from the same
+   * shared `boardPostRules` and re-checks that the reply belongs to this
+   * question, so calling the endpoint is refused for anyone the card would not
+   * have offered it to. Optimistic, then reconciled to whatever the server
+   * returns; a refusal reverts and speaks in the shared request-failure
+   * vocabulary — never a raw `err.message`, never a 503/vendor string.
+   */
+  const handleSetAnswer = async (postId: string, answerMessageId: string | null) => {
+    const previous = answeredByPost[postId] ?? null;
+    setAnsweredByPost((prev) => ({ ...prev, [postId]: answerMessageId }));
+    try {
+      const result = await markCommunityPostAnswered(communityId, postId, answerMessageId);
+      setAnsweredByPost((prev) => ({ ...prev, [postId]: result.answeredMessageId }));
+    } catch (err) {
+      setAnsweredByPost((prev) => ({ ...prev, [postId]: previous }));
+      showToast(requestFailureCopy(err).title, 'error');
     }
   };
 
@@ -1085,6 +1144,16 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
       );
     }
     const target = actionTargetFor(post);
+    // Every card decision comes from the ONE shared matrix, asked about this
+    // post and this viewer — never from a role test written here.
+    const perms = boardPostRules(viewerRole, {
+      isPlatformAdmin,
+      senderId: post.senderId,
+      viewerId: userId,
+      postKind: postKinds[post.id],
+      pinnedAt: post.pinnedAt,
+      removedAt: post.removedAt,
+    });
     return (
       <BoardPostCard
         key={post.id}
@@ -1117,24 +1186,17 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
         }
         onEdit={(text) => handleEditPost(post, text)}
         onDelete={() => void handleDeletePost(post)}
-        // Every card decision comes from the ONE shared matrix, asked about
-        // this post and this viewer — never from a role test written here.
-        canRemoveAsModerator={
-          boardPostRules(viewerRole, {
-            isPlatformAdmin,
-            senderId: post.senderId,
-            viewerId: userId,
-            postKind: postKinds[post.id],
-            pinnedAt: post.pinnedAt,
-            removedAt: post.removedAt,
-          }).canRemove && post.senderId !== userId
-        }
+        canRemoveAsModerator={perms.canRemove && post.senderId !== userId}
         onRemoveAsModerator={() => void handleRemovePost(post)}
         postKindLabel={
           postKinds[post.id] && postKinds[post.id] !== 'discussion'
             ? boardPostKindMeta(postKinds[post.id]).label
             : null
         }
+        // A question the author or a moderator has resolved reads as answered
+        // in the timeline; the accept/clear controls live in the thread, beside
+        // the reply they point at.
+        answered={!!answeredByPost[post.id]}
         onTogglePin={() => void handleTogglePin(post)}
         onStartStudyGroup={() => onStartStudyGroup(studyGroupNameFromPost(post), true)}
       />
@@ -1378,6 +1440,21 @@ export const CommunityBoard: React.FC<CommunityBoardProps> = ({
               prev.map((post) => (post.id === postId ? { ...post, replyCount } : post))
             )
           }
+          answeredMessageId={answeredByPost[openedPost.id] ?? null}
+          // Whether this viewer may accept or clear an answer is the SAME shared
+          // rule the card uses — computed once here, never re-derived in the
+          // panel — so the thread and the timeline can never disagree.
+          canMarkAnswered={
+            boardPostRules(viewerRole, {
+              isPlatformAdmin,
+              senderId: openedPost.senderId,
+              viewerId: userId,
+              postKind: postKinds[openedPost.id],
+              pinnedAt: openedPost.pinnedAt,
+              removedAt: openedPost.removedAt,
+            }).canMarkAnswered
+          }
+          onSetAnswer={(messageId) => void handleSetAnswer(openedPost.id, messageId)}
         />
       ) : null}
 

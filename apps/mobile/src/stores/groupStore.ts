@@ -227,6 +227,15 @@ export interface Message {
   repostedByMe?: boolean;
   /** Viewer-specific. Absent (not false) when `message_bookmarks` is missing. */
   bookmarked?: boolean;
+  /**
+   * Accepted-answer id for a board QUESTION (`messages.answered_message_id`).
+   * Mapped conditionally on PRESENCE by `boardActionFields`: the key is set
+   * (to a string, or to `null` for a cleared answer) only when the row carries
+   * it, and omitted otherwise, so a realtime patch that does not include it
+   * leaves a known answer untouched. `CommunityBoardScreen`'s `readPostAnswerId`
+   * and its `'answeredMessageId' in post` seed guard both depend on this.
+   */
+  answeredMessageId?: string | null;
   receiptStatus?: 'sent' | 'read';
   /**
    * Local-only outbox state. Deliberately separate from receiptStatus, which

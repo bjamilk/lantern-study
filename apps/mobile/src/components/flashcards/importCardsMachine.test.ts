@@ -5,6 +5,7 @@ import {
   canSave,
   cardsToSave,
   importCardsReducer,
+  importFileRefusal,
   importedCardsToLocalFlashcards,
   outcomeMessage,
   overflowNotice,
@@ -97,6 +98,53 @@ describe('re-parsing and failure', () => {
   it('refuses to save nothing', () => {
     const state = run([{ type: 'text_changed', text: 'prose with no separator' }, { type: 'parse' }]);
     expect(canSave(state)).toBe(false);
+  });
+});
+
+describe('the door only reads what it can parse on the phone', () => {
+  it('accepts a text export: a picked .txt/.csv/.tsv is not refused', () => {
+    expect(importFileRefusal('BIO_101-cards.txt')).toBeNull();
+    expect(importFileRefusal('quizlet-export.csv')).toBeNull();
+    expect(importFileRefusal('deck.tsv')).toBeNull();
+    // An extensionless Quizlet export is read on content, not refused here.
+    expect(importFileRefusal('exported-cards')).toBeNull();
+  });
+
+  it('refuses an Anki .apkg/.colpkg package and names what to bring instead', () => {
+    for (const name of ['French.apkg', 'Collection.colpkg', 'DECK.APKG']) {
+      const message = importFileRefusal(name);
+      // The rule must fire — this fails if the .apkg guard is removed.
+      expect(message).not.toBeNull();
+      // Plain words that tell the student what the door does accept…
+      expect(message).toContain('.txt');
+      // …and never a raw parser, file-system or vendor string.
+      const lower = message!.toLowerCase();
+      expect(lower).not.toContain('unexpected');
+      expect(lower).not.toContain('json');
+      expect(lower).not.toContain('sqlite');
+      expect(lower).not.toContain('error');
+    }
+  });
+
+  it('a picked .txt still parses to saveable cards (the accept path end to end)', () => {
+    const state = run([
+      { type: 'file_picked', text: ankiRows(4), fileName: 'deck.txt' },
+      { type: 'parse' },
+    ]);
+    expect(state.parsed!.cards).toHaveLength(4);
+    expect(canSave(importCardsReducer(state, { type: 'deck_name_changed', name: 'X' }))).toBe(true);
+  });
+
+  it('refusing through the machine keeps the paste box usable and drops any stale parse', () => {
+    const parsed = run([{ type: 'text_changed', text: ankiRows(3) }, { type: 'parse' }]);
+    const rejected = importCardsReducer(parsed, {
+      type: 'file_rejected',
+      message: importFileRefusal('deck.apkg')!,
+    });
+    expect(rejected.stage).toBe('input');
+    expect(rejected.parsed).toBeNull();
+    expect(rejected.error).toContain('.txt');
+    expect(canSave(rejected)).toBe(false);
   });
 });
 

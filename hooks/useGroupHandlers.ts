@@ -35,6 +35,7 @@ import {
     type ChatMessageMutationPayload,
 } from '../services/supabase';
 import { confirmDialog } from '../stores/confirmStore';
+import { planDeleteGroupConfirm, planRevokeInvitationConfirm } from '../utils/destructiveConfirm';
 import { useToastStore } from '../stores/toastStore';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
@@ -1751,21 +1752,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         await declineGroupInvite(groupId);
     }, []);
 
-    const handleRevokeInvitation = useCallback((groupId: string, email: string) => {
-        if (window.confirm(`Are you sure you want to revoke the invitation for ${email}?`)) {
-            updateGroups(prev => prev.map(g => {
-                if (g.id === groupId) {
-                    return { ...g, memberEmails: (g.memberEmails || []).filter(e => e !== email) };
-                }
-                return g;
-            }));
-        }
+    const handleRevokeInvitation = useCallback(async (groupId: string, email: string) => {
+        if (!(await confirmDialog(planRevokeInvitationConfirm({ invitee: email })))) return;
+        updateGroups(prev => prev.map(g => {
+            if (g.id === groupId) {
+                return { ...g, memberEmails: (g.memberEmails || []).filter(e => e !== email) };
+            }
+            return g;
+        }));
     }, [updateGroups]);
 
-    const handleRevokePhoneInvitation = useCallback((groupId: string, phoneNumber: string) => {
-        if (window.confirm(`Are you sure you want to revoke the invitation for ${phoneNumber}?`)) {
-            updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, invitedPhoneNumbers: (g.invitedPhoneNumbers || []).filter(p => p !== phoneNumber) } : g));
-        }
+    const handleRevokePhoneInvitation = useCallback(async (groupId: string, phoneNumber: string) => {
+        if (!(await confirmDialog(planRevokeInvitationConfirm({ invitee: phoneNumber })))) return;
+        updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, invitedPhoneNumbers: (g.invitedPhoneNumbers || []).filter(p => p !== phoneNumber) } : g));
     }, [updateGroups]);
 
     const handlePromoteToAdmin = useCallback(async (groupId: string, userId: string) => {
@@ -1947,10 +1946,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, []);
 
     const handleDeleteGroup = useCallback(async (groupId: string) => {
-        if (window.confirm("Are you sure you want to permanently delete this group and all its sub-groups? This cannot be undone. Past test scores stay in your history, but they won’t appear under Group performance after the group is gone.")) {
-            const group = groups.find(g => g.id === groupId);
+        const group = groups.find(g => g.id === groupId);
+        if (!(await confirmDialog(planDeleteGroupConfirm({ name: group?.name })))) return;
+        {
             const idsToDelete = [groupId, ...getAllSubgroupIDs(groupId, groups)];
-            
+
             try {
                 for (const id of idsToDelete) {
                     await deleteGroup(id);

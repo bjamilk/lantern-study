@@ -4,6 +4,7 @@ import { lazyWithRetry } from './utils/lazyWithRetry';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useToastStore } from './stores/toastStore';
 import { confirmDialog, useConfirmStore } from './stores/confirmStore';
+import { planStartDuelConfirm, planAcceptGroupInviteConfirm, planDeclineGroupInviteConfirm } from './utils/destructiveConfirm';
 import { useLectureRecordingStore } from './stores/lectureRecordingStore';
 import { ToastBanner } from './components/ui/ToastBanner';
 import AiJobProgressPanel from './components/jobs/AiJobProgressPanel';
@@ -731,7 +732,7 @@ export const App: React.FC = () => {
             try {
                 const challenge = await fetchChallenge(challengeId);
                 const opponentName = challenge.opponent?.name || 'Your opponent';
-                const startNow = window.confirm(`${opponentName} accepted your duel! Start playing now?`);
+                const startNow = await confirmDialog(planStartDuelConfirm({ opponentName }));
                 if (startNow) {
                     void handleStartChallengePlay(challengeId);
                 } else {
@@ -3199,21 +3200,24 @@ export const App: React.FC = () => {
                         handleInitiateDm(params.userId);
                     } else if (screen === 'GroupInvite' && params?.groupId) {
                         const groupId = params.groupId as string;
-                        if (window.confirm('Accept this group invite and join the chat?')) {
-                            void handleAcceptGroupInvite(groupId)
-                                .then(() => {
+                        void (async () => {
+                            if (await confirmDialog(planAcceptGroupInviteConfirm())) {
+                                try {
+                                    await handleAcceptGroupInvite(groupId);
                                     const g = useGroupStore.getState().groups.find((x) => x.id === groupId);
                                     if (g) handleSelectChat({ ...g, chatType: 'group' });
                                     setAppMode(AppMode.CHAT);
-                                })
-                                .catch((err) => {
-                                    alert(err instanceof Error ? err.message : 'Failed to accept invite');
-                                });
-                        } else if (window.confirm('Decline this group invite?')) {
-                            void handleDeclineGroupInvite(groupId).catch((err) => {
-                                alert(err instanceof Error ? err.message : 'Failed to decline invite');
-                            });
-                        }
+                                } catch (err) {
+                                    showToast(err instanceof Error ? err.message : 'Failed to accept invite', 'error');
+                                }
+                            } else if (await confirmDialog(planDeclineGroupInviteConfirm())) {
+                                try {
+                                    await handleDeclineGroupInvite(groupId);
+                                } catch (err) {
+                                    showToast(err instanceof Error ? err.message : 'Failed to decline invite', 'error');
+                                }
+                            }
+                        })();
                     } else if (screen === 'GroupChat' && params?.groupId) {
                         const g = groups.find((x) => x.id === params.groupId);
                         if (g) {

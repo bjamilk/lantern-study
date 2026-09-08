@@ -37,6 +37,7 @@ import {
   canSave,
   cardsToSave,
   importCardsReducer,
+  importFileRefusal,
   outcomeMessage,
   overflowNotice,
   previewCards,
@@ -112,6 +113,14 @@ export default function ImportCardsSheet({ visible, onClose, onImported }: Impor
       });
       if (result.canceled || !result.assets?.[0]) return;
       const asset = result.assets[0];
+      // A file the door names but cannot read (an Anki .apkg package) is turned
+      // away before we try to read it as text, so the student gets words they
+      // can act on instead of a garbled "no cards found".
+      const refusal = importFileRefusal(asset.name);
+      if (refusal) {
+        dispatch({ type: 'file_rejected', message: refusal });
+        return;
+      }
       const text = await FileSystem.readAsStringAsync(asset.uri);
       dispatch({ type: 'file_picked', text, fileName: asset.name ?? 'Imported cards' });
       dispatch({ type: 'parse' });
@@ -169,7 +178,7 @@ export default function ImportCardsSheet({ visible, onClose, onImported }: Impor
             <FeatureDisc feature="flashcards" icon="layers" size={32} />
             <View className="flex-1">
               <T.Heading>Import cards</T.Heading>
-              <T.Label style={{ color: eyebrowInk }}>FREE — QUIZLET OR ANKI EXPORT</T.Label>
+              <T.Label style={{ color: eyebrowInk }}>FREE — QUIZLET OR ANKI TEXT EXPORT</T.Label>
             </View>
             {/* The hit area is part of the header, so it moves with the sheet
                 and never has to be aimed at where the sheet used to be. */}

@@ -3636,6 +3636,34 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     /**
+     * Mark a QUESTION board post answered by pointing at the reply that
+     * answered it, or clear it by passing `answerMessageId: null`.
+     *
+     * The server is the gate: whether the caller may mark answered is
+     * re-derived from `boardPostRules` (the post's author or a moderator, an
+     * answerable/question kind, not removed) — a client that shows the control
+     * to the wrong person only earns a 403. The answering reply must be a real
+     * comment in THIS question's own thread; a reply from another post, board
+     * or community, a removed reply, or the post itself is 400. A post in
+     * another community is 404, exactly as one that does not exist.
+     *
+     * `cleared` distinguishes an un-answer from a mark, so clearing an accepted
+     * answer is never confused with a post that was never marked. 503 before
+     * the 20260908120000 migration is applied — surface it as unavailable, not
+     * as an error the student caused.
+     */
+    markCommunityPostAnswered: (
+      communityId: string,
+      postId: string,
+      answerMessageId: string | null,
+    ) =>
+      apiRequest<{ id: string; answeredMessageId: string | null; cleared: boolean }>(
+        `/communities/${encodeURIComponent(communityId)}/posts/${encodeURIComponent(postId)}/answered`,
+        { method: 'POST', body: JSON.stringify({ answerMessageId }) },
+        10000,
+      ),
+
+    /**
      * Mint an invite link. Moderators only, at most
      * COMMUNITY_INVITE_ACTIVE_MAX live at once (409 past that — revoke one).
      *

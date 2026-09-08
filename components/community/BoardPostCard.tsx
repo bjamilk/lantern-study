@@ -74,9 +74,38 @@ export interface BoardPostCardProps {
   onRemoveAsModerator?: () => void;
   /** "Announcement" / "Question" / "Event"; null for a plain discussion. */
   postKindLabel?: string | null;
+  /**
+   * A question whose author or a moderator has accepted a reply as the answer.
+   * Read straight off the post's `answered_message_id`, so the timeline reads
+   * as answered without opening the thread. Only a `question` post is ever
+   * answered — the server never sets it on any other kind (§ mark-answered).
+   */
+  answered?: boolean;
   onTogglePin: () => void;
   onStartStudyGroup: () => void;
 }
+
+/** The board's mark-answered vocabulary, shared by the card and the panel. */
+export const BOARD_ANSWER_COPY = {
+  /** The badge on an answered question, on the card and above the thread. */
+  answeredBadge: 'Answered',
+  /** The badge on the one reply that was accepted as the answer. */
+  answerBadge: 'Answer',
+  /** Accept this reply as the answer (author or moderator). */
+  markAnswer: 'Mark as answer',
+  /** Un-accept — clear the answer (whoever could accept one). */
+  clearAnswer: 'Clear answer',
+} as const;
+
+/** The success-toned "Answered" chip, so the card and the panel read the same. */
+export const AnsweredChip: React.FC<{ className?: string }> = ({ className = '' }) => (
+  <span
+    className={`inline-flex shrink-0 items-center gap-1 rounded-full bg-lantern-success/10 px-2 py-0.5 text-label font-medium text-lantern-success ${className}`}
+  >
+    <AppIcon name="checkmark-circle" size={13} filled aria-hidden />
+    {BOARD_ANSWER_COPY.answeredBadge}
+  </span>
+);
 
 const MEDIA_CHIP_CLASS =
   'inline-flex min-h-[44px] items-center gap-1.5 rounded-lantern border border-lantern-border bg-lantern-background-secondary px-3 text-xs font-medium text-lantern-text-secondary';
@@ -295,6 +324,7 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
   canRemoveAsModerator = false,
   onRemoveAsModerator,
   postKindLabel = null,
+  answered = false,
   onTogglePin,
   onStartStudyGroup,
 }) => {
@@ -380,6 +410,9 @@ export const BoardPostCard: React.FC<BoardPostCardProps> = ({
                 {postKindLabel}
               </span>
             ) : null}
+            {/* An answered question says so in the timeline — the reader does
+                not have to open the thread to learn it was resolved. */}
+            {answered ? <AnsweredChip /> : null}
           </p>
           <p className="text-[11px] text-lantern-text-tertiary">
             {when}

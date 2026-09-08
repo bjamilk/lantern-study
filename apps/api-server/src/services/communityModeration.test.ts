@@ -316,6 +316,167 @@ describe('removePost', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Accepted answer
+// ---------------------------------------------------------------------------
+
+describe('markPostAnswered', () => {
+  const REPLY = '88888888-8888-4888-8888-888888888888';
+  const OTHER_REPLY = '99999999-9999-4999-8999-999999999999';
+
+  /** A question post on this community's board, by MEMBER. */
+  const questionRow = (over: Record<string, unknown> = {}) => ({
+    id: POST,
+    sender_id: MEMBER,
+    group_id: GROUP,
+    post_kind: 'question',
+    removed_at: null,
+    answered_message_id: null,
+    groups: { id: GROUP, community_id: COMMUNITY },
+    ...over,
+  });
+
+  /** A reply hanging under POST's thread. */
+  const replyRow = (over: Record<string, unknown> = {}) => ({
+    id: REPLY,
+    thread_root_id: POST,
+    removed_at: null,
+    ...over,
+  });
+
+  it('lets a moderator mark a question answered and audits community_post_answer', async () => {
+    const { service, queries } = makeDb([
+      ...actorScript('moderator'),
+      { table: 'messages', result: { data: questionRow() } },
+      { table: 'messages', result: { data: replyRow() } },
+      { table: 'messages', result: {} },
+    ]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, REPLY)).resolves.toEqual({
+      id: POST,
+      answeredMessageId: REPLY,
+      cleared: false,
+    });
+    const update = last(queries.filter((q) => q.filters.some((f) => f[0] === 'update')));
+    expect(argOf(update, 'update')).toEqual({ answered_message_id: REPLY });
+    expect((logAdminAction.mock.calls[0] as any[])[1]).toMatchObject({
+      action: 'community_post_answer',
+      targetType: 'community_post',
+      targetId: POST,
+    });
+  });
+
+  it('lets the question’s author mark it answered', async () => {
+    const { service } = makeDb([
+      ...actorScript('member'),
+      { table: 'messages', result: { data: questionRow({ sender_id: MEMBER }) } },
+      { table: 'messages', result: { data: replyRow() } },
+      { table: 'messages', result: {} },
+    ]);
+    await expect(service.markPostAnswered(MEMBER, COMMUNITY, POST, REPLY)).resolves.toMatchObject({
+      answeredMessageId: REPLY,
+      cleared: false,
+    });
+  });
+
+  it('refuses a plain member who is not the author (server is the gate)', async () => {
+    const { service } = makeDb([
+      ...actorScript('member'),
+      { table: 'messages', result: { data: questionRow({ sender_id: OWNER }) } },
+    ]);
+    await expect(service.markPostAnswered(MEMBER, COMMUNITY, POST, REPLY)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+
+  it('refuses a non-question post — only answerable kinds can be answered', async () => {
+    const { service } = makeDb([
+      ...actorScript('moderator'),
+      { table: 'messages', result: { data: questionRow({ post_kind: 'discussion' }) } },
+    ]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, REPLY)).rejects.toMatchObject({
+      statusCode: 403,
+    });
+  });
+
+  it('refuses a reply from another thread — the answer must belong to THIS question', async () => {
+    const { service } = makeDb([
+      ...actorScript('moderator'),
+      { table: 'messages', result: { data: questionRow() } },
+      { table: 'messages', result: { data: replyRow({ id: OTHER_REPLY, thread_root_id: OTHER_REPLY }) } },
+    ]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, OTHER_REPLY)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it('refuses pointing a question at itself — a root post is nobody’s answer', async () => {
+    const { service } = makeDb([
+      ...actorScript('moderator'),
+      { table: 'messages', result: { data: questionRow() } },
+      // The post read back as an "answer" carries the root's null thread_root_id.
+      { table: 'messages', result: { data: { id: POST, thread_root_id: null, removed_at: null } } },
+    ]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, POST)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it('refuses a removed reply as the accepted answer', async () => {
+    const { service } = makeDb([
+      ...actorScript('moderator'),
+      { table: 'messages', result: { data: questionRow() } },
+      { table: 'messages', result: { data: replyRow({ removed_at: '2026-09-01T00:00:00Z' }) } },
+    ]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, REPLY)).rejects.toMatchObject({
+      statusCode: 400,
+    });
+  });
+
+  it('404s for a question in ANOTHER community, never "wrong community"', async () => {
+    const { service } = makeDb([
+      ...actorScript('owner'),
+      {
+        table: 'messages',
+        result: { data: questionRow({ groups: { id: GROUP, community_id: OTHER_COMMUNITY } }) },
+      },
+    ]);
+    await expect(service.markPostAnswered(OWNER, COMMUNITY, POST, REPLY)).rejects.toMatchObject({
+      statusCode: 404,
+      message: 'Post not found',
+    });
+  });
+
+  it('un-answers when the answer id is null, and clearing is a distinct audited action', async () => {
+    const { service, queries } = makeDb([
+      ...actorScript('moderator'),
+      { table: 'messages', result: { data: questionRow({ answered_message_id: REPLY }) } },
+      { table: 'messages', result: {} },
+    ]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, null)).resolves.toEqual({
+      id: POST,
+      answeredMessageId: null,
+      cleared: true,
+    });
+    // No reply lookup on the clear path — only the post read and the update.
+    expect(queries.filter((q) => q.table === 'messages').length).toBe(2);
+    const update = last(queries.filter((q) => q.filters.some((f) => f[0] === 'update')));
+    expect(argOf(update, 'update')).toEqual({ answered_message_id: null });
+    expect((logAdminAction.mock.calls[0] as any[])[1]).toMatchObject({
+      action: 'community_post_unanswer',
+      metadata: expect.objectContaining({ previousAnsweredMessageId: REPLY }),
+    });
+  });
+
+  it('answers 503, not 500, before the migration is applied', async () => {
+    setSchemaCapabilities({ messagePostKind: false });
+    const { service, script } = makeDb([]);
+    await expect(service.markPostAnswered(MOD, COMMUNITY, POST, REPLY)).rejects.toMatchObject({
+      statusCode: 503,
+    });
+    expect(script.length).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Announcement cap
 // ---------------------------------------------------------------------------
 

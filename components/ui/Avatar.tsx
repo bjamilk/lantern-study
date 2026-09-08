@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { avatarColorFromSeed, initialsFromName } from '@lantern/shared/design';
+import { avatarColorFromSeed } from '@lantern/shared/design';
+import { resolveAvatarIdentity } from '../../utils/displayIdentity';
 import { useResolvedAvatarSrc } from '../../hooks/useResolvedAvatarSrc';
 
 interface AvatarProps {
@@ -29,8 +30,12 @@ export const Avatar: React.FC<AvatarProps> = ({
   className = '',
   localOnly = false,
 }) => {
-  const initials = useMemo(() => initialsFromName(name), [name]);
-  const bgColor = useMemo(() => avatarColorFromSeed(name || '?'), [name]);
+  // Initials AND the accessibility label are seeded from the resolved name
+  // only: a blank or email-shaped name has no initials to invent, so it draws a
+  // neutral mark ("?") and reads as the neutral placeholder — the email is never
+  // turned into fake initials, nor spoken by a screen reader.
+  const { initials, label } = useMemo(() => resolveAvatarIdentity(name), [name]);
+  const bgColor = useMemo(() => avatarColorFromSeed(label), [label]);
   const resolvedSrc = useResolvedAvatarSrc(localOnly ? null : src);
   const showImage = resolvedSrc && !localOnly;
 
@@ -38,7 +43,7 @@ export const Avatar: React.FC<AvatarProps> = ({
     return (
       <img
         src={resolvedSrc}
-        alt={name}
+        alt={label}
         loading="lazy"
         className={`${sizeClasses[size]} rounded-full object-cover shrink-0 ${className}`}
       />
@@ -48,7 +53,7 @@ export const Avatar: React.FC<AvatarProps> = ({
   return (
     <span
       role="img"
-      aria-label={name}
+      aria-label={label}
       className={`${sizeClasses[size]} rounded-full inline-flex items-center justify-center font-semibold text-white shrink-0 ${className}`}
       style={{ backgroundColor: bgColor }}
     >

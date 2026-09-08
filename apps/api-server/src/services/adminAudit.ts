@@ -49,6 +49,8 @@ export type AdminAuditAction =
   | 'community_member_mute'
   | 'community_member_unmute'
   | 'community_post_remove'
+  | 'community_post_answer'
+  | 'community_post_unanswer'
   | 'community_invite_create'
   | 'community_invite_revoke';
 

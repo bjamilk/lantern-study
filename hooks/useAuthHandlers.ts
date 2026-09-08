@@ -32,6 +32,8 @@ import {
 import { syncCopy } from '@lantern/shared/design';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { useToastStore } from '../stores/toastStore';
+import { confirmDialog } from '../stores/confirmStore';
+import { planResetSettingsConfirm } from '../utils/destructiveConfirm';
 
 /** Monotonic generation so a stale failed save cannot roll back a newer optimistic update. */
 let settingsMutationGeneration = 0;
@@ -197,7 +199,7 @@ export function useAuthHandlers() {
 
     const handleResetSettings = useCallback(async () => {
         if (!currentUser) return;
-        if (!window.confirm('Reset all settings to defaults? Your study data will not be affected.')) {
+        if (!(await confirmDialog(planResetSettingsConfirm()))) {
             return;
         }
         const previous = currentUser;

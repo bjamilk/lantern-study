@@ -10,6 +10,7 @@ import { takeStashedAuthLinkError } from '../utils/authErrorHash';
 import { LanternIcon } from './ui/LanternIcon';
 import TurnstileWidget, { type TurnstileHandle, getTurnstileSitekey } from './TurnstileWidget';
 import { readReferralCode, clearReferralCode } from '../utils/referral';
+import { resolveDisplayName, NEUTRAL_DISPLAY_NAME } from '../utils/displayIdentity';
 import {
   LEGAL_PATHS,
   isEmailNotConfirmedError,
@@ -288,11 +289,14 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
     const metaLastName = typeof meta.last_name === 'string' ? meta.last_name.trim() : '';
     const metaUsername = typeof meta.username === 'string' ? meta.username.toLowerCase().trim() : '';
     const metaPhone = typeof meta.phone === 'string' ? meta.phone.trim() : undefined;
-    const metaName =
-      (typeof meta.name === 'string' && meta.name.trim()) ||
-      [metaFirstName, metaLastName].filter(Boolean).join(' ') ||
-      authUser.email?.split('@')[0] ||
-      'User';
+    // The account email is deliberately NOT a name candidate: its local part is
+    // not a name, and surfacing it is the defect this closes. resolveDisplayName
+    // rejects an email-shaped candidate and returns the neutral placeholder when
+    // no real name is present, so this is never an email and never empty.
+    const metaName = resolveDisplayName([
+      typeof meta.name === 'string' ? meta.name : null,
+      [metaFirstName, metaLastName].filter(Boolean).join(' '),
+    ]);
 
     let profile: Awaited<ReturnType<typeof fetchUserProfile>> | null = null;
     try {
@@ -451,9 +455,11 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         }
         if (password !== confirmPassword) { setError('Passwords do not match.'); return; }
 
-        // Minimal metadata: the post-signin onboarding modal collects username
-        // and real names; until then the email prefix stands in as the name.
-        const signupName = email.split('@')[0];
+        // No name is sent. The signup form collects only email + password, so
+        // there is no real name yet; the email's local part used to be sent as
+        // `name`, which stored the address as the person's name. The signup
+        // trigger now defaults a nameless account to a neutral placeholder, and
+        // the post-signin onboarding modal collects the real name and username.
         // Phase 4 Q: referral attribution rides signUp metadata and is consumed
         // SERVER-SIDE by handle_new_user(). It deliberately is NOT read back in
         // finishAuthSession: confirming by clicking the emailed link never runs
@@ -462,7 +468,6 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
         // every email-link signup — the majority of them.
         const referralCode = readReferralCode();
         const signupMetadata = {
-          name: signupName,
           ...(referralCode ? { referral_code: referralCode, referral_source: 'link' } : {}),
         };
 
@@ -522,7 +527,9 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onAuthSuccess }) => {
             try {
               await createUserProfile({
                 id: data.user.id,
-                name: signupName,
+                // No real name at signup — never the email local part. The
+                // trigger has already stored this same neutral placeholder.
+                name: NEUTRAL_DISPLAY_NAME,
                 points: 0,
                 stats: {},
                 settings: {},

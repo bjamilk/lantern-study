@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { AppIcon } from './ui/AppIcon';
 import { useBudgetStore } from '../stores/budgetStore';
+import { confirmDialog } from '../stores/confirmStore';
+import { planDeleteSavingsGoalConfirm } from '../utils/destructiveConfirm';
 import Modal from './ui/Modal';
 import {
   createSavingsGoalApi,
@@ -96,6 +98,17 @@ const SavingsGoalModal: React.FC<SavingsGoalModalProps> = ({ isOpen, onClose, cu
   };
 
   const handleRemove = async (goalId: string) => {
+    // A single tap on a small ✕ used to delete the goal and move the wallet
+    // balance with no confirmation and no undo — gate it behind a danger prompt
+    // that names the goal and states what happens.
+    const goal = savingsGoals.find(g => g.id === goalId);
+    const ok = await confirmDialog(
+      planDeleteSavingsGoalConfirm({
+        name: goal?.name,
+        currentAmount: goal?.currentAmount,
+      }),
+    );
+    if (!ok) return;
     setBusy(true);
     setError(null);
     try {

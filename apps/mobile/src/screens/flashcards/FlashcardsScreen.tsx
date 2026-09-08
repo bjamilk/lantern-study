@@ -617,13 +617,13 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       <Pressable
         onPress={() => setImportCardsOpen(true)}
         accessibilityRole="button"
-        accessibilityLabel="Import cards from a Quizlet or Anki export. Free."
+        accessibilityLabel="Import cards from a Quizlet or Anki text export. Free."
         className="mx-4 mb-3 flex-row items-center gap-3 px-3 py-3 rounded-2xl bg-lantern-surface border border-lantern-border"
       >
         <FeatureDisc feature="flashcards" icon="download" size={32} />
         <View className="flex-1">
           <T.Body className="font-semibold">Import cards</T.Body>
-          <T.Caption tone="secondary">Free — Quizlet or Anki export</T.Caption>
+          <T.Caption tone="secondary">Free — Quizlet or Anki text export</T.Caption>
         </View>
         <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
       </Pressable>

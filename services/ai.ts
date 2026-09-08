@@ -2,7 +2,8 @@
  * Client-side AI service — calls the backend AI API endpoints.
  * Uses the same auth headers and base URL as the main supabase service.
  */
-import { getApiBaseUrl, DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared';
+import { getApiBaseUrl } from '@lantern/shared';
+import { AI_USAGE_UNKNOWN, resolveAIUsageFallback } from '@lantern/shared/utils/aiUsage';
 import {
   parseGlobalAIUsageFromHeaderReader,
   parseGlobalAIUsageFromHeaders,
@@ -37,12 +38,24 @@ export interface AIUsageInfo {
   resetsAt: string;
 }
 
-let _latestUsage: AIUsageInfo = {
-  used: 0,
-  limit: DEFAULT_AI_DAILY_LIMIT,
-  remaining: DEFAULT_AI_DAILY_LIMIT,
-  resetsAt: '',
-};
+/**
+ * Before the server has told this browser the truth, the app knows NOTHING
+ * about this account's allowance — so it starts at the honest unknown (limit
+ * 0), not at DEFAULT_AI_DAILY_LIMIT.
+ *
+ * This used to seed {limit: 20, remaining: 20}, which is the API's DEFAULT and
+ * not this account's allowance (production runs 100). Every surface reads this
+ * value synchronously on mount, so on any cold start where the fetch had not
+ * yet returned — offline boot, slow network, a 429 backoff — the badge drew a
+ * confident "20/20", the nav showed "20", and the Usage screen said "20 of 20"
+ * with a "Resets at midnight GMT" hint: a fifth of the real allowance, stated
+ * as fact, that then jumped to 100. At limit 0 every consumer already draws
+ * nothing — the badge and inline both `return null`, the nav credit is null,
+ * every generation gate is written `limit > 0 && remaining < …` so an unknown
+ * allowance never blocks a student — so the unknown state is silence, and the
+ * server stays the only real gate.
+ */
+let _latestUsage: AIUsageInfo = AI_USAGE_UNKNOWN;
 const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
 const USAGE_FETCH_TTL_MS = 60_000;
 let _usageLastFetchAt = 0;
@@ -100,13 +113,17 @@ export async function forceRefreshAIUsage(): Promise<AIUsageInfo> {
   try {
     return await fetchAIUsageFromApi();
   } catch {
-    return _latestUsage;
+    // A failed refresh must never invent an allowance: repeat the last
+    // server-known figures if we hold them, otherwise the honest unknown.
+    return resolveAIUsageFallback(_latestUsage);
   }
 }
 
 async function fetchAIUsageFromApi(): Promise<AIUsageInfo> {
   const ready = await ensureAuthTokenReady();
-  if (!ready) return _latestUsage;
+  // Auth not ready yet is a not-answered state, not a zero allowance: hand back
+  // the last server-known figures, or the honest unknown — never the seed.
+  if (!ready) return resolveAIUsageFallback(_latestUsage);
   const headers = await getAuthHeaders();
   const res = await fetch(`${API_BASE_URL}/api/v1/ai/usage`, { headers });
   if (res.status === 429) {
@@ -175,13 +192,16 @@ export async function fetchAIUsageDetail(): Promise<AIUsageSnapshot> {
 
 export async function fetchAIUsage(_userId?: string): Promise<AIUsageInfo> {
   const now = Date.now();
-  if (now < _usageBackoffUntil) return _latestUsage;
+  // In a 429 backoff we have not been re-answered: never fall back to the seed.
+  if (now < _usageBackoffUntil) return resolveAIUsageFallback(_latestUsage);
   if (now - _usageLastFetchAt < USAGE_FETCH_TTL_MS && _latestUsage.limit > 0) {
     return _latestUsage;
   }
   if (_usageInFlight) return _usageInFlight;
   _usageInFlight = fetchAIUsageFromApi()
-    .catch(() => _latestUsage)
+    // A failed fetch repeats the last server-known figures, or says nothing —
+    // it must not synthesise a balance from DEFAULT_AI_DAILY_LIMIT.
+    .catch(() => resolveAIUsageFallback(_latestUsage))
     .finally(() => {
       _usageInFlight = null;
     });

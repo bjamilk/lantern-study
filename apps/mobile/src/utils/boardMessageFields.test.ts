@@ -66,4 +66,54 @@ describe('boardActionFields', () => {
     expect(boardActionFields(null)).toEqual({});
     expect(boardActionFields(undefined)).toEqual({});
   });
+
+  /**
+   * The accepted-answer id is the field the board's "Clear accepted answer"
+   * row and the whole answered-state seed hang on. If the mapper stops emitting
+   * it the key never reaches a `Message`, `CommunityBoardScreen`'s
+   * `'answeredMessageId' in post` seed guard is never true, the answered map
+   * stays empty forever and the clear row can never render — the exact dead
+   * state this round fixed. Each assertion below fails if the mapping is removed.
+   */
+  describe('answeredMessageId', () => {
+    it('maps a realtime (snake_case) accepted answer', () => {
+      const fields = boardActionFields({ id: 'm1', answered_message_id: 'reply-7' });
+      expect(fields.answeredMessageId).toBe('reply-7');
+      expect('answeredMessageId' in fields).toBe(true);
+    });
+
+    it('maps an HTTP (camelCase) accepted answer', () => {
+      expect(boardActionFields({ answeredMessageId: 'reply-9' }).answeredMessageId).toBe('reply-9');
+    });
+
+    it('carries a null CLEAR through as a present key, never dropped', () => {
+      // A realtime row for a cleared question carries the real column: `null`.
+      // Presence, not truthiness — the board treats a present null as "no
+      // accepted answer, authoritatively", distinct from "row said nothing".
+      const fields = boardActionFields({ id: 'm1', answered_message_id: null });
+      expect('answeredMessageId' in fields).toBe(true);
+      expect(fields.answeredMessageId).toBeNull();
+    });
+
+    it('OMITS the key entirely when the row carries neither casing', () => {
+      // The merge contract: a reaction UPDATE that never mentions the answer
+      // must not blank a known one. Absent, not present-and-undefined.
+      const fields = boardActionFields({ id: 'm1', reactions: { '❤️': 4 } });
+      expect('answeredMessageId' in fields).toBe(false);
+    });
+
+    it('survives a merge without clobbering a known answer', () => {
+      const cached = { id: 'm1', answeredMessageId: 'reply-7' };
+      const realtimeReaction = { id: 'm1', reactions: { '👍': 2 } };
+      const merged = { ...cached, ...boardActionFields(realtimeReaction) };
+      expect(merged.answeredMessageId).toBe('reply-7');
+    });
+
+    it('lets a real clear win the merge', () => {
+      const cached = { id: 'm1', answeredMessageId: 'reply-7' };
+      const cleared = { id: 'm1', answered_message_id: null };
+      const merged = { ...cached, ...boardActionFields(cleared) };
+      expect(merged.answeredMessageId).toBeNull();
+    });
+  });
 });

@@ -91,6 +91,9 @@ export default defineConfig(({ mode }) => {
           'components/**/*.test.{ts,tsx}',
           // utils/ was omitted, so utils/xhrHeaders.test.ts had never run.
           'utils/**/*.test.{ts,tsx}',
+          // stores/ was omitted, so the confirm store (whose stranded-promise
+          // bug permanently disables buttons) had no suite that could run.
+          'stores/**/*.test.{ts,tsx}',
           // services/ was omitted too, so the fetch layer — where the raw
           // server sentence leaked out of fetchNoteAttachmentPages — had no
           // suite that could run at all.

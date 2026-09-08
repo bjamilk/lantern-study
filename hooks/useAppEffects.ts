@@ -10,6 +10,7 @@ import { useUIStore } from '../stores/uiStore';
 import { useNotesStore } from '../stores/notesStore';
 import { initialUserStats } from '../utils/helpers';
 import { resolvePlatformAdmin } from '../utils/platformAdmin';
+import { resolveDisplayName } from '../utils/displayIdentity';
 import {
     supabase, setCachedAuthToken,
     fetchGroups, fetchGroupMembers,
@@ -503,10 +504,17 @@ export function useAppEffects({
                         profileErr.message?.includes('status: 404')
                     ) {
                         const meta = (authUser.user_metadata || {}) as Record<string, unknown>;
-                        const userName =
-                            (meta.name as string) ||
-                            authUser.email?.split('@')[0] ||
-                            'User';
+                        // The account email is NOT a name candidate: its local
+                        // part is not a name. resolveDisplayName drops an
+                        // email-shaped value and yields the neutral placeholder
+                        // when there is no real name, so this is never the email
+                        // and never an empty string.
+                        const userName = resolveDisplayName([
+                            typeof meta.name === 'string' ? meta.name : null,
+                            [meta.first_name, meta.last_name]
+                                .filter((v): v is string => typeof v === 'string' && v.trim() !== '')
+                                .join(' '),
+                        ]);
                         try {
                             // Same fields finishAuthSession writes: verifying
                             // via the EMAIL LINK boots here instead, and used

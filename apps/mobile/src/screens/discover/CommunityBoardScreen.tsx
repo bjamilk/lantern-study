@@ -31,9 +31,11 @@ import {
   studyGroupNameFromPost,
   validateBoardSubject,
   COMMUNITY_MODERATION_COPY,
+  requestFailureCopy,
   type BoardPostKind,
   type CommunityRole,
 } from '@lantern/shared/network';
+import { COMMUNITY_NOT_ENABLED_COPY, isNotEnabledError } from '@lantern/shared/api';
 import {
   CHAT_MUTE_DURATIONS,
   canEditChatMessage,
@@ -42,7 +44,7 @@ import {
   type ChatMuteDurationId,
 } from '@lantern/shared/utils';
 import * as api from '../../services/api';
-import { removeCommunityPost } from '../../services/api';
+import { removeCommunityPost, api as lanternEndpoints } from '../../services/api';
 import { uploadChatImage } from '../../services/chatImageUpload';
 import { importLocalBookmarksOnce } from '../../services/bookmarkImport';
 import { useAuthStore } from '../../stores';
@@ -95,6 +97,29 @@ const TOP_THRESHOLD_PX = 80;
  * what the reader sees afterwards; this is the moderator's own menu row.
  */
 const REMOVE_POST_LABEL = 'Remove post';
+
+/**
+ * Un-accepting an answer needs no reply — only the question's id — so a screen
+ * that already knows a question is answered can offer it without the thread.
+ * ACCEPTING a reply is not here on purpose: you cannot point at a reply the
+ * board never shows (see `boardComposerModel`, `replyAnswerMenuAction`), so
+ * "Mark as answer" lives on the reply's own long-press in the thread.
+ */
+const CLEAR_ANSWER_LABEL = 'Clear accepted answer';
+
+/**
+ * The accepted-answer id a board row carries. `mapApiMessage` (via
+ * `boardActionFields`) now maps `messages.answered_message_id` onto the typed
+ * `Message.answeredMessageId` conditionally on presence, so this reads a real
+ * field. It still normalises defensively — a cleared answer arrives as `null`,
+ * which is not an accepted-answer id — collapsing both "cleared" and "absent"
+ * to null for the caller; the seed effect below keys on key PRESENCE, not on
+ * this return, to keep those two cases distinct.
+ */
+function readPostAnswerId(post: Message): string | null {
+  const raw = (post as { answeredMessageId?: unknown }).answeredMessageId;
+  return typeof raw === 'string' && raw ? raw : null;
+}
 
 /** `@username` mentions in the body → the user ids the API notifies. */
 function resolveMentionedUserIds(
@@ -239,6 +264,14 @@ export function CommunityBoardScreen({
   const [chatMuted, setChatMuted] = useState(false);
   const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
   const [muteBusy, setMuteBusy] = useState(false);
+  /**
+   * Each question's accepted answer, by post id — the board's own answered
+   * state, exactly as web's `CommunityBoard` keeps it, so a card resolves
+   * "answered?" without waiting on the store to model the column. Seeded from
+   * any row that carries the field (presence is authoritative, even a null
+   * clear), then owned by `handleSetAnswer`.
+   */
+  const [answeredByPost, setAnsweredByPost] = useState<Record<string, string | null>>({});
 
   const listRef = useRef<FlatList<Message>>(null);
   const atTopRef = useRef(true);
@@ -300,9 +333,81 @@ export function CommunityBoardScreen({
         postKind: post.postKind ?? null,
         pinnedAt: post.pinnedAt ?? null,
         removedAt: post.removedAt ?? (post.isRemoved ? post.createdAt : null),
+        // The board's own answered state wins over the row whenever the map
+        // HAS an entry for this post — presence, not truthiness. An in-session
+        // CLEAR is a `null`, and `??` would fall straight back to the row,
+        // which still carries the old answer until it refetches: the reader
+        // would tap "Clear accepted answer" and watch the row stay. A post the
+        // map has never heard of falls back to whatever the row carries.
+        answeredMessageId:
+          post.id in answeredByPost
+            ? answeredByPost[post.id] ?? null
+            : readPostAnswerId(post),
         mutedUntil: detail?.viewerMutedUntil ?? null,
       }),
-    [viewerRole, isPlatformAdmin, user?.id, group?.adminIds, detail?.viewerMutedUntil]
+    [viewerRole, isPlatformAdmin, user?.id, group?.adminIds, detail?.viewerMutedUntil, answeredByPost]
+  );
+
+  /**
+   * Seed the answered map from whatever the loaded rows carry. Presence of the
+   * field — even a null clear — is authoritative; a row that omits it (a
+   * pre-migration row, or a realtime patch that did not carry it) leaves a
+   * known answer untouched, so a live favorite never blanks it. The store now
+   * models `answered_message_id` (mapped on presence by `boardActionFields`),
+   * so a loaded question row seeds its answer here; `handleSetAnswer` still
+   * drives an in-session mark or clear before the row refetches.
+   */
+  useEffect(() => {
+    setAnsweredByPost((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const post of allPosts) {
+        if (!post?.id || !('answeredMessageId' in post)) continue;
+        const value = readPostAnswerId(post);
+        if (next[post.id] !== value) {
+          next[post.id] = value;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [allPosts]);
+
+  /**
+   * Accept a reply as a question's answer, or clear it (`null`). The board
+   * itself only ever CLEARS (the un-answer path needs no reply); accepting a
+   * specific reply is driven from the thread, which calls this same endpoint.
+   *
+   * Optimistic, then reconciled to the server's own value. The gate is the
+   * server's — it re-derives `canMarkAnswered` from the same shared rules — so
+   * a refusal reverts the map and speaks the shared failure vocabulary, never a
+   * raw message. A pre-migration API's 503 reads as the app's "not switched on
+   * yet" copy, never an error the student caused.
+   */
+  const handleSetAnswer = useCallback(
+    async (postId: string, answerMessageId: string | null) => {
+      if (!communityId) return;
+      const previous = answeredByPost[postId] ?? null;
+      setAnsweredByPost((prev) => ({ ...prev, [postId]: answerMessageId }));
+      try {
+        const result = await lanternEndpoints.markCommunityPostAnswered(
+          communityId,
+          postId,
+          answerMessageId
+        );
+        setAnsweredByPost((prev) => ({ ...prev, [postId]: result.answeredMessageId }));
+      } catch (error) {
+        setAnsweredByPost((prev) => ({ ...prev, [postId]: previous }));
+        const status =
+          error && typeof error === 'object' ? (error as { status?: unknown }).status : undefined;
+        const message =
+          isNotEnabledError(error) || status === 503
+            ? COMMUNITY_NOT_ENABLED_COPY
+            : requestFailureCopy(error).title;
+        useToastStore.getState().showToast(message, 'error');
+      }
+    },
+    [communityId, answeredByPost]
   );
 
   const mentionCandidates = useMemo(() => {
@@ -1081,6 +1186,19 @@ export function CommunityBoardScreen({
         onPress: () => void setPin(groupId, target.id, !isPinned),
       });
     }
+    // Un-accept an answered question. Only shown when the shared rule allows
+    // it AND a reply is actually accepted — clearing nothing changes nothing,
+    // and a row that changes nothing is the dead feature we do not ship.
+    // Accepting a reply is not here: that points at ONE reply, which the board
+    // never shows, so it lives on the reply's long-press in the thread.
+    if (rules.canMarkAnswered && rules.isAnswered) {
+      items.push({
+        label: CLEAR_ANSWER_LABEL,
+        icon: 'checkmark-circle',
+        iconFilled: true,
+        onPress: () => void handleSetAnswer(target.id, null),
+      });
+    }
     /**
      * A MODERATOR taking down someone else's post: a soft removal that carries
      * a reason (`DELETE /communities/:id/posts/:postId`). The author's own
@@ -1119,6 +1237,7 @@ export function CommunityBoardScreen({
     removeGroupMessage,
     startStudyGroup,
     bookmarksSupported,
+    handleSetAnswer,
   ]);
 
   // ----------------------------------------------------------------- render

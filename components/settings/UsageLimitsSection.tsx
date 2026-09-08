@@ -5,6 +5,7 @@ import {
   type AIUsageSnapshot,
   type AIUsageView,
 } from '@lantern/shared/ai';
+import { aiUsageCounterCopy } from '@lantern/shared/utils/aiUsage';
 import { fetchAIUsageDetail, getLatestAIUsage } from '../../services/ai';
 
 /**
@@ -37,7 +38,13 @@ function UsageBar({ view }: { view: AIUsageView }) {
   );
 }
 
-function CostRow({ row }: { row: AICostRow }) {
+function CostRow({ row, figuresKnown }: { row: AICostRow; figuresKnown: boolean }) {
+  // "Not affordable" is a claim about a balance. Before the server has told this
+  // browser what the balance is, `remaining` is the honest unknown (0), which
+  // makes every price read as unaffordable — the whole list in the error colour,
+  // asserting a shortfall nobody measured. So the warning colour is spent only
+  // when there are real figures behind it.
+  const unaffordable = figuresKnown && !row.affordable;
   return (
     <li className="flex items-start justify-between gap-4 py-2.5 border-t border-lantern-border first:border-t-0">
       <div className="min-w-0">
@@ -58,7 +65,7 @@ function CostRow({ row }: { row: AICostRow }) {
       {/* The price, always, through the one helper every button uses. */}
       <span
         className={`text-caption font-semibold whitespace-nowrap ${
-          row.affordable ? 'text-lantern-feature-ai-ink' : 'text-lantern-error'
+          unaffordable ? 'text-lantern-error' : 'text-lantern-feature-ai-ink'
         }`}
       >
         {row.costLabel}
@@ -79,7 +86,7 @@ export interface UsageLimitsSectionProps {
 export const UsageLimitsSection: React.FC<UsageLimitsSectionProps> = ({ onInviteFriends }) => {
   const [snapshot, setSnapshot] = useState<AIUsageSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
 
   const load = useCallback(async () => {
@@ -88,9 +95,9 @@ export const UsageLimitsSection: React.FC<UsageLimitsSectionProps> = ({ onInvite
       // Also republishes the global counts to every subscriber, so opening
       // this panel re-syncs the sidebar badge with the server.
       setSnapshot(await fetchAIUsageDetail());
-      setError(null);
+      setFailed(false);
     } catch {
-      setError('Could not reach the server. These are the last figures this browser saw.');
+      setFailed(true);
     } finally {
       setLoading(false);
     }
@@ -111,6 +118,29 @@ export const UsageLimitsSection: React.FC<UsageLimitsSectionProps> = ({ onInvite
     { nowMs }
   );
 
+  /*
+   * What the counter is allowed to say.
+   *
+   * The badge's figures start at the honest unknown (limit 0) until the server
+   * answers, and `buildAIUsageView` reads a 0 as "AI uses are not available on
+   * this account" — true of a server that answered zero, a lie about a browser
+   * that has not been told yet. This planner tells the two apart via
+   * `serverAnswered`, so a cold start with a dead network says it is checking
+   * (or that it could not check), never that the student's AI was taken away,
+   * and never a number nobody sent. The offline note follows the same split:
+   * "the last figures this browser saw" is only honest when there ARE figures.
+   */
+  const serverAnswered = snapshot !== null;
+  const counter = aiUsageCounterCopy({
+    knownLabel: view.countLabel,
+    limit: view.limit,
+    serverAnswered,
+    loading,
+    failed,
+  });
+  /** The same split the counter copy uses, for the price list's colours. */
+  const figuresKnown = serverAnswered || view.limit > 0;
+
   return (
     <div className="space-y-6">
       <div>
@@ -122,7 +152,7 @@ export const UsageLimitsSection: React.FC<UsageLimitsSectionProps> = ({ onInvite
 
       <section className="rounded-lg border border-lantern-border p-4">
         <div className="flex items-baseline justify-between gap-3 mb-2">
-          <p className="text-heading font-semibold text-lantern-text">{view.countLabel}</p>
+          <p className="text-heading font-semibold text-lantern-text">{counter.countLine}</p>
           {/* Referral rewards, only when the server actually reported a
               balance. An absent field prints nothing — a "+0" would be a
               number this screen never measured. */}
@@ -138,7 +168,9 @@ export const UsageLimitsSection: React.FC<UsageLimitsSectionProps> = ({ onInvite
           {view.resetRelative}
           {view.resetAbsolute ? ` · ${view.resetAbsolute}` : ''}
         </p>
-        {error && <p className="text-caption text-lantern-warning mt-2">{error}</p>}
+        {counter.offlineNote && (
+          <p className="text-caption text-lantern-warning mt-2">{counter.offlineNote}</p>
+        )}
       </section>
 
       {view.exhausted && (
@@ -180,7 +212,7 @@ export const UsageLimitsSection: React.FC<UsageLimitsSectionProps> = ({ onInvite
         </h4>
         <ul>
           {view.costRows.map((row) => (
-            <CostRow key={row.id} row={row} />
+            <CostRow key={row.id} row={row} figuresKnown={figuresKnown} />
           ))}
         </ul>
       </section>

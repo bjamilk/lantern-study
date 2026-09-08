@@ -31,6 +31,7 @@ import {
   COMMUNITY_MODERATION_COPY,
   COMMUNITY_MUTE_REASON_MAX,
   INVITE_REFUSAL_COPY,
+  boardPostRules,
   canAssignCommunityRole,
   canModerateCommunityMember,
   isAssignableCommunityRole,
@@ -395,6 +396,134 @@ export class CommunityModerationService {
       metadata: { communityId, groupId: (post as any).group_id, authorId: (post as any).sender_id, byAuthor: isAuthor },
     });
     return { id: postId, removedAt };
+  }
+
+  // ─── Accepted answer ──────────────────────────────────────────────────────
+
+  /**
+   * POST /communities/:id/posts/:postId/answered { answerMessageId }
+   *
+   * Marks a QUESTION post answered by pointing at the reply that answered it,
+   * or clears it when `answerMessageId` is null (un-answer).
+   *
+   * THE GATE IS THE SERVER. Whether the caller may mark answered is re-derived
+   * here from the SAME shared `boardPostRules` both clients call — author or
+   * moderator, an answerable (question) kind, not removed — never from a flag
+   * the client sends. The client hides the row; this refuses the request.
+   *
+   * THE ANSWER MUST BELONG TO THIS QUESTION. The reply must be a real message
+   * whose `thread_root_id` is this post — which is exactly the set of comments
+   * under the question. That one check rejects an id from another board,
+   * another community, a removed reply, and the post itself (a root post has
+   * no `thread_root_id`, so it can never point at itself).
+   *
+   * Un-answer is possible for anyone who could answer, and is a distinct,
+   * audited action (`community_post_unanswer`) that returns `cleared: true`, so
+   * clearing an answer is never confused with a post that was never marked.
+   *
+   * DEGRADE: gated on the SAME `hasMessagePostKind` capability the read path,
+   * removal reason and post kinds already use — a database without
+   * `answered_message_id` answers 503, never 500.
+   */
+  async markPostAnswered(
+    actorId: string,
+    communityId: string,
+    postId: string,
+    answerMessageId: unknown,
+  ): Promise<{ id: string; answeredMessageId: string | null; cleared: boolean }> {
+    this.assertUuid(postId, 'post id');
+    const clearing = answerMessageId === null || answerMessageId === undefined;
+    const answerId = clearing ? null : this.assertUuid(answerMessageId, 'answer message id');
+
+    if (!(await hasMessagePostKind(this.db))) throw unavailable('Marking a question answered');
+
+    const actor = await this.resolveActor(actorId, communityId);
+
+    const { data: post, error } = await this.db
+      .from('messages')
+      .select(
+        'id, sender_id, group_id, post_kind, removed_at, answered_message_id, groups:group_id(id, community_id)',
+      )
+      .eq('id', postId)
+      .maybeSingle();
+    if (error) {
+      if (isMissingSchemaError(error)) {
+        markMessagePostKindMissing();
+        throw unavailable('Marking a question answered');
+      }
+      throw error;
+    }
+    if (!post) throw fail('Post not found', 404);
+
+    const group = Array.isArray((post as any).groups) ? (post as any).groups[0] : (post as any).groups;
+    if (!group || group.community_id !== communityId) {
+      // Wrong community: answer exactly as if the post did not exist, so this
+      // endpoint cannot confirm a post's existence to an outsider.
+      throw fail('Post not found', 404);
+    }
+
+    // The permission gate — the SAME matrix the clients render from. A
+    // non-question, a removed post, or a viewer who is neither the author nor
+    // a moderator all fail here, with one refusal so the caller cannot probe
+    // which of the three it was.
+    const permissions = boardPostRules(actor.role, {
+      senderId: (post as any).sender_id ?? '',
+      viewerId: actorId,
+      postKind: (post as any).post_kind ?? null,
+      removedAt: (post as any).removed_at ?? null,
+      answeredMessageId: (post as any).answered_message_id ?? null,
+      isPlatformAdmin: actor.isPlatformAdmin,
+    });
+    if (!permissions.canMarkAnswered) {
+      throw fail('Only the author or a moderator can mark this answered', 403);
+    }
+
+    if (!clearing) {
+      // The answering reply must be real AND live in THIS post's thread. A
+      // comment's `thread_root_id` is the question it hangs under, so this one
+      // equality rejects a reply from another board or community, a removed
+      // reply, and the post itself (its own `thread_root_id` is null).
+      const { data: reply, error: replyError } = await this.db
+        .from('messages')
+        .select('id, thread_root_id, removed_at')
+        .eq('id', answerId)
+        .maybeSingle();
+      if (replyError) throw replyError;
+      if (
+        !reply ||
+        (reply as any).thread_root_id !== postId ||
+        (reply as any).removed_at
+      ) {
+        throw fail('That reply is not part of this question', 400);
+      }
+    }
+
+    const previous = ((post as any).answered_message_id ?? null) as string | null;
+    const { error: updateError } = await this.db
+      .from('messages')
+      .update({ answered_message_id: answerId })
+      .eq('id', postId);
+    if (updateError) {
+      if (isMissingSchemaError(updateError)) {
+        markMessagePostKindMissing();
+        throw unavailable('Marking a question answered');
+      }
+      throw updateError;
+    }
+
+    await logAdminAction(this.supabaseService, {
+      actorId,
+      action: clearing ? 'community_post_unanswer' : 'community_post_answer',
+      targetType: 'community_post',
+      targetId: postId,
+      metadata: {
+        communityId,
+        groupId: (post as any).group_id,
+        answerMessageId: answerId,
+        previousAnsweredMessageId: previous,
+      },
+    });
+    return { id: postId, answeredMessageId: answerId, cleared: clearing };
   }
 
   // ─── Announcements ────────────────────────────────────────────────────────
