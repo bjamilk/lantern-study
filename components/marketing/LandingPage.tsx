@@ -149,7 +149,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn, onContinue, 
               : 'Free on Android and iOS.'
           : 'Android APK (~81 MB), direct download — no store account needed. Google Play and App Store listings are in progress.'}
       </p>
-      <p className="relative mt-4 text-sm text-lantern-text-tertiary">
+      <p className="relative mt-4 text-caption text-lantern-text-tertiary">
         Instructor or lecturer?{' '}
         {onOpenTeach ? (
           <button type="button" className="text-lantern-primary font-medium" onClick={onOpenTeach}>
