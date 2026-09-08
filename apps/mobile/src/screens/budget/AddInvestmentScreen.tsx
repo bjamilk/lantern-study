@@ -7,8 +7,8 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useBudgetStore } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
@@ -31,11 +31,11 @@ export default function AddInvestmentScreen() {
   const handleSubmit = useCallback(async () => {
     const amountNum = parseFloat(amount);
     if (!amount || amountNum <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      appAlert('Invalid Amount', 'Please enter a valid positive amount.');
       return;
     }
     if (!description.trim()) {
-      Alert.alert('Missing Description', 'Please describe this investment.');
+      appAlert('Missing Description', 'Please describe this investment.');
       return;
     }
     try {
@@ -47,11 +47,11 @@ export default function AddInvestmentScreen() {
         description: description.trim(),
         date: toDateOnlyLocal(date),
       });
-      Alert.alert('Success', 'Investment logged!', [
+      appAlert('Success', 'Investment logged!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch {
-      Alert.alert('Error', 'Failed to add investment.');
+      appAlert('Error', 'Failed to add investment.');
     }
   }, [amount, description, date, addTransaction, navigation, userId]);
 

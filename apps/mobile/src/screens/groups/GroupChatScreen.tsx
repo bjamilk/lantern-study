@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -14,6 +13,7 @@ import {
   TextInput,
   BackHandler,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -101,6 +101,7 @@ import { findMyCommunity } from '../../utils/communityOverlay';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
+import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
 
 export type GroupChatNavigation = {
   goBack: () => void;
@@ -602,12 +603,12 @@ export function GroupChatView({
           user?.id
         );
         setShowTestConfig(false);
-        Alert.alert(
+        appAlert(
           'Downloaded for offline',
           'Find it under More → Offline mode → Downloaded Tests. It works without a connection and syncs to your other devices.'
         );
       } catch (e: unknown) {
-        Alert.alert('Download failed', e instanceof Error ? e.message : 'Could not download questions.');
+        appAlert('Download failed', e instanceof Error ? e.message : 'Could not download questions.');
       }
     },
     [downloadTest, groupId, displayName, user?.id]
@@ -997,7 +998,7 @@ export function GroupChatView({
       );
 
       if (!questions.length) {
-        Alert.alert('No questions', 'No testable questions match your filters.');
+        appAlert('No questions', 'No testable questions match your filters.');
         return;
       }
 
@@ -1048,7 +1049,7 @@ export function GroupChatView({
         navigateToTestTaking(sessionParams);
       }
     } catch (err) {
-      Alert.alert(
+      appAlert(
         'Could not start session',
         err instanceof Error ? err.message : 'Please try again.'
       );
@@ -1156,7 +1157,7 @@ export function GroupChatView({
       setNewMessagesBelow(0);
     } catch (error) {
       if (!overrideText && !editingMessage) setText(trimmed);
-      Alert.alert(
+      appAlert(
         editingMessage ? 'Edit failed' : 'Send failed',
         error instanceof Error ? error.message : 'Please try again.'
       );
@@ -1181,7 +1182,7 @@ export function GroupChatView({
   }, []);
 
   const confirmRemoveMessage = useCallback((message: Message) => {
-    Alert.alert(
+    appAlert(
       'Remove message?',
       'This removes the message for everyone. An audit record will be retained.',
       [
@@ -1199,7 +1200,7 @@ export function GroupChatView({
                 if (threadRootId) await reloadThread();
               })
               .catch((error) => {
-                Alert.alert(
+                appAlert(
                   'Remove failed',
                   error instanceof Error ? error.message : 'Please try again.'
                 );
@@ -1283,7 +1284,7 @@ export function GroupChatView({
       await Clipboard.setStringAsync(textToCopy);
       void AccessibilityInfo.announceForAccessibility('Message copied');
     } catch {
-      Alert.alert('Copy failed', 'Could not copy the message text.');
+      appAlert('Copy failed', 'Could not copy the message text.');
     }
   }, []);
 
@@ -1294,13 +1295,13 @@ export function GroupChatView({
       if (!user?.id) return;
       const alreadyFlagged = message.flaggedAsSimilarUserIds?.includes(user.id) ?? false;
       if (alreadyFlagged) {
-        Alert.alert(
+        appAlert(
           'Already flagged',
           'You have already flagged this message as a duplicate for the group to review.'
         );
         return;
       }
-      Alert.alert(
+      appAlert(
         'Flag duplicate?',
         'This flags the message as a duplicate or similar question for the group and its admins to review.',
         [
@@ -1469,7 +1470,11 @@ export function GroupChatView({
         groupId,
         markdown,
         user.id,
-        user.user_metadata?.full_name || user.email || 'User',
+        // Never the address: this name is stamped on a message everyone in the
+        // group reads (see scrubEmailFromDisplayName).
+        scrubEmailFromDisplayName(user.user_metadata?.full_name) ||
+          scrubEmailFromDisplayName(user.email) ||
+          'User',
         { replyToMessageId: replyTo?.id }
       );
       setReplyTo(null);
@@ -1497,15 +1502,15 @@ export function GroupChatView({
       const invited = result?.invited?.length ? result.invited : (result?.added || []);
       const pending = result?.alreadyPending || [];
       if (invited.length || pending.length) {
-        Alert.alert(
+        appAlert(
           'Invites sent',
           'People must accept the invite before they appear in this group.'
         );
       } else {
-        Alert.alert('No new invites', 'Those users may already be members or already invited.');
+        appAlert('No new invites', 'Those users may already be members or already invited.');
       }
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Invite failed',
         error instanceof Error ? error.message : 'Could not send invites.'
       );
@@ -1555,7 +1560,7 @@ export function GroupChatView({
     try {
       await archiveGroup(groupId);
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Could not update group',
         error instanceof Error ? error.message : 'Please try again.'
       );
@@ -1627,13 +1632,13 @@ export function GroupChatView({
       try {
         const status = await api.muteGroupChat(groupId, duration);
         if (!status?.muted) {
-          Alert.alert('Mute failed', 'Could not mute notifications for this group.');
+          appAlert('Mute failed', 'Could not mute notifications for this group.');
           return;
         }
         setChatMuted(true);
         setChatMutedUntil(status.mutedUntil);
       } catch {
-        Alert.alert('Mute failed', 'Could not mute notifications for this group.');
+        appAlert('Mute failed', 'Could not mute notifications for this group.');
       } finally {
         setMuteBusy(false);
       }
@@ -1647,13 +1652,13 @@ export function GroupChatView({
     try {
       const status = await api.unmuteGroupChat(groupId);
       if (!status || status.muted) {
-        Alert.alert('Unmute failed', 'Could not unmute notifications for this group.');
+        appAlert('Unmute failed', 'Could not unmute notifications for this group.');
         return;
       }
       setChatMuted(false);
       setChatMutedUntil(null);
     } catch {
-      Alert.alert('Unmute failed', 'Could not unmute notifications for this group.');
+      appAlert('Unmute failed', 'Could not unmute notifications for this group.');
     } finally {
       setMuteBusy(false);
     }
@@ -2091,7 +2096,15 @@ export function GroupChatView({
             {...CHAT_LIST_WINDOWING}
             className="flex-1"
             style={{ backgroundColor: wallpaper.listBackgroundColor }}
-            contentContainerClassName="px-4 py-4 flex-grow"
+            /*
+             * A chat sits at the BOTTOM. `flex-grow` alone made the content
+             * container fill the viewport and stack from the top, so a thread
+             * with three messages left a screen-high void between the last
+             * bubble and the composer. `justify-end` pins a short thread to
+             * the composer; once the content is taller than the viewport
+             * `flexGrow` stops applying and the list scrolls exactly as before.
+             */
+            contentContainerClassName="px-4 py-4 flex-grow justify-end"
             onScroll={(e) => {
               const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
               if (contentOffset.y <= 16) {
@@ -2325,13 +2338,13 @@ export function GroupChatView({
         onSavePreset={(name, config) => {
           if (!user?.id) return;
           void saveTestPreset(user.id, name, config).catch(() => {
-            Alert.alert('Error', 'Failed to save preset.');
+            appAlert('Error', 'Failed to save preset.');
           });
         }}
         onDeletePreset={presetId => {
           if (!user?.id) return;
           void deleteTestPreset(user.id, presetId).catch(() => {
-            Alert.alert('Error', 'Failed to delete preset.');
+            appAlert('Error', 'Failed to delete preset.');
           });
         }}
         subgroups={availableSubgroups}
@@ -2366,7 +2379,7 @@ export function GroupChatView({
                 navigation.goBack();
               })
               .catch((error: unknown) => {
-                Alert.alert(
+                appAlert(
                   'Could not leave group',
                   error instanceof Error ? error.message : 'Try again.',
                 );
@@ -2379,7 +2392,7 @@ export function GroupChatView({
                 navigation.goBack();
               })
               .catch((error: unknown) => {
-                Alert.alert(
+                appAlert(
                   'Could not update group',
                   error instanceof Error ? error.message : 'Try again.',
                 );
@@ -2440,7 +2453,7 @@ export function GroupChatView({
           subject={displayName}
           onQuestionsGenerated={async (questions) => {
             if (!user?.id) {
-              Alert.alert('Error', 'Please sign in to post questions.');
+              appAlert('Error', 'Please sign in to post questions.');
               return;
             }
             const senderName = user.user_metadata?.full_name || 'You';
@@ -2459,9 +2472,9 @@ export function GroupChatView({
             setShowAIGenerate(false);
             await fetchMessages(groupId, { page: 1, refresh: true, limit: messageLimit });
             if (posted === 0) {
-              Alert.alert('Error', 'Questions were generated but could not be posted to chat.');
+              appAlert('Error', 'Questions were generated but could not be posted to chat.');
             } else if (posted < questions.length) {
-              Alert.alert(
+              appAlert(
                 'Partial success',
                 `Posted ${posted} of ${questions.length} questions to the group chat.`
               );

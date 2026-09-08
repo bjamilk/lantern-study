@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -8,6 +7,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen } from '../../components/layout';
 import { useMarketplaceStore } from '../../stores';
 import { Button, Card } from '../../components/ui';
@@ -53,11 +53,11 @@ export function MakeOfferScreen({ navigation, route }: Props) {
   const handleSubmit = async () => {
     if (!listing) return;
     if (!parsedAmount || parsedAmount <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid offer amount.');
+      appAlert('Invalid amount', 'Please enter a valid offer amount.');
       return;
     }
     if (listing.price && parsedAmount > listing.price) {
-      Alert.alert('Too high', 'Your offer cannot exceed the asking price.');
+      appAlert('Too high', 'Your offer cannot exceed the asking price.');
       return;
     }
 
@@ -66,11 +66,11 @@ export function MakeOfferScreen({ navigation, route }: Props) {
       void import('../../services/productAnalytics').then(({ trackOfferMade }) => {
         trackOfferMade(listing.id);
       });
-      Alert.alert('Offer sent', 'The seller will review your offer.', [
+      appAlert('Offer sent', 'The seller will review your offer.', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch {
-      Alert.alert('Error', 'Failed to submit offer. Please try again.');
+      appAlert('Error', 'Failed to submit offer. Please try again.');
     }
   };
 

@@ -89,6 +89,10 @@ export function createAIClient(config: AIClientConfig) {
   const jobs = createJobClient({
     getBaseUrl: config.getBaseUrl,
     getAuthHeaders: config.getAuthHeaders,
+    // Every poll restates the counters. The 202 that started the job published
+    // the CHARGED numbers; a job that then fails is refunded server-side, and
+    // this is what tells the badge so.
+    onUsageUpdate: (usage) => notifyUsage(usage),
   });
 
   const awaitJob = async <T>(jobId: string, onUpdate?: JobUpdateHandler): Promise<T> => {

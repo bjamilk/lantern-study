@@ -19,6 +19,8 @@ import {
   type JobRecordView,
   type WatchState,
 } from './jobState';
+import { parseGlobalAIUsageFromHeaderReader } from '../api/usageHeaders';
+import type { AIUsageInfo } from '../types';
 
 export interface JobFetchInit {
   headers?: Record<string, string>;
@@ -42,6 +44,16 @@ export interface JobClientConfig {
   sleep?: (ms: number) => Promise<void>;
   /** Client watching budget (default 90s). */
   budgetMs?: number;
+  /**
+   * Told the live AI counters every time a job is polled.
+   *
+   * A queued run is accepted with 202 — a 2xx — so the accept publishes the
+   * CHARGED counters and nothing else ever restates them. When the job fails
+   * the server refunds the credits, and without this the badge kept the charge
+   * for work that produced nothing. The job route stamps the current counts on
+   * every poll; this hands them to whatever holds the badge.
+   */
+  onUsageUpdate?: (usage: AIUsageInfo) => void;
 }
 
 export interface JobProgress {
@@ -156,6 +168,11 @@ export function createJobClient(config: JobClientConfig) {
   const fetchJob = async (jobId: string): Promise<JobRecordView> => {
     const headers = await config.getAuthHeaders();
     const response = await doFetch(`${config.getBaseUrl()}/api/v1/jobs/${jobId}`, { headers });
+    // Before the ok/error branch: a poll that reports a FAILED job is exactly
+    // the one carrying the refunded counters.
+    if (response.headers && config.onUsageUpdate) {
+      parseGlobalAIUsageFromHeaderReader(response.headers, config.onUsageUpdate);
+    }
     const payload = (await response.json().catch(() => ({}))) as {
       data?: unknown;
       error?: string;

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -9,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -172,7 +172,7 @@ export function MyListingsScreen({
     } catch (e) {
       // The store already rolled the optimistic row back; surface the API's
       // seller-facing refusal (moderated / reserved / archived) instead of nothing.
-      Alert.alert(
+      appAlert(
         'Could not update listing',
         e instanceof Error && e.message ? e.message : 'Failed to update listing.'
       );
@@ -183,7 +183,7 @@ export function MyListingsScreen({
 
   const handleDelete = (listingId: string, title: string) => {
     if (!user?.id) return;
-    Alert.alert('Delete listing', `Remove "${title}"?`, [
+    appAlert('Delete listing', `Remove "${title}"?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -198,7 +198,7 @@ export function MyListingsScreen({
 
   const openListingActions = (item: (typeof filtered)[number]) => {
     if (item.status === 'reserved') {
-      Alert.alert(item.title, 'Sale in progress', [
+      appAlert(item.title, 'Sale in progress', [
         { text: 'View orders', onPress: () => navigation.navigate('Orders', { role: 'seller' }) },
         { text: 'Cancel', style: 'cancel' },
       ]);
@@ -212,7 +212,7 @@ export function MyListingsScreen({
         item.appeal_status && item.appeal_status !== 'none'
           ? ` ${LISTING_APPEAL_STATUS_LABELS[item.appeal_status]}.`
           : ' You can appeal once from the listing row.';
-      Alert.alert(
+      appAlert(
         MARKETPLACE_LISTING_STATUS_LABELS[item.status],
         `${marketplaceListingModerationNotice(item.status)}${
           item.takedown_reason ? ` Reason: ${item.takedown_reason}.` : ''

@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
   Text,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { fetchMarketplaceListing, fetchMyInquiries } from '../../services/api';
@@ -137,7 +137,7 @@ export function InquiriesScreen({
   };
 
   const handleStatus = (item: InquiryItem, status: 'negotiating' | 'closed' | 'purchased') => {
-    Alert.alert('Update status', `Mark inquiry as ${status}?`, [
+    appAlert('Update status', `Mark inquiry as ${status}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Confirm',
@@ -146,7 +146,7 @@ export function InquiriesScreen({
             await updateInquiryStatus(item.id, status);
             await load();
           } catch {
-            Alert.alert('Error', 'Could not update status.');
+            appAlert('Error', 'Could not update status.');
           }
         },
       },

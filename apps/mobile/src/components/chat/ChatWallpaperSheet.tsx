@@ -8,8 +8,9 @@
  * modal.
  */
 import React, { useMemo } from 'react';
-import { AccessibilityInfo, Alert } from 'react-native';
+import { AccessibilityInfo } from 'react-native';
 import { ActionSheet, type ActionSheetItem } from '../ui';
+import { appAlert } from '../ui/appDialog';
 import { useChatWallpaperStore } from '../../stores/chatWallpaperStore';
 import { useToastStore } from '../../stores/toastStore';
 import { hasChatOverride, resolveChatWallpaper } from '../../utils/chatWallpaper';
@@ -70,7 +71,7 @@ export function ChatWallpaperSheet({
                 isDefaultScope ? 'Default chat background updated' : 'Chat background updated',
               );
             } else if (outcome === 'denied') {
-              Alert.alert(
+              appAlert(
                 'Permission needed',
                 'Allow photo library access to set a chat background.',
               );

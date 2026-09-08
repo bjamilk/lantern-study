@@ -6,8 +6,8 @@ import {
   Pressable,
   RefreshControl,
   ActivityIndicator,
-  Alert,
 } from "react-native";
+import { appAlert } from "../../components/ui/appDialog";
 import {
   CommonActions,
   useFocusEffect,
@@ -241,7 +241,7 @@ export default function NotificationsScreen() {
         return;
       }
       if (parsed.type === "group_invite" && parsed.id) {
-        Alert.alert(
+        appAlert(
           "Group invite",
           "Accept this invite to join the group chat?",
           [
@@ -251,7 +251,7 @@ export default function NotificationsScreen() {
               style: "destructive",
               onPress: () => {
                 void declineGroupInvite(parsed.id!).catch(() => {
-                  Alert.alert("Error", "Could not decline invite");
+                  appAlert("Error", "Could not decline invite");
                 });
               },
             },
@@ -275,7 +275,7 @@ export default function NotificationsScreen() {
                     );
                   })
                   .catch(() => {
-                    Alert.alert("Error", "Could not accept invite");
+                    appAlert("Error", "Could not accept invite");
                   });
               },
             },

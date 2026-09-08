@@ -15,11 +15,11 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   useWindowDimensions,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import * as DocumentPicker from 'expo-document-picker';
 import { getNoteStudyContent, hasEnoughNoteStudyContent } from '@lantern/shared/utils';
 import { useTheme } from '../theme';
@@ -93,7 +93,7 @@ export default function AIGenerateQuestionsModal({
         attachments: [uploaded.attachment, ...(uploaded.note.attachments || [])],
       };
       if (!hasEnoughNoteStudyContent(studyInput)) {
-        Alert.alert(
+        appAlert(
           'Not enough text',
           'Could not extract enough study text yet. Wait a moment and try again, or paste notes manually.'
         );
@@ -101,7 +101,7 @@ export default function AIGenerateQuestionsModal({
       }
       setNotes(getNoteStudyContent(studyInput).slice(0, 8000));
     } catch (err: unknown) {
-      Alert.alert('Upload failed', err instanceof Error ? err.message : 'Could not upload attachment.');
+      appAlert('Upload failed', err instanceof Error ? err.message : 'Could not upload attachment.');
     } finally {
       setIsUploading(false);
     }
@@ -109,11 +109,11 @@ export default function AIGenerateQuestionsModal({
 
   const handleGenerate = async () => {
     if (!notes.trim()) {
-      Alert.alert('Missing Notes', 'Please paste some notes or upload a PDF/PowerPoint.');
+      appAlert('Missing Notes', 'Please paste some notes or upload a PDF/PowerPoint.');
       return;
     }
     if (notes.trim().length < 50) {
-      Alert.alert('More notes needed', 'Paste at least 50 characters, or upload a PDF/slides file.');
+      appAlert('More notes needed', 'Paste at least 50 characters, or upload a PDF/slides file.');
       return;
     }
 

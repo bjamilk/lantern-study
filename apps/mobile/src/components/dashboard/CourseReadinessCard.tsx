@@ -1,6 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { fetchCourseReadiness } from '../../services/api';
+import { useAuthStore } from '../../stores/authStore';
+import { useNetworkStatus } from '../../hooks';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { Card, useFeatureAccent } from '../ui';
 import { smallTextInk } from '../ui/FeatureDisc';
@@ -14,6 +17,7 @@ import {
   type ReadinessCourseInput,
   type ReadinessNavTarget,
 } from './readinessCardModel';
+import { planReadinessLoad, type ReadinessLoadTrigger } from './readinessLoadPlanner';
 
 import { toTab } from '../../navigation/nestedTab';
 
@@ -93,7 +97,16 @@ type LoadState =
   | { status: 'ready'; courses: ReadinessCourseInput[] }
   | { status: 'failed' };
 
-export function CourseReadinessCard() {
+export function CourseReadinessCard({
+  /**
+   * Bumped by Home's pull-to-refresh. The card is a sibling of the stats the
+   * student watches recover, so a pull that refreshes them and not this one is
+   * the whole reported bug.
+   */
+  reloadToken,
+}: {
+  reloadToken?: number;
+} = {}) {
   const [state, setState] = useState<LoadState>({ status: 'loading' });
   // Build 169, dark mode: the chips and the action button were painted with
   // `text-lantern-feature-tests-ink` / `bg-lantern-feature-tests-tint`, and
@@ -113,19 +126,97 @@ export function CourseReadinessCard() {
   // small-text ink like every other sub-12px feature label (FeatureDisc.tsx).
   const chipInk = smallTextInk('tests', accent, isDark);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchCourseReadiness()
-      .then((data) => {
-        if (!cancelled) setState({ status: 'ready', courses: data.courses });
-      })
-      .catch(() => {
-        if (!cancelled) setState({ status: 'failed' });
-      });
-    return () => {
-      cancelled = true;
-    };
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const { isConnected } = useNetworkStatus();
+
+  /**
+   * The load, driven by `planReadinessLoad`. Everything the planner reads is
+   * held in a ref rather than a dependency, so `run` keeps ONE identity per
+   * account: an effect keyed on the card's own status would re-fire the moment
+   * a fetch settled and retry itself forever on a dead link.
+   */
+  const stateRef = useRef<LoadState>(state);
+  const inFlightRef = useRef(false);
+  const loadedForRef = useRef<string | null>(null);
+  /** Newest request wins; every older answer is dropped, not raced. */
+  const requestRef = useRef(0);
+
+  const apply = useCallback((next: LoadState) => {
+    stateRef.current = next;
+    setState(next);
   }, []);
+
+  const run = useCallback(
+    (trigger: ReadinessLoadTrigger) => {
+      const plan = planReadinessLoad({
+        trigger,
+        status: stateRef.current.status,
+        inFlight: inFlightRef.current,
+        userId,
+        loadedForUserId: loadedForRef.current,
+      });
+      if (plan.reset) {
+        // Another account's readiness (or none) must not sit on screen while
+        // this one loads. The in-flight answer is dropped by token below.
+        requestRef.current += 1;
+        inFlightRef.current = false;
+        loadedForRef.current = null;
+        apply({ status: 'loading' });
+      }
+      if (!plan.fetch) return;
+
+      const token = (requestRef.current += 1);
+      const forUser = userId;
+      inFlightRef.current = true;
+      fetchCourseReadiness()
+        .then((data) => {
+          if (token !== requestRef.current) return;
+          inFlightRef.current = false;
+          loadedForRef.current = forUser;
+          apply({ status: 'ready', courses: data.courses });
+        })
+        .catch(() => {
+          if (token !== requestRef.current) return;
+          inFlightRef.current = false;
+          // Recorded even on a failure: it is what makes a later sign-in as a
+          // different student a `reset`, rather than a silent re-use.
+          loadedForRef.current = forUser;
+          apply({ status: 'failed' });
+        });
+    },
+    [apply, userId]
+  );
+
+  // First render, and any change of signed-in account.
+  useEffect(() => {
+    run('user-changed');
+  }, [run]);
+
+  // Home stays mounted behind its tab, so returning to it runs no plain
+  // effect. This is the return path.
+  useFocusEffect(
+    useCallback(() => {
+      run('focus');
+    }, [run])
+  );
+
+  // Airplane mode off. The card recovers on its own rather than waiting for
+  // the student to guess that a pull would help.
+  const wasConnected = useRef(isConnected);
+  useEffect(() => {
+    const cameBack = isConnected && !wasConnected.current;
+    wasConnected.current = isConnected;
+    if (cameBack) run('reconnected');
+  }, [isConnected, run]);
+
+  // Pull-to-refresh, from Home. The initial value is the baseline, so mounting
+  // with a token already set does not fetch twice.
+  const seenToken = useRef(reloadToken);
+  useEffect(() => {
+    if (reloadToken === seenToken.current) return;
+    seenToken.current = reloadToken;
+    run('pull-to-refresh');
+  }, [reloadToken, run]);
 
   // Nothing is drawn for the beat before the first answer: a skeleton in the
   // screen's only tint panel is a flash of colour that means nothing.

@@ -10,7 +10,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Alert,
   Dimensions,
   TextInput,
   Image,
@@ -19,6 +18,7 @@ import {
   AppState,
   BackHandler,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenInsets, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
@@ -35,7 +35,7 @@ import { AppIcon } from '../../components/ui/AppIcon';
 import { T } from '../../components/ui';
 import { TAB_STACK_ROOT_ROUTE } from '../../navigation/tabPressBehavior';
 import { toTab } from '../../navigation/nestedTab';
-import { planTestExit, type ReturnToTarget } from './testSessionExit';
+import { planSessionExitCopy, planTestExit, type ReturnToTarget } from './testSessionExit';
 import { isPracticeAttempt, type ConfidenceLevel } from './confidenceReveal';
 import { useFeatureAccent } from '../../components/ui/FeatureDisc';
 
@@ -670,13 +670,21 @@ export default function TestTakingScreen() {
   const exitGuardArmedRef = useRef(exitGuardArmed);
   exitGuardArmedRef.current = exitGuardArmed;
 
+  // The dialog states what leaving DOES — `onConfirm` runs `exitStudyMode`,
+  // which abandons the draft — instead of the two sentences it shipped with,
+  // one of which promised a practice sitting could be resumed and the other
+  // of which read as a contradiction of Home's saved sessions.
+  const exitCopy = planSessionExitCopy({
+    mode: isStudyMode ? 'study' : 'test',
+    answeredCount: activeTest ? Object.keys(activeTest.answers).length : 0,
+    totalQuestions: activeTest?.questions.length ?? 0,
+  });
+
   useConfirmBeforeExit(exitGuardArmed, {
-    title: isStudyMode ? 'Exit Study Mode' : 'Exit Test',
-    message: isStudyMode
-      ? 'Are you sure you want to exit? You can come back anytime.'
-      : 'Are you sure you want to exit? Your progress will be lost and the test will not be scored.',
-    confirmLabel: 'Exit',
-    destructive: !isStudyMode,
+    title: exitCopy.title,
+    message: exitCopy.message,
+    confirmLabel: exitCopy.confirmLabel,
+    destructive: exitCopy.destructive,
     // Always abandon so the timer cannot keep running and auto-submit a zero.
     onConfirm: () => {
       exitStudyMode();
@@ -1010,7 +1018,7 @@ export default function TestTakingScreen() {
      * History row as practice), and REPLACE this screen with TestResults.
      */
     if (liveSession.mode === 'study') {
-      Alert.alert(
+      appAlert(
         'End Study Session',
         'End this session and see your review? Blanks are counted separately, not as wrong answers.',
         [
@@ -1022,7 +1030,7 @@ export default function TestTakingScreen() {
     }
 
     if (timeUp) {
-      Alert.alert('Time\'s Up!', 'Your test has been submitted automatically.');
+      appAlert('Time\'s Up!', 'Your test has been submitted automatically.');
       await finalizeSubmit();
       return;
     }
@@ -1211,6 +1219,21 @@ export default function TestTakingScreen() {
           </View>
         )}
       </View>
+
+      {/* The offline state belongs IN the page, not in the floating chip the
+          shell draws over the top-right corner — there it was clipped by the
+          Submit button and unreadable (device finding, build 172). The chip
+          stands down on this route; this line is what replaces it, and it
+          says what offline means for the sitting rather than showing an icon
+          alone. */}
+      {isOffline && (
+        <View style={s(colors).offlineNotice}>
+          <AppIcon name="cloud-offline" size={14} color={colors.textSecondary} />
+          <T.Caption style={s(colors).offlineNoticeText} numberOfLines={2}>
+            Offline · your answers are kept on this phone and your score uploads when you reconnect
+          </T.Caption>
+        </View>
+      )}
 
       {!isStudyMode && currentQuestion && (
         <View style={s(colors).flagRow}>
@@ -2157,6 +2180,18 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderWidth: 1,
     borderColor: '#f97316',
   },
+  offlineNotice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  offlineNoticeText: {
+    flex: 1,
+    color: c.textSecondary,
+  },
+
   flagRow: {
     paddingHorizontal: 16,
     paddingBottom: 8,

@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -137,7 +137,7 @@ export function JobEmployerScreen() {
       const permission =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission required', 'Photo library access is needed.');
+        appAlert('Permission required', 'Photo library access is needed.');
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync({

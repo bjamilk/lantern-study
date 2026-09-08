@@ -169,6 +169,45 @@ export function requestFailureSentence(error: unknown): string {
   return `${copy.title}. ${copy.body}`;
 }
 
+/**
+ * Messages that are a stack trace wearing a sentence: nothing in them was
+ * written for a student, so none of them may reach one verbatim.
+ */
+const MACHINE_MESSAGE_PATTERNS = [
+  /^[A-Za-z]*Error\b/,
+  /json parse error/i,
+  /unexpected token/i,
+  /undefined is not (a|an) /i,
+  /cannot read propert/i,
+  /\bat https?:\/\//i,
+];
+
+/**
+ * A message a screen already holds as a string, made safe to render.
+ *
+ * Screens that keep their failure as `e.message` in state — Library's course
+ * tree, the notes list, the deck list — printed React Native's raw
+ * "Network request failed" straight at students, on screens that were
+ * meanwhile drawing a correct offline icon and serving cached content. This is
+ * the narrow fix for those: a message that classifies as a real transport or
+ * HTTP failure is replaced by the shared sentence for that kind, and a message
+ * that is machine noise is replaced by the generic one. Anything the app
+ * itself wrote ("Could not delete note") is passed through untouched, because
+ * that sentence knows something this module does not.
+ */
+export function humanizeFailureMessage(error: unknown): string {
+  const raw =
+    typeof error === 'string' ? error : ((readString(error, 'message') ?? '') as string);
+  const message = raw.trim();
+  if (!message) return requestFailureSentence(error);
+
+  if (classifyRequestFailure(error) !== 'unknown') return requestFailureSentence(error);
+  if (MACHINE_MESSAGE_PATTERNS.some((pattern) => pattern.test(message))) {
+    return requestFailureSentence(null);
+  }
+  return message;
+}
+
 /** Whether offering a retry button can plausibly change the outcome. */
 export function isRequestFailureRetryable(error: unknown): boolean {
   return requestFailureCopy(error).retryLabel != null;

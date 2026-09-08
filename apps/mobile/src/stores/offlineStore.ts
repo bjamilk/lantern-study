@@ -9,6 +9,7 @@ import {
   canonicalOfflineQuestionType,
   matchesOfflineQuestionTypeFilter,
 } from '../utils/questionHelpers';
+import { normalizeOfflineBundleQuestion } from '../utils/offlineQuestionShape';
 import {
   PENDING_RESULTS_LEGACY_KEY,
   mergeIntoStoredResults,
@@ -221,49 +222,22 @@ const persistLocalTests = async (downloadedTests: OfflineTest[]) => {
   return totalStorageUsed;
 };
 
+/**
+ * The ONE mapper. Both paths that build a bundle read it: the group download
+ * below, and the cloud hydration above (a web-made bundle, or a purchased
+ * question bank). It lives in utils/offlineQuestionShape so a jest test can
+ * hold the shipped code — the earlier test mirrored a private copy of this
+ * function and stayed green while the real one dropped every option's text.
+ */
 const mapMessageToOfflineQuestion = (message: any, index: number): OfflineQuestion | null => {
-  const payload = message.question || message.questionData || message;
-  const stem = payload.questionStem || payload.stem || message.text || message.content;
-  if (!stem) return null;
-
-  const rawOptions = payload.options || [];
-  const options = Array.isArray(rawOptions)
-    ? rawOptions.map((opt: any, i: number) => ({
-        id: String(opt.id ?? opt.optionId ?? `opt-${i}`),
-        text: String(opt.text ?? opt.optionText ?? opt.label ?? ''),
-        isCorrect: Boolean(opt.isCorrect ?? opt.correct ?? payload.correctAnswerIds?.includes?.(opt.id)),
-      }))
-    : [];
-
+  const question = normalizeOfflineBundleQuestion(message, index);
+  if (!question) return null;
+  // Kept from the old mapper: the stored type is canonicalised so the
+  // download-time type filters compare like with like.
   return {
-    id: String(message.id ?? `q-${index}`),
-    stem: String(stem),
-    type:
-      canonicalOfflineQuestionType(payload.questionType || payload.type || message.questionType) ||
-      String(payload.questionType || payload.type || 'mcq-single'),
-    options,
-    // Fill-in-blank stores its answers separately from options; without this
-    // the question grades every response as wrong.
-    correctAnswer: payload.correctAnswer ?? payload.acceptableAnswers?.[0],
-    acceptableAnswers: Array.isArray(payload.acceptableAnswers)
-      ? payload.acceptableAnswers
-      : undefined,
-    // Matching and diagram questions keep their structures verbatim; the
-    // test-question converter rebuilds pairs/labels from them. Dropping these
-    // rendered such questions unanswerable (stem with empty item lists).
-    matchingPromptItems: Array.isArray(payload.matchingPromptItems)
-      ? payload.matchingPromptItems
-      : undefined,
-    matchingAnswerItems: Array.isArray(payload.matchingAnswerItems)
-      ? payload.matchingAnswerItems
-      : undefined,
-    correctMatches: Array.isArray(payload.correctMatches) ? payload.correctMatches : undefined,
-    diagramLabels: Array.isArray(payload.diagramLabels) ? payload.diagramLabels : undefined,
-    explanation: payload.explanation || message.explanation,
-    tags: payload.tags || message.tags || [],
-    imageUrl: payload.imageUrl || message.imageUrl,
-    createdAt: message.created_at || message.timestamp || new Date().toISOString(),
-  };
+    ...question,
+    type: canonicalOfflineQuestionType(question.type) || question.type,
+  } as OfflineQuestion;
 };
 
 const fetchGroupQuestionsForOffline = async (
@@ -322,7 +296,20 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
         AsyncStorage.getItem(RESULTS_KEY),
       ]);
 
-      let downloadedTests: OfflineTest[] = testsData ? JSON.parse(testsData) : [];
+      // Bundles already on this handset were written by whichever build
+      // downloaded them, so they carry the old shapes too. Re-normalising on
+      // read repairs the ones that can be repaired (string options, options
+      // under another key) instead of leaving a downloaded test unanswerable
+      // until it is deleted and fetched again. It is a no-op for a bundle
+      // that is already canonical.
+      let downloadedTests: OfflineTest[] = (testsData ? JSON.parse(testsData) : []).map(
+        (test: OfflineTest) => ({
+          ...test,
+          questions: (test.questions || [])
+            .map((q, index) => mapMessageToOfflineQuestion(q, index))
+            .filter(Boolean) as OfflineQuestion[],
+        })
+      );
 
       // Without a user there is nobody to attribute pending results to, so we
       // load none rather than risk showing (and later uploading) another

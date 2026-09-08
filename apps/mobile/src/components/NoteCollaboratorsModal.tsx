@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import * as Clipboard from 'expo-clipboard';
 import { generateNoteShareLink } from '@lantern/shared';
 import { Button } from './ui';
@@ -85,7 +85,7 @@ export function NoteCollaboratorsModal({
     } catch (error) {
       setCollaborators([]);
       setShareLinks([]);
-      Alert.alert('Could not load sharing', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not load sharing', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setLoading(false);
     }
@@ -132,7 +132,7 @@ export function NoteCollaboratorsModal({
       });
       await load();
     } catch (error) {
-      Alert.alert('Could not create link', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not create link', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setSaving(false);
     }
@@ -148,7 +148,7 @@ export function NoteCollaboratorsModal({
       setSelectedUserId('');
       await load();
     } catch (error) {
-      Alert.alert('Could not add collaborator', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not add collaborator', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setSaving(false);
     }
@@ -161,7 +161,7 @@ export function NoteCollaboratorsModal({
       await updateNoteCollaboratorRole(noteId, collaborator.userId, nextRole);
       await load();
     } catch (error) {
-      Alert.alert('Could not update role', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not update role', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setSaving(false);
     }
@@ -173,7 +173,7 @@ export function NoteCollaboratorsModal({
       await removeNoteCollaborator(noteId, userId);
       await load();
     } catch (error) {
-      Alert.alert('Could not remove collaborator', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not remove collaborator', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setSaving(false);
     }
@@ -185,7 +185,7 @@ export function NoteCollaboratorsModal({
       await revokeNoteShareLink(noteId, linkId);
       await load();
     } catch (error) {
-      Alert.alert('Could not revoke link', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not revoke link', error instanceof Error ? error.message : 'Try again.');
     } finally {
       setSaving(false);
     }

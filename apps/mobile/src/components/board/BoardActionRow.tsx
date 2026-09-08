@@ -48,6 +48,12 @@ type ActionSpec = {
   label: string;
   onPress?: () => void;
   disabled?: boolean;
+  /**
+   * Dimmed but STILL TAPPABLE. A control that is merely unavailable right now
+   * has a reason, and the tap is how the reader hears it; `disabled` would
+   * swallow the tap and leave a grey icon that never explains itself.
+   */
+  unavailable?: boolean;
   /** Absent, not disabled, when the server cannot back it (§2 degrade). */
   hidden?: boolean;
 };
@@ -105,8 +111,16 @@ export function BoardActionRow({
       activeColor: colors.success,
       label: boardRepostAccessibilityLabel(repostCount, repostedByMe),
       onPress: onRepost,
-      // A repost you already made stays tappable — that tap is the undo.
-      disabled: !canRepost && !repostedByMe,
+      /*
+       * NOT `disabled`. On device this icon was permanently grey and inert,
+       * with no way to learn why — and the refusal copy the screen already
+       * owns (`boardRepostRefusalCopy`: "you posted this less than a day
+       * ago", "you cannot repost a repost") was unreachable, because a
+       * disabled Pressable never fires. It stays dimmed, so the state is
+       * visible, and it stays tappable, so the tap says the reason out loud.
+       * A repost you already made is tappable too — that tap is the undo.
+       */
+      unavailable: !canRepost && !repostedByMe,
     },
     favorite: {
       icon: 'heart',
@@ -147,13 +161,15 @@ export function BoardActionRow({
             accessibilityLabel={spec.label}
             accessibilityState={{
               selected: !!spec.active,
+              // `unavailable` is deliberately NOT announced as disabled: a
+              // screen reader user must be able to press it and hear why.
               disabled: !!spec.disabled,
             }}
             // 44px is the floor on BOTH axes. `flex-1` spreads the five evenly
             // and lets a long count grow into its own slot instead of pushing
             // a neighbour's target under the minimum.
             className="min-h-[44px] min-w-[44px] flex-1 flex-row items-center justify-start"
-            style={{ opacity: spec.disabled ? 0.4 : 1 }}
+            style={{ opacity: spec.disabled || spec.unavailable ? 0.4 : 1 }}
           >
             <AppIcon
               name={spec.icon}

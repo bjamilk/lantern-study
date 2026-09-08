@@ -170,3 +170,70 @@ export function planAttemptFromSessionRow(row: unknown): AttemptMappingPlan {
     confidenceByQuestion,
   };
 }
+
+/* ------------------------------------------------------------------ *
+ * How long the sitting took
+ * ------------------------------------------------------------------ */
+
+/**
+ * The seconds a completed sitting took, from the best source the row has.
+ *
+ * History showed "0:00" against every row until the result was opened (device
+ * finding, build 172). The list is fetched LEAN — lean rows carry no
+ * `userAnswers` — so summing per-answer timings gave 0 and nothing else was
+ * read. Two other sources were on the row the whole time: the server's own
+ * `timeSpentSeconds` (it folds the per-answer timings before stripping them,
+ * see mapTestListRow) and the session's start/end stamps.
+ *
+ * Returns `null` — never 0 — when the row records no time at all, so a caller
+ * can print "—" instead of claiming a sitting took no time.
+ */
+export function planAttemptDurationSeconds(row: unknown): number | null {
+  const raw = dict(row);
+  const session = dict(raw.session ?? raw);
+  const answers = dict(session.userAnswers ?? session.user_answers ?? raw.userAnswers);
+
+  let fromAnswers = 0;
+  for (const answer of Object.values(answers)) {
+    const entry = dict(answer);
+    const spent = num(entry.timeSpentSeconds) ?? num(entry.time_spent_seconds);
+    if (spent !== null && spent > 0) fromAnswers += spent;
+  }
+  if (fromAnswers > 0) return Math.round(fromAnswers);
+
+  const server = pickNum(raw, 'timeSpentSeconds', 'time_spent_seconds', 'timeSpent');
+  if (server !== null && server > 0) return Math.round(server);
+
+  const start = Date.parse(String(session.startTime ?? session.start_time ?? raw.start_time ?? ''));
+  const end = Date.parse(String(session.endTime ?? session.end_time ?? raw.end_time ?? ''));
+  if (Number.isFinite(start) && Number.isFinite(end) && end > start) {
+    return Math.round((end - start) / 1000);
+  }
+
+  return null;
+}
+
+/**
+ * A duration a student can read, at the scale it happened.
+ *
+ * `Math.floor(seconds / 60)` printed "0m" for a sitting that took 12 seconds
+ * and "1m" for one that took 119 — the analysis screen's Total Time. Seconds
+ * are shown under a minute, and the minutes carry their seconds up to an
+ * hour, so a short sitting is reported as short rather than as nothing.
+ *
+ * `null` (the row records no time) reads "—": an unknown duration is not a
+ * zero one.
+ */
+export function formatSessionDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds < 0) {
+    return '—';
+  }
+  const total = Math.round(seconds);
+  if (total < 60) return `${total}s`;
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (minutes < 60) return rest === 0 ? `${minutes}m` : `${minutes}m ${rest}s`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes === 0 ? `${hours}h` : `${hours}h ${restMinutes}m`;
+}

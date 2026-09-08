@@ -14,12 +14,12 @@ import {
   Modal,
   TouchableOpacity,
   TextInput,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   ScrollView,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Course } from '@lantern/shared/types';
 import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
@@ -242,7 +242,7 @@ export default function UsernameRequiredModal({
       const finalFirst = needsUsername ? trimmedFirstName : currentUser.firstName || firstName.trim();
       const finalLast = needsUsername ? trimmedLastName : currentUser.lastName || lastName.trim();
 
-      Alert.alert(
+      appAlert(
         needsUsername ? 'Welcome!' : 'All set',
         needsUsername
           ? `Your username @${finalUsername} has been set successfully.`

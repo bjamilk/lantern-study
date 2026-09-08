@@ -14,6 +14,7 @@ import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { featureAccents } from '@lantern/shared/design';
 import { resolveAvatarSrc } from '@lantern/shared/utils';
+import { memberCountLabel } from '@lantern/shared/network';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 export interface GroupChatHeaderAction {
@@ -267,7 +268,10 @@ export function GroupChatHeader({
               </Pressable>
             ) : memberCount ? (
               <Text className="text-xs text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
-                {memberCount} members
+                {/* Not `{memberCount} members`: a one-person room read
+                    "1 members". The shared label is the same one the
+                    Communities list already uses. */}
+                {memberCountLabel(memberCount)}
               </Text>
             ) : null}
           </View>

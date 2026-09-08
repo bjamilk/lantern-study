@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { View, Text, ScrollView, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import * as api from '../../services/api';
 import {
@@ -56,7 +57,7 @@ export default function RecurringScreen() {
       const res = await api.listRecurring();
       setRules((res.rules || []) as RecurringRule[]);
     } catch {
-      Alert.alert('Recurring', 'Could not load recurring items.');
+      appAlert('Recurring', 'Could not load recurring items.');
     } finally {
       setLoading(false);
     }
@@ -74,7 +75,7 @@ export default function RecurringScreen() {
   const handleAdd = async () => {
     const amt = parseFloat(amount);
     if (!amt || amt <= 0) {
-      Alert.alert('Recurring', 'Enter a valid amount.');
+      appAlert('Recurring', 'Enter a valid amount.');
       return;
     }
     setSaving(true);
@@ -97,7 +98,7 @@ export default function RecurringScreen() {
       const uid = currentUserId;
       if (uid) void fetchTransactions(uid);
     } catch {
-      Alert.alert('Recurring', 'Could not add recurring item.');
+      appAlert('Recurring', 'Could not add recurring item.');
     } finally {
       setSaving(false);
     }
@@ -108,7 +109,7 @@ export default function RecurringScreen() {
       await api.deleteRecurring(id);
       setRules(prev => prev.filter(r => r.id !== id));
     } catch {
-      Alert.alert('Recurring', 'Could not remove recurring item.');
+      appAlert('Recurring', 'Could not remove recurring item.');
     }
   };
 

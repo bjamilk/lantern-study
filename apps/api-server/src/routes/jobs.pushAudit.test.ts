@@ -32,8 +32,13 @@ async function runRoute(jobId: string, userId: string) {
   const handlers = layer.route.stack.map((s: any) => s.handle);
   const req: any = { user: { id: userId }, params: { jobId }, query: {}, body: {}, headers: {} };
 
-  const res: any = { statusCode: 200, body: undefined };
+  const res: any = { statusCode: 200, body: undefined, headers: {} };
   await new Promise<void>((resolve, reject) => {
+    // The route stamps the caller's live AI counters on every poll.
+    res.setHeader = (name: string, value: string) => {
+      res.headers[name.toLowerCase()] = value;
+      return res;
+    };
     res.status = (code: number) => {
       res.statusCode = code;
       return res;

@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
   Platform,
   Pressable,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen } from '../../components/layout';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import * as ImagePicker from 'expo-image-picker';
@@ -164,12 +164,12 @@ export function EditListingScreen({
 
   const pickImages = async () => {
     if (images.length >= MAX_IMAGES) {
-      Alert.alert('Limit reached', `Maximum ${MAX_IMAGES} images allowed.`);
+      appAlert('Limit reached', `Maximum ${MAX_IMAGES} images allowed.`);
       return;
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Photo library access is needed.');
+      appAlert('Permission required', 'Photo library access is needed.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -189,7 +189,7 @@ export function EditListingScreen({
         })
     );
     if (accepted.length < result.assets.length) {
-      Alert.alert('Unsupported photo format', HEIC_IMAGE_UPLOAD_ERROR);
+      appAlert('Unsupported photo format', HEIC_IMAGE_UPLOAD_ERROR);
     }
     if (accepted.length === 0) return;
 
@@ -207,7 +207,7 @@ export function EditListingScreen({
       }
       setImages(prev => [...prev, ...uploaded].slice(0, MAX_IMAGES));
     } catch (e: unknown) {
-      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not upload images');
+      appAlert('Upload failed', e instanceof Error ? e.message : 'Could not upload images');
     } finally {
       setUploading(false);
     }
@@ -216,18 +216,18 @@ export function EditListingScreen({
   const handleSubmit = async () => {
     if (!user?.id || !listingId) return;
     if (!title.trim()) {
-      Alert.alert('Missing title', 'Please enter a title.');
+      appAlert('Missing title', 'Please enter a title.');
       return;
     }
     if (!campusId) {
-      Alert.alert(
+      appAlert(
         'Missing area',
         'Choose a campus, or select Other (city in Nigeria).'
       );
       return;
     }
     if (isOtherCity && !location.trim()) {
-      Alert.alert('Missing city', 'Enter the Nigerian city for this listing.');
+      appAlert('Missing city', 'Enter the Nigerian city for this listing.');
       return;
     }
     const parsedPrice = price.trim() ? parseFloat(price.replace(/,/g, '')) : undefined;
@@ -237,11 +237,11 @@ export function EditListingScreen({
     const hasSale = parsedSalePrice != null && parsedSalePrice > 0;
     if (hasSale) {
       if (!Number.isFinite(parsedSalePrice) || (parsedSalePrice as number) < 0) {
-        Alert.alert('Invalid discount', 'Enter a valid discounted price, or choose No sale.');
+        appAlert('Invalid discount', 'Enter a valid discounted price, or choose No sale.');
         return;
       }
       if (parsedPrice == null || (parsedSalePrice as number) >= parsedPrice) {
-        Alert.alert(
+        appAlert(
           'Discount too high',
           'The discounted price must be lower than the asking price, or choose No sale.'
         );
@@ -249,7 +249,7 @@ export function EditListingScreen({
       }
       // A discounted price with no end date never shows to buyers (fix #7).
       if (saleEndsPreset === 'none') {
-        Alert.alert(
+        appAlert(
           'Add a promo end date',
           "Pick 24 hours or 7 days, or choose No sale — a discount with no end date won't show to buyers."
         );
@@ -275,7 +275,7 @@ export function EditListingScreen({
     const parsedQuantity = quantity.trim() ? parseInt(quantity, 10) : undefined;
     if (needsAttestation && !attested) {
       setAttestationError(ATTESTATION_REQUIRED_MESSAGE);
-      Alert.alert('Confirm your rights', ATTESTATION_REQUIRED_MESSAGE);
+      appAlert('Confirm your rights', ATTESTATION_REQUIRED_MESSAGE);
       return;
     }
     setAttestationError(null);
@@ -309,14 +309,14 @@ export function EditListingScreen({
         },
         user.id
       );
-      Alert.alert('Saved', 'Listing updated.');
+      appAlert('Saved', 'Listing updated.');
       navigation.goBack();
     } catch (e) {
       // The API refuses edits to moderated listings (403) with seller-facing
       // copy, and 400s the rights/content checks — keep the message inline too.
       const message = e instanceof Error && e.message ? e.message : 'Failed to update listing.';
       setSubmitError(message);
-      Alert.alert('Could not save', message);
+      appAlert('Could not save', message);
     }
   };
 

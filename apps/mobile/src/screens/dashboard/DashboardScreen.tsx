@@ -74,6 +74,11 @@ import { DailyGoalsProgress } from '../../components/DailyGoalsProgress';
 
 import { fetchDailyQuests, recordLoginStreak, purchaseStreakFreeze, type DailyQuest } from '../../services/gamification';
 import { WALLET_COINS } from '@lantern/shared/utils';
+import {
+  resolveSavedSessions,
+  savedSessionSubtitle,
+  savedSessionsOverflowLabel,
+} from '@lantern/shared/utils';
 import { isCardDue } from '@lantern/shared/utils/srs';
 import { isQuizzableNote } from '@lantern/shared/utils/noteStudyContent';
 import { useToastStore } from '../../stores/toastStore';
@@ -220,10 +225,16 @@ export function DashboardScreen({ navigation }: Props) {
   const statsLastSyncedAt = useStatsStore(s => s.lastSyncedAt);
 
   const activeTest = useTestStore(s => s.activeTest);
-  const pausedSessions = useTestStore(s => s.pausedSessions);
+  const rawPausedSessions = useTestStore(s => s.pausedSessions);
   const refreshPausedSessions = useTestStore(s => s.refreshPausedSessions);
   const resumePausedSession = useTestStore(s => s.resumePausedSession);
   const abandonPausedSession = useTestStore(s => s.abandonPausedSession);
+  // Eight rows reading "Test · SDOH · 0 of 5 answered" are not eight things to
+  // resume. The shared rule collapses blank duplicates, drops blank drafts
+  // nobody came back to, and caps what Home draws — it never touches a session
+  // that holds answers.
+  const savedSessions = useMemo(() => resolveSavedSessions(rawPausedSessions), [rawPausedSessions]);
+  const pausedSessions = savedSessions.sessions;
   const pauseActiveTest = useTestStore(s => s.pauseActiveTest);
 
   const {
@@ -251,6 +262,14 @@ export function DashboardScreen({ navigation }: Props) {
   const studySettings = useSettingsStore(s => s.settings.study);
 
   const [refreshing, setRefreshing] = useState(false);
+
+  /**
+   * Every pull bumps this, and the readiness card reloads on the change. That
+   * card owns its own fetch (it is the only thing on Home that calls
+   * `fetchCourseReadiness`), so `load()` below cannot reach it — which is why
+   * a failed readiness load used to survive every pull on this screen.
+   */
+  const [readinessReloadToken, setReadinessReloadToken] = useState(0);
 
   const [quests, setQuests] = useState<DailyQuest[]>([]);
 
@@ -555,6 +574,8 @@ export function DashboardScreen({ navigation }: Props) {
 
     setRefreshing(true);
 
+    setReadinessReloadToken((n) => n + 1);
+
     await load();
 
     setRefreshing(false);
@@ -800,7 +821,7 @@ export function DashboardScreen({ navigation }: Props) {
         {/* CARD 2 — the screen's ONE tint panel, in the tests family's sky.
             Spec §5.7: the single coloured thing above the fold answers "am I
             ready", and it keeps its honest empty and failed states. */}
-        <CourseReadinessCard />
+        <CourseReadinessCard reloadToken={readinessReloadToken} />
 
         <JoinClassCard />
         <ClassWorkCard />
@@ -896,9 +917,9 @@ export function DashboardScreen({ navigation }: Props) {
                   feature={session.sessionKind === 'study' ? 'flashcards' : 'tests'}
                   icon={session.sessionKind === 'study' ? 'layers' : 'clipboard'}
                   title={session.title}
-                  subtitle={`${session.sessionKind === 'study' ? 'Study' : 'Test'} · ${session.answeredCount} of ${session.totalQuestions} answered`}
+                  subtitle={savedSessionSubtitle(session)}
                   onPress={() => void handleResumePaused(session.id)}
-                  accessibilityLabel={`Resume ${session.title}, ${session.answeredCount} of ${session.totalQuestions} answered`}
+                  accessibilityLabel={`Resume ${session.title}, ${savedSessionSubtitle(session)}`}
                   right={
                     <View className="flex-row items-center gap-2">
                       <Button
@@ -917,6 +938,11 @@ export function DashboardScreen({ navigation }: Props) {
                 />
               </View>
             ))}
+            {savedSessions.hiddenCount > 0 ? (
+              <Text className="text-caption text-lantern-text-tertiary mt-2">
+                {savedSessionsOverflowLabel(savedSessions.hiddenCount)}
+              </Text>
+            ) : null}
           </Card>
         ) : activeTest ? (
           <Card className="mb-4 bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800">

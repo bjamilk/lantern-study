@@ -14,7 +14,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
   ScrollView,
   Linking,
 } from 'react-native';
@@ -26,6 +25,7 @@ import { supabase } from '../../services/supabase';
 import { saveAcademicProfile } from '../../services/academic';
 import { stashPendingAcademicProfile } from '../../services/pendingAcademicProfile';
 import { useTheme } from '../../theme';
+import { appAlert } from '../../components/ui/appDialog';
 import { LanternLogo } from '../../components/LanternLogo';
 import { SocialAuthButtons } from '../../components/auth/SocialAuthButtons';
 import { useCookieNoticeBottomInset } from '../../components/CookieNoticeBanner';
@@ -191,9 +191,9 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
 
       if (error) {
         if (error.message.includes('already registered') || error.status === 422) {
-          Alert.alert('Account Exists', 'This email is already registered. Please sign in instead.');
+          appAlert('Account Exists', 'This email is already registered. Please sign in instead.');
         } else {
-          Alert.alert('Sign Up Failed', error.message);
+          appAlert('Sign Up Failed', error.message);
         }
         return;
       }
@@ -229,7 +229,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
             console.warn('[SignUp] academic profile PUT failed; stashing for next boot:', academicError);
             await stashPendingAcademicProfile(email, academicFields);
           }
-          Alert.alert('Welcome to Lantern Study!', 'Your account has been created successfully.');
+          appAlert('Welcome to Lantern Study!', 'Your account has been created successfully.');
         } else {
           // Email confirmation pending: no token yet, so replay the academic
           // fields on the first authenticated boot.
@@ -238,7 +238,7 @@ export default function SignUpScreen({ navigation, route }: SignUpScreenProps) {
         }
       }
     } catch (error: any) {
-      Alert.alert('Sign Up Failed', error.message || 'Something went wrong');
+      appAlert('Sign Up Failed', error.message || 'Something went wrong');
     } finally {
       setIsLoading(false);
     }

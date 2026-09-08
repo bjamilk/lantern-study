@@ -3,7 +3,6 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -11,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import {
   COMMUNITY_COPY,
   COMMUNITY_LOUNGE_CHANNEL_NAME,
@@ -312,10 +312,10 @@ function CommunityServer({
       return;
     }
     if (!community.isMember) {
-      Alert.alert(boardDisplayName(channel), COMMUNITY_COPY.joinToOpen);
+      appAlert(boardDisplayName(channel), COMMUNITY_COPY.joinToOpen);
       return;
     }
-    Alert.alert(`Join ${boardDisplayName(channel)}?`, boardSubtitle(channel, now), [
+    appAlert(`Join ${boardDisplayName(channel)}?`, boardSubtitle(channel, now), [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Join', onPress: () => void joinThenOpen(channel) },
     ]);

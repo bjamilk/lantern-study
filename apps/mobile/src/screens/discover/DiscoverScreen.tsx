@@ -1,6 +1,8 @@
+import { pluralize } from '@lantern/shared/utils';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, TextInput, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
   resolveListState,
@@ -12,6 +14,7 @@ import {
   communityKindLabel,
   communityMembershipAction,
   communityUnreadTotal,
+  communityDisplayName,
   memberCountLabel,
   presenceLabel,
   shouldShowTrustChip,
@@ -278,7 +281,7 @@ function DiscoverHub({
   const submitCommunity = async () => {
     const name = newName.trim();
     if (name.length < 3) {
-      Alert.alert('Name needed', 'Use at least 3 characters.');
+      appAlert('Name needed', 'Use at least 3 characters.');
       return;
     }
     setCreateBusy(true);
@@ -337,11 +340,14 @@ function DiscoverHub({
             className="flex-1 pr-2"
             onPress={() => navigation.navigate('CommunityDetail', { slug: item.slug })}
             accessibilityRole="button"
-            accessibilityLabel={`Open ${item.name}${unread > 0 ? `, ${unread} unread` : ''}`}
+            accessibilityLabel={`Open ${communityDisplayName(item.name)}${
+              unread > 0 ? `, ${unread} unread` : ''
+            }`}
           >
             <View className="flex-row items-center" style={{ gap: 4 }}>
               <Text className="shrink text-sm font-semibold text-lantern-text" numberOfLines={1}>
-                {item.name}
+                {/* Derived course rooms are named `code — title`. */}
+                {communityDisplayName(item.name)}
               </Text>
               {item.is_official ? (
                 <AppIcon name="checkmark-circle" size={16} color="#6366f1" />
@@ -406,7 +412,7 @@ function DiscoverHub({
           </Text>
           <Text className="text-xs text-lantern-text-tertiary mt-0.5">
             {memberCountLabel(item.memberCount)}
-            {item.questionCount > 0 ? ` · ${item.questionCount} questions` : ''}
+            {item.questionCount > 0 ? ` · ${pluralize(item.questionCount, 'question')}` : ''}
             {item.isMember ? ' · Member' : ''}
           </Text>
           {item.description ? (

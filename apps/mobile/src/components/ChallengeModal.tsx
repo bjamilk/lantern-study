@@ -12,8 +12,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Alert,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { useGameStore, GameUser, GameConfig } from '../stores';
@@ -112,7 +112,7 @@ export default function ChallengeModal({
   const handleSendChallenge = async () => {
     if (!currentUser) return;
     if (!canSend) {
-      Alert.alert(
+      appAlert(
         'Not enough questions',
         `Only ${availableCount} question${availableCount === 1 ? '' : 's'} match your filters. Lower the count or adjust filters.`
       );
@@ -120,7 +120,7 @@ export default function ChallengeModal({
     }
     try {
       await sendChallenge(buildConfig(), currentUser, opponent);
-      Alert.alert(
+      appAlert(
         'Challenge Sent',
         `${opponent.name} will be notified and can accept or decline your duel.`
       );
@@ -134,7 +134,7 @@ export default function ChallengeModal({
   const handleSoloPractice = async () => {
     if (!currentUser) return;
     if (availableCount < 1) {
-      Alert.alert('No questions', 'No testable questions match your filters.');
+      appAlert('No questions', 'No testable questions match your filters.');
       return;
     }
     try {

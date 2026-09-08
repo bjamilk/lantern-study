@@ -13,12 +13,12 @@ import {
   TouchableOpacity,
   TextInput,
   ScrollView,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Image,
   ActionSheetIOS,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { useTheme, ThemeScope } from '../theme';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
@@ -166,7 +166,7 @@ export default function QuestionModal({
           }
         );
       } else {
-        Alert.alert(
+        appAlert(
           'Add Image',
           'Choose an option',
           [
@@ -187,7 +187,7 @@ export default function QuestionModal({
   ) => {
     const { status } = await ImagePicker.requestCameraPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Camera permission is needed to take photos.');
+      appAlert('Permission Required', 'Camera permission is needed to take photos.');
       return;
     }
 
@@ -210,7 +210,7 @@ export default function QuestionModal({
   ) => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Photo library permission is needed to select images.');
+      appAlert('Permission Required', 'Photo library permission is needed to select images.');
       return;
     }
 
@@ -450,7 +450,7 @@ export default function QuestionModal({
   const validateAndSubmit = () => {
     // Validate stem
     if (!stem.trim()) {
-      Alert.alert('Error', 'Please enter a question');
+      appAlert('Error', 'Please enter a question');
       return;
     }
 
@@ -458,20 +458,20 @@ export default function QuestionModal({
     if (['mcq-single', 'mcq-multiple', 'true-false'].includes(questionType)) {
       const filledOptions = options.filter(o => o.text.trim());
       if (filledOptions.length < 2) {
-        Alert.alert('Error', 'Please add at least 2 answer options');
+        appAlert('Error', 'Please add at least 2 answer options');
         return;
       }
 
       const hasCorrect = options.some(o => o.isCorrect);
       if (!hasCorrect) {
-        Alert.alert('Error', 'Please mark at least one correct answer');
+        appAlert('Error', 'Please mark at least one correct answer');
         return;
       }
     }
 
     // Validate fill in blank
     if (questionType === 'fill-blank' && !correctAnswer.trim()) {
-      Alert.alert('Error', 'Please provide the correct answer');
+      appAlert('Error', 'Please provide the correct answer');
       return;
     }
 
@@ -479,7 +479,7 @@ export default function QuestionModal({
     if (questionType === 'matching') {
       const filledPairs = matchingPairs.filter(p => p.left.trim() && p.right.trim());
       if (filledPairs.length < 2) {
-        Alert.alert('Error', 'Please add at least 2 complete matching pairs');
+        appAlert('Error', 'Please add at least 2 complete matching pairs');
         return;
       }
     }
@@ -487,12 +487,12 @@ export default function QuestionModal({
     // Validate diagram labels
     if (questionType === 'diagram-labelling') {
       if (!diagramImage) {
-        Alert.alert('Error', 'Please upload a diagram image');
+        appAlert('Error', 'Please upload a diagram image');
         return;
       }
       const filledLabels = diagramLabels.filter(l => l.correctAnswer.trim());
       if (filledLabels.length < 2) {
-        Alert.alert('Error', 'Please add at least 2 labels with answers');
+        appAlert('Error', 'Please add at least 2 labels with answers');
         return;
       }
     }
@@ -527,9 +527,9 @@ export default function QuestionModal({
       try {
         await onSubmit(question);
         handleClose();
-        Alert.alert('Success', 'Question submitted successfully!');
+        appAlert('Success', 'Question submitted successfully!');
       } catch (error: any) {
-        Alert.alert('Error', error?.message || 'Failed to submit question.');
+        appAlert('Error', error?.message || 'Failed to submit question.');
       } finally {
         submittingRef.current = false;
         setIsSubmitting(false);

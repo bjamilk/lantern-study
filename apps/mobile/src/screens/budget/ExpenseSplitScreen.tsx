@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Pressable, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, TextInput, Pressable, TouchableOpacity } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../stores/authStore';
 import {
@@ -42,7 +43,7 @@ export default function ExpenseSplitScreen() {
 
   const handleAdd = async () => {
     if (!title.trim() || amountNum <= 0) {
-      Alert.alert('Missing fields', 'Enter a title and a total amount.');
+      appAlert('Missing fields', 'Enter a title and a total amount.');
       return;
     }
     const allNames = [userName, ...namedOthers];

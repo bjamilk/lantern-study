@@ -121,3 +121,93 @@ export function getAIResetLabel(
   if (used >= limit) return 'Resets soon';
   return 'Reset time updating...';
 }
+
+// ─────────────────────────────────────────────────────────────
+// What a student is told when a daily cap is reached
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * What each feature's daily allowance is a count OF, in plain words.
+ *
+ * On device the flashcard cap produced "Daily limit reached for this feature
+ * (generate_flashcards). Try again tomorrow." — an internal key, in brackets,
+ * shown to someone revising for an exam. The key is a routing detail; the
+ * student's question is "how many of these do I get, and when do I get more?",
+ * and that is what these nouns and the sentence below answer.
+ *
+ * A key with no entry falls back to `AI_LIMIT_FALLBACK_NOUN`: a new feature
+ * added on the server must never be able to print its own key at a student.
+ */
+export const AI_FEATURE_LIMIT_NOUNS: Record<string, string> = {
+  companion: 'AI chat replies',
+  generate_questions: 'test runs',
+  generate_flashcards: 'flashcard runs',
+  explain: 'explanations',
+  study_plan: 'study plans',
+  enhance_flashcard: 'card rewrites',
+  study_recommendations: 'study suggestions',
+  listing_description: 'listing descriptions',
+  voice_ask: 'spoken questions',
+};
+
+/** Said instead of a key nobody outside the server has ever seen. */
+export const AI_LIMIT_FALLBACK_NOUN = 'AI runs';
+
+/** The plain noun for a feature key, never the key itself. */
+export function aiFeatureLimitNoun(featureKey: string | null | undefined): string {
+  if (!featureKey) return AI_LIMIT_FALLBACK_NOUN;
+  return AI_FEATURE_LIMIT_NOUNS[featureKey] ?? AI_LIMIT_FALLBACK_NOUN;
+}
+
+/**
+ * When the allowance comes back, as a sentence — or nothing.
+ *
+ * `formatAIResetCountdown` returns "Resets in 3h 12m"; a limit message wants
+ * that as its own sentence, and wants to say NOTHING rather than guess when
+ * the server sent no window. "Try again tomorrow" was that guess, and it is
+ * wrong for most of the day: the caps reset at midnight UTC, which for a
+ * student in Lagos or Manila is the same afternoon.
+ */
+function resetSentence(resetsAt: string | null | undefined, nowMs?: number): string {
+  // A stamp that will not parse produces "Resets in NaNm" from the countdown
+  // formatter, so it is checked here rather than printed at a student.
+  if (!resetsAt || Number.isNaN(Date.parse(resetsAt))) return '';
+  const countdown = formatAIResetCountdown(resetsAt, nowMs ?? Date.now());
+  return countdown ? `${countdown}.` : '';
+}
+
+/** Everything a limit message can be built from. `resetsAt` may be absent. */
+export interface AILimitCopyInput {
+  /** The per-feature key the SERVER capped on, or null for the global allowance. */
+  featureKey?: string | null;
+  /** The cap that was hit. */
+  limit: number;
+  /** ISO timestamp the window rolls over at, when the server knows one. */
+  resetsAt?: string | null;
+  nowMs?: number;
+}
+
+/**
+ * The one sentence shown when a per-feature daily cap is reached.
+ *
+ * Names the number the student actually gets and when it comes back — the two
+ * facts that make the message act-on-able — and never the feature key, which
+ * is why this function exists rather than a template literal at each of the
+ * three call sites in the limiter.
+ */
+export function describeAIFeatureLimitReached(input: AILimitCopyInput): string {
+  const noun = aiFeatureLimitNoun(input.featureKey);
+  const used = input.limit > 0 ? `You have used today's ${input.limit} ${noun}.` : `You have used today's ${noun}.`;
+  const reset = resetSentence(input.resetsAt, input.nowMs);
+  return reset ? `${used} ${reset}` : used;
+}
+
+/** The same sentence for the whole-account allowance, which has no feature. */
+export function describeAIDailyLimitReached(input: Omit<AILimitCopyInput, 'featureKey'>): string {
+  const used =
+    input.limit > 0
+      ? `You have used today's ${input.limit} AI uses.`
+      : "You have used today's AI uses.";
+  const reset = resetSentence(input.resetsAt, input.nowMs);
+  return reset ? `${used} ${reset}` : used;
+}

@@ -3,7 +3,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import type { DeckCollaborator } from '@lantern/shared/types';
 import * as api from '../services/api';
 import { Button } from './ui';
@@ -108,14 +108,14 @@ export default function CollaboratorsModal({
       setUserSuggestions([]);
       setNewRoleId('editor');
     } catch {
-      Alert.alert('Error', 'Failed to add collaborator.');
+      appAlert('Error', 'Failed to add collaborator.');
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleRemove = (userId: string) => {
-    Alert.alert('Remove collaborator', 'Remove this collaborator from the deck?', [
+    appAlert('Remove collaborator', 'Remove this collaborator from the deck?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -125,7 +125,7 @@ export default function CollaboratorsModal({
             await api.removeDeckCollaborator(deckId, userId);
             setCollaborators(prev => prev.filter(c => c.userId !== userId));
           } catch {
-            Alert.alert('Error', 'Failed to remove collaborator.');
+            appAlert('Error', 'Failed to remove collaborator.');
           }
         },
       },

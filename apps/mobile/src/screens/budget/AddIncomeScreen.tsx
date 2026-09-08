@@ -11,8 +11,8 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useBudgetStore, INCOME_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
@@ -44,7 +44,7 @@ export default function AddIncomeScreen() {
     const amountNum = parseFloat(amount);
     
     if (!amount || amountNum <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      appAlert('Invalid Amount', 'Please enter a valid positive amount.');
       return;
     }
 
@@ -62,7 +62,7 @@ export default function AddIncomeScreen() {
       // Save silently and return — no blocking "Success" OK-tap between entries.
       navigation.goBack();
     } catch (error) {
-      Alert.alert('Error', 'Failed to add income. Please try again.');
+      appAlert('Error', 'Failed to add income. Please try again.');
     }
   }, [amount, category, description, date, addTransaction, navigation, userId]);
 

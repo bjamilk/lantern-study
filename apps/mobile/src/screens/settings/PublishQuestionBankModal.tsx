@@ -1,7 +1,6 @@
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { CampusPicker } from '../marketplace/CampusPicker';
 import { CoursePicker } from '../../components/CoursePicker';
@@ -146,14 +146,14 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
   const submit = async () => {
     if (!canSubmit) return;
     if (courseError) {
-      Alert.alert('Course needed', courseError);
+      appAlert('Course needed', courseError);
       return;
     }
     setBusy(true);
     try {
       if (isUpdate && existingBank) {
         const result = await updateQuestionBankContent(existingBank.listingId, content, provenance);
-        Alert.alert(
+        appAlert(
           'Question bank updated',
           `"${existingBank.title}" is now version ${result.version}. Buyers will see an update.`
         );
@@ -170,7 +170,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
           content,
           ...provenance,
         });
-        Alert.alert(
+        appAlert(
           'Published',
           priceValue && priceValue > 0
             ? 'Buyers get this bank instantly after payment.'
@@ -180,7 +180,7 @@ export function PublishQuestionBankModal({ test, onClose, onPublished }: Props) 
       onPublished?.();
       onClose();
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not publish question bank');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not publish question bank');
     } finally {
       setBusy(false);
     }

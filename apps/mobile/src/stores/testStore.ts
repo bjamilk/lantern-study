@@ -40,7 +40,7 @@ import {
 } from '../utils/resolveAttemptTimeLimitMinutes';
 // One raw history row → mode, score and pass mark. Pure and tested, because
 // getting it wrong is what stamped a red NOT PASSED · 0% on a practice sitting.
-import { planAttemptFromSessionRow } from '../utils/testAttemptMapping';
+import { planAttemptDurationSeconds, planAttemptFromSessionRow } from '../utils/testAttemptMapping';
 import { displayTestTitle } from '../screens/tests/testAuthoring';
 import {
   applyTimerChoices,
@@ -1154,9 +1154,10 @@ export const useTestStore = create<TestState>((set, get) => ({
           };
         });
 
-        const timeSpent = Object.values(userAnswers).reduce((sum: number, ans: any) => {
-          return sum + (ans?.timeSpentSeconds ?? ans?.time_spent_seconds ?? 0);
-        }, 0);
+        // Per-answer timings first, then the server's own total, then the
+        // session stamps. Summing the answers alone read 0 on every LEAN list
+        // row — which is why History showed 0:00 until a result was opened.
+        const timeSpent = planAttemptDurationSeconds(r) ?? 0;
 
         return {
           id: sessionId,

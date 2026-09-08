@@ -1,11 +1,44 @@
-/** Display label for group chat — prefers real name, then @username. */
+/**
+ * An email address is never a display name.
+ *
+ * A profile whose `name` column holds the address it was created from, a
+ * signed-in fallback that reached for `user_metadata.name`, an optimistic card
+ * drawn before the server's copy arrives — any of these can put
+ * `someone@example.com` where a person's name belongs, and a community board
+ * publishes it to everyone who can read the board. That happened: a removed
+ * post's tombstone carried the author's full address, initials and all, beside
+ * live cards showing the same person's real name.
+ *
+ * The address is reduced to its local part rather than dropped, because the
+ * local part is the fallback name the rest of the app already uses ("nimaj22"),
+ * and a card reading "Member" tells a reader less than one reading a handle.
+ * Only a strict address is treated this way: a name is allowed to be odd, and
+ * mangling one that merely contains an "@" would be a worse bug than the one
+ * this fixes.
+ */
+const EMAIL_SHAPED = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function scrubEmailFromDisplayName(
+  value: string | null | undefined
+): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  if (!EMAIL_SHAPED.test(trimmed)) return trimmed;
+  const localPart = trimmed.split('@')[0]?.trim();
+  return localPart || null;
+}
+
+/**
+ * Display label for group chat — prefers real name, then @username.
+ * Never an email address: see scrubEmailFromDisplayName.
+ */
 export function formatChatSenderLabel(user: {
   username?: string | null;
   name?: string | null;
 }): string {
-  const name = user.name?.trim();
+  const name = scrubEmailFromDisplayName(user.name);
   if (name) return name;
-  const raw = user.username?.trim();
+  const raw = scrubEmailFromDisplayName(user.username);
   if (raw) {
     const withoutAt = raw.startsWith('@') ? raw.slice(1).trim() : raw;
     if (withoutAt) return `@${withoutAt}`;

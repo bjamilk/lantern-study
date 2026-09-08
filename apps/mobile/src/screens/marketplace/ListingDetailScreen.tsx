@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Pressable,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import * as WebBrowser from 'expo-web-browser';
 import {
   SCREEN_KEYBOARD_BEHAVIOR,
@@ -99,9 +99,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   // plain system inset — the floor the page needs when no action bar renders.
   const baseBottomPadding = useScreenBottomPadding({ bottomExtra: 24 });
   /*
-   * The action bar below is conditionally one to four rows tall — quantity
-   * stepper, coupon row, Contact/Offer, Cart/Buy Now — which reaches ~280px on
-   * a gesture-nav device. The page used to reserve a hard-coded 140px for it,
+   * The action bar below is conditionally one or two rows tall — Contact/Offer
+   * and Cart/Buy Now. (It used to be up to four: the quantity stepper and the
+   * coupon field sat in it too, which took roughly a third of the screen away
+   * from the listing itself and cut the description mid-sentence. Those two
+   * are read-time choices, so they now render beside the price.)
+   * The page used to reserve a hard-coded 140px for the bar,
    * so roughly 140px of the listing (the tail of the description, the seller
    * block, the favourites line) could never be scrolled into view. Measuring
    * the bar is the only thing that tracks a bar whose height depends on price,
@@ -244,20 +247,20 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       if (listing.listing_kind === 'study_pack') {
         await downloadStudyPack(listingId);
         setBankOwned(true);
-        Alert.alert(
+        appAlert(
           'Added to your Library',
           'This study pack — notes, flashcards and questions — is now on all your devices.'
         );
       } else {
         await downloadQuestionBank(listingId);
         setBankOwned(true);
-        Alert.alert(
+        appAlert(
           'Added to Offline Mode',
           'This question bank is now available offline on all your devices.'
         );
       }
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not download this item');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not download this item');
     } finally {
       setDownloadingBank(false);
     }
@@ -297,7 +300,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       });
       setShowContact(false);
       setContactMessage('');
-      Alert.alert('Message sent', 'Opening chat with the seller.');
+      appAlert('Message sent', 'Opening chat with the seller.');
       const sellerId = result.sellerId || listing.seller_id || listing.user_id;
       const threadId =
         result.threadId ||
@@ -306,7 +309,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         openDm(threadId, sellerId, listing.seller?.name);
       }
     } catch (e: unknown) {
-      Alert.alert(
+      appAlert(
         'Error',
         e instanceof Error ? e.message : 'Failed to send message. Please try again.'
       );
@@ -341,7 +344,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     const surcharge = Math.round(itemTotal * surchargeBps) / 10_000;
     const payAmount = Math.round((itemTotal + surcharge) * 100) / 100;
     const quote = `${surcharge > 0 ? `Item: ${formatPrice(itemTotal)}\nService charge (${surchargeBps / 100}%): ${formatPrice(surcharge)}\n` : ''}Total: ${formatPrice(payAmount)}`;
-    Alert.alert(
+    appAlert(
       'Buy Now',
       digital
         ? `Purchase "${listing.title}"?\n\n${quote}`
@@ -376,12 +379,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               } else {
                 await load();
               }
-              Alert.alert(
+              appAlert(
                 'Order placed',
                 'Arrange pickup or delivery with the seller.'
               );
             } catch (e: unknown) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Purchase failed');
+              appAlert('Error', e instanceof Error ? e.message : 'Purchase failed');
             } finally {
               setActionLoading(false);
             }
@@ -400,12 +403,12 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       // Alert, not toast: toastStore's showToast(message, type?) has no action
       // slot, so a toast cannot offer "View cart" — and that tap is the whole
       // point of confirming (Amazon's add-to-cart sheet does the same).
-      Alert.alert('Added to cart', qty > 1 ? `${qty} items added.` : 'Item added to cart.', [
+      appAlert('Added to cart', qty > 1 ? `${qty} items added.` : 'Item added to cart.', [
         { text: 'Keep shopping', style: 'cancel' },
         { text: 'View cart', onPress: () => navigation.navigate('Cart') },
       ]);
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not add to cart');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not add to cart');
     } finally {
       setActionLoading(false);
     }
@@ -417,10 +420,10 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     try {
       const result = await validateMarketplaceCoupon(couponCode.trim(), listing.id);
       setCouponPreview({ discountAmount: result.discountAmount, finalAmount: result.finalAmount });
-      Alert.alert('Coupon applied', `${formatPrice(result.discountAmount)} off`);
+      appAlert('Coupon applied', `${formatPrice(result.discountAmount)} off`);
     } catch (e: unknown) {
       setCouponPreview(null);
-      Alert.alert('Invalid coupon', e instanceof Error ? e.message : 'Could not apply coupon');
+      appAlert('Invalid coupon', e instanceof Error ? e.message : 'Could not apply coupon');
     } finally {
       setValidatingCoupon(false);
     }
@@ -428,7 +431,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   const handleBoost = () => {
     if (!listing || !user?.id) return;
-    Alert.alert('Boost listing', 'Boost this listing for 72 hours?', [
+    appAlert('Boost listing', 'Boost this listing for 72 hours?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Boost',
@@ -437,9 +440,9 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           try {
             await boostListing(listing.id, user.id);
             await load();
-            Alert.alert('Boosted', 'Your listing is now boosted for 72 hours.');
+            appAlert('Boosted', 'Your listing is now boosted for 72 hours.');
           } catch (e: unknown) {
-            Alert.alert('Error', e instanceof Error ? e.message : 'Boost failed');
+            appAlert('Error', e instanceof Error ? e.message : 'Boost failed');
           } finally {
             setActionLoading(false);
           }
@@ -456,11 +459,11 @@ export function ListingDetailScreen({ navigation, route }: Props) {
       setShowReview(false);
       setReviewComment('');
       setReviewRating(5);
-      Alert.alert('Thanks', 'Your review was submitted.');
+      appAlert('Thanks', 'Your review was submitted.');
     } catch (e: unknown) {
       // Surface the server's reason (e.g. "Reviews are limited to buyers who
       // completed a purchase") instead of a generic failure.
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to submit review.');
+      appAlert('Error', e instanceof Error ? e.message : 'Failed to submit review.');
     } finally {
       setSending(false);
     }
@@ -468,7 +471,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   const handleMarkSold = () => {
     if (!listing || !user?.id) return;
-    Alert.alert('Mark as sold', 'Mark this listing as sold?', [
+    appAlert('Mark as sold', 'Mark this listing as sold?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Mark sold',
@@ -482,7 +485,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
 
   const handleDelete = () => {
     if (!listing || !user?.id) return;
-    Alert.alert('Delete listing', 'This cannot be undone.', [
+    appAlert('Delete listing', 'This cannot be undone.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -528,21 +531,32 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const handleToggleHelpful = async (reviewId: string) => {
     if (votingReviewId) return;
     if (!user?.id) {
-      Alert.alert('Sign in', 'Sign in to mark reviews as helpful.');
+      appAlert('Sign in', 'Sign in to mark reviews as helpful.');
       return;
     }
     setVotingReviewId(reviewId);
     try {
       await toggleReviewHelpful(listing.id, reviewId);
     } catch {
-      Alert.alert('Error', 'Could not record that. Please try again.');
+      appAlert('Error', 'Could not record that. Please try again.');
     } finally {
       setVotingReviewId(null);
     }
   };
   const crumbs = listingBreadcrumb(listing);
   const specRows = listingSpecRows(listing);
-  const typeLabel = listingTypeLabel(listing, category?.name || '');
+  const rawTypeLabel = listingTypeLabel(listing, category?.name || '');
+  /*
+   * The breadcrumb already ends with the category this listing sits in
+   * ("Lab, Tools & Equipment › Lab instruments for sale"), and the type label
+   * below it was frequently that same leaf again, word for word, in a
+   * different colour. Say it once.
+   */
+  const lastCrumb = crumbs.length > 0 ? crumbs[crumbs.length - 1].label : '';
+  const typeLabel =
+    rawTypeLabel && rawTypeLabel.trim().toLowerCase() === lastCrumb.trim().toLowerCase()
+      ? ''
+      : rawTypeLabel;
 
   return (
     <Screen bottom="none">
@@ -676,6 +690,62 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               <AppIcon name="location" size={16} color="#64748b" />
               <Text className="text-sm text-lantern-text-secondary">{listing.location}</Text>
             </View>
+          ) : null}
+
+          {/* Quantity and coupon: read-time choices, next to the price they
+              change, rather than stacked in the sticky action bar. */}
+          {!own && listing.status === 'active' && !isDigitalListingKind(listing.listing_kind) ? (
+            <>
+              {listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 ? (
+                <View className="flex-row items-center justify-between mt-3">
+                  <Text className="text-sm text-lantern-text-secondary">
+                    Qty · {listing.quantity} available
+                  </Text>
+                  <View className="flex-row items-center rounded-lg border border-lantern-border overflow-hidden">
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Decrease quantity"
+                      className="px-3 py-2"
+                      onPress={() => setSelectedQuantity((q) => Math.max(1, q - 1))}
+                    >
+                      <Text className="text-lantern-text">−</Text>
+                    </Pressable>
+                    <Text className="px-3 py-2 font-semibold text-lantern-text">
+                      {selectedQuantity}
+                    </Text>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel="Increase quantity"
+                      className="px-3 py-2"
+                      onPress={() =>
+                        setSelectedQuantity((q) => Math.min(Number(listing.quantity), q + 1))
+                      }
+                    >
+                      <Text className="text-lantern-text">+</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ) : null}
+              {listing.price && listing.price > 0 ? (
+                <View className="flex-row gap-2 mt-3">
+                  <TextInput
+                    value={couponCode}
+                    onChangeText={setCouponCode}
+                    placeholder="Coupon code"
+                    autoCapitalize="characters"
+                    className="flex-1 px-3 py-2 rounded-xl border border-lantern-border text-lantern-text text-sm"
+                    placeholderTextColor="#94a3b8"
+                  />
+                  <Button
+                    variant="secondary"
+                    loading={validatingCoupon}
+                    onPress={() => void handleApplyCoupon()}
+                  >
+                    Apply
+                  </Button>
+                </View>
+              ) : null}
+            </>
           ) : null}
 
           {pickupNudge?.message && !own ? (
@@ -1137,49 +1207,13 @@ export function ListingDetailScreen({ navigation, route }: Props) {
           onHeightChange={setActionBarHeight}
           className="absolute left-0 right-0 px-4 pt-3 bg-lantern-surface border-t border-lantern-border"
         >
-          {listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 ? (
-            <View className="flex-row items-center justify-between mb-2">
-              <Text className="text-xs text-lantern-text-secondary">
-                Qty · {listing.quantity} available
-              </Text>
-              <View className="flex-row items-center rounded-lg border border-lantern-border overflow-hidden">
-                <Pressable
-                  className="px-3 py-2"
-                  onPress={() => setSelectedQuantity((q) => Math.max(1, q - 1))}
-                >
-                  <Text className="text-lantern-text">−</Text>
-                </Pressable>
-                <Text className="px-3 py-2 font-semibold text-lantern-text">{selectedQuantity}</Text>
-                <Pressable
-                  className="px-3 py-2"
-                  onPress={() =>
-                    setSelectedQuantity((q) => Math.min(Number(listing.quantity), q + 1))
-                  }
-                >
-                  <Text className="text-lantern-text">+</Text>
-                </Pressable>
-              </View>
-            </View>
-          ) : null}
-          {listing.price && listing.price > 0 ? (
-            <View className="flex-row gap-2 mb-2">
-              <TextInput
-                value={couponCode}
-                onChangeText={setCouponCode}
-                placeholder="Coupon code"
-                autoCapitalize="characters"
-                className="flex-1 px-3 py-2 rounded-xl border border-lantern-border text-lantern-text text-sm"
-                placeholderTextColor="#94a3b8"
-              />
-              <Button
-                variant="secondary"
-                loading={validatingCoupon}
-                onPress={() => void handleApplyCoupon()}
-              >
-                Apply
-              </Button>
-            </View>
-          ) : null}
+          {/* Quantity and the coupon field used to live HERE, which made this
+              bar four rows tall — roughly a third of the screen, permanently,
+              over every listing. They are not actions: they are choices you
+              make while reading, so they moved up into the page beside the
+              price. The bar is what is left: the things you press when you
+              have decided. The applied-coupon line stays, because it changes
+              what "Buy Now" will charge. */}
           {couponPreview ? (
             <Text className="text-xs text-emerald-600 mb-2">
               Coupon applied —{' '}

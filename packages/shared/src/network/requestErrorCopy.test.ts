@@ -3,6 +3,7 @@ import {
   STALE_PROGRESS_COPY,
   UNAVAILABLE_PROGRESS_COPY,
   classifyRequestFailure,
+  humanizeFailureMessage,
   isRequestFailureRetryable,
   lastSyncedLabel,
   requestFailureCopy,
@@ -162,5 +163,44 @@ describe('progress copy', () => {
       expect(copy.title.length).toBeGreaterThan(0);
       expect(copy.body.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('humanizeFailureMessage', () => {
+  it('replaces the raw React Native message the audit found on Library and Flashcards', () => {
+    expect(humanizeFailureMessage('Network request failed')).toBe(
+      'We couldn’t reach Lantern. Check your connection and try again.',
+    );
+    expect(humanizeFailureMessage(new Error('Network request failed'))).toBe(
+      'We couldn’t reach Lantern. Check your connection and try again.',
+    );
+  });
+
+  it('replaces the browser wording for the same event with the same sentence', () => {
+    expect(humanizeFailureMessage('TypeError: Failed to fetch')).toBe(
+      humanizeFailureMessage('Network request failed'),
+    );
+  });
+
+  it('keeps a sentence the app wrote for this exact situation', () => {
+    expect(humanizeFailureMessage('Could not delete this note')).toBe('Could not delete this note');
+  });
+
+  it('never prints a stack trace at a student', () => {
+    expect(humanizeFailureMessage('JSON Parse error: Unexpected EOF')).toBe(
+      'We couldn’t load this. Something went wrong on the way to Lantern. Try again.',
+    );
+    expect(humanizeFailureMessage("undefined is not an object (evaluating 'x.y')")).toBe(
+      'We couldn’t load this. Something went wrong on the way to Lantern. Try again.',
+    );
+  });
+
+  it('says something rather than nothing when the failure carried no message', () => {
+    expect(humanizeFailureMessage('')).toBe(
+      'We couldn’t load this. Something went wrong on the way to Lantern. Try again.',
+    );
+    expect(humanizeFailureMessage({ status: 503 })).toBe(
+      'Lantern is having a problem. This one is on our side, not yours. Try again in a moment.',
+    );
   });
 });

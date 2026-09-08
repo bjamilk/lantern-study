@@ -13,12 +13,12 @@ import {
   TouchableOpacity,
   ScrollView,
   Image,
-  Alert,
   TextInput,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
@@ -139,7 +139,7 @@ export default function GroupInfoModal({
     if (!isAdmin || uploadingAvatar) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Allow photo library access to set a group avatar.');
+      appAlert('Permission needed', 'Allow photo library access to set a group avatar.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -167,9 +167,9 @@ export default function GroupInfoModal({
       });
       setAvatarPreview(uploaded.url || uploaded.avatarUrl);
       onAvatarUpdated?.(group.id, uploaded.avatarUrl);
-      Alert.alert('Success', 'Group avatar updated');
+      appAlert('Success', 'Group avatar updated');
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Upload failed',
         error instanceof Error ? error.message : 'Could not update group avatar'
       );
@@ -181,11 +181,11 @@ export default function GroupInfoModal({
   const handleSaveDetails = () => {
     onUpdateDetails(group.id, name, description, discovery);
     setHasChanges(false);
-    Alert.alert('Success', 'Group details updated');
+    appAlert('Success', 'Group details updated');
   };
 
   const handleArchive = () => {
-    Alert.alert(
+    appAlert(
       group.isArchived ? 'Unarchive Group' : 'Archive Group',
       group.isArchived 
         ? 'This will restore the group for all members.'
@@ -204,7 +204,7 @@ export default function GroupInfoModal({
   };
 
   const handleDelete = () => {
-    Alert.alert(
+    appAlert(
       'Delete Group',
       'This is permanent and cannot be undone. Group chat data will be removed. Past test scores stay in your history, but they won’t appear under Group performance after the group is gone.',
       [
@@ -223,13 +223,13 @@ export default function GroupInfoModal({
 
   const handleLeave = () => {
     if (isSoleAdmin) {
-      Alert.alert(
+      appAlert(
         'Cannot leave',
         'You are the only admin. Promote another member before leaving.',
       );
       return;
     }
-    Alert.alert(
+    appAlert(
       'Leave Group',
       `Leave "${group.name}"? You will lose access until someone invites you again.`,
       [
@@ -244,7 +244,7 @@ export default function GroupInfoModal({
   };
 
   const handlePromote = (member: GroupMember) => {
-    Alert.alert(
+    appAlert(
       'Promote to Admin',
       `Make ${member.name} an admin?`,
       [
@@ -255,7 +255,7 @@ export default function GroupInfoModal({
   };
 
   const handleDemote = (member: GroupMember) => {
-    Alert.alert(
+    appAlert(
       'Remove Admin',
       `Remove admin privileges from ${member.name}?`,
       [
@@ -266,7 +266,7 @@ export default function GroupInfoModal({
   };
 
   const handleRemove = (member: GroupMember) => {
-    Alert.alert(
+    appAlert(
       'Remove Member',
       `Remove ${member.name} from the group?`,
       [

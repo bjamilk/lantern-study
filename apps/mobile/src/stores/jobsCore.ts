@@ -113,6 +113,12 @@ export interface TrackedJob {
   /** Server-supplied stage label, when there is one. */
   stage?: string;
   error?: string;
+  /**
+   * Why a failed job failed, when the reason changes what a student can do:
+   * `limit` = a daily cap refused it (retrying cannot help until the reset),
+   * `unavailable` = the provider was down (retry is honest). Absent = unknown.
+   */
+  failureKind?: 'limit' | 'unavailable' | 'other';
   artifact?: JobArtifactRef;
   /**
    * Where this job's save actually landed, recorded the moment it landed and
@@ -915,3 +921,16 @@ export const isSyncOpOrphanedByDeckDelete = (op: QueuedSyncOpView, deckId: strin
   }
   return false;
 };
+
+/**
+ * Classify a thrown generation error for the job record. A 429 is a daily
+ * cap: the Usage & limits copy already tells the student when it resets, so
+ * the sheet must not offer a Retry that can only fail again.
+ */
+export function classifyJobFailure(error: unknown): 'limit' | 'unavailable' | 'other' {
+  const e = error as { status?: number; code?: string; message?: string } | null;
+  if (!e) return 'other';
+  if (e.status === 429 || e.code === 'RATE_LIMIT' || e.code === 'AI_LIMIT_REACHED') return 'limit';
+  if (e.status === 503 || e.status === 502 || /temporarily unavailable/i.test(e.message ?? '')) return 'unavailable';
+  return 'other';
+}

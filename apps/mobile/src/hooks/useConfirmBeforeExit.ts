@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Alert } from 'react-native';
+import { appAlert } from '../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 
 export interface ConfirmBeforeExitOptions {
@@ -39,7 +39,7 @@ export function useConfirmBeforeExit(
         onConfirm,
       } = optionsRef.current;
 
-      Alert.alert(title, message, [
+      appAlert(title, message, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: confirmLabel,

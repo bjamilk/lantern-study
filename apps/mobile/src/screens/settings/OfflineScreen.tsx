@@ -9,7 +9,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   RefreshControl,
   Modal,
@@ -17,6 +16,7 @@ import {
   Switch,
   useWindowDimensions,
 } from 'react-native';
+import { appAlert, confirmAsync } from '../../components/ui/appDialog';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useChrome } from '../../components/layout/ChromeContext';
@@ -25,12 +25,15 @@ import { useOfflineStore, OfflineTest, PendingResult } from '../../stores/offlin
 import { matchesCourseFilter } from '../../utils/libraryArchive';
 import { useTestStore } from '../../stores/testStore';
 import { offlineQuestionsToTestQuestions } from '../../utils/questionHelpers';
+import { planBundlePlayability } from '../../utils/offlineQuestionShape';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { restoreQuestionBanks } from '../../services/api';
 import { PublishQuestionBankModal } from './PublishQuestionBankModal';
 import { getConnectionStatus, syncCopy, featureAccents, lightColors } from '@lantern/shared/design';
+import { pluralize } from '@lantern/shared/utils';
+import { humanizeFailureMessage } from '@lantern/shared/network';
 import { useNetworkStatus, usePendingWork } from '../../hooks';
 import { syncService } from '../../services/syncService';
 import {
@@ -175,7 +178,7 @@ export default function OfflineScreen() {
   };
 
   const handleDeleteTest = (test: OfflineTest) => {
-    Alert.alert(
+    appAlert(
       'Delete Download',
       `Remove "${test.testName}" from offline storage?`,
       [
@@ -193,12 +196,30 @@ export default function OfflineScreen() {
 
   const handleStartOfflineTest = async (test: OfflineTest, mode: 'test' | 'study' = 'test') => {
     if (!test.questions.length) {
-      Alert.alert('No Questions', 'This offline bundle has no questions.');
+      appAlert('No Questions', 'This offline bundle has no questions.');
       return;
     }
 
+    // A downloaded question with no readable answer options cannot be
+    // answered — on device that shipped as four blank rows and a score the
+    // student never earned. Leave those out, and say so; if none are left,
+    // do not open a session at all.
+    const playability = planBundlePlayability(test.questions);
+    if (!playability.canStart) {
+      appAlert('Nothing to answer', playability.notice ?? 'This offline bundle has no questions.');
+      return;
+    }
+    if (playability.notice) {
+      // Asked BEFORE the session opens, not thrown over the first question:
+      // a shorter test than the one they downloaded is their call to make.
+      const proceed = await confirmAsync('Some questions left out', playability.notice, {
+        confirmLabel: 'Start anyway',
+      });
+      if (!proceed) return;
+    }
+
     try {
-      const questions = offlineQuestionsToTestQuestions(test.questions);
+      const questions = offlineQuestionsToTestQuestions(playability.playable);
       // Study mode: untimed, unscored practice — web bundles always offered
       // it; mobile hardcoded scored tests.
       await startQuestionSet(test.testName, questions, mode, {
@@ -224,7 +245,7 @@ export default function OfflineScreen() {
         }),
       });
     } catch {
-      Alert.alert('Error', 'Failed to start offline test.');
+      appAlert('Error', 'Failed to start offline test.');
     }
   };
 
@@ -238,7 +259,7 @@ export default function OfflineScreen() {
    */
   const handleSync = async () => {
     if (pending.total === 0) {
-      Alert.alert('Nothing to sync', 'All your work is already uploaded.');
+      appAlert('Nothing to sync', 'All your work is already uploaded.');
       return;
     }
 
@@ -296,22 +317,22 @@ export default function OfflineScreen() {
       scoresRemaining;
 
     if (remaining === 0) {
-      Alert.alert('Synced', 'Everything has been uploaded.');
+      appAlert('Synced', 'Everything has been uploaded.');
     } else if (synced > 0) {
-      Alert.alert(
+      appAlert(
         'Partly synced',
-        `${synced} item${synced !== 1 ? 's' : ''} uploaded; ${remaining} still waiting. ` +
+        `${pluralize(synced, 'item')} uploaded; ${remaining} still waiting. ` +
           'The rest is still saved on this device — check your connection and try again.'
       );
     } else if (!queueSnapshot.isOnline || !network.isConnected) {
       // Offline is not a failure: nothing was attempted, nothing was lost.
-      Alert.alert(
+      appAlert(
         'Waiting for a connection',
-        `${remaining} item${remaining !== 1 ? 's' : ''} saved on this device. ` +
+        `${pluralize(remaining, 'item')} saved on this device. ` +
           'They will upload automatically as soon as you are back online.'
       );
     } else {
-      Alert.alert(
+      appAlert(
         'Sync failed',
         'Nothing could be uploaded. Your work is still saved on this device and will sync ' +
           'automatically once you are back online.'
@@ -320,7 +341,7 @@ export default function OfflineScreen() {
   };
 
   const handleClearAll = () => {
-    Alert.alert(
+    appAlert(
       'Clear all downloads',
       'This will remove all downloaded tests and pending results. This action cannot be undone.',
       [
@@ -343,14 +364,15 @@ export default function OfflineScreen() {
     try {
       const { restored } = await restoreQuestionBanks();
       await loadOfflineData(userId);
-      Alert.alert(
+      appAlert(
         'Restore complete',
         restored > 0
-          ? `Restored ${restored} question bank${restored !== 1 ? 's' : ''}.`
+          ? `Restored ${pluralize(restored, 'question bank')}.`
           : 'No purchased question banks to restore.'
       );
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not restore purchases');
+      // A transport failure or server string is never printed as-is.
+      appAlert('Could not restore purchases', humanizeFailureMessage(e));
     } finally {
       setRestoringBanks(false);
     }
@@ -370,7 +392,7 @@ export default function OfflineScreen() {
           ) : null}
         </View>
         <Text style={[styles.testMeta, { color: colors.textSecondary }]}>
-          {test.groupName} • {test.questionCount} questions
+          {test.groupName} • {pluralize(test.questionCount, 'question')}
         </Text>
         <View style={styles.testDetails}>
           <View style={styles.detailBadge}>

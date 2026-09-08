@@ -199,7 +199,9 @@ export async function refundJobCreditOnce(record: JobRecord | null): Promise<boo
   // failed through no fault of theirs.
   const pool = charge.pool === 'bonus' ? 'bonus' : 'daily';
   if (charge.featureKey) {
-    await refundFeatureAiCredit(userId, charge.featureKey, pool);
+    // The whole reserved amount, not a hard-coded 1: a feature route that
+    // reserved several credits must not keep the difference.
+    await refundFeatureAiCredit(userId, charge.featureKey, pool, charge.credits);
   } else {
     await refundAiCredits(userId, charge.credits, pool);
   }

@@ -9,33 +9,10 @@
  * options because the cloud path cast instead of converting.
  */
 import { offlineQuestionsToTestQuestions } from '../utils/questionHelpers';
-
-// Mirrors mapMessageToOfflineQuestion in offlineStore (not exported).
-function mapMessageToOfflineQuestion(message: any, index: number) {
-  const payload = message.question || message.questionData || message;
-  const stem = payload.questionStem || payload.stem || message.text || message.content;
-  if (!stem) return null;
-  const rawOptions = payload.options || [];
-  const options = Array.isArray(rawOptions)
-    ? rawOptions.map((opt: any, i: number) => ({
-        id: String(opt.id ?? `opt-${i}`),
-        text: String(opt.text ?? ''),
-        isCorrect: Boolean(opt.isCorrect ?? payload.correctAnswerIds?.includes?.(opt.id)),
-      }))
-    : [];
-  return {
-    id: String(message.id ?? `q-${index}`),
-    stem: String(stem),
-    type: String(payload.questionType || payload.type || 'mcq-single'),
-    options,
-    correctAnswer: payload.correctAnswer ?? payload.acceptableAnswers?.[0],
-    acceptableAnswers: Array.isArray(payload.acceptableAnswers) ? payload.acceptableAnswers : undefined,
-    matchingPromptItems: Array.isArray(payload.matchingPromptItems) ? payload.matchingPromptItems : undefined,
-    matchingAnswerItems: Array.isArray(payload.matchingAnswerItems) ? payload.matchingAnswerItems : undefined,
-    correctMatches: Array.isArray(payload.correctMatches) ? payload.correctMatches : undefined,
-    tags: payload.tags || message.tags || [],
-  };
-}
+// The SHIPPED mapper, not a copy of it. This file used to mirror
+// offlineStore's private version, so it stayed green while the real one
+// dropped every option's text (build 172).
+import { normalizeOfflineBundleQuestion as mapMessageToOfflineQuestion } from '../utils/offlineQuestionShape';
 
 const WEB_SHAPED = {
   id: 'q1',

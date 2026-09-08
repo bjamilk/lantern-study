@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Alert } from 'react-native';
+import { appAlert } from '../components/ui/appDialog';
 import { formatAiTutorReply, parseAiQuery } from '@lantern/shared/utils';
 import { aiAskTutor } from '../services/ai';
 
@@ -44,13 +44,13 @@ export function useAiTutorSend({ onPostAnswer }: UseAiTutorSendOptions) {
         if (!answer) {
           // A 200 with an empty answer (quota exhausted, provider returned
           // nothing) used to swallow the question along with the composer text.
-          Alert.alert('No answer', 'The AI Tutor did not return an answer. Please try again.');
+          appAlert('No answer', 'The AI Tutor did not return an answer. Please try again.');
           return 'failed';
         }
         await onPostAnswer(formatAiTutorReply(answer));
         return 'answered';
       } catch (error) {
-        Alert.alert(
+        appAlert(
           'AI Tutor failed',
           error instanceof Error ? error.message : 'Please try again.'
         );

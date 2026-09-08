@@ -8,13 +8,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
   Text,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useAuthStore } from '../../stores';
 import { ScreenHeader } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
@@ -83,7 +83,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
   const handleUnblock = useCallback(
     (target: BlockedUser) => {
       if (!user?.id || busyId) return;
-      Alert.alert(
+      appAlert(
         `Unblock ${target.name}?`,
         'They will be able to message you again.',
         [
@@ -97,7 +97,7 @@ export function BlockedUsersScreen({ navigation }: Props) {
                   await unblockUser(user.id, target.id);
                   setBlocked(prev => prev.filter(b => b.id !== target.id));
                 } catch (err) {
-                  Alert.alert(
+                  appAlert(
                     'Could not unblock',
                     err instanceof Error ? err.message : 'Please try again.'
                   );

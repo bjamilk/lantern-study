@@ -202,3 +202,26 @@ export function pruneTimerChoices(
   }
   return next;
 }
+
+/* ------------------------------------------------------------------ *
+ * What the mode cards promise
+ * ------------------------------------------------------------------ */
+
+/**
+ * The line under "Test Mode" in the start sheet.
+ *
+ * It was the constant "Timed • Scored", printed beside a stats strip that
+ * said "∞ / No limit" for the very same test (device finding, build 172): the
+ * card promised a clock the session would never draw. The timer is a property
+ * of THIS test, so the card reads it from the same minutes the strip and the
+ * launch use — `resolveDefaultSessionMinutes`.
+ */
+export function describeTestModeCard(minutes: number): string {
+  const timing = Number.isFinite(minutes) && minutes > 0 ? `${Math.round(minutes)} min` : 'Untimed';
+  return `${timing} • Scored\nNo hints`;
+}
+
+/** The line under "Study Mode". A practice sitting has no timer, ever. */
+export function describeStudyModeCard(): string {
+  return 'Untimed • Feedback\nLearn as you go';
+}

@@ -1,7 +1,7 @@
+import { pluralize } from '@lantern/shared/utils';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -10,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
 import {
   COMMUNITY_COPY,
@@ -28,6 +29,7 @@ import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../discove
 import type { ChatStackParamList } from '../../navigation/types';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { toTab } from '../../navigation/nestedTab';
+import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
 
 type CreateGroupParams = ChatStackParamList['CreateGroup'];
 
@@ -210,7 +212,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
   const handlePickAvatar = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Allow photo library access to set a group avatar.');
+      appAlert('Permission needed', 'Allow photo library access to set a group avatar.');
       return;
     }
 
@@ -234,7 +236,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
       });
       setAvatarUrl(`data:${prepared.contentType};base64,${prepared.base64Data}`);
     } catch (e: unknown) {
-      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not set avatar');
+      appAlert('Upload failed', e instanceof Error ? e.message : 'Could not set avatar');
     } finally {
       setPickingAvatar(false);
     }
@@ -242,14 +244,18 @@ export function CreateGroupScreen({ navigation, route }: Props) {
 
   const handleCreate = useCallback(async () => {
     if (!user?.id || !groupName.trim()) {
-      Alert.alert('Group name required', 'Please enter a group name.');
+      appAlert('Group name required', 'Please enter a group name.');
       return;
     }
 
     setIsCreating(true);
     try {
+      // Never the address: every member of the new group sees this name.
       const ownerName =
-        user.user_metadata?.name || user.user_metadata?.full_name || user.email || 'User';
+        scrubEmailFromDisplayName(user.user_metadata?.name) ||
+        scrubEmailFromDisplayName(user.user_metadata?.full_name) ||
+        scrubEmailFromDisplayName(user.email) ||
+        'User';
 
       const created = await createGroup({
         name: groupName.trim(),
@@ -336,7 +342,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
       // Pre-migration the API answers 503 `Study groups are not available yet`
       // (§3.1). Surfacing the server's own sentence is the difference between
       // a degrade and a mystery.
-      Alert.alert(
+      appAlert(
         'Error',
         error instanceof Error && error.message
           ? error.message
@@ -493,8 +499,8 @@ export function CreateGroupScreen({ navigation, route }: Props) {
         }
         subtitle={
           isSubGroup && parentName
-            ? `Inside "${parentName}" · ${selectedUsers.length + 1} members`
-            : `${selectedUsers.length + 1} members`
+            ? `Inside "${parentName}" · ${pluralize(selectedUsers.length + 1, 'member')}`
+            : pluralize(selectedUsers.length + 1, 'member')
         }
         right={
           <Button variant="ghost" size="sm" onPress={() => setStep('select_members')}>

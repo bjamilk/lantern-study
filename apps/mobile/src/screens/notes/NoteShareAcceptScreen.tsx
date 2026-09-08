@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { acceptNoteShareLink, previewNoteShareLink } from '../../services/notes';
 import { useNotesStore } from '../../stores/notesStore';
 import { Button, Card } from '../../components/ui';
@@ -58,7 +59,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
       await loadNotes();
       navigation.navigate('NoteEditor', { noteId: result.note.id });
     } catch (cause) {
-      Alert.alert('Could not accept invite', cause instanceof Error ? cause.message : 'Try again.');
+      appAlert('Could not accept invite', cause instanceof Error ? cause.message : 'Try again.');
     } finally {
       setAccepting(false);
     }

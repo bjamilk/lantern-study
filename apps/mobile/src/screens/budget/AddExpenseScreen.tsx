@@ -11,8 +11,8 @@ import {
   ScrollView,
   TouchableOpacity,
   TextInput,
-  Alert,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useBudgetStore, EXPENSE_CATEGORIES } from '../../stores/budgetStore';
 import { useTheme } from '../../theme';
@@ -44,7 +44,7 @@ export default function AddExpenseScreen() {
     const amountNum = parseFloat(amount);
 
     if (!amount || amountNum <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive amount.');
+      appAlert('Invalid Amount', 'Please enter a valid positive amount.');
       return;
     }
 
@@ -62,7 +62,7 @@ export default function AddExpenseScreen() {
       // Save silently and return — no blocking "Success" OK-tap between entries.
       navigation.goBack();
     } catch (error) {
-      Alert.alert('Error', 'Failed to add expense. Please try again.');
+      appAlert('Error', 'Failed to add expense. Please try again.');
     }
   }, [amount, category, description, date, addTransaction, navigation, userId]);
 

@@ -9,8 +9,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
 import type { CompanionConversation, CompanionUserContext } from '@lantern/shared';
@@ -432,7 +432,7 @@ export function AICompanionPanel({ context }: Props) {
       const { Audio } = await import('expo-av');
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Microphone access is required for voice dictation.');
+        appAlert('Permission needed', 'Microphone access is required for voice dictation.');
         return;
       }
       await Audio.setAudioModeAsync({
@@ -457,7 +457,7 @@ export function AICompanionPanel({ context }: Props) {
         screen: context?.currentScreen,
       });
     } catch {
-      Alert.alert('Error', 'Could not start recording. Check microphone permission and try again.');
+      appAlert('Error', 'Could not start recording. Check microphone permission and try again.');
     }
   }, [context?.currentScreen, finishDictation, isRecording, isTranscribing]);
 
@@ -528,7 +528,7 @@ export function AICompanionPanel({ context }: Props) {
   }, [startNewChat]);
 
   const handleDeleteChat = useCallback(() => {
-    Alert.alert(
+    appAlert(
       'Delete this chat?',
       'Past chats stay in history. This only removes the current conversation.',
       [
@@ -569,11 +569,23 @@ export function AICompanionPanel({ context }: Props) {
             <AppIcon name="close" size={24} color="#94a3b8" />
           </Pressable>
         </View>
-        <View className="px-4 pb-2 flex-row items-center justify-between">
+        {/*
+          Two lines, not one row.
+
+          Side by side, the disclaimer and the credit line shared a phone's
+          width and both lost: the device pass read
+          "…Not professional advice.71/100 AI uses left ·" — no space where
+          the row ran out, the reset countdown gone off the right edge. They
+          are two different sentences about two different things; stacking
+          them is what lets each one finish.
+        */}
+        <View className="px-4 pb-2">
           <AIDisclaimer compact textColor="#64748b" linkColor="#c45c26" />
           {/* Chat spends daily AI credits; the floating badge is hidden while
               the panel is open, so show the countdown here instead. */}
-          <AIUsageBadge variant="inline" cost={AI_FEATURE_CREDIT_COST} />
+          <View className="mt-1">
+            <AIUsageBadge variant="inline" cost={AI_FEATURE_CREDIT_COST} />
+          </View>
         </View>
 
         {showHistoryList ? (

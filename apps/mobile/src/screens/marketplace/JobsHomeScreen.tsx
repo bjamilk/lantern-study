@@ -414,9 +414,15 @@ export function JobsHomeScreen() {
     <Screen edges={[]} bottom="none" keyboard>
       {/* No back button: Jobs is a root tab destination now, not a screen
           reached from inside the marketplace. */}
+      {/* ONE header. This screen used to draw "Jobs / Explore opportunities"
+          here and "Find your next opportunity / Search roles from companies,
+          organizations, and independent posters." again in the body, directly
+          below it — two stacked page headers saying the same thing, under a
+          "Jobs" segment that was already selected. The useful sentence moved
+          up here; the second header is gone. */}
       <ScreenHeader safeTop
         title="Jobs"
-        subtitle="Explore opportunities"
+        subtitle="Roles from companies, organizations, and independent posters."
         right={
           <Pressable
             onPress={() => navigation.navigate("CreateJob")}
@@ -431,16 +437,7 @@ export function JobsHomeScreen() {
         contentContainerStyle={{ paddingBottom: tabBarClearance }}
         keyboardShouldPersistTaps="handled"
       >
-        <View className="px-4 pb-4">
-          <Text className="text-2xl font-bold text-lantern-text">
-            Find your next opportunity
-          </Text>
-          <Text className="mt-1 text-sm leading-5 text-lantern-text-secondary">
-            Search roles from companies, organizations, and independent posters.
-          </Text>
-        </View>
-
-        <View className="mx-4 rounded-2xl border border-lantern-border bg-lantern-surface p-3">
+        <View className="mx-4 mt-4 rounded-2xl border border-lantern-border bg-lantern-surface p-3">
           <TextInput
             className="h-12 rounded-xl border border-lantern-border bg-lantern-background px-4 text-sm text-lantern-text"
             placeholder="Job title, skill, or company"

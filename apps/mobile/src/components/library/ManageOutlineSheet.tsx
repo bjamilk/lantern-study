@@ -17,7 +17,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -53,6 +52,7 @@ import {
 } from '../../services/academic';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../layout';
 import { AppIcon } from '../ui/AppIcon';
+import { appAlert } from '../ui/appDialog';
 
 export interface ManageOutlineSheetProps {
   courseId: string | null;
@@ -305,7 +305,7 @@ export function ManageOutlineSheet({
     (topic: CourseTopic) => {
       // Both halves of deleteBody are load-bearing: shared (it disappears for
       // everyone) and no-work-lost (artefacts only unfile).
-      Alert.alert(formatDeleteTopicTitle(topic.title), COURSE_TOPIC_COPY.deleteBody, [
+      appAlert(formatDeleteTopicTitle(topic.title), COURSE_TOPIC_COPY.deleteBody, [
         { text: COURSE_TOPIC_COPY.deleteCancel, style: 'cancel' },
         { text: COURSE_TOPIC_COPY.deleteConfirm, style: 'destructive', onPress: () => void runDelete(topic) },
       ]);

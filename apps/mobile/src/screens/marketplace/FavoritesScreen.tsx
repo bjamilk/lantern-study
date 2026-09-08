@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { FlatList, Pressable, Text, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuthStore, useMarketplaceStore } from '../../stores';
 import { Button } from '../../components/ui';
@@ -42,13 +43,13 @@ export function FavoritesScreen({ navigation }: { navigation: NavigationProp }) 
       .then(() =>
         // Alert, not toast: showToast(message, type?) has no action slot, so a
         // toast cannot offer "View cart" (same call as ListingDetail).
-        Alert.alert('Added to cart', 'Item added to cart.', [
+        appAlert('Added to cart', 'Item added to cart.', [
           { text: 'Keep shopping', style: 'cancel' },
           { text: 'View cart', onPress: () => navigation.navigate('Cart') },
         ])
       )
       .catch((err: unknown) =>
-        Alert.alert('Error', err instanceof Error ? err.message : 'Could not add to cart')
+        appAlert('Error', err instanceof Error ? err.message : 'Could not add to cart')
       );
   };
 

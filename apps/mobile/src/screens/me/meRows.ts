@@ -12,6 +12,7 @@
  * compile error rather than a blank row.
  */
 import type { FeatureKey } from '@lantern/shared/design';
+import { LOW_DATA_MODE_HINT } from '@lantern/shared/settings';
 import type { AppIconName } from '../../components/ui/appIconMap';
 
 export type MeRowId =
@@ -148,7 +149,7 @@ export function buildMeSections({ darkMode, lowDataMode }: MeState): MeSection[]
         {
           id: 'lowData',
           label: 'Low-data mode',
-          hint: 'Skip images and heavy downloads on mobile data',
+          hint: LOW_DATA_MODE_HINT,
           icon: 'cellular',
           kind: 'switch',
           value: lowDataMode,

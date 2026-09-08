@@ -8,6 +8,7 @@ import {
   Notification,
 } from "../types";
 import { cacheService } from "./cache";
+import { scrubEmailFromDisplayName } from "@lantern/shared/utils/displayNames";
 import { logger } from "../utils/logger";
 import { buildFlashcardUpdateData } from "../utils/flashcardUpdate";
 import {
@@ -270,7 +271,10 @@ function mapProfileSender(
 ) {
   return {
     id: profile?.id || senderId,
-    name: profile?.name || "Unknown",
+    // Never an address: a profiles row created from an email sign-up can hold
+    // the address itself, and this is the one serialiser every board, DM and
+    // group message sender passes through.
+    name: scrubEmailFromDisplayName(profile?.name) || "Unknown",
     username: profile?.username || undefined,
     avatarUrl: profile?.avatar_url,
     points: 0,

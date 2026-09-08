@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text } from 'react-native';
 import { UNAVAILABLE_PROGRESS_COPY } from '@lantern/shared/network';
+import { pluralize } from '@lantern/shared/utils';
 import { Card, Button, useFeatureAccent } from '../ui';
 import type { UserLevel } from '../../types/dashboardStats';
 import { AppIcon } from '../ui/AppIcon';
@@ -65,13 +66,13 @@ export function DashboardHeroCard({
   // history and is withheld when we could not fetch it.
   const subtitle =
     dueCount > 0
-      ? `${dueCount} flashcard${dueCount !== 1 ? 's' : ''} due for review.`
+      ? `${pluralize(dueCount, 'flashcard')} due for review.`
       : !progressKnown
         ? UNAVAILABLE_PROGRESS_COPY.body
         : progressPending
           ? 'Loading your progress…'
           : totalTests > 0
-          ? `You've completed ${totalTests} test${totalTests !== 1 ? 's' : ''}. What's next?`
+          ? `You've completed ${pluralize(totalTests, 'test')}. What's next?`
           : 'Import material or review flashcards to get started.';
 
   // Figures are drawn only when they are real AND here: not offline with

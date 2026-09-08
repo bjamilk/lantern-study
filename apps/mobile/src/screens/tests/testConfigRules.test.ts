@@ -1,4 +1,6 @@
 import {
+  describeStudyModeCard,
+  describeTestModeCard,
   isTestConfigValid,
   applyTimerChoices,
   planTimerChoicePersist,
@@ -252,5 +254,33 @@ describe('planTimerChoicePersist · untouched sheet', () => {
   it('still records on start, and on cancel once the timer was touched', () => {
     expect(planTimerChoicePersist({ timerDurationSeconds: 600, sessionMode: 'test', exit: 'start', touched: false })).toBe(10);
     expect(planTimerChoicePersist({ timerDurationSeconds: 0, sessionMode: 'test', exit: 'cancel', touched: true })).toBe(0);
+  });
+});
+
+describe('describeTestModeCard: the card and the strip say one thing', () => {
+  it('names the minutes a timed test actually runs for', () => {
+    expect(describeTestModeCard(45)).toBe('45 min • Scored\nNo hints');
+  });
+
+  it('says Untimed for a test whose timer is "No limit"', () => {
+    // The defect: this card said "Timed • Scored" beside a strip reading
+    // "∞ / No limit" for the same test.
+    expect(describeTestModeCard(0)).toBe('Untimed • Scored\nNo hints');
+  });
+
+  it('agrees with the strip for every stored timer choice', () => {
+    for (const stored of [0, 1, 5, 45]) {
+      const minutes = resolveDefaultSessionMinutes({
+        timerChosen: true,
+        storedMinutes: stored,
+        questionCount: 10,
+      });
+      const stripSaysNoLimit = minutes === 0;
+      expect(describeTestModeCard(minutes).startsWith('Untimed')).toBe(stripSaysNoLimit);
+    }
+  });
+
+  it('never promises a timer for practice', () => {
+    expect(describeStudyModeCard()).toContain('Untimed');
   });
 });

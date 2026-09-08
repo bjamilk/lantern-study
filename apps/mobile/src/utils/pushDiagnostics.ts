@@ -66,6 +66,21 @@ export type PushFailureKind =
   | 'rate-limited'
   | 'unknown';
 
+/**
+ * What each kind means to the person holding the phone.
+ *
+ * One sentence, no build words: which of these is true changes what they can
+ * do about it, and nothing else here does. `PUSH_FAILURE_KIND_COPY` keeps the
+ * build-facing sentence for the disclosure.
+ */
+export const PUSH_FAILURE_KIND_PLAIN_COPY: Record<PushFailureKind, string> = {
+  'apns-credentials': 'Notifications are not set up for this build yet.',
+  'invalid-credentials': 'Notifications are not set up for this build yet.',
+  'device-not-registered': 'This phone needs to register for notifications again.',
+  'rate-limited': 'Too many notifications at once — this one was dropped.',
+  unknown: 'The notification service would not take it.',
+};
+
 /** What each kind means, for the diagnostics panel only. */
 export const PUSH_FAILURE_KIND_COPY: Record<PushFailureKind, string> = {
   'apns-credentials': 'No Apple push credentials are uploaded for this build.',
@@ -156,11 +171,13 @@ export const jobPushFailureRows = (
 ): PushDiagnosticRow[] => {
   const raw = jobPushFailureDetail(audit);
   if (!raw) return [];
+  const kind = classifyPushFailure(raw);
   return [
     {
       key: 'push-failure',
       label: 'Last notification failure',
-      value: `${PUSH_FAILURE_KIND_COPY[classifyPushFailure(raw)]} (${raw})`,
+      value: PUSH_FAILURE_KIND_PLAIN_COPY[kind],
+      detail: `${PUSH_FAILURE_KIND_COPY[kind]} (${raw})`,
       state: 'bad',
     },
   ];
@@ -224,7 +241,20 @@ export interface PushDiagnosticRow {
     | 'register-error'
     | 'push-failure';
   label: string;
+  /** The plain half. Always safe to show a student. */
   value: string;
+  /**
+   * The build-facing half — an Expo message, an APNs credential string, an EAS
+   * slug — kept ONLY for the "Show details" disclosure.
+   *
+   * Build 172 printed "No Apple push credentials are uploaded for this build.
+   * (Could not find APNs credentials for com.lanternstudy.app.dev
+   * (@bjamilk/lantern-study)…)" straight onto a student's settings screen, on
+   * an Android phone. None of it is theirs to read or act on, and all of it is
+   * needed in a bug report — so it moves behind a disclosure rather than being
+   * deleted.
+   */
+  detail?: string;
   state: 'ok' | 'bad' | 'unknown';
 }
 
@@ -440,8 +470,112 @@ export const pushErrorRows = (error: string | null | undefined): PushDiagnosticR
     {
       key: 'register-error',
       label: 'Last registration error',
-      value: error,
+      // Same split as the failure row: the student is told THAT it failed;
+      // the OS/Expo sentence that says why is for the disclosure.
+      value: 'This phone could not get a notification token.',
+      detail: error,
       state: 'bad',
     },
   ];
+};
+
+/** True when any row is carrying build-facing text behind the disclosure. */
+export const hasPushDetails = (rows: readonly PushDiagnosticRow[]): boolean =>
+  rows.some((row) => Boolean(row.detail));
+
+// ─────────────────────────────────────────────────────────────
+// The Settings switch, and what it is allowed to claim
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * What the "Push Notifications" row shows.
+ *
+ * On device the switch read ON while the panel four lines above it said
+ * "Permission on this phone: Not allowed yet" and "Push token on this device:
+ * None yet" — the switch was reporting a stored PREFERENCE and reading as a
+ * promise about this phone. A student with it on got nothing and had no reason
+ * to look further.
+ *
+ * So the switch now shows what will actually happen here: on only when the
+ * preference is on AND this device can be reached. `unknown` — the server
+ * could not be asked — follows the preference, because a failed request is not
+ * evidence that notifications are off. The subtitle always names the half that
+ * is missing, and `needsPermission` tells the screen that flipping it on has
+ * to ask the OS rather than only writing a setting.
+ */
+export interface PushToggleState {
+  /** What the switch renders. */
+  value: boolean;
+  /** The row's subtitle: the real state, in one sentence. */
+  subtitle: string;
+  /** Turning it on must request the OS permission (and mint a token) first. */
+  needsPermission: boolean;
+  /** The OS has refused for good; only system settings can undo it. */
+  blockedInSystemSettings: boolean;
+}
+
+export const pushToggleState = (
+  enabled: boolean,
+  input: PushReadinessInput
+): PushToggleState => {
+  const readiness = pushReadiness(input);
+  const blockedInSystemSettings =
+    input.permission === 'denied' || input.permission === 'unavailable';
+  const needsPermission = enabled && input.supported && input.permission !== 'granted';
+
+  if (!enabled) {
+    return {
+      value: false,
+      subtitle: 'Off — nothing is sent to this phone.',
+      needsPermission: false,
+      blockedInSystemSettings,
+    };
+  }
+
+  if (!input.supported) {
+    return {
+      value: false,
+      subtitle: 'On for your account — this build cannot receive push.',
+      needsPermission: false,
+      blockedInSystemSettings,
+    };
+  }
+
+  if (input.permission !== 'granted') {
+    return {
+      value: false,
+      subtitle: blockedInSystemSettings
+        ? 'On for your account — this phone blocks notifications in system settings.'
+        : 'On for your account — this phone has not allowed notifications yet.',
+      needsPermission,
+      blockedInSystemSettings,
+    };
+  }
+
+  if (readiness === 'unknown') {
+    return {
+      value: true,
+      subtitle: "On — we couldn't check with the server just now.",
+      needsPermission: false,
+      blockedInSystemSettings,
+    };
+  }
+
+  if (readiness === 'off') {
+    return {
+      value: false,
+      subtitle: input.server && !input.server.pushEnabled
+        ? 'On here, off for your account on the server.'
+        : 'On for your account — this phone is not registered yet.',
+      needsPermission: false,
+      blockedInSystemSettings,
+    };
+  }
+
+  return {
+    value: true,
+    subtitle: 'On — this phone gets alerts about finished work.',
+    needsPermission: false,
+    blockedInSystemSettings,
+  };
 };

@@ -11,8 +11,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   Modal,
-  Alert,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenBottomPadding, useScreenInsets, useScrollToTopRequest } from '../../components/layout';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useTestStore, type Test, type TestAttempt, type TestMode } from '../../stores/testStore';
@@ -27,7 +27,13 @@ import { BackButton, CourseChip, EmptyState, FeatureDisc, useFeatureAccent } fro
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
-import { resolveTestTimeLimitMinutes, resolveDefaultSessionMinutes } from './testConfigRules';
+import { formatSessionDuration } from '../../utils/testAttemptMapping';
+import {
+  describeStudyModeCard,
+  describeTestModeCard,
+  resolveTestTimeLimitMinutes,
+  resolveDefaultSessionMinutes,
+} from './testConfigRules';
 import { planRetake, planAttemptRow, deriveTestSource } from './testAuthoring';
 // Wave T: the six type steps replace this file's eleven ad-hoc sizes.
 import { typeScale, tabularNums } from '../../design/typeScale';
@@ -197,7 +203,7 @@ export default function TestScreen() {
         mode: mode 
       });
     } catch (error) {
-      Alert.alert('Error', 'Failed to start test');
+      appAlert('Error', 'Failed to start test');
     }
   }, [startTest, navigation]);
 
@@ -238,7 +244,7 @@ export default function TestScreen() {
         mode,
       });
     }).catch(() => {
-      Alert.alert('Error', 'Failed to start test');
+      appAlert('Error', 'Failed to start test');
     });
   }, [configTest, user?.id, startTest, navigation]);
 
@@ -303,7 +309,7 @@ export default function TestScreen() {
           groupId: attempt.groupId,
         });
       } catch {
-        Alert.alert('Error', 'Failed to start test');
+        appAlert('Error', 'Failed to start test');
       }
     };
 
@@ -334,7 +340,7 @@ export default function TestScreen() {
 
     if (plan.action === 'launchSnapshot') return launchSnapshot();
     if (plan.action === 'launchTest') return launchTest(plan.testId);
-    if (plan.action === 'refuse') Alert.alert(plan.title, plan.message);
+    if (plan.action === 'refuse') appAlert(plan.title, plan.message);
   }, [startQuestionSet, startTest, hydrateTestFromServer, navigation, user?.id]);
 
   const handleViewAttempt = useCallback((attempt: TestAttempt) => {
@@ -343,7 +349,7 @@ export default function TestScreen() {
 
   const handleDeleteAttempt = useCallback((attempt: TestAttempt) => {
     if (!user?.id) return;
-    Alert.alert(
+    appAlert(
       'Delete test result?',
       `Remove "${attempt.testName}" from your history? This cannot be undone.`,
       [
@@ -353,7 +359,7 @@ export default function TestScreen() {
           style: 'destructive',
           onPress: () => {
             void deleteAttempt(user.id, attempt.id).catch(() => {
-              Alert.alert('Error', 'Failed to delete test result.');
+              appAlert('Error', 'Failed to delete test result.');
             });
           },
         },
@@ -376,7 +382,7 @@ export default function TestScreen() {
 
   const handleClearHistory = useCallback(() => {
     if (!user?.id || attempts.length === 0) return;
-    Alert.alert(
+    appAlert(
       'Clear test history?',
       'Delete all completed test history? This cannot be undone.',
       [
@@ -388,7 +394,7 @@ export default function TestScreen() {
             void clearTestHistory(user.id)
               .then(() => fetchAttempts(user.id))
               .catch(() => {
-                Alert.alert('Error', 'Failed to clear test history.');
+                appAlert('Error', 'Failed to clear test history.');
               });
           },
         },
@@ -401,11 +407,6 @@ export default function TestScreen() {
     return date.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
 
   /**
    * "From SDOH" under a saved test, and in the mode sheet's subtitle.
@@ -565,7 +566,10 @@ export default function TestScreen() {
               </View>
             ) : null}
             <Text style={[styles.attemptMeta, { color: colors.textSecondary }]}>
-              {item.score}/{item.totalPoints} pts • {formatTime(item.timeSpent)}
+              {/* A sitting with no recorded time reads "—", not "0:00": the
+                  row used to claim every attempt took no time at all until
+                  its result was opened. */}
+              {item.score}/{item.totalPoints} pts • {formatSessionDuration(item.timeSpent || null)}
             </Text>
           </View>
           <View
@@ -901,8 +905,11 @@ export default function TestScreen() {
                         { color: colors.text },
                         selectedMode === 'test' && { color: colors.primaryText }
                       ]}>Test Mode</Text>
+                      {/* The SAME minutes the strip below and the launch use:
+                          the card used to promise "Timed" beside a strip that
+                          said "No limit" for the same test. */}
                       <Text style={[styles.modeDescription, { color: colors.textSecondary }]}>
-                        Timed • Scored{'\n'}No hints
+                        {describeTestModeCard(defaultMinutesFor(selectedTest))}
                       </Text>
                       {selectedMode === 'test' && (
                         <View style={styles.modeCheck}>
@@ -937,7 +944,7 @@ export default function TestScreen() {
                         selectedMode === 'study' && { color: '#10b981' }
                       ]}>Study Mode</Text>
                       <Text style={[styles.modeDescription, { color: colors.textSecondary }]}>
-                        Untimed • Feedback{'\n'}Learn as you go
+                        {describeStudyModeCard()}
                       </Text>
                       {selectedMode === 'study' && (
                         <View style={styles.modeCheck}>

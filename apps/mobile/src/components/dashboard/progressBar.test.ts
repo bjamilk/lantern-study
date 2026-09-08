@@ -24,12 +24,13 @@ describe('clampProgressPercent', () => {
 });
 
 describe('goalCountLabel', () => {
-  it('says the overshoot the bar cannot draw', () => {
-    expect(goalCountLabel(12, 1)).toBe('12 of 1');
+  it('says the overshoot the bar cannot draw, without reading as a broken counter', () => {
+    expect(goalCountLabel(12, 1)).toBe('12 done \u00b7 goal 1');
+    expect(goalCountLabel(5, 1)).toBe('5 done \u00b7 goal 1');
   });
 
   it('reads the same under the goal', () => {
-    expect(goalCountLabel(0, 20)).toBe('0 of 20');
+    expect(goalCountLabel(0, 20)).toBe('0 done \u00b7 goal 20');
   });
 });
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import { applyGlobalUsageHeaders } from '../middleware/aiRateLimit';
 import { getJobRecord, reconcileJobTimeout } from '../queue/jobStatus';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
@@ -39,6 +40,25 @@ router.get(
     // preferences, so an admin reading someone else's job never sees it.
     const isOwner = !!job.userId && job.userId === userId;
     const { push, ...rest } = job as typeof job & { push?: unknown };
+
+    /**
+     * The counters as they stand RIGHT NOW, on the poll that learns how the
+     * job ended.
+     *
+     * A queued run answers 202 — a 2xx — so the accept carries the charged
+     * numbers and the middleware's non-2xx refund never fires. When the job
+     * then fails, the worker hands the credits back (refundJobCreditOnce), but
+     * nothing had ever restated them: the phone kept showing the charge for a
+     * run that produced nothing, which is exactly what the Usage & limits
+     * screen promises it will not do. Stamping the live counts on every poll
+     * makes the refund visible the moment the client sees the failure.
+     *
+     * Owner only: these are the caller's own counters, and an admin reading
+     * someone else's job must not have their badge rewritten by it.
+     */
+    if (isOwner) {
+      await applyGlobalUsageHeaders(res, userId);
+    }
 
     res.json({
       success: true,

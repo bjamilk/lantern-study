@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView, useScreenBottomPadding } from '../../components/layout';
 import * as DocumentPicker from 'expo-document-picker';
@@ -30,6 +30,7 @@ import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import type { CourseTopic } from '@lantern/shared/types';
+import { pluralize } from '@lantern/shared/utils';
 import { confirmSheet } from '../../stores/confirmStore';
 import AIGenerateFlashcardsModal from '../../components/AIGenerateFlashcardsModal';
 import CollaboratorsModal from '../../components/CollaboratorsModal';
@@ -191,7 +192,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   };
 
   const startTimedCram = () => {
-    Alert.alert(FLASHCARD_MODE_LABELS.timed_drill.label, 'Choose session length', [
+    appAlert(FLASHCARD_MODE_LABELS.timed_drill.label, 'Choose session length', [
       { text: '5 min', onPress: () => navigateStudy('CramSession', { timedMinutes: 5 }) },
       { text: '10 min', onPress: () => navigateStudy('CramSession', { timedMinutes: 10 }) },
       { text: '15 min', onPress: () => navigateStudy('CramSession', { timedMinutes: 15 }) },
@@ -210,7 +211,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         back: card.back,
       });
     }
-    Alert.alert('Success', `Added ${generated.length} flashcards to the deck.`);
+    appAlert('Success', `Added ${generated.length} flashcards to the deck.`);
   };
 
   const handleFlashcardSubmit = async (data: FlashcardDraft) => {
@@ -275,7 +276,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         });
       }
     } catch (e) {
-      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setCourseMoveOpen(false);
     }
@@ -286,7 +287,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     try {
       await updateDeck(deckId, { topicId: topic?.id ?? null }, user.id);
     } catch (e) {
-      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setTopicMoveOpen(false);
     }
@@ -314,10 +315,10 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       });
     } catch (e: unknown) {
       if (e instanceof SharingUnavailableError) {
-        Alert.alert('Sharing unavailable', 'This device cannot open a share sheet.');
+        appAlert('Sharing unavailable', 'This device cannot open a share sheet.');
         return;
       }
-      Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
+      appAlert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
     } finally {
       setExporting(false);
     }
@@ -335,10 +336,10 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       });
     } catch (e: unknown) {
       if (e instanceof SharingUnavailableError) {
-        Alert.alert('Sharing unavailable', 'This device cannot open a share sheet.');
+        appAlert('Sharing unavailable', 'This device cannot open a share sheet.');
         return;
       }
-      Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export CSV');
+      appAlert('Export failed', e instanceof Error ? e.message : 'Could not export CSV');
     } finally {
       setExporting(false);
     }
@@ -363,15 +364,15 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         await fetchDecks(user.id);
         const newDeck = imported.deck as { id: string; name: string };
         navigation.navigate('DeckDetail', { deckId: newDeck.id, deckName: newDeck.name });
-        Alert.alert('Imported', `Deck "${newDeck.name}" imported from APKG.`);
+        appAlert('Imported', `Deck "${newDeck.name}" imported from APKG.`);
       } else if (name.endsWith('.csv')) {
         const csv = await FileSystem.readAsStringAsync(asset.uri);
         const imported = await importDeckCsv(csv, user.id, deckName);
         await fetchDecks(user.id);
         await loadCards();
-        Alert.alert(
+        appAlert(
           'Imported',
-          `${(imported.flashcards as unknown[])?.length ?? 0} cards imported.`
+          `${pluralize((imported.flashcards as unknown[])?.length ?? 0, 'card')} imported.`
         );
       } else {
         const text = await FileSystem.readAsStringAsync(asset.uri);
@@ -380,10 +381,10 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         await fetchDecks(user.id);
         const newDeck = imported.deck as { id: string; name: string };
         navigation.navigate('DeckDetail', { deckId: newDeck.id, deckName: newDeck.name });
-        Alert.alert('Imported', `Deck "${newDeck.name}" imported.`);
+        appAlert('Imported', `Deck "${newDeck.name}" imported.`);
       }
     } catch (e: unknown) {
-      Alert.alert('Import failed', e instanceof Error ? e.message : 'Could not import file');
+      appAlert('Import failed', e instanceof Error ? e.message : 'Could not import file');
     } finally {
       setImporting(false);
     }
@@ -419,7 +420,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       );
       setEditDeckOpen(false);
     } catch (e) {
-      Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not save', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setSavingDeck(false);
     }
@@ -438,7 +439,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       await deleteDeck(deckId, user.id);
       navigation.goBack();
     } catch (e) {
-      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
     }
   };
 
@@ -456,9 +457,9 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       await resetDeckStatistics(deckId, user.id);
       await loadCards();
       await fetchDecks(user.id);
-      Alert.alert('Progress reset', 'All cards in this deck are new again.');
+      appAlert('Progress reset', 'All cards in this deck are new again.');
     } catch (e) {
-      Alert.alert('Could not reset', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not reset', e instanceof Error ? e.message : 'Please try again.');
     }
   };
 
@@ -471,7 +472,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         await markDeckOffline(deckId, user.id);
       }
     } catch (e) {
-      Alert.alert('Offline change failed', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Offline change failed', e instanceof Error ? e.message : 'Please try again.');
     }
   };
 
@@ -490,7 +491,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       setFlashcardModalOpen(false);
       setEditingCard(null);
     } catch (e) {
-      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
     }
   };
 

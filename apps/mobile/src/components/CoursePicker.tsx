@@ -22,6 +22,7 @@ import {
   View,
 } from 'react-native';
 import type { Course } from '@lantern/shared/types';
+import { humanizeFailureMessage } from '@lantern/shared/network';
 import { COURSE_TITLE_MIN_LENGTH } from '@lantern/shared/academic';
 import { useTheme } from '../theme';
 import { useAuthStore } from '../stores/authStore';
@@ -299,7 +300,7 @@ export function CoursePicker({
                     accessibilityLabel="Course title"
                     onSubmitEditing={() => void submitCreate()}
                   />
-                  {createError ? <Text style={[styles.errorText, { color: colors.error }]}>{createError}</Text> : null}
+                  {createError ? <Text style={[styles.errorText, { color: colors.error }]}>{humanizeFailureMessage(createError)}</Text> : null}
                   <View style={styles.createActions}>
                     <Pressable onPress={() => setCreateCode(null)} style={styles.createCancel} accessibilityRole="button">
                       <Text style={{ color: colors.textSecondary, fontWeight: '600' }}>Cancel</Text>
@@ -323,7 +324,7 @@ export function CoursePicker({
               {!searching && options.length === 0 && !addCode && !createCode ? (
                 <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
                   {error
-                    ? `Could not search courses: ${error}`
+                    ? humanizeFailureMessage(error)
                     : query.trim()
                       ? 'No courses match. Type a full code like "BIO 201" to add it.'
                       : 'Type a course code or title to search.'}

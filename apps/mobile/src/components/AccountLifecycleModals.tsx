@@ -8,8 +8,8 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  Alert,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import * as DocumentPicker from 'expo-document-picker';
 import {
   ACCOUNT_DATA_LOSS_ITEMS,
@@ -142,7 +142,7 @@ export function AccountLifecycleModals({
       await deactivateUserAccount(userId);
       await refreshLifecycle();
       handleCloseDelete();
-      Alert.alert('Account paused', `Your account will be deleted in ${ACCOUNT_DELETION_GRACE_DAYS} days unless you reactivate.`);
+      appAlert('Account paused', `Your account will be deleted in ${ACCOUNT_DELETION_GRACE_DAYS} days unless you reactivate.`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to pause account.');
     } finally {
@@ -214,7 +214,7 @@ export function AccountLifecycleModals({
       setImportFileName(null);
       setImportPassword('');
       setError(null);
-      Alert.alert('Import complete', result.message || 'Your backup was restored.');
+      appAlert('Import complete', result.message || 'Your backup was restored.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.');
     } finally {
@@ -374,9 +374,9 @@ export function AccountLifecycleModals({
             try {
               await reactivateUserAccount(userId);
               await refreshLifecycle();
-              Alert.alert('Account reactivated', 'Welcome back to Lantern Study.');
+              appAlert('Account reactivated', 'Welcome back to Lantern Study.');
             } catch (e) {
-              Alert.alert('Error', e instanceof Error ? e.message : 'Failed to reactivate account.');
+              appAlert('Error', e instanceof Error ? e.message : 'Failed to reactivate account.');
             } finally {
               setLoading(false);
             }

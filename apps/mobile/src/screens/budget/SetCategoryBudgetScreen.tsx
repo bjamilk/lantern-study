@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, ScrollView, TextInput, Alert } from 'react-native';
+import { View, Text, ScrollView, TextInput } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../stores/authStore';
 import { useBudgetStore, EXPENSE_CATEGORIES, formatCurrency } from '../../stores/budgetStore';
@@ -37,7 +38,7 @@ export default function SetCategoryBudgetScreen() {
     }
     const total = Object.values(categoryBudgets).reduce((s, v) => s + v, 0);
     if (total <= 0) {
-      Alert.alert('Enter at least one category budget');
+      appAlert('Enter at least one category budget');
       return;
     }
     // Preserve the overall monthly cap — do NOT overwrite it with the sum of the
@@ -46,7 +47,7 @@ export default function SetCategoryBudgetScreen() {
     // smaller category sum. Category budgets sit *within* the cap, they don't
     // define it. (Matches web SetMonthlyPlanModal, which only edits categories.)
     await setBudget(userId, budget?.monthlyLimit ?? 0, categoryBudgets);
-    Alert.alert('Saved', 'Category budgets updated.');
+    appAlert('Saved', 'Category budgets updated.');
     navigation.goBack();
   };
 

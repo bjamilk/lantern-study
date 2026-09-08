@@ -15,9 +15,16 @@ export function clampProgressPercent(percent: number | null | undefined): number
   return Math.max(0, Math.min(100, Math.round(percent)));
 }
 
-/** `done`/`goal` as prose: "12 of 1", not a 1200% bar. */
+/**
+ * `done`/`goal` as prose: "12 done · goal 1", not a 1200% bar.
+ *
+ * "12 of 1" was the first phrasing, and beside a bar pinned at 100% it read as
+ * a broken counter rather than a goal beaten — "of" says the second number is
+ * the whole, and here it is not. Naming both figures for what they are lets an
+ * overshoot read as an overshoot.
+ */
 export function goalCountLabel(done: number, goal: number): string {
-  return `${done} of ${goal}`;
+  return `${done} done · goal ${goal}`;
 }
 
 /** True when the student is past the goal — the bar cannot say so, so text does. */

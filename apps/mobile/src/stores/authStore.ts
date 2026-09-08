@@ -17,6 +17,7 @@ import { fetchUserProfile } from '../services/api';
 import { signInWithGoogleOAuth, signInWithAppleNative } from '../services/socialAuth';
 import type { User, Session } from '@supabase/supabase-js';
 import { isEmailNotConfirmedError } from '@lantern/shared';
+import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 import { PENDING_RESULTS_LEGACY_KEY, pendingResultsKey } from './pendingResultsScope';
 import { SYNC_QUEUE_LEGACY_KEY, syncQueueKey } from '@lantern/shared/sync';
@@ -93,10 +94,21 @@ interface AuthState {
 const BOOT_REFRESH_TIMEOUT_MS = 8_000;
 const BOOT_TIMEOUT_MARKER = 'auth-init-timeout';
 
-/** Fallback display name so a restoring boot greets the student, not "User". */
+/**
+ * Fallback display name so a restoring boot greets the student, not "User".
+ *
+ * `user_metadata.name` is whatever the sign-up flow wrote, and for an email
+ * sign-up that is routinely the address itself. This name is not only a
+ * greeting: it is the identity the app stamps on the viewer's own chat and
+ * board cards until the server's copy lands, and a board shows those to
+ * everyone who can read it. An address never survives this function.
+ */
 function displayNameFromUser(user: User): string | null {
   const metadataName = user.user_metadata?.name;
-  if (typeof metadataName === 'string' && metadataName.trim()) return metadataName.trim();
+  if (typeof metadataName === 'string') {
+    const scrubbed = scrubEmailFromDisplayName(metadataName);
+    if (scrubbed) return scrubbed;
+  }
   return user.email?.split('@')[0] ?? null;
 }
 
@@ -428,10 +440,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           academicProfile = profile.academic ?? null;
         } catch (profileError) {
           console.warn('Profile sync failed after sign-in; continuing with auth session:', profileError);
-          profileName =
-            (typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim()) ||
-            user.email?.split('@')[0] ||
-            null;
+          profileName = displayNameFromUser(user);
         }
       }
 

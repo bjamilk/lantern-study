@@ -124,3 +124,69 @@ describe('TestBuilderScreen: a picked row is not a purchase (build 168)', () => 
     expect(source).not.toContain('GENERATED_QUESTION_COUNT = 10');
   });
 });
+
+/**
+ * Build 172's device findings. Same rule as above: a source scan cannot prove
+ * a control renders, but it can prove the shipped code calls the planner the
+ * unit tests exercise — which is exactly what was missing when a mirrored
+ * copy of the offline mapper stayed green while the real one was broken.
+ */
+describe('the offline bundle has ONE mapper (build 172)', () => {
+  const store = read('../../stores/offlineStore.ts');
+
+  it('the store maps through the shared normaliser instead of its own copy', () => {
+    expect(store).toContain("from '../utils/offlineQuestionShape'");
+    expect(store).toContain('normalizeOfflineBundleQuestion(message, index)');
+    // The private option loop that dropped every string option's text.
+    expect(store).not.toContain('opt.optionText');
+  });
+
+  it('both bundle paths — cloud hydration and group download — use it', () => {
+    expect(store).toContain('.map((q, index) => mapMessageToOfflineQuestion(q, index))');
+    expect(store).toContain('.map(mapMessageToOfflineQuestion)');
+  });
+
+  it('bundles already on the handset are re-normalised when they are read', () => {
+    const load = store.slice(
+      store.indexOf('loadOfflineData: async'),
+      store.indexOf('downloadTest: async')
+    );
+    expect(load).toContain('JSON.parse(testsData)');
+    expect(load).toContain('mapMessageToOfflineQuestion(q, index)');
+  });
+
+  it('a bundle with nothing answerable never opens a session', () => {
+    const screen = read('../settings/OfflineScreen.tsx');
+    expect(screen).toContain('planBundlePlayability(test.questions)');
+    expect(screen).toContain('if (!playability.canStart)');
+    expect(screen).toContain('offlineQuestionsToTestQuestions(playability.playable)');
+  });
+});
+
+describe('the start sheet and the player tell the truth (build 172)', () => {
+  it('the Test Mode card reads its timer from the same rule as the strip', () => {
+    const source = read('TestScreen.tsx');
+    expect(source).toContain('describeTestModeCard(defaultMinutesFor(selectedTest))');
+    expect(source).not.toContain('Timed • Scored');
+  });
+
+  it('History formats a duration honestly instead of padding it to 0:00', () => {
+    const source = read('TestScreen.tsx');
+    expect(source).toContain('formatSessionDuration(item.timeSpent');
+    expect(source).not.toContain("secs.toString().padStart(2, '0')");
+  });
+
+  it('the exit dialog is planned, and the two false sentences are gone', () => {
+    const source = read('TestTakingScreen.tsx');
+    expect(source).toContain('planSessionExitCopy({');
+    expect(source).not.toContain('Your progress will be lost');
+    expect(source).not.toContain('You can come back anytime');
+  });
+
+  it('the player states its own offline status, and the shell chip stands down', () => {
+    const source = read('TestTakingScreen.tsx');
+    expect(source).toContain('offlineNotice');
+    const shell = read('../../navigation/RootNavigator.tsx');
+    expect(shell).toContain("focused !== 'TestTaking' ?");
+  });
+});

@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import {
   fetchPaystackBanks,
   fetchSellerPayoutProfile,
@@ -45,7 +45,7 @@ export function SellerPayoutSetup() {
         if (p?.bank_code) setBankCode(p.bank_code);
       } catch (err: unknown) {
         if (!cancelled) {
-          Alert.alert(
+          appAlert(
             'Payout settings',
             err instanceof Error ? err.message : 'Could not load payout settings'
           );
@@ -63,7 +63,7 @@ export function SellerPayoutSetup() {
 
   const onSave = async () => {
     if (!accountNumber.trim() || !bankCode) {
-      Alert.alert('Missing details', 'Enter account number and select a bank');
+      appAlert('Missing details', 'Enter account number and select a bank');
       return;
     }
     setSaving(true);
@@ -74,9 +74,9 @@ export function SellerPayoutSetup() {
       });
       setProfile(saved);
       setAccountNumber('');
-      Alert.alert('Saved', 'Payout bank account verified and saved.');
+      appAlert('Saved', 'Payout bank account verified and saved.');
     } catch (err: unknown) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Could not save bank account');
+      appAlert('Error', err instanceof Error ? err.message : 'Could not save bank account');
     } finally {
       setSaving(false);
     }

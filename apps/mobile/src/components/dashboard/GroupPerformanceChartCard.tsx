@@ -13,6 +13,7 @@ import {
   getGroupIdWithDescendants,
   withResolvedGroupIds,
   GROUP_PERFORMANCE_PERIOD_OPTIONS,
+  pluralize,
   type GroupPerformancePeriod,
   type LeanTestResultLike,
 } from '@lantern/shared/utils';
@@ -479,8 +480,8 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
               </Text>
               {selectedSeries.map((s) => (
                 <Text key={s.id} className="text-caption text-lantern-text-tertiary text-center">
-                  {s.name}: {s.averageScore.toFixed(1)}% avg across {s.testCount} test
-                  {s.testCount !== 1 ? 's' : ''}
+                  {s.name}: {s.averageScore.toFixed(1)}% avg across{' '}
+                  {pluralize(s.testCount, 'test')}
                 </Text>
               ))}
             </View>

@@ -21,6 +21,7 @@ import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
 import { useTheme } from '../theme';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AppIcon } from './ui/AppIcon';
+import { formatSessionDuration } from '../utils/testAttemptMapping';
 import { T } from './ui';
 import { useFeatureAccent } from './ui/FeatureDisc';
 import type { QuestionSource } from '../screens/tests/confidenceReveal';
@@ -75,10 +76,16 @@ function TimePerQuestionBars({
   const maxTime = Math.max(1, ...items.map((item) => item.time));
 
   return (
+    // The indicator is drawn for anything past a phone's width — at exactly
+    // eight bars the old `> 8` hid it, and the eighth bar was cut off at the
+    // screen edge with nothing to say the chart scrolled (device finding,
+    // build 172). `barsRowScrollable` adds the trailing room so the last bar
+    // and its label clear the edge.
     <ScrollView
       horizontal
-      showsHorizontalScrollIndicator={items.length > 8}
-      contentContainerStyle={styles.barsRow}
+      showsHorizontalScrollIndicator={items.length > 6}
+      persistentScrollbar={items.length > 6}
+      contentContainerStyle={[styles.barsRow, items.length > 6 && styles.barsRowScrollable]}
     >
       {items.map((item) => {
         const active = selectedQuestionNumber === item.questionNumber;
@@ -248,8 +255,11 @@ export default function TestAnalysisContent({
               <Text style={[styles.scoreDetailLabel, { color: colors.textSecondary }]}>Avg Time</Text>
             </View>
             <View style={styles.scoreDetailItem}>
+              {/* `Math.floor(seconds / 60)` printed "0m" for a 12-second
+                  sitting — the shortest sittings were reported as no time at
+                  all. */}
               <Text style={[styles.scoreDetailValue, { color: colors.text }]}>
-                {Math.floor(test.timeSpent / 60)}m
+                {formatSessionDuration(test.timeSpent || null)}
               </Text>
               <Text style={[styles.scoreDetailLabel, { color: colors.textSecondary }]}>Total Time</Text>
             </View>
@@ -605,6 +615,9 @@ const styles = StyleSheet.create({
   barChartContainer: {
     minHeight: 168,
     width: '100%',
+  },
+  barsRowScrollable: {
+    paddingRight: 20,
   },
   barsRow: {
     flexDirection: 'row',

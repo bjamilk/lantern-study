@@ -307,7 +307,7 @@ import { linkingConfig } from './linking';
 
 import { registerForPushNotifications, uploadPushToken } from '../services/pushNotifications';
 
-import { fetchUserProfile } from '../services/api';
+import { useProfileIdentity } from '../hooks/useProfileIdentity';
 
 import UsernameRequiredModal from '../components/UsernameRequiredModal';
 import { AccountSuspendedBanner } from '../components/moderation/AccountSuspendedBanner';
@@ -1008,13 +1008,18 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
       {/* Informational only (no onPress): pointerEvents none so it can never
           swallow taps meant for the screen under it — it was eating the unpin
           button on the chat's pinned-message banner. */}
-      <View
-        pointerEvents="none"
-        className="absolute right-3 z-40"
-        style={{ top: (hideBar ? 0 : insets.top) + 48 }}
-      >
-        <SyncStatusIndicator compact />
-      </View>
+      {/* Not on the test player: its own header puts Submit exactly here, so
+          the chip was drawn under it and clipped (device finding, build 172).
+          That screen states its offline status in the page instead. */}
+      {focused !== 'TestTaking' ? (
+        <View
+          pointerEvents="none"
+          className="absolute right-3 z-40"
+          style={{ top: (hideBar ? 0 : insets.top) + 48 }}
+        >
+          <SyncStatusIndicator compact />
+        </View>
+      ) : null}
       <ToastHost />
       <ConfirmSheetHost />
 
@@ -1056,8 +1061,6 @@ function MainTabsShell() {
 
   const user = useAuthStore(s => s.user);
 
-  const profileName = useAuthStore(s => s.profileName);
-
   const openCompanion = useCompanionStore(s => s.open);
 
   const unreadNotificationCount = useNotificationStore(s => s.unreadCount);
@@ -1066,49 +1069,12 @@ function MainTabsShell() {
 
   const insets = useSafeAreaInsets();
 
-  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  // The name and the face are resolved in ONE place — `useProfileIdentity` —
+  // and published from here so the top bar, the Me tab, Settings and the
+  // community board composer cannot show three different identities for the
+  // same account (they did: "Benjamin Amadi", "User"/"NI", "YO").
+  const { displayName, avatarUrl } = useProfileIdentity();
 
-  // Same avatar resolution as SettingsScreen: profile row first, then the
-  // auth metadata copy EditProfile keeps in sync.
-  useEffect(() => {
-    if (!user?.id) {
-      setAvatarUrl(null);
-      return;
-    }
-    let cancelled = false;
-    void fetchUserProfile(user.id)
-      .then((profile) => {
-        if (cancelled) return;
-        const url =
-          (profile as { avatar_url?: string; avatarUrl?: string }).avatar_url ||
-          (profile as { avatarUrl?: string }).avatarUrl ||
-          (user.user_metadata?.avatar_url as string | undefined) ||
-          null;
-        setAvatarUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setAvatarUrl((user.user_metadata?.avatar_url as string | undefined) || null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, user?.user_metadata?.avatar_url]);
-
-  // The avatar draws initials from this, so a placeholder becomes a fake
-  // identity ('Your profile' → "YP" on a cold start, before the profile has
-  // resolved). Fall back to the account's own email local part — the same
-  // stand-in authStore uses when the profile sync fails — and otherwise to
-  // nothing, which the avatar renders as "?".
-  const displayName =
-    profileName ||
-    (user?.user_metadata?.name as string | undefined) ||
-    user?.email?.split('@')[0] ||
-    '';
-
-  // Published once, read by the top bar's avatar AND by the Me tab, so the two
-  // show the same face without fetching the profile twice.
   useEffect(() => {
     setProfile({ name: displayName, avatarUri: avatarUrl, email: user?.email ?? null });
   }, [displayName, avatarUrl, user?.email, setProfile]);

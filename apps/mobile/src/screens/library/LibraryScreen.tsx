@@ -29,6 +29,7 @@ import {
 } from '../../utils/libraryArchive';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
+import { readCachedOverview, writeCachedOverview } from './libraryOverviewCache';
 
 import { toTab } from '../../navigation/nestedTab';
 
@@ -69,8 +70,11 @@ export function LibraryScreen({ navigation, route }: Props) {
   // ---- Library archive tree (GET /library/overview) ----
   const [overview, setOverview] = useState<LibraryOverview | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
-  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [overviewError, setOverviewError] = useState<unknown>(null);
   const [overviewAttempt, setOverviewAttempt] = useState(0);
+  // True while the tree on screen came from the cache rather than this load —
+  // the courses are real, they are just not freshly confirmed.
+  const [overviewFromCache, setOverviewFromCache] = useState(false);
   // Course whose shared outline is being managed (rename/reorder/delete topics).
   const [manageCourse, setManageCourse] = useState<LibraryCourseFilter | null>(null);
   const tree = useMemo(() => (overview ? buildLibraryTree(overview) : null), [overview]);
@@ -81,9 +85,19 @@ export function LibraryScreen({ navigation, route }: Props) {
     try {
       const data = await fetchLibraryOverview();
       setOverview(data);
+      setOverviewFromCache(false);
       setOverviewError(null);
+      void writeCachedOverview(userId, data);
     } catch (e: unknown) {
-      setOverviewError(e instanceof Error ? e.message : 'Could not load courses');
+      // Offline, this is the whole story: the courses this student already has
+      // are on the device, so fall back to them rather than spinning at a list
+      // that has not changed since the last time they opened it.
+      const cached = await readCachedOverview(userId);
+      if (cached) {
+        setOverview(prev => prev ?? cached.overview);
+        setOverviewFromCache(true);
+      }
+      setOverviewError(e ?? new Error('Could not load courses'));
     } finally {
       setOverviewLoading(false);
     }
@@ -331,6 +345,7 @@ export function LibraryScreen({ navigation, route }: Props) {
           tree={tree}
           loading={overviewLoading}
           error={overviewError}
+          stale={overviewFromCache}
           totalNotes={heroNotes}
           totalDecks={heroDecks}
           selectedCourseId={courseFilter?.id ?? null}

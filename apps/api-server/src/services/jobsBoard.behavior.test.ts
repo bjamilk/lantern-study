@@ -337,6 +337,61 @@ describe("updatePosting validation", () => {
   });
 });
 
+describe("schoolApprovePosting", () => {
+  const queued = {
+    id: "post-1",
+    title: "Barista needed",
+    description: "Serve coffee at the campus cafe.",
+    status: "pending_school_approval",
+    posterUserId: "owner-1",
+    companyId: null,
+  };
+
+  it("refuses to publish boilerplate through the approval queue", async () => {
+    // The third publish path. create and update both gate template
+    // leftovers; this one wrote straight to the status column, so a posting
+    // that entered the queue with "[team / function]" intact went live.
+    const updateChain = chain({ data: null, error: null });
+    const client = makeClient({ job_postings: [updateChain] });
+    const { svc } = makeService(client);
+    jest
+      .spyOn(svc, "getPosting")
+      .mockResolvedValue({ ...queued, title: "Internship — [team / function]" } as any);
+
+    await expect(svc.schoolApprovePosting("post-1", true)).rejects.toThrow(/Replace/);
+    // Refused means NOT written: no status update reached the table.
+    expect(
+      updateChain.calls.some((call: { method: string }) => call.method === "update"),
+    ).toBe(false);
+  });
+
+  it("publishes a posting whose copy is real", async () => {
+    const updateChain = chain({ data: null, error: null });
+    const client = makeClient({ job_postings: [updateChain] });
+    const { svc } = makeService(client);
+    jest.spyOn(svc, "getPosting").mockResolvedValue(queued as any);
+
+    await svc.schoolApprovePosting("post-1", true);
+    const patch = argOf(updateChain, "update") as Record<string, unknown>;
+    expect(patch.status).toBe("active");
+  });
+
+  it("still lets the school REJECT a posting, boilerplate or not", async () => {
+    // Rejection closes the posting: refusing it over its copy would trap a
+    // boilerplate posting in the queue for ever.
+    const updateChain = chain({ data: null, error: null });
+    const client = makeClient({ job_postings: [updateChain] });
+    const { svc } = makeService(client);
+    jest
+      .spyOn(svc, "getPosting")
+      .mockResolvedValue({ ...queued, title: "Internship — [team / function]" } as any);
+
+    await svc.schoolApprovePosting("post-1", false);
+    const patch = argOf(updateChain, "update") as Record<string, unknown>;
+    expect(patch.status).toBe("closed");
+  });
+});
+
 describe("expressApply / trackExternalApply deadline backstop", () => {
   const pastDeadline = "2020-01-01T00:00:00Z";
 

@@ -16,6 +16,8 @@ import {
   pushDiagnosticRows,
   pushErrorRows,
   pushIdentityRows,
+  pushToggleState,
+  hasPushDetails,
   pushReadiness,
   pushReadinessSummary,
   type PushReadinessInput,
@@ -281,9 +283,11 @@ describe('pushErrorRows', () => {
     expect(pushErrorRows('')).toEqual([]);
   });
 
-  it('shows the failure verbatim, never a paraphrase', () => {
+  it('tells the student it failed and keeps the build words for the disclosure', () => {
     const [row] = pushErrorRows('Default FirebaseApp is not initialized');
-    expect(row.value).toBe('Default FirebaseApp is not initialized');
+    expect(row.value).toBe('This phone could not get a notification token.');
+    // Verbatim, still — behind "Show details", where a bug report can reach it.
+    expect(row.detail).toBe('Default FirebaseApp is not initialized');
     expect(row.state).toBe('bad');
   });
 });
@@ -337,8 +341,79 @@ describe('jobPushFailureDetail', () => {
     );
     expect(rows).toHaveLength(1);
     expect(rows[0].state).toBe('bad');
-    expect(rows[0].value).toContain('Apple push credentials');
-    expect(rows[0].value).toContain('Could not find APNs credentials');
+    // The student's half names no build, no bundle id and no EAS slug.
+    expect(rows[0].value).toBe('Notifications are not set up for this build yet.');
+    expect(rows[0].value).not.toContain('APNs');
+    // The founder's half keeps every word of it.
+    expect(rows[0].detail).toContain('Apple push credentials');
+    expect(rows[0].detail).toContain('Could not find APNs credentials');
     expect(jobPushFailureRows(audit({ tokenCount: 1 }))).toEqual([]);
+  });
+});
+
+describe('hasPushDetails', () => {
+  it('is true only when a row is holding build words back', () => {
+    expect(hasPushDetails(pushDiagnosticRows({ supported: true, permission: 'granted', server: null }))).toBe(
+      false
+    );
+    expect(hasPushDetails(pushErrorRows('Default FirebaseApp is not initialized'))).toBe(true);
+  });
+});
+
+describe('pushToggleState', () => {
+  const ready: PushReadinessInput = {
+    supported: true,
+    permission: 'granted',
+    deviceToken: 'ExponentPushToken[abcdef]',
+    server: { hasToken: true, pushEnabled: true },
+  };
+
+  it('shows on only when this phone will actually be reached', () => {
+    const state = pushToggleState(true, ready);
+    expect(state.value).toBe(true);
+    expect(state.subtitle).toBe('On — this phone gets alerts about finished work.');
+    expect(state.needsPermission).toBe(false);
+  });
+
+  it('does not read as on while the OS has not allowed it', () => {
+    // The defect: the switch said ON three lines under "Permission on this
+    // phone: Not allowed yet".
+    const state = pushToggleState(true, { ...ready, permission: 'undetermined', deviceToken: null });
+    expect(state.value).toBe(false);
+    expect(state.subtitle).toContain('has not allowed notifications yet');
+    expect(state.needsPermission).toBe(true);
+  });
+
+  it('sends a hard refusal to system settings rather than asking again', () => {
+    const state = pushToggleState(true, { ...ready, permission: 'denied', deviceToken: null });
+    expect(state.value).toBe(false);
+    expect(state.blockedInSystemSettings).toBe(true);
+    expect(state.subtitle).toContain('system settings');
+  });
+
+  it('follows the preference when the server could not be asked', () => {
+    // A failed request is not evidence that notifications are off.
+    const state = pushToggleState(true, { ...ready, server: null });
+    expect(state.value).toBe(true);
+    expect(state.subtitle).toContain("couldn't check");
+  });
+
+  it('says which side is off when the server holds no token', () => {
+    const state = pushToggleState(true, { ...ready, server: { hasToken: false, pushEnabled: true } });
+    expect(state.value).toBe(false);
+    expect(state.subtitle).toContain('not registered yet');
+  });
+
+  it('is plainly off when the student turned it off', () => {
+    const state = pushToggleState(false, ready);
+    expect(state.value).toBe(false);
+    expect(state.subtitle).toBe('Off — nothing is sent to this phone.');
+    expect(state.needsPermission).toBe(false);
+  });
+
+  it('never claims this build can be reached when it cannot', () => {
+    const state = pushToggleState(true, { ...ready, supported: false });
+    expect(state.value).toBe(false);
+    expect(state.subtitle).toContain('cannot receive push');
   });
 });

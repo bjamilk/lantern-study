@@ -4,6 +4,7 @@
 import { useCallback } from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { DMThread } from '@lantern/shared/types';
+import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore, type Group } from '../stores/groupStore';
 
@@ -56,7 +57,13 @@ export function useGroupHandlers() {
         id: threadId,
         participantIds: [user.id, otherUserId].sort() as [string, string],
         participants: {
-          [user.id]: { name: user.user_metadata?.full_name || user.email || 'You' },
+          [user.id]: {
+            // Never the address (see scrubEmailFromDisplayName).
+            name:
+              scrubEmailFromDisplayName(user.user_metadata?.full_name) ||
+              scrubEmailFromDisplayName(user.email) ||
+              'You',
+          },
           // Carry the avatar from the contact row — a client-pending thread has
           // no server row to hydrate it from, so without this the peer shows
           // initials until the thread is persisted and refetched.

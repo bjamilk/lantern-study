@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { Alert } from 'react-native';
+import { appAlert } from '../components/ui/appDialog';
 import { useNotificationSubscription } from './useRealtimeSubscriptions';
 import { useAuthStore } from '../stores/authStore';
 import { buildCurrentGameUser } from '../utils/currentGameUser';
@@ -48,7 +48,7 @@ export function useChallengeNotificationHandler() {
       }
 
       if (type === 'challenge_accepted') {
-        Alert.alert(
+        appAlert(
           'Duel accepted!',
           message || 'Your opponent accepted the duel. Start playing now?',
           [

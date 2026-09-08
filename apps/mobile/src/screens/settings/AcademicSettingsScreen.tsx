@@ -7,7 +7,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -16,6 +15,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import type { Course, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear, semesterLabel, studyLevelLabel } from '@lantern/shared/academic';
 import { useAuthStore } from '../../stores/authStore';
@@ -132,12 +132,12 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
     const entry = parseYear(entryYear);
     const grad = parseYear(graduationYear);
     if (Number.isNaN(entry) || Number.isNaN(grad)) {
-      Alert.alert('Check the years', 'Entry and graduation years must be whole numbers, e.g. 2024.');
+      appAlert('Check the years', 'Entry and graduation years must be whole numbers, e.g. 2024.');
       return;
     }
     const yearError = validateAcademicYears(entry, grad);
     if (yearError) {
-      Alert.alert('Check the years', yearError);
+      appAlert('Check the years', yearError);
       return;
     }
     setSaving(true);
@@ -151,9 +151,9 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         entryYear: entry,
         expectedGraduationYear: grad,
       });
-      Alert.alert('Saved', 'Your academic profile is up to date.');
+      appAlert('Saved', 'Your academic profile is up to date.');
     } catch (e: unknown) {
-      Alert.alert('Could not save', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not save', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setSaving(false);
     }
@@ -174,7 +174,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         await addMyCourse(course, academicYear);
         await reloadCourses();
       } catch (e: unknown) {
-        Alert.alert('Could not add course', e instanceof Error ? e.message : 'Please try again.');
+        appAlert('Could not add course', e instanceof Error ? e.message : 'Please try again.');
       }
     },
     [academicYear, reloadCourses]
@@ -182,7 +182,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
 
   const handleRemoveCourse = useCallback(
     (row: UserCourse) => {
-      Alert.alert('Remove course?', `${row.course.code} will be removed from ${row.academicYear}. Your notes and decks stay where they are.`, [
+      appAlert('Remove course?', `${row.course.code} will be removed from ${row.academicYear}. Your notes and decks stay where they are.`, [
         { text: 'Cancel', style: 'cancel' },
         {
           text: 'Remove',
@@ -191,7 +191,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
             void removeMyCourseEnrolment(row.course.id, row.academicYear)
               .then(reloadCourses)
               .catch((e: unknown) =>
-                Alert.alert('Could not remove', e instanceof Error ? e.message : 'Please try again.')
+                appAlert('Could not remove', e instanceof Error ? e.message : 'Please try again.')
               );
           },
         },
@@ -204,7 +204,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
     async (row: UserCourse) => {
       const draft = (examDrafts[row.course.id] ?? '').trim();
       if (!isValidExamDateInput(draft)) {
-        Alert.alert('Check the date', 'Use YYYY-MM-DD, e.g. 2026-11-30.');
+        appAlert('Check the date', 'Use YYYY-MM-DD, e.g. 2026-11-30.');
         return;
       }
       setSavingExamFor(row.course.id);
@@ -212,7 +212,7 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
         await setMyCourseExamDate(row.course.id, draft || null, row.academicYear);
         await reloadCourses();
       } catch (e: unknown) {
-        Alert.alert('Could not save exam date', e instanceof Error ? e.message : 'Please try again.');
+        appAlert('Could not save exam date', e instanceof Error ? e.message : 'Please try again.');
       } finally {
         setSavingExamFor(null);
       }
@@ -223,10 +223,10 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
   const handleArchiveSemester = useCallback(() => {
     const active = courses.filter(row => row.academicYear === academicYear);
     if (active.length === 0) {
-      Alert.alert('Nothing to archive', `You have no active courses for ${academicYear}.`);
+      appAlert('Nothing to archive', `You have no active courses for ${academicYear}.`);
       return;
     }
-    Alert.alert(
+    appAlert(
       'Archive this semester?',
       `${active.length} course${active.length === 1 ? '' : 's'} for ${academicYear} will move to your archive. Nothing is deleted — notes, decks and tests stay filed under each course.`,
       [
@@ -239,10 +239,10 @@ export default function AcademicSettingsScreen({ navigation }: { navigation: Nav
             void archiveAcademicYear(academicYear)
               .then(async count => {
                 await reloadCourses();
-                Alert.alert('Archived', `${count} course${count === 1 ? '' : 's'} archived.`);
+                appAlert('Archived', `${count} course${count === 1 ? '' : 's'} archived.`);
               })
               .catch((e: unknown) =>
-                Alert.alert('Could not archive', e instanceof Error ? e.message : 'Please try again.')
+                appAlert('Could not archive', e instanceof Error ? e.message : 'Please try again.')
               )
               .finally(() => setArchiving(false));
           },

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   Text,
   TextInput,
@@ -10,6 +9,7 @@ import {
 import * as ImagePicker from 'expo-image-picker';
 import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
 import { Button } from '../ui';
+import { appAlert } from '../ui/appDialog';
 import { useTheme } from '../../theme';
 import { getFontScaleValue } from '../../theme/installFontScale';
 import { featureAccents } from '@lantern/shared/design';
@@ -208,7 +208,7 @@ export function ChatComposer({
       recordingRef.current = null;
       const elapsed = Date.now() - startedAtRef.current;
       if (!uri || elapsed < 400) {
-        Alert.alert('Voice note', 'Recording was too short. Hold a bit longer.');
+        appAlert('Voice note', 'Recording was too short. Hold a bit longer.');
         return;
       }
       if (!onSendAudioMarkdown) return;
@@ -225,13 +225,13 @@ export function ChatComposer({
         const { url } = await uploadChatAudio(uri, mimeType, { groupId, threadId });
         await onSendAudioMarkdown(buildChatAudioMarkdown(url));
       } catch (err: any) {
-        Alert.alert('Voice note', err?.message || 'Could not upload voice note');
+        appAlert('Voice note', err?.message || 'Could not upload voice note');
       } finally {
         setUploadingAudio(false);
       }
     } catch {
       recordingRef.current = null;
-      Alert.alert('Voice note', 'Could not finish recording.');
+      appAlert('Voice note', 'Could not finish recording.');
     }
   };
 
@@ -241,7 +241,7 @@ export function ChatComposer({
       const { Audio } = await import('expo-av');
       const permission = await Audio.requestPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Microphone', 'Microphone permission is required for voice notes.');
+        appAlert('Microphone', 'Microphone permission is required for voice notes.');
         return;
       }
       await Audio.setAudioModeAsync({
@@ -258,7 +258,7 @@ export function ChatComposer({
         void stopRecording();
       }, MAX_VOICE_MS);
     } catch {
-      Alert.alert('Voice note', 'Could not start recording.');
+      appAlert('Voice note', 'Could not start recording.');
     }
   };
 

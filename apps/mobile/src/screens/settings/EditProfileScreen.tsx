@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { useAuthStore } from '../../stores/authStore';
 import { updateUserProfile, fetchUserProfile, uploadProfileAvatar } from '../../services/api';
@@ -66,7 +66,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
     if (!user?.id) return;
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Allow photo library access to change your avatar.');
+      appAlert('Permission needed', 'Allow photo library access to change your avatar.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -98,7 +98,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
       setPreviewUrl(uploaded.url);
       await supabase.auth.updateUser({ data: { avatar_url: uploaded.avatarUrl } });
     } catch (e: unknown) {
-      Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not update avatar');
+      appAlert('Upload failed', e instanceof Error ? e.message : 'Could not update avatar');
     } finally {
       setUploadingAvatar(false);
     }
@@ -113,7 +113,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
       setPreviewUrl(null);
       await supabase.auth.updateUser({ data: { avatar_url: null } });
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not remove avatar');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not remove avatar');
     } finally {
       setUploadingAvatar(false);
     }
@@ -125,10 +125,10 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
     try {
       await updateUserProfile(user.id, { name: name.trim(), phone: phone.trim() });
       await supabase.auth.updateUser({ data: { name: name.trim() } });
-      Alert.alert('Saved', 'Profile updated successfully.');
+      appAlert('Saved', 'Profile updated successfully.');
       navigation.goBack();
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to save profile');
+      appAlert('Error', e instanceof Error ? e.message : 'Failed to save profile');
     } finally {
       setSaving(false);
     }
@@ -137,11 +137,11 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
   const handleChangePassword = useCallback(async () => {
     if (!user?.email) return;
     if (newPassword.length < 6) {
-      Alert.alert('Invalid password', 'New password must be at least 6 characters.');
+      appAlert('Invalid password', 'New password must be at least 6 characters.');
       return;
     }
     if (newPassword !== confirmPassword) {
-      Alert.alert('Mismatch', 'New passwords do not match.');
+      appAlert('Mismatch', 'New passwords do not match.');
       return;
     }
 
@@ -152,7 +152,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
         password: currentPassword,
       });
       if (signInError) {
-        Alert.alert('Error', 'Current password is incorrect.');
+        appAlert('Error', 'Current password is incorrect.');
         return;
       }
       const { error } = await supabase.auth.updateUser({ password: newPassword });
@@ -161,9 +161,9 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
       setNewPassword('');
       setConfirmPassword('');
       setShowPasswordSection(false);
-      Alert.alert('Success', 'Password updated successfully.');
+      appAlert('Success', 'Password updated successfully.');
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to change password');
+      appAlert('Error', e instanceof Error ? e.message : 'Failed to change password');
     } finally {
       setChangingPassword(false);
     }

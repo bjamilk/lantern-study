@@ -12,8 +12,8 @@ import {
   TouchableOpacity,
   RefreshControl,
   Dimensions,
-  Alert,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute, useFocusEffect } from '@react-navigation/native';
 import { PieChart } from 'react-native-gifted-charts';
@@ -263,7 +263,7 @@ export default function BudgetScreen() {
       : 0;
 
   const handleDeleteTransaction = useCallback((transaction: Transaction) => {
-    Alert.alert(
+    appAlert(
       'Delete Transaction',
       `Are you sure you want to delete "${transaction.description}"?`,
       [

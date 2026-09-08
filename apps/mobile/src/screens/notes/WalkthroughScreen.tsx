@@ -30,7 +30,8 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, View } from 'react-native';
+import { ActivityIndicator, ScrollView, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Screen, useScreenActions, useScreenBottomPadding } from '../../components/layout';
@@ -234,7 +235,7 @@ export function WalkthroughScreen() {
     if (!verdict.canQuiz) {
       // Said out loud rather than as a disabled control with no explanation —
       // the row's Quiz item cannot print a reason before the press.
-      Alert.alert('Nothing to quiz here', verdict.reason || 'This page has no readable text.');
+      appAlert('Nothing to quiz here', verdict.reason || 'This page has no readable text.');
       return;
     }
     setQuizOpen(true);
@@ -281,7 +282,7 @@ export function WalkthroughScreen() {
       setOfferedChecks((prev) => [...prev, index]);
       // An OFFER. Declining costs nothing and blocks nothing — the next page
       // is one tap away either way.
-      Alert.alert(
+      appAlert(
         'Check what you have read?',
         `You have marked ${DEFAULT_CHECK_EVERY_N} pages done. Want a few questions on this page?`,
         [

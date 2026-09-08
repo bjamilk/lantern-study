@@ -10,6 +10,8 @@ import { logger } from '../utils/logger';
 import {
   DEFAULT_AI_DAILY_LIMIT,
   DEFAULT_AI_FEATURE_LIMITS,
+  describeAIDailyLimitReached,
+  describeAIFeatureLimitReached,
   isZeroCreditAIFeature,
 } from '@lantern/shared/utils/aiUsage';
 import {
@@ -313,7 +315,13 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
   setBonusHeader(res, result.bonusRemaining);
   if (!result.allowed) {
     res.status(429).json({
-      error: 'Daily AI limit reached. Try again tomorrow.',
+      // Plain words with the two facts a student can act on — how many they
+      // get and when they come back. "Try again tomorrow" was wrong for most
+      // of the world: these windows roll over at midnight UTC.
+      error: describeAIDailyLimitReached({
+        limit: AI_DAILY_LIMIT,
+        resetsAt: toResetsAt(result.resetTime),
+      }),
       limit: AI_DAILY_LIMIT,
       used: result.count,
       bonusRemaining: result.bonusRemaining,
@@ -384,7 +392,10 @@ export async function chargeAiCreditsDetailed(
         error:
           credits > 1
             ? `Daily AI limit reached. ${label} needs ${credits} AI uses — you have ${describeRemaining(result)}.`
-            : 'Daily AI limit reached. Try again tomorrow.',
+            : describeAIDailyLimitReached({
+                limit: AI_DAILY_LIMIT,
+                resetsAt: toResetsAt(result.resetTime),
+              }),
         limit: AI_DAILY_LIMIT,
         used: result.count,
         resetsAt: toResetsAt(result.resetTime),
@@ -406,15 +417,24 @@ export async function refundAiCredits(
 }
 
 /**
- * Give back the one global + one feature credit reserved by
- * aiRateLimitForFeature, for handlers that answer 2xx without doing AI work
- * (e.g. a quiz regenerate that returns the existing quiz untouched). Non-2xx
- * responses are refunded automatically by the middleware itself.
+ * Give back the global + feature credit reserved by aiRateLimitForFeature, for
+ * handlers that answer 2xx without doing AI work (e.g. a quiz regenerate that
+ * returns the existing quiz untouched). Non-2xx responses are refunded
+ * automatically by the middleware itself.
+ *
+ * `credits` is the GLOBAL half and defaults to the one credit
+ * aiRateLimitForFeature reserves. A queued job whose request reserved more than
+ * that (a variable-cost route that also names a feature) hands back what it
+ * actually took: hard-coding 1 here left the rest of a multi-credit charge on
+ * the student's counter for work that never happened. The feature counter is a
+ * cap rather than a currency — it moves one step per request whatever the
+ * charge, so it always comes back one step.
  */
 export async function refundFeatureAiCredit(
   userId: string,
   featureKey: string,
-  pool: AiUsePool = 'daily'
+  pool: AiUsePool = 'daily',
+  credits: number = AI_FEATURE_CREDIT_COST
 ): Promise<void> {
   // A free feature never took a global credit, so refunding one would MINT an
   // AI use out of a failed voice question. Only the cap comes back.
@@ -426,7 +446,11 @@ export async function refundFeatureAiCredit(
   // it; the per-feature counter is a cap, not a currency, and always resets
   // against the same daily key it was charged on.
   await Promise.all([
-    releaseGlobalAllowance(userId, AI_FEATURE_CREDIT_COST, pool),
+    releaseGlobalAllowance(
+      userId,
+      Math.max(0, Math.floor(credits)) || AI_FEATURE_CREDIT_COST,
+      pool
+    ),
     releaseUsage(buildUsageKey(userId, featureKey), AI_FEATURE_CREDIT_COST),
   ]);
 }
@@ -485,7 +509,10 @@ export function aiRateLimitWithCost(
         error:
           cost > 1
             ? `${label} needs ${cost} AI uses — you have ${describeRemaining(result)}.`
-            : 'Daily AI limit reached. Try again tomorrow.',
+            : describeAIDailyLimitReached({
+                limit: AI_DAILY_LIMIT,
+                resetsAt: toResetsAt(result.resetTime),
+              }),
         limit: AI_DAILY_LIMIT,
         used: result.count,
         remaining,
@@ -594,7 +621,13 @@ function zeroCreditFeatureLimiter(featureKey: string) {
     const featureResult = await incrementUsage(key, limit);
     if (!featureResult.allowed) {
       res.status(429).json({
-        error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
+        // The feature KEY is a routing detail. It used to be shown to
+        // students in brackets; the noun and the countdown replace it.
+        error: describeAIFeatureLimitReached({
+          featureKey,
+          limit,
+          resetsAt: toResetsAt(featureResult.resetTime),
+        }),
         feature: featureKey,
         limit,
         used: featureResult.count,
@@ -653,7 +686,11 @@ export function aiRateLimitForFeature(featureKey: string) {
     const featureSnapshot = await readUsage(key, limit);
     if (featureSnapshot.used >= limit) {
       res.status(429).json({
-        error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
+        error: describeAIFeatureLimitReached({
+          featureKey,
+          limit,
+          resetsAt: featureSnapshot.resetsAt,
+        }),
         feature: featureKey,
         limit,
         used: featureSnapshot.used,
@@ -670,7 +707,10 @@ export function aiRateLimitForFeature(featureKey: string) {
     setBonusHeader(res, globalResult.bonusRemaining);
     if (!globalResult.allowed) {
       res.status(429).json({
-        error: 'Daily AI limit reached. Try again tomorrow.',
+        error: describeAIDailyLimitReached({
+          limit: AI_DAILY_LIMIT,
+          resetsAt: toResetsAt(globalResult.resetTime),
+        }),
         limit: AI_DAILY_LIMIT,
         used: globalResult.count,
         bonusRemaining: globalResult.bonusRemaining,
@@ -686,7 +726,11 @@ export function aiRateLimitForFeature(featureKey: string) {
       // is itself about to refuse.
       await releaseGlobalAllowance(userId, AI_FEATURE_CREDIT_COST, globalResult.pool);
       res.status(429).json({
-        error: `Daily limit reached for this feature (${featureKey}). Try again tomorrow.`,
+        error: describeAIFeatureLimitReached({
+          featureKey,
+          limit,
+          resetsAt: toResetsAt(featureResult.resetTime),
+        }),
         feature: featureKey,
         limit,
         used: featureResult.count,

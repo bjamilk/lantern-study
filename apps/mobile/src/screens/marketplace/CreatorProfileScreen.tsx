@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { fetchCreatorProfile, followCreator, unfollowCreator } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
@@ -70,7 +71,7 @@ export function CreatorProfileScreen({
       if (next) await followCreator(userId);
       else await unfollowCreator(userId);
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not update follow');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not update follow');
       void load();
     } finally {
       setBusy(false);

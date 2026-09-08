@@ -1,5 +1,6 @@
 import {
   planExitToTestsList,
+  planSessionExitCopy,
   planRetakeFromResults,
   planTestExit,
   resolveRetakeTimeLimitMinutes,
@@ -384,5 +385,39 @@ describe('planRetakeFromResults with returnTo', () => {
     expect(plan.action).toBe('retakeQuestionSet');
     if (plan.action === 'unavailable') throw new Error('expected a launchable plan');
     expect('returnTo' in plan.params).toBe(false);
+  });
+});
+
+describe('planSessionExitCopy: the exit says what actually happens', () => {
+  it('tells a test-taker the attempt is discarded, not merely "lost"', () => {
+    const copy = planSessionExitCopy({ mode: 'test', answeredCount: 3, totalQuestions: 15 });
+
+    expect(copy.title).toBe('Exit test?');
+    expect(copy.message).toBe(
+      'You have answered 3 of 15. Leaving discards this attempt — it is not saved, not scored, and will not appear in History.'
+    );
+    expect(copy.confirmLabel).toBe('Discard attempt');
+    expect(copy.destructive).toBe(true);
+  });
+
+  it('never tells a practice reader they can come back — the draft is abandoned', () => {
+    const copy = planSessionExitCopy({ mode: 'study', answeredCount: 2, totalQuestions: 10 });
+
+    expect(copy.message).toContain('is not saved');
+    expect(copy.message).not.toMatch(/come back|resume|saved session/i);
+    expect(copy.destructive).toBe(false);
+  });
+
+  it('leaves the progress sentence out when nothing has been answered', () => {
+    const copy = planSessionExitCopy({ mode: 'test', answeredCount: 0, totalQuestions: 15 });
+
+    expect(copy.message.startsWith('Leaving discards')).toBe(true);
+  });
+
+  it('promises no control the player does not have', () => {
+    for (const mode of ['test', 'study'] as const) {
+      const copy = planSessionExitCopy({ mode, answeredCount: 1, totalQuestions: 5 });
+      expect(copy.message).not.toMatch(/pause|save (and|&) exit/i);
+    }
   });
 });

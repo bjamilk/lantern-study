@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import {
@@ -65,7 +66,7 @@ export function StudyProductDraftsScreen({
         }
         await createStudyPackDraft(source);
       } catch (e: unknown) {
-        Alert.alert('Error', e instanceof Error ? e.message : 'Could not start the study product');
+        appAlert('Error', e instanceof Error ? e.message : 'Could not start the study product');
       } finally {
         navigation.setParams?.({ source: undefined });
         void load();
@@ -93,7 +94,7 @@ export function StudyProductDraftsScreen({
     try {
       setReviewDraft(await fetchStudyPackDraft(id));
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not open this draft');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not open this draft');
     }
   };
 

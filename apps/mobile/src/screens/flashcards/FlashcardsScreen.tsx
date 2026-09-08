@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Modal,
   Pressable,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { KeyboardAwareScrollView } from '../../components/layout';
 import { useAuthStore, useFlashcardStore, type Deck } from '../../stores';
@@ -18,6 +18,8 @@ import { FeatureDisc, smallTextInk, useFeatureAccent } from '../../components/ui
 import { useUIStore } from '../../stores/uiStore';
 import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import type { Course, CourseTopic } from '@lantern/shared/types';
+import { humanizeFailureMessage } from '@lantern/shared/network';
+import { pluralize } from '@lantern/shared/utils';
 import { useTheme } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { exportDeck } from '../../services/api';
@@ -38,6 +40,7 @@ import { confirmSheet } from '../../stores/confirmStore';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
+import { deckDisplaySubtitle, deckDisplayTitle, sortDecksForList } from './deckList';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -90,6 +93,9 @@ function DeckCard({
   const accent = useFeatureAccent('flashcards');
   const cardCount = deck.card_count ?? 0;
   const dueCount = deck.due_count ?? 0;
+  // What a person reads, not what an uploader stored. See ./deckList.
+  const title = deckDisplayTitle(deck);
+  const subtitle = deckDisplaySubtitle(deck);
   const duePillInk = smallTextInk('flashcards', accent, isDark);
 
   return (
@@ -99,7 +105,7 @@ function DeckCard({
       delayLongPress={350}
       className="mb-3 rounded-2xl border border-lantern-border bg-lantern-surface p-3 active:opacity-90"
       accessibilityRole="button"
-      accessibilityLabel={`Deck ${deck.name}. ${getDeckListStatsLine(dueCount, cardCount)}`}
+      accessibilityLabel={`Deck ${title}. ${getDeckListStatsLine(dueCount, cardCount)}`}
       accessibilityHint={onMore ? 'Long press for more actions' : undefined}
     >
       <View className="flex-row items-center gap-3">
@@ -107,7 +113,7 @@ function DeckCard({
         <View className="flex-1 min-w-0">
           <View className="flex-row items-center gap-2">
             <T.Body style={{ fontWeight: '600' }} numberOfLines={1} className="flex-1">
-              {deck.name}
+              {title}
             </T.Body>
             {isOffline ? (
               <AppIcon
@@ -148,16 +154,16 @@ function DeckCard({
               onMore();
             }}
             accessibilityRole="button"
-            accessibilityLabel={`More actions for ${deck.name}`}
+            accessibilityLabel={`More actions for ${title}`}
             hitSlop={8}
           >
             <AppIcon name="ellipsis-vertical" size={18} color={colors.textSecondary} />
           </Pressable>
         ) : null}
       </View>
-      {deck.description ? (
+      {subtitle ? (
         <T.Caption tone="secondary" numberOfLines={2} className="mt-2">
-          {deck.description}
+          {subtitle}
         </T.Caption>
       ) : null}
       {onStudy && dueCount > 0 ? (
@@ -263,19 +269,24 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       list = list.filter(d => matchesCourseFilter(d.course_id, courseFilterId));
       if (topicFilterId) list = list.filter(d => matchesTopicFilter(d.topic_id, topicFilterId));
     }
-    if (!deckQuery) return list;
+    // Study-first: a deck with cards due is the reason this screen was
+    // opened, and it used to sit under five decks reading "Nothing ready".
+    if (!deckQuery) return sortDecksForList(list);
     // Cards as well as the deck's own name: "enzyme" means the cards, and the
     // ones already cached on this device are searchable with the API down.
-    return list.filter(
-      d =>
-        d.name.toLowerCase().includes(deckQuery) ||
-        Boolean(d.description && d.description.toLowerCase().includes(deckQuery)) ||
-        (cardsByDeck[d.id] || []).some(
-          c =>
-            (c.front || '').toLowerCase().includes(deckQuery) ||
-            (c.back || '').toLowerCase().includes(deckQuery) ||
-            (c.clozeText || '').toLowerCase().includes(deckQuery)
-        )
+    return sortDecksForList(
+      list.filter(
+        d =>
+          d.name.toLowerCase().includes(deckQuery) ||
+          deckDisplayTitle(d).toLowerCase().includes(deckQuery) ||
+          Boolean(d.description && d.description.toLowerCase().includes(deckQuery)) ||
+          (cardsByDeck[d.id] || []).some(
+            c =>
+              (c.front || '').toLowerCase().includes(deckQuery) ||
+              (c.back || '').toLowerCase().includes(deckQuery) ||
+              (c.clozeText || '').toLowerCase().includes(deckQuery)
+          )
+      )
     );
   }, [decks, courseFilterId, topicFilterId, deckQuery, cardsByDeck]);
 
@@ -296,7 +307,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         });
       }
     } catch (e) {
-      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setCourseMoveDeck(null);
     }
@@ -308,7 +319,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
     try {
       await updateDeck(target.deck.id, { topicId: topic?.id ?? null }, user.id);
     } catch (e) {
-      Alert.alert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not move deck', e instanceof Error ? e.message : 'Please try again.');
     } finally {
       setTopicMoveDeck(null);
     }
@@ -350,7 +361,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       if (offlineDeckIds.includes(deckId)) await unmarkDeckOffline(deckId);
       else await markDeckOffline(deckId, user.id);
     } catch (e) {
-      Alert.alert('Offline change failed', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Offline change failed', e instanceof Error ? e.message : 'Please try again.');
     }
   };
 
@@ -365,10 +376,10 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       });
     } catch (e) {
       if (e instanceof SharingUnavailableError) {
-        Alert.alert('Sharing unavailable', 'This device cannot open a share sheet.');
+        appAlert('Sharing unavailable', 'This device cannot open a share sheet.');
         return;
       }
-      Alert.alert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
+      appAlert('Export failed', e instanceof Error ? e.message : 'Could not export deck');
     }
   };
 
@@ -385,7 +396,9 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
     const count = deck.card_count ?? 0;
     const ok = await confirmSheet({
       title: 'Delete deck?',
-      message: `"${deck.name}" and its ${count} card${count === 1 ? '' : 's'} will be permanently deleted. This cannot be undone.`,
+      // The name as the LIST drew it: a student confirming a delete should be
+      // reading the row they tapped, not the filename underneath it.
+      message: `"${deckDisplayTitle(deck)}" and its ${pluralize(count, 'card')} will be permanently deleted. This cannot be undone.`,
       confirmLabel: 'Delete',
       danger: true,
     });
@@ -393,7 +406,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
     try {
       await deleteDeck(deck.id, user.id);
     } catch (e) {
-      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
+      appAlert('Could not delete', e instanceof Error ? e.message : 'Please try again.');
     }
   };
 
@@ -408,7 +421,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         back: card.back,
       });
     }
-    Alert.alert('Success', `Added ${generated.length} flashcards to the deck.`);
+    appAlert('Success', `Added ${generated.length} flashcards to the deck.`);
     setAiModalOpen(false);
     setAiDeckId(null);
   };
@@ -482,7 +495,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           section: 'Manage',
           label: 'Delete deck',
           icon: 'trash',
-          hint: `${deckActions.card_count ?? 0} card${(deckActions.card_count ?? 0) === 1 ? '' : 's'} will be deleted`,
+          hint: `${pluralize(deckActions.card_count ?? 0, 'card')} will be deleted`,
           destructive: true,
           onPress: () => setTimeout(() => void handleDeleteDeck(deckActions), 50),
         },
@@ -522,7 +535,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       <ScreenHeader
         onBack={() => navigation.goBack()}
         title="Flashcards"
-        subtitle={`${decks.length} deck${decks.length !== 1 ? 's' : ''}`}
+        subtitle={pluralize(decks.length, 'deck')}
         right={
           <View className="flex-row gap-1.5">
             <Button size="sm" variant="secondary" onPress={() => setImportOpen(true)}>
@@ -555,7 +568,9 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
 
       {error ? (
         <Pressable onPress={clearError} className="mx-4 mb-2 px-3 py-2 rounded-xl bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800">
-          <Text className="text-xs text-amber-800 dark:text-amber-200">{error}</Text>
+          <Text className="text-xs text-amber-800 dark:text-amber-200">
+            {humanizeFailureMessage(error)}
+          </Text>
         </Pressable>
       ) : null}
 

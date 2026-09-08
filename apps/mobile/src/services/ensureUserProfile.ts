@@ -1,4 +1,5 @@
 import type { User } from '@supabase/supabase-js';
+import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
 import { createUserProfile, fetchUserProfile } from './api';
 import { extractAcademicProfile, type AcademicProfile } from '../utils/academicProfile';
 
@@ -22,7 +23,10 @@ export async function ensureUserProfile(user: User): Promise<{
   try {
     const profile = await fetchUserProfile(user.id);
     return {
-      displayName: profile.name?.trim() || resolveFallbackName(user),
+      // A profiles row created from an address can hold the address itself.
+      // This name is what the app writes onto the viewer's own cards before
+      // the server's copy arrives, and a board publishes those to everyone.
+      displayName: scrubEmailFromDisplayName(profile.name) || resolveFallbackName(user),
       firstName: resolveProfileFirstName(profile, user),
       academic: extractAcademicProfile(profile),
     };
@@ -56,10 +60,18 @@ function resolveProfileFirstName(
   return undefined;
 }
 
+/**
+ * The name to show when the profile has none.
+ *
+ * `user_metadata.name` is whatever the sign-up flow put there, and for an
+ * email sign-up that is routinely the address — so it goes through the same
+ * scrub as every other candidate. The local part is the deliberate landing
+ * place, not a leak: it is the fallback name the rest of the app already uses.
+ */
 function resolveFallbackName(user: User): string {
-  return (
-    (typeof user.user_metadata?.name === 'string' && user.user_metadata.name.trim()) ||
-    user.email?.split('@')[0] ||
-    'User'
-  );
+  const fromMetadata =
+    typeof user.user_metadata?.name === 'string'
+      ? scrubEmailFromDisplayName(user.user_metadata.name)
+      : null;
+  return fromMetadata || user.email?.split('@')[0] || 'User';
 }

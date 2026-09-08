@@ -1,4 +1,5 @@
 import { buildMeSections, meRowIds } from './meRows';
+import { LOW_DATA_MODE_HINT } from '@lantern/shared/settings';
 
 const sections = (darkMode = false, lowDataMode = false) =>
   buildMeSections({ darkMode, lowDataMode });
@@ -23,6 +24,14 @@ describe('the Me tab', () => {
     const last = flat[flat.length - 1];
     expect(last.id).toBe('logout');
     expect(last.kind).toBe('destructive');
+  });
+
+  it('describes Low-data mode with the one shared sentence, not a second wording', () => {
+    // Me said "Skip images and heavy downloads on mobile data" while Settings >
+    // Appearance said "Lighter images, charts, and page loads" — one switch
+    // described twice reads as two switches.
+    const flat = sections().flatMap((section) => section.rows);
+    expect(flat.find((row) => row.id === 'lowData')?.hint).toBe(LOW_DATA_MODE_HINT);
   });
 
   it('keeps Dark mode and Low-data mode as switches, never destinations', () => {

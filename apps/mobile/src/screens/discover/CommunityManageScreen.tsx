@@ -26,7 +26,8 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { seedMuteState } from '@lantern/shared/network';
-import { ActivityIndicator, Alert, FlatList, Pressable, Share, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, Share, Text, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import * as Clipboard from 'expo-clipboard';
 import {
   COMMUNITY_COPY,
@@ -311,7 +312,7 @@ export function CommunityManageScreen({
   const revokeInvite = useCallback(
     (code: string) => {
       if (!communityId) return;
-      Alert.alert('Revoke this link?', 'Anyone still holding it will not be able to join.', [
+      appAlert('Revoke this link?', 'Anyone still holding it will not be able to join.', [
         { text: 'Cancel', style: 'cancel' },
         {
           text: MANAGE_COPY.inviteRevoke,
@@ -499,26 +500,36 @@ export function CommunityManageScreen({
   return (
     <Screen bottom="none">
       <View className="border-b border-lantern-border">
+        {/*
+          The app bar's 56px row holds the back control and the TITLE, and
+          nothing else — the same shape as CommunityMembersScreen.
+
+          It used to hold four lines of text (title, community, and a wrapping
+          invite link) inside that same fixed height. They were centred, so the
+          overflow was clipped at BOTH ends and the top line lost was the title:
+          "Manage community" arrived sliced in half under the Campus bar on
+          every screenshot of this screen. The two supporting lines move below
+          the row, where they can be as tall as they need to be.
+        */}
         <View className="flex-row items-center h-[56px] pr-4">
           <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
-          <View className="flex-1 min-w-0">
-            <Text className="text-heading font-semibold text-lantern-text" numberOfLines={1}>
-              {MANAGE_COPY.title}
-            </Text>
-            <Text className="text-caption text-lantern-text-tertiary" numberOfLines={1}>
-              {communityName}
-            </Text>
-            {/* The public link this community's slug produces, spelled out and
-                selectable: a founder asked to "send the link" had nowhere to
-                read it, because the slug only ever existed in the route. */}
-            <Text
-              className="text-caption text-lantern-text-tertiary"
-              selectable
-              numberOfLines={2}
-            >
-              {communitySlugLine(slug)}
-            </Text>
-          </View>
+          <Text
+            className="flex-1 text-heading font-semibold text-lantern-text"
+            numberOfLines={1}
+          >
+            {MANAGE_COPY.title}
+          </Text>
+        </View>
+        <View className="px-4 pb-2">
+          <Text className="text-caption text-lantern-text-tertiary" numberOfLines={1}>
+            {communityName}
+          </Text>
+          {/* The public link this community's slug produces, spelled out and
+              selectable: a founder asked to "send the link" had nowhere to
+              read it, because the slug only ever existed in the route. */}
+          <Text className="text-caption text-lantern-text-tertiary" selectable numberOfLines={2}>
+            {communitySlugLine(slug)}
+          </Text>
         </View>
         <View className="flex-row px-2" accessibilityRole="tablist">
           {(['members', 'invites'] as const).map((value) => {

@@ -62,3 +62,38 @@ describe('resolveSenderIdentity', () => {
     expect(r.name).toBe('Member');
   });
 });
+
+/**
+ * A community board publishes every card to everyone who can read it. The
+ * viewer's own freshly created post is drawn from `viewer` alone (no roster, no
+ * embedded sender), and `viewer.name` is the auth store's `profileName` — which
+ * used to be `user_metadata.name` verbatim, i.e. the address an email sign-up
+ * put there. The post's tombstone then carried "nimaj22@gmail.com" and its
+ * initials next to live cards showing the same person's real name.
+ */
+describe('an email address never becomes a sender label', () => {
+  it('shows the local part, not the address, for the viewer\'s own row', () => {
+    const r = resolveSenderIdentity({
+      senderId: ME,
+      viewer: { id: ME, name: 'nimaj22@gmail.com', username: null, avatarUrl: null },
+    });
+    expect(r.name).toBe('nimaj22');
+  });
+
+  it('refuses an address coming from the server\'s embedded sender too', () => {
+    const r = resolveSenderIdentity({
+      senderId: ME,
+      sender: { name: 'nimaj22@gmail.com' },
+      viewer,
+    });
+    expect(r.name).toBe('nimaj22');
+  });
+
+  it('refuses an address coming from the roster', () => {
+    const r = resolveSenderIdentity({
+      senderId: 'user-other',
+      rosterMember: { name: 'someone@example.com' },
+    });
+    expect(r.name).toBe('someone');
+  });
+});

@@ -316,7 +316,11 @@ export function NoteLearnPanel({
           // The six-step scale, not a Tailwind size class: NativeWind inlines
           // rem at 14 here, so the Tailwind ladder runs a step small.
           style={typeScale.body}
-          placeholder='Optional guidance — e.g. "focus on clinical applications"'
+          // Short enough to finish inside one line on a phone: the longer
+          // wording was cut mid-quote on device ("…focus on clinical
+          // applications) — a placeholder that ends without closing is read
+          // as a bug in the field, not as an example.
+          placeholder="Optional: what should it focus on?"
           placeholderTextColor={colors.textTertiary}
           value={guidance}
           onChangeText={onGuidanceChange}

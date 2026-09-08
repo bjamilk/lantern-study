@@ -12,6 +12,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
   communityMembershipAction,
+  communityDisplayName,
   memberCountLabel,
   resolveListState,
   type Community,
@@ -296,7 +297,7 @@ function CommunitiesPanel({
         onPress={() => (joined ? open(community.slug) : void join(community))}
         disabled={busy}
         accessibilityRole="button"
-        accessibilityLabel={`${community.name}, ${meta.label}, ${memberCountLabel(
+        accessibilityLabel={`${communityDisplayName(community.name)}, ${meta.label}, ${memberCountLabel(
           community.member_count
         )}. ${joined ? 'Open' : 'Join'}`}
         style={{ minHeight: 56 }}
@@ -308,7 +309,9 @@ function CommunitiesPanel({
         <FeatureDisc feature={meta.ink} icon={meta.icon} size={40} />
         <View className="flex-1 min-w-0">
           <Text className="text-body font-semibold text-lantern-text" numberOfLines={1}>
-            {community.name}
+            {/* A derived course room is named `code — title`, which reads
+                "PHARM 212 — PHARM 212" whenever the title IS the code. */}
+            {communityDisplayName(community.name)}
           </Text>
           <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
             {meta.label} · {memberCountLabel(community.member_count)}

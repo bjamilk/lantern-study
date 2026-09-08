@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
   Text,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import { useMarketplaceStore } from '../../stores/marketplaceStore';
@@ -120,15 +120,15 @@ export function OrdersScreen({
     const listing = order.listing;
     const listingId = listing?.id || order.listing_id;
     if (!listingId) {
-      Alert.alert('Unavailable', 'Listing is no longer available.');
+      appAlert('Unavailable', 'Listing is no longer available.');
       return;
     }
     if (listing?.status && listing.status !== 'active') {
-      Alert.alert('Sold out', 'This listing is sold out or unavailable.');
+      appAlert('Sold out', 'This listing is sold out or unavailable.');
       return;
     }
     if (listing?.quantity != null && listing.quantity <= 0) {
-      Alert.alert('Sold out', 'This listing is sold out.');
+      appAlert('Sold out', 'This listing is sold out.');
       return;
     }
     const lastQty = Math.max(1, Number(order.quantity) || 1);
@@ -151,7 +151,7 @@ export function OrdersScreen({
       // No hosted-checkout URL: fall back to the order detail to finish payment.
       navigation.navigate('OrderDetail', { orderId: order.id });
     } catch (err: unknown) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Could not open checkout');
+      appAlert('Error', err instanceof Error ? err.message : 'Could not open checkout');
     } finally {
       setPayingId(null);
     }

@@ -2,11 +2,11 @@
  * Seller-facing takedown notice + one-shot appeal (Phase 1 · E, contract §5):
  * shown on a moderated listing in My Listings and on the owner's listing
  * detail. Reads takedown_reason / appeal_* from the owner-only listing fields
- * and drives POST /marketplace/listings/:id/appeal. iOS uses Alert.prompt for
- * the note; Android (no prompt) gets a small modal.
+ * and drives POST /marketplace/listings/:id/appeal. The note is written in the
+ * app's own modal on both platforms.
  */
 import React, { useState } from 'react';
-import { Alert, Modal, Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Modal, Pressable, Text, TextInput, View } from 'react-native';
 import {
   APPEAL_NOTE_MAX_LENGTH,
   LISTING_APPEAL_STATUS_LABELS,
@@ -23,6 +23,7 @@ import { useMarketplaceStore, type MarketplaceListing } from '../../stores';
 import { Button } from '../ui';
 import { useTheme } from '../../theme';
 import { AppIcon } from '../ui/AppIcon';
+import { appAlert } from '../ui/appDialog';
 
 interface Props {
   listing: Pick<
@@ -67,13 +68,12 @@ export function ListingTakedownNotice({ listing, compact }: Props) {
     setNoteError(null);
     try {
       await appealListing(listing.id, trimmed);
-      Alert.alert('Appeal submitted', 'Our team will review it and let you know the outcome.');
+      appAlert('Appeal submitted', 'Our team will review it and let you know the outcome.');
       return true;
     } catch (e: unknown) {
       const message = e instanceof Error && e.message ? e.message : 'Could not submit your appeal.';
-      // Android keeps the modal open with the error; iOS already dismissed the prompt.
-      if (Platform.OS === 'ios') Alert.alert('Could not appeal', message);
-      else setNoteError(message);
+      // The modal stays open with the error in place.
+      setNoteError(message);
       return false;
     } finally {
       setBusy(false);
@@ -82,24 +82,7 @@ export function ListingTakedownNotice({ listing, compact }: Props) {
 
   const startAppeal = () => {
     if (!canAppeal) {
-      Alert.alert('Appeal unavailable', refusal ?? 'This listing cannot be appealed.');
-      return;
-    }
-    if (Platform.OS === 'ios' && typeof Alert.prompt === 'function') {
-      Alert.prompt(
-        'Appeal takedown',
-        'Explain why this listing should be restored (for example, you own the rights or the report was mistaken).',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Submit appeal',
-            onPress: (text?: string) => {
-              void submitAppeal(text ?? '');
-            },
-          },
-        ],
-        'plain-text'
-      );
+      appAlert('Appeal unavailable', refusal ?? 'This listing cannot be appealed.');
       return;
     }
     setNote('');
@@ -198,7 +181,7 @@ export function ListingTakedownNotice({ listing, compact }: Props) {
         </Text>
       ) : null}
 
-      {/* Android: Alert.prompt does not exist, so the note gets a small modal. */}
+      {/* The appeal note is written here, in the app's own dialog style. */}
       <Modal
         visible={androidPromptOpen}
         transparent

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, ScrollView, Pressable, TextInput, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, ScrollView, Pressable, TextInput, TouchableOpacity } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useAuthStore } from '../../stores/authStore';
 import { useBudgetStore, formatCurrency, type SavingsGoal } from '../../stores/budgetStore';
@@ -35,7 +36,7 @@ export default function SavingsGoalsScreen() {
   const handleAdd = async () => {
     const amount = parseFloat(target);
     if (!name.trim() || !amount || amount <= 0) {
-      Alert.alert('Invalid goal', 'Enter a name and target amount.');
+      appAlert('Invalid goal', 'Enter a name and target amount.');
       return;
     }
     await addSavingsGoal({

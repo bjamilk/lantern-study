@@ -29,9 +29,9 @@ import {
   FlatList,
   Modal,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { Screen, useScreenBottomPadding, useScreenInsets } from '../../components/layout';
 import { BackButton, FeatureDisc, useFeatureAccent } from '../../components/ui';
@@ -175,7 +175,7 @@ export default function TestBuilderScreen() {
         const cards = useFlashcardStore.getState().flashcards[deckId] || [];
         const notesText = deckStudyNotes(cards);
         if (notesText.trim().length < 50) {
-          Alert.alert(
+          appAlert(
             'Not enough to work from',
             'This deck does not have enough card text yet. Add a few more cards and try again.'
           );
@@ -215,7 +215,7 @@ export default function TestBuilderScreen() {
         });
         returnToTests();
       } catch (error) {
-        Alert.alert(
+        appAlert(
           'Could not start',
           error instanceof Error ? error.message : 'Try again in a moment.'
         );
@@ -306,7 +306,7 @@ export default function TestBuilderScreen() {
       disabledReason: row.disabledReason,
     });
     if (plan.action === 'refuse') {
-      Alert.alert('Cannot use this one', plan.reason);
+      appAlert('Cannot use this one', plan.reason);
       return;
     }
     setSelection(plan.selection);
@@ -332,7 +332,7 @@ export default function TestBuilderScreen() {
       max: MAX_GENERATED_QUESTIONS,
     });
     if (plan.action === 'refuse') {
-      Alert.alert('Nothing to generate yet', plan.reason);
+      appAlert('Nothing to generate yet', plan.reason);
       return;
     }
     if (plan.kind === 'deck') void handleDeckPicked(plan.id, plan.title);

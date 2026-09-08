@@ -20,12 +20,21 @@ import {
 } from '@lantern/shared/jobs/jobClient';
 import { JOB_STALE_TIMEOUT_MS } from '@lantern/shared/jobs/jobState';
 import { API_BASE_URL, getAuthHeaders } from './supabase';
+import { publishAIUsage } from './aiUsageStore';
 
 export { JobStillRunningError, isJobStillRunningError } from '@lantern/shared/jobs/jobClient';
 
 const jobs = createJobClient({
   getBaseUrl: () => API_BASE_URL,
   getAuthHeaders,
+  /**
+   * Every poll restates the AI counters, and the one that matters is the poll
+   * that reports a FAILURE: the 202 which started the job published the charged
+   * numbers, the server refunds a job that never produced an answer, and this
+   * is the only moment the phone can hear about it. Without it the badge kept
+   * the charge for work that produced nothing.
+   */
+  onUsageUpdate: publishAIUsage,
 });
 
 /** Watch `jobId` until it is done or failed; backoff-polled, never blind. */

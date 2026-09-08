@@ -600,9 +600,9 @@ export type BoardRepostRefusal =
   | 'unavailable';
 
 /**
- * Can this viewer repost this post? The client hides the control on a refusal
- * and the server re-checks every rule, so calling the endpoint directly with
- * curl is refused too (§6.3, acceptance criterion 17).
+ * Can this viewer repost this post? The server re-checks every rule, so
+ * calling the endpoint directly with curl is refused too (§6.3, acceptance
+ * criterion 17).
  */
 export function canRepostBoardPost(input: {
   post: Pick<BoardPost, 'senderId' | 'timestamp' | 'removedAt' | 'repostedByMe' | 'repostOf'>;
@@ -621,6 +621,24 @@ export function canRepostBoardPost(input: {
     }
   }
   return { ok: true };
+}
+
+/**
+ * How the repost control should render for this viewer, on both platforms.
+ *
+ * The rule that matters: a refusal DIMS the control, it never disables it.
+ * On device the icon was grey and inert, and there was no way to find out
+ * why — the refusal copy below existed but nothing could ever reach it,
+ * because a disabled control never fires its press. Dimmed-and-pressable is
+ * the only shape in which the reason gets said out loud.
+ */
+export function boardRepostControlState(
+  verdict: { ok: true } | { ok: false; reason: BoardRepostRefusal },
+  repostedByMe: boolean,
+): { pressable: true; dimmed: boolean } {
+  // Pressable is not conditional: every state of this control has something
+  // to say — repost, undo, or the reason it cannot happen right now.
+  return { pressable: true, dimmed: !verdict.ok && !repostedByMe };
 }
 
 /** One refusal reason → the one string both platforms show for it. */

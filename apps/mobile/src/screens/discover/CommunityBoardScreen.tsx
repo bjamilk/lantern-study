@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -13,6 +12,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -25,7 +25,9 @@ import {
   boardRepostRefusalCopy,
   boardSharePayload,
   canRepostBoardPost,
+  communityDisplayName,
   isBoardFavorited,
+  memberCountLabel,
   studyGroupNameFromPost,
   validateBoardSubject,
   COMMUNITY_MODERATION_COPY,
@@ -67,6 +69,7 @@ import {
   resolveComposerKind,
 } from './boardComposerModel';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
+import { useProfileIdentity } from '../../hooks/useProfileIdentity';
 
 export type BoardNavigation = {
   goBack: () => void;
@@ -129,6 +132,8 @@ export function CommunityBoardScreen({
 }) {
   const { groupId, groupName, communitySlug } = route.params;
   const user = useAuthStore((s) => s.user);
+  // One name and one face for this student, shared with Me and Settings.
+  const identity = useProfileIdentity();
   const { lowDataMode } = useLowDataMode();
 
   const groups = useGroupStore((s) => s.groups);
@@ -185,7 +190,9 @@ export function CommunityBoardScreen({
   const channelsById = useCommunityStore((s) => s.channelsById);
 
   const communityId = route.params.communityId ?? detail?.id ?? null;
-  const communityName = route.params.communityName ?? detail?.name ?? null;
+  // Derived course rooms are stored as `code — title`, which reads
+  // "PHARM 212 — PHARM 212" whenever the title is the code again.
+  const communityName = communityDisplayName(route.params.communityName ?? detail?.name) || null;
   const viewerRole: CommunityRole | null =
     (communityId ? channelsById[communityId]?.viewer.role : null) ?? detail?.viewerRole ?? null;
   /**
@@ -469,7 +476,7 @@ export function CommunityBoardScreen({
       setHighlightId(useGroupStore.getState().messagesCache[groupId]?.slice(-1)[0]?.id ?? null);
       return true;
     } catch (error) {
-      Alert.alert('Post failed', error instanceof Error ? error.message : 'Please try again.');
+      appAlert('Post failed', error instanceof Error ? error.message : 'Please try again.');
       return false;
     } finally {
       setSending(false);
@@ -783,7 +790,7 @@ export function CommunityBoardScreen({
         setChatMuted(!!status?.muted);
         setChatMutedUntil(status?.mutedUntil ?? null);
       } catch {
-        Alert.alert('Mute failed', 'Could not mute notifications for this board.');
+        appAlert('Mute failed', 'Could not mute notifications for this board.');
       } finally {
         setMuteBusy(false);
       }
@@ -799,18 +806,18 @@ export function CommunityBoardScreen({
       setChatMuted(false);
       setChatMutedUntil(null);
     } catch {
-      Alert.alert('Unmute failed', 'Could not unmute notifications for this board.');
+      appAlert('Unmute failed', 'Could not unmute notifications for this board.');
     } finally {
       setMuteBusy(false);
     }
   }, [groupId, muteBusy]);
 
   const showAbout = useCallback(() => {
-    Alert.alert(
+    appAlert(
       displayName,
       [
         group?.description?.trim() || null,
-        `${memberCount.toLocaleString()} ${memberCount === 1 ? 'member' : 'members'}`,
+        memberCountLabel(memberCount),
         communityName ? COMMUNITY_COPY.inCommunity(communityName) : null,
       ]
         .filter(Boolean)
@@ -820,7 +827,7 @@ export function CommunityBoardScreen({
 
   const confirmLeave = useCallback(() => {
     if (!user?.id) return;
-    Alert.alert(COMMUNITY_BOARD_COPY.leaveBoard, `Leave ${displayName}?`, [
+    appAlert(COMMUNITY_BOARD_COPY.leaveBoard, `Leave ${displayName}?`, [
       { text: 'Cancel', style: 'cancel' },
       {
         text: COMMUNITY_BOARD_COPY.leaveBoard,
@@ -832,7 +839,7 @@ export function CommunityBoardScreen({
               navigation.goBack();
             })
             .catch((error: unknown) => {
-              Alert.alert(
+              appAlert(
                 'Could not leave',
                 error instanceof Error ? error.message : 'Try again.'
               );
@@ -1047,7 +1054,7 @@ export function CommunityBoardScreen({
         icon: 'trash',
         destructive: true,
         onPress: () => {
-          Alert.alert(COMMUNITY_BOARD_COPY.deletePost, 'This cannot be undone.', [
+          appAlert(COMMUNITY_BOARD_COPY.deletePost, 'This cannot be undone.', [
             { text: 'Cancel', style: 'cancel' },
             {
               text: 'Delete',
@@ -1133,6 +1140,22 @@ export function CommunityBoardScreen({
     [navigation, groupId, communitySlug, communityName, displayName]
   );
 
+  /**
+   * The board's own answer to "who is this?", by author id. A removed post is
+   * re-delivered without the profile join every live card resolved from, so
+   * the tombstone used to draw whatever identity its payload happened to
+   * carry. This is the source the rest of the board agrees on — see
+   * `components/board/boardAuthorIdentity.ts`.
+   */
+  const authorsById = useMemo(() => {
+    const map = new Map<string, { name?: string | null; avatarUrl?: string | null }>();
+    for (const member of group?.members ?? []) {
+      const id = member.userId || member.id;
+      if (id) map.set(id, { name: member.name, avatarUrl: member.avatarUrl });
+    }
+    return map;
+  }, [group?.members]);
+
   const renderPost = useCallback(
     ({ item }: { item: Message }) => {
       // Favorite / Comment / Bookmark on a REPOST card read the ORIGINAL's
@@ -1150,6 +1173,7 @@ export function CommunityBoardScreen({
           bookmarksSupported={bookmarksSupported}
           lowDataMode={lowDataMode}
           highlighted={highlightId === item.id}
+          knownAuthor={authorsById.get(item.senderId) ?? null}
           onOpenComments={() => openComments(item)}
           onToggleFavorite={() => toggleFavorite(item)}
           onRepost={() => openRepost(item)}
@@ -1173,6 +1197,7 @@ export function CommunityBoardScreen({
       bookmarksSupported,
       lowDataMode,
       highlightId,
+      authorsById,
       openComments,
       toggleFavorite,
       openRepost,
@@ -1202,7 +1227,9 @@ export function CommunityBoardScreen({
           {/* Low-data mode keeps naming the community: it is the only
               community affordance on this screen (§4.1 / §10). */}
           <Text className="text-xs text-lantern-primary-text" numberOfLines={1}>
-            {[communityName, memberCount > 0 ? `${memberCount.toLocaleString()} members` : null]
+            {/* `${n} members` read "1 members" on a one-person board while
+                the Communities list one screen back said "1 member". */}
+            {[communityName, memberCount > 0 ? memberCountLabel(memberCount) : null]
               .filter(Boolean)
               .join(' · ') || COMMUNITY_COPY.membersOnly}
           </Text>
@@ -1337,8 +1364,12 @@ export function CommunityBoardScreen({
 
         <BoardComposer
           groupId={groupId}
-          avatarUrl={user?.user_metadata?.avatar_url ?? null}
-          authorName={user?.user_metadata?.name || 'You'}
+          // The composer wore a different face from the post it was about to
+          // make: it read auth metadata only and fell back to the literal
+          // "You", which the avatar drew as a "YO" chip above the same
+          // student's real photo. Both now come from `useProfileIdentity`.
+          avatarUrl={identity.avatarUrl}
+          authorName={identity.displayName}
           text={text}
           onChangeText={setText}
           subject={subject}

@@ -1,12 +1,12 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   Text,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import * as WebBrowser from 'expo-web-browser';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -102,7 +102,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
 
       if (payUrl) {
         if (failCount > 0) {
-          Alert.alert(
+          appAlert(
             'Partial checkout',
             `${orderCount} checkout(s) started; ${failCount} item(s) failed. Opening Paystack for the first order.`
           );
@@ -120,7 +120,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
       }
 
       if (failCount > 0) {
-        Alert.alert(
+        appAlert(
           'Partial checkout',
           `${orderCount} order(s) created; ${failCount} item(s) failed.`
         );
@@ -131,7 +131,7 @@ export function CartScreen({ navigation }: { navigation: NavigationProp }) {
         navigation.navigate('Orders', { role: 'buyer' });
       }
     } catch (e: unknown) {
-      Alert.alert('Checkout failed', e instanceof Error ? e.message : 'Try again');
+      appAlert('Checkout failed', e instanceof Error ? e.message : 'Try again');
       await load();
     } finally {
       setCheckingOut(false);

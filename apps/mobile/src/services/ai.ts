@@ -7,9 +7,9 @@ import type {
   FlashcardGenerationDifficulty,
   FlashcardTypeMix,
 } from '@lantern/shared/flashcards/generationOptions';
-import { DEFAULT_AI_DAILY_LIMIT } from '@lantern/shared/utils/aiUsage';
 import { getAuthHeaders, API_BASE_URL, supabase } from './supabase';
 import { settleJob } from './jobWatch';
+import { getLatestAIUsage, publishAIUsage, subscribeToAIUsage } from './aiUsageStore';
 
 export type {
   AIGeneratedQuestion,
@@ -24,17 +24,8 @@ export type {
   AIUsageInfo,
 } from '@lantern/shared';
 
-let _latestUsage: AIUsageInfo = {
-  used: 0,
-  limit: DEFAULT_AI_DAILY_LIMIT,
-  remaining: DEFAULT_AI_DAILY_LIMIT,
-  resetsAt: '',
-};
-const _usageListeners = new Set<(usage: AIUsageInfo) => void>();
-
 function updateUsage(usage: AIUsageInfo) {
-  _latestUsage = usage;
-  _usageListeners.forEach((fn) => fn(usage));
+  publishAIUsage(usage);
 }
 
 /** Apply global AI quota headers from a fetch Response (notes AI paths). */
@@ -51,12 +42,13 @@ export function applyAIUsageFromErrorBody(data: unknown): void {
   const body = data as { used?: number; limit?: number; resetsAt?: string; feature?: string };
   if (!body || typeof body.used !== 'number' || typeof body.limit !== 'number') return;
   if (body.feature) return;
-  if (body.limit !== _latestUsage.limit) return;
+  const latest = getLatestAIUsage();
+  if (body.limit !== latest.limit) return;
   updateUsage({
     used: body.used,
     limit: body.limit,
     remaining: Math.max(0, body.limit - body.used),
-    resetsAt: body.resetsAt || _latestUsage.resetsAt,
+    resetsAt: body.resetsAt || latest.resetsAt,
   });
 }
 
@@ -80,16 +72,13 @@ const { ai, companion } = createLanternAI({
   supportsResponseStreaming: false,
 });
 
-export function getLatestAIUsage(): AIUsageInfo {
-  return _latestUsage;
-}
-
-export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () => void {
-  _usageListeners.add(listener);
-  return () => {
-    _usageListeners.delete(listener);
-  };
-}
+/**
+ * The badge's numbers and everything that watches them live in
+ * `services/aiUsageStore`, so the job poller can publish a refund without
+ * importing this module back. Re-exported here because every caller in the app
+ * already asks `services/ai` for them.
+ */
+export { getLatestAIUsage, subscribeToAIUsage };
 
 export const fetchAIUsage = ai.fetchAIUsage;
 /**

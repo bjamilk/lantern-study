@@ -48,6 +48,7 @@ import {
   type JobStatusSnapshot,
   type ServerJobStatus,
   type WireJobRecord,
+  classifyJobFailure,
 } from './jobsCore';
 import type { TrackedJob } from './jobsCore';
 import { jobArtifactLink, jobNotification, jobResultLink } from '../components/jobs/jobSheetModel';
@@ -59,6 +60,8 @@ import {
 } from '../services/localNotifications';
 import { API_BASE_URL, getAuthHeaders } from '../services/supabase';
 import { fetchAIUsage } from '../services/ai';
+import { parseGlobalAIUsageFromHeaders } from '@lantern/shared/api';
+import { publishAIUsage } from '../services/aiUsageStore';
 import { isJobStillRunningError } from '../services/jobWatch';
 import { useAuthStore } from './authStore';
 import { syncService } from '../services/syncService';
@@ -82,6 +85,11 @@ const defaultJobClient: JobClient = {
   async getJobStatus(jobId: string): Promise<JobStatusSnapshot> {
     const headers = await getAuthHeaders();
     const response = await fetch(`${API_BASE_URL}/api/v1/jobs/${jobId}`, { headers });
+    // Every poll restates the caller's AI counters, and the one that reports
+    // a FAILURE carries the refund. This direct client is what actually polls
+    // (setJobClient is never called), so it must publish them too, or a job
+    // settled from here leaves the badge showing the charge.
+    parseGlobalAIUsageFromHeaders(response, publishAIUsage);
     const payload = (await response.json().catch(() => ({}))) as {
       data?: WireJobRecord;
       error?: string;
@@ -611,6 +619,7 @@ export const useJobsStore = create<JobsState>((set, get) => {
           settle(id, {
             status: 'failed',
             error: error instanceof Error ? error.message : 'The generation failed.',
+            failureKind: classifyJobFailure(error),
           });
         }
       })();

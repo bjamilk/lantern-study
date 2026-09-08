@@ -10,9 +10,9 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  Alert,
   BackHandler,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, useIsFocused, RouteProp } from '@react-navigation/native';
@@ -504,7 +504,7 @@ export default function TestResultsScreen() {
    */
   const handleTryAgain = async () => {
     if (retakePlan.action === 'unavailable') {
-      Alert.alert('Cannot retake', retakePlan.message);
+      appAlert('Cannot retake', retakePlan.message);
       return;
     }
     if (startingRetake) return;
@@ -533,7 +533,7 @@ export default function TestResultsScreen() {
       }
       navigation.replace('TestTaking', retakePlan.params);
     } catch {
-      Alert.alert('Error', 'Failed to start test');
+      appAlert('Error', 'Failed to start test');
     } finally {
       setStartingRetake(false);
     }

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActionSheetIOS,
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -14,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import * as DocumentPicker from 'expo-document-picker';
@@ -23,6 +23,7 @@ import {
   formatMaxNoteUploadLabel,
 } from '@lantern/shared/utils/noteUpload';
 import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
+import { humanizeFailureMessage } from '@lantern/shared/network';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import { useNotesStore } from '../../stores/notesStore';
@@ -454,7 +455,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       await moveNotesToFolder(selectedNoteIds, folderId);
       exitSelectMode();
     } catch (e: unknown) {
-      Alert.alert('Could not move notes', e instanceof Error ? e.message : 'Try again.');
+      appAlert('Could not move notes', e instanceof Error ? e.message : 'Try again.');
     } finally {
       setMovingNotes(false);
     }
@@ -467,7 +468,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       return note ? canDeleteNote(note) : false;
     });
     if (ownedIds.length === 0) {
-      Alert.alert(
+      appAlert(
         'Cannot delete',
         'Only notes you own can be deleted. Shared notes stay with their owner.',
       );
@@ -488,7 +489,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       await removeNotes(ownedIds);
       exitSelectMode();
     } catch (e: unknown) {
-      Alert.alert('Could not delete notes', e instanceof Error ? e.message : 'Try again.');
+      appAlert('Could not delete notes', e instanceof Error ? e.message : 'Try again.');
     } finally {
       setDeletingNotes(false);
     }
@@ -516,7 +517,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
-        Alert.alert(
+        appAlert(
           'Could not move to course',
           failed === target.noteIds.length
             ? 'Try again.'
@@ -557,7 +558,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       );
       const failed = results.filter((r) => r.status === 'rejected').length;
       if (failed > 0) {
-        Alert.alert(
+        appAlert(
           'Could not move to topic',
           failed === target.noteIds.length
             ? 'Try again.'
@@ -647,7 +648,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                 iconFilled: noteActions.isPinned,
                 onPress: () => {
                   void saveNote(noteActions.id, { isPinned: !noteActions.isPinned }).catch((e: unknown) => {
-                    Alert.alert('Could not update pin', e instanceof Error ? e.message : 'Try again.');
+                    appAlert('Could not update pin', e instanceof Error ? e.message : 'Try again.');
                   });
                 },
               },
@@ -659,7 +660,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           icon: 'archive',
           onPress: () => {
             void saveNote(noteActions.id, { isArchived: !noteActions.isArchived }).catch((e: unknown) => {
-              Alert.alert('Could not update archive', e instanceof Error ? e.message : 'Try again.');
+              appAlert('Could not update archive', e instanceof Error ? e.message : 'Try again.');
             });
           },
         },
@@ -727,7 +728,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       await updateFolder(renameFolder.id, { name: trimmed });
       setRenameFolder(null);
     } catch (e: unknown) {
-      Alert.alert('Could not rename', e instanceof Error ? e.message : 'Try again.');
+      appAlert('Could not rename', e instanceof Error ? e.message : 'Try again.');
     } finally {
       setRenamingFolder(false);
     }
@@ -744,7 +745,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     try {
       await removeFolder(folder.id);
     } catch (e: unknown) {
-      Alert.alert('Could not delete', e instanceof Error ? e.message : 'Try again.');
+      appAlert('Could not delete', e instanceof Error ? e.message : 'Try again.');
     }
   };
 
@@ -776,7 +777,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       return;
     }
 
-    Alert.alert(folder.name, 'Manage this folder. Notes stay in All notes if you delete it.', [
+    appAlert(folder.name, 'Manage this folder. Notes stay in All notes if you delete it.', [
       { text: 'Rename', onPress: runRename },
       { text: 'Delete folder', style: 'destructive', onPress: runDelete },
       { text: 'Cancel', style: 'cancel' },
@@ -877,7 +878,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
   };
 
   const handlePickPhotos = () => {
-    Alert.alert('Import photos', 'Choose a source', [
+    appAlert('Import photos', 'Choose a source', [
       { text: 'Photo library', onPress: () => void handlePickPhotosFromLibrary() },
       { text: 'Camera', onPress: () => void handleTakePhoto() },
       { text: 'Cancel', style: 'cancel' },
@@ -1475,7 +1476,9 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           onPress={() => setError(null)}
           className="mx-4 mb-1.5 px-3 py-1.5 rounded-lg bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800"
         >
-          <Text className="text-caption text-red-700 dark:text-red-300">{error}</Text>
+          <Text className="text-caption text-red-700 dark:text-red-300">
+            {humanizeFailureMessage(error)}
+          </Text>
         </Pressable>
       ) : null}
 

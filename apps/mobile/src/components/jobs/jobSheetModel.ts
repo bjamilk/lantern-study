@@ -425,7 +425,9 @@ export const jobSheetState = (
       elapsedLabel,
       overBudget: false,
       waiting: false,
-      actions: ['retry', 'dismiss'],
+      // A daily-cap refusal cannot be retried into success; offering Retry
+      // under "try again tomorrow" was the contradiction the device pass found.
+      actions: job.failureKind === 'limit' ? ['dismiss'] : ['retry', 'dismiss'],
       tone: 'failed',
       pushNote: describeJobPush(job.pushAudit),
     };

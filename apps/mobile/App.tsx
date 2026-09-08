@@ -7,6 +7,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { RootNavigator } from './src/navigation';
 import { ThemeProvider, useAppTheme } from './src/theme';
 import CookieNoticeBanner from './src/components/CookieNoticeBanner';
+import { AppDialogHost } from './src/components/ui/AppDialogHost';
 import { checkAndApplyOtaUpdate } from './src/services/otaUpdates';
 import { hydrateProductAnalyticsPrefs } from './src/services/productAnalytics';
 
@@ -34,6 +35,14 @@ function AppInner() {
       <RootNavigator />
       <StatusBar style={theme === 'dark' ? 'light' : 'dark'} />
       <CookieNoticeBanner />
+      {/* The app's own dialog, mounted ONCE for the whole app. `appAlert`
+          (src/components/ui/appDialog) queues into it from anywhere — a
+          screen, a store, a service — with react-native's `Alert.alert`
+          signature. It lives HERE rather than beside ToastHost, which is
+          rendered inside the signed-in tab bar: the auth screens raise
+          prompts too, and a dialog host that unmounts with the tab bar would
+          drop them. */}
+      <AppDialogHost />
     </>
   );
 }

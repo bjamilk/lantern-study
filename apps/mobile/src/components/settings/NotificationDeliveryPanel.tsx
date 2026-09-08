@@ -23,6 +23,7 @@ import {
 } from '../../services/pushNotifications';
 import {
   describeRegisterOutcome,
+  hasPushDetails,
   pushDiagnosticRows,
   pushErrorRows,
   jobPushFailureRows,
@@ -47,8 +48,15 @@ import {
  * action that can fix the client half. It claims nothing it has not checked:
  * a server that cannot be reached produces "couldn't check", never "off".
  */
-export function NotificationDeliveryPanel() {
-  const { colors } = useTheme();
+/**
+ * The device's real push state, and a way to re-read it.
+ *
+ * Exported because the Settings screen's "Push Notifications" switch has to
+ * show the same truth this panel prints four lines above it — on device the
+ * two disagreed, the switch reading ON while the panel said the OS had never
+ * allowed anything. One reader, one answer.
+ */
+export function usePushDeliveryState() {
   const [state, setState] = useState<PushReadinessInput>({
     supported: isPushNotificationsSupported(),
     permission: 'undetermined',
@@ -56,11 +64,6 @@ export function NotificationDeliveryPanel() {
     server: null,
   });
   const [checking, setChecking] = useState(true);
-  const [working, setWorking] = useState(false);
-  const [outcome, setOutcome] = useState<string | null>(null);
-  // Which app this build would mint a token for, and why the last attempt
-  // failed. Both are read after every check, because "re-register" changes
-  // them: the transport is only known once a token has actually been asked for.
   const [identity, setIdentity] = useState<PushAppIdentity>(() => getPushAppIdentity());
   const [registerError, setRegisterError] = useState<string | null>(null);
 
@@ -84,6 +87,26 @@ export function NotificationDeliveryPanel() {
   useEffect(() => {
     void check();
   }, [check]);
+
+  return { state, checking, identity, registerError, check };
+}
+
+export function NotificationDeliveryPanel() {
+  const { colors } = useTheme();
+  // Which app this build would mint a token for, and why the last attempt
+  // failed, come with the state: "re-register" changes them, and the transport
+  // is only known once a token has actually been asked for.
+  const { state, checking, identity, registerError, check } = usePushDeliveryState();
+  const [working, setWorking] = useState(false);
+  const [outcome, setOutcome] = useState<string | null>(null);
+  /**
+   * Whether the build-facing text is on screen.
+   *
+   * Closed by default. What was here before was an APNs credential string and
+   * an EAS slug printed straight at a student, on a phone that could do
+   * nothing with either.
+   */
+  const [showDetails, setShowDetails] = useState(false);
 
   const reRegister = useCallback(async () => {
     setWorking(true);
@@ -154,13 +177,34 @@ export function NotificationDeliveryPanel() {
                     : colors.textTertiary
               }
             />
-            <Text className="text-caption text-lantern-text-secondary flex-1">
-              <Text className="text-lantern-text">{row.label}: </Text>
-              {row.value}
-            </Text>
+            <View className="flex-1">
+              <Text className="text-caption text-lantern-text-secondary">
+                <Text className="text-lantern-text">{row.label}: </Text>
+                {row.value}
+              </Text>
+              {/* The build words, only when asked for. */}
+              {row.detail && showDetails ? (
+                <Text className="mt-1 text-caption text-lantern-text-tertiary" selectable>
+                  {row.detail}
+                </Text>
+              ) : null}
+            </View>
           </View>
         ))}
       </View>
+
+      {hasPushDetails(rows) ? (
+        <Pressable
+          onPress={() => setShowDetails((open) => !open)}
+          accessibilityRole="button"
+          accessibilityState={{ expanded: showDetails }}
+          className="mt-2 self-start py-1"
+        >
+          <Text className="text-caption font-medium text-lantern-primary-text">
+            {showDetails ? 'Hide details' : 'Show details'}
+          </Text>
+        </Pressable>
+      ) : null}
 
       {outcome ? (
         <Text className="mt-3 text-caption text-lantern-text" accessibilityLiveRegion="polite">

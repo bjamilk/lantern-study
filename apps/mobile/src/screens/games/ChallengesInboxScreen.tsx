@@ -14,8 +14,6 @@ import {
 
   ActivityIndicator,
 
-  Alert,
-
 } from 'react-native';
 
 import { Screen, useScreenBottomPadding } from '../../components/layout';
@@ -26,6 +24,7 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { GroupChallenge } from '@lantern/shared/types';
 
 import { useTheme } from '../../theme';
+import { appAlert } from '../../components/ui/appDialog';
 
 import { useAuthStore } from '../../stores/authStore';
 import { buildCurrentGameUser } from '../../utils/currentGameUser';
@@ -148,7 +147,7 @@ export default function ChallengesInboxScreen() {
 
     } catch (e: any) {
 
-      Alert.alert('Error', e.message || 'Could not start challenge');
+      appAlert('Error', e.message || 'Could not start challenge');
 
     }
 

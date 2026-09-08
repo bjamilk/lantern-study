@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { createStudyPackDraft, fetchSemesterPackProposals } from '../../services/api';
@@ -30,7 +31,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
       const cap = Math.min(next.proposals.length, next.maxSelectable);
       setSelected(new Set(next.proposals.slice(0, cap).map((p) => p.courseId)));
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not load proposals');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not load proposals');
       setData(null);
     } finally {
       setLoading(false);
@@ -71,7 +72,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
         createStudyPackDraft(input),
       );
       if (result.failed > 0) {
-        Alert.alert(
+        appAlert(
           'Stopped',
           `Started ${result.ok} pack${result.ok === 1 ? '' : 's'}. ${result.errors[0] || 'Credit limit reached.'}`,
         );

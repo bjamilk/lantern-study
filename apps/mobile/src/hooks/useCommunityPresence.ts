@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import type { RealtimeChannel } from '@supabase/supabase-js';
+import { scrubEmailFromDisplayName } from '@lantern/shared/utils/displayNames';
 import { communityPresenceChannel, type CommunityPresencePayload } from '@lantern/shared/network';
 import { userShowsOnlineStatus } from '@lantern/shared/settings';
 import { supabase } from '../services/supabase';
@@ -160,7 +161,13 @@ export function useCommunityPresence(
 ): CommunityPresenceSnapshot {
   const userId = useAuthStore((s) => s.user?.id);
   const userName = useAuthStore(
-    (s) => s.profileName || (s.user?.user_metadata?.name as string | undefined) || s.user?.email || ''
+    (s) =>
+      // Never the address: this name is tracked on the presence channel that
+      // every member of the community reads.
+      s.profileName ||
+      scrubEmailFromDisplayName(s.user?.user_metadata?.name as string | undefined) ||
+      scrubEmailFromDisplayName(s.user?.email) ||
+      ''
   );
   const avatarUrl = useAuthStore(
     (s) => (s.user?.user_metadata?.avatar_url as string | undefined) ?? null

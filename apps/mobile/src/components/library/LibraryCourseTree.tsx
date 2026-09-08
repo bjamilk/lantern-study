@@ -13,6 +13,7 @@ import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-nati
 import type { LibraryCourseNode } from '@lantern/shared/types';
 import { featureAccents } from '@lantern/shared/design';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
+import { humanizeFailureMessage } from '@lantern/shared/network';
 import { useTheme } from '../../theme';
 import { ActionSheet, type ActionSheetItem } from '../ui';
 import { useUIStore, type LibraryCourseFilter } from '../../stores/uiStore';
@@ -46,7 +47,13 @@ interface Counts {
 interface Props {
   tree: LibraryTree | null;
   loading: boolean;
-  error: string | null;
+  /** Whatever the last load threw. Classified, never printed raw. */
+  error: unknown;
+  /**
+   * The tree on screen came from the cache, not from this load. The courses
+   * are real; only their freshness is in doubt, so say that and nothing more.
+   */
+  stale?: boolean;
   /**
    * Archive-wide totals for the collapsed summary. They used to be chips in a
    * hero block of their own; here they cost no height at all, and opening the
@@ -251,6 +258,7 @@ export function LibraryCourseTree({
   tree,
   loading,
   error,
+  stale = false,
   totalNotes,
   totalDecks,
   selectedCourseId,
@@ -416,7 +424,13 @@ export function LibraryCourseTree({
         <Text className="flex-1 text-sm font-semibold text-lantern-text" numberOfLines={1}>
           My courses
         </Text>
+        {/* A spinner is a promise that something is still on its way. Once the
+            load has failed with nothing cached behind it, that promise is
+            false — the audit found this one still turning offline. */}
         {loading && !tree ? <ActivityIndicator size="small" color={colors.primaryText} /> : null}
+        {!loading && error && !tree ? (
+          <AppIcon name="cloud-offline" size={16} color={colors.textTertiary} />
+        ) : null}
         {!open && tree ? (
           <Text className="text-[11px] text-lantern-text-secondary mr-1" numberOfLines={1}>
             {activeCount} active · {totalNotes} {totalNotes === 1 ? 'note' : 'notes'} · {totalDecks}{' '}
@@ -435,10 +449,22 @@ export function LibraryCourseTree({
         >
           {error && !tree ? (
             <View className="px-2 py-3">
-              <Text className="text-xs text-lantern-error mb-2">Could not load your courses: {error}</Text>
+              <Text className="text-xs text-lantern-text-secondary mb-2">
+                {humanizeFailureMessage(error)}
+              </Text>
               <Pressable onPress={onRetry} accessibilityRole="button" className="self-start">
-                <Text className="text-xs font-semibold text-lantern-primary-text">Retry</Text>
+                <Text className="text-xs font-semibold text-lantern-primary-text">Try again</Text>
               </Pressable>
+            </View>
+          ) : null}
+
+          {/* Courses we already had. Named as saved, not passed off as live. */}
+          {error && tree && stale ? (
+            <View className="px-2 pt-2 pb-1 flex-row items-center gap-1.5">
+              <AppIcon name="cloud-offline" size={12} color={colors.textTertiary} />
+              <Text className="text-caption text-lantern-text-tertiary flex-1">
+                Your saved courses. We&apos;ll refresh them when you reconnect.
+              </Text>
             </View>
           ) : null}
 

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -21,6 +20,7 @@ import {
 } from '../../stores/marketplaceStore';
 import { formatPrice } from '../../screens/marketplace/marketplaceHelpers';
 import { ErrorState, InlineErrorBanner, LoadingState } from '../ui';
+import { appAlert } from '../ui/appDialog';
 import { useTheme } from '../../theme';
 
 type OfferAction = 'accept' | 'decline' | 'counter' | 'withdraw';
@@ -159,7 +159,7 @@ export function DmOffersPanel({
         }
       }
     } catch (error: unknown) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Action failed');
+      appAlert('Error', error instanceof Error ? error.message : 'Action failed');
     } finally {
       setBusyOfferId(null);
     }
@@ -169,7 +169,7 @@ export function DmOffersPanel({
     if (!currentUserId || !counterOfferId || busyOfferId) return;
     const amount = parseAmount(counterAmount);
     if (!amount) {
-      Alert.alert('Invalid amount', 'Enter a valid counter amount.');
+      appAlert('Invalid amount', 'Enter a valid counter amount.');
       return;
     }
     setBusyOfferId(counterOfferId);
@@ -180,7 +180,7 @@ export function DmOffersPanel({
       await announce(`[Offer] I countered with ${formatPrice(amount)}.`);
       await load();
     } catch (error: unknown) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Counter failed');
+      appAlert('Error', error instanceof Error ? error.message : 'Counter failed');
     } finally {
       setBusyOfferId(null);
     }
@@ -190,7 +190,7 @@ export function DmOffersPanel({
     if (!currentUserId || creating) return;
     const amount = parseAmount(newOfferAmount);
     if (!amount) {
-      Alert.alert('Invalid amount', 'Enter a valid offer amount.');
+      appAlert('Invalid amount', 'Enter a valid offer amount.');
       return;
     }
     setCreating(true);
@@ -200,7 +200,7 @@ export function DmOffersPanel({
       await announce(`[Offer] I offered ${formatPrice(amount)}.`);
       await load();
     } catch (error: unknown) {
-      Alert.alert('Error', error instanceof Error ? error.message : 'Could not send offer');
+      appAlert('Error', error instanceof Error ? error.message : 'Could not send offer');
     } finally {
       setCreating(false);
     }

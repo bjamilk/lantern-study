@@ -1,4 +1,9 @@
-import { attemptModeOf, planAttemptFromSessionRow } from './testAttemptMapping';
+import {
+  attemptModeOf,
+  formatSessionDuration,
+  planAttemptDurationSeconds,
+  planAttemptFromSessionRow,
+} from './testAttemptMapping';
 
 /** A lean completed row, as `GET /tests?status=completed&lean=1` returns one. */
 const leanRow = (config: Record<string, unknown>, extra: Record<string, unknown> = {}) => ({
@@ -169,5 +174,69 @@ describe('rows that are missing pieces', () => {
     });
     expect(plan.confidenceByQuestion).toEqual({});
     expect(plan.percentage).toBe(100);
+  });
+});
+
+describe('planAttemptDurationSeconds: History stopped saying 0:00', () => {
+  it('sums the per-answer timings when the row carries answers', () => {
+    const row = {
+      session: {
+        userAnswers: {
+          q1: { timeSpentSeconds: 5 },
+          q2: { time_spent_seconds: 7 },
+        },
+      },
+    };
+    expect(planAttemptDurationSeconds(row)).toBe(12);
+  });
+
+  it('reads the server total on a LEAN row, which has no answers at all', () => {
+    // The defect: this row is what History lists, and it summed to 0.
+    const leanRow = {
+      id: 's1',
+      timeSpentSeconds: 12,
+      questionsWithTime: 8,
+      session: { userAnswers: {} },
+    };
+    expect(planAttemptDurationSeconds(leanRow)).toBe(12);
+  });
+
+  it('falls back to the session stamps when neither is recorded', () => {
+    const row = {
+      session: {
+        startTime: '2026-09-07T10:00:00.000Z',
+        endTime: '2026-09-07T10:03:30.000Z',
+        userAnswers: {},
+      },
+    };
+    expect(planAttemptDurationSeconds(row)).toBe(210);
+  });
+
+  it('returns null — not 0 — when the row records no time', () => {
+    expect(planAttemptDurationSeconds({ session: { userAnswers: {} } })).toBeNull();
+  });
+});
+
+describe('formatSessionDuration: sub-minute sittings are reported honestly', () => {
+  it('keeps seconds under a minute', () => {
+    // 12s used to print "0m" on the analysis screen.
+    expect(formatSessionDuration(12)).toBe('12s');
+    expect(formatSessionDuration(59)).toBe('59s');
+  });
+
+  it('carries the seconds alongside the minutes', () => {
+    expect(formatSessionDuration(60)).toBe('1m');
+    expect(formatSessionDuration(119)).toBe('1m 59s');
+    expect(formatSessionDuration(605)).toBe('10m 5s');
+  });
+
+  it('rolls up to hours', () => {
+    expect(formatSessionDuration(3600)).toBe('1h');
+    expect(formatSessionDuration(5400)).toBe('1h 30m');
+  });
+
+  it('says nothing rather than zero for an unknown duration', () => {
+    expect(formatSessionDuration(null)).toBe('—');
+    expect(formatSessionDuration(undefined)).toBe('—');
   });
 });

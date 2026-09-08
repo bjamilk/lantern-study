@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -10,6 +9,7 @@ import {
   TextInput,
   BackHandler,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
@@ -279,8 +279,21 @@ function InviteRow({
   );
 }
 
+/** The floating "Create group" circle: 56dp, the Material FAB size. */
+const FAB_SIZE = 56;
+/** Breathing room between the last list row and the circle. */
+const FAB_GAP = 12;
+
 export function GroupsScreen({ navigation }: Props) {
   const tabBarClearance = useTabBarClearance(16);
+  /*
+   * The "Create group" FAB floats over this list, so the list has to end
+   * ABOVE it. With tab-bar clearance alone the last chat row sat underneath
+   * the button and could not be read or tapped ("Pilot hall test Lounge").
+   * One constant for the circle, used by both the button and the list's
+   * bottom padding, so they cannot drift apart.
+   */
+  const fabClearance = tabBarClearance + FAB_SIZE + FAB_GAP;
   const { onScroll: chromeOnScroll, setTopBarSuppressed } = useChrome();
   const { colors } = useTheme();
   const { lowDataMode } = useLowDataMode();
@@ -968,7 +981,7 @@ export function GroupsScreen({ navigation }: Props) {
           groupName: invite.groupName,
         });
       } catch (error) {
-        Alert.alert(
+        appAlert(
           'Could not accept invite',
           error instanceof Error ? error.message : 'Please try again.'
         );
@@ -987,7 +1000,7 @@ export function GroupsScreen({ navigation }: Props) {
         await declineGroupInvite(invite.groupId);
         setPendingInvites((prev) => prev.filter((i) => i.groupId !== invite.groupId));
       } catch (error) {
-        Alert.alert(
+        appAlert(
           'Could not decline invite',
           error instanceof Error ? error.message : 'Please try again.'
         );
@@ -1155,7 +1168,7 @@ export function GroupsScreen({ navigation }: Props) {
                         ? `msghit-${item.id}`
                       : `group-${item.group.id}-L${item.nestingLevel}`
           }
-          contentContainerStyle={{ paddingBottom: tabBarClearance }}
+          contentContainerStyle={{ paddingBottom: fabClearance }}
           // The live search box sits directly above this list: without this the
           // first tap on a result (a chat, a message hit, a user to DM) is
           // swallowed dismissing the keyboard, so opening one took two taps.
@@ -1367,8 +1380,10 @@ export function GroupsScreen({ navigation }: Props) {
         onPress={() => navigation.navigate('CreateGroup')}
         accessibilityRole="button"
         accessibilityLabel="Create group"
-        className="absolute right-4 h-14 w-14 items-center justify-center rounded-full bg-lantern-primary-fill"
+        className="absolute right-4 items-center justify-center rounded-full bg-lantern-primary-fill"
         style={{
+          height: FAB_SIZE,
+          width: FAB_SIZE,
           bottom: tabBarClearance - 8,
           elevation: 8,
           shadowColor: '#000',

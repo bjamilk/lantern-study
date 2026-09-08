@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   Switch,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
 import { getNoteStudyContent } from '@lantern/shared';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
@@ -252,7 +252,7 @@ export default function ImportAndStudyModal({
   };
 
   const handlePickPhotos = () => {
-    Alert.alert('Photograph pages', 'Choose a source', [
+    appAlert('Photograph pages', 'Choose a source', [
       { text: 'Photo library', onPress: () => void handlePickPhotosFromLibrary() },
       { text: 'Camera', onPress: () => void handleTakePhoto() },
       { text: 'Cancel', style: 'cancel' },

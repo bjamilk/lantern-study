@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { ActivityIndicator, Alert, Image, KeyboardAvoidingView, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import {
   SCREEN_KEYBOARD_BEHAVIOR,
   Screen,
@@ -112,12 +113,12 @@ export function OrderDetailScreen({
       try {
         if (reference) {
           await verifyMarketplacePayment(reference);
-          if (!cancelled) Alert.alert('Payment confirmed', 'Your Paystack payment was verified.');
+          if (!cancelled) appAlert('Payment confirmed', 'Your Paystack payment was verified.');
         }
         if (!cancelled) await load();
       } catch (err: unknown) {
         if (!cancelled) {
-          Alert.alert(
+          appAlert(
             'Payment check',
             err instanceof Error ? err.message : 'Could not verify payment yet. Pull to refresh from Orders.'
           );
@@ -161,7 +162,7 @@ export function OrderDetailScreen({
       }
     } catch (err: unknown) {
       if (options.rethrow) throw err;
-      Alert.alert('Error', err instanceof Error ? err.message : 'Action failed');
+      appAlert('Error', err instanceof Error ? err.message : 'Action failed');
     } finally {
       setActing(false);
     }
@@ -181,9 +182,9 @@ export function OrderDetailScreen({
         await load();
         return;
       }
-      Alert.alert('Checkout unavailable', 'Could not open Paystack checkout.');
+      appAlert('Checkout unavailable', 'Could not open Paystack checkout.');
     } catch (err: unknown) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Could not start checkout');
+      appAlert('Error', err instanceof Error ? err.message : 'Could not start checkout');
     } finally {
       setActing(false);
     }
@@ -200,9 +201,9 @@ export function OrderDetailScreen({
       setShowReview(false);
       setReviewComment('');
       setReviewRating(5);
-      Alert.alert('Thanks', 'Review submitted');
+      appAlert('Thanks', 'Review submitted');
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to submit review');
+      appAlert('Error', e instanceof Error ? e.message : 'Failed to submit review');
     } finally {
       setSubmittingReview(false);
     }
@@ -220,7 +221,7 @@ export function OrderDetailScreen({
     if (!order) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission needed', 'Allow photo access to upload payment proof.');
+      appAlert('Permission needed', 'Allow photo access to upload payment proof.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -237,7 +238,7 @@ export function OrderDetailScreen({
       setOrder(await submitOrderPaymentProof(order.id, url));
       await refreshSellerData();
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Upload failed');
+      appAlert('Error', e instanceof Error ? e.message : 'Upload failed');
     } finally {
       setProofUploading(false);
     }
@@ -432,9 +433,9 @@ export function OrderDetailScreen({
                     setActing(true);
                     try {
                       await requestOrderPayment(order.id);
-                      Alert.alert('Sent', 'Payment request sent to buyer');
+                      appAlert('Sent', 'Payment request sent to buyer');
                     } catch (e: unknown) {
-                      Alert.alert('Error', e instanceof Error ? e.message : 'Failed');
+                      appAlert('Error', e instanceof Error ? e.message : 'Failed');
                     } finally {
                       setActing(false);
                     }

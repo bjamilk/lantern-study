@@ -1,5 +1,6 @@
 import {
   formatChatSenderLabel,
+  scrubEmailFromDisplayName,
   getDashboardFirstName,
   resolveAvatarSrc,
   resolveGroupChatAvatarUrl,
@@ -159,5 +160,42 @@ describe('resolveAvatarSrc', () => {
 
   it('suppresses remote images in low-data mode', () => {
     expect(resolveAvatarSrc('https://cdn.example/group-avatars/g1/avatar.webp', true)).toBeNull();
+  });
+});
+
+/**
+ * A community board publishes whatever it is given to everyone who can read it.
+ * A tombstone on a removed post shipped with the author's full email address
+ * where their name belonged, next to live cards showing that same person's real
+ * name — so the label itself has to refuse an address, wherever the name came
+ * from.
+ */
+describe('an email address is never a display name', () => {
+  it('reduces an address to its local part', () => {
+    expect(scrubEmailFromDisplayName('nimaj22@gmail.com')).toBe('nimaj22');
+    expect(formatChatSenderLabel({ name: 'nimaj22@gmail.com' })).toBe('nimaj22');
+  });
+
+  it('refuses an address arriving as the username too', () => {
+    expect(formatChatSenderLabel({ username: 'nimaj22@gmail.com' })).toBe('@nimaj22');
+  });
+
+  it('leaves a real name alone', () => {
+    expect(formatChatSenderLabel({ name: 'Benjamin Amadi' })).toBe('Benjamin Amadi');
+    expect(scrubEmailFromDisplayName('Benjamin Amadi')).toBe('Benjamin Amadi');
+  });
+
+  it('leaves an odd name that merely contains an @ alone', () => {
+    // Mangling this would be a worse bug than the one the scrub fixes.
+    expect(formatChatSenderLabel({ name: 'DJ @ Night' })).toBe('DJ @ Night');
+  });
+
+  it('falls through to Member when there is no candidate at all', () => {
+    expect(formatChatSenderLabel({ name: '   ', username: null })).toBe('Member');
+  });
+
+  it('reports nothing for an empty candidate', () => {
+    expect(scrubEmailFromDisplayName('   ')).toBeNull();
+    expect(scrubEmailFromDisplayName(null)).toBeNull();
   });
 });

@@ -231,3 +231,74 @@ describe('watchJob', () => {
     expect(outcome.status).toBe('still_running');
   });
 });
+
+/**
+ * A queued run answers 202 — a 2xx — so the accept publishes the CHARGED
+ * counters and no auto-refund can fire on it. When the job then fails the
+ * server hands the credits back, and the poll that reports the failure is the
+ * only moment the client can hear about it. Without this the badge kept a
+ * charge for work that produced nothing.
+ */
+describe('AI counters on a job poll', () => {
+  function withHeaders(body: unknown, headers: Record<string, string>, status = 200) {
+    return {
+      ...ok(body, status),
+      headers: { get: (name: string) => headers[name.toLowerCase()] ?? null },
+    };
+  }
+
+  it('republishes the refunded counters from the poll that reports a failure', async () => {
+    const seen: Array<{ used: number; remaining: number }> = [];
+    const fetchImpl: JobFetch = async () =>
+      withHeaders(
+        jobBody({
+          stage: 'failed',
+          status: 'failed',
+          percent: 100,
+          error: {
+            code: 'JOB_FAILED',
+            message: 'AI is temporarily unavailable. Please try again in a moment.',
+            retryable: true,
+          },
+          credit: { charged: 1, refunded: 1 },
+        })
+      , {
+        'x-ai-global-usage-used': '0',
+        'x-ai-global-usage-limit': '100',
+        'x-ai-global-usage-resets-at': '2026-09-08T00:00:00.000Z',
+      });
+
+    const client = createJobClient({
+      getBaseUrl: () => 'https://api.test',
+      getAuthHeaders: async () => ({}),
+      fetchImpl,
+      now: () => 0,
+      sleep: async () => {},
+      onUsageUpdate: (usage) => seen.push({ used: usage.used, remaining: usage.remaining }),
+    });
+
+    const outcome = await client.watchJob('job-1');
+    expect(outcome.status).toBe('failed');
+    expect(seen[seen.length - 1]).toEqual({ used: 0, remaining: 100 });
+  });
+
+  it('says nothing when the server sends no counters', async () => {
+    const seen: unknown[] = [];
+    const fetchImpl: JobFetch = async () =>
+      ok(jobBody({ stage: 'done', status: 'completed', percent: 100, result: { ok: true } }));
+
+    const client = createJobClient({
+      getBaseUrl: () => 'https://api.test',
+      getAuthHeaders: async () => ({}),
+      fetchImpl,
+      now: () => 0,
+      sleep: async () => {},
+      onUsageUpdate: (usage) => seen.push(usage),
+    });
+
+    await client.watchJob('job-1');
+    // An absent header means "this server does not know", which must never be
+    // published as zero.
+    expect(seen).toEqual([]);
+  });
+});

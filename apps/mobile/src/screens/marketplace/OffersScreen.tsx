@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Pressable,
   RefreshControl,
@@ -10,6 +9,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { canRespondToOffer, canWithdrawOffer, getOfferProposedBy } from '@lantern/shared';
 import { useMarketplaceStore, useAuthStore, type MarketplaceOffer } from '../../stores';
 import { resumeMarketplaceOrderCheckout } from '../../services/api';
@@ -110,15 +110,15 @@ export function OffersScreen({
           return;
         }
         if (payUrl && !isBuyer) {
-          Alert.alert('Offer accepted', 'The buyer will complete Paystack checkout.');
+          appAlert('Offer accepted', 'The buyer will complete Paystack checkout.');
           await load();
           return;
         }
       }
       await load();
-      Alert.alert('Done', `Offer ${action}ed.`);
+      appAlert('Done', `Offer ${action}ed.`);
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Action failed');
+      appAlert('Error', e instanceof Error ? e.message : 'Action failed');
       // An expired-offer 409 (or any conflict) means our card is stale — pull
       // fresh so the now-dead offer stops showing action buttons.
       void load();
@@ -143,7 +143,7 @@ export function OffersScreen({
       // No hosted-checkout URL: fall back to the order detail to finish payment.
       navigation.navigate('OrderDetail', { orderId });
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not open checkout');
+      appAlert('Error', e instanceof Error ? e.message : 'Could not open checkout');
     } finally {
       setPayingOrderId(null);
     }
@@ -153,7 +153,7 @@ export function OffersScreen({
     if (!user?.id || !counterOfferId || busyOfferId) return;
     const amount = parseFloat(counterAmount.replace(/,/g, ''));
     if (!amount || amount <= 0) {
-      Alert.alert('Invalid amount', 'Enter a valid counter amount.');
+      appAlert('Invalid amount', 'Enter a valid counter amount.');
       return;
     }
     setBusyOfferId(counterOfferId);
@@ -162,9 +162,9 @@ export function OffersScreen({
       setCounterOfferId(null);
       setCounterAmount('');
       await load();
-      Alert.alert('Counter sent', 'Your counter offer was sent.');
+      appAlert('Counter sent', 'Your counter offer was sent.');
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Counter failed');
+      appAlert('Error', e instanceof Error ? e.message : 'Counter failed');
     } finally {
       setBusyOfferId(null);
     }

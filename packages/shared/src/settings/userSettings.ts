@@ -45,6 +45,16 @@ export interface StudySettings {
   lockAnsweredQuestions: boolean;
 }
 
+/**
+ * Low-data mode, in one sentence.
+ *
+ * The audit found it described two different ways one tap apart: Me said
+ * "Skip images and heavy downloads on mobile data", Settings > Appearance said
+ * "Lighter images, charts, and page loads". Two descriptions of one switch
+ * read as two switches. This is the sentence; both surfaces import it.
+ */
+export const LOW_DATA_MODE_HINT = 'Skip images and heavy downloads to save data';
+
 export interface AppearanceSettings {
   theme: 'light' | 'dark' | 'system';
   accentColor: string;

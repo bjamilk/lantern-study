@@ -12,9 +12,9 @@ import {
   ScrollView,
   Switch,
   TextInput,
-  Alert,
   useWindowDimensions,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import { QuestionType, TestMode, type TestPreset, type TestPresetConfig } from '../stores/testStore';
 import { useSettingsStore } from '../stores/settingsStore';
 import { useTheme, type ThemeColors } from '../theme';
@@ -349,11 +349,11 @@ export default function TestConfigModal({
 
   const handleSavePreset = useCallback(() => {
     if (!onSavePreset || !presetName.trim()) {
-      Alert.alert('Preset name required', 'Please enter a name for the preset.');
+      appAlert('Preset name required', 'Please enter a name for the preset.');
       return;
     }
     if (presets.length >= 5) {
-      Alert.alert('Limit reached', 'You can save up to 5 presets. Delete one to add another.');
+      appAlert('Limit reached', 'You can save up to 5 presets. Delete one to add another.');
       return;
     }
     const config: TestPresetConfig = {
@@ -479,11 +479,11 @@ export default function TestConfigModal({
   const handleSubmit = useCallback(() => {
     if (!isValid) return;
     if (questionVisibilityMode === 'none') {
-      Alert.alert('No questions', 'Question visibility is set to hide all. Change the filter to start.');
+      appAlert('No questions', 'Question visibility is set to hide all. Change the filter to start.');
       return;
     }
     if (forcesStudyFromVisibility) {
-      Alert.alert(
+      appAlert(
         'Study session',
         'Unverified questions are study-only. Starting a study session instead.'
       );
@@ -537,7 +537,7 @@ export default function TestConfigModal({
   const handleDownload = useCallback(() => {
     if (!onDownload || effectiveMaxQuestions === 0) return;
     if (questionVisibilityMode === 'none') {
-      Alert.alert('No questions', 'Question visibility is set to hide all. Change the filter to download.');
+      appAlert('No questions', 'Question visibility is set to hide all. Change the filter to download.');
       return;
     }
     onDownload({
@@ -942,7 +942,7 @@ export default function TestConfigModal({
                     <TouchableOpacity
                       style={styles.presetDeleteButton}
                       onPress={() => {
-                        Alert.alert('Delete preset', 'Remove this preset?', [
+                        appAlert('Delete preset', 'Remove this preset?', [
                           { text: 'Cancel', style: 'cancel' },
                           {
                             text: 'Delete',

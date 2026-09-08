@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import {
   ActivityIndicator,
-  Alert,
   Linking,
   Platform,
   Pressable,
@@ -14,6 +13,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { appAlert, confirmAsync } from '../../components/ui/appDialog';
 
 
 
@@ -64,6 +64,7 @@ import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
 import { NoteLearnPanel } from '../../components/notes/NoteLearnPanel';
 import { getLatestAIUsage, subscribeToAIUsage } from '../../services/ai';
+import { makeCardsConfirmMessage, noCreditsLeftMessage } from './noteCardsPrompt';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import {
   AI_CREDIT_COSTS,
@@ -378,14 +379,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const handleAddPhotos = () => {
     if (!selectedNote || addingPhotos) return;
-    Alert.alert('Add photos', 'Choose a source', [
+    appAlert('Add photos', 'Choose a source', [
       {
         text: 'Photo library',
         onPress: () => {
           void (async () => {
             const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
             if (status !== 'granted') {
-              Alert.alert('Permission required', 'Photo library access is needed.');
+              appAlert('Permission required', 'Photo library access is needed.');
               return;
             }
             const result = await ImagePicker.launchImageLibraryAsync({
@@ -410,7 +411,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               const merged = [...other, ...uploadResult.attachments];
               setSelectedNote({ ...selectedNote, attachments: merged });
             } catch (e: unknown) {
-              Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not add photos');
+              appAlert('Upload failed', e instanceof Error ? e.message : 'Could not add photos');
             } finally {
               setAddingPhotos(false);
             }
@@ -423,7 +424,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           void (async () => {
             const { status } = await ImagePicker.requestCameraPermissionsAsync();
             if (status !== 'granted') {
-              Alert.alert('Permission required', 'Camera access is needed.');
+              appAlert('Permission required', 'Camera access is needed.');
               return;
             }
             const result = await ImagePicker.launchCameraAsync({ quality: 0.85, exif: false });
@@ -445,7 +446,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 attachments: [...other, ...uploadResult.attachments],
               });
             } catch (e: unknown) {
-              Alert.alert('Upload failed', e instanceof Error ? e.message : 'Could not add photo');
+              appAlert('Upload failed', e instanceof Error ? e.message : 'Could not add photo');
             } finally {
               setAddingPhotos(false);
             }
@@ -493,12 +494,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               ) ?? [result.attachment],
         });
         if (result.status === 'failed') {
-          Alert.alert('OCR failed', result.ocrError || 'Local OCR failed.');
+          appAlert('OCR failed', result.ocrError || 'Local OCR failed.');
         }
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        Alert.alert('OCR failed', err instanceof Error ? err.message : 'OCR timed out');
+        appAlert('OCR failed', err instanceof Error ? err.message : 'OCR timed out');
       })
       .finally(() => {
         if (!cancelled) setRunningOcr(false);
@@ -655,7 +656,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     const unsubscribe = nav.addListener?.('beforeRemove', (e) => {
       if (lectureNoteId !== noteId || lectureStatus !== 'recording') return;
       e.preventDefault();
-      Alert.alert(
+      appAlert(
         'Lecture recording in progress',
         'Leave this note and keep recording in the background, or discard the recording?',
         [
@@ -760,14 +761,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         });
       }
       if (result.status === 'failed') {
-        Alert.alert(
+        appAlert(
           'Transcript unavailable',
           result.transcriptError ||
             'Still could not fetch a transcript for this video.'
         );
       }
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Transcript retry failed');
+      appAlert('Error', e instanceof Error ? e.message : 'Transcript retry failed');
     } finally {
       setRetryingYoutubeTranscript(false);
     }
@@ -777,7 +778,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
     if (!studyContent.trim()) {
 
-      Alert.alert(
+      appAlert(
         'Empty note',
         isYoutubeNote
           ? 'Wait for the video transcript, or add your own notes, before summarizing.'
@@ -817,7 +818,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
     } catch (e: unknown) {
 
-      Alert.alert('Error', e instanceof Error ? e.message : 'Summarize failed');
+      appAlert('Error', e instanceof Error ? e.message : 'Summarize failed');
 
     } finally {
 
@@ -851,14 +852,14 @@ export function NoteEditorScreen({ navigation, route }: Props) {
    */
   const handleGenerateFlashcards = () => {
     if (!canGenerateStudyMaterials) {
-      Alert.alert(
+      appAlert(
         'Not enough content',
         'Add at least 50 characters of study content. For presentations, wait for slide text extraction or add your own notes.'
       );
       return;
     }
     if (!user?.id) {
-      Alert.alert('Error', 'You must be signed in to generate flashcards.');
+      appAlert('Error', 'You must be signed in to generate flashcards.');
       return;
     }
 
@@ -912,7 +913,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const handleGenerateQuiz = () => {
     if (!canGenerateStudyMaterials) {
-      Alert.alert(
+      appAlert(
         'Not enough content',
         'Add at least 50 characters of study content. For presentations, wait for slide text extraction or add your own notes.'
       );
@@ -988,14 +989,28 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     // already make out loud is made here.
     if (shortForOneCredit) {
       scrollToLearnPanel();
-      Alert.alert(
-        'No credits left today',
-        `Flashcards from a note cost ${formatCreditCost(AI_CREDIT_COSTS.generate_flashcards)}. Your credits reset tomorrow.`
+      appAlert(
+        'No AI uses left today',
+        noCreditsLeftMessage(AI_CREDIT_COSTS.generate_flashcards, aiUsage)
       );
       return;
     }
     if (isAILoading) return;
-    handleGenerateFlashcards();
+    // A row item is a NAME, not a price: on device, tapping "Cards" spent an
+    // AI use instantly, with nothing said before or after — a student who
+    // read it as "show me this note's cards" was charged for a generation
+    // they never asked for. Every other priced door in this app prints its
+    // cost on the control; this one cannot, so it asks. The tile in the Learn
+    // panel, which does print its cost, still runs on one press.
+    void (async () => {
+      const confirmed = await confirmAsync(
+        'Make flashcards from this note?',
+        makeCardsConfirmMessage(AI_CREDIT_COSTS.generate_flashcards, aiUsage),
+        { confirmLabel: 'Make flashcards' }
+      );
+      if (!confirmed) return;
+      handleGenerateFlashcards();
+    })();
   };
 
   useScreenActions('NoteEditor', {
@@ -1045,7 +1060,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       const copy = await copyNote(noteId);
       navigation.navigate('NoteEditor', { noteId: copy.id });
     } catch (error) {
-      Alert.alert('Could not make a copy', error instanceof Error ? error.message : 'Try again.');
+      appAlert('Could not make a copy', error instanceof Error ? error.message : 'Try again.');
     }
   };
 
@@ -1449,11 +1464,11 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                               ) ?? [result.attachment],
                         });
                         if (result.status === 'failed') {
-                          Alert.alert('OCR failed', result.ocrError || 'Local OCR failed.');
+                          appAlert('OCR failed', result.ocrError || 'Local OCR failed.');
                         }
                       })
                       .catch((err: unknown) => {
-                        Alert.alert(
+                        appAlert(
                           'OCR failed',
                           err instanceof Error ? err.message : 'Failed to run OCR'
                         );

@@ -9,8 +9,8 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  Alert,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { ScrollView } from 'react-native';
 import {
@@ -93,7 +93,7 @@ export default function SetBudgetScreen() {
     const amountNum = parseFloat(amount);
     
     if (!amount || amountNum <= 0) {
-      Alert.alert('Invalid Amount', 'Please enter a valid positive amount for your budget.');
+      appAlert('Invalid Amount', 'Please enter a valid positive amount for your budget.');
       return;
     }
 
@@ -103,11 +103,11 @@ export default function SetBudgetScreen() {
         plannedIncome,
         plannedSavings: toNumber(savings),
       });
-      Alert.alert('Success', 'Budget saved successfully!', [
+      appAlert('Success', 'Budget saved successfully!', [
         { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
-      Alert.alert('Error', 'Failed to save budget. Please try again.');
+      appAlert('Error', 'Failed to save budget. Please try again.');
     }
   }, [amount, setBudget, setBudgetPlan, userId, plannedIncome, savings, navigation]);
 

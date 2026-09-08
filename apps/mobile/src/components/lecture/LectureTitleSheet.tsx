@@ -12,7 +12,6 @@
  */
 import React, { useEffect, useState } from 'react';
 import {
-  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -23,6 +22,7 @@ import {
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import { useTheme } from '../../theme';
 import { Body, Caption, Heading } from '../ui/Text';
+import { appAlert } from '../ui/appDialog';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { MAX_LECTURE_TITLE_LENGTH } from './lecturePreflight';
 
@@ -48,7 +48,7 @@ export function LectureTitleSheet() {
   const keepSheetOpen = () => {};
 
   const confirmDiscard = () => {
-    Alert.alert('Discard this recording?', 'The audio will be deleted. Nothing has been spent.', [
+    appAlert('Discard this recording?', 'The audio will be deleted. Nothing has been spent.', [
       { text: 'Keep', style: 'cancel' },
       { text: 'Discard', style: 'destructive', onPress: () => void discard() },
     ]);

@@ -376,3 +376,65 @@ export function planRetakeFromResults(input: RetakeFromResultsInput): RetakeFrom
 
   return unavailable('noQuestions');
 }
+
+/* ------------------------------------------------------------------ *
+ * Leaving a sitting: what is actually true
+ * ------------------------------------------------------------------ */
+
+/** The confirmation shown when a reader backs out of a running sitting. */
+export interface SessionExitCopy {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  /** Only a discarded, scored attempt is a destructive exit. */
+  destructive: boolean;
+}
+
+/**
+ * What the "Exit" confirmation may say.
+ *
+ * Both sentences it shipped with were wrong for the code behind them
+ * (device finding, build 172). Exiting calls `exitStudyMode`, which ABANDONS
+ * the draft — so a test's "your progress will be lost" was right about the
+ * loss but sat beside a Home list of saved sessions and read as a
+ * contradiction, and a practice sitting's "you can come back anytime" was
+ * simply false: nothing is kept.
+ *
+ * So the copy states the one fact that is true of both, and how much work it
+ * applies to. It names no feature the screen does not have: there is no Save
+ * control in the player, and offering one in a sentence would be a second
+ * lie.
+ */
+export function planSessionExitCopy(input: {
+  mode: 'test' | 'study';
+  /** Questions answered so far. */
+  answeredCount: number;
+  /** Questions in the sitting. */
+  totalQuestions: number;
+}): SessionExitCopy {
+  const { mode, answeredCount, totalQuestions } = input;
+  const answered = Number.isFinite(answeredCount) ? Math.max(0, answeredCount) : 0;
+  const total = Number.isFinite(totalQuestions) ? Math.max(0, totalQuestions) : 0;
+  const progress =
+    answered > 0 && total > 0
+      ? `You have answered ${answered} of ${total}. `
+      : answered > 0
+        ? `You have answered ${answered} so far. `
+        : '';
+
+  if (mode === 'study') {
+    return {
+      title: 'Exit practice?',
+      message: `${progress}Leaving ends this practice sitting — it is not saved and will not appear in History.`,
+      confirmLabel: 'End practice',
+      destructive: false,
+    };
+  }
+
+  return {
+    title: 'Exit test?',
+    message: `${progress}Leaving discards this attempt — it is not saved, not scored, and will not appear in History.`,
+    confirmLabel: 'Discard attempt',
+    destructive: true,
+  };
+}

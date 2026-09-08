@@ -2,7 +2,6 @@ import { COMPOSER_KEYBOARD_BEHAVIOR } from './composerKeyboardBehavior';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -15,6 +14,7 @@ import {
 } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { ErrorState, InlineErrorBanner, LoadingState } from '../ui';
+import { appAlert } from '../ui/appDialog';
 import { useAiTutorSend } from '../../hooks/useAiTutorSend';
 import { useChatImageAttach } from '../../hooks/useChatImageAttach';
 import { CHAT_LIST_WINDOWING } from './chatListWindowing';
@@ -217,7 +217,7 @@ export function ChatThreadModal({
       await onReload();
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error) {
-      Alert.alert(
+      appAlert(
         editingMessage ? 'Edit failed' : 'Send failed',
         error instanceof Error ? error.message : 'Please try again.'
       );
@@ -252,7 +252,7 @@ export function ChatThreadModal({
 
   const confirmRemove = (message: ThreadMessage) => {
     if (!onRemove) return;
-    Alert.alert(
+    appAlert(
       'Remove message?',
       'This removes the message for everyone. An audit record will be retained.',
       [
@@ -270,7 +270,7 @@ export function ChatThreadModal({
                 await onReload();
               })
               .catch((error) => {
-                Alert.alert(
+                appAlert(
                   'Remove failed',
                   error instanceof Error ? error.message : 'Please try again.'
                 );
@@ -291,13 +291,13 @@ export function ChatThreadModal({
       return;
     }
 
-    Alert.alert('Message options', undefined, [
+    appAlert('Message options', undefined, [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Reply', onPress: () => beginReply(message) },
       {
         text: canEdit ? 'Edit or remove' : 'Remove',
         onPress: () =>
-          Alert.alert('Manage message', undefined, [
+          appAlert('Manage message', undefined, [
             { text: 'Cancel', style: 'cancel' },
             ...(canEdit ? [{ text: 'Edit', onPress: () => beginEdit(message) }] : []),
             ...(canRemove

@@ -5,6 +5,7 @@ import {
   boardPostAccessibilityLabel,
   boardPostKindMeta,
   boardRelativeTime,
+  boardRepostControlState,
   canRepostBoardPost,
   normalizeBoardPostKind,
 } from '@lantern/shared/network';
@@ -17,6 +18,7 @@ import { isBoardRepost, splitBoardBody, toBoardPost } from '../../utils/boardPos
 import { BoardActionRow } from './BoardActionRow';
 import { BoardImage } from './BoardImage';
 import { BoardQuotedPost } from './BoardQuotedPost';
+import { resolveBoardAuthorIdentity, type BoardAuthorCandidate } from './boardAuthorIdentity';
 import { LegacyQuestionCard } from './LegacyQuestionCard';
 import type { Message } from '../../stores/groupStore';
 import { AppIcon } from '../ui/AppIcon';
@@ -56,6 +58,7 @@ export function BoardPostCard({
   bookmarksSupported,
   lowDataMode,
   highlighted,
+  knownAuthor,
   onOpenComments,
   onToggleFavorite,
   onRepost,
@@ -77,6 +80,14 @@ export function BoardPostCard({
   lowDataMode: boolean;
   /** The freshly posted card, held for BOARD_NEW_POST_HIGHLIGHT_MS. */
   highlighted?: boolean;
+  /**
+   * The identity the client ALREADY holds for `post.senderId` — the community
+   * roster, which is the same source every live card on this board resolved
+   * from. A tombstone's own payload does not come through that join, so this
+   * is what keeps a removed post's author looking like the same person as
+   * their post one row above (`boardAuthorIdentity.ts`).
+   */
+  knownAuthor?: BoardAuthorCandidate | null;
   onOpenComments: () => void;
   onToggleFavorite: () => void;
   onRepost: () => void;
@@ -122,10 +133,41 @@ export function BoardPostCard({
     () => canRepostBoardPost({ post: boardPost, viewerId, now }),
     [boardPost, viewerId, now]
   );
+  // Dimmed on a refusal, never disabled: the tap is how the reader learns why
+  // (`boardRepostRefusalCopy`, shown by the screen).
+  const repostControl = boardRepostControlState(repostable, boardPost.repostedByMe);
 
-  // Founder decision 4: a repost keeps the ORIGINAL author, with the
-  // reposter's name only in the attribution line above.
-  const headerName = isRepost ? (post.repostOf?.senderName ?? post.senderName) : post.senderName;
+  /**
+   * Founder decision 4: a repost keeps the ORIGINAL author, with the
+   * reposter's name only in the attribution line above.
+   *
+   * `knownAuthor` is deliberately withheld from a repost's header: it is keyed
+   * on `post.senderId`, which on a repost is the REPOSTER — handing it over
+   * would put the reposter's face on somebody else's post. It is exactly right
+   * for the attribution line, which IS the reposter, and for every ordinary
+   * card.
+   */
+  const author = useMemo(
+    () =>
+      resolveBoardAuthorIdentity({
+        payload: isRepost
+          ? { name: post.repostOf?.senderName ?? post.senderName, avatarUrl: null }
+          : { name: post.senderName, avatarUrl: post.senderAvatar ?? null },
+        known: isRepost ? null : (knownAuthor ?? null),
+        isRemoved,
+      }),
+    [isRepost, post.repostOf?.senderName, post.senderName, post.senderAvatar, knownAuthor, isRemoved]
+  );
+  const reposterName = useMemo(
+    () =>
+      resolveBoardAuthorIdentity({
+        payload: { name: post.senderName, avatarUrl: post.senderAvatar ?? null },
+        known: knownAuthor ?? null,
+        isRemoved: false,
+      }).name,
+    [post.senderName, post.senderAvatar, knownAuthor]
+  );
+  const headerName = author.name;
   const headerWhen = isRepost
     ? boardRelativeTime(post.repostOf?.timestamp ?? post.createdAt, now)
     : when;
@@ -150,7 +192,9 @@ export function BoardPostCard({
               text: post.repostOf?.snippet ?? '',
               removedAt: post.repostOf?.removedAt ?? boardPost.removedAt,
             }
-          : boardPost,
+          : // The resolved name here too: a screen reader must not be the one
+            // place an address still gets read out.
+            { ...boardPost, senderName: headerName },
         now
       ),
     [boardPost, isRepost, headerName, post.repostOf, now]
@@ -160,7 +204,7 @@ export function BoardPostCard({
     return (
       <LegacyQuestionCard
         stem={boardPost.legacyQuestionStem || ''}
-        authorName={post.senderName}
+        authorName={author.name}
         relativeTime={when}
         hasImage={!!imageUrl}
         onStartStudyGroup={onStartStudyGroup}
@@ -188,12 +232,12 @@ export function BoardPostCard({
       {isRepost && !isRemoved ? (
         <View
           accessible
-          accessibilityLabel={COMMUNITY_BOARD_COPY.repostedBy(post.senderName)}
+          accessibilityLabel={COMMUNITY_BOARD_COPY.repostedBy(reposterName)}
           className="mb-1.5 flex-row items-center"
         >
           <AppIcon name="repeat" size={13} color="#94a3b8" />
           <Text className="ml-1.5 text-[11px] font-semibold text-lantern-text-tertiary">
-            {COMMUNITY_BOARD_COPY.repostedBy(post.senderName)}
+            {COMMUNITY_BOARD_COPY.repostedBy(reposterName)}
           </Text>
         </View>
       ) : null}
@@ -212,7 +256,7 @@ export function BoardPostCard({
           // A repost keeps the ORIGINAL author's identity. The quoted embed
           // carries a name but no avatar url, so this falls back to initials
           // rather than showing the reposter's face over someone else's post.
-          uri={isRepost ? undefined : resolveAvatarSrc(post.senderAvatar, lowDataMode)}
+          uri={isRepost ? undefined : resolveAvatarSrc(author.avatarUrl, lowDataMode)}
           size={28}
           decorative
         />
@@ -367,7 +411,7 @@ export function BoardPostCard({
           repostCount={boardPost.repostCount}
           repostedByMe={boardPost.repostedByMe}
           onRepost={onRepost}
-          canRepost={repostable.ok}
+          canRepost={!repostControl.dimmed}
           replyCount={replyCount}
           onComment={onOpenComments}
           bookmarked={boardPost.bookmarked}

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   AppState,
   type AppStateStatus,
   FlatList,
@@ -17,6 +16,7 @@ import {
   TextInput,
   BackHandler,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
@@ -393,7 +393,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           setDmBlocked(true);
         }
       } catch (err) {
-        Alert.alert(
+        appAlert(
           iBlockedThem ? 'Could not unblock' : 'Could not block',
           err instanceof Error ? err.message : 'Please try again.'
         );
@@ -407,7 +407,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       return;
     }
 
-    Alert.alert(
+    appAlert(
       'Block user',
       `Block ${displayName}? They won’t be able to message you, and you won’t be able to message them until you unblock.`,
       [
@@ -442,13 +442,13 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       try {
         const status = await muteDmThread(threadId, duration);
         if (!status?.muted) {
-          Alert.alert('Mute failed', 'Could not mute notifications for this chat.');
+          appAlert('Mute failed', 'Could not mute notifications for this chat.');
           return;
         }
         setChatMuted(true);
         setChatMutedUntil(status.mutedUntil);
       } catch {
-        Alert.alert('Mute failed', 'Could not mute notifications for this chat.');
+        appAlert('Mute failed', 'Could not mute notifications for this chat.');
       } finally {
         setMuteBusy(false);
       }
@@ -462,13 +462,13 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     try {
       const status = await unmuteDmThread(threadId);
       if (!status || status.muted) {
-        Alert.alert('Unmute failed', 'Could not unmute notifications for this chat.');
+        appAlert('Unmute failed', 'Could not unmute notifications for this chat.');
         return;
       }
       setChatMuted(false);
       setChatMutedUntil(null);
     } catch {
-      Alert.alert('Unmute failed', 'Could not unmute notifications for this chat.');
+      appAlert('Unmute failed', 'Could not unmute notifications for this chat.');
     } finally {
       setMuteBusy(false);
     }
@@ -487,7 +487,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         navigation.goBack();
       }
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Could not update chat',
         error instanceof Error ? error.message : 'Please try again.'
       );
@@ -506,7 +506,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
 
   const handleDeleteChat = useCallback(() => {
     if (!user?.id || chatActionBusy) return;
-    Alert.alert(
+    appAlert(
       'Delete conversation?',
       'This removes the conversation and its history from your chats. The other person keeps their copy.',
       [
@@ -519,7 +519,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
             void deleteDmThread(threadId, user.id)
               .then(() => navigation.goBack())
               .catch((error: unknown) => {
-                Alert.alert(
+                appAlert(
                   'Delete failed',
                   error instanceof Error ? error.message : 'Please try again.'
                 );
@@ -849,7 +849,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
       setNewMessagesBelow(0);
     } catch (error) {
       if (!overrideText && !editingMessage) setText(trimmed);
-      Alert.alert(
+      appAlert(
         editingMessage ? 'Edit failed' : 'Send failed',
         error instanceof Error ? error.message : 'Please try again.'
       );
@@ -921,7 +921,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
   );
 
   const confirmRemoveMessage = useCallback((message: DirectMessage) => {
-    Alert.alert(
+    appAlert(
       'Remove message?',
       'This removes the message for everyone. An audit record will be retained.',
       [
@@ -939,7 +939,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                 if (threadRootId) await reloadThread();
               })
               .catch((error) => {
-                Alert.alert(
+                appAlert(
                   'Remove failed',
                   error instanceof Error ? error.message : 'Please try again.'
                 );
@@ -1374,7 +1374,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               onPress={async () => {
                 setOrderBusy(true);
                 try { await updateMarketplaceOrder(order.id, { action: 'mark_ready' }); await reloadOrder(); }
-                catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+                catch (e: any) { appAlert('Error', e?.message || 'Something went wrong'); }
                 finally { setOrderBusy(false); }
               }}
               className="px-3 py-1.5 rounded-lantern bg-lantern-primary-fill"
@@ -1400,9 +1400,9 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                     // instead of stranding a stale Pay-now that errors on a second tap.
                     await reloadOrder();
                   } else {
-                    Alert.alert('Checkout', 'Could not start checkout. Please try again.');
+                    appAlert('Checkout', 'Could not start checkout. Please try again.');
                   }
-                } catch (e: any) { Alert.alert('Error', e?.message || 'Could not start checkout'); }
+                } catch (e: any) { appAlert('Error', e?.message || 'Could not start checkout'); }
                 finally { setOrderBusy(false); }
               }}
               className="px-3 py-1.5 rounded-lantern bg-emerald-600"
@@ -1416,7 +1416,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               onPress={async () => {
                 setOrderBusy(true);
                 try { await updateMarketplaceOrder(order.id, { action: 'confirm_received' }); await reloadOrder(); }
-                catch (e: any) { Alert.alert('Error', e?.message || 'Something went wrong'); }
+                catch (e: any) { appAlert('Error', e?.message || 'Something went wrong'); }
                 finally { setOrderBusy(false); }
               }}
               className="px-3 py-1.5 rounded-lantern bg-emerald-600"
@@ -1558,7 +1558,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               {...CHAT_LIST_WINDOWING}
               className="flex-1"
               style={{ backgroundColor: wallpaper.listBackgroundColor }}
-              contentContainerClassName="px-4 py-4 flex-grow"
+              contentContainerClassName="px-4 py-4 flex-grow justify-end"
               onScroll={(e) => {
                 const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
                 const distance = contentSize.height - layoutMeasurement.height - contentOffset.y;
@@ -1673,7 +1673,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                       await acceptDmMessageRequest(threadId);
                       if (user?.id) await fetchDmThreads(user.id);
                     } catch (err) {
-                      Alert.alert(
+                      appAlert(
                         'Could not accept',
                         err instanceof Error ? err.message : 'Please try again.'
                       );
@@ -1696,7 +1696,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
                       await declineDmMessageRequest(threadId);
                       if (user?.id) await fetchDmThreads(user.id);
                     } catch (err) {
-                      Alert.alert(
+                      appAlert(
                         'Could not decline',
                         err instanceof Error ? err.message : 'Please try again.'
                       );

@@ -112,7 +112,7 @@ export interface DiscoverPerson {
   followerCount: number;
 }
 
-export { communityKindLabel, memberCountLabel } from './communityLabels';
+export { communityDisplayName, communityKindLabel, memberCountLabel } from './communityLabels';
 import type { CommunityRole } from './communityServer';
 
 /**

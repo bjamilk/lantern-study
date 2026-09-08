@@ -36,6 +36,7 @@ import {
   boardRepostAccessibilityLabel,
   boardRepostClientId,
   boardRepostOriginalId,
+  boardRepostControlState,
   boardRepostRefusalCopy,
   boardShareAccessibilityLabel,
   boardSharePayload,
@@ -551,6 +552,27 @@ describe('canRepostBoardPost', () => {
     expect(
       canRepostBoardPost({ post: post({ removedAt: hoursAgo(2) }), viewerId: 'u2', now })
     ).toEqual({ ok: false, reason: 'removed' });
+  });
+
+  it('dims a refused repost but keeps it pressable, so the reason can be said', () => {
+    // The regression: the control was rendered `disabled`, so the press that
+    // would have shown `boardRepostRefusalCopy` never fired and the icon was
+    // permanently grey and silent.
+    const refused = canRepostBoardPost({
+      post: post({ senderId: 'u1', timestamp: hoursAgo(1) }),
+      viewerId: 'u1',
+      now,
+    });
+    expect(refused.ok).toBe(false);
+    expect(boardRepostControlState(refused, false)).toEqual({ pressable: true, dimmed: true });
+  });
+
+  it('leaves an allowed repost, and an undo, at full strength', () => {
+    const allowed = canRepostBoardPost({ post: post(), viewerId: 'u2', now });
+    expect(boardRepostControlState(allowed, false)).toEqual({ pressable: true, dimmed: false });
+    // Already reposted: refused as a repost, but the tap is the undo.
+    const already = canRepostBoardPost({ post: post({ repostedByMe: true }), viewerId: 'u2', now });
+    expect(boardRepostControlState(already, true)).toEqual({ pressable: true, dimmed: false });
   });
 
   it('gives every refusal a single string both platforms show', () => {

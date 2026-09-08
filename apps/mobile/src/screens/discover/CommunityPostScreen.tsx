@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Pressable,
@@ -11,6 +10,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 import {
@@ -342,7 +342,7 @@ export function CommunityPostScreen({
       setExpanded(false);
       await reload();
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Comment failed',
         error instanceof Error ? error.message : 'Please try again.'
       );

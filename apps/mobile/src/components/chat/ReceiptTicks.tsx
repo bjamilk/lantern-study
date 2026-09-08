@@ -1,6 +1,7 @@
 import React from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useTheme } from '../../theme';
+import { appAlert } from '../ui/appDialog';
 import { AppIcon } from '../ui/AppIcon';
 
 interface ReceiptTicksProps {
@@ -37,7 +38,7 @@ export function ReceiptTicks({
 
   const handleLongPress = () => {
     if (!showSeenDetail) return;
-    Alert.alert('Read receipts', label);
+    appAlert('Read receipts', label);
   };
 
   const icon = (

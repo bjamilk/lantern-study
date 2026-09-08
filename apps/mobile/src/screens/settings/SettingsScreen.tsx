@@ -11,13 +11,13 @@ import {
   ScrollView,
   TouchableOpacity,
   Switch,
-  Alert,
   ActivityIndicator,
   TextInput,
   Modal,
   Linking,
   KeyboardAvoidingView,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import Slider from '@react-native-community/slider';
@@ -27,11 +27,11 @@ import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { useTheme } from '../../theme';
 import { SCREEN_KEYBOARD_BEHAVIOR, Screen, useScreenBottomPadding } from '../../components/layout';
-import { exportUserData, fetchMarketplaceCampuses, fetchUserProfile } from '../../services/api';
+import { exportUserData, fetchMarketplaceCampuses } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
 import { marketplaceComplianceBanner } from '@lantern/shared';
 import { lightColors } from '@lantern/shared/design';
-import { SETTINGS_FAQ } from '@lantern/shared/settings';
+import { SETTINGS_FAQ, LOW_DATA_MODE_HINT } from '@lantern/shared/settings';
 import { studyLevelLabel } from '@lantern/shared/academic';
 import { usePaystackEnabled } from '../../hooks/usePaystackEnabled';
 import { filterCampusesByQuery, isOtherCityCampus } from '@lantern/shared/marketplace';
@@ -44,13 +44,19 @@ import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
+import { useProfileIdentity } from '../../hooks/useProfileIdentity';
 import { ChatWallpaperSheet } from '../../components/chat/ChatWallpaperSheet';
 import { useChatWallpaperStore } from '../../stores/chatWallpaperStore';
 import { openCookiePreferenceCenter } from '../../components/CookieNoticeBanner';
 import { shareTextFile, SharingUnavailableError } from '../../utils/shareFile';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
-import { NotificationDeliveryPanel } from '../../components/settings/NotificationDeliveryPanel';
+import {
+  NotificationDeliveryPanel,
+  usePushDeliveryState,
+} from '../../components/settings/NotificationDeliveryPanel';
+import { pushToggleState } from '../../utils/pushDiagnostics';
+import { reRegisterPushToken } from '../../services/pushNotifications';
 
 // First entry must match DEFAULT_USER_SETTINGS.appearance.accentColor so a fresh
 // account shows a selected swatch (and matches the web default primary).
@@ -187,7 +193,9 @@ export default function SettingsScreen() {
   const [campuses, setCampuses] = useState<Array<{ id: string; name: string; city: string; state?: string; slug?: string }>>([]);
   const [campusesLoading, setCampusesLoading] = useState(false);
   const [campusSearch, setCampusSearch] = useState('');
-  const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(null);
+  // The signed-in student's name and face come from `useProfileIdentity`,
+  // the one resolver every surface shares.
+  const identity = useProfileIdentity();
   
   // Temp values for modals
   const [tempDailyCardGoal, setTempDailyCardGoal] = useState(settings.study.dailyCardGoal);
@@ -200,28 +208,6 @@ export default function SettingsScreen() {
     }
   }, [user?.id]);
 
-  useEffect(() => {
-    if (!user?.id) return;
-    let cancelled = false;
-    void fetchUserProfile(user.id)
-      .then((profile) => {
-        if (cancelled) return;
-        const url =
-          (profile as { avatar_url?: string; avatarUrl?: string }).avatar_url ||
-          (profile as { avatarUrl?: string }).avatarUrl ||
-          (user.user_metadata?.avatar_url as string | undefined) ||
-          null;
-        setProfileAvatarUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setProfileAvatarUrl((user.user_metadata?.avatar_url as string | undefined) || null);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id, user?.user_metadata?.avatar_url]);
 
   useEffect(() => {
     let cancelled = false;
@@ -275,7 +261,7 @@ export default function SettingsScreen() {
   };
 
   const handleLogout = useCallback(() => {
-    Alert.alert(
+    appAlert(
       'Sign Out',
       'Are you sure you want to sign out?',
       [
@@ -305,7 +291,7 @@ export default function SettingsScreen() {
       const res = await exportUserData(userId);
       payload = (res as any)?.data ?? res;
     } catch {
-      Alert.alert('Export failed', 'You may only export once every 24 hours.');
+      appAlert('Export failed', 'You may only export once every 24 hours.');
       return;
     }
 
@@ -320,13 +306,13 @@ export default function SettingsScreen() {
       });
     } catch (shareError) {
       if (shareError instanceof SharingUnavailableError) {
-        Alert.alert(
+        appAlert(
           'Sharing unavailable',
           'This device cannot open a share sheet, so the export could not be sent anywhere.'
         );
         return;
       }
-      Alert.alert(
+      appAlert(
         'Export failed',
         shareError instanceof Error ? shareError.message : 'Could not share your data.'
       );
@@ -344,9 +330,9 @@ export default function SettingsScreen() {
     try {
       await reactivateUserAccount(userId);
       setAccountLifecycle({ status: 'active' });
-      Alert.alert('Account reactivated', 'Welcome back to Lantern Study.');
+      appAlert('Account reactivated', 'Welcome back to Lantern Study.');
     } catch (e) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to reactivate account.');
+      appAlert('Error', e instanceof Error ? e.message : 'Failed to reactivate account.');
     } finally {
       setReactivatingAccount(false);
     }
@@ -356,18 +342,18 @@ export default function SettingsScreen() {
     if (!user?.id) return;
     const result = await syncSettings(user.id, { force: true });
     if (result === 'synced') {
-      Alert.alert('Synced', 'Settings synced successfully!');
+      appAlert('Synced', 'Settings synced successfully!');
     } else if (result === 'deferred') {
-      Alert.alert('Waiting for Wi‑Fi', 'Sync on Wi‑Fi only is enabled. Connect to Wi‑Fi to sync.');
+      appAlert('Waiting for Wi‑Fi', 'Sync on Wi‑Fi only is enabled. Connect to Wi‑Fi to sync.');
     } else if (result === 'conflict') {
-      Alert.alert(
+      appAlert(
         'Updated elsewhere',
         'Settings were changed on another device. Latest values were reloaded; review and sync again if needed.'
       );
     } else if (result === 'skipped') {
-      Alert.alert('Sync', 'Nothing to sync right now.');
+      appAlert('Sync', 'Nothing to sync right now.');
     } else {
-      Alert.alert(
+      appAlert(
         'Sync failed',
         'Could not reach the server. Your changes are saved on this device and will retry later.'
       );
@@ -375,7 +361,7 @@ export default function SettingsScreen() {
   }, [user?.id, syncSettings]);
 
   const handleResetSettings = useCallback(() => {
-    Alert.alert(
+    appAlert(
       'Reset Settings',
       'This will reset all settings to defaults. Your study data will not be affected.',
       [
@@ -386,19 +372,19 @@ export default function SettingsScreen() {
           onPress: async () => {
             await resetToDefaults();
             if (!user?.id) {
-              Alert.alert('Reset', 'Settings reset on this device.');
+              appAlert('Reset', 'Settings reset on this device.');
               return;
             }
             const result = await syncSettings(user.id, { force: true });
             if (result === 'synced') {
-              Alert.alert('Reset', 'Settings have been reset to defaults.');
+              appAlert('Reset', 'Settings have been reset to defaults.');
             } else if (result === 'deferred') {
-              Alert.alert(
+              appAlert(
                 'Reset locally',
                 'Defaults applied on this device. Connect to Wi‑Fi to sync.'
               );
             } else {
-              Alert.alert(
+              appAlert(
                 'Reset locally',
                 'Defaults applied on this device, but sync failed. They will retry later.'
               );
@@ -408,6 +394,44 @@ export default function SettingsScreen() {
       ]
     );
   }, [resetToDefaults, syncSettings, user?.id]);
+
+  /**
+   * The device's real push state, read from the same place the delivery panel
+   * above these toggles reads it, so the two can never disagree again.
+   */
+  const { state: pushDelivery, check: recheckPushDelivery } = usePushDeliveryState();
+  const pushToggle = pushToggleState(settings.notifications.pushEnabled, pushDelivery);
+
+  /**
+   * Turning push on has two halves, and only one of them is a setting.
+   *
+   * The preference is written either way. When this phone has never been
+   * allowed, the OS is asked as well — that is the half that was missing, and
+   * why the switch could sit on with nothing ever arriving. A phone that has
+   * refused for good is sent to system settings, which is the only place that
+   * can undo it.
+   */
+  const handlePushToggle = useCallback(
+    async (next: boolean) => {
+      updateSingleSetting('notifications', 'pushEnabled', next);
+      if (!next) return;
+      if (pushToggle.blockedInSystemSettings) {
+        await Linking.openSettings().catch(() => undefined);
+        return;
+      }
+      if (pushToggle.needsPermission || !pushDelivery.deviceToken) {
+        await reRegisterPushToken().catch(() => undefined);
+      }
+      await recheckPushDelivery();
+    },
+    [
+      updateSingleSetting,
+      pushToggle.blockedInSystemSettings,
+      pushToggle.needsPermission,
+      pushDelivery.deviceToken,
+      recheckPushDelivery,
+    ]
+  );
 
   const handleReminderTimeChange = useCallback((event: any, selectedDate?: Date) => {
     setShowTimePicker(false);
@@ -464,16 +488,28 @@ export default function SettingsScreen() {
           />
         ) : null}
 
-        {/* Profile Section */}
+        {/* Profile Section — the SAME name and face the Me tab and the board
+            composer draw, from `useProfileIdentity`. This card used to read
+            `user_metadata.name` alone and fall back to the literal "User",
+            so an account whose profile said "Benjamin Amadi" showed "User"
+            and an orange "NI" chip one tap later. */}
         <View style={[styles.profileSection, { backgroundColor: colors.card }]}>
           <ResolvedAvatar
-            name={user?.user_metadata?.name || user?.email || 'U'}
-            uri={profileAvatarUrl}
+            name={identity.displayName || identity.email || ''}
+            uri={identity.avatarUrl}
             size={56}
           />
           <View style={styles.profileInfo}>
-            <Text style={[styles.profileName, { color: colors.text }]}>{user?.user_metadata?.name || 'User'}</Text>
-            <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>{user?.email || 'user@example.com'}</Text>
+            {identity.displayName ? (
+              <Text style={[styles.profileName, { color: colors.text }]}>
+                {identity.displayName}
+              </Text>
+            ) : null}
+            {identity.email ? (
+              <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>
+                {identity.email}
+              </Text>
+            ) : null}
           </View>
           <TouchableOpacity
             style={styles.editProfileButton}
@@ -495,18 +531,26 @@ export default function SettingsScreen() {
           <NotificationDeliveryPanel />
           <Text style={[styles.subGroupTitle, { color: colors.textTertiary }]}>Push & in-app</Text>
           <View style={[styles.sectionContent, { backgroundColor: colors.card }]}>
+            {/*
+              The switch shows what will actually happen on THIS phone, not the
+              stored preference: on device it read ON three lines under
+              "Permission on this phone: Not allowed yet", which is a promise
+              the app could not keep. `pushToggleState` folds the preference
+              and the device's real state into the one thing to render, and
+              turning it on asks the OS rather than only writing a setting.
+            */}
             <SettingItem
               colors={colors}
               icon="notifications"
               iconColor="#8b5cf6"
               title="Push Notifications"
-              subtitle="Device push alerts, synced across devices"
+              subtitle={pushToggle.subtitle}
               rightElement={
                 <Switch
-                  value={settings.notifications.pushEnabled}
-                  onValueChange={(val) => updateSingleSetting('notifications', 'pushEnabled', val)}
+                  value={pushToggle.value}
+                  onValueChange={(val) => void handlePushToggle(val)}
                   trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
-                  thumbColor={settings.notifications.pushEnabled ? colors.switchThumbOn : colors.switchThumbOff}
+                  thumbColor={pushToggle.value ? colors.switchThumbOn : colors.switchThumbOff}
                 />
               }
               showChevron={false}
@@ -845,7 +889,7 @@ export default function SettingsScreen() {
               icon="cellular"
               iconColor="#0ea5e9"
               title="Low-Data Mode"
-              subtitle="Lighter images, charts, and page loads"
+              subtitle={LOW_DATA_MODE_HINT}
               rightElement={
                 <Switch
                   value={settings.appearance.lowDataMode}
@@ -1237,7 +1281,7 @@ export default function SettingsScreen() {
               subtitle="Show the getting-started tips again"
               onPress={() => {
                 useFeatureTipStore.getState().replay();
-                Alert.alert('Feature tips reset', 'Explore the app to see navigation tips again.');
+                appAlert('Feature tips reset', 'Explore the app to see navigation tips again.');
               }}
             />
             <SettingItem
@@ -1349,13 +1393,13 @@ export default function SettingsScreen() {
                   .then((result) => {
                     if (result.updated) return;
                     if (!result.isEnabled) {
-                      Alert.alert(
+                      appAlert(
                         'Updates unavailable',
                         'This install has OTA disabled (Expo Go or a development build). Install the preview APK from Expo to receive updates.'
                       );
                       return;
                     }
-                    Alert.alert(
+                    appAlert(
                       result.reason === 'up-to-date' ? 'Up to date' : 'No update applied',
                       result.reason === 'up-to-date'
                         ? 'You already have the latest preview update.'

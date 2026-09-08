@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   KeyboardAvoidingView,
   Modal,
@@ -12,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../components/layout';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -145,7 +145,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
   const saveShop = async () => {
     const trimmed = shopName.trim();
     if (!trimmed) {
-      Alert.alert('Shop name required');
+      appAlert('Shop name required');
       return;
     }
     setSaving(true);
@@ -153,7 +153,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
       await updateMyShop({ shopName: trimmed, bio: bio.trim() || null });
       setEditOpen(false);
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Failed to save shop');
+      appAlert('Error', e instanceof Error ? e.message : 'Failed to save shop');
     } finally {
       setSaving(false);
     }

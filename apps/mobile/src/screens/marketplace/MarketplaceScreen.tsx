@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   FlatList,
   Keyboard,
@@ -13,6 +12,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen } from '../../components/layout';
 import { KeyboardSafePanel } from './components/KeyboardSafePanel';
 import { Skeleton, Button, Badge } from '../../components/ui';
@@ -612,9 +612,9 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             ? activeCategoryLabel
             : selectedCampus?.name || 'Marketplace search')
       );
-      Alert.alert('Saved', 'Search saved.');
+      appAlert('Saved', 'Search saved.');
     } catch {
-      Alert.alert('Error', 'Could not save search.');
+      appAlert('Error', 'Could not save search.');
     }
   };
 

@@ -3597,6 +3597,24 @@ export class JobsBoardService {
 
   async schoolApprovePosting(postingId: string, approve: boolean) {
     const status = approve ? "active" : "closed";
+    if (approve) {
+      /*
+       * The third publish path, and the one that had no gate.
+       *
+       * `createPosting` and `updatePosting` both refuse template boilerplate,
+       * but a posting can also reach `active` from here — the school approval
+       * queue — and this write went straight to the column. A posting that
+       * entered the queue before the gate existed, or whose copy was edited
+       * while it waited, would go live carrying "[team / function]".
+       * Publishing is publishing: the same rule applies.
+       */
+      const existing = await this.getPosting(postingId);
+      const leftover = describeJobTemplateLeftovers(
+        existing?.title,
+        existing?.description,
+      );
+      if (leftover) throw httpError(leftover);
+    }
     const { error } = await this.client()
       .from("job_postings")
       .update({ status, updated_at: new Date().toISOString() })

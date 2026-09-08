@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -9,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { appAlert } from '../../components/ui/appDialog';
 import { Screen } from '../../components/layout';
 import { useFocusEffect } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
@@ -293,12 +293,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const pickImages = async () => {
     if (pendingImages.length >= MAX_IMAGES) {
-      Alert.alert('Limit reached', `Maximum ${MAX_IMAGES} images allowed.`);
+      appAlert('Limit reached', `Maximum ${MAX_IMAGES} images allowed.`);
       return;
     }
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission required', 'Photo library access is needed.');
+      appAlert('Permission required', 'Photo library access is needed.');
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -325,7 +325,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       });
     }
     if (rejectedHeic > 0) {
-      Alert.alert('Unsupported photo format', HEIC_IMAGE_UPLOAD_ERROR);
+      appAlert('Unsupported photo format', HEIC_IMAGE_UPLOAD_ERROR);
     }
     if (accepted.length === 0) return;
     setPendingImages((prev) => [...prev, ...accepted].slice(0, MAX_IMAGES));
@@ -333,7 +333,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const handleGenerateDescription = async () => {
     if (!title.trim()) {
-      Alert.alert('Add a title first', 'Enter a title so AI knows what you are selling.');
+      appAlert('Add a title first', 'Enter a title so AI knows what you are selling.');
       return;
     }
     setGeneratingDesc(true);
@@ -346,7 +346,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       });
       if (generated) setDescription(generated);
     } catch (e: unknown) {
-      Alert.alert(
+      appAlert(
         'Could not generate description',
         e instanceof Error ? e.message : 'Please try again in a moment.'
       );
@@ -357,29 +357,29 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
 
   const handleSubmit = async () => {
     if (!user?.id) {
-      Alert.alert('Sign in required', 'Please sign in to create a listing.');
+      appAlert('Sign in required', 'Please sign in to create a listing.');
       return;
     }
     if (!title.trim()) {
-      Alert.alert('Missing title', 'Please enter a title for your listing.');
+      appAlert('Missing title', 'Please enter a title for your listing.');
       return;
     }
     if (isCustomType && !customCategory.trim()) {
-      Alert.alert(
+      appAlert(
         'Name this type',
         'Tell buyers what kind of thing this is, or pick a category from the catalog.'
       );
       return;
     }
     if (!campusId) {
-      Alert.alert(
+      appAlert(
         'Missing area',
         'Choose a campus, or select Other (city in Nigeria).'
       );
       return;
     }
     if (isOtherCity && !location.trim()) {
-      Alert.alert(
+      appAlert(
         'Missing city',
         'Enter the Nigerian city for this listing.'
       );
@@ -387,12 +387,12 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     }
     const parsedPrice = price.trim() ? parseFloat(price.replace(/,/g, '')) : undefined;
     if (price.trim() && (!parsedPrice || parsedPrice < 0)) {
-      Alert.alert('Invalid price', 'Please enter a valid price.');
+      appAlert('Invalid price', 'Please enter a valid price.');
       return;
     }
     if (needsAttestation && !attested) {
       setAttestationError(ATTESTATION_REQUIRED_MESSAGE);
-      Alert.alert('Confirm your rights', ATTESTATION_REQUIRED_MESSAGE);
+      appAlert('Confirm your rights', ATTESTATION_REQUIRED_MESSAGE);
       return;
     }
     setAttestationError(null);
@@ -401,7 +401,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
     // don't block — before publishing a photoless one.
     if (pendingImages.length === 0) {
       const publishWithout = await new Promise<boolean>(resolve => {
-        Alert.alert(
+        appAlert(
           'No photos yet',
           'Listings with photos get far more buyers. Add one first?',
           [
@@ -428,7 +428,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           parsedPrice == null ||
           parsedSalePrice >= parsedPrice)
       ) {
-        Alert.alert(
+        appAlert(
           'Invalid discounted price',
           'Discounted price must be lower than the asking price, or leave it blank. This is for a promo — not your cost/profit.'
         );
@@ -436,7 +436,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       }
       // A discounted price with no end date never shows to buyers (fix #7).
       if (parsedSalePrice != null && parsedSalePrice > 0 && saleEndsPreset === 'none') {
-        Alert.alert(
+        appAlert(
           'Add a promo end date',
           "Pick 24 hours or 7 days, or clear the discounted price — a discount with no end date won't show to buyers."
         );
@@ -517,13 +517,13 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       useMarketplaceStore.getState().invalidateShopSummary();
       setPublishedSinceMount(true);
       if (queued) {
-        Alert.alert(
+        appAlert(
           'Saved for publishing',
           'You appear to be offline. Your listing will publish automatically when you reconnect.'
         );
         navigation.goBack();
       } else if (failedUploads > 0 && uploadedUrls.length === 0) {
-        Alert.alert(
+        appAlert(
           'Listing created, photos failed',
           heicFailures > 0
             ? HEIC_IMAGE_UPLOAD_ERROR
@@ -531,7 +531,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         );
         navigation.navigate('ListingDetail', { listingId: listing.id });
       } else if (failedUploads > 0) {
-        Alert.alert(
+        appAlert(
           'Listing published',
           heicFailures > 0
             ? `${failedUploads} photo(s) failed. ${HEIC_IMAGE_UPLOAD_ERROR}`
@@ -539,7 +539,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
         );
         navigation.navigate('ListingDetail', { listingId: listing.id });
       } else {
-        Alert.alert('Listing published', 'Your listing is now live.');
+        appAlert('Listing published', 'Your listing is now live.');
         navigation.navigate('ListingDetail', { listingId: listing.id });
       }
     } catch (e: unknown) {
@@ -549,7 +549,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
       const message =
         e instanceof Error && e.message ? e.message : 'Failed to create listing. Please try again.';
       setSubmitError(message);
-      Alert.alert('Could not publish listing', message);
+      appAlert('Could not publish listing', message);
     }
   };
 
@@ -653,7 +653,7 @@ export function CreateListingScreen({ navigation }: { navigation: NavigationProp
           selectedNodeId={taxonomyNodeId}
           onSelect={(node: TaxonomyNode) => {
             if (node.publishFlow === 'question_bank' || node.publishFlow === 'study_pack') {
-              Alert.alert(
+              appAlert(
                 'Publish from Study products',
                 node.publishFlow === 'question_bank'
                   ? 'A Lantern question bank is a takeable test. Publish it from Study products, or list a PDF/printed pack here.'

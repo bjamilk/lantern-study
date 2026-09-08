@@ -26,9 +26,9 @@ import {
   TextInput,
   ScrollView,
   ActivityIndicator,
-  Alert,
   useWindowDimensions,
 } from 'react-native';
+import { appAlert } from './ui/appDialog';
 import { useTheme } from '../theme';
 import { useAIHandlers } from '../hooks/useAIHandlers';
 import AIUsageBadge from './AIUsageBadge';
@@ -160,7 +160,7 @@ export default function AIGenerateFlashcardsModal({
 
   const handleGenerate = async () => {
     if (!plan.ok) {
-      Alert.alert('Not enough to work with', plan.blockedReason ?? 'Paste your notes first.');
+      appAlert('Not enough to work with', plan.blockedReason ?? 'Paste your notes first.');
       return;
     }
     setAiError(null);
