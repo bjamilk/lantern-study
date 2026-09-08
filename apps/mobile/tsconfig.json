@@ -3,6 +3,17 @@
   "compilerOptions": {
     "strict": true,
     "paths": {
+      // Without this, ts-jest cannot resolve a '@lantern/shared/...' subpath
+      // that ONLY a test file imports: the shared package's `exports` map
+      // answers for tsc, but under ts-jest the specifier resolves only once
+      // some non-test file imports it too. importCardsMachine.test.ts was the
+      // first test to import '@lantern/shared/utils/fsrs' that no app file
+      // imports, and it failed CI with TS2307 while passing locally off a
+      // warm jest cache. This mirrors what jest's moduleNameMapper already
+      // does at runtime, so the compiler and the runtime read the same files.
+      "@lantern/shared/*": [
+        "../../packages/shared/src/*"
+      ],
       "@shared/*": [
         "../../packages/shared/src/*"
       ],
