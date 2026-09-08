@@ -6,6 +6,8 @@ import { useTheme } from '../../theme';
 import { TAB_BAR_CONTENT_HEIGHT, tabBarClearance } from './screenInsets';
 import { useChrome } from './ChromeContext';
 import { CONTEXTUAL_BAR_CONTENT_HEIGHT, contextualBarClearance } from './contextualBarLayout';
+import { replacesGlobalBar } from '../../navigation/contextualBars';
+import { planBottomBarComposition } from './bottomBarComposition';
 import { BOTTOM_TABS, TAB_LABELS, type BottomTabKey, type TabKey } from './tabRouting';
 // Which glyph each destination draws, and why the current one is FILLED
 // rather than merely tinted: see tabIcons.ts, which is pure and unit-tested.
@@ -27,8 +29,15 @@ interface Props {
   dueCardsCount?: number;
   unreadChatCount?: number;
   /**
-   * The contextual row (spec v3 §7.2), drawn directly above the five tabs and
-   * INSIDE this bar's own absolutely-positioned container.
+   * The contextual row (spec v3 §7.2), drawn INSIDE this bar's own
+   * absolutely-positioned container.
+   *
+   * Where it sits depends on `replaceGlobalTabs`, which the caller derives from
+   * the registry's mode (founder decision 2026-09-08):
+   * - `above` mode (default): the row is drawn directly ABOVE the five tabs, and
+   *   both are on screen — today's behaviour, unchanged.
+   * - `replace` mode: the five tabs are NOT rendered and this row stands in
+   *   their place, with `exit` as the single leading way out.
    *
    * A slot rather than an import so the composition stays with the one caller
    * that mounts the bar (RootNavigator's CustomTabBar, which also owns the
@@ -38,6 +47,26 @@ interface Props {
    * one of them changed.
    */
   above?: React.ReactNode;
+  /**
+   * Replace the global five-tab row with the contextual row (Study, Shop).
+   *
+   * When true the five destinations are not on screen — the section's own row
+   * takes the bar's slot — and `exit` is the leading control that gets the
+   * student back out. False (the default) is every above-mode and no-row route,
+   * where the five tabs render exactly as before. The decision is
+   * planBottomBarComposition (bottomBarComposition.ts), where it is tested.
+   */
+  replaceGlobalTabs?: boolean;
+  /**
+   * The single leading exit control of a replace-mode row (founder decision 2).
+   *
+   * `control` is the rules lane's answer — `back` when the focused stack can
+   * pop, `home` when it is at the section root — and `onPress` is wired by the
+   * caller to the matching navigation (pop the focused stack, or go to the Home
+   * tab and restore the global bar). Rendered ONLY when `replaceGlobalTabs` is
+   * true; an above-mode row keeps the global bar as its own way out.
+   */
+  exit?: { control: 'back' | 'home'; onPress: () => void };
 }
 
 function TabButton({
@@ -101,6 +130,55 @@ function TabButton({
   );
 }
 
+/**
+ * The one leading control of a replace-mode row — the way out that makes
+ * taking the global five-tab bar away safe (founder decision 2).
+ *
+ * It is never absent and never inert: `back` pops the focused stack, `home`
+ * leaves the section for the Home tab (which restores the global bar). Both are
+ * wired by the caller; this only draws the glyph. Painted in the chrome accent
+ * (`tabBarActive`, the same indigo the current tab wears) because it is chrome,
+ * not a feature — one hue for the whole bar.
+ *
+ * ICON-ONLY, with the word carried as its accessible name. Width is the scarce
+ * dimension on this row: a visible "Back"/"Home" costs ~30 dp, and on Study's
+ * five-item row that is taken straight out of the selected item's promoted
+ * label, which then ellipsises to nothing (contextualBarPresentation.ts measures
+ * exactly this). A bare arrow / house is the standard affordance, the word is
+ * still announced, and the row keeps one visible word — the selected item's,
+ * which is what decision 4 asked for.
+ */
+function ExitControl({
+  control,
+  onPress,
+  color,
+}: {
+  control: 'back' | 'home';
+  onPress: () => void;
+  color: string;
+}) {
+  const label = control === 'back' ? 'Back' : 'Home';
+  return (
+    <Pressable
+      onPress={onPress}
+      // A square 44 dp target on the row's own baseline, and a FIXED footprint:
+      // the segments flex to fill whatever is left, so the exit can never eat
+      // into the label's room as the control swaps Back for Home.
+      style={{ width: CONTEXTUAL_BAR_CONTENT_HEIGHT, minHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
+      className="items-center justify-center"
+      accessibilityRole="button"
+      accessibilityLabel={label}
+    >
+      <AppIcon
+        name={control === 'back' ? 'arrow-back' : 'home'}
+        size={22}
+        color={color}
+        importantForAccessibility="no"
+      />
+    </Pressable>
+  );
+}
+
 /** Approximate content height above the home indicator; used by screens for bottom padding. */
 export const BOTTOM_TAB_BAR_CONTENT_HEIGHT = TAB_BAR_CONTENT_HEIGHT;
 
@@ -126,6 +204,14 @@ export function useTabBarClearance(extra = 16): number {
     base: tabBarClearance(insets.bottom, extra),
     contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
     present: contextual !== null,
+    // Study and Shop REPLACE the global bar rather than stack above it (founder
+    // decision 2026-09-08): the row stands in the bar's slot, so the bar's own
+    // 56 dp content height comes back out and a screen pads for one strip, not
+    // two. The arithmetic lives in contextualBarLayout.ts; this only passes the
+    // mode the registry declared. `replacesGlobalBar(null)` is false, so every
+    // above-mode and no-row route is unchanged.
+    replaceMode: replacesGlobalBar(contextual),
+    globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
   });
 }
 
@@ -140,8 +226,11 @@ export function useTabBarClearance(extra = 16): number {
  *
  * The bar does not move. It has no `hideProgress` any more: scrolling,
  * focusing a search box and opening the keyboard all leave it exactly where it
- * is. Only an immersive ROUTE (a study session, a chat) unmounts it, and that
- * screen draws its own header in its place.
+ * is. Two things take the five off screen. An immersive ROUTE (a study session,
+ * a chat) unmounts the whole bar, and that screen draws its own header in its
+ * place. And a `replace`-mode section (Study, Shop — founder decision
+ * 2026-09-08) swaps the five for that section's own contextual row plus a single
+ * leading exit control; leaving the section brings the five straight back.
  */
 export function BottomTabBar({
   activeTab,
@@ -149,8 +238,15 @@ export function BottomTabBar({
   dueCardsCount = 0,
   unreadChatCount = 0,
   above,
+  replaceGlobalTabs = false,
+  exit,
 }: Props) {
   const { colors, isDark } = useTheme();
+  // WHAT the bottom slot contains, from the one tested planner rather than an
+  // inline ternary: the five and no exit, or the exit and the section's row.
+  // Inverting it here would have passed every test while shipping both bars in
+  // Study and none anywhere else, so the decision is not repeated in JSX.
+  const composition = planBottomBarComposition({ replace: replaceGlobalTabs });
   const insets = useSafeAreaInsets();
   const bottomPad = Math.max(insets.bottom, 20) + 10;
 
@@ -181,22 +277,38 @@ export function BottomTabBar({
         elevation: 12,
       }}
     >
-      {/* Above the five, inside the same container: the row grows this bar
-          rather than floating over the screen, so there is one height to
-          clear and the five destinations never move. */}
-      {above}
-      <View className="flex-row pt-2">
-        {tabs.map(tab => (
-          <TabButton
-            key={tab.key}
-            tab={tab}
-            active={activeTab === tab.key}
-            onPress={() => onTabPress(tab.key)}
-            activeColor={colors.tabBarActive}
-            inactiveColor={colors.tabBarInactive}
-          />
-        ))}
-      </View>
+      {composition.showGlobalTabs ? (
+        <>
+          {/* Above mode: the row grows this bar above the five rather than
+              floating over the screen, so there is one height to clear and the
+              five destinations never move. */}
+          {above}
+          <View className="flex-row pt-2">
+            {tabs.map(tab => (
+              <TabButton
+                key={tab.key}
+                tab={tab}
+                active={activeTab === tab.key}
+                onPress={() => onTabPress(tab.key)}
+                activeColor={colors.tabBarActive}
+                inactiveColor={colors.tabBarInactive}
+              />
+            ))}
+          </View>
+        </>
+      ) : (
+        // Replace mode (Study, Shop): the section's row stands in the global
+        // bar's slot and the five destinations are not on screen. The single
+        // leading exit control is the way out — Back or Home, never inert — so
+        // the five can be gone without stranding the student. `items-stretch`
+        // holds the exit and the row to one baseline as the row animates in.
+        <View className="flex-row items-stretch">
+          {composition.showExit && exit ? (
+            <ExitControl control={exit.control} onPress={exit.onPress} color={colors.tabBarActive} />
+          ) : null}
+          <View className="flex-1">{above}</View>
+        </View>
+      )}
     </View>
   );
 }

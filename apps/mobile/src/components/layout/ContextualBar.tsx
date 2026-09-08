@@ -1,10 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Keyboard, Platform, Pressable, Text, View } from 'react-native';
-import {
-  featureAccentsDark,
-  featureAccentsLight,
-  featureSmallTextInk,
-} from '@lantern/shared/design';
+import { featureAccentsDark, featureAccentsLight } from '@lantern/shared/design';
 import {
   activeItem,
   planContextualPress,
@@ -25,28 +21,52 @@ import {
   contextualBarTransitionMs,
   resolveContextualSpec,
 } from './contextualBarLayout';
+import {
+  CONTEXTUAL_PILL_LABEL,
+  planContextualPills,
+  type ContextualPillPlan,
+} from './contextualBarPresentation';
 
 /**
- * The contextual row (spec v3 §7.2).
+ * The contextual row (spec v3 §7.2, as amended by the founder 2026-09-08).
  *
- * A 44 dp segment strip drawn directly ABOVE the global bottom bar, inside the
- * same chrome view, carrying a few doors *within* the destination you are in —
- * so a student can go Library → Tests without climbing out to the hub. It never
- * replaces the global bar: the five destinations stay exactly where they are,
- * one tap away, which is the whole difference from StudyFetch's answer of
- * deleting its bar on every pushed screen (`inv #77`, `#169`).
+ * A 44 dp strip carrying a few doors *within* the destination you are in — so a
+ * student can go Library → Tests without climbing out to the hub. WHERE it sits
+ * is the registry's `mode` (navigation/contextualBars.ts): a `replace`-mode row
+ * (Study, Shop) stands IN the global bar's slot, and an `above`-mode row (deck,
+ * note, walk-through, community) sits above an unchanged global bar. This file
+ * draws both.
  *
- * What its CONTENTS are a function of: THE FOCUSED ROUTE (and, for a route
- * that hosts more than one destination, the segment its params name). Not
- * scroll, not a selection — the same rule `immersive` already follows. The one
- * thing outside the route that touches the row is the soft keyboard, which
- * removes it entirely rather than moving it: the IME is drawn over the bottom
- * of the window, so the row was buried and unpressable while typing. Nothing
- * about the row's ITEMS changes while it is gone, and it returns as it was.
- * The registry lives in navigation/contextualBars.ts (pure, tested);
- * the arithmetic and the two suppressions live in contextualBarLayout.ts (pure,
- * tested); this file is the untestable shell over both, because mobile jest is
- * node-env and cannot render a native component.
+ * HOW an item is drawn — founder decision 4. The SELECTED item (the one whose
+ * target is the focused route) shows its label beside its icon inside a filled
+ * pill; every other item is its icon alone. The pill's fill is the selected
+ * feature's own `tint` ground and its label the feature's `ink` — the pair the
+ * contrast gate (scripts/design/contrast.mjs) already asserts clears 4.5:1 in
+ * BOTH themes, so "selected" means the feature's own chip: a soft saturated fill
+ * that lifts off the near-white bar in light, a saturated dark ground that reads
+ * as filled against the elevated bar in dark. The word is `text-body` (15 sp), a
+ * scale step, one line, tail-ellipsised and font-capped so "Flashcards" (the
+ * worst case) stays inside the row even at a large accessibility text size. The
+ * hidden labels never leave the accessibility tree — every item keeps its full
+ * label as an accessible name (see planContextualPills). The label/accessible-
+ * name/long-label decisions are pure in contextualBarPresentation.ts (tested);
+ * this file is the untestable shell over them, because mobile jest is node-env
+ * and cannot render a native component.
+ *
+ * A `replace`-mode row also carries ONE leading exit control (founder decision
+ * 2): Back when the focused stack can pop, Home at the section root — never
+ * inert, one position, and the way out now that the global bar is gone. That
+ * control is NOT drawn here, and deliberately so. BottomTabBar draws it, because
+ * it owns the whole bottom slot and OUTLIVES this component: the row unmounts
+ * while the keyboard is up, and an exit that went with it would leave a
+ * replace-mode section with no way out at all. One exit, in one file.
+ *
+ * What its CONTENTS are a function of: THE FOCUSED ROUTE (and, for a route that
+ * hosts more than one destination, the segment its params name). Not scroll, not
+ * a selection — the same rule `immersive` already follows. The one thing outside
+ * the route that touches the row is the soft keyboard, which removes it entirely
+ * rather than moving it: the IME is drawn over the bottom of the window, so the
+ * row was buried and unpressable while typing.
  *
  * What it never does: open a modal or a sheet (the AI panel is the app's own
  * always-available surface, not a modal this row invents), cross into another
@@ -60,53 +80,77 @@ export { CONTEXTUAL_BAR_CONTENT_HEIGHT } from './contextualBarLayout';
 
 interface SegmentProps {
   item: ContextualBarItem;
-  active: boolean;
+  plan: ContextualPillPlan;
   onPress: () => void;
   isDark: boolean;
-  neutralInk: string;
 }
 
-function Segment({ item, active, onPress, isDark, neutralInk }: SegmentProps) {
+function Segment({ item, plan, onPress, isDark }: SegmentProps) {
   const accents = isDark ? featureAccentsDark : featureAccentsLight;
   const ink = accents[item.feature].ink;
-  // The label is 11 sp (`text-label`), which is below the 12 px line where a
-  // feature ink is allowed to be used raw — featureSmallTextInk is the single
-  // source for the darkened substitute (light lime is the one real case).
-  const activeLabelInk = featureSmallTextInk(item.feature, isDark ? 'dark' : 'light');
+  const tint = accents[item.feature].tint;
 
   return (
     <Pressable
       onPress={onPress}
       // 44 dp is the minimum target, and it is also the whole row: the
       // Pressable IS the segment, so there is no dead margin around it.
-      style={{ flex: 1, minHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
+      // The labelled segment takes a bigger share of the row than an icon-only
+      // one — with five equal segments the promoted word has ~14 dp and
+      // ellipsises to nothing. The shares are in contextualBarPresentation.ts,
+      // where the worst real row is measured against the longest label.
+      style={{ flex: plan.flex, minHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
       className="items-center justify-center px-1"
       accessibilityRole="tab"
-      accessibilityState={{ selected: active }}
-      accessibilityLabel={item.label}
+      accessibilityState={{ selected: plan.selected }}
+      // Decision 4's accessibility half: the word may be hidden on screen for an
+      // icon-only item, but the accessible NAME is always its full label, so a
+      // screen reader announces every item and its selected state.
+      accessibilityLabel={plan.accessibleName}
     >
-      {/* `active` is the duotone form — ink stroke over a tint fill — so the
-          current segment changes SHAPE and not only hue; `feature` is the
-          at-rest form, the glyph stroked in its own identity. Both come from
-          appIconTone.ts, which owns the rule. */}
-      <AppIcon
-        name={item.icon}
-        size={18}
-        tone={active ? 'active' : 'feature'}
-        feature={item.feature}
-        color={ink}
-        importantForAccessibility="no"
-      />
-      <Text
-        numberOfLines={1}
-        // `label`: 11/16/+0.04em. The active segment's word carries the accent;
-        // the rest stay neutral, so the row reads as one control with one
-        // current item rather than five competing hues at full strength.
-        className={`text-label mt-0.5 text-center ${active ? 'font-bold' : 'font-medium'}`}
-        style={{ color: active ? activeLabelInk : neutralInk }}
-      >
-        {item.label}
-      </Text>
+      {plan.showLabel ? (
+        // The SELECTED item: icon + label on the feature's own tint chip. Icon
+        // and word share the feature `ink`, the pair contrast.mjs gates ≥4.5:1
+        // on this tint in both themes. `rounded-full`/`self-center` keep the
+        // pill tight around its content and inside the 44 dp row; `flex-shrink`
+        // lets a long word ellipsise rather than push the pill past the row.
+        <View
+          className="max-w-full flex-row items-center self-center rounded-full px-2.5 py-1"
+          style={{ backgroundColor: tint }}
+        >
+          <AppIcon
+            name={item.icon}
+            size={18}
+            tone="feature"
+            feature={item.feature}
+            color={ink}
+            importantForAccessibility="no"
+          />
+          <Text
+            numberOfLines={CONTEXTUAL_PILL_LABEL.numberOfLines}
+            ellipsizeMode={CONTEXTUAL_PILL_LABEL.ellipsizeMode}
+            maxFontSizeMultiplier={CONTEXTUAL_PILL_LABEL.maxFontSizeMultiplier}
+            // `text-body` (15 sp) is a scale step; the pill promotes the word
+            // from the old unreadable 11 sp. `shrink` pairs with the pill's
+            // `max-w-full` so "Flashcards" truncates instead of overflowing.
+            className="text-body ml-1.5 shrink font-semibold"
+            style={{ color: ink }}
+          >
+            {plan.label}
+          </Text>
+        </View>
+      ) : (
+        // Every other item: its icon alone, stroked in its own identity. No
+        // label on screen — but the accessible name above still carries it.
+        <AppIcon
+          name={item.icon}
+          size={18}
+          tone="feature"
+          feature={item.feature}
+          color={ink}
+          importantForAccessibility="no"
+        />
+      )}
     </Pressable>
   );
 }
@@ -281,6 +325,12 @@ export function ContextualBar({
   // shell with an empty registry is byte-for-byte today's shell.
   if (!rendered) return null;
 
+  // Decision 4: the label goes on the selected item only, and every item keeps
+  // its full label as an accessible name. (Decision 2's exit control is drawn by
+  // BottomTabBar — see this file's header for why it cannot live here.)
+  const pills = planContextualPills(rendered.items, current?.id);
+  const planById = new Map(pills.map((p) => [p.id, p]));
+
   return (
     <Animated.View
       style={{
@@ -299,16 +349,19 @@ export function ContextualBar({
         className="flex-row"
         style={{ height: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
       >
-        {rendered.items.map((item) => (
-          <Segment
-            key={item.id}
-            item={item}
-            active={current?.id === item.id}
-            onPress={() => press(item)}
-            isDark={isDark}
-            neutralInk={colors.tabBarInactive}
-          />
-        ))}
+        {rendered.items.map((item) => {
+          const plan = planById.get(item.id);
+          if (!plan) return null;
+          return (
+            <Segment
+              key={item.id}
+              item={item}
+              plan={plan}
+              onPress={() => press(item)}
+              isDark={isDark}
+            />
+          );
+        })}
       </View>
     </Animated.View>
   );

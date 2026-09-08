@@ -1,10 +1,23 @@
 /**
  * The arithmetic and the two yes/no decisions behind the contextual row.
  *
- * Spec v3 §7.2. The row is a 44 dp segment strip drawn directly ABOVE the
- * global bottom bar, inside the same absolutely-positioned chrome view. Its
- * items are a property of the FOCUSED ROUTE — exactly as `immersive` already
- * is — never of scrolling, the keyboard or a selection.
+ * Spec v3 §7.2, as amended by the founder (2026-09-08). The row is a 44 dp
+ * segment strip inside the absolutely-positioned chrome view. Where it sits
+ * depends on the registry's mode (navigation/contextualBars.ts):
+ *
+ * - `above` — drawn directly ABOVE the global bottom bar, today's behaviour.
+ *   Its clearance is the bar's clearance PLUS the row.
+ * - `replace` — drawn IN the global bar's slot; the global bar is not on screen
+ *   in that section. Its clearance is the bar's clearance with the bar's own
+ *   content height taken back OUT and the row put in its place, so a screen
+ *   pads for one strip and not two.
+ *
+ * The mode is a boolean input here — `replaceMode` on the clearance call — not
+ * an import: this file cannot import the registry (see below), so the chrome
+ * passes {@link replacesGlobalBar}(spec) in the way it already passes `present`.
+ *
+ * The row's items are a property of the FOCUSED ROUTE — exactly as `immersive`
+ * already is — never of scrolling, the keyboard or a selection.
  *
  * Everything a test can hold is here: whether the row is on screen at all,
  * what it adds to a screen's bottom clearance, and whether the swap animates.
@@ -110,28 +123,63 @@ export function contextualBarHeight(present: boolean, contentHeight: number): nu
 }
 
 export interface ContextualClearanceInput {
-  /** Whatever the tab-bar clearance already came to (screenInsets.ts). */
+  /**
+   * The tab-bar clearance the screen would use with the GLOBAL bar present
+   * (screenInsets.tabBarClearance) — i.e. the global bar's content height plus
+   * the floored safe-area inset and gap. Both modes start from this so the
+   * safe-area handling is computed in exactly one place.
+   */
   base: number;
   /** The row's content height, e.g. CONTEXTUAL_BAR_CONTENT_HEIGHT. */
   contentHeight: number;
   /** Whether the row is on screen for this route. */
   present: boolean;
+  /**
+   * True when this row REPLACES the global bar (Study, Shop). The global bar is
+   * then NOT on screen, so its own content height is taken back out of `base`
+   * and the row stands in its place: the total is safe-area + row, not
+   * safe-area + bar + row. Defaults false, which is today's `above` behaviour,
+   * so every existing caller is unchanged until it opts in.
+   */
+  replaceMode?: boolean;
+  /**
+   * The global bar's own content height (screenInsets.TAB_BAR_CONTENT_HEIGHT,
+   * 56). ONLY read in replace mode, to remove the bar that is no longer drawn.
+   * An input rather than an import so this file stays node-testable in
+   * isolation. Defaults 0, which makes replace mode a no-op if a caller forgets
+   * it — the safe direction, since the result then only ever over-clears.
+   */
+  globalBarContentHeight?: number;
 }
 
 /**
- * Bottom padding that clears BOTH bars.
+ * Bottom padding that clears whatever chrome sits at the bottom of THIS route.
  *
  * The offline-box saga is the warning here: a list whose last row hides under
  * the chrome is not a small cosmetic miss, it is a row the student cannot
- * reach. Clearance is additive and unconditional — the row's height, or zero —
- * so no screen has to know whether its route has a registry entry.
+ * reach. So the arithmetic errs toward clearing too much, never too little.
+ *
+ * - No row (`present` false): the global bar's own clearance, `base`. This is
+ *   every route outside a registry, and the immersive case where the row is
+ *   hidden entirely — nothing stands in the bar's place, so there is nothing to
+ *   add or subtract.
+ * - `above` mode: `base` PLUS the row, the two bars stacked.
+ * - `replace` mode: `base` PLUS the row MINUS the global bar's content height,
+ *   because the bar is gone and the row occupies its slot. Floored at the row
+ *   itself so a degenerate `base` can never return less than the strip a screen
+ *   must clear.
  */
 export function contextualBarClearance({
   base,
   contentHeight,
   present,
+  replaceMode = false,
+  globalBarContentHeight = 0,
 }: ContextualClearanceInput): number {
-  return px(base) + contextualBarHeight(present, contentHeight);
+  const row = contextualBarHeight(present, contentHeight);
+  if (!present) return px(base);
+  if (!replaceMode) return px(base) + row;
+  return Math.max(row, px(base) + row - px(globalBarContentHeight));
 }
 
 /**

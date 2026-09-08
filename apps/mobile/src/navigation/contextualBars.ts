@@ -1,14 +1,41 @@
 /**
- * The contextual row: what sits directly ABOVE the global bottom bar, and what
- * a press on it means (spec v3 §7.2, "Lantern's version").
+ * The contextual row: the second row of doors *within* a destination, and what
+ * a press on one means (spec v3 §7.2, "Lantern's version").
  *
- * The global five — Home · Study · Chat · Campus · Me — never change. This is
- * the second row: a small set of doors *within* the destination you are
- * already in, so a student can move from Library to Tests without climbing out
- * to the hub and back down. StudyFetch's counter-example is to delete its bar
- * on every pushed screen, which leaves the only way back as the exact pixel you
- * came in by (`inv #169`); the row exists so the global bar never has to move
- * and is always one tap away.
+ * The global five — Home · Study · Chat · Campus · Me — are the whole product's
+ * map. This is the row below them: a small set of doors within the destination
+ * you are already in, so a student can move from Library to Tests without
+ * climbing out to the hub and back down.
+ *
+ * WHERE THE ROW SITS — the founder's decision (2026-09-08), which overturns the
+ * rule this file used to state:
+ *
+ * This file used to argue that the row must ALWAYS sit ABOVE the global bar, so
+ * the global bar never moves and is always one tap away — naming StudyFetch,
+ * which deletes its bar on every pushed screen, as the counter-example to avoid
+ * (`inv #169`). The founder has weighed that and chosen otherwise, and the row
+ * now sits in one of two places, declared per registry by {@link ContextualBarMode}:
+ *
+ * - `replace` — the row stands IN the global bar's place; while you are in the
+ *   section the global five are not on screen. This is what the old rule
+ *   forbade, and the mitigation that makes it safe is founder decision 2: a
+ *   replace-mode row ALWAYS carries a single leading exit control that is never
+ *   inert — {@link contextualExitControl} returns `back` when the focused stack
+ *   can pop and `home` when you are at the section root — so a student is never
+ *   stranded the way StudyFetch strands one. Study and Shop are `replace`: each
+ *   is a SECTION with several co-equal doors, and dedicating the bottom row to
+ *   that section's own doors is worth more than a second row of them stacked
+ *   above the global five. Leaving the section restores the global bar.
+ * - `above` — the row sits above an unchanged global bar, exactly as before.
+ *   This is for a SINGLE screen you pass THROUGH — one deck, one note, one
+ *   document, one community — where there is no section of co-equal doors to
+ *   dedicate the row to, and where taking the global bar away would strand the
+ *   student inside that one deck or note with no way out but the pixel they
+ *   arrived by. Deck detail, the note editor, the walk-through and a community
+ *   page are all `above`.
+ *
+ * The mode is a PROPERTY OF THE REGISTRY, not a check scattered through the
+ * chrome, so a fifth registry cannot be added without stating which it is.
  *
  * Three things this file is deliberately NOT:
  *
@@ -30,9 +57,10 @@
  * imports below are erased (a type, and a predicate from a file that itself has
  * no runtime imports), so mobile jest's node environment can test all of it.
  *
- * FOUNDER SCOPE: all four registries in §7.2 are now here — Study, deck detail,
- * the note editor and Shop. The three added later than Study brought two things
- * the Study row never needed, and both are deliberately small:
+ * FOUNDER SCOPE: six registries live here now — Study and Shop (`replace`), and
+ * deck detail, the note editor, the walk-through and a community page (`above`).
+ * The five added after Study brought two things the Study row never needed, and
+ * both are deliberately small:
  *
  * - `paramsFrom`. Every deck mode is "this deck, in that mode", so the row has
  *   to carry the deck id it is standing on. The registry cannot read the
@@ -145,9 +173,31 @@ export interface ContextualBarItem {
   activeFor?: readonly RouteName[];
 }
 
+/**
+ * Where a registry's row sits relative to the global five-tab bar — the
+ * founder's decision, encoded once so the chrome never has to guess.
+ *
+ * - `replace`: the row stands IN the global bar's slot; the global five are not
+ *   on screen while you are in the section. Only safe because a replace-mode row
+ *   always carries {@link contextualExitControl} as its leading control, so the
+ *   way out is never lost. Study and Shop.
+ * - `above`: the row sits above an unchanged global bar, today's behaviour, for
+ *   a single pass-through screen with no section of doors to dedicate the bottom
+ *   to. Deck detail, the note editor, the walk-through, a community page.
+ *
+ * Required, with no default: a fifth registry has to state its intent rather
+ * than inherit one silently.
+ */
+export type ContextualBarMode = 'replace' | 'above';
+
 export interface ContextualBarSpec {
   /** The tab whose stack every `route` target below belongs to. */
   stack: ContextualBarStack;
+  /**
+   * Whether this row REPLACES the global bar or sits ABOVE it (founder decision,
+   * 2026-09-08). No default — see {@link ContextualBarMode}.
+   */
+  mode: ContextualBarMode;
   items: readonly ContextualBarItem[];
   /**
    * The row's accent when NO item is the current screen.
@@ -172,6 +222,9 @@ export interface ContextualBarSpec {
  */
 const STUDY_BAR: ContextualBarSpec = {
   stack: 'StudyTab',
+  // Study is a SECTION: five co-equal doors. The row takes the global bar's
+  // place and the leading exit control is the way out (founder decision 1-2).
+  mode: 'replace',
   items: [
     {
       id: 'library',
@@ -228,6 +281,9 @@ const STUDY_BAR: ContextualBarSpec = {
  */
 const DECK_BAR: ContextualBarSpec = {
   stack: 'StudyTab',
+  // One deck you pass through, not a section: the row stays ABOVE the global
+  // bar so a student is never stranded inside a single deck (founder decision 3).
+  mode: 'above',
   accent: 'flashcards',
   items: [
     {
@@ -295,6 +351,9 @@ const DECK_BAR: ContextualBarSpec = {
  */
 const NOTE_BAR: ContextualBarSpec = {
   stack: 'StudyTab',
+  // One note you pass through: ABOVE the global bar, for the same reason the
+  // deck row is (founder decision 3).
+  mode: 'above',
   accent: 'notes',
   items: [
     {
@@ -349,6 +408,8 @@ const NOTE_BAR: ContextualBarSpec = {
  */
 const WALKTHROUGH_BAR: ContextualBarSpec = {
   stack: 'StudyTab',
+  // One document you read through: ABOVE the global bar (founder decision 3).
+  mode: 'above',
   accent: 'notes',
   items: [
     {
@@ -413,6 +474,9 @@ const WALKTHROUGH_BAR: ContextualBarSpec = {
  */
 const COMMUNITY_BAR: ContextualBarSpec = {
   stack: 'CampusTab',
+  // One community you pass through, not a section of Campus: ABOVE the global
+  // bar so the student can always step back out to Campus (founder decision 3).
+  mode: 'above',
   accent: 'campus',
   items: [
     {
@@ -469,6 +533,10 @@ const COMMUNITY_BAR: ContextualBarSpec = {
  */
 const SHOP_BAR: ContextualBarSpec = {
   stack: 'CampusTab',
+  // Shop is a SECTION: Browse/Cart/You are co-equal doors. Like Study it takes
+  // the global bar's place, with the leading exit control as the way out
+  // (founder decision 1-2).
+  mode: 'replace',
   accent: 'campus',
   items: [
     {
@@ -638,6 +706,47 @@ export function accentForRoute(
   const item = activeItem(focusedRoute, focusedParams);
   if (item) return item.feature;
   return specForRoute(focusedRoute, focusedParams)?.accent ?? null;
+}
+
+/**
+ * Does this row REPLACE the global bar, or sit above it?
+ *
+ * The one place the chrome asks the mode question, so the answer lives with the
+ * registry that declares it (founder decision 1). A null spec (no row) is not a
+ * replace — there is nothing to stand in the bar's place — so the global bar
+ * stays exactly where it is on every route outside a `replace` registry.
+ *
+ * `undefined`/`null` and a spec whose `mode` is anything but `'replace'` all
+ * answer false, so the global bar is only ever removed on a route that has
+ * SAID so.
+ */
+export function replacesGlobalBar(spec: ContextualBarSpec | null | undefined): boolean {
+  return spec?.mode === 'replace';
+}
+
+/**
+ * The single leading control of a `replace`-mode row (founder decision 2).
+ *
+ * `back` when the focused stack has a screen to pop, `home` when you are at the
+ * section root with nothing behind you. It is never absent and never inert:
+ * one position that always does something, which is what makes taking the
+ * global bar away safe.
+ *
+ * `canGoBack` is the navigator's OWN answer (`navigation.canGoBack()`), passed
+ * in the way the focused route's params already are — the chrome cannot read
+ * the navigator, and a row is data. Anything that is not literally `true` is
+ * treated as `home`, because `home` always works from anywhere and an inert
+ * exit is the one thing this control may never be.
+ *
+ * The chrome DISPATCHES it: `back` pops the focused stack; `home` leaves the
+ * section for the Home tab, which restores the global bar. It is rendered ONLY
+ * when {@link replacesGlobalBar} is true — an `above`-mode row keeps the global
+ * bar, which is its own way out, so it carries no exit control.
+ */
+export type ContextualExitControl = 'back' | 'home';
+
+export function contextualExitControl(canGoBack: boolean): ContextualExitControl {
+  return canGoBack === true ? 'back' : 'home';
 }
 
 export interface ContextualPressInput {
