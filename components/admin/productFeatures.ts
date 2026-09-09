@@ -1159,6 +1159,100 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     commits: ['41df865'],
   },
   {
+    id: 'in-app-dialogs-1-0-45',
+    title: 'Every dialog is the app\u2019s own, and BACK is never a dead key (1.0.45)',
+    area: 'core',
+    status: 'shipped',
+    shippedAt: '2026-09-08',
+    summary:
+      'All 412 system alerts were replaced with one in-app dialog on the design system, and hardware BACK now always resolves a dialog instead of doing nothing.',
+    details: [
+      'components/ui/appDialog exposes appAlert with React Native Alert.alert\u2019s exact signature, plus confirmAsync for the two-button case, so the sweep across 79 files was an import swap rather than a rewrite.',
+      'A single AppDialogHost is mounted above every navigator and modal layer. A dialog raised from inside a Modal screen draws above it \u2014 verified on device, since nested Modal stacking on Android cannot be tested in jest.',
+      'BACK runs the cancel button, or the only button when there is one. The exploratory run that prompted this found students trapped on OK-only notices, where BACK did nothing at all.',
+      'noSystemAlertLint fails the build if Alert.alert reappears anywhere under apps/mobile/src.',
+      'Contrast is asserted for title, message and every button on colors.card in both palettes.',
+    ],
+    howToUse: [
+      'Any confirmation, error or notice in the mobile app is now the in-app dialog.',
+      'Press BACK on a dialog: a confirm cancels, a single-button notice runs that button.',
+    ],
+    surfaces: ['mobile'],
+    adminNotes:
+      'A student reporting a "stuck" screen on an older build was almost certainly on an OK-only system alert where BACK was inert.',
+    commits: ['c0c53f05'],
+  },
+  {
+    id: 'study-shop-own-bar-1-0-45',
+    title: 'Study and Shop take over the bottom bar, and the door you are in is named (1.0.45)',
+    area: 'core',
+    status: 'shipped',
+    shippedAt: '2026-09-08',
+    summary:
+      'In Study and Shop the contextual row replaces the global five-tab bar, with one adaptive control out. Every door carries its name, and the selected one is named larger beside its icon on its own tint.',
+    details: [
+      'The row used to sit above the global bar; in Study and Shop it now stands in its place. Deck detail, the note editor, the walk-through and the community page keep the row above the bar, because those are single screens you pass through.',
+      'One leading control adapts: Back when the stack can pop, Home at a section root. It is never absent and never inert.',
+      'A selected door is named at 15 sp beside its icon on the feature tint; a row with no selection labels every door at 11 sp, the same treatment the pass-through rows use. Verified on device that "Flashcards" renders whole at 360 dp and 411 dp at the default text size, and truncates only at 360 dp with text at 1.5x, where the full word remains in the accessible name.',
+      'Bottom clearance changes with the mode and is computed in one planner rather than at each call site \u2014 about 40 screens read it.',
+    ],
+    howToUse: [
+      'Tap Study: the bottom bar becomes Library, Flashcards, Tests, Record and AI with a Home button.',
+      'Move between doors without climbing back to the hub; the leading button returns you to the rest of the app.',
+    ],
+    surfaces: ['mobile'],
+    adminNotes:
+      'Founder decision on 2026-09-08, overturning the earlier rule that the global bar never moves. The rationale comments in navigation/contextualBars.ts were rewritten to match.',
+    commits: ['3e402eda', 'c8c544e3', '840ccf00'],
+  },
+  {
+    id: 'board-mark-answered-1-0-45',
+    title: 'A community question can be marked answered (1.0.45)',
+    area: 'community',
+    status: 'shipped',
+    shippedAt: '2026-09-08',
+    summary:
+      'The asker or a moderator can point a question post at the reply that answered it, and undo it. The column and the shared rule existed since Wave 8; nothing wrote it, so both clients hid the control.',
+    details: [
+      'POST /communities/:communityId/posts/:postId/answered takes an answerMessageId, or null to clear.',
+      'Permission is re-derived server-side from the shared boardPostRules \u2014 answerable kind, not removed, author or moderator. A client flag is never trusted.',
+      'A foreign reply is rejected by one equality, thread_root_id = postId, which covers another board, another community, a removed reply and the post pointing at itself.',
+      'The accept control lives on the reply\u2019s own long-press rather than the post\u2019s menu, because a board card never renders the replies \u2014 a post-menu control could not point at one. The post menu carries only "Clear accepted answer".',
+      'Un-answering records its own audit action carrying the previous value, so a clear is distinguishable from never having been set.',
+    ],
+    howToUse: [
+      'Open a community board question, long-press the reply that answered it, and choose Mark as answer.',
+      'The post menu offers Clear accepted answer once one is set.',
+    ],
+    surfaces: ['mobile', 'web'],
+    adminNotes:
+      'Requires migration 20260908120000 (applied 2026-09-08). A database without answered_message_id gets a 503 and the honest not-enabled copy, never a 500.',
+    commits: ['db54b617'],
+  },
+  {
+    id: 'honest-ai-allowance-identity-1-0-45',
+    title: 'The app stopped stating an AI allowance and a name it was never given (1.0.45)',
+    area: 'core',
+    status: 'shipped',
+    shippedAt: '2026-09-08',
+    summary:
+      'On a cold start both clients printed a confident "20 of 20" from a shared default, for accounts the server gives 100. And an account with no name was called by its email local part, on every avatar and to screen readers.',
+    details: [
+      'Every failure path \u2014 the fetch catch, auth-not-ready, the 429 backoff \u2014 returned a synthesized default. Both clients now start at an explicit unknown that renders as silence and gates no generation; the server stays the only real limit.',
+      'A failed generation was already refunded server-side, but the phone never re-read its counters. GET /jobs/:id now carries the live usage headers and both job clients republish them. refundFeatureAiCredit also hard-coded a one-credit refund, so multi-credit jobs kept the difference.',
+      'The email-as-name defect was not a client bug: the signup trigger stored the email local part as profiles.name, which no client could tell from a chosen name. Migration 20260908140000 fixes that forward; ensureUserProfile on mobile no longer writes it either.',
+      'A real name that happens to match the email local part is kept \u2014 the rule drops addresses, not people called ada with an ada@ address.',
+      'Avatar colour is seeded from the account id, so accounts without a name no longer all render the same colour.',
+    ],
+    howToUse: [
+      'Me \u2192 Usage & limits shows "Checking your AI uses\u2026" rather than a number, when the figures are not known.',
+    ],
+    surfaces: ['mobile', 'web'],
+    adminNotes:
+      'Migration 20260908140000 must be hand-applied for new signups; existing rows are untouched. The release notes for that migration carry the count query and the optional backfill.',
+    commits: ['51317dd2', '46f4e714'],
+  },
+  {
     id: 'board-media-signing-fix-1-0-44',
     title: 'Shared photos stopped disappearing after 24 hours (1.0.44)',
     area: 'chat',
