@@ -306,8 +306,7 @@ export function screenRow(screenOffSurvives: boolean): PreflightRow {
 /* -------------------------------------------------------------- consent -- */
 
 /** One line, on the card, in plain words. Not a legal notice. */
-export const LECTURE_CONSENT_LINE =
-  'Recording is stored in your note; ask before recording other people.';
+export { LECTURE_CONSENT_LINE } from '@lantern/shared/learning';
 
 /* ----------------------------------------------------------------- card -- */
 

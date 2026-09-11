@@ -11,6 +11,8 @@ import {
   isLectureNote,
   isWalkableAttachment,
   materialsForCourse,
+  newLectureNoteTitle,
+  resolveLectureStudioNote,
   testsFiledInCourse,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
@@ -33,8 +35,7 @@ import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifact
 import { aiGenerateFlashcards } from '../../services/ai';
 import { generateNoteQuiz } from '../../services/notes';
 import { getMyActiveCourses } from '../../services/academic';
-import { recorderDoorPrompt, shouldCreateLectureNote } from './recorderDoor';
-import { confirmSheet } from '../../stores/confirmStore';
+import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
 import type { UserCourse } from '@lantern/shared/types';
 import type { StudyNote } from '../../services/notes';
@@ -46,7 +47,6 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const tabBarClearance = useTabBarClearance(16);
   const showToast = useToastStore((s) => s.showToast);
   const startJob = useJobsStore((s) => s.startJob);
-  const createNote = useNotesStore((s) => s.createNote);
   const loadNote = useNotesStore((s) => s.loadNote);
   const notes = useNotesStore((s) => s.notes);
   const selectedNote = useNotesStore((s) => s.selectedNote);
@@ -55,7 +55,8 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const userId = useAuthStore((s) => s.user?.id);
   const [enrolment, setEnrolment] = useState<UserCourse | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const [openingRecorder, setOpeningRecorder] = useState(false);
+  const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
+  const lectureStatus = useLectureRecordingStore((s) => s.status);
 
   useEffect(() => {
     void touchWorkspaceRecent(courseId);
@@ -92,25 +93,20 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     [tests, courseId, noteIds, deckIds]
   );
 
-  const openRecorder = async () => {
-    if (openingRecorder) return;
-    setOpeningRecorder(true);
-    try {
-      const prompt = recorderDoorPrompt();
-      const confirmed = await confirmSheet({
-        title: prompt.title,
-        message: prompt.message,
-        confirmLabel: prompt.confirmLabel,
-        cancelLabel: prompt.cancelLabel,
-      });
-      if (!shouldCreateLectureNote(confirmed)) return;
-      const note = await createNote({ title: prompt.noteTitle, body: '', courseId });
-      navigation.navigate('NoteEditor', { noteId: note.id, startRecording: true });
-    } catch {
-      showToast('Could not start a lecture note. Check your connection and try again.', 'error');
-    } finally {
-      setOpeningRecorder(false);
-    }
+  const openLectureStudio = (existingNoteId?: string) => {
+    const decision = resolveLectureStudioNote({
+      lectures,
+      selectedNoteId: existingNoteId || selectedNote?.id,
+      recordingNoteId: lectureNoteId && lectureStatus !== 'idle' ? lectureNoteId : null,
+      todayTitle: newLectureNoteTitle(),
+    });
+    const noteId = decision.action === 'resume' ? decision.noteId : existingNoteId;
+    if (noteId) void loadNote(noteId);
+    navigation.navigate('LectureStudio', {
+      courseId,
+      courseLabel: label,
+      noteId,
+    });
   };
 
   const handleActivity = (id: WorkspaceActivityId, status: 'ready' | 'later') => {
@@ -168,7 +164,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         navigation.navigate('TestsList', { courseId, courseLabel: label });
         return;
       case 'lecture':
-        void openRecorder();
+        openLectureStudio();
         return;
       case 'play':
         if (courseDecks[0]) {
@@ -392,7 +388,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             lectures.map((note, index) => (
               <Pressable
                 key={note.id}
-                onPress={() => navigation.navigate('NoteEditor', { noteId: note.id })}
+                onPress={() => openLectureStudio(note.id)}
                 className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
               >
                 <T.Body numberOfLines={1}>{note.title || 'Lecture'}</T.Body>

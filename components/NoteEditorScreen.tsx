@@ -2,12 +2,17 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   COURSE_TOPIC_COPY,
   aggregatePhotoOcrStatus,
+  composeLectureNoteBody,
+  displayLectureTranscript,
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
   isPhotoNoteSource,
   isPlaceholderExtractedText,
+  latestLectureTranscript,
+  preferLectureTranscript,
+  splitLectureNoteBody,
 } from '@lantern/shared';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
 import NoteLearnPanel from './NoteLearnPanel';
@@ -33,10 +38,12 @@ import { FEATURE_INK_TEXT } from './ui/featureClasses';
 import * as notesApi from '../services/notes';
 import {
   formatRecordingDuration,
-  getElapsedRecordingSeconds,
   MIN_LECTURE_RECORD_MS,
 } from '../services/lectureRecording';
-import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
+import {
+  getSessionElapsedMs,
+  useLectureRecordingStore,
+} from '../stores/lectureRecordingStore';
 import { useNotesStore } from '../stores/notesStore';
 import { CoursePicker } from './academic/CoursePicker';
 import { TopicPicker } from './academic/TopicPicker';
@@ -127,20 +134,42 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const lectureStatus = useLectureRecordingStore((s) => s.status);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
+  const lecturePausedAt = useLectureRecordingStore((s) => s.pausedAt);
+  const lecturePausedTotalMs = useLectureRecordingStore((s) => s.pausedTotalMs);
   const lectureTick = useLectureRecordingStore((s) => s.tick);
   const startLectureRecording = useLectureRecordingStore((s) => s.start);
   const stopLectureRecording = useLectureRecordingStore((s) => s.stopAndTranscribe);
+  const pauseLectureRecording = useLectureRecordingStore((s) => s.pauseRecording);
+  const resumeLectureRecording = useLectureRecordingStore((s) => s.resumeRecording);
   const discardLectureRecording = useLectureRecordingStore((s) => s.discard);
   const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
+  const committedTranscript = useLectureRecordingStore((s) => s.committedTranscript);
+  const interimTranscript = useLectureRecordingStore((s) => s.interimTranscript);
+  const whisperTranscript = useLectureRecordingStore((s) => s.whisperTranscript);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
   const recordingForThisNote = lectureNoteId === note.id && lectureStatus === 'recording';
   const transcribingForThisNote =
     lectureNoteId === note.id &&
     (lectureStatus === 'uploading' || lectureStatus === 'transcribing');
   const recordingSeconds = recordingForThisNote
-    ? getElapsedRecordingSeconds(lectureStartedAt)
+    ? Math.floor(
+        getSessionElapsedMs({
+          startedAt: lectureStartedAt,
+          pausedAt: lecturePausedAt,
+          pausedTotalMs: lecturePausedTotalMs,
+        }) / 1000
+      )
     : 0;
   void lectureTick; // re-render on wall-clock ticks while recording
+  const lecturePaused = recordingForThisNote && Boolean(lecturePausedAt);
+  const liveTranscript = displayLectureTranscript({
+    committed: committedTranscript,
+    interim: interimTranscript,
+    whisper:
+      whisperTranscript ||
+      latestLectureTranscript(note.attachments) ||
+      splitLectureNoteBody(body).transcript,
+  });
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
   const [generatingPreview, setGeneratingPreview] = useState(false);
@@ -347,8 +376,29 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
   useEffect(() => {
     if (!canEdit || !note.id || !saveEnabledRef.current || !userEditedRef.current) return;
-    onSaveRef.current({ title, body });
-  }, [note.id, title, body, canEdit]);
+    const typed = splitLectureNoteBody(body).typed;
+    const captions = preferLectureTranscript(
+      splitLectureNoteBody(body).transcript,
+      recordingForThisNote ? committedTranscript : splitLectureNoteBody(body).transcript
+    );
+    onSaveRef.current({
+      title,
+      body: captions ? composeLectureNoteBody(typed, captions) : body,
+    });
+  }, [note.id, title, body, canEdit, recordingForThisNote, committedTranscript]);
+
+  useEffect(() => {
+    if (!recordingForThisNote || !committedTranscript.trim()) return;
+    const timer = window.setTimeout(() => {
+      const typed = splitLectureNoteBody(bodyRef.current).typed;
+      const next = composeLectureNoteBody(
+        typed,
+        preferLectureTranscript(splitLectureNoteBody(bodyRef.current).transcript, committedTranscript)
+      );
+      onSaveRef.current({ title: titleRef.current, body: next });
+    }, 800);
+    return () => window.clearTimeout(timer);
+  }, [committedTranscript, recordingForThisNote]);
 
   const handleTitleChange = (value: string) => {
     // Blocked during transcription: the completion handler replaces title/body
@@ -886,6 +936,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <>
                 <Button
                   size="sm"
+                  variant="secondary"
+                  onClick={() => (lecturePaused ? resumeLectureRecording() : pauseLectureRecording())}
+                >
+                  <AppIcon name={lecturePaused ? 'play' : 'pause'} size={16} className="sm:mr-1" />
+                  <span className="hidden sm:inline">{lecturePaused ? 'Resume' : 'Pause'}</span>
+                </Button>
+                <Button
+                  size="sm"
                   variant="danger"
                   onClick={stopRecording}
                   disabled={recordingSeconds * 1000 < MIN_LECTURE_RECORD_MS}
@@ -906,11 +964,13 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                 </Button>
                 <div className="flex items-center gap-2 self-center">
                   <span className="relative flex h-2.5 w-2.5">
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                    {lecturePaused ? null : (
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-400 opacity-75" />
+                    )}
                     <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500" />
                   </span>
                   <span className="text-xs sm:text-sm font-medium text-red-500">
-                    Recording {formatRecordingDuration(recordingSeconds)}
+                    {lecturePaused ? 'Paused' : 'Recording'} {formatRecordingDuration(recordingSeconds)}
                   </span>
                 </div>
               </>
@@ -965,6 +1025,19 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               />
             </div>
           </div>
+
+          {(recordingForThisNote || liveTranscript) && (
+            <div className="rounded-xl border border-lantern-border bg-lantern-background p-3">
+              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Live transcript</h2>
+              {liveTranscript ? (
+                <p className="text-body whitespace-pre-wrap">{liveTranscript}</p>
+              ) : (
+                <p className="text-body text-lantern-text-tertiary">
+                  {lecturePaused ? 'Paused.' : 'Listening… captions appear in a few seconds.'}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* ─── Turn into ───────────────────────────────────────────────
               The four things a note becomes, at the top of the note rather

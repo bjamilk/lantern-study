@@ -99,7 +99,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
   {
     id: 'lecture',
     label: 'Lecture',
-    promise: 'Record into a note in this course',
+    promise: 'Live transcript and notes while you record',
     icon: 'mic',
     feature: 'recording',
     status: 'ready',

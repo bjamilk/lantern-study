@@ -1848,6 +1848,11 @@ export interface CompanionUserContext {
    * rail is asking about this question, not the whole note.
    */
   questionStem?: string;
+  /**
+   * One-shot excerpt from the lecture studio — what was just said. Quoted in
+   * the user message so Ask does not need the recorder to stop.
+   */
+  recentTranscript?: string;
   /** When set, companion grounding may include that class's published materials. */
   classId?: string;
   studyGoal?: StudyGoalMode;

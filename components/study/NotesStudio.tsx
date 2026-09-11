@@ -6,7 +6,10 @@ import {
   canAskAboutHighlight,
   hasEnoughNoteStudyContent,
   highlightFromRange,
+  isLectureNote,
   isWalkableAttachment,
+  latestLectureTranscript,
+  splitLectureNoteBody,
   type TurnIntoTargetId,
 } from '@lantern/shared';
 import type { SmartNotesDepth, SmartNotesRequestOptions } from '@lantern/shared/utils/smartNotes';
@@ -134,6 +137,13 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
         );
   const imageAttachments = (note.attachments || []).filter((attachment) => attachment.type === 'image');
   const hasSource = Boolean(documentAttachment || imageAttachments.length > 0);
+  const lectureTranscript =
+    splitLectureNoteBody(note.body || '').transcript || latestLectureTranscript(note.attachments);
+  const showLectureTranscript =
+    isLectureNote(note) &&
+    Boolean(lectureTranscript) &&
+    !splitLectureNoteBody(body).transcript &&
+    !body.includes(lectureTranscript);
 
   useEffect(() => {
     if (!walkable?.id) {
@@ -368,6 +378,12 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
             placeholder="Your notes sit here. Highlight a sentence and Ask, or write notes from the source."
             className="flex-1 min-h-[12rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
           />
+          {showLectureTranscript ? (
+            <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3">
+              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Transcript</h2>
+              <p className="text-body whitespace-pre-wrap">{lectureTranscript}</p>
+            </div>
+          ) : null}
           {askReady ? (
             <p className="mt-2 text-caption text-lantern-text-secondary">
               Highlighted {highlight.trim().length} characters — Ask cites that span.

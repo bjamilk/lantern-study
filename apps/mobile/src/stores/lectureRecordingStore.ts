@@ -92,6 +92,10 @@ interface LectureRecordingState {
   pausedAt: number | null;
   /** Milliseconds spent paused across the whole session. Never billed. */
   pausedTotalMs: number;
+  committedTranscript: string;
+  interimTranscript: string;
+  whisperTranscript: string;
+  transcriptNoteId: string | null;
 
   start: (noteId: string, noteTitle: string, options?: { currentBody?: string }) => Promise<void>;
   /** Stop the recorder and open the title sheet. Nothing is uploaded yet. */
@@ -254,6 +258,19 @@ function resetSession(
   });
 }
 
+function captionFieldsForNote(
+  state: Pick<LectureRecordingState, 'transcriptNoteId' | 'committedTranscript' | 'whisperTranscript'>,
+  noteId: string
+) {
+  const same = state.transcriptNoteId === noteId;
+  return {
+    committedTranscript: same ? state.committedTranscript : '',
+    interimTranscript: '',
+    whisperTranscript: same ? state.whisperTranscript : '',
+    transcriptNoteId: noteId,
+  };
+}
+
 /**
  * The note's title as it stands right now, not as it stood when recording
  * started — the student may have renamed it mid-lecture, and the sheet must
@@ -312,6 +329,10 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
   canRetryTranscription: false,
   pausedAt: null,
   pausedTotalMs: 0,
+  committedTranscript: '',
+  interimTranscript: '',
+  whisperTranscript: '',
+  transcriptNoteId: null,
 
   setCurrentBodyProvider: (provider) => {
     session.currentBodyProvider = provider;
@@ -438,6 +459,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         canRetryTranscription: false,
         pausedAt: null,
         pausedTotalMs: 0,
+        ...captionFieldsForNote(get(), noteId),
       });
       // After the state is set, so the notification's text is the title the
       // banner is showing.
@@ -453,6 +475,12 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
 
   discard: async () => {
     const { status } = get();
+    const clearCaptions = {
+      committedTranscript: '',
+      interimTranscript: '',
+      whisperTranscript: '',
+      transcriptNoteId: null,
+    };
     if (status === 'naming' || status === 'failed') {
       // The recorder is already down. THIS is the only path that deletes the
       // audio — a student saying "throw it away" is the one instruction that
@@ -460,14 +488,14 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
       const uri = status === 'failed' ? session.failedUri : session.pendingUri;
       await deleteRecordingFile(uri);
       await resetAudioMode();
-      resetSession(set);
+      resetSession(set, clearCaptions);
       return;
     }
     if (status === 'uploading' || status === 'transcribing') {
       session.abort?.abort();
       session.abort = null;
       await deleteRecordingFile(session.pendingUri ?? session.failedUri);
-      resetSession(set);
+      resetSession(set, clearCaptions);
       await resetAudioMode();
       return;
     }
@@ -483,7 +511,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
       // ignore
     }
     await resetAudioMode();
-    resetSession(set);
+    resetSession(set, clearCaptions);
   },
 
   cancelTranscription: () => {
@@ -752,7 +780,18 @@ async function runTranscription(
     session.abort = null;
     await deleteRecordingFile(uri);
     await resetAudioMode();
-    resetSession(set);
+    const incoming = result.transcript?.trim() ?? '';
+    const current = get();
+    const previous =
+      current.transcriptNoteId === noteId ? current.whisperTranscript.trim() : '';
+    resetSession(set, {
+      whisperTranscript: previous && incoming && previous !== incoming
+        ? `${previous}\n\n${incoming}`
+        : incoming || previous,
+      transcriptNoteId: noteId,
+      committedTranscript: current.committedTranscript,
+      interimTranscript: '',
+    });
   } catch (e: unknown) {
     // Only this attempt's controller may be cleared: a Discard followed by a
     // fresh recording can have installed a new one before this rejection lands.

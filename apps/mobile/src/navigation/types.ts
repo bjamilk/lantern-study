@@ -53,6 +53,11 @@ export type StudyStackParamList = {
    */
   AdaptiveQuiz: { courseId: string; courseLabel?: string; noteId?: string };
   /**
+   * Lecture studio for one course — my notes, live transcript, ask.
+   * Distinct from NoteEditor; the room stays a dashboard.
+   */
+  LectureStudio: { courseId: string; courseLabel?: string; noteId?: string };
+  /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on
    * an editable topic list rather than near one.

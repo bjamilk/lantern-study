@@ -98,6 +98,7 @@ export default defineConfig(({ mode }) => {
           // server sentence leaked out of fetchNoteAttachmentPages — had no
           // suite that could run at all.
           'services/**/*.test.{ts,tsx}',
+          'packages/shared/src/learning/**/*.test.ts',
         ],
       },
     };

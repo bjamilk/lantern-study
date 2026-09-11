@@ -11,10 +11,12 @@ import { useTestStore } from '../../stores/testStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useNoteUploadStore, getActiveUploadJob, getVisibleUploadJobs } from '../../stores/noteUploadStore';
-import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
+import {
+  getSessionElapsedMs,
+  useLectureRecordingStore,
+} from '../../stores/lectureRecordingStore';
 import {
   formatRecordingDuration,
-  getElapsedRecordingSeconds,
   MIN_LECTURE_RECORD_MS,
 } from '../../services/lectureRecording';
 import { fetchAIUsage } from '../../services/ai';
@@ -68,13 +70,26 @@ const AppShell: React.FC<AppShellProps> = ({
     const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
     const lectureNoteTitle = useLectureRecordingStore((s) => s.noteTitle);
     const lectureStartedAt = useLectureRecordingStore((s) => s.startedAt);
+    const lecturePausedAt = useLectureRecordingStore((s) => s.pausedAt);
+    const lecturePausedTotalMs = useLectureRecordingStore((s) => s.pausedTotalMs);
     const lectureTick = useLectureRecordingStore((s) => s.tick);
     const stopLecture = useLectureRecordingStore((s) => s.stopAndTranscribe);
+    const pauseLecture = useLectureRecordingStore((s) => s.pauseRecording);
+    const resumeLecture = useLectureRecordingStore((s) => s.resumeRecording);
     const discardLecture = useLectureRecordingStore((s) => s.discard);
     const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
     const lectureActive = lectureStatus !== 'idle' && Boolean(lectureNoteId);
+    const lecturePaused = lectureStatus === 'recording' && Boolean(lecturePausedAt);
     const lectureSeconds =
-      lectureStatus === 'recording' ? getElapsedRecordingSeconds(lectureStartedAt) : 0;
+      lectureStatus === 'recording'
+        ? Math.floor(
+            getSessionElapsedMs({
+              startedAt: lectureStartedAt,
+              pausedAt: lecturePausedAt,
+              pausedTotalMs: lecturePausedTotalMs,
+            }) / 1000
+          )
+        : 0;
     void lectureTick;
     // Always show when a lecture session is active so in-app navigation stays obvious.
     const lectureBannerVisible = lectureActive;
@@ -189,7 +204,7 @@ const AppShell: React.FC<AppShellProps> = ({
                 sideColumn !== null
                   ? (isSidebarExpanded ? 'md:ml-[38rem]' : 'md:ml-[25rem]')
                   : isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'
-            } ${isSessionPaused || lectureBannerVisible ? 'pt-12' : ''}`}>
+            } ${isSessionPaused && !lectureBannerVisible ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}
                 {isSessionPaused && !lectureBannerVisible && (
@@ -214,7 +229,7 @@ const AppShell: React.FC<AppShellProps> = ({
                     </div>
                 )}
                 {lectureBannerVisible && lectureNoteId && (
-                    <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white px-3 py-2 flex items-center justify-between gap-2">
+                    <div className="shrink-0 bg-red-600 text-white px-3 py-2 flex items-center justify-between gap-2">
                         <button
                             type="button"
                             className="min-w-0 flex-1 text-left"
@@ -222,7 +237,7 @@ const AppShell: React.FC<AppShellProps> = ({
                         >
                             <span className="block text-sm font-semibold truncate">
                                 {lectureStatus === 'recording'
-                                  ? `Recording ${formatRecordingDuration(lectureSeconds)}`
+                                  ? `${lecturePaused ? 'Paused' : 'Recording'} ${formatRecordingDuration(lectureSeconds)}`
                                   : lectureStatus === 'uploading'
                                     ? 'Uploading lecture…'
                                     : 'Transcribing lecture…'}
@@ -243,6 +258,14 @@ const AppShell: React.FC<AppShellProps> = ({
                         <div className="flex items-center gap-1.5 shrink-0">
                             {lectureStatus === 'recording' ? (
                                 <>
+                                    <button
+                                        type="button"
+                                        onClick={() => (lecturePaused ? resumeLecture() : pauseLecture())}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-white/20 hover:bg-white/30 rounded-lg text-xs sm:text-sm font-semibold"
+                                    >
+                                        <AppIcon name={lecturePaused ? 'play' : 'pause'} size={16} />
+                                        <span className="hidden sm:inline">{lecturePaused ? 'Resume' : 'Pause'}</span>
+                                    </button>
                                     <button
                                         type="button"
                                         disabled={lectureSeconds * 1000 < MIN_LECTURE_RECORD_MS}

@@ -1246,6 +1246,23 @@ export const App: React.FC = () => {
      * sent students looking for a control that was not on their screen.
      */
     const handleRecordLecture = (courseId?: string) => {
+        const lecture = useLectureRecordingStore.getState();
+        if (lecture.status !== 'idle' && lecture.noteId) {
+            const notesState = useNotesStore.getState();
+            const openExisting = async () => {
+                if (notesState.selectedNote?.id !== lecture.noteId) {
+                    await notesState.loadNote(lecture.noteId!);
+                }
+                const note = useNotesStore.getState().selectedNote;
+                if (note?.id === lecture.noteId && note.courseId) {
+                    navigateTo(AppMode.COURSE_WORKSPACE, { courseId: note.courseId });
+                    return;
+                }
+                await noteHandlers.openNote(lecture.noteId!);
+            };
+            void openExisting().catch((e: any) => showToast(e?.message || 'Could not return to the lecture.', 'error'));
+            return;
+        }
         void noteHandlers.handleCreateNote(newLectureNoteTitle(), { courseId })
             .then(() => showToast('New note ready \u2014 press Record to start.', 'info'))
             .catch((e: any) => showToast(e?.message || 'Failed to create note', 'error'));
@@ -3152,7 +3169,20 @@ export const App: React.FC = () => {
         <ErrorBoundary>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
             unreadChatCount={getTotalActiveUnreadChatCount(chatListGroups, dmThreads)}
-            onOpenLectureNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+            onOpenLectureNote={(noteId) => {
+                void (async () => {
+                    const notesState = useNotesStore.getState();
+                    if (notesState.selectedNote?.id !== noteId) {
+                        await notesState.loadNote(noteId);
+                    }
+                    const note = useNotesStore.getState().selectedNote;
+                    if (note?.id === noteId && note.courseId) {
+                        navigateTo(AppMode.COURSE_WORKSPACE, { courseId: note.courseId });
+                        return;
+                    }
+                    await noteHandlers.openNote(noteId);
+                })();
+            }}
             onNavigateToMe={() => navigateToPath(ME_PATH)}
             onNavigateToCampus={goToCampus}
             onNavigate={handleShellNavigate}>

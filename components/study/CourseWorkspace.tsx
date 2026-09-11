@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   WORKSPACE_ACTIVITIES,
   WORKSPACE_LATER_COPY,
@@ -7,6 +7,8 @@ import {
   isLectureNote,
   isWalkableAttachment,
   materialsForCourse,
+  newLectureNoteTitle,
+  resolveLectureStudioNote,
   testsFiledInCourse,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
@@ -23,6 +25,8 @@ import { ManageOutlineModal } from '../academic/ManageOutlineModal';
 import ImportAndStudyModal from '../ImportAndStudyModal';
 import { NotesStudio } from './NotesStudio';
 import { AdaptiveQuiz } from './AdaptiveQuiz';
+import { LectureStudio } from './LectureStudio';
+import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
@@ -34,7 +38,6 @@ import { useNoteHandlers } from '../../hooks/useNoteHandlers';
 import { useAiJobUserId } from '../../hooks/useAiJobs';
 import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { runAiJob } from '../../stores/aiJobRunner';
-import { newLectureNoteTitle } from './recorderDoor';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
 import * as notesApi from '../../services/notes';
 import { fetchCourseTopics } from '../../services/academic';
@@ -93,6 +96,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [topics, setTopics] = useState<CourseTopic[]>([]);
   const [turning, setTurning] = useState(false);
   const [writingQuiz, setWritingQuiz] = useState(false);
+  const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
+  const lectureStatus = useLectureRecordingStore((s) => s.status);
 
   const reloadNotes = useCallback(() => {
     return notesApi.fetchNotes({ courseId }).then((rows) => {
@@ -143,6 +148,17 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
   const lectures = useMemo(() => notes.filter(isLectureNote), [notes]);
+  const steeredToLecture = useRef(false);
+  useEffect(() => {
+    steeredToLecture.current = false;
+  }, [courseId]);
+  useEffect(() => {
+    if (steeredToLecture.current) return;
+    if (lectureStatus === 'idle' || !lectureNoteId) return;
+    if (!notes.some((row) => row.id === lectureNoteId)) return;
+    setActivity('lecture');
+    steeredToLecture.current = true;
+  }, [courseId, lectureNoteId, lectureStatus, notes]);
   const noteIds = useMemo(() => new Set(notes.map((n) => n.id)), [notes]);
   const deckIds = useMemo(() => new Set(courseDecks.map((d) => d.id)), [courseDecks]);
   const courseTests = useMemo(() => {
@@ -173,6 +189,19 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     [loadNote, setActiveNoteContext]
   );
 
+  useEffect(() => {
+    if (activity !== 'lecture') return;
+    const decision = resolveLectureStudioNote({
+      lectures,
+      selectedNoteId: selectedNote?.id,
+      recordingNoteId: lectureNoteId && lectureStatus !== 'idle' ? lectureNoteId : null,
+      todayTitle: newLectureNoteTitle(),
+    });
+    if (decision.action !== 'resume') return;
+    if (selectedNote?.id === decision.noteId) return;
+    void openNote(decision.noteId);
+  }, [activity, lectureNoteId, lectureStatus, lectures, openNote, selectedNote?.id]);
+
   const handleActivity = (id: WorkspaceActivityId, status: 'ready' | 'later') => {
     if (status === 'later') {
       showToast(WORKSPACE_LATER_COPY, 'info');
@@ -180,7 +209,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
     setActivity(id);
     if (id === 'lecture') {
-      void noteHandlers.handleCreateNote(newLectureNoteTitle(), { courseId });
+      const decision = resolveLectureStudioNote({
+        lectures,
+        selectedNoteId: selectedNote?.id,
+        recordingNoteId: lectureNoteId && lectureStatus !== 'idle' ? lectureNoteId : null,
+        todayTitle: newLectureNoteTitle(),
+      });
+      if (decision.action === 'resume') {
+        void openNote(decision.noteId);
+      }
       return;
     }
     if (id === 'walkthrough') {
@@ -406,12 +443,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               items={notes.map((note) => ({
                 id: note.id,
                 label: note.title || 'Untitled note',
-                feature: 'notes' as const,
-                icon: 'document-text' as const,
+                feature: isLectureNote(note) ? ('recording' as const) : ('notes' as const),
+                icon: isLectureNote(note) ? ('mic' as const) : ('document-text' as const),
                 selected: selectedNote?.id === note.id,
                 onClick: () => {
                   void openNote(note.id);
-                  setActivity('notes');
+                  setActivity(isLectureNote(note) ? 'lecture' : 'notes');
                 },
               }))}
             />
@@ -497,6 +534,24 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               onWriteQuestions={handleWriteQuizQuestions}
               onOpenNotes={() => setActivity('notes')}
               onOpenWalkthrough={() => handleActivity('walkthrough', 'ready')}
+            />
+          ) : activity === 'lecture' ? (
+            <LectureStudio
+              courseId={courseId}
+              theme={theme}
+              note={
+                selectedNote && (isLectureNote(selectedNote) || selectedNote.id === lectureNoteId)
+                  ? selectedNote
+                  : lectures.find((row) => row.id === lectureNoteId) || null
+              }
+              lectures={lectures}
+              turning={turning}
+              onTurnInto={(target) => void handleTurnInto(target)}
+              onSmartNote={handleStudioSmartNote}
+              onNoteReady={async (noteId) => {
+                await openNote(noteId);
+                void reloadNotes().catch(() => undefined);
+              }}
             />
           ) : (
           <Card padding="lg" className="flex-1 min-h-0 overflow-y-auto">
@@ -604,7 +659,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               </div>
             )}
             {activity === 'lecture' && (
-              <p className="text-body text-lantern-text-secondary">Opening a lecture note to record…</p>
+              <p className="text-body text-lantern-text-secondary">Open lecture on a wider screen.</p>
             )}
           </Card>
           )}

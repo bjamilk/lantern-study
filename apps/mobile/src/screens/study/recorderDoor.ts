@@ -8,28 +8,17 @@
  * rather than an inline template literal in two screens.
  */
 
+import {
+  newLectureNoteTitle,
+  shouldCreateLectureNote,
+  shouldDeleteDoorNoteOnDiscard,
+  type DoorNoteCleanupInput,
+} from '@lantern/shared/learning';
 import { LECTURE_TRANSCRIPTION_PRICE_RULE } from '@lantern/shared/utils/aiCredits';
 import { lectureCapacityLine } from '@lantern/shared/utils/lectureAudio';
 
-const MONTHS = [
-  'Jan',
-  'Feb',
-  'Mar',
-  'Apr',
-  'May',
-  'Jun',
-  'Jul',
-  'Aug',
-  'Sep',
-  'Oct',
-  'Nov',
-  'Dec',
-];
-
-/** e.g. "Lecture — 6 Sep". `now` is injectable so the test is not date-bound. */
-export function newLectureNoteTitle(now: Date = new Date()): string {
-  return `Lecture — ${now.getDate()} ${MONTHS[now.getMonth()]}`;
-}
+export { newLectureNoteTitle, shouldCreateLectureNote, shouldDeleteDoorNoteOnDiscard };
+export type { DoorNoteCleanupInput };
 
 /**
  * What the Record door does BEFORE it writes anything.
@@ -81,51 +70,3 @@ export function recorderDoorPrompt(now: Date = new Date()): RecorderDoorPrompt {
   };
 }
 
-/** Whether the door may create the note. `false` writes nothing at all. */
-export function shouldCreateLectureNote(confirmed: boolean): boolean {
-  return confirmed === true;
-}
-
-/**
- * The other half of "nothing exists until the student commits".
- *
- * `shouldCreateLectureNote` moved creation from the tap to the "Start" of the
- * confirm sheet, so a *cancelled* start leaves nothing behind. But "Start"
- * still writes the note before a single second is recorded, and the recorder
- * opens straight onto it — so a student who taps Start and then Discards (the
- * mis-tap-twice case the device pass hit) was left with exactly the empty
- * "Lecture — 6 Sep" the door was meant to stop creating. The note simply moved
- * one tap deeper.
- *
- * This is the rule that closes that hole: when a door recording is discarded,
- * the note the door created is deleted too — but ONLY while it is still the
- * untouched shell the door wrote. The moment the student makes it theirs — a
- * word typed in the body, or a title of their own — the note is a note, and
- * throwing away the audio must never throw away their note with it. A note the
- * door did not open is never in scope at all, so recording into an existing
- * note and discarding leaves that note exactly where it was.
- */
-export interface DoorNoteCleanupInput {
-  /** True only when THIS editor session was opened by the Record door. */
-  openedByDoor: boolean;
-  /** The note's title as it stands now. */
-  title: string | null | undefined;
-  /** The note's body as it stands now. */
-  body: string | null | undefined;
-  /**
-   * The exact title the door wrote when it created the note, so a title the
-   * student has since changed reads as intent to keep.
-   */
-  doorTitle: string;
-}
-
-export function shouldDeleteDoorNoteOnDiscard(input: DoorNoteCleanupInput): boolean {
-  // A note the door never opened is the student's from the start.
-  if (!input.openedByDoor) return false;
-  // Anything typed into the body is content the discard must not destroy.
-  if ((input.body ?? '').trim().length > 0) return false;
-  // A renamed note is one the student decided to keep; only the door's own
-  // untouched placeholder is a throwaway shell.
-  if ((input.title ?? '').trim() !== input.doorTitle.trim()) return false;
-  return true;
-}

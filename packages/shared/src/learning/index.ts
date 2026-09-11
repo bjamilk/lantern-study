@@ -4,3 +4,4 @@ export * from './readinessCard';
 export * from './courseWorkspace';
 export * from './notesStudio';
 export * from './adaptiveQuiz';
+export * from './lectureStudio';
