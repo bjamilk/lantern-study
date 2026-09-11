@@ -10,6 +10,9 @@ import {
   calendarKindLabel,
   calendarMonthGrid,
   calendarMonthTitle,
+  calendarWeekDates,
+  calendarWeekStart,
+  shiftCalendarWeek,
   calendarSessionFeature,
   calendarSessionLabel,
   markCalendarSessionDone,
@@ -147,6 +150,15 @@ describe('study calendar', () => {
     expect(eleventh?.inMonth).toBe(true);
     expect(toDateOnlyLocal(new Date(2026, 8, 11))).toBe(TODAY);
     expect(calendarMonthTitle(2026, 8)).toBe('Sep 2026');
+  });
+
+  it('lays out a Monday-start week that can shift', () => {
+    const start = calendarWeekStart(new Date(2026, 8, 11));
+    expect(start).toBe('2026-09-07');
+    expect(calendarWeekDates(start)).toHaveLength(7);
+    expect(calendarWeekDates(start)[0]).toBe('2026-09-07');
+    expect(calendarWeekDates(start)[6]).toBe('2026-09-13');
+    expect(shiftCalendarWeek(start, 1)).toBe('2026-09-14');
   });
 
   it('resumes the existing calendar note', () => {

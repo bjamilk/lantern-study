@@ -31,6 +31,9 @@ import {
   type AdaptiveQuizItem,
   type StudyCalendarSession,
   type StudySetHomeTool,
+  type StudySetRecommendedKind,
+  type StudySetUnit,
+  topicsFromReadingNotes,
   type StudySetPath,
   type StudySetPathActivity,
   type TurnIntoTargetId,
@@ -60,11 +63,12 @@ import CreateStudySetModal from './CreateStudySetModal';
 import { StudySetSettingsModal } from './StudySetSettingsModal';
 import { StudySetTimer } from './StudySetTimer';
 import { StudySetUpload } from './StudySetUpload';
-import { CreateFromSource } from './CreateFromSource';
+import { CreateFromSource, parseCardExport } from './CreateFromSource';
+import { createDeckWithCards } from '../../services/apiEndpoints';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
 import { StudySetGuidedPrompts } from './StudySetGuidedPrompts';
-import { fetchStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
+import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
 import { useStudyResumeStore } from '../../stores/studyResumeStore';
 import type { StudySetTopic } from '@lantern/shared';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
@@ -135,6 +139,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const createSet = useStudySetStore((s) => s.createSet);
   const touchOpened = useStudySetStore((s) => s.touchOpened);
   const openPicker = useStudySetStore((s) => s.openPicker);
+  const folders = useStudySetStore((s) => s.folders);
+  const loadFolders = useStudySetStore((s) => s.loadFolders);
   const sets = useStudySetStore((s) => s.sets);
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
   const courseId = studySet?.courseId || courseIdProp || '';
@@ -161,6 +167,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [writingQuiz, setWritingQuiz] = useState(false);
   const [quizSeed, setQuizSeed] = useState<AdaptiveQuizItem[] | null>(null);
   const [planTopics, setPlanTopics] = useState<StudySetTopic[]>([]);
+  const [planUnits, setPlanUnits] = useState<StudySetUnit[]>([]);
+  const [planGenerating, setPlanGenerating] = useState(false);
+  const [quizQuestionCount, setQuizQuestionCount] = useState(10);
+  const [importSource, setImportSource] = useState<'pdf' | 'ppt' | 'audio' | 'video' | 'youtube' | 'paste' | null>(null);
+  const [companionRail, setCompanionRail] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches
+  );
   const [createKind, setCreateKind] = useState<'recap' | 'lesson' | null>(null);
   const [quizLive, setQuizLive] = useState(false);
   const recordActivity = useStudyResumeStore((s) => s.recordActivity);
@@ -187,7 +200,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   useEffect(() => {
     void loadSets().catch(() => undefined);
-  }, [loadSets]);
+    void loadFolders().catch(() => undefined);
+  }, [loadFolders, loadSets]);
 
   useEffect(() => {
     if (!studySetId) return;
@@ -197,24 +211,33 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   useEffect(() => {
     if (!studySetId) {
       setPlanTopics([]);
+      setPlanUnits([]);
       return;
     }
     let cancelled = false;
     void fetchStudySetPlan(studySetId)
       .then((data) => {
         if (cancelled) return;
-        const rows = Array.isArray((data as { topics?: StudySetTopic[] })?.topics)
-          ? (data as { topics: StudySetTopic[] }).topics
-          : [];
-        setPlanTopics(rows);
+        applyPlanPayload(data, setPlanUnits, setPlanTopics);
       })
       .catch(() => {
-        if (!cancelled) setPlanTopics([]);
+        if (!cancelled) {
+          setPlanTopics([]);
+          setPlanUnits([]);
+        }
       });
     return () => {
       cancelled = true;
     };
   }, [studySetId]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => setCompanionRail(mq.matches);
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     if (!routePath) return;
@@ -340,6 +363,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const lessons = useMemo(() => notes.filter(isLessonNote), [notes]);
   const recaps = useMemo(() => notes.filter(isRecapNote), [notes]);
   const essays = useMemo(() => notes.filter(isEssayNote), [notes]);
+  const homeMaterials = useMemo(
+    () =>
+      [...readingNotes, ...lectures].sort((a, b) =>
+        (b.updatedAt || '').localeCompare(a.updatedAt || '')
+      ),
+    [lectures, readingNotes]
+  );
   const exams = useMemo(() => upcomingExamsFromNotes(calendars), [calendars]);
   const steeredToLecture = useRef(false);
   useEffect(() => {
@@ -435,14 +465,58 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     void openNote(decision.noteId);
   }, [activity, essays, openNote, selectedNote?.id]);
 
+  const openSetChat = (message?: string) => {
+    if (message) useCompanionStore.getState().openWithMessage(message);
+    else useCompanionStore.getState().open();
+  };
+
+  const kickPlanGeneration = useCallback(async () => {
+    if (!studySetId || planTopics.length > 0 || planGenerating) return;
+    setPlanGenerating(true);
+    try {
+      const existing = await fetchStudySetPlan(studySetId);
+      const existingTopics = Array.isArray((existing as { topics?: StudySetTopic[] })?.topics)
+        ? (existing as { topics: StudySetTopic[] }).topics
+        : [];
+      if (existingTopics.length > 0) {
+        applyPlanPayload(existing, setPlanUnits, setPlanTopics);
+        return;
+      }
+      const rows = await notesApi.fetchNotes({ studySetId });
+      const sourceNotes = (Array.isArray(rows) ? rows : []).filter(
+        (note) =>
+          !isCalendarNote(note) &&
+          !isLessonNote(note) &&
+          !isRecapNote(note) &&
+          !isEssayNote(note)
+      );
+      const built = topicsFromReadingNotes(studySetId, sourceNotes);
+      if (built.topics.length === 0) return;
+      const saved = await replaceStudySetPlan(studySetId, {
+        units: [{ title: built.unit.title, position: built.unit.position }],
+        topics: built.topics.map((topic) => ({
+          unitIndex: 0,
+          title: topic.title,
+          position: topic.position,
+          status: topic.status,
+          sourceNoteIds: topic.sourceNoteIds,
+        })),
+      });
+      applyPlanPayload(saved, setPlanUnits, setPlanTopics);
+    } catch {
+      // Local fallback stays on set home until the student opens Plan.
+    } finally {
+      setPlanGenerating(false);
+    }
+  }, [planGenerating, planTopics.length, studySetId]);
+
   const handleHomeTool = (tool: StudySetHomeTool) => {
     if (tool.id === 'import') {
       go('add');
-      setImportOpen(true);
       return;
     }
     if (tool.id === 'ask') {
-      useCompanionStore.getState().openWithMessage(`Help me study ${label}. What should I do next in this set?`);
+      openSetChat(`Help me study ${label}. What should I do next in this set?`);
       return;
     }
     if (tool.id === 'recap' && recaps.length === 0) setCreateKind('recap');
@@ -655,7 +729,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     setWritingQuiz(true);
     try {
       const run = () =>
-        notesApi.generateNoteQuiz(noteId, undefined, 10).then((row) => row.questions || []);
+        notesApi.generateNoteQuiz(noteId, undefined, quizQuestionCount).then((row) => row.questions || []);
       if (!aiJobUserId) return run();
       return runAiJob(
         {
@@ -730,6 +804,16 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {studySetId ? <StudySetTimer /> : null}
+              {!companionRail ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => openSetChat()}
+                  aria-label="Chat"
+                >
+                  <AppIcon name="chatbubbles" size={16} />
+                  <span className="ml-1.5">Chat</span>
+                </Button>
+              ) : null}
               {studySetId && activity !== 'home' ? (
                 <Button variant="secondary" onClick={() => go('home')}>
                   Set home
@@ -988,40 +1072,120 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             <StudySetUpload
               studySetId={studySetId}
               courseId={courseId || undefined}
-              onImport={() => setImportOpen(true)}
+              onImport={(source) => {
+                setImportSource(source ?? null);
+                setImportOpen(true);
+              }}
+              onYoutube={async (url) => {
+                const created = await notesApi.createNoteFromYoutube(url);
+                const noteId = created.note?.id;
+                if (noteId) {
+                  await notesApi.updateNote(noteId, studySetNotePayload({ courseId, studySetId }));
+                  await reloadNotes().catch(() => undefined);
+                  void kickPlanGeneration();
+                  void openNote(noteId);
+                  go('notes', { noteId });
+                }
+              }}
+              onPaste={async (title, body) => {
+                const created = await useNotesStore.getState().createNote({
+                  title,
+                  body,
+                  ...studySetNotePayload({ courseId, studySetId }),
+                });
+                await reloadNotes().catch(() => undefined);
+                void kickPlanGeneration();
+                await openNote(created.id);
+                go('notes', { noteId: created.id });
+              }}
+              onAnki={async (text) => {
+                const cards = parseCardExport(text);
+                if (cards.length === 0) {
+                  throw new Error('Paste Anki or Quizlet text: one card per line, front and back separated by a tab.');
+                }
+                await createDeckWithCards({
+                  name: 'Imported cards',
+                  studySetId,
+                  cards: cards.map((card) => ({ type: 'BASIC' as const, front: card.front, back: card.back })),
+                });
+                void kickPlanGeneration();
+                go('cards');
+              }}
               onRecord={() => go('lecture')}
             />
           ) : activity === 'home' && studySetId ? (
             <StudySetHome
               setLabel={label}
-              notes={readingNotes}
+              notes={homeMaterials}
               deckCount={courseDecks.length}
               testCount={courseTests.length}
               recommended={readingNotes[0] ?? notes[0] ?? null}
               studySet={studySet}
               planTopics={planTopics}
+              planUnits={planUnits}
               exams={exams}
+              planGenerating={planGenerating}
               onTool={handleHomeTool}
               onOpenNote={(noteId) => {
+                const lecture = lectures.some((row) => row.id === noteId);
                 void openNote(noteId);
-                go('notes', { noteId });
+                if (lecture) go('lecture');
+                else go('notes', { noteId });
               }}
-              onOpenRecommended={(kind) => {
+              onOpenRecommended={(kind: StudySetRecommendedKind) => {
                 const recommendedId =
                   planTopics.find((topic) => topic.status === 'unseen')?.sourceNoteIds[0] ||
                   planTopics[0]?.sourceNoteIds[0] ||
                   readingNotes[0]?.id ||
                   notes[0]?.id;
-                if (recommendedId) void openNote(recommendedId);
-                if (kind === 'read') go('read', { noteId: recommendedId });
-                else if (kind === 'quiz') {
+                if (recommendedId && kind !== 'ask') void openNote(recommendedId);
+                if (kind === 'ask') {
+                  openSetChat(`Help me study ${label}. What should I do next in this set?`);
+                  return;
+                }
+                if (kind === 'read') {
+                  go('notes', { noteId: recommendedId });
+                  return;
+                }
+                if (kind === 'quiz') {
                   setQuizLive(true);
                   go('quiz');
+                  return;
                 }
-                else handleActivity('lesson', 'ready');
+                if (kind === 'cards') {
+                  go('cards');
+                  return;
+                }
+                if (kind === 'recap') {
+                  if (recaps.length === 0) setCreateKind('recap');
+                  handleActivity('recap', 'ready');
+                  return;
+                }
+                if (kind === 'play') {
+                  handleActivity('play', 'ready');
+                  return;
+                }
+                if (kind === 'test') {
+                  handleActivity('test', 'ready');
+                  return;
+                }
+                handleActivity('lesson', 'ready');
+              }}
+              onSkipTopic={(topicId) => {
+                setPlanTopics((rows) => {
+                  const base =
+                    rows.length > 0 ? rows : topicsFromReadingNotes(studySetId, readingNotes).topics;
+                  return base.map((row) => (row.id === topicId ? { ...row, status: 'covered' } : row));
+                });
+                void updateStudySetTopicStatus(studySetId, topicId, 'covered').catch(() => undefined);
               }}
               onOpenPlan={() => go('plan')}
               onOpenCalendar={() => go('calendar')}
+              onAddSyllabus={() => {
+                go('add');
+                setImportSource(null);
+                setImportOpen(true);
+              }}
             />
           ) : activity === 'notes' && studioNote && noteInRoom(studioNote) && !isCalendarNote(studioNote) && !isEssayNote(studioNote) && !isLectureNote(studioNote) && !isLessonNote(studioNote) && !isRecapNote(studioNote) ? (
             <NotesStudio
@@ -1050,7 +1214,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               decks={courseDecks}
               studySetId={studySetId}
               onCancel={() => go('quiz')}
-              onPickNote={(noteId) => {
+              onPickNote={(noteId, options) => {
+                if (options?.questionCount) setQuizQuestionCount(options.questionCount);
                 void openNote(noteId);
                 setQuizLive(true);
                 go('quiz');
@@ -1064,7 +1229,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             <StudySetArtifactLibrary
               title="Quizzes"
               empty="Make a quiz from materials in this set. The first question previews on the card."
-              createLabel="New quiz"
+              createLabel="+ New"
+              folders={folders.map((folder) => ({ id: folder.id, title: folder.title }))}
+              onOpenFolder={() => {
+                openPicker();
+                navigateTo(AppMode.STUDY_HUB);
+              }}
               onCreate={() => go('quiz', { createNew: true })}
               onOpen={(quizId) => go('quiz', { quizId })}
               items={courseTests.map((test) => ({
@@ -1189,7 +1359,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             <StudySetArtifactLibrary
               title="Audio recaps"
               empty="Generate a listen-through from a note in this set."
-              createLabel="New recap"
+              createLabel="+ New"
+              folders={folders.map((folder) => ({ id: folder.id, title: folder.title }))}
+              onOpenFolder={() => {
+                openPicker();
+                navigateTo(AppMode.STUDY_HUB);
+              }}
               onCreate={() => setCreateKind('recap')}
               onOpen={(noteId) => {
                 void openNote(noteId);
@@ -1345,7 +1520,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                   <StudySetArtifactLibrary
                     title="Cards"
                     empty="Turn a note into flashcards, or import Anki / Quizlet into this set."
-                    createLabel="New deck"
+                    createLabel="+ New"
+                    folders={folders.map((folder) => ({ id: folder.id, title: folder.title }))}
+                    onOpenFolder={() => {
+                      openPicker();
+                      navigateTo(AppMode.STUDY_HUB);
+                    }}
                     onCreate={studySetId ? () => go('cards', { createNew: true }) : undefined}
                     onOpen={(deckId) => {
                       const deck = courseDecks.find((row) => row.id === deckId);
@@ -1396,6 +1576,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </section>
         </div>
 
+        {companionRail ? (
         <aside className="flex w-full lg:w-80 h-72 lg:h-auto shrink-0 min-h-0">
           <div className="flex flex-1 min-h-0 flex-col rounded-lantern-xl border border-lantern-border overflow-hidden">
             {studySetId ? (
@@ -1404,7 +1585,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                   (routePath?.activity ??
                     (activity === 'add' || activity === 'home' ? activity : activity)) as StudySetPathActivity
                 }
-                onAsk={(message) => useCompanionStore.getState().openWithMessage(message)}
+                onAsk={(message) => openSetChat(message)}
                 onGo={(next) => go(next)}
               />
             ) : null}
@@ -1418,6 +1599,14 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             </div>
           </div>
         </aside>
+        ) : (
+          <AICompanionPanel
+            variant="drawer"
+            context={companionContext}
+            onAction={onCompanionAction}
+            theme={theme}
+          />
+        )}
       </div>
 
       <ManageOutlineModal
@@ -1453,12 +1642,21 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           isOpen={importOpen}
           courseId={courseId || undefined}
           studySetId={studySetId}
-          onClose={() => setImportOpen(false)}
+          source={importSource}
+          onClose={() => {
+            setImportOpen(false);
+            setImportSource(null);
+          }}
           onComplete={() => {
-            void reloadNotes().catch(() => undefined);
+            void reloadNotes()
+              .then(() => {
+                void kickPlanGeneration();
+              })
+              .catch(() => undefined);
           }}
           onOpenNote={(noteId) => {
             setImportOpen(false);
+            setImportSource(null);
             void openNote(noteId);
             go('notes', { noteId });
           }}
@@ -1467,6 +1665,21 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     </div>
   );
 };
+
+function applyPlanPayload(
+  data: unknown,
+  setUnits: (units: StudySetUnit[]) => void,
+  setTopics: (topics: StudySetTopic[]) => void
+) {
+  const units = Array.isArray((data as { units?: StudySetUnit[] })?.units)
+    ? (data as { units: StudySetUnit[] }).units
+    : [];
+  const topics = Array.isArray((data as { topics?: StudySetTopic[] })?.topics)
+    ? (data as { topics: StudySetTopic[] }).topics
+    : [];
+  setUnits(units);
+  setTopics(topics);
+}
 
 function MaterialGroup({
   title,

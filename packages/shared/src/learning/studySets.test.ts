@@ -8,7 +8,14 @@ import {
   studySetNotePayload,
   testsFiledInStudySet,
 } from './studySets';
-import { STUDY_SET_HOME_PRIMARY_TOOL_IDS, STUDY_SET_HOME_TOOLS } from './studySetHome';
+import {
+  DEFAULT_QUIZ_TYPE_COUNTS,
+  STUDY_SET_HOME_PRIMARY_TOOL_IDS,
+  STUDY_SET_HOME_TOOLS,
+  STUDY_SET_RECOMMENDED_CARDS,
+  notePreviewText,
+  quizTypeCountTotal,
+} from './studySetHome';
 
 describe('study sets', () => {
   it('normalises and validates titles', () => {
@@ -92,5 +99,19 @@ describe('study sets', () => {
       'lecture',
       'play',
     ]);
+    expect(STUDY_SET_RECOMMENDED_CARDS.filter((card) => card.primary).map((card) => card.id)).toEqual([
+      'ask',
+      'read',
+      'quiz',
+    ]);
+  });
+
+  it('previews note bodies and sums quiz type counts', () => {
+    expect(notePreviewText('<p>Intake and triage</p>')).toBe('Intake and triage');
+    expect(notePreviewText('<!-- lantern:smart-notes:start --> ## Overview\nPancreatitis')).toBe(
+      'Overview Pancreatitis'
+    );
+    expect(quizTypeCountTotal(DEFAULT_QUIZ_TYPE_COUNTS)).toBe(20);
+    expect(quizTypeCountTotal({ ...DEFAULT_QUIZ_TYPE_COUNTS, true_false: 5 })).toBe(25);
   });
 });

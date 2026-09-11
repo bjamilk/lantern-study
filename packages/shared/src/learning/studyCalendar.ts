@@ -324,6 +324,33 @@ export function sessionsOnDate(
   return plan.sessions.filter((session) => session.date === date);
 }
 
+export function calendarWeekStart(from: Date = new Date()): string {
+  const mondayOffset = from.getDay() === 0 ? -6 : 1 - from.getDay();
+  return toDateOnlyLocal(new Date(from.getFullYear(), from.getMonth(), from.getDate() + mondayOffset));
+}
+
+export function calendarWeekDates(startDate: string): string[] {
+  const start = parseDateOnlyLocal(startDate);
+  if (!start) return [];
+  return Array.from({ length: 7 }, (_, index) =>
+    toDateOnlyLocal(new Date(start.getFullYear(), start.getMonth(), start.getDate() + index))
+  );
+}
+
+export function shiftCalendarWeek(startDate: string, deltaWeeks: number): string {
+  const start = parseDateOnlyLocal(startDate);
+  if (!start) return startDate;
+  return toDateOnlyLocal(
+    new Date(start.getFullYear(), start.getMonth(), start.getDate() + deltaWeeks * 7)
+  );
+}
+
+export function calendarWeekTitle(startDate: string): string {
+  const days = calendarWeekDates(startDate);
+  if (days.length < 7) return 'This week';
+  return `${formatDisplayDate(days[0])} – ${formatDisplayDate(days[6])}`;
+}
+
 export function calendarMonthTitle(year: number, monthIndex: number): string {
   const stamp = toDateOnlyLocal(new Date(year, monthIndex, 1));
   return formatDisplayDate(stamp).replace(/^\d+\s/, '');

@@ -31,6 +31,8 @@ interface ImportAndStudyModalProps {
   courseId?: string | null;
   /** File the imported note into a study set. Course remains optional. */
   studySetId?: string | null;
+  /** Focus the matching file control when a set-home chip opened this modal. */
+  source?: 'pdf' | 'ppt' | 'audio' | 'video' | 'youtube' | 'paste' | null;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -43,6 +45,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   onTurnIntoStudyProduct,
   courseId,
   studySetId,
+  source = null,
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -339,26 +342,34 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
               ) : null}
 
               <div className="flex flex-wrap gap-3">
+                {(!source || source === 'pdf' || source === 'audio' || source === 'video') ? (
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <AppIcon name="document-upload" size={32} className="text-lantern-primary" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Upload PDF</span>
                   <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
                 </label>
+                ) : null}
+                {(!source || source === 'ppt') ? (
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <AppIcon name="document-upload" size={32} className="text-lantern-accent" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
                 </label>
+                ) : null}
+                {(!source || source === 'audio' || source === 'video') ? (
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <AppIcon name="image" size={32} className="text-lantern-primary" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Photos</span>
                   <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
+                ) : null}
+                {!source ? (
                 <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
                   <AppIcon name="image" size={32} className="text-lantern-accent" aria-hidden />
                   <span className="text-sm font-medium text-lantern-text">Camera</span>
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
+                ) : null}
               </div>
 
               <textarea

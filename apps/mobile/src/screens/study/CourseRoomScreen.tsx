@@ -6,7 +6,12 @@ import { useFocusEffect } from '@react-navigation/native';
 import {
   STUDY_SET_HOME_PRIMARY_TOOL_IDS,
   STUDY_SET_HOME_TOOLS,
+  STUDY_SET_RECOMMENDED_CARDS,
   WORKSPACE_ACTIVITIES,
+  notePreviewText,
+  pickRecommendedTopic,
+  topicIndexLabel,
+  topicsFromReadingNotes,
   WORKSPACE_LATER_COPY,
   TURN_INTO_TARGETS,
   courseWorkspaceLabel,
@@ -77,6 +82,8 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const [importOpen, setImportOpen] = useState(false);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
+  const [showMoreRecommended, setShowMoreRecommended] = useState(false);
+  const [skippedTopicIds, setSkippedTopicIds] = useState<string[]>([]);
   const openCompanion = useCompanionStore((s) => s.open);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
 
@@ -435,6 +442,46 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           }
         />
 
+        {studySetId ? (
+          <SetHomeRecommended
+            studySetId={studySetId}
+            notes={studyNotes}
+            lectures={lectures}
+            skippedTopicIds={skippedTopicIds}
+            showMore={showMoreRecommended}
+            onShowMore={() => setShowMoreRecommended((value) => !value)}
+            onSkip={(topicId) => setSkippedTopicIds((ids) => [...ids, topicId])}
+            onAsk={() => openCompanion()}
+            onRead={(noteId) => {
+              selectNote(noteId);
+              navigation.navigate('NotesStudio', {
+                courseId,
+                courseLabel: label,
+                noteId,
+                studySetId,
+              });
+            }}
+            onQuiz={(noteId) => {
+              selectNote(noteId);
+              navigation.navigate('AdaptiveQuiz', {
+                courseId,
+                courseLabel: label,
+                noteId,
+                studySetId,
+              });
+            }}
+            onOpenActivity={(activityId) => handleActivity(activityId, 'ready')}
+            onAddSyllabus={() => setImportOpen(true)}
+            onAddExam={() =>
+              navigation.navigate('StudyCalendar', {
+                courseId,
+                courseLabel: label,
+                studySetId,
+              })
+            }
+          />
+        ) : null}
+
         <View className="flex-row flex-wrap gap-2 mb-4">
           {(studySetId
             ? STUDY_SET_HOME_TOOLS.filter((tool) => STUDY_SET_HOME_PRIMARY_TOOL_IDS.includes(tool.id))
@@ -534,10 +581,34 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
         <Card className="mb-3">
           <T.Caption tone="secondary" className="mb-2">
-            Notes{studyNotes.length ? ` · ${studyNotes.length}` : ''}
+            {studySetId ? 'Recent materials' : `Notes${studyNotes.length ? ` · ${studyNotes.length}` : ''}`}
           </T.Caption>
-          {studyNotes.length === 0 ? (
+          {(studySetId ? [...lectures, ...studyNotes] : studyNotes).length === 0 ? (
             <T.Body tone="secondary">{studySetId ? 'No notes in this set yet.' : 'No notes in this course yet.'}</T.Body>
+          ) : studySetId ? (
+            <View className="gap-3">
+              {[...lectures, ...studyNotes].slice(0, 8).map((note) => (
+                <MaterialTile
+                  key={note.id}
+                  title={note.title || (isLectureNote(note) ? 'Lecture' : 'Untitled note')}
+                  preview={notePreviewText(note.body)}
+                  lecture={isLectureNote(note)}
+                  onPress={() => {
+                    if (isLectureNote(note)) {
+                      openLectureStudio(note.id);
+                      return;
+                    }
+                    selectNote(note.id);
+                    navigation.navigate('NotesStudio', {
+                      courseId,
+                      courseLabel: label,
+                      noteId: note.id,
+                      studySetId,
+                    });
+                  }}
+                />
+              ))}
+            </View>
           ) : (
             studyNotes.map((note, index) => (
               <View key={note.id} className={index > 0 ? 'border-t border-lantern-border' : undefined}>
@@ -742,6 +813,138 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         }}
       />
     </SafeAreaView>
+  );
+}
+
+function SetHomeRecommended({
+  studySetId,
+  notes,
+  lectures,
+  skippedTopicIds,
+  showMore,
+  onShowMore,
+  onSkip,
+  onAsk,
+  onRead,
+  onQuiz,
+  onOpenActivity,
+  onAddSyllabus,
+  onAddExam,
+}: {
+  studySetId: string;
+  notes: StudyNote[];
+  lectures: StudyNote[];
+  skippedTopicIds: string[];
+  showMore: boolean;
+  onShowMore: () => void;
+  onSkip: (topicId: string) => void;
+  onAsk: () => void;
+  onRead: (noteId: string) => void;
+  onQuiz: (noteId: string) => void;
+  onOpenActivity: (id: WorkspaceActivityId) => void;
+  onAddSyllabus: () => void;
+  onAddExam: () => void;
+}) {
+  const derived = topicsFromReadingNotes(studySetId, notes);
+  const topics = derived.topics.filter((topic) => !skippedTopicIds.includes(topic.id));
+  const current = pickRecommendedTopic(topics);
+  const empty = notes.length === 0 && lectures.length === 0 && derived.topics.length === 0;
+  const cards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
+
+  if (empty) {
+    return (
+      <View className="mb-4 gap-3">
+        <Card>
+          <T.Body>Add your syllabus</T.Body>
+          <T.Caption tone="secondary" className="mt-1">
+            Import a syllabus or notes so this set can build a plan.
+          </T.Caption>
+          <Button size="sm" className="mt-3" onPress={onAddSyllabus}>
+            Add syllabus
+          </Button>
+        </Card>
+        <Card>
+          <T.Body>Exam dates</T.Body>
+          <T.Caption tone="secondary" className="mt-1">
+            Add an exam so the calendar can group what to study.
+          </T.Caption>
+          <Button size="sm" variant="secondary" className="mt-3" onPress={onAddExam}>
+            Add exam
+          </Button>
+        </Card>
+      </View>
+    );
+  }
+
+  if (!current) return null;
+
+  return (
+    <View className="mb-4">
+      <T.Caption tone="secondary">{topicIndexLabel(topics, current)}</T.Caption>
+      <T.Title className="mt-1 mb-3">{current.title}</T.Title>
+      <View className="gap-3">
+        {cards.map((card) => (
+          <Pressable
+            key={card.id}
+            onPress={() => {
+              const noteId = current.sourceNoteIds[0];
+              if (card.id === 'ask') onAsk();
+              else if (card.id === 'read' && noteId) onRead(noteId);
+              else if (card.id === 'quiz' && noteId) onQuiz(noteId);
+              else if (card.id === 'cards') onOpenActivity('cards');
+              else if (card.id === 'lesson') onOpenActivity('lesson');
+              else if (card.id === 'recap') onOpenActivity('recap');
+              else if (card.id === 'play') onOpenActivity('play');
+              else if (card.id === 'test') onOpenActivity('test');
+            }}
+            className="rounded-2xl border border-lantern-border bg-lantern-surface p-3"
+          >
+            <T.Caption tone="secondary">{card.eyebrow}</T.Caption>
+            <View className="mt-2 mb-2">
+              <FeatureDisc feature={card.feature} icon={card.icon as AppIconName} size={40} />
+            </View>
+            <T.Body>{card.label}</T.Body>
+          </Pressable>
+        ))}
+      </View>
+      <View className="flex-row items-center justify-between mt-2">
+        <Pressable onPress={onShowMore} accessibilityRole="button">
+          <T.Caption>{showMore ? 'Show less' : 'Show more'}</T.Caption>
+        </Pressable>
+        <Pressable onPress={() => onSkip(current.id)} accessibilityRole="button">
+          <T.Caption>Skip topic</T.Caption>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function MaterialTile({
+  title,
+  preview,
+  lecture,
+  onPress,
+}: {
+  title: string;
+  preview: string;
+  lecture: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable onPress={onPress} className="rounded-2xl border border-lantern-border overflow-hidden">
+      <View className={`min-h-[88px] px-3 py-3 ${lecture ? 'bg-lantern-feature-recording-tint' : 'bg-lantern-background-secondary'}`}>
+        {lecture ? (
+          <FeatureDisc feature="recording" icon="mic" size={40} />
+        ) : (
+          <T.Caption tone="secondary" numberOfLines={4}>
+            {preview || 'Untitled note'}
+          </T.Caption>
+        )}
+      </View>
+      <View className="px-3 py-2">
+        <T.Body numberOfLines={1}>{title}</T.Body>
+      </View>
+    </Pressable>
   );
 }
 

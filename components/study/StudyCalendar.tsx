@@ -8,7 +8,12 @@ import {
   calendarSessionLabel,
   calendarMonthGrid,
   calendarMonthTitle,
+  calendarWeekDates,
+  calendarWeekStart,
+  calendarWeekTitle,
   calendarSessionFeature,
+  shiftCalendarWeek,
+  upcomingExamsFromNotes,
   composeCalendarNoteBody,
   generateStudyCalendar,
   markCalendarSessionDone,
@@ -92,6 +97,9 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   const today = todayDateOnlyLocal();
   const todayDate = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1);
   const [view, setView] = useState({ year: todayDate.getFullYear(), month: todayDate.getMonth() });
+  const [layout, setLayout] = useState<'week' | 'month'>('week');
+  const [weekStart, setWeekStart] = useState(() => calendarWeekStart());
+  const noteExams = useMemo(() => upcomingExamsFromNotes(calendarNotes, today), [calendarNotes, today]);
 
   useEffect(() => {
     setExamDraft(examDate || '');
@@ -176,6 +184,7 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
           year: Number(first.slice(0, 4)),
           month: Number(first.slice(5, 7)) - 1,
         });
+        setWeekStart(calendarWeekStart(new Date(Number(first.slice(0, 4)), Number(first.slice(5, 7)) - 1, Number(first.slice(8, 10)))));
       }
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not save that plan.', 'error');
@@ -294,23 +303,48 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
         ) : null}
       </div>
 
-      {plan ? (
-        <div className="space-y-2">
+      <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            {(['week', 'month'] as const).map((id) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setLayout(id)}
+                className={`min-h-[36px] rounded-full border px-3 text-caption capitalize ${
+                  layout === id
+                    ? 'border-transparent bg-lantern-primary-fill text-white'
+                    : 'border-lantern-border text-lantern-text-secondary'
+                }`}
+              >
+                {id}
+              </button>
+            ))}
+          </div>
           <div className="flex items-center justify-between gap-3">
             <button
               type="button"
               className="min-h-[44px] min-w-[44px] text-body text-lantern-text-secondary"
-              onClick={() => setView((current) => shiftMonth(current.year, current.month, -1))}
-              aria-label="Previous month"
+              onClick={() =>
+                layout === 'week'
+                  ? setWeekStart((current) => shiftCalendarWeek(current, -1))
+                  : setView((current) => shiftMonth(current.year, current.month, -1))
+              }
+              aria-label={layout === 'week' ? 'Previous week' : 'Previous month'}
             >
               ‹
             </button>
-            <h3 className="text-heading">{calendarMonthTitle(view.year, view.month)}</h3>
+            <h3 className="text-heading">
+              {layout === 'week' ? calendarWeekTitle(weekStart) : calendarMonthTitle(view.year, view.month)}
+            </h3>
             <button
               type="button"
               className="min-h-[44px] min-w-[44px] text-body text-lantern-text-secondary"
-              onClick={() => setView((current) => shiftMonth(current.year, current.month, 1))}
-              aria-label="Next month"
+              onClick={() =>
+                layout === 'week'
+                  ? setWeekStart((current) => shiftCalendarWeek(current, 1))
+                  : setView((current) => shiftMonth(current.year, current.month, 1))
+              }
+              aria-label={layout === 'week' ? 'Next week' : 'Next month'}
             >
               ›
             </button>
@@ -321,17 +355,22 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
                 {label}
               </div>
             ))}
-            {grid.map((cell, index) => {
+            {(layout === 'week'
+              ? calendarWeekDates(weekStart).map((date) => ({ date, inMonth: true }))
+              : grid
+            ).map((cell, index) => {
               const daySessions = cell.date ? sessionsOnDate(plan, cell.date) : [];
               const isToday = cell.date === today;
-              const isExam = cell.date === examDate;
+              const examTitle =
+                (cell.date === examDate ? 'Exam' : null) ||
+                noteExams.find((exam) => exam.examDate === cell.date)?.title;
               return (
                 <div
                   key={cell.date || `empty-${index}`}
                   className={`min-h-[72px] rounded-lg border p-1 ${
                     !cell.inMonth
                       ? 'border-transparent'
-                      : isExam
+                      : examTitle
                         ? `${FEATURE_TINT_BG.tests} border-transparent`
                         : 'border-lantern-border'
                   }`}
@@ -345,6 +384,11 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
                       >
                         {Number(cell.date.slice(8, 10))}
                       </p>
+                      {examTitle ? (
+                        <span className={`mt-1 inline-flex rounded-full px-1.5 py-0.5 text-label ${FEATURE_TINT_BG.tests} ${FEATURE_INK_TEXT.tests}`}>
+                          {examTitle}
+                        </span>
+                      ) : null}
                       <div className="mt-1 flex flex-col gap-0.5">
                         {daySessions.map((session) => {
                           const feature = calendarSessionFeature(session.kind);
@@ -373,11 +417,10 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
           {examDate ? (
             <p className="text-caption text-lantern-text-secondary">
               Exam {formatDisplayDate(examDate)}
-              {plan.acceptedAt ? ' · accepted' : ' · draft'}
+              {plan?.acceptedAt ? ' · accepted' : plan ? ' · draft' : ''}
             </p>
           ) : null}
         </div>
-      ) : null}
 
       {topics.length > 0 ? (
         <div>

@@ -147,3 +147,66 @@ export const STUDY_SET_HOME_PRIMARY_TOOL_IDS: readonly StudySetHomeToolId[] = [
   'lecture',
   'play',
 ];
+
+export type StudySetRecommendedKind =
+  | 'ask'
+  | 'read'
+  | 'quiz'
+  | 'cards'
+  | 'lesson'
+  | 'recap'
+  | 'play'
+  | 'test';
+
+export interface StudySetRecommendedCard {
+  id: StudySetRecommendedKind;
+  label: string;
+  eyebrow: string;
+  icon: WorkspaceIconName;
+  feature: FeatureKey;
+  primary: boolean;
+}
+
+export const STUDY_SET_RECOMMENDED_CARDS: readonly StudySetRecommendedCard[] = [
+  { id: 'ask', label: 'Ask Lantern', eyebrow: 'Recommended', icon: 'sparkles', feature: 'ai', primary: true },
+  { id: 'read', label: 'Read', eyebrow: 'Catch up quickly', icon: 'book', feature: 'notes', primary: true },
+  { id: 'quiz', label: 'Quiz', eyebrow: 'Most used', icon: 'help-circle', feature: 'tests', primary: true },
+  { id: 'cards', label: 'Flashcards', eyebrow: 'Practice', icon: 'layers', feature: 'flashcards', primary: false },
+  { id: 'lesson', label: 'Tutor', eyebrow: 'Guided', icon: 'school', feature: 'ai', primary: false },
+  { id: 'recap', label: 'Listen', eyebrow: 'On the go', icon: 'headphones', feature: 'ai', primary: false },
+  { id: 'play', label: 'Arcade', eyebrow: 'Play', icon: 'game-controller', feature: 'flashcards', primary: false },
+  { id: 'test', label: 'Practice test', eyebrow: 'Exam conditions', icon: 'clipboard', feature: 'tests', primary: false },
+];
+
+export function notePreviewText(body: string | null | undefined, max = 160): string {
+  const plain = (body || '')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/`{3}[\s\S]*?`{3}/g, ' ')
+    .replace(/#{1,6}\s+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!plain) return '';
+  return plain.length > max ? `${plain.slice(0, max).trim()}…` : plain;
+}
+
+export type QuizTypeCounts = Record<
+  'multiple_choice' | 'true_false' | 'fill_in_blank' | 'short_answer',
+  number
+>;
+
+export const DEFAULT_QUIZ_TYPE_COUNTS: QuizTypeCounts = {
+  multiple_choice: 20,
+  true_false: 0,
+  fill_in_blank: 0,
+  short_answer: 0,
+};
+
+export function quizTypeCountTotal(counts: QuizTypeCounts): number {
+  return (
+    Math.max(0, counts.multiple_choice) +
+    Math.max(0, counts.true_false) +
+    Math.max(0, counts.fill_in_blank) +
+    Math.max(0, counts.short_answer)
+  );
+}

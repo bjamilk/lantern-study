@@ -1,6 +1,8 @@
 import React from 'react';
-import { Button, FeatureDisc } from '../ui';
+import { notePreviewText } from '@lantern/shared';
+import { FeatureDisc } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
+import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 
 export interface ArtifactCard {
   id: string;
@@ -8,7 +10,7 @@ export interface ArtifactCard {
   preview?: string | null;
   meta?: string;
   feature: 'tests' | 'flashcards' | 'ai';
-  icon: 'clipboard' | 'layers' | 'headphones';
+  icon: 'clipboard' | 'layers' | 'headphones' | 'school';
 }
 
 interface StudySetArtifactLibraryProps {
@@ -18,6 +20,8 @@ interface StudySetArtifactLibraryProps {
   onOpen: (id: string) => void;
   onCreate?: () => void;
   createLabel?: string;
+  folders?: Array<{ id: string; title: string }>;
+  onOpenFolder?: (id: string) => void;
 }
 
 export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = ({
@@ -26,45 +30,85 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
   items,
   onOpen,
   onCreate,
-  createLabel = 'New',
+  createLabel = '+ New',
+  folders = [],
+  onOpenFolder,
 }) => {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="text-heading">{title}</h2>
+      <h2 className="text-heading">{title}</h2>
+      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {onCreate ? (
-          <Button size="sm" onClick={onCreate}>
-            {createLabel}
-          </Button>
-        ) : null}
-      </div>
-      {items.length === 0 ? (
-        <p className="text-body text-lantern-text-secondary">{empty}</p>
-      ) : (
-        items.map((item) => (
           <button
-            key={item.id}
             type="button"
-            onClick={() => onOpen(item.id)}
-            className="w-full rounded-2xl border border-lantern-border bg-lantern-surface p-4 text-left hover:bg-lantern-background-secondary"
+            onClick={onCreate}
+            className="min-h-[11rem] rounded-2xl border border-dashed border-lantern-border bg-lantern-surface text-left px-4 py-4 hover:bg-lantern-background-secondary"
           >
-            <div className="flex items-start gap-3">
-              <FeatureDisc feature={item.feature} icon={<AppIcon name={item.icon} size={18} />} />
-              <span className="min-w-0 flex-1">
-                <span className="block text-body font-semibold truncate">{item.title}</span>
-                {item.preview ? (
-                  <span className="mt-1 block text-caption text-lantern-text-secondary line-clamp-2">
-                    {item.preview}
-                  </span>
-                ) : null}
-                {item.meta ? (
-                  <span className="mt-1 block text-caption text-lantern-text-tertiary">{item.meta}</span>
-                ) : null}
-              </span>
-            </div>
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-background-secondary">
+              <AppIcon name="add" size={18} />
+            </span>
+            <span className="mt-4 block text-body font-semibold">{createLabel}</span>
           </button>
-        ))
-      )}
+        ) : null}
+        {folders.map((folder) => (
+          <button
+            key={folder.id}
+            type="button"
+            onClick={() => onOpenFolder?.(folder.id)}
+            className="min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left px-4 py-4 hover:bg-lantern-background-secondary"
+          >
+            <span className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-background-secondary">
+              <AppIcon name="folder" size={18} />
+            </span>
+            <span className="mt-4 block text-body font-semibold truncate">{folder.title}</span>
+            <span className="block text-caption text-lantern-text-secondary">Folder</span>
+          </button>
+        ))}
+        {items.map((item) => {
+          const preview = item.preview ? notePreviewText(item.preview, 140) : '';
+          const recap = item.feature === 'ai' && item.icon === 'headphones';
+          const tutor = item.feature === 'ai' && item.icon === 'school';
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => onOpen(item.id)}
+              className="min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary"
+            >
+              <div
+                className={`h-24 px-3 py-3 ${
+                  recap || tutor ? FEATURE_TINT_BG.ai : item.feature === 'tests' ? FEATURE_TINT_BG.tests : FEATURE_TINT_BG.flashcards
+                }`}
+              >
+                {item.feature === 'tests' && preview ? (
+                  <p className="text-caption text-lantern-text line-clamp-4">{preview}</p>
+                ) : (
+                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-surface ${FEATURE_INK_TEXT[item.feature]}`}>
+                    <AppIcon name={item.icon} size={18} />
+                  </span>
+                )}
+              </div>
+              <div className="flex items-start gap-2 px-3 py-3">
+                <FeatureDisc size={24} feature={item.feature} icon={<AppIcon name={item.icon} size={14} />} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-body font-semibold truncate">{item.title}</span>
+                  {item.feature !== 'tests' && preview ? (
+                    <span className="mt-1 block text-caption text-lantern-text-secondary line-clamp-2">
+                      {preview}
+                    </span>
+                  ) : null}
+                  {item.meta ? (
+                    <span className="mt-1 block text-caption text-lantern-text-tertiary">{item.meta}</span>
+                  ) : null}
+                </span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      {items.length === 0 && !onCreate ? (
+        <p className="text-body text-lantern-text-secondary">{empty}</p>
+      ) : null}
     </div>
   );
 };

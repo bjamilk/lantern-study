@@ -5,6 +5,8 @@ import {
   studySetPlanProgress,
   topicIndexLabel,
   topicsFromReadingNotes,
+  topicsInUnit,
+  unitsForTopics,
   type StudySetMode,
   type StudySetTopic,
   type StudySetUnit,
@@ -35,6 +37,8 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const [topics, setTopics] = useState<StudySetTopic[]>(fallback.topics);
   const [generating, setGenerating] = useState(false);
   const [diagnosticIndex, setDiagnosticIndex] = useState<number | null>(null);
+  const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
+  const timelineUnits = unitsForTopics(units, topics);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,43 +196,66 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
           </div>
         </Card>
       ) : null}
-      <div className="space-y-4">
-        {units.map((unit) => (
-          <section key={unit.id}>
-            <h3 className="text-heading mb-2">{unit.title}</h3>
-            <div className="space-y-2">
-              {topics
-                .filter((topic) => topic.unitId === unit.id)
-                .map((topic) => (
-                  <label
-                    key={topic.id}
-                    className="flex items-center gap-3 rounded-xl border border-lantern-border p-3"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={topic.status !== 'unseen'}
-                      onChange={() => {
-                        const next = topic.status === 'unseen' ? 'covered' : topic.status === 'covered' ? 'mastered' : 'unseen';
-                        setTopics((rows) =>
-                          rows.map((row) => (row.id === topic.id ? { ...row, status: next } : row))
-                        );
-                        void updateStudySetTopicStatus(studySetId, topic.id, next).catch(() => undefined);
-                      }}
-                    />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-body font-semibold truncate">{topic.title}</span>
-                      <span className="block text-caption text-lantern-text-secondary capitalize">
-                        {topic.status}
+      <div className="relative space-y-3 before:absolute before:left-[13px] before:top-3 before:bottom-3 before:w-px before:bg-lantern-border">
+        {timelineUnits.map((unit, index) => {
+          const unitTopics = topicsInUnit(topics, unit.id);
+          const expanded = openUnits[unit.id] ?? index === 0;
+          return (
+            <section key={unit.id} className="relative pl-8">
+              <span className="absolute left-1.5 top-3 h-3 w-3 rounded-full bg-lantern-primary-fill" />
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenUnits((current) => ({ ...current, [unit.id]: !expanded }))
+                }
+                className="w-full min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-left"
+              >
+                <span className="block text-heading">
+                  {String(index + 1).padStart(2, '0')} {unit.title}
+                </span>
+                <span className="block text-caption text-lantern-text-secondary">
+                  {unitTopics.length} topics · {expanded ? 'Hide' : 'Show'}
+                </span>
+              </button>
+              {expanded ? (
+                <div className="space-y-2 mt-2">
+                  {unitTopics.map((topic) => (
+                    <label
+                      key={topic.id}
+                      className="flex items-center gap-3 rounded-xl border border-lantern-border p-3"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={topic.status !== 'unseen'}
+                        onChange={() => {
+                          const next =
+                            topic.status === 'unseen'
+                              ? 'covered'
+                              : topic.status === 'covered'
+                                ? 'mastered'
+                                : 'unseen';
+                          setTopics((rows) =>
+                            rows.map((row) => (row.id === topic.id ? { ...row, status: next } : row))
+                          );
+                          void updateStudySetTopicStatus(studySetId, topic.id, next).catch(() => undefined);
+                        }}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-body font-semibold truncate">{topic.title}</span>
+                        <span className="block text-caption text-lantern-text-secondary capitalize">
+                          {topic.status}
+                        </span>
                       </span>
-                    </span>
-                    <Button size="sm" variant="ghost" onClick={() => onStart('read', topic.sourceNoteIds[0])}>
-                      Open
-                    </Button>
-                  </label>
-                ))}
-            </div>
-          </section>
-        ))}
+                      <Button size="sm" variant="ghost" onClick={() => onStart('read', topic.sourceNoteIds[0])}>
+                        Open
+                      </Button>
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          );
+        })}
       </div>
     </div>
   );

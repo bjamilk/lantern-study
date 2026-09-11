@@ -95,3 +95,30 @@ export const STUDY_SET_MODES: readonly { id: StudySetMode; label: string; promis
   { id: 'standard', label: 'Standard', promise: 'Next uncovered topic' },
   { id: 'comprehensive', label: 'Comprehensive', promise: 'Mastery required before moving on' },
 ];
+
+export function unitsForTopics(
+  units: readonly StudySetUnit[],
+  topics: readonly StudySetTopic[]
+): StudySetUnit[] {
+  if (units.length > 0) {
+    return [...units].sort((a, b) => a.position - b.position);
+  }
+  const seen = new Map<string, StudySetUnit>();
+  for (const topic of topics) {
+    if (seen.has(topic.unitId)) continue;
+    seen.set(topic.unitId, {
+      id: topic.unitId,
+      studySetId: topic.studySetId,
+      title: 'Your materials',
+      position: topic.position,
+    });
+  }
+  return [...seen.values()];
+}
+
+export function topicsInUnit(
+  topics: readonly StudySetTopic[],
+  unitId: string
+): StudySetTopic[] {
+  return topics.filter((topic) => topic.unitId === unitId).sort((a, b) => a.position - b.position);
+}

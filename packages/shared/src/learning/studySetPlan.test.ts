@@ -1,8 +1,11 @@
+import { describe, expect, it } from 'vitest';
 import {
   pickRecommendedTopic,
   studySetPlanProgress,
   studySetProgressPercent,
   topicsFromReadingNotes,
+  topicsInUnit,
+  unitsForTopics,
 } from './studySetPlan';
 
 describe('study set plan', () => {
@@ -32,5 +35,14 @@ describe('study set plan', () => {
     ]);
     expect(progress).toEqual({ topics: 3, covered: 2, mastered: 1 });
     expect(studySetProgressPercent(progress)).toBe(50);
+  });
+
+  it('derives units from topics when none are stored', () => {
+    const topics = [
+      { id: '1', studySetId: 's', unitId: 'u1', title: 'A', position: 10, status: 'unseen' as const, sourceNoteIds: [] },
+      { id: '2', studySetId: 's', unitId: 'u1', title: 'B', position: 20, status: 'unseen' as const, sourceNoteIds: [] },
+    ];
+    expect(unitsForTopics([], topics).map((unit) => unit.id)).toEqual(['u1']);
+    expect(topicsInUnit(topics, 'u1').map((topic) => topic.id)).toEqual(['1', '2']);
   });
 });
