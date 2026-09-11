@@ -300,6 +300,7 @@ const AppShell: React.FC<AppShellProps> = ({
                       it counts, not floating beside it.
                     */}
                     <div className="md:hidden flex items-center gap-1 shrink-0">
+                        {appMode !== AppMode.COURSE_WORKSPACE ? (
                         <button
                             type="button"
                             onClick={toggleCompanion}
@@ -326,6 +327,7 @@ const AppShell: React.FC<AppShellProps> = ({
                                 </span>
                             ) : null}
                         </button>
+                        ) : null}
                         <button
                             type="button"
                             onClick={sidebarProps.onOpenNotificationModal}

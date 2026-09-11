@@ -393,6 +393,10 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       return params.libraryTab ? `/library/${params.libraryTab}` : '/library';
     case AppMode.STUDY_HUB:
       return '/study';
+    case AppMode.COURSE_WORKSPACE:
+      return params.courseId
+        ? `/study/courses/${encodeURIComponent(params.courseId)}`
+        : '/study';
     case AppMode.AI_TOOLS:
       return '/ai-tools';
     case AppMode.NOTE_EDITOR:
@@ -620,6 +624,10 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { mode: AppMode.LIBRARY, params: {} };
   }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
+  const studyCourseId = segment(path, /^\/study\/courses\/([^/]+)$/);
+  if (studyCourseId) {
+    return { mode: AppMode.COURSE_WORKSPACE, params: { courseId: studyCourseId } };
+  }
   if (path === STUDY_PRODUCTS_PATH) return { mode: AppMode.STUDY_PRODUCT_DRAFTS, params: {} };
   if (path === '/ai-tools') return { mode: AppMode.AI_TOOLS, params: {} };
   if (path === '/wallet') {

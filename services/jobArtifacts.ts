@@ -64,6 +64,8 @@ export interface SaveGeneratedTestInput {
    * link, a notification, or the list) has nowhere else to read it from.
    */
   config?: Record<string, unknown>;
+  courseId?: string | null;
+  topicId?: string | null;
 }
 
 /** The copy a save failure is reported with when the request never landed. */
@@ -140,6 +142,8 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     sourceDeckId: input.sourceDeckId,
     questions: input.questions,
     ...(input.config ? { config: input.config } : {}),
+    ...(input.courseId !== undefined ? { courseId: input.courseId } : {}),
+    ...(input.topicId !== undefined ? { topicId: input.topicId } : {}),
   };
   jobs.recordPendingSave(input.jobId, payload);
 
@@ -269,6 +273,8 @@ async function writeTest(
     // The route spreads this into the stored config; without it the builder's
     // Practice/Exam and timer choices died at the network boundary.
     ...(payload.config ? { config: payload.config } : {}),
+    ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+    ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
     questions: payload.questions,
   } as Parameters<typeof createPersonalTest>[0]).catch((error: unknown) => {
     throw asSaveError(error);

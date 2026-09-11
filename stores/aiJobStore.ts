@@ -99,6 +99,8 @@ export type PendingAiSave =
       sourceNoteId?: string;
       /** A test built from a deck's cards. Mutually exclusive with the note. */
       sourceDeckId?: string;
+      courseId?: string | null;
+      topicId?: string | null;
       questions: unknown[];
       /**
        * The builder's choices (attempt kind, timer) as they will be stored on

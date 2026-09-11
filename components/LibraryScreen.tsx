@@ -20,7 +20,7 @@ import { LibraryRail } from './library/LibraryRail';
 import { LibraryPanelSearchProvider } from './library/libraryPanelSearch';
 import { LibrarySearchBox, LibrarySearchResults } from './library/LibrarySearch';
 import { ClassOfficialMaterials } from './classes/ClassOfficialMaterials';
-import { AppIcon } from './ui/AppIcon';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 export type LibraryTab = 'notes' | 'flashcards';
 
@@ -48,9 +48,9 @@ interface LibraryScreenProps {
   onTurnSemesterIntoProducts?: () => void;
 }
 
-const tabs: { id: LibraryTab; label: string; icon: React.ElementType }[] = [
-  { id: 'notes', label: 'Notes', icon: DocumentTextIcon },
-  { id: 'flashcards', label: 'Flashcards', icon: RectangleStackIcon },
+const tabs: { id: LibraryTab; label: string; icon: AppIconName }[] = [
+  { id: 'notes', label: 'Notes', icon: 'document-text' },
+  { id: 'flashcards', label: 'Flashcards', icon: 'albums' },
 ];
 
 /**
@@ -259,12 +259,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           </div>
 
           <TabList data-tip-id="library.tabs">
-            {tabs.map(({ id, label, icon: Icon }, index) => (
+            {tabs.map(({ id, label, icon }, index) => (
               <Tab
                 key={id}
                 value={id}
                 index={index}
-                icon={<Icon className="w-4 h-4" />}
+                icon={<AppIcon name={icon} size={16} />}
                 style={tab === id ? { borderTopWidth: 3, borderTopColor: featureAccents.library } : undefined}
                 badge={
                   id === 'flashcards' && dueCardsCount > 0 ? (

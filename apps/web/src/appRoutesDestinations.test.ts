@@ -157,6 +157,26 @@ describe('tests, results and flashcard review modes have real urls', () => {
     });
     expect(parseAppRoute('/study')).toEqual({ mode: AppMode.STUDY_HUB, params: {} });
   });
+
+  it('gives a course workspace a url under Study', () => {
+    expect(parseAppRoute('/study/courses/bio-201')).toEqual({
+      mode: AppMode.COURSE_WORKSPACE,
+      params: { courseId: 'bio-201' },
+    });
+    expect(parseAppRoute('/study/courses/c%201').params.courseId).toBe('c 1');
+    expect(buildAppPath(AppMode.COURSE_WORKSPACE, { courseId: 'bio-201' })).toBe(
+      '/study/courses/bio-201'
+    );
+    expect(buildAppPath(AppMode.COURSE_WORKSPACE)).toBe('/study');
+    expect(isRoutableAppMode(AppMode.COURSE_WORKSPACE)).toBe(true);
+    expect(resolveActiveDestination(AppMode.COURSE_WORKSPACE, '/study/courses/bio-201')).toBe(
+      'study'
+    );
+    expect(resolveActiveDestination(AppMode.DASHBOARD, '/study/courses/bio-201')).toBe('study');
+    expect(parseAppRoute('/campus/shop/courses/c1').mode).toBe(AppMode.MARKETPLACE);
+    expect(parseAppRoute('/study/tests/abc-123').standalone).toBe('test-detail');
+    expect(parseAppRoute('/study/session').mode).toBe(AppMode.STUDY_ACTIVE);
+  });
 });
 
 describe('the five destinations own every screen', () => {
@@ -164,6 +184,7 @@ describe('the five destinations own every screen', () => {
     expect(resolveActiveDestination(AppMode.DASHBOARD, '/dashboard')).toBe('home');
     expect(resolveActiveDestination(AppMode.TEST_ACTIVE, '/tests/active')).toBe('study');
     expect(resolveActiveDestination(AppMode.NOTE_EDITOR, '/notes/n1')).toBe('study');
+    expect(resolveActiveDestination(AppMode.COURSE_WORKSPACE, '/study/courses/c1')).toBe('study');
     expect(resolveActiveDestination(AppMode.CHAT, '/chat')).toBe('chat');
     expect(resolveActiveDestination(AppMode.CREATE_GROUP, '/groups/new')).toBe('chat');
     // A community and a listing are both Campus — Chat never lights for a

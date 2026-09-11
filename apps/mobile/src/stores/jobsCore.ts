@@ -69,6 +69,8 @@ export type PendingSave =
       description?: string;
       /** Save into a deck the student already has, instead of making one. */
       deckId?: string;
+      courseId?: string | null;
+      topicId?: string | null;
       cards: GeneratedCard[];
     }
   | {
@@ -78,6 +80,8 @@ export type PendingSave =
       sourceNoteId?: string;
       /** The deck this was generated from, when the source was a deck. */
       sourceDeckId?: string;
+      courseId?: string | null;
+      topicId?: string | null;
       /** Question rows, exactly as the generator produced them. */
       questions: unknown[];
     };

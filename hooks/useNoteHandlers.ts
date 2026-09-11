@@ -73,8 +73,15 @@ export function useNoteHandlers(currentUserId?: string) {
 
   /** `title` is for the doors that create a note FOR something (the lecture
    *  recorder), so the note is recognisable in the list a week later. */
-  const handleCreateNote = useCallback(async (title?: string) => {
-    const note = await createNote({ title: title || 'Untitled Note', body: '' });
+  const handleCreateNote = useCallback(async (
+    title?: string,
+    options?: { courseId?: string | null }
+  ) => {
+    const note = await createNote({
+      title: title || 'Untitled Note',
+      body: '',
+      ...(options?.courseId ? { courseId: options.courseId } : {}),
+    });
     setSelectedNote(note);
     navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
     trackQuestProgress('create_note');
@@ -263,6 +270,7 @@ export function useNoteHandlers(currentUserId?: string) {
         deckName,
         description: `Generated from note: ${note.title || 'Untitled Note'}`,
         cards: generated.map((card) => ({ front: card.front, back: card.back })),
+        courseId: note.courseId,
       });
 
       const deck = useFlashcardStore
@@ -381,6 +389,7 @@ export function useNoteHandlers(currentUserId?: string) {
           title: `Quiz: ${note.title || 'Untitled Note'}`.slice(0, 120),
           sourceNoteId: note.id,
           questions,
+          courseId: note.courseId,
         });
       }
       return withTitle;

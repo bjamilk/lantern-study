@@ -293,6 +293,7 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
                 deckName,
                 description: `Generated from note: ${note.title || 'Untitled Note'}`,
                 cards: generated.map((card) => ({ front: card.front, back: card.back })),
+                courseId: note.courseId,
               });
               savedFlashcardCount = saved.saved;
               savedDeck =

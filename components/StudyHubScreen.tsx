@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
-import { getStudyAllDueLabel, getStudyCtaLabel, FLASHCARD_MODE_LABELS, isCardDue } from '@lantern/shared';
+import { getStudyAllDueLabel, getStudyCtaLabel, FLASHCARD_MODE_LABELS, isCardDue, courseWorkspaceLabel } from '@lantern/shared';
 import { ScreenHeader, Card, Button, StatPill, FeatureDisc, DoorTile } from './ui';
 import SavedSessionsList from './SavedSessionsList';
 import { AppIcon } from './ui/AppIcon';
+import { useAcademicStore } from '../stores/academicStore';
 
 interface StudyHubScreenProps {
   dueCardsCount: number;
@@ -30,6 +31,8 @@ interface StudyHubScreenProps {
   /** Opens a fresh note with the lecture recorder — the web's only recording path. */
   onRecordLecture?: () => void;
   noteCount?: number;
+  onOpenCourse?: (courseId: string) => void;
+  onOpenImport?: () => void;
 }
 
 export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
@@ -50,11 +53,15 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   onAbandonPausedSession,
   recentTestCount = 0,
   onViewRecentTests,
-  onOpenFlashcards,
-  onOpenTests,
-  onRecordLecture,
-  noteCount,
+  onOpenCourse,
+  onOpenImport,
 }) => {
+  const loadMyCourses = useAcademicStore((s) => s.loadMyCourses);
+  const myCourses = useAcademicStore((s) => s.myCourses);
+  useEffect(() => {
+    void loadMyCourses();
+  }, [loadMyCourses]);
+  const activeCourses = myCourses.filter((row) => row.status === 'active');
   const hasPausedSession = Boolean(activeTestSession || activeStudySession);
   const topDecks = decks.slice(0, 4);
   const quizLabel = FLASHCARD_MODE_LABELS.quiz.label;
@@ -73,7 +80,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
       <div className="px-4 md:px-6 lg:px-8 py-6 w-full space-y-6">
         <ScreenHeader
           title="Study"
-          subtitle="Review due cards, resume sessions, and jump back in"
+          subtitle="Open a course, or import material"
         />
 
         {pausedSessions.length > 0 && onResumePausedSession && onAbandonPausedSession ? (
@@ -137,59 +144,56 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           </div>
         </Card>
 
-        {/* ─── The doors (§5.7 Study hub). Five tiles, one hue each, no more. ─── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-          <DoorTile
-            feature="notes"
-            icon={<AppIcon name="document-text" size={24} />}
-            illustration="notes-stack"
-            title="Library"
-            promise="Turn slides into cards"
-            count={
-              noteCount !== undefined
-                ? `${noteCount + decks.length} item${noteCount + decks.length === 1 ? '' : 's'}`
-                : undefined
-            }
+        {/* Course workspaces — the room, not five equal doors. Import stays a door. */}
+        <div className="space-y-3">
+          {activeCourses.length > 0 && onOpenCourse ? (
+            <Card padding="md">
+              <h2 className="text-label uppercase text-lantern-text-secondary mb-3">Your courses</h2>
+              <div className="space-y-1">
+                {activeCourses.map((row) => (
+                  <button
+                    key={row.course.id}
+                    type="button"
+                    onClick={() => onOpenCourse(row.course.id)}
+                    className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-lantern-background-secondary text-left"
+                  >
+                    <FeatureDisc feature="notes" icon={<AppIcon name="library" size={20} />} />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-body font-semibold text-lantern-text truncate">
+                        {courseWorkspaceLabel(row.course)}
+                      </span>
+                      <span className="block text-caption text-lantern-text-secondary">
+                        Notes, cards, tests and lectures
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          ) : (
+            <Card padding="md">
+              <p className="text-body text-lantern-text-secondary">
+                Add courses in Academic settings, then open them here as a workspace.
+              </p>
+            </Card>
+          )}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <DoorTile
+              feature="notes"
+              icon={<AppIcon name="cloud-upload" size={24} />}
+              illustration="import-tray"
+              title="Import & study"
+              promise="PDF, slides or pasted notes — one step"
+              onClick={onOpenImport ?? onOpenAITools}
+            />
+          </div>
+          <button
+            type="button"
             onClick={onOpenLibrary}
-          />
-          <DoorTile
-            feature="flashcards"
-            icon={<AppIcon name="layers" size={24} />}
-            illustration="cards-fan"
-            title="Flashcards"
-            promise="Spaced repetition that remembers for you"
-            count={dueCardsCount > 0 ? `${dueCardsCount} due` : undefined}
-            onClick={onOpenFlashcards ?? onOpenLibrary}
-          />
-          {onOpenTests && (
-            <DoorTile
-              feature="tests"
-              icon={<AppIcon name="clipboard" size={24} />}
-              illustration="test-sheet"
-              title="Tests"
-              promise="Sit a practice test, see what to fix"
-              count={recentTestCount > 0 ? `${recentTestCount} saved` : undefined}
-              onClick={onOpenTests}
-            />
-          )}
-          {onRecordLecture && (
-            <DoorTile
-              feature="recording"
-              icon={<AppIcon name="mic" size={24} />}
-              illustration="mic-wave"
-              title="Record"
-              promise="Record a lecture, get a note back"
-              onClick={onRecordLecture}
-            />
-          )}
-          <DoorTile
-            feature="notes"
-            icon={<AppIcon name="cloud-upload" size={24} />}
-            illustration="import-tray"
-            title="Import & study"
-            promise="PDF, slides or pasted notes — one step"
-            onClick={onOpenAITools}
-          />
+            className="text-caption text-lantern-text-secondary hover:underline"
+          >
+            All materials
+          </button>
         </div>
 
         {topDecks.length > 0 && (

@@ -397,6 +397,8 @@ describe('the active item', () => {
     // Library. Neither may borrow another item's highlight.
     expect(activeItem('StudyHub')).toBeNull();
     expect(accentForRoute('StudyHub')).toBeNull();
+    expect(activeItem('CourseRoom')).toBeNull();
+    expect(accentForRoute('CourseRoom')).toBeNull();
     expect(activeItem('NotesList')).toBeNull();
   });
 

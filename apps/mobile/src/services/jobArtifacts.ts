@@ -65,6 +65,8 @@ export interface SaveGeneratedDeckInput {
   /** The deck's name — the new deck's title, or the existing one's, for copy. */
   deckName: string;
   description?: string;
+  courseId?: string | null;
+  topicId?: string | null;
 }
 
 export interface SavedDeck {
@@ -82,6 +84,8 @@ export interface SaveGeneratedTestInput {
   sourceNoteId?: string;
   /** The deck this was generated from, when the source was a deck. */
   sourceDeckId?: string;
+  courseId?: string | null;
+  topicId?: string | null;
   /** Question rows, exactly as the generator produced them. */
   questions: unknown[];
 }
@@ -117,6 +121,8 @@ export async function saveGeneratedDeck(input: SaveGeneratedDeckInput): Promise<
     deckName: input.deckName,
     description: input.description,
     deckId: input.deckId,
+    courseId: input.courseId,
+    topicId: input.topicId,
     cards: input.cards,
   };
   // Recorded BEFORE the attempt: if the process dies between here and the
@@ -148,6 +154,8 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     title: input.title,
     sourceNoteId: input.sourceNoteId,
     sourceDeckId: input.sourceDeckId,
+    courseId: input.courseId,
+    topicId: input.topicId,
     questions: input.questions,
   };
   jobs.recordPendingSave(input.jobId, payload);
@@ -249,6 +257,8 @@ async function writeDeck(
     deckId: payload.deckId,
     name: payload.deckName.slice(0, 80),
     description: payload.description,
+    ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+    ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
     cards: payload.cards,
   }).catch((error: unknown) => {
     throw asSaveError(error);
@@ -332,6 +342,8 @@ async function writeTest(
     sourceNoteId: payload.sourceNoteId,
     sourceDeckId: payload.sourceDeckId,
     ...(serverJobId ? { sourceJobId: serverJobId } : {}),
+    ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+    ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
     // The server resolves the note's own title and that always wins; this is
     // the fallback it falls back TO, and without it a test whose note title
     // could not be read back landed with no provenance at all — the row said

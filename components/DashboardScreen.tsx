@@ -70,6 +70,7 @@ import {
 import MasteryPanel, { SHOW_DASHBOARD_MASTERY_PANEL } from './MasteryPanel';
 import CourseReadinessCard from './CourseReadinessCard';
 import { JoinClassCard } from './classes/JoinClassCard';
+import { WorkspaceJumpBack } from './study/WorkspaceJumpBack';
 import { ClassWorkCard } from './classes/ClassWorkCard';
 import { AppIcon } from './ui/AppIcon';
 
@@ -271,6 +272,7 @@ interface DashboardScreenProps {
   onReviewDueCards?: () => void;
   /** Wave 1 doors on Home. Each tile renders only when its route is wired. */
   onNavigateToTests?: () => void;
+  onOpenCourseWorkspace?: (courseId: string) => void;
   /**
    * The readiness card's one action needs somewhere to go. Each is optional
    * and the card hides the action it cannot honour, so a host that wires none
@@ -424,6 +426,7 @@ export default function DashboardScreen({
   onNavigateToAITools,
   onReviewDueCards,
   onNavigateToTests,
+  onOpenCourseWorkspace,
   onOpenDeckById,
   onOpenNoteById,
   onOpenAcademicSettings,
@@ -1301,6 +1304,7 @@ export default function DashboardScreen({
       <div className="px-4 md:px-8 mt-4 w-full flex flex-col gap-3">
         <JoinClassCard />
         <ClassWorkCard />
+        {onOpenCourseWorkspace && <WorkspaceJumpBack onOpen={onOpenCourseWorkspace} />}
       </div>
 
       {/* ═══════════════ DOORS ═══════════════ */}

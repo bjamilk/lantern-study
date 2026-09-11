@@ -153,6 +153,7 @@ import {
 } from '../screens/notes';
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { StudyHubScreen } from '../screens/study/StudyHubScreen';
+import { CourseRoomScreen } from '../screens/study/CourseRoomScreen';
 
 import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen } from '../screens/groups';
 
@@ -395,6 +396,8 @@ function StudyNavigator() {
     <StudyStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.StudyTab}>
 
       <StudyStack.Screen name="StudyHub" component={StudyHubScreen} />
+
+      <StudyStack.Screen name="CourseRoom" component={CourseRoomScreen} />
 
       <StudyStack.Screen name="Library" component={LibraryScreen} />
 

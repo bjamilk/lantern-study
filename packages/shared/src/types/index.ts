@@ -625,6 +625,8 @@ export enum AppMode {
   NOTE_EDITOR = 'NOTE_EDITOR',
   LIBRARY = 'LIBRARY',
   STUDY_HUB = 'STUDY_HUB',
+  /** One enrolled course as a room: `/study/courses/:courseId`. */
+  COURSE_WORKSPACE = 'COURSE_WORKSPACE',
   /** Wave 1 door: the list of tests (`/tests`), above `/tests/active` and `/tests/review`. */
   TESTS_HOME = 'TESTS_HOME',
   AI_TOOLS = 'AI_TOOLS',

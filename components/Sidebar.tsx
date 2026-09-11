@@ -477,6 +477,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               apart from the five — but they are labelled, because an unnamed
               icon is a guess. */}
           <div className="mt-3 border-t border-lantern-border px-2 pt-3 space-y-1">
+            {currentAppMode !== AppMode.COURSE_WORKSPACE ? (
             <NavButton
               navFunc={onToggleCompanion}
               icon="sparkles"
@@ -485,6 +486,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               countLabel={aiCredits != null ? `${aiCredits} AI credits` : undefined}
               tipId="nav.companion"
             />
+            ) : null}
             <NavButton
               navFunc={onOpenNotificationModal}
               icon="notifications-alert"

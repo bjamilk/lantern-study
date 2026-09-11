@@ -26,6 +26,11 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
       ];
     case AppMode.STUDY_HUB:
       return [{ label: 'Study' }];
+    case AppMode.COURSE_WORKSPACE:
+      return [
+        { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
+        { label: 'Course' },
+      ];
     case AppMode.AI_TOOLS:
       return [
         { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },

@@ -47,6 +47,7 @@ const MODE_OWNER: Partial<Record<AppMode, DestinationId>> = {
   [AppMode.DASHBOARD]: 'home',
 
   [AppMode.STUDY_HUB]: 'study',
+  [AppMode.COURSE_WORKSPACE]: 'study',
   [AppMode.LIBRARY]: 'study',
   [AppMode.NOTES]: 'study',
   [AppMode.NOTE_EDITOR]: 'study',
@@ -116,6 +117,6 @@ export function resolveActiveDestination(
   // (they render from the path, as `/me` does), so the mode underneath is
   // whatever the student came from. The path is the only truthful signal, and
   // both are inside Study.
-  if (path && (path === TEST_BUILDER_PATH || path.startsWith('/study/tests/'))) return 'study';
+  if (path && (path === TEST_BUILDER_PATH || path.startsWith('/study/tests/') || path.startsWith('/study/courses/'))) return 'study';
   return MODE_OWNER[appMode] ?? null;
 }

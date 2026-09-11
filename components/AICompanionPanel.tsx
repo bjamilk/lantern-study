@@ -60,6 +60,11 @@ interface AICompanionPanelProps {
   context?: CompanionUserContext;
   onAction?: (action: CompanionAction) => void;
   theme?: 'light' | 'dark';
+  /**
+   * `drawer` is the overlay that follows every screen.
+   * `rail` is the docked pane in a course workspace — always visible, no close.
+   */
+  variant?: 'drawer' | 'rail';
 }
 
 const QUICK_PROMPTS = [
@@ -126,7 +131,12 @@ function formatRelativeTime(iso: string): string {
   }
 }
 
-const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, theme = 'light' }) => {
+const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
+  context,
+  onAction,
+  theme = 'light',
+  variant = 'drawer',
+}) => {
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
     failedMessage, consumeFailedMessage,
@@ -492,11 +502,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     stopMediaStream,
   ]);
 
-  // Cleanup mic / in-flight transcription when the panel closes or unmounts
+  // Cleanup mic / in-flight transcription when the overlay closes or unmounts.
+  // The rail stays mounted, so it only discards on unmount.
   useEffect(() => {
-    if (isOpen) return;
+    if (variant === 'rail' || isOpen) return;
     discardDictation();
-  }, [isOpen, discardDictation]);
+  }, [isOpen, variant, discardDictation]);
 
   useEffect(() => {
     return () => {
@@ -557,21 +568,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
     close();
   };
 
-  if (!isOpen) return null;
+  if (variant !== 'rail' && !isOpen) return null;
 
-  return (
-    <Drawer
-      isOpen={isOpen}
-      onClose={close}
-      ariaLabelledBy="ai-companion-title"
-      maxWidthClass="max-w-sm"
-      zIndexClass="z-[70]"
-      backdropClassName="bg-black/20 md:hidden"
-      panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
-      loading={isSending}
-      closeOnBackdrop={!isSending}
-    >
-
+  const body = (
+    <>
         {/* Header */}
         <div className={`flex items-center gap-3 px-4 py-3 border-b flex-shrink-0
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-primary-background'}`}>
@@ -610,6 +610,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             >
               <AppIcon name="trash" size={16} />
             </button>
+            {variant !== 'rail' && (
             <button
               onClick={close}
               title="Close"
@@ -618,6 +619,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
             >
               <AppIcon name="close" size={20} />
             </button>
+            )}
           </div>
         </div>
 
@@ -950,6 +952,33 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({ context, onAction, 
           </div>
         </div>
         )}
+    </>
+  );
+
+  if (variant === 'rail') {
+    return (
+      <aside
+        className={`h-full min-h-0 flex flex-col ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
+        aria-labelledby="ai-companion-title"
+      >
+        {body}
+      </aside>
+    );
+  }
+
+  return (
+    <Drawer
+      isOpen={isOpen}
+      onClose={close}
+      ariaLabelledBy="ai-companion-title"
+      maxWidthClass="max-w-sm"
+      zIndexClass="z-[70]"
+      backdropClassName="bg-black/20 md:hidden"
+      panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
+      loading={isSending}
+      closeOnBackdrop={!isSending}
+    >
+      {body}
     </Drawer>
   );
 };

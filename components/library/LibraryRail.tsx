@@ -13,7 +13,7 @@ import {
 import { ManageOutlineModal } from '../academic/ManageOutlineModal';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from '../ui';
 import type { LibraryTab } from '../LibraryScreen';
-import { AppIcon } from '../ui/AppIcon';
+import { AppIcon, type AppIconName } from '../ui/AppIcon';
 
 export interface LibraryRailProps {
   /** Current course filter: uuid | 'null' (unfiled) | null (all). */
@@ -48,11 +48,11 @@ export interface LibraryRailProps {
 
 type CountKey = keyof Pick<LibraryCourseCounts, 'notes' | 'decks' | 'tests' | 'bundles'>;
 
-const COUNT_META: Array<{ key: CountKey; label: string; icon: React.ElementType }> = [
-  { key: 'notes', label: 'Notes', icon: DocumentTextIcon },
-  { key: 'decks', label: 'Flashcard decks', icon: RectangleStackIcon },
-  { key: 'tests', label: 'Tests', icon: ClipboardDocumentCheckIcon },
-  { key: 'bundles', label: 'Offline bundles', icon: CloudArrowDownIcon },
+const COUNT_META: Array<{ key: CountKey; label: string; icon: AppIconName }> = [
+  { key: 'notes', label: 'Notes', icon: 'document-text' },
+  { key: 'decks', label: 'Flashcard decks', icon: 'albums' },
+  { key: 'tests', label: 'Tests', icon: 'clipboard-check' },
+  { key: 'bundles', label: 'Offline bundles', icon: 'cloud-download' },
 ];
 
 /**
@@ -192,7 +192,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
     if (present.length === 0) return null;
     return (
       <div className="mt-1 flex flex-wrap items-center gap-1" aria-label="Item counts">
-        {present.map(({ key, label, icon: Icon }) => {
+        {present.map(({ key, label, icon }) => {
           const n = counts[key] || 0;
           const title =
             key === 'tests'
@@ -216,7 +216,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                   : 'bg-lantern-background-secondary text-lantern-text-secondary hover:bg-lantern-border/60 hover:text-lantern-text'
               }`}
             >
-              <Icon className="h-3 w-3" aria-hidden />
+              <AppIcon name={icon} size={12} aria-hidden />
               {n}
               {key === 'bundles' && counts.purchasedPacks ? (
                 <AppIcon name="bag" size={12} className="ml-0.5" aria-hidden />

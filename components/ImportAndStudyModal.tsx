@@ -27,6 +27,8 @@ interface ImportAndStudyModalProps {
   onComplete: (result: ImportAndStudyResult) => void;
   onOpenNote: (noteId: string) => void;
   onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
+  /** File the imported note under this course (course workspace Import). */
+  courseId?: string | null;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -37,6 +39,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   onComplete,
   onOpenNote,
   onTurnIntoStudyProduct,
+  courseId,
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -150,23 +153,39 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     [runGenerators, onComplete, aiUserId, generateCards, generateQuiz]
   );
 
+  const fileImportedNote = useCallback(
+    async (note: StudyNote): Promise<StudyNote> => {
+      if (!courseId || note.courseId === courseId) return note;
+      const updated = await notesApi.updateNote(note.id, { courseId });
+      const notesState = useNotesStore.getState();
+      notesState.setNotes([updated, ...notesState.notes.filter((n) => n.id !== updated.id)]);
+      if (notesState.selectedNote?.id === updated.id) {
+        notesState.setSelectedNote({ ...notesState.selectedNote, courseId: updated.courseId });
+      }
+      return { ...note, ...updated };
+    },
+    [courseId]
+  );
+
   const processContent = useCallback(
     async (body: string, title: string, sourceType: string) => {
       setStep('processing');
       setError(null);
       try {
-        const note = await notesApi.createNote({
+        const created = await notesApi.createNote({
           title,
           body,
           sourceType: sourceType as StudyNote['sourceType'],
+          ...(courseId ? { courseId } : {}),
         });
+        const note = await fileImportedNote(created);
         await runStudyGenerators(note);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Import failed');
         setStep('input');
       }
     },
-    [runStudyGenerators]
+    [runStudyGenerators, fileImportedNote, courseId]
   );
 
   const handlePdf = async (file: File) => {
@@ -180,9 +199,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       );
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
-      await loadNote(note.id);
+      const filed = await fileImportedNote(note);
+      await loadNote(filed.id);
       useUIStore.getState().clearImportProgress();
-      await runStudyGenerators({ ...note, attachments: [attachment] });
+      await runStudyGenerators({ ...filed, attachments: [attachment] });
     } catch (e: unknown) {
       useUIStore.getState().clearImportProgress();
       setError(e instanceof Error ? e.message : 'PDF import failed');
@@ -201,9 +221,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       );
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
-      await loadNote(note.id);
+      const filed = await fileImportedNote(note);
+      await loadNote(filed.id);
       const loaded = useNotesStore.getState().selectedNote;
-      if (loaded?.id === note.id && (!loaded.attachments || loaded.attachments.length === 0)) {
+      if (loaded?.id === filed.id && (!loaded.attachments || loaded.attachments.length === 0)) {
         notesState.setSelectedNote({ ...loaded, attachments: [attachment] });
       }
       useUIStore.getState().clearImportProgress();
@@ -231,9 +252,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       );
       const notesState = useNotesStore.getState();
       notesState.setNotes([note, ...notesState.notes.filter((n) => n.id !== note.id)]);
-      await loadNote(note.id);
+      const filed = await fileImportedNote(note);
+      await loadNote(filed.id);
       const loaded = useNotesStore.getState().selectedNote;
-      if (loaded?.id === note.id && (!loaded.attachments || loaded.attachments.length === 0)) {
+      if (loaded?.id === filed.id && (!loaded.attachments || loaded.attachments.length === 0)) {
         notesState.setSelectedNote({ ...loaded, attachments });
       }
       useUIStore.getState().clearImportProgress();

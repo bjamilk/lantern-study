@@ -202,6 +202,8 @@ export interface DeckWithCardsRequest {
   deckId?: string;
   name: string;
   description?: string;
+  courseId?: string | null;
+  topicId?: string | null;
   /**
    * The route normalises every field below
    * (apps/api-server/src/services/deckWithCards.ts `validateDeckCards`), so a
@@ -257,6 +259,8 @@ export interface PersonalTestRequest {
    * and lets a resumed app settle the job from the record alone.
    */
   sourceJobId?: string;
+  courseId?: string | null;
+  topicId?: string | null;
   /**
    * Config the route folds into the session. `sourceNoteTitle` is the
    * server's documented FALLBACK for the note's title (its own read of the

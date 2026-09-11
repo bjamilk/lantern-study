@@ -997,6 +997,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           cards: flashcards,
           deckName: `From: ${noteTitle}`,
           description: `Generated from note: ${noteTitle}`,
+          courseId: selectedNote?.courseId,
         });
         // `saved`, never `flashcards.length`: the count the student is shown
         // is of cards that exist.
@@ -1049,6 +1050,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           title: `Test · ${noteTitle}`,
           sourceNoteId: noteId,
           questions: session.questions,
+          courseId: selectedNote?.courseId,
         });
         return { artifact: ref, resultCount: saved };
       },

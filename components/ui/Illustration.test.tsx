@@ -195,13 +195,7 @@ describe('illustration placement', () => {
       'components/DiscoverScreen.tsx': ['campus-hall'],
       'components/NotesScreen.tsx': ['notes-stack'],
       'components/OfflineModeScreen.tsx': ['download-phone'],
-      'components/StudyHubScreen.tsx': [
-        'notes-stack',
-        'cards-fan',
-        'test-sheet',
-        'mic-wave',
-        'import-tray',
-      ],
+      'components/StudyHubScreen.tsx': ['import-tray'],
       'components/TestsHomeScreen.tsx': ['test-sheet', 'empty-inbox'],
     });
   });

@@ -47,6 +47,7 @@ interface ImportAndStudyModalProps {
   onComplete?: (result: ImportAndStudyResult) => void;
   onOpenNote: (noteId: string) => void;
   onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
+  courseId?: string | null;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -57,6 +58,7 @@ export default function ImportAndStudyModal({
   onComplete,
   onOpenNote,
   onTurnIntoStudyProduct,
+  courseId,
 }: ImportAndStudyModalProps) {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -154,6 +156,7 @@ export default function ImportAndStudyModal({
                 cards: flashcards,
                 deckName: `From: ${note.title}`,
                 description: `Generated from note: ${note.title}`,
+                courseId: courseId ?? undefined,
               });
               flashcardCount = saved;
             }
@@ -179,8 +182,17 @@ export default function ImportAndStudyModal({
         },
       });
     },
-    [generateCards, generateQuiz, onComplete]
+    [generateCards, generateQuiz, onComplete, courseId]
   );
+
+  const fileNote = async (noteId: string) => {
+    if (!courseId) return;
+    try {
+      await notesApi.updateNote(noteId, { courseId });
+    } catch {
+      // The note still exists; filing can be fixed from the note.
+    }
+  };
 
   const processText = async () => {
     if (!textContent.trim()) return;
@@ -191,6 +203,7 @@ export default function ImportAndStudyModal({
         title: 'Imported Notes',
         body: textContent.trim(),
         sourceType: 'typed',
+        ...(courseId ? { courseId } : {}),
       });
       enrichNote(note);
     } catch (e: unknown) {
@@ -218,6 +231,7 @@ export default function ImportAndStudyModal({
         ...uploaded.note,
         attachments: uploaded.attachments,
       });
+      await fileNote(uploaded.note.id);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Photo import failed');
       setStep('input');

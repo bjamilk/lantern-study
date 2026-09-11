@@ -48,7 +48,7 @@ import { useScreenBottomPadding } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTestStore } from '../../stores/testStore';
 
-import { Card, Button, FeatureRow, FeatureTile } from '../../components/ui';
+import { Card, Button, FeatureRow, FeatureTile, T } from '../../components/ui';
 
 import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard';
 
@@ -109,6 +109,11 @@ import { toTab } from '../../navigation/nestedTab';
 import { recorderDoorPrompt, shouldCreateLectureNote } from '../study/recorderDoor';
 import { confirmSheet } from '../../stores/confirmStore';
 import { tabularNums } from '../../design/typeScale';
+import { readWorkspaceRecents } from '../../utils/workspaceRecents';
+import { getMyActiveCourses } from '../../services/academic';
+import { courseWorkspaceLabel } from '@lantern/shared';
+import type { UserCourse } from '@lantern/shared/types';
+import type { WorkspaceRecent } from '@lantern/shared';
 
 type Props = CompositeScreenProps<
 
@@ -298,6 +303,8 @@ export function DashboardScreen({ navigation }: Props) {
 
   const [importOpen, setImportOpen] = useState(false);
   const [openingRecorder, setOpeningRecorder] = useState(false);
+  const [workspaceRecents, setWorkspaceRecents] = useState<WorkspaceRecent[]>([]);
+  const [workspaceCourses, setWorkspaceCourses] = useState<UserCourse[]>([]);
 
   const [analysisLoadingId, setAnalysisLoadingId] = useState<string | null>(null);
   const [recentSort, setRecentSort] = useState<'newest' | 'oldest' | 'highestScore'>('newest');
@@ -568,6 +575,8 @@ export function DashboardScreen({ navigation }: Props) {
       // which bootstrap only loads once — refresh them alongside the chart so
       // Home cannot keep showing a stale "N due" or unread count.
       void refreshUserData(user.id, { only: ['flashcards', 'notifications'] });
+      void readWorkspaceRecents().then(setWorkspaceRecents);
+      void getMyActiveCourses().then(setWorkspaceCourses).catch(() => undefined);
     }, [user?.id, selectedPeriod, fetchStats])
   );
 
@@ -826,6 +835,37 @@ export function DashboardScreen({ navigation }: Props) {
 
         <JoinClassCard />
         <ClassWorkCard />
+
+        {workspaceRecents.length > 0 ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-1">
+              Jump back in
+            </T.Caption>
+            {workspaceRecents.slice(0, 4).map((row, index) => {
+              const course = workspaceCourses.find((c) => c.course.id === row.courseId)?.course;
+              const label = course ? courseWorkspaceLabel(course) : 'Course';
+              return (
+                <View
+                  key={row.courseId}
+                  className={index > 0 ? 'border-t border-lantern-border' : undefined}
+                >
+                  <FeatureRow
+                    feature="notes"
+                    icon="library"
+                    title={label}
+                    subtitle="Open workspace"
+                    onPress={() =>
+                      parent?.navigate(
+                        'StudyTab',
+                        toTab('CourseRoom', { courseId: row.courseId, courseLabel: label })
+                      )
+                    }
+                  />
+                </View>
+              );
+            })}
+          </Card>
+        ) : null}
 
         {/* The four doors. Review is lime because it IS flashcards; the three
             siblings each carry their own feature hue, which is four hues on

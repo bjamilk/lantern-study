@@ -44,6 +44,10 @@ export type HomeStackParamList = {
 export type StudyStackParamList = {
   StudyHub: undefined;
   /**
+   * One enrolled course as a room — notes, decks, tests and lectures together.
+   */
+  CourseRoom: { courseId: string; courseLabel?: string };
+  /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on
    * an editable topic list rather than near one.

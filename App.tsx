@@ -135,6 +135,7 @@ const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
 import NoteEditorScreen from './components/NoteEditorScreen';
 const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
 const StudyHubScreen = lazyWithRetry(() => import('./components/StudyHubScreen'));
+const CourseWorkspace = lazyWithRetry(() => import('./components/study/CourseWorkspace'));
 const TestsHomeScreen = lazyWithRetry(() => import('./components/TestsHomeScreen'));
 const TestBuilderScreen = lazyWithRetry(() => import('./components/TestBuilderScreen'));
 const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
@@ -856,11 +857,12 @@ export const App: React.FC = () => {
                     case AppMode.OFFLINE: return 'Offline mode';
                     case AppMode.NOTES: return 'Notes library';
                     case AppMode.NOTE_EDITOR: return selectedNote ? `Note: ${selectedNote.title}` : 'Note editor';
+                    case AppMode.COURSE_WORKSPACE: return selectedNote ? `Course – ${selectedNote.title}` : 'Course workspace';
                     default: return undefined;
                 }
             })(),
-            noteId: appMode === AppMode.NOTE_EDITOR ? selectedNote?.id : undefined,
-            noteContext: appMode === AppMode.NOTE_EDITOR && selectedNote
+            noteId: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE ? selectedNote?.id : undefined,
+            noteContext: (appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE) && selectedNote
                 ? getNoteStudyContent({
                     sourceType: selectedNote.sourceType,
                     body: selectedNote.body,
@@ -868,7 +870,7 @@ export const App: React.FC = () => {
                     attachments: selectedNote.attachments,
                   }).substring(0, 6000) || undefined
                 : undefined,
-            noteTitle: appMode === AppMode.NOTE_EDITOR ? selectedNote?.title : undefined,
+            noteTitle: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE ? selectedNote?.title : undefined,
             studyGoal,
             activeSessionSummary: activeTestSession
                 ? `Taking a ${activeTestSession.config?.mode || 'test'} with ${activeTestSession.questions?.length ?? 0} questions`
@@ -1243,8 +1245,8 @@ export const App: React.FC = () => {
      * phone, where "Record lecture" is the wide-screen label and pointing at it
      * sent students looking for a control that was not on their screen.
      */
-    const handleRecordLecture = () => {
-        void noteHandlers.handleCreateNote(newLectureNoteTitle())
+    const handleRecordLecture = (courseId?: string) => {
+        void noteHandlers.handleCreateNote(newLectureNoteTitle(), { courseId })
             .then(() => showToast('New note ready \u2014 press Record to start.', 'info'))
             .catch((e: any) => showToast(e?.message || 'Failed to create note', 'error'));
     };
@@ -2099,6 +2101,7 @@ export const App: React.FC = () => {
                     }}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
                     onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
+                    onOpenCourseWorkspace={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
                     onNavigateToTests={() => navigateTo(AppMode.TESTS_HOME)}
                     onOpenDeckById={(deckId) => {
                         const deck = decks.find((d) => d.id === deckId);
@@ -2245,8 +2248,55 @@ export const App: React.FC = () => {
                         onOpenTests={() => navigateTo(AppMode.TESTS_HOME)}
                         onRecordLecture={handleRecordLecture}
                         noteCount={notes.length}
+                        onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
+                        onOpenImport={() => setShowImportAndStudy(true)}
                     />
                 );
+            case AppMode.COURSE_WORKSPACE: {
+                const workspaceCourseId = parseAppRoute(location.pathname).params.courseId;
+                if (!workspaceCourseId) {
+                    return (
+                    <StudyHubScreen
+                        dueCardsCount={dueCardsCount}
+                        decks={decks}
+                        flashcards={flashcards}
+                        onStartDueReview={handleFlashcardStudy}
+                        onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
+                        onOpenAITools={() => navigateTo(AppMode.AI_TOOLS)}
+                        onSelectDeck={handleSelectDeck}
+                        onStartLearn={handleStartLearn}
+                        onStartReview={(deckId) => {
+                            const deck = decks.find((d) => d.id === deckId);
+                            if (deck) handleStudyDeck(deck);
+                        }}
+                        activeTestSession={activeTestSession}
+                        activeStudySession={activeStudySession}
+                        onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
+                        pausedSessions={pausedSessions}
+                        onResumePausedSession={handleResumePausedSession}
+                        onAbandonPausedSession={handleAbandonPausedSession}
+                        recentTestCount={testResults.length}
+                        onViewRecentTests={() => navigateTo(AppMode.TESTS_HOME)}
+                        onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
+                        onOpenImport={() => setShowImportAndStudy(true)}
+                    />
+                    );
+                }
+                return (
+                    <CourseWorkspace
+                        courseId={workspaceCourseId}
+                        theme={theme}
+                        companionContext={companionContext}
+                        onCompanionAction={handleCompanionAction}
+                        onSelectDeck={handleSelectDeck}
+                        onStartMatch={handleStartMatch}
+                        onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+                        onNewTest={handleStartNewTest}
+                        onOpenTest={(testId) => navigateToPath(buildTestDetailPath(testId))}
+                        onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
+                    />
+                );
+            }
             case AppMode.TESTS_HOME:
                 return (
                     <TestsHomeScreen
@@ -3310,11 +3360,13 @@ export const App: React.FC = () => {
                     });
                     closeModal('usernameRequired');
                 }} />}
+            {appMode !== AppMode.COURSE_WORKSPACE && (
             <AICompanionPanel
                 context={companionContext}
                 onAction={handleCompanionAction}
                 theme={theme}
             />
+            )}
             {showImportAndStudy && (
                 <Suspense fallback={null}>
                     <ImportAndStudyModal
