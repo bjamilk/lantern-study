@@ -1,7 +1,7 @@
 /**
  * /api/v1/users/me/study-sets — personal study sets on the Study tab.
  */
-import { Router } from 'express';
+import { Router, type Response } from 'express';
 import { body, param } from 'express-validator';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
@@ -50,7 +50,7 @@ export const validateStudySetId = [param('setId').isUUID().withMessage('setId mu
 router.get(
   '/',
   authMiddleware,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const data = await getStudySetsService(supabaseService).list(userId);
@@ -61,7 +61,7 @@ router.get(
 router.get(
   '/resume',
   authMiddleware,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const data = await getStudySetsService(supabaseService).resume(userId);
@@ -72,7 +72,7 @@ router.get(
 router.get(
   '/folders',
   authMiddleware,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     const data = await getStudySetsService(supabaseService).listFolders(userId);
@@ -85,7 +85,7 @@ router.post(
   authMiddleware,
   body('title').isString().isLength({ min: 1, max: 80 }),
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -103,7 +103,7 @@ router.delete(
   authMiddleware,
   param('folderId').isUUID(),
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -121,7 +121,7 @@ router.post(
   authMiddleware,
   validateStudySetCreate,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -139,7 +139,7 @@ router.get(
   authMiddleware,
   validateStudySetId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -157,7 +157,7 @@ router.patch(
   authMiddleware,
   validateStudySetPatch,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -179,7 +179,7 @@ router.post(
   authMiddleware,
   validateStudySetId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -197,7 +197,7 @@ router.get(
   authMiddleware,
   validateStudySetId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -215,7 +215,7 @@ router.put(
   authMiddleware,
   validateStudySetId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -239,7 +239,7 @@ router.patch(
   param('topicId').isUUID(),
   body('status').isIn(['unseen', 'covered', 'mastered']),
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {
@@ -262,7 +262,7 @@ router.delete(
   authMiddleware,
   validateStudySetId,
   handleValidationErrors,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
     try {

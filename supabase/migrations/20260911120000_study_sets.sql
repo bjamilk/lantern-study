@@ -46,3 +46,6 @@ CREATE POLICY study_sets_update ON public.study_sets
 CREATE POLICY study_sets_delete ON public.study_sets
   FOR DELETE TO authenticated
   USING (user_id = auth.uid());
+
+GRANT ALL ON public.study_sets TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.study_sets TO authenticated;

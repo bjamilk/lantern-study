@@ -111,3 +111,10 @@ CREATE POLICY study_set_topics_all ON public.study_set_topics
   FOR ALL TO authenticated
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
+
+GRANT ALL ON public.study_set_folders TO service_role;
+GRANT ALL ON public.study_set_units TO service_role;
+GRANT ALL ON public.study_set_topics TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.study_set_folders TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.study_set_units TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.study_set_topics TO authenticated;
