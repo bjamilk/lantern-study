@@ -24,6 +24,7 @@ import {
   type FlashcardTypeMix,
 } from '@lantern/shared/flashcards';
 import { normalizeFlashcardCount } from '@lantern/shared/utils/flashcardGeneration';
+import { normalizeGeneratedLesson, type LessonMode } from '@lantern/shared/learning';
 export { SMART_NOTES_GUIDANCE_MAX_CHARS };
 export type { SmartNotesDepth };
 export type { ExamFormat };
@@ -1386,6 +1387,68 @@ For true_false: options=["True","False"]. For short_answer/fill_in_blank: omit o
   }
 
   return { provider, usage, questions: usable };
+}
+
+export async function generateLessonFromNotes(
+  notes: string,
+  options: {
+    mode?: LessonMode;
+    sourceTitle?: string;
+    subject?: string;
+  } = {}
+): Promise<{
+  mode: LessonMode;
+  sourceTitle: string;
+  plan: ReturnType<typeof normalizeGeneratedLesson>['plan'];
+  pages: ReturnType<typeof normalizeGeneratedLesson>['pages'];
+  provider: string;
+  usage?: AiUsage;
+}> {
+  const mode: LessonMode = options.mode === 'mastery' ? 'mastery' : 'explore';
+  const source = notes.substring(0, 6000);
+  const sourceTitle = options.sourceTitle?.trim() || 'this note';
+
+  return withAiResponseCache(
+    'generate_lesson',
+    source,
+    { mode, sourceTitle, subject: options.subject },
+    async () => {
+      const systemPrompt = `You write a structured tutor lesson from study notes.
+Return ONLY valid JSON:
+{"topics":[{"title":"...","pages":[{"title":"...","body":"2-4 spoken paragraphs the tutor will read aloud","check":{"stem":"...","type":"multiple_choice","options":["...","...","...","..."],"correctAnswer":"...","explanation":"..."}}]}]}
+
+Rules:
+- 4 to 10 topics. 1 to 3 pages per topic. Never more than 40 pages total.
+- body is what the tutor says. Short sentences. No markdown.
+- Every topic has at least one page. About half the pages have a check question.
+- For multiple_choice, options are four full answers and correctAnswer matches one option exactly.
+- ${mode === 'mastery' ? 'Sequence topics from foundations to application.' : 'Topics may be studied in any order.'}
+${options.subject ? `Subject: ${options.subject}.` : ''}`;
+
+      const { text, provider, usage } = await chatCompletion(
+        systemPrompt,
+        `Write a ${mode} lesson from:\n\n${source}`,
+        { temperature: 0.6, jsonOutput: true, maxTokens: 2500 }
+      );
+      const parsed = extractJSON(text);
+      const session = normalizeGeneratedLesson(parsed, {
+        mode,
+        sourceNoteId: '',
+        sourceTitle,
+      });
+      if (session.pages.length === 0) {
+        throw new Error('Lesson generation produced no pages');
+      }
+      return {
+        mode: session.mode,
+        sourceTitle: session.sourceTitle,
+        plan: session.plan,
+        pages: session.pages,
+        provider,
+        usage,
+      };
+    }
+  );
 }
 
 export interface GeneratedEssayQuestion {

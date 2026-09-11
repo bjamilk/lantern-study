@@ -602,6 +602,7 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
   CourseRoom: STUDY_BAR,
   AdaptiveQuiz: STUDY_BAR,
   LectureStudio: STUDY_BAR,
+  LessonStudio: STUDY_BAR,
   Library: STUDY_BAR,
   NotesList: STUDY_BAR,
   FlashcardsList: STUDY_BAR,

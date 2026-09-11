@@ -226,6 +226,7 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
   const json = (await response.json().catch(() => ({}))) as T & {
     jobId?: string;
     error?: string;
+    message?: string;
     used?: number;
     limit?: number;
     resetsAt?: string;
@@ -253,12 +254,18 @@ async function aiRequest<T>(endpoint: string, body: Record<string, any>): Promis
         resetsAt: json.resetsAt || '',
       });
     }
+    const specific =
+      typeof json.error === 'string' && json.error.trim() && json.error.trim().toLowerCase() !== 'error'
+        ? json.error
+        : typeof json.message === 'string' && json.message.trim()
+          ? json.message
+          : '';
     const message =
       response.status === 400 &&
       typeof json.error === 'string' &&
       /at least 50 characters/i.test(json.error)
         ? 'Not enough study content yet. Add notes or wait for slide/PDF text extraction to finish.'
-        : json.error || `AI request failed (${response.status})`;
+        : specific || `AI request failed (${response.status})`;
     // The status rides along so callers can say something true without
     // reading the server's sentence: `requestFailureSentence` turns a 429 into
     // "That was a lot of tries at once" instead of showing whatever the API
@@ -336,6 +343,31 @@ export async function aiAskTutor(
   context?: { subject?: string; recentTopics?: string[] }
 ): Promise<{ answer: string; provider: string }> {
   return aiRequest('/ask-tutor', { question, context });
+}
+
+export async function aiGenerateLesson(
+  notes: string,
+  options?: { mode?: 'explore' | 'mastery'; sourceTitle?: string; subject?: string }
+): Promise<{
+  mode: 'explore' | 'mastery';
+  sourceTitle: string;
+  plan: { topics: Array<{ id: string; title: string; pageIds: string[] }> };
+  pages: Array<{
+    id: string;
+    topicId: string;
+    title: string;
+    body: string;
+    check?: {
+      stem: string;
+      kind: string;
+      options?: string[];
+      correctAnswer: string;
+      explanation?: string;
+    };
+  }>;
+  provider: string;
+}> {
+  return aiRequest('/generate-lesson', { notes, ...options });
 }
 
 export async function aiEnhanceFlashcard(

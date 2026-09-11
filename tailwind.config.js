@@ -61,6 +61,7 @@ module.exports = {
           // their dark values carry their own alpha.
           background: 'rgb(var(--color-background) / <alpha-value>)',
           'background-secondary': 'rgb(var(--color-background-secondary) / <alpha-value>)',
+          'nav-column': 'rgb(var(--color-nav-column) / <alpha-value>)',
           surface: 'rgb(var(--color-surface) / <alpha-value>)',
           'surface-secondary': 'rgb(var(--color-surface-secondary) / <alpha-value>)',
           text: 'rgb(var(--color-text) / <alpha-value>)',

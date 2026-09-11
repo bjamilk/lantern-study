@@ -55,6 +55,7 @@ export function hexToRgbChannels(hex: string): string | null {
 export const LANTERN_CSS_VAR_PALETTE_KEYS = [
   'background',
   'backgroundSecondary',
+  'navColumn',
   'surface',
   'surfaceSecondary',
   'text',

@@ -73,6 +73,7 @@ export interface JobRecord {
 export type AIJobName =
   | "ai.generate.questions"
   | "ai.generate.flashcards"
+  | "ai.generate.lesson"
   | "ai.explain.answer"
   | "ai.study.recommendations"
   | "ai.ask.tutor"

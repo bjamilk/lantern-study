@@ -157,6 +157,7 @@ interface CostSpec {
  *   notes/transcribe-audio featureKey=voice_ask         aiRateLimitForFeature('voice_ask') ← free, capped
  *   notes/:id/attachments/:id/narration (POST)          aiRateLimitWithCost(getNarrationCreditCost)
  *   notes/:id/attachments/:id/narration (GET)           no limiter — replaying a paid script is free
+ *   generate-lesson                                      aiRateLimitForFeature('lesson')
  */
 export const AI_COST_SPECS: readonly CostSpec[] = [
   {
@@ -228,6 +229,13 @@ export const AI_COST_SPECS: readonly CostSpec[] = [
     detail: 'A plan built from what you have been revising.',
     cost: AI_FEATURE_CREDIT_COST,
     featureKey: 'study_plan',
+  },
+  {
+    id: 'lesson',
+    label: 'Start a lesson',
+    detail: 'Builds a tutor plan and pages from a note in this course.',
+    cost: AI_FEATURE_CREDIT_COST,
+    featureKey: 'lesson',
   },
   {
     id: 'study_recommendations',

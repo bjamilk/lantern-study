@@ -55,7 +55,7 @@ function poolFromUnknown(payload: unknown): AdaptiveQuizItem[] {
 }
 
 export function AdaptiveQuizScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel, noteId } = route.params;
+  const { courseId, courseLabel, noteId, seedItems } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
   const tests = useTestStore((s) => s.tests);
@@ -87,6 +87,12 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
     setLoading(true);
     setError(null);
     try {
+      if (seedItems && seedItems.length > 0) {
+        setSourceTitle('This lesson');
+        setSourceNoteId(noteId ?? noteOrder[0]?.id ?? null);
+        setSession(startAdaptiveQuiz(seedItems));
+        return;
+      }
       for (const note of noteOrder) {
         const quiz = await getNoteQuiz(note.id).catch(() => null);
         const items = poolFromUnknown(quiz);
@@ -127,7 +133,7 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [courseId, courseNotes, noteOrder, tests]);
+  }, [courseId, courseNotes, noteId, noteOrder, seedItems, tests]);
 
   useEffect(() => {
     void loadExisting();

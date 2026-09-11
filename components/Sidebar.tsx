@@ -366,7 +366,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-background-secondary/90 backdrop-blur-md text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
+    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-nav-column backdrop-blur-md text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
       <div className="flex items-center justify-between h-16 p-4 border-b border-lantern-border flex-shrink-0">
         {showText && (
           <div className="flex items-center gap-2.5">
@@ -384,7 +384,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 className={`relative p-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 ${
                   isChatsSectionExpanded
                     ? 'text-lantern-primary bg-lantern-primary-background'
-                    : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-surface'
+                    : 'text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-surface'
                 }`}
                 aria-expanded={isChatsSectionExpanded}
                 aria-label={
@@ -404,7 +404,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             )}
             <button
               onClick={handleSidebarToggle}
-              className="p-2 text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-surface rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
+              className="p-2 text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-surface rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
               aria-label={effectiveExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
               <AppIcon name="menu" size={24} className="transition-transform duration-300" />

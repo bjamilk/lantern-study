@@ -5,11 +5,14 @@ import {
   courseWorkspaceLabel,
   hasEnoughNoteStudyContent,
   isLectureNote,
+  isLessonNote,
   isWalkableAttachment,
   materialsForCourse,
   newLectureNoteTitle,
   resolveLectureStudioNote,
+  resolveLessonStudioNote,
   testsFiledInCourse,
+  type AdaptiveQuizItem,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
@@ -26,6 +29,7 @@ import ImportAndStudyModal from '../ImportAndStudyModal';
 import { NotesStudio } from './NotesStudio';
 import { AdaptiveQuiz } from './AdaptiveQuiz';
 import { LectureStudio } from './LectureStudio';
+import { LessonStudio } from './LessonStudio';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useNotesStore } from '../../stores/notesStore';
@@ -96,6 +100,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [topics, setTopics] = useState<CourseTopic[]>([]);
   const [turning, setTurning] = useState(false);
   const [writingQuiz, setWritingQuiz] = useState(false);
+  const [quizSeed, setQuizSeed] = useState<AdaptiveQuizItem[] | null>(null);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
 
@@ -148,6 +153,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
   const lectures = useMemo(() => notes.filter(isLectureNote), [notes]);
+  const lessons = useMemo(() => notes.filter(isLessonNote), [notes]);
   const steeredToLecture = useRef(false);
   useEffect(() => {
     steeredToLecture.current = false;
@@ -202,18 +208,40 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     void openNote(decision.noteId);
   }, [activity, lectureNoteId, lectureStatus, lectures, openNote, selectedNote?.id]);
 
+  useEffect(() => {
+    if (activity !== 'lesson') return;
+    const decision = resolveLessonStudioNote({
+      lessons,
+      selectedNoteId: selectedNote?.id,
+    });
+    if (decision.action !== 'resume') return;
+    if (selectedNote?.id === decision.noteId) return;
+    void openNote(decision.noteId);
+  }, [activity, lessons, openNote, selectedNote?.id]);
+
   const handleActivity = (id: WorkspaceActivityId, status: 'ready' | 'later') => {
     if (status === 'later') {
       showToast(WORKSPACE_LATER_COPY, 'info');
       return;
     }
     setActivity(id);
+    if (id === 'quiz') setQuizSeed(null);
     if (id === 'lecture') {
       const decision = resolveLectureStudioNote({
         lectures,
         selectedNoteId: selectedNote?.id,
         recordingNoteId: lectureNoteId && lectureStatus !== 'idle' ? lectureNoteId : null,
         todayTitle: newLectureNoteTitle(),
+      });
+      if (decision.action === 'resume') {
+        void openNote(decision.noteId);
+      }
+      return;
+    }
+    if (id === 'lesson') {
+      const decision = resolveLessonStudioNote({
+        lessons,
+        selectedNoteId: selectedNote?.id,
       });
       if (decision.action === 'resume') {
         void openNote(decision.noteId);
@@ -423,9 +451,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </div>
       </div>
 
-      <div className="flex-1 flex flex-col lg:flex-row min-h-0 px-4 md:px-6 pb-4 gap-4">
-        <div className="flex flex-1 min-h-0 gap-4 min-w-0">
-        <aside className="w-full md:w-72 shrink-0 flex flex-col min-h-0 md:max-w-xs">
+      <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-y-auto lg:overflow-hidden px-4 md:px-6 pb-4 gap-4">
+        <div className="flex flex-1 min-h-[32rem] gap-4 min-w-0 flex-col lg:flex-row">
+        <aside className="w-full lg:w-72 shrink-0 flex flex-col min-h-0 lg:max-w-xs max-h-64 lg:max-h-none">
           <Card padding="md" className="flex-1 min-h-0 overflow-y-auto">
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-label uppercase text-lantern-text-secondary">Materials</h2>
@@ -448,7 +476,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 selected: selectedNote?.id === note.id,
                 onClick: () => {
                   void openNote(note.id);
-                  setActivity(isLectureNote(note) ? 'lecture' : 'notes');
+                  setActivity(isLectureNote(note) ? 'lecture' : isLessonNote(note) ? 'lesson' : 'notes');
                 },
               }))}
             />
@@ -491,6 +519,21 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 },
               }))}
             />
+            <MaterialGroup
+              title="Lessons"
+              empty="Start a lesson from a note"
+              items={lessons.map((note) => ({
+                id: note.id,
+                label: note.title || 'Lesson',
+                feature: 'ai' as const,
+                icon: 'school' as const,
+                selected: selectedNote?.id === note.id,
+                onClick: () => {
+                  void openNote(note.id);
+                  setActivity('lesson');
+                },
+              }))}
+            />
             <button
               type="button"
               onClick={onOpenLibrary}
@@ -501,7 +544,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           </Card>
         </aside>
 
-        <section className="hidden sm:flex flex-1 min-w-0 min-h-0">
+        <section className="hidden sm:flex flex-1 min-w-0 min-h-[32rem]">
           {activity === 'notes' && studioNote && studioNote.courseId === courseId ? (
             <NotesStudio
               note={studioNote}
@@ -531,6 +574,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               testIds={courseTests.map((test) => test.id)}
               canWalkthrough={Boolean(walkable)}
               writing={writingQuiz}
+              seedItems={quizSeed}
               onWriteQuestions={handleWriteQuizQuestions}
               onOpenNotes={() => setActivity('notes')}
               onOpenWalkthrough={() => handleActivity('walkthrough', 'ready')}
@@ -548,6 +592,23 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               turning={turning}
               onTurnInto={(target) => void handleTurnInto(target)}
               onSmartNote={handleStudioSmartNote}
+              onNoteReady={async (noteId) => {
+                await openNote(noteId);
+                void reloadNotes().catch(() => undefined);
+              }}
+            />
+          ) : activity === 'lesson' ? (
+            <LessonStudio
+              courseId={courseId}
+              theme={theme}
+              notes={notes}
+              selectedNote={selectedNote && selectedNote.courseId === courseId ? selectedNote : null}
+              turning={turning}
+              onTurnInto={(target) => void handleTurnInto(target)}
+              onOpenQuiz={(items) => {
+                setQuizSeed(items);
+                setActivity('quiz');
+              }}
               onNoteReady={async (noteId) => {
                 await openNote(noteId);
                 void reloadNotes().catch(() => undefined);
@@ -661,6 +722,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             {activity === 'lecture' && (
               <p className="text-body text-lantern-text-secondary">Open lecture on a wider screen.</p>
             )}
+            {activity === 'lesson' && (
+              <p className="text-body text-lantern-text-secondary">Open lesson on a wider screen.</p>
+            )}
           </Card>
           )}
         </section>
@@ -716,8 +780,8 @@ function MaterialGroup({
   items: Array<{
     id: string;
     label: string;
-    feature: 'notes' | 'flashcards' | 'tests' | 'recording';
-    icon: 'document-text' | 'layers' | 'clipboard' | 'mic';
+    feature: 'notes' | 'flashcards' | 'tests' | 'recording' | 'ai';
+    icon: 'document-text' | 'layers' | 'clipboard' | 'mic' | 'school';
     selected: boolean;
     onClick: () => void;
   }>;

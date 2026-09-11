@@ -41,6 +41,7 @@ jest.mock('../services/aiInferenceLog', () => ({ logAIInference: jest.fn(async (
 jest.mock('../services/aiService', () => ({
   generateQuestionsFromNotes: jest.fn(),
   generateFlashcardsFromNotes: jest.fn(),
+  generateLessonFromNotes: jest.fn(),
   explainAnswer: jest.fn(),
   getStudyRecommendations: jest.fn(),
   askTutor: jest.fn(),

@@ -235,14 +235,14 @@ const AppShell: React.FC<AppShellProps> = ({
                             className="min-w-0 flex-1 text-left"
                             onClick={() => onOpenLectureNote?.(lectureNoteId)}
                         >
-                            <span className="block text-sm font-semibold truncate">
+                            <span className="block text-caption font-semibold truncate">
                                 {lectureStatus === 'recording'
                                   ? `${lecturePaused ? 'Paused' : 'Recording'} ${formatRecordingDuration(lectureSeconds)}`
                                   : lectureStatus === 'uploading'
                                     ? 'Uploading lecture…'
                                     : 'Transcribing lecture…'}
                             </span>
-                            <span className="block text-xs opacity-90 truncate">
+                            <span className="block text-label opacity-90 truncate">
                                 {lectureNoteTitle || 'Untitled note'} · Tap to return
                             </span>
                             {/* Parity with the mobile pre-flight card's consent

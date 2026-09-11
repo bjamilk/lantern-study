@@ -9,6 +9,7 @@ import {
   courseWorkspaceLabel,
   hasEnoughNoteStudyContent,
   isLectureNote,
+  isLessonNote,
   isWalkableAttachment,
   materialsForCourse,
   newLectureNoteTitle,
@@ -74,6 +75,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
   const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
   const lectures = useMemo(() => courseNotes.filter(isLectureNote), [courseNotes]);
+  const lessons = useMemo(() => courseNotes.filter(isLessonNote), [courseNotes]);
   const noteIds = useMemo(() => new Set(courseNotes.map((n) => n.id)), [courseNotes]);
   const deckIds = useMemo(() => new Set(courseDecks.map((d) => d.id)), [courseDecks]);
   const courseTests = useMemo(
@@ -166,6 +168,18 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       case 'lecture':
         openLectureStudio();
         return;
+      case 'lesson': {
+        const note =
+          selectedNote && selectedNote.courseId === courseId && isLessonNote(selectedNote)
+            ? selectedNote
+            : courseNotes.find(isLessonNote);
+        navigation.navigate('LessonStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note?.id,
+        });
+        return;
+      }
       case 'play':
         if (courseDecks[0]) {
           navigation.navigate('MatchStudy', {
@@ -306,6 +320,22 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 <Pressable
                   onPress={() => {
                     selectNote(note.id);
+                    if (isLectureNote(note)) {
+                      navigation.navigate('LectureStudio', {
+                        courseId,
+                        courseLabel: label,
+                        noteId: note.id,
+                      });
+                      return;
+                    }
+                    if (isLessonNote(note)) {
+                      navigation.navigate('LessonStudio', {
+                        courseId,
+                        courseLabel: label,
+                        noteId: note.id,
+                      });
+                      return;
+                    }
                     navigation.navigate('NoteEditor', { noteId: note.id });
                   }}
                   className="py-3"
@@ -392,6 +422,31 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
               >
                 <T.Body numberOfLines={1}>{note.title || 'Lecture'}</T.Body>
+              </Pressable>
+            ))
+          )}
+        </Card>
+
+        <Card className="mb-3">
+          <T.Caption tone="secondary" className="mb-2">
+            Lessons
+          </T.Caption>
+          {lessons.length === 0 ? (
+            <T.Body tone="secondary">Start a lesson from a note.</T.Body>
+          ) : (
+            lessons.map((note, index) => (
+              <Pressable
+                key={note.id}
+                onPress={() =>
+                  navigation.navigate('LessonStudio', {
+                    courseId,
+                    courseLabel: label,
+                    noteId: note.id,
+                  })
+                }
+                className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
+              >
+                <T.Body numberOfLines={1}>{note.title || 'Lesson'}</T.Body>
               </Pressable>
             ))
           )}

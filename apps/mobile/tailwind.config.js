@@ -19,6 +19,7 @@ module.exports = {
           // exceptions: their dark values carry their own alpha.
           background: 'rgb(var(--color-lantern-background) / <alpha-value>)',
           'background-secondary': 'rgb(var(--color-lantern-background-secondary) / <alpha-value>)',
+          'nav-column': 'rgb(var(--color-lantern-nav-column) / <alpha-value>)',
           surface: 'rgb(var(--color-lantern-surface) / <alpha-value>)',
           'surface-secondary': 'rgb(var(--color-lantern-surface-secondary) / <alpha-value>)',
           text: 'rgb(var(--color-lantern-text) / <alpha-value>)',

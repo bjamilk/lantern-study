@@ -6,6 +6,7 @@ import type { JobError, JobResultRef } from "@lantern/shared/jobs/jobState";
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
+  generateLessonFromNotes,
   explainAnswer,
   getStudyRecommendations,
   askTutor,
@@ -161,6 +162,17 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
         Array.isArray(result.questions) ? result.questions.length : 0,
         job.data,
       );
+      return result;
+    }
+    case "ai.generate.lesson": {
+      const { notes, mode, sourceTitle, subject } = job.data;
+      await progress.stage("generating");
+      const result = await generateLessonFromNotes(notes, {
+        mode,
+        sourceTitle,
+        subject,
+      });
+      await recordInference(userId, "generate-lesson", result);
       return result;
     }
     case "ai.generate.flashcards": {

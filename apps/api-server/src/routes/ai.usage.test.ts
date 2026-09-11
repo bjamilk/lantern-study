@@ -21,6 +21,7 @@ jest.mock('../services/supabase', () => ({ SupabaseService: class {} }));
 jest.mock('../services/aiService', () => ({
   generateQuestionsFromNotes: jest.fn(),
   generateFlashcardsFromNotes: jest.fn(),
+  generateLessonFromNotes: jest.fn(),
   explainAnswer: jest.fn(),
   getStudyRecommendations: jest.fn(),
   askTutor: jest.fn(),

@@ -107,10 +107,10 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
   {
     id: 'lesson',
     label: 'Lesson',
-    promise: 'Structured tutor session',
+    promise: 'Structured tutor session with a plan you can skip or master',
     icon: 'school',
     feature: 'ai',
-    status: 'later',
+    status: 'ready',
   },
   {
     id: 'recap',
@@ -147,7 +147,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
 ];
 
 export const WORKSPACE_LATER_COPY =
-  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture and play are ready now.';
+  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture, lesson and play are ready now.';
 
 export type TurnIntoTargetId = 'cards' | 'test';
 

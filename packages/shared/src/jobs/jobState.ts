@@ -220,6 +220,7 @@ export function jobKindFromName(name: string | undefined): JobKind {
       return 'smart_notes';
     case 'ai.explain.answer':
       return 'explain';
+    case 'ai.generate.lesson':
     case 'ai.ask.tutor':
       return 'tutor';
     case 'ai.companion.message':

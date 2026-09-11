@@ -44,6 +44,7 @@ const LARGE_TEXT_ONLY = {};
 const NON_TEXT_VARS = new Set([
   '--color-background',
   '--color-background-secondary',
+  '--color-nav-column',
   '--color-surface',
   '--color-surface-secondary',
   '--color-border',
@@ -88,6 +89,7 @@ const WHITE_ON_FILL = [
 const PALETTE_VAR_MAP = {
   background: '--color-background',
   backgroundSecondary: '--color-background-secondary',
+  navColumn: '--color-nav-column',
   surface: '--color-surface',
   surfaceSecondary: '--color-surface-secondary',
   text: '--color-text',
@@ -454,6 +456,15 @@ function run() {
     const warningInk = t.vars['--color-warning'];
     if (warningInk && warningChipGround) {
       check(`${t.name} --color-warning`, 'amber warning chip', warningInk, warningChipGround);
+    }
+
+    // Destination rail: body and secondary ink on `--color-nav-column`.
+    // Tertiary fails AA on this brown, so the sidebar does not paint it there.
+    const navColumn = t.vars['--color-nav-column'];
+    const secondaryInk = t.vars['--color-text-secondary'];
+    if (navColumn) {
+      check(`${t.name} --color-text`, 'nav column', t.body, navColumn);
+      if (secondaryInk) check(`${t.name} --color-text-secondary`, 'nav column', secondaryInk, navColumn);
     }
 
     // The ink must also hold on the CARD, which in both themes is its own

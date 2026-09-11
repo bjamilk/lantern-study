@@ -51,12 +51,22 @@ export type StudyStackParamList = {
    * Adaptive quiz for one course — confirm, confidence 1–3, then explanation.
    * Distinct from TestTaking (submit-all).
    */
-  AdaptiveQuiz: { courseId: string; courseLabel?: string; noteId?: string };
+  AdaptiveQuiz: {
+    courseId: string;
+    courseLabel?: string;
+    noteId?: string;
+    seedItems?: import('@lantern/shared/learning').AdaptiveQuizItem[];
+  };
   /**
    * Lecture studio for one course — my notes, live transcript, ask.
    * Distinct from NoteEditor; the room stays a dashboard.
    */
   LectureStudio: { courseId: string; courseLabel?: string; noteId?: string };
+  /**
+   * Lesson studio for one course — board, plan, voice, chat.
+   * Distinct from companion overlay; Explore skips, Mastery sequences.
+   */
+  LessonStudio: { courseId: string; courseLabel?: string; noteId?: string };
   /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on

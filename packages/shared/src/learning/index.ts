@@ -5,3 +5,4 @@ export * from './courseWorkspace';
 export * from './notesStudio';
 export * from './adaptiveQuiz';
 export * from './lectureStudio';
+export * from './lessonStudio';

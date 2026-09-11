@@ -159,6 +159,7 @@ export function createAIClient(config: AIClientConfig) {
       const json = (await response.json().catch(() => ({}))) as T & {
         jobId?: string;
         error?: string;
+        message?: string;
         used?: number;
         limit?: number;
         resetsAt?: string;
@@ -184,7 +185,21 @@ export function createAIClient(config: AIClientConfig) {
             resetsAt: json.resetsAt || '',
           });
         }
-        throw new Error(json.error || `AI request failed (${response.status})`);
+        const specific =
+          typeof json.error === 'string' &&
+          json.error.trim() &&
+          json.error.trim().toLowerCase() !== 'error'
+            ? json.error
+            : typeof json.message === 'string' && json.message.trim()
+              ? json.message
+              : '';
+        const error = new Error(specific || `AI request failed (${response.status})`) as Error & {
+          status?: number;
+          body?: unknown;
+        };
+        error.status = response.status;
+        error.body = json;
+        throw error;
       }
 
       if (hadFeatureQuota) refreshGlobalUsage();
@@ -353,6 +368,37 @@ export function createAIClient(config: AIClientConfig) {
       question: string,
       context?: { subject?: string; recentTopics?: string[] }
     ) => aiRequest<{ answer: string; provider: string }>('/ask-tutor', { question, context }),
+
+    aiGenerateLesson: (
+      notes: string,
+      options?: {
+        mode?: 'explore' | 'mastery';
+        sourceTitle?: string;
+        subject?: string;
+        onJobUpdate?: JobUpdateHandler;
+      }
+    ) => {
+      const { onJobUpdate, ...rest } = options ?? {};
+      return aiRequest<{
+        mode: 'explore' | 'mastery';
+        sourceTitle: string;
+        plan: { topics: Array<{ id: string; title: string; pageIds: string[] }> };
+        pages: Array<{
+          id: string;
+          topicId: string;
+          title: string;
+          body: string;
+          check?: {
+            stem: string;
+            kind: string;
+            options?: string[];
+            correctAnswer: string;
+            explanation?: string;
+          };
+        }>;
+        provider: string;
+      }>('/generate-lesson', { notes, ...rest }, 'POST', onJobUpdate);
+    },
 
     aiEnhanceFlashcard: (front: string, back: string) =>
       aiRequest<{ enhanced: AIGeneratedFlashcard; provider: string }>('/enhance-flashcard', {

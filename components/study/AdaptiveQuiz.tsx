@@ -35,6 +35,7 @@ interface AdaptiveQuizProps {
   testIds: string[];
   canWalkthrough: boolean;
   writing?: boolean;
+  seedItems?: AdaptiveQuizItem[] | null;
   onWriteQuestions: (noteId: string) => Promise<unknown[]>;
   onOpenNotes: () => void;
   onOpenWalkthrough: () => void;
@@ -64,6 +65,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
   testIds,
   canWalkthrough,
   writing,
+  seedItems,
   onWriteQuestions,
   onOpenNotes,
   onOpenWalkthrough,
@@ -85,6 +87,12 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
     setLoading(true);
     setError(null);
     try {
+      if (seedItems && seedItems.length > 0) {
+        setSourceTitle('This lesson');
+        setSourceNoteId(noteOrder[0]?.id ?? null);
+        setSession(startAdaptiveQuiz(seedItems));
+        return;
+      }
       for (const note of noteOrder) {
         const quiz = await getNoteQuiz(note.id).catch(() => null);
         const items = poolFromUnknown(quiz);
@@ -120,7 +128,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [noteOrder, testIds]);
+  }, [noteOrder, seedItems, testIds]);
 
   useEffect(() => {
     void loadExisting();

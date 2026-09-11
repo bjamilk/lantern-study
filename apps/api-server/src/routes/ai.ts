@@ -27,6 +27,7 @@ import {
 import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
+  generateLessonFromNotes,
   explainAnswer,
   getStudyRecommendations,
   askTutor,
@@ -158,6 +159,36 @@ router.post('/generate-questions', aiRateLimitForFeature('generate_questions'), 
   } catch (error: any) {
     console.error('AI generate questions error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate questions.') });
+  }
+});
+
+router.post('/generate-lesson', aiRateLimitForFeature('lesson'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { notes, mode, sourceTitle, subject } = req.body;
+    if (!notes || typeof notes !== 'string' || notes.trim().length < 50) {
+      res.status(400).json({ error: 'Notes must be at least 50 characters.' });
+      return;
+    }
+    const outcome = await runSyncOrEnqueue(
+      'ai.generate.lesson',
+      { notes, mode, sourceTitle, subject },
+      userId,
+      async () => {
+        const generated = await generateLessonFromNotes(notes, { mode, sourceTitle, subject });
+        await recordInference(req, 'generate-lesson', generated);
+        return generated;
+      },
+      aiChargeFromRes(res)
+    );
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+    res.json(outcome.result);
+  } catch (error: any) {
+    console.error('AI generate lesson error:', error.message);
+    res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate a lesson.') });
   }
 });
 

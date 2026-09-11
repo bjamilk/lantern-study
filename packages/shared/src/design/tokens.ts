@@ -17,6 +17,10 @@ const lightBase = {
   // Warm off-white: hsl(30°, 50%, 96%) — easier on the eyes than cool alice-blue
   background: '#faf5f0',
   backgroundSecondary: '#f3ebe2',
+  // Desktop destination rail. Darker brown than the page cream so the menu
+  // column reads as chrome. Body and secondary ink clear AA; tertiary does not,
+  // so that rail uses secondary for muted glyphs.
+  navColumn: '#e4cab4',
   surface: '#ffffff',
   surfaceSecondary: '#f1f5f9',
   card: '#ffffff',
@@ -104,6 +108,7 @@ const darkBase = {
   // X border gray (#2f3336). Chosen over the old navy family on user request.
   background: '#000000',
   backgroundSecondary: '#16181c',
+  navColumn: '#1c1814',
   surface: '#101214',
   surfaceSecondary: '#1a1d21',
   card: '#101214',
@@ -473,6 +478,7 @@ export const fontStacks = {
 export const cssVarNames = {
   background: '--color-background',
   backgroundSecondary: '--color-background-secondary',
+  navColumn: '--color-nav-column',
   surface: '--color-surface',
   surfaceSecondary: '--color-surface-secondary',
   text: '--color-text',
@@ -521,6 +527,7 @@ export function paletteToCssVars(palette: ThemePalette): Record<string, string> 
   return {
     [cssVarNames.background]: ch(palette.background),
     [cssVarNames.backgroundSecondary]: ch(palette.backgroundSecondary),
+    [cssVarNames.navColumn]: ch(palette.navColumn),
     [cssVarNames.surface]: ch(palette.surface),
     [cssVarNames.surfaceSecondary]: ch(palette.surfaceSecondary),
     [cssVarNames.text]: ch(palette.text),

@@ -61,6 +61,8 @@ describe('stage vocabulary', () => {
     expect(jobKindFromName('ai.generate.flashcards')).toBe('flashcards');
     expect(jobKindFromName('ai.enhance.flashcard')).toBe('enhance');
     expect(jobKindFromName('notes.ai.summarize')).toBe('smart_notes');
+    expect(jobKindFromName('ai.generate.lesson')).toBe('tutor');
+    expect(jobKindFromName('notes.ai.quiz')).toBe('quiz');
     expect(jobKindFromName('cron.weeklySummary')).toBe('maintenance');
     expect(jobKindFromName(undefined)).toBe('other');
   });

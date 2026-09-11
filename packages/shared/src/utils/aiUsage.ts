@@ -124,6 +124,11 @@ export const DEFAULT_AI_FEATURE_LIMITS = {
   study_recommendations: 25,
   listing_description: 20,
   /**
+   * A structured lesson from a note: plan + slide-like pages, Explore or Mastery.
+   * Same daily shape as a study plan — one generated session, not a chat turn.
+   */
+  lesson: 10,
+  /**
    * Asking a question out loud, from the walk-through.
    *
    * A spoken question is the same question typed — it must not cost a lecture.
@@ -255,6 +260,7 @@ export const AI_FEATURE_LIMIT_NOUNS: Record<string, string> = {
   enhance_flashcard: 'card rewrites',
   study_recommendations: 'study suggestions',
   listing_description: 'listing descriptions',
+  lesson: 'lessons',
   voice_ask: 'spoken questions',
 };
 
