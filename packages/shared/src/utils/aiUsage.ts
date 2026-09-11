@@ -134,6 +134,12 @@ export const DEFAULT_AI_FEATURE_LIMITS = {
    */
   recap: 10,
   /**
+   * Practice feedback on a student draft, with or without a rubric.
+   * Same daily shape as a recap — one generated review, not a chat turn.
+   * Not an official grade.
+   */
+  essay: 10,
+  /**
    * Asking a question out loud, from the walk-through.
    *
    * A spoken question is the same question typed — it must not cost a lecture.
@@ -267,6 +273,7 @@ export const AI_FEATURE_LIMIT_NOUNS: Record<string, string> = {
   listing_description: 'listing descriptions',
   lesson: 'lessons',
   recap: 'recaps',
+  essay: 'essay reviews',
   voice_ask: 'spoken questions',
 };
 

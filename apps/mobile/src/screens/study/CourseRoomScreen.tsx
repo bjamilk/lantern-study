@@ -2,21 +2,27 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useFocusEffect } from '@react-navigation/native';
 import {
   WORKSPACE_ACTIVITIES,
   WORKSPACE_LATER_COPY,
   TURN_INTO_TARGETS,
   courseWorkspaceLabel,
+  formatCourseMaterialCounts,
   hasEnoughNoteStudyContent,
   isCalendarNote,
+  isEssayNote,
   isLectureNote,
   isLessonNote,
   isRecapNote,
   isWalkableAttachment,
   materialsForCourse,
+  materialsForStudySet,
   newLectureNoteTitle,
   resolveLectureStudioNote,
+  studySetLabel,
   testsFiledInCourse,
+  testsFiledInStudySet,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
@@ -27,6 +33,7 @@ import { Button, Card, FeatureDisc, ScreenHeader, T } from '../../components/ui'
 import { type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
+import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTestStore } from '../../stores/testStore';
@@ -38,7 +45,9 @@ import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifact
 import { aiGenerateFlashcards } from '../../services/ai';
 import { generateNoteQuiz } from '../../services/notes';
 import { getMyActiveCourses } from '../../services/academic';
+import { useStudySetStore } from '../../stores/studySetStore';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
+import { useCompanionStore } from '../../stores/companionStore';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
 import type { UserCourse } from '@lantern/shared/types';
 import type { StudyNote } from '../../services/notes';
@@ -46,7 +55,12 @@ import type { StudyNote } from '../../services/notes';
 type Props = NativeStackScreenProps<StudyStackParamList, 'CourseRoom'>;
 
 export function CourseRoomScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel } = route.params;
+  const { courseId: courseIdParam, studySetId, courseLabel } = route.params;
+  const loadSets = useStudySetStore((s) => s.loadSets);
+  const updateSet = useStudySetStore((s) => s.updateSet);
+  const touchOpened = useStudySetStore((s) => s.touchOpened);
+  const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
+  const courseId = studySet?.courseId || courseIdParam || '';
   const tabBarClearance = useTabBarClearance(16);
   const showToast = useToastStore((s) => s.showToast);
   const startJob = useJobsStore((s) => s.startJob);
@@ -57,50 +71,97 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const tests = useTestStore((s) => s.tests);
   const userId = useAuthStore((s) => s.user?.id);
   const [enrolment, setEnrolment] = useState<UserCourse | null>(null);
+  const [activeCourses, setActiveCourses] = useState<UserCourse[]>([]);
   const [importOpen, setImportOpen] = useState(false);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
+  const openCompanion = useCompanionStore((s) => s.open);
+  const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
 
   useEffect(() => {
-    void touchWorkspaceRecent(courseId);
+    void loadSets().catch(() => undefined);
+  }, [loadSets]);
+
+  useEffect(() => {
+    if (studySetId) touchOpened(studySetId);
+  }, [studySetId, touchOpened]);
+
+  useEffect(() => {
+    if (courseId) void touchWorkspaceRecent(courseId);
     void getMyActiveCourses().then((rows) => {
+      setActiveCourses(rows);
       setEnrolment(rows.find((row) => row.course.id === courseId) ?? null);
     });
-    void useNotesStore.getState().loadNotes().catch(() => undefined);
-    if (userId) void useTestStore.getState().fetchTests(userId).catch(() => undefined);
-  }, [courseId, userId]);
+  }, [courseId]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void useNotesStore.getState().loadNotes().catch(() => undefined);
+      if (userId) {
+        void useFlashcardStore.getState().fetchDecks(userId).catch(() => undefined);
+        void useTestStore.getState().fetchTests(userId).catch(() => undefined);
+      }
+    }, [userId])
+  );
+
+  const noteInRoom = (note: { courseId?: string | null; studySetId?: string | null } | null | undefined) => {
+    if (!note) return false;
+    return studySetId ? note.studySetId === studySetId : Boolean(courseId) && note.courseId === courseId;
+  };
+
+  useEffect(() => {
+    if (!selectedNote || !noteInRoom(selectedNote)) return;
+    void setActiveNoteContext({
+      id: selectedNote.id,
+      title: selectedNote.title || 'Untitled note',
+    });
+  }, [courseId, studySetId, selectedNote, setActiveNoteContext]);
 
   const label =
-    courseLabel ||
-    (enrolment ? courseWorkspaceLabel(enrolment.course) : 'Course');
+    studySetId
+      ? studySetLabel(studySet || { title: courseLabel || '' })
+      : courseLabel ||
+        (enrolment ? courseWorkspaceLabel(enrolment.course) : 'Course');
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const courseNotes = useMemo(
+    () => (studySetId ? materialsForStudySet(notes, studySetId) : materialsForCourse(notes, courseId)),
+    [notes, courseId, studySetId]
+  );
   const studyNotes = useMemo(
-    () => courseNotes.filter((note) => !isCalendarNote(note)),
+    () =>
+      courseNotes.filter(
+        (note) =>
+          !isCalendarNote(note) &&
+          !isLectureNote(note) &&
+          !isLessonNote(note) &&
+          !isRecapNote(note) &&
+          !isEssayNote(note)
+      ),
     [courseNotes]
   );
-  const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
+  const courseDecks = useMemo(
+    () => (studySetId ? materialsForStudySet(decks, studySetId) : materialsForCourse(decks, courseId)),
+    [decks, courseId, studySetId]
+  );
   const lectures = useMemo(() => courseNotes.filter(isLectureNote), [courseNotes]);
   const lessons = useMemo(() => courseNotes.filter(isLessonNote), [courseNotes]);
   const recaps = useMemo(() => courseNotes.filter(isRecapNote), [courseNotes]);
-  const noteIds = useMemo(() => new Set(studyNotes.map((n) => n.id)), [studyNotes]);
+  const essays = useMemo(() => courseNotes.filter(isEssayNote), [courseNotes]);
+  const noteIds = useMemo(() => new Set(courseNotes.map((n) => n.id)), [courseNotes]);
   const deckIds = useMemo(() => new Set(courseDecks.map((d) => d.id)), [courseDecks]);
-  const courseTests = useMemo(
-    () =>
-      testsFiledInCourse(
-        tests.map((test) => ({
-          id: test.id,
-          courseId: null,
-          sourceNoteId: test.sourceNoteId,
-          sourceDeckId: undefined,
-          deckId: test.deckId,
-        })),
-        courseId,
-        noteIds,
-        deckIds
-      ),
-    [tests, courseId, noteIds, deckIds]
-  );
+  const courseTests = useMemo(() => {
+    const rows = tests.map((test) => ({
+      id: test.id,
+      courseId: test.courseId,
+      studySetId: undefined,
+      sourceNoteId: test.sourceNoteId,
+      sourceDeckId: undefined,
+      deckId: test.deckId,
+    }));
+    return studySetId
+      ? testsFiledInStudySet(rows, studySetId, noteIds, deckIds)
+      : testsFiledInCourse(rows, courseId, noteIds, deckIds);
+  }, [tests, courseId, studySetId, noteIds, deckIds]);
 
   const openLectureStudio = (existingNoteId?: string) => {
     const decision = resolveLectureStudioNote({
@@ -115,6 +176,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       courseId,
       courseLabel: label,
       noteId,
+      studySetId,
     });
   };
 
@@ -126,7 +188,13 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     switch (id) {
       case 'notes': {
         const note =
-          selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+          selectedNote &&
+          noteInRoom(selectedNote) &&
+          !isCalendarNote(selectedNote) &&
+          !isLectureNote(selectedNote) &&
+          !isLessonNote(selectedNote) &&
+          !isRecapNote(selectedNote) &&
+          !isEssayNote(selectedNote)
             ? selectedNote
             : studyNotes[0];
         if (!note) {
@@ -134,11 +202,16 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           return;
         }
         selectNote(note.id);
-        navigation.navigate('NoteEditor', { noteId: note.id });
+        navigation.navigate('NotesStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note.id,
+          studySetId,
+        });
         return;
       }
       case 'walkthrough': {
-        const note = (selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+        const note = (selectedNote && noteInRoom(selectedNote) && !isCalendarNote(selectedNote)
           ? selectedNote
           : studyNotes.find((n) => n.attachments?.some(isWalkableAttachment))) as
           | (StudyNote & { attachments?: Array<{ id?: string; type?: string }> })
@@ -153,24 +226,23 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       }
       case 'quiz': {
         const note =
-          selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+          selectedNote &&
+          noteInRoom(selectedNote) &&
+          !isCalendarNote(selectedNote) &&
+          !isEssayNote(selectedNote)
             ? selectedNote
-            : studyNotes[0];
+            : studyNotes.find((row) => !isEssayNote(row));
         navigation.navigate('AdaptiveQuiz', {
           courseId,
           courseLabel: label,
           noteId: note?.id,
+          studySetId,
         });
         return;
       }
       case 'cards':
-        if (courseDecks[0]) {
-          navigation.navigate('DeckDetail', {
-            deckId: courseDecks[0].id,
-            deckName: courseDecks[0].name,
-          });
-        } else {
-          showToast('No decks in this course yet. Turn a note into cards.', 'info');
+        if (courseDecks.length === 0) {
+          showToast(studySetId ? 'No decks in this set yet. Turn a note into cards.' : 'No decks in this course yet. Turn a note into cards.', 'info');
         }
         return;
       case 'test':
@@ -181,44 +253,57 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         return;
       case 'lesson': {
         const note =
-          selectedNote && selectedNote.courseId === courseId && isLessonNote(selectedNote)
+          selectedNote && noteInRoom(selectedNote) && isLessonNote(selectedNote)
             ? selectedNote
             : courseNotes.find(isLessonNote);
         navigation.navigate('LessonStudio', {
           courseId,
           courseLabel: label,
           noteId: note?.id,
+          studySetId,
         });
         return;
       }
       case 'recap': {
         const note =
-          selectedNote && selectedNote.courseId === courseId && isRecapNote(selectedNote)
+          selectedNote && noteInRoom(selectedNote) && isRecapNote(selectedNote)
             ? selectedNote
             : courseNotes.find(isRecapNote);
         navigation.navigate('RecapStudio', {
           courseId,
           courseLabel: label,
           noteId: note?.id,
+          studySetId,
         });
         return;
       }
       case 'play':
-        if (courseDecks[0]) {
-          navigation.navigate('MatchStudy', {
-            deckId: courseDecks[0].id,
-            deckName: courseDecks[0].name,
-          });
-        } else {
-          showToast('File a deck in this course first.', 'info');
-        }
+        navigation.navigate('PlayStudio', {
+          courseId,
+          courseLabel: label,
+          studySetId,
+        });
         return;
       case 'plan':
         navigation.navigate('StudyCalendar', {
           courseId,
           courseLabel: label,
+          studySetId,
         });
         return;
+      case 'essay': {
+        const note =
+          selectedNote && noteInRoom(selectedNote) && isEssayNote(selectedNote)
+            ? selectedNote
+            : courseNotes.find(isEssayNote);
+        navigation.navigate('EssayStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note?.id,
+          studySetId,
+        });
+        return;
+      }
       default:
         return;
     }
@@ -260,12 +345,13 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             cards: flashcards,
             deckName: `From: ${noteTitle}`,
             description: `Generated from note: ${noteTitle}`,
-            courseId,
+            courseId: courseId || undefined,
+            studySetId,
           });
           return { artifact: ref, resultCount: saved };
         },
       });
-      showToast('Building flashcards for this course…', 'info');
+      showToast(studySetId ? 'Building flashcards for this set…' : 'Building flashcards for this course…', 'info');
       return;
     }
 
@@ -286,12 +372,12 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           title: `Test · ${noteTitle}`,
           sourceNoteId: note.id,
           questions: session.questions,
-          courseId,
+          courseId: courseId || undefined,
         });
         return { artifact: ref, resultCount: saved };
       },
     });
-    showToast('Building a practice test for this course…', 'info');
+    showToast(studySetId ? 'Building a practice test for this set…' : 'Building a practice test for this course…', 'info');
   };
 
   const selectNote = useCallback(
@@ -307,7 +393,23 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         className="flex-1"
         contentContainerStyle={{ paddingBottom: tabBarClearance, paddingHorizontal: 16, paddingTop: 8 }}
       >
-        <ScreenHeader title={label} subtitle="This course’s notes, cards, tests and lectures" />
+        <ScreenHeader
+          title={label}
+          subtitle={
+            studySetId
+              ? 'This set houses every activity you start from here'
+              : formatCourseMaterialCounts({
+                  notes: studyNotes.length,
+                  decks: courseDecks.length,
+                  tests: courseTests.length,
+                })
+          }
+          right={
+            <Pressable onPress={() => openCompanion()} accessibilityRole="button" accessibilityLabel="Ask">
+              <T.Caption>Ask</T.Caption>
+            </Pressable>
+          }
+        />
 
         <View className="flex-row flex-wrap gap-2 mb-4">
           {WORKSPACE_ACTIVITIES.map((item) => (
@@ -331,43 +433,82 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           ))}
         </View>
 
+        {studySetId ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-2">
+              Course (optional)
+            </T.Caption>
+            <View className="flex-row flex-wrap gap-2">
+              <Pressable
+                onPress={() => {
+                  void updateSet(studySetId, { courseId: null }).catch(() => {
+                    showToast('Could not update the course on this set.', 'error');
+                  });
+                }}
+                className={`px-3 py-2 rounded-full border ${
+                  !studySet?.courseId
+                    ? 'border-lantern-primary bg-lantern-primary-background'
+                    : 'border-lantern-border'
+                }`}
+              >
+                <T.Caption>Standalone</T.Caption>
+              </Pressable>
+              {activeCourses.map((row) => (
+                <Pressable
+                  key={row.course.id}
+                  onPress={() => {
+                    void updateSet(studySetId, { courseId: row.course.id }).catch(() => {
+                      showToast('Could not update the course on this set.', 'error');
+                    });
+                  }}
+                  className={`px-3 py-2 rounded-full border ${
+                    studySet?.courseId === row.course.id
+                      ? 'border-lantern-primary bg-lantern-primary-background'
+                      : 'border-lantern-border'
+                  }`}
+                >
+                  <T.Caption>{courseWorkspaceLabel(row.course)}</T.Caption>
+                </Pressable>
+              ))}
+            </View>
+          </Card>
+        ) : null}
+
+        {courseId ? (
+        <ClassOfficialMaterials
+          courseId={courseId}
+          embedded
+          onOpenNote={(noteId) => {
+            void useNotesStore.getState().loadNotes().catch(() => undefined);
+            selectNote(noteId);
+            navigation.navigate('NotesStudio', {
+              courseId,
+              courseLabel: label,
+              noteId,
+              studySetId,
+            });
+          }}
+        />
+        ) : null}
+
         <Card className="mb-3">
           <T.Caption tone="secondary" className="mb-2">
-            Notes
+            Notes{studyNotes.length ? ` · ${studyNotes.length}` : ''}
           </T.Caption>
           {studyNotes.length === 0 ? (
-            <T.Body tone="secondary">No notes in this course yet.</T.Body>
+            <T.Body tone="secondary">{studySetId ? 'No notes in this set yet.' : 'No notes in this course yet.'}</T.Body>
           ) : (
             studyNotes.map((note, index) => (
               <View key={note.id} className={index > 0 ? 'border-t border-lantern-border' : undefined}>
                 <Pressable
                   onPress={() => {
                     selectNote(note.id);
-                    if (isLectureNote(note)) {
-                      navigation.navigate('LectureStudio', {
-                        courseId,
-                        courseLabel: label,
-                        noteId: note.id,
-                      });
-                      return;
-                    }
-                    if (isLessonNote(note)) {
-                      navigation.navigate('LessonStudio', {
-                        courseId,
-                        courseLabel: label,
-                        noteId: note.id,
-                      });
-                      return;
-                    }
-                    if (isRecapNote(note)) {
-                      navigation.navigate('RecapStudio', {
-                        courseId,
-                        courseLabel: label,
-                        noteId: note.id,
-                      });
-                      return;
-                    }
-                    navigation.navigate('NoteEditor', { noteId: note.id });
+                    navigation.navigate('NotesStudio', {
+                      courseId,
+                      courseLabel: label,
+                      noteId: note.id,
+                      studySetId,
+                    });
                   }}
                   className="py-3"
                 >
@@ -396,7 +537,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
         <Card className="mb-3">
           <T.Caption tone="secondary" className="mb-2">
-            Decks
+            Decks{courseDecks.length ? ` · ${courseDecks.length}` : ''}
           </T.Caption>
           {courseDecks.length === 0 ? (
             <T.Body tone="secondary">No decks filed here.</T.Body>
@@ -415,14 +556,12 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           )}
         </Card>
 
-        <Card className="mb-3">
-          <T.Caption tone="secondary" className="mb-2">
-            Tests
-          </T.Caption>
-          {courseTests.length === 0 ? (
-            <T.Body tone="secondary">No tests from this course yet.</T.Body>
-          ) : (
-            courseTests.map((test, index) => {
+        {courseTests.length > 0 ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-2">
+              Tests · {courseTests.length}
+            </T.Caption>
+            {courseTests.map((test, index) => {
               const row = tests.find((t) => t.id === test.id);
               return (
                 <Pressable
@@ -435,18 +574,16 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                   <T.Body numberOfLines={1}>{row?.name || 'Test'}</T.Body>
                 </Pressable>
               );
-            })
-          )}
-        </Card>
+            })}
+          </Card>
+        ) : null}
 
-        <Card className="mb-3">
-          <T.Caption tone="secondary" className="mb-2">
-            Lectures
-          </T.Caption>
-          {lectures.length === 0 ? (
-            <T.Body tone="secondary">Record a lecture to file it here.</T.Body>
-          ) : (
-            lectures.map((note, index) => (
+        {lectures.length > 0 ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-2">
+              Lectures · {lectures.length}
+            </T.Caption>
+            {lectures.map((note, index) => (
               <Pressable
                 key={note.id}
                 onPress={() => openLectureStudio(note.id)}
@@ -454,18 +591,16 @@ export function CourseRoomScreen({ navigation, route }: Props) {
               >
                 <T.Body numberOfLines={1}>{note.title || 'Lecture'}</T.Body>
               </Pressable>
-            ))
-          )}
-        </Card>
+            ))}
+          </Card>
+        ) : null}
 
-        <Card className="mb-3">
-          <T.Caption tone="secondary" className="mb-2">
-            Lessons
-          </T.Caption>
-          {lessons.length === 0 ? (
-            <T.Body tone="secondary">Start a lesson from a note.</T.Body>
-          ) : (
-            lessons.map((note, index) => (
+        {lessons.length > 0 ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-2">
+              Lessons · {lessons.length}
+            </T.Caption>
+            {lessons.map((note, index) => (
               <Pressable
                 key={note.id}
                 onPress={() =>
@@ -473,24 +608,23 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                     courseId,
                     courseLabel: label,
                     noteId: note.id,
+                    studySetId,
                   })
                 }
                 className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
               >
                 <T.Body numberOfLines={1}>{note.title || 'Lesson'}</T.Body>
               </Pressable>
-            ))
-          )}
-        </Card>
+            ))}
+          </Card>
+        ) : null}
 
-        <Card className="mb-3">
-          <T.Caption tone="secondary" className="mb-2">
-            Recaps
-          </T.Caption>
-          {recaps.length === 0 ? (
-            <T.Body tone="secondary">Start a recap from a note.</T.Body>
-          ) : (
-            recaps.map((note, index) => (
+        {recaps.length > 0 ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-2">
+              Recaps · {recaps.length}
+            </T.Caption>
+            {recaps.map((note, index) => (
               <Pressable
                 key={note.id}
                 onPress={() =>
@@ -498,18 +632,43 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                     courseId,
                     courseLabel: label,
                     noteId: note.id,
+                    studySetId,
                   })
                 }
                 className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
               >
                 <T.Body numberOfLines={1}>{note.title || 'Recap'}</T.Body>
               </Pressable>
-            ))
-          )}
-        </Card>
+            ))}
+          </Card>
+        ) : null}
+
+        {essays.length > 0 ? (
+          <Card className="mb-3">
+            <T.Caption tone="secondary" className="mb-2">
+              Essays · {essays.length}
+            </T.Caption>
+            {essays.map((note, index) => (
+              <Pressable
+                key={note.id}
+                onPress={() =>
+                  navigation.navigate('EssayStudio', {
+                    courseId,
+                    courseLabel: label,
+                    noteId: note.id,
+                    studySetId,
+                  })
+                }
+                className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
+              >
+                <T.Body numberOfLines={1}>{note.title || 'Essay'}</T.Body>
+              </Pressable>
+            ))}
+          </Card>
+        ) : null}
 
         <Button className="mb-3" onPress={() => setImportOpen(true)}>
-          Import into this course
+          {studySetId ? 'Import into this set' : 'Import into this course'}
         </Button>
         <Button
           variant="ghost"
@@ -521,11 +680,24 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
       <ImportAndStudyModal
         visible={importOpen}
-        courseId={courseId}
+        courseId={courseId || undefined}
+        studySetId={studySetId}
         onClose={() => setImportOpen(false)}
         onOpenNote={(noteId) => {
           setImportOpen(false);
-          navigation.navigate('NoteEditor', { noteId });
+          navigation.navigate('NotesStudio', {
+            courseId,
+            courseLabel: label,
+            noteId,
+            studySetId,
+          });
+        }}
+        onComplete={() => {
+          void useNotesStore.getState().loadNotes().catch(() => undefined);
+          if (userId) {
+            void useFlashcardStore.getState().fetchDecks(userId).catch(() => undefined);
+            void useTestStore.getState().fetchTests(userId).catch(() => undefined);
+          }
         }}
       />
     </SafeAreaView>

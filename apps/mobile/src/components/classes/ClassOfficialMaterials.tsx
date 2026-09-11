@@ -7,9 +7,10 @@ import { copyClassMaterialToNotes, fetchOfficialClassMaterials } from '../../ser
 interface ClassOfficialMaterialsProps {
   courseId?: string | null;
   onOpenNote?: (noteId: string) => void;
+  embedded?: boolean;
 }
 
-export function ClassOfficialMaterials({ courseId, onOpenNote }: ClassOfficialMaterialsProps) {
+export function ClassOfficialMaterials({ courseId, onOpenNote, embedded = false }: ClassOfficialMaterialsProps) {
   const [items, setItems] = useState<(ClassMaterial & { classTitle?: string; course?: Course })[]>(
     []
   );
@@ -32,8 +33,9 @@ export function ClassOfficialMaterials({ courseId, onOpenNote }: ClassOfficialMa
         From your lecturer
       </Text>
       <Text className="mt-1 text-caption text-lantern-text-secondary">
-        These notes stay available after the class is archived. They are read-only — copy one into
-        your notes to edit or share your own version.
+        {embedded
+          ? 'Read-only class notes. Copy one into this course to edit it.'
+          : 'These notes stay available after the class is archived. They are read-only — copy one into your notes to edit or share your own version.'}
       </Text>
       {error ? <Text className="mt-2 text-caption text-lantern-error">{error}</Text> : null}
       {items.slice(0, 8).map((item) => {

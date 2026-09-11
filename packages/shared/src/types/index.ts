@@ -63,6 +63,8 @@ export interface Deck {
   isShared?: boolean;
   /** Course this deck belongs to (academic archive). */
   courseId?: string | null;
+  /** Personal study set this deck belongs to. Optional; independent of course. */
+  studySetId?: string | null;
   /** Topic within `courseId`. Never set without a course, never from another course. */
   topicId?: string | null;
   /**
@@ -222,6 +224,19 @@ export interface UserCourse {
   status: 'active' | 'archived';
   /** "YYYY-MM-DD" */
   examDate?: string | null;
+}
+
+/**
+ * A personal study set — the primary container on the Study tab.
+ * A course is an optional tag, not a requirement to exist.
+ */
+export interface StudySet {
+  id: string;
+  userId: string;
+  title: string;
+  courseId?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 /**
@@ -627,6 +642,8 @@ export enum AppMode {
   STUDY_HUB = 'STUDY_HUB',
   /** One enrolled course as a room: `/study/courses/:courseId`. */
   COURSE_WORKSPACE = 'COURSE_WORKSPACE',
+  /** One personal study set as a room: `/study/sets/:studySetId`. */
+  STUDY_SET_WORKSPACE = 'STUDY_SET_WORKSPACE',
   /** Wave 1 door: the list of tests (`/tests`), above `/tests/active` and `/tests/review`. */
   TESTS_HOME = 'TESTS_HOME',
   AI_TOOLS = 'AI_TOOLS',
@@ -667,6 +684,8 @@ export interface StudyNote {
   groupId?: string;
   /** Course this note belongs to (academic archive). */
   courseId?: string | null;
+  /** Personal study set this note belongs to. Optional; independent of course. */
+  studySetId?: string | null;
   /** Topic within `courseId`. Never set without a course, never from another course. */
   topicId?: string | null;
   title: string;
@@ -1855,6 +1874,8 @@ export interface CompanionUserContext {
   recentTranscript?: string;
   /** When set, companion grounding may include that class's published materials. */
   classId?: string;
+  /** Course the student is in — generated decks should file here. */
+  courseId?: string;
   studyGoal?: StudyGoalMode;
   /** Active companion thread; omit / null + newConversation to start fresh. */
   conversationId?: string;

@@ -30,6 +30,8 @@ interface NotesState {
   ) => Promise<NoteFolder>;
   removeFolder: (folderId: string) => Promise<void>;
   createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
+  /** Merge a note that was written outside this store so the course room can see it. */
+  upsertNote: (note: StudyNote) => void;
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
   /** Move notes into a folder, or `null` for All notes (unfiled). */
   moveNotesToFolder: (noteIds: string[], folderId: string | null) => Promise<void>;
@@ -122,6 +124,15 @@ export const useNotesStore = create<NotesState>((set, get) => ({
     const note = await notesApi.createNote(payload || { title: 'Untitled Note', body: '' });
     set({ notes: [note, ...get().notes] });
     return note;
+  },
+
+  upsertNote: (note) => {
+    const notes = get().notes;
+    set({
+      notes: notes.some((row) => row.id === note.id)
+        ? notes.map((row) => (row.id === note.id ? { ...row, ...note } : row))
+        : [note, ...notes],
+    });
   },
 
   saveNote: async (noteId, updates) => {

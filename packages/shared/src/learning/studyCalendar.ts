@@ -87,6 +87,7 @@ function isOtherStudioNote(note: { title?: string | null; body?: string | null }
   const body = note.body ?? '';
   if (/^Lesson — /.test(title) || body.includes('lantern-lesson')) return true;
   if (/^Recap — /.test(title) || body.includes('lantern-recap')) return true;
+  if (/^Essay — /.test(title) || body.includes('lantern-essay')) return true;
   return false;
 }
 
@@ -125,6 +126,11 @@ export function sessionMinutesForHours(hoursPerWeek: number): number {
 
 export function calendarKindLabel(kind: CalendarSessionKind): string {
   return kind === 'cards' ? 'Cards' : 'Quiz';
+}
+
+export function calendarSessionLabel(session: StudyCalendarSession): string {
+  const base = `${calendarKindLabel(session.kind)} · ${session.topicTitle}`;
+  return session.status === 'done' ? `Done · ${base}` : base;
 }
 
 export function calendarSessionFeature(kind: CalendarSessionKind): FeatureKey {

@@ -118,6 +118,12 @@ export function isMissingTopicColumn(
   return isMissingColumnError(error) && /topic_id/i.test(error?.message || '');
 }
 
+export function isMissingStudySetColumn(
+  error: { code?: string; message?: string } | null | undefined
+): boolean {
+  return isMissingColumnError(error) && /study_set_id/i.test(error?.message || '');
+}
+
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export const isUuid = (value: unknown): value is string =>
   typeof value === 'string' && UUID_RE.test(value);

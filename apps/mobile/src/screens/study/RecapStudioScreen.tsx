@@ -17,6 +17,7 @@ import {
   materialsForCourse,
   newRecapNoteTitle,
   normalizeGeneratedRecap,
+  studySetNotePayload,
   parseRecapNoteBody,
   recapFromMaterial,
   recapProgress,
@@ -39,7 +40,7 @@ import { aiAskTutor, aiGenerateRecap } from '../../services/ai';
 type Props = NativeStackScreenProps<StudyStackParamList, 'RecapStudio'>;
 
 export function RecapStudioScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel, noteId } = route.params;
+  const { courseId, courseLabel, noteId, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
   const selectedNote = useNotesStore((s) => s.selectedNote);
@@ -189,7 +190,7 @@ export function RecapStudioScreen({ navigation, route }: Props) {
       const created = await createNote({
         title: newRecapNoteTitle(chosen, note.title || 'Untitled note'),
         body: composeRecapNoteBody(next),
-        courseId,
+        ...studySetNotePayload({ courseId, studySetId }),
       });
       setRecapNoteId(created.id);
       recapNoteIdRef.current = created.id;

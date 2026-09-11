@@ -138,10 +138,10 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, isShared, courseId, topicId } = req.body;
+    const { name, description, isShared, courseId, studySetId, topicId } = req.body;
     let deck;
     try {
-      deck = await supabaseService.createDeck({ name, description, isShared, courseId, topicId }, userId);
+      deck = await supabaseService.createDeck({ name, description, isShared, courseId, studySetId, topicId }, userId);
     } catch (err) {
       if (respondPublicError(err, res)) return;
       throw err;
@@ -193,7 +193,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { name, description, isShared, courseId, topicId, cards, source, deckId } = req.body;
+    const { name, description, isShared, courseId, studySetId, topicId, cards, source, deckId } = req.body;
 
     // Generation opened from inside a deck sends that deck's id: the cards go
     // there. Without this the server made a SECOND deck with the same name
@@ -224,7 +224,7 @@ router.post(
         const result = targetDeckId
           ? await supabaseService.addCardsToExistingDeck(targetDeckId, validation.cards, userId)
           : await supabaseService.createDeckWithCards(
-              { name, description, isShared, courseId, topicId },
+              { name, description, isShared, courseId, studySetId, topicId },
               validation.cards,
               userId,
             );
@@ -276,10 +276,10 @@ router.put(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const { name, description, isShared, courseId, topicId } = req.body;
+    const { name, description, isShared, courseId, studySetId, topicId } = req.body;
     let updatedDeck;
     try {
-      updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId, topicId }, userId);
+      updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId, studySetId, topicId }, userId);
     } catch (err) {
       if (respondPublicError(err, res)) return;
       throw err;

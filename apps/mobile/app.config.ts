@@ -253,6 +253,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       UIBackgroundModes: ['audio'],
       NSMicrophoneUsageDescription:
         'Lantern Study needs the microphone to record lectures and transcribe them into notes.',
+      NSSpeechRecognitionUsageDescription:
+        'Lantern Study shows live lecture captions and hears lesson commands on this phone.',
       // iOS terminates the app immediately — no JS error, no permission prompt —
       // if the photo library or camera is opened without these strings. Eleven
       // screens use expo-image-picker (flashcard images, note photos, avatars,
@@ -337,6 +339,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-secure-store',
     'expo-web-browser',
     'expo-av',
+    [
+      'expo-speech-recognition',
+      {
+        microphonePermission:
+          'Lantern Study needs the microphone to record lectures and hear lesson commands.',
+        speechRecognitionPermission:
+          'Lantern Study shows live lecture captions and hears lesson commands on this phone.',
+      },
+    ],
     ['expo-apple-authentication', { usesAppleSignIn: true }],
     [
       'expo-splash-screen',

@@ -5,7 +5,7 @@
  * auth-header / session-expiry plumbing like services/gamificationStreak.ts.
  */
 import { getApiBaseUrl } from '@lantern/shared';
-import type { Course, CourseTopic, InstitutionSummary, User, UserCourse } from '@lantern/shared';
+import type { Course, CourseTopic, InstitutionSummary, StudySet, User, UserCourse } from '@lantern/shared';
 import { mapUserFromApi } from '@lantern/shared/utils/apiMappers';
 import { getAuthHeaders, fetchMarketplaceCampuses } from './supabase';
 import { handleApiAuthFailure } from './sessionHandler';
@@ -181,6 +181,28 @@ export const archiveSemester = (academicYear: string): Promise<{ archived: numbe
   academicRequest<{ archived: number }>('/users/me/courses/archive-semester', {
     method: 'POST',
     body: JSON.stringify({ academicYear }),
+  });
+
+export const fetchMyStudySets = () => academicRequest<StudySet[]>('/users/me/study-sets');
+
+export const createStudySet = (input: { title: string; courseId?: string | null }) =>
+  academicRequest<StudySet>('/users/me/study-sets', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
+export const fetchStudySet = (setId: string) =>
+  academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`);
+
+export const updateStudySet = (setId: string, patch: { title?: string; courseId?: string | null }) =>
+  academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  });
+
+export const deleteStudySet = (setId: string) =>
+  academicRequest<void>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
+    method: 'DELETE',
   });
 
 // ---------- Academic profile (PUT /users/:id) ----------

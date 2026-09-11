@@ -317,6 +317,8 @@ export interface Test {
    */
   sourceNoteId?: string;
   sourceNoteTitle?: string;
+  /** Academic archive: personal tests filed on a course. */
+  courseId?: string | null;
   passingScore: number; // percentage
   createdAt: string;
 }
@@ -949,6 +951,7 @@ export const useTestStore = create<TestState>((set, get) => ({
           // open the note, and a name alone cannot be linked.
           sourceNoteId: t.sourceNoteId || t.config?.sourceNoteId || undefined,
           sourceNoteTitle: t.sourceNoteTitle || t.config?.sourceNoteTitle || undefined,
+          courseId: t.course_id ?? t.courseId ?? t.config?.courseId ?? null,
           passingScore: t.config?.passingScore || 70,
           createdAt: t.created_at,
         };

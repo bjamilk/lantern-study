@@ -23,6 +23,7 @@ import {
   type RecapSession,
   type RecapStyle,
   type TurnIntoTargetId,
+  studySetNotePayload,
 } from '@lantern/shared';
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyNote } from '../../types';
@@ -37,6 +38,7 @@ import { aiAskTutor, aiGenerateRecap } from '../../services/ai';
 
 interface RecapStudioProps {
   courseId: string;
+  studySetId?: string;
   theme: 'light' | 'dark';
   notes: StudyNote[];
   selectedNote: StudyNote | null;
@@ -59,6 +61,7 @@ function sessionFromGenerated(
 
 export const RecapStudio: React.FC<RecapStudioProps> = ({
   courseId,
+  studySetId,
   notes,
   selectedNote,
   turning,
@@ -213,7 +216,7 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
       const created = await createNote({
         title: newRecapNoteTitle(chosen, note.title || 'Untitled note'),
         body: composeRecapNoteBody(next),
-        courseId,
+        ...studySetNotePayload({ courseId, studySetId }),
       });
       setRecapNoteId(created.id);
       setSession(next);

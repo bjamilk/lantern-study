@@ -70,6 +70,7 @@ import contactRoutes from './routes/contact';
 import analyticsRoutes, { initializeAnalyticsRoutes } from './routes/analytics';
 import courseRoutes, { initializeCourseRoutes } from './routes/courses';
 import userCourseRoutes, { initializeUserCourseRoutes } from './routes/userCourses';
+import studySetRoutes, { initializeStudySetRoutes } from './routes/studySets';
 import conceptRoutes, { initializeConceptRoutes } from './routes/concepts';
 import libraryRoutes, { initializeLibraryRoutes } from './routes/library';
 import creatorRoutes, { initializeCreatorRoutes } from './routes/creators';
@@ -191,6 +192,7 @@ async function initializeServices() {
     initializeAnalyticsRoutes(supabaseService);
     initializeCourseRoutes(supabaseService, cacheService);
     initializeUserCourseRoutes(supabaseService, cacheService);
+    initializeStudySetRoutes(supabaseService);
     initializeConceptRoutes(supabaseService, cacheService);
     initializeLibraryRoutes(supabaseService, cacheService);
     initializeCreatorRoutes(supabaseService);
@@ -408,6 +410,7 @@ async function startServer() {
     // /users/me/courses MUST be mounted before /users so the "me" segment is
     // never captured by /users/:userId/* (Express matches in registration order).
     app.use('/api/v1/users/me/courses', userCourseRoutes);
+    app.use('/api/v1/users/me/study-sets', studySetRoutes);
     app.use('/api/v1/users', userRoutes);
     // Nested topics mount before /courses so the parent router does not
     // swallow /:courseId/topics.

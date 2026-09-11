@@ -418,9 +418,14 @@ export function useFlashcardHandlers() {
         trackFlashcardReviewStarted(cardQueue.length, deck.id);
     }, [currentUser, flashcards, setActiveReviewSession, setAppMode]);
 
-    const handleStartCram = useCallback((deck: Deck, timerSeconds?: number) => {
+    const handleStartCram = useCallback((deck: Deck, timerSeconds?: number, cardIds?: string[]) => {
         if (!currentUser) return;
-        const cardsInDeck = flashcards.filter(fc => fc.deckId === deck.id);
+        let cardsInDeck = flashcards.filter(fc => fc.deckId === deck.id);
+        if (cardIds && cardIds.length > 0) {
+            const wanted = new Set(cardIds);
+            const filtered = cardsInDeck.filter(fc => wanted.has(fc.id));
+            if (filtered.length > 0) cardsInDeck = filtered;
+        }
         
         if (cardsInDeck.length === 0) {
             alert("This deck is empty. Add some cards to cram!");

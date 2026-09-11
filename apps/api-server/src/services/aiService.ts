@@ -27,6 +27,7 @@ import { normalizeFlashcardCount } from '@lantern/shared/utils/flashcardGenerati
 import {
   normalizeGeneratedLesson,
   normalizeGeneratedRecap,
+  normalizeGeneratedEssayReview,
   recapSegmentCap,
   type LessonMode,
   type RecapLength,
@@ -1524,6 +1525,73 @@ ${options.subject ? `Subject: ${options.subject}.` : ''}`;
         length: session.length,
         sourceTitle: session.sourceTitle,
         segments: session.segments,
+        provider,
+        usage,
+      };
+    }
+  );
+}
+
+export async function gradeEssayFromDraft(
+  draft: string,
+  options: {
+    rubricText?: string;
+    prompt?: string;
+    sourceNotes?: string;
+    sourceTitle?: string;
+  } = {}
+): Promise<{
+  overall: number;
+  scores: ReturnType<typeof normalizeGeneratedEssayReview>['scores'];
+  feedback: string;
+  provider: string;
+  usage?: AiUsage;
+}> {
+  const source = draft.substring(0, 6000);
+  const rubricText = options.rubricText?.trim() || '';
+  const prompt = options.prompt?.trim() || '';
+  const sourceNotes = options.sourceNotes?.substring(0, 4000) || '';
+  const sourceTitle = options.sourceTitle?.trim() || 'this draft';
+
+  return withAiResponseCache(
+    'grade_essay',
+    source,
+    { rubricText, prompt, sourceTitle },
+    async () => {
+      const systemPrompt = `You give PRACTICE feedback on a student essay draft. This is NOT an official grade and must never be presented as one.
+Return ONLY valid JSON:
+{"overall":0-100,"scores":[{"label":"criterion","score":0,"max":5,"comment":"one short sentence"}],"feedback":"2-4 sentences of practice advice. Never paste the draft back."}
+
+Rules:
+- overall is 0-100 practice feedback, not a transcript mark.
+- If a rubric is provided, score each criterion. If not, use Structure, Coverage of the topic, and Clarity (max 5 each).
+- comments and feedback are short. Do not copy the draft. Do not quote more than a few words.
+- Always make clear this is practice feedback, not an official grade.
+${options.sourceTitle ? `Source: ${sourceTitle}.` : ''}`;
+
+      const userPrompt = [
+        prompt ? `Assignment prompt:\n${prompt}` : '',
+        rubricText ? `Rubric:\n${rubricText}` : 'No rubric was supplied.',
+        sourceNotes ? `Course material (optional context):\n${sourceNotes}` : '',
+        `Student draft:\n${source}`,
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
+      const { text, provider, usage } = await chatCompletion(
+        systemPrompt,
+        userPrompt,
+        { temperature: 0.4, jsonOutput: true, maxTokens: 1200 }
+      );
+      const parsed = extractJSON(text);
+      const review = normalizeGeneratedEssayReview(parsed, { draft: source, rubricText });
+      if (!review.feedback.trim()) {
+        throw new Error('Essay review produced no feedback');
+      }
+      return {
+        overall: review.overall,
+        scores: review.scores,
+        feedback: review.feedback,
         provider,
         usage,
       };

@@ -56,6 +56,8 @@ export const LANTERN_CSS_VAR_PALETTE_KEYS = [
   'background',
   'backgroundSecondary',
   'navColumn',
+  'navColumnText',
+  'navColumnTextSecondary',
   'surface',
   'surfaceSecondary',
   'text',

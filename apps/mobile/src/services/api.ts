@@ -599,6 +599,11 @@ export const {
   updateMyCourse,
   removeMyCourse,
   archiveSemester,
+  fetchMyStudySets,
+  createStudySet,
+  fetchStudySet,
+  updateStudySet,
+  deleteStudySet,
   // Classes: join-by-code, assigned work, official lecturer materials
   joinClassByCode,
   previewClassByCode,

@@ -23,6 +23,7 @@ jest.mock('../services/aiService', () => ({
   generateFlashcardsFromNotes: jest.fn(),
   generateLessonFromNotes: jest.fn(),
   generateRecapFromNotes: jest.fn(),
+  gradeEssayFromDraft: jest.fn(),
   explainAnswer: jest.fn(),
   getStudyRecommendations: jest.fn(),
   askTutor: jest.fn(),

@@ -9,10 +9,11 @@ interface BreadcrumbContext {
   libraryTab: 'notes' | 'flashcards';
   navigateTo: (mode: AppMode, params?: AppRouteParams) => void;
   setActiveTestResult: (result: any) => void;
+  studySetTitle?: string | null;
 }
 
 export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
-  const { appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult } = ctx;
+  const { appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult, studySetTitle } = ctx;
 
   switch (appMode) {
     case AppMode.LIBRARY:
@@ -30,6 +31,11 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
       return [
         { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
         { label: 'Course' },
+      ];
+    case AppMode.STUDY_SET_WORKSPACE:
+      return [
+        { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
+        { label: studySetTitle?.trim() || 'Study set' },
       ];
     case AppMode.AI_TOOLS:
       return [

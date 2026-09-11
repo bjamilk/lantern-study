@@ -271,6 +271,7 @@ export function useNoteHandlers(currentUserId?: string) {
         description: `Generated from note: ${note.title || 'Untitled Note'}`,
         cards: generated.map((card) => ({ front: card.front, back: card.back })),
         courseId: note.courseId,
+        studySetId: note.studySetId,
       });
 
       const deck = useFlashcardStore

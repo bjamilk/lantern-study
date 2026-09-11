@@ -20,6 +20,8 @@ module.exports = {
           background: 'rgb(var(--color-lantern-background) / <alpha-value>)',
           'background-secondary': 'rgb(var(--color-lantern-background-secondary) / <alpha-value>)',
           'nav-column': 'rgb(var(--color-lantern-nav-column) / <alpha-value>)',
+          'nav-column-text': 'rgb(var(--color-lantern-nav-column-text) / <alpha-value>)',
+          'nav-column-text-secondary': 'rgb(var(--color-lantern-nav-column-text-secondary) / <alpha-value>)',
           surface: 'rgb(var(--color-lantern-surface) / <alpha-value>)',
           'surface-secondary': 'rgb(var(--color-lantern-surface-secondary) / <alpha-value>)',
           text: 'rgb(var(--color-lantern-text) / <alpha-value>)',

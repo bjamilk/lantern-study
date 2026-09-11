@@ -67,7 +67,9 @@ svg[data-slot="icon"].w-24 {
   /* Warm off-white: hsl(30°, 50%, 96%) */
   --color-background: 250 245 240;
   --color-background-secondary: 243 235 226;
-  --color-nav-column: 228 202 180;
+  --color-nav-column: 20 18 33;
+  --color-nav-column-text: 248 250 252;
+  --color-nav-column-text-secondary: 184 179 204;
   --color-surface: 255 255 255;
   --color-surface-secondary: 241 245 249;
   --color-text: 15 23 42;
@@ -169,7 +171,9 @@ svg[data-slot="icon"].w-24 {
   color-scheme: dark;
   --color-background: 0 0 0;
   --color-background-secondary: 22 24 28;
-  --color-nav-column: 28 24 20;
+  --color-nav-column: 20 18 33;
+  --color-nav-column-text: 248 250 252;
+  --color-nav-column-text-secondary: 184 179 204;
   --color-surface: 16 18 20;
   --color-surface-secondary: 26 29 33;
   --color-text: 248 250 252;

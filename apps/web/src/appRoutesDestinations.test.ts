@@ -169,6 +169,17 @@ describe('tests, results and flashcard review modes have real urls', () => {
     );
     expect(buildAppPath(AppMode.COURSE_WORKSPACE)).toBe('/study');
     expect(isRoutableAppMode(AppMode.COURSE_WORKSPACE)).toBe(true);
+    expect(parseAppRoute('/study/sets/set-1')).toEqual({
+      mode: AppMode.STUDY_SET_WORKSPACE,
+      params: { studySetId: 'set-1' },
+    });
+    expect(buildAppPath(AppMode.STUDY_SET_WORKSPACE, { studySetId: 'set-1' })).toBe(
+      '/study/sets/set-1'
+    );
+    expect(isRoutableAppMode(AppMode.STUDY_SET_WORKSPACE)).toBe(true);
+    expect(resolveActiveDestination(AppMode.STUDY_SET_WORKSPACE, '/study/sets/set-1')).toBe(
+      'study'
+    );
     expect(resolveActiveDestination(AppMode.COURSE_WORKSPACE, '/study/courses/bio-201')).toBe(
       'study'
     );
@@ -185,6 +196,7 @@ describe('the five destinations own every screen', () => {
     expect(resolveActiveDestination(AppMode.TEST_ACTIVE, '/tests/active')).toBe('study');
     expect(resolveActiveDestination(AppMode.NOTE_EDITOR, '/notes/n1')).toBe('study');
     expect(resolveActiveDestination(AppMode.COURSE_WORKSPACE, '/study/courses/c1')).toBe('study');
+    expect(resolveActiveDestination(AppMode.STUDY_SET_WORKSPACE, '/study/sets/s1')).toBe('study');
     expect(resolveActiveDestination(AppMode.CHAT, '/chat')).toBe('chat');
     expect(resolveActiveDestination(AppMode.CREATE_GROUP, '/groups/new')).toBe('chat');
     // A community and a listing are both Campus — Chat never lights for a

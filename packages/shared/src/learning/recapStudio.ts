@@ -12,6 +12,7 @@ import { hasEnoughNoteStudyContent } from '../utils/noteStudyContent';
 import { isLectureNote } from './courseWorkspace';
 import { isLessonNote } from './lessonStudio';
 import { isCalendarNote } from './studyCalendar';
+import { isEssayNote } from './essayStudio';
 
 export type RecapStyle = 'summary' | 'lecture' | 'podcast';
 export type RecapLength = 'short' | 'medium' | 'long';
@@ -94,6 +95,7 @@ export function recapSourceNotes<
         !isRecapNote(note) &&
         !isLessonNote(note) &&
         !isCalendarNote(note) &&
+        !isEssayNote(note) &&
         hasEnoughNoteStudyContent({
           ...note,
           body: note.body ?? undefined,

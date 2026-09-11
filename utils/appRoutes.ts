@@ -205,6 +205,8 @@ export interface AppRouteParams {
   shopView?: Exclude<ShopView, 'browse' | 'sell'>;
   /** The course open on `/campus/shop/courses/:courseId`. */
   courseId?: string;
+  /** One personal study set: `/study/sets/:studySetId`. */
+  studySetId?: string;
   /** One personal test: `/study/tests/:testId`. */
   testId?: string;
   /** Join-class code on `/join/:code`. */
@@ -396,6 +398,10 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
     case AppMode.COURSE_WORKSPACE:
       return params.courseId
         ? `/study/courses/${encodeURIComponent(params.courseId)}`
+        : '/study';
+    case AppMode.STUDY_SET_WORKSPACE:
+      return params.studySetId
+        ? `/study/sets/${encodeURIComponent(params.studySetId)}`
         : '/study';
     case AppMode.AI_TOOLS:
       return '/ai-tools';
@@ -624,6 +630,10 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { mode: AppMode.LIBRARY, params: {} };
   }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
+  const studySetId = segment(path, /^\/study\/sets\/([^/]+)$/);
+  if (studySetId) {
+    return { mode: AppMode.STUDY_SET_WORKSPACE, params: { studySetId } };
+  }
   const studyCourseId = segment(path, /^\/study\/courses\/([^/]+)$/);
   if (studyCourseId) {
     return { mode: AppMode.COURSE_WORKSPACE, params: { courseId: studyCourseId } };

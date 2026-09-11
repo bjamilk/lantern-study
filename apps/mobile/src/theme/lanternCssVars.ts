@@ -61,6 +61,8 @@ function paletteToLanternVars(palette: ThemePalette, pairs: Record<FeatureKey, F
     '--color-lantern-background': channels(palette.background),
     '--color-lantern-background-secondary': channels(palette.backgroundSecondary),
     '--color-lantern-nav-column': channels(palette.navColumn),
+    '--color-lantern-nav-column-text': channels(palette.navColumnText),
+    '--color-lantern-nav-column-text-secondary': channels(palette.navColumnTextSecondary),
     '--color-lantern-surface': channels(palette.surface),
     '--color-lantern-surface-secondary': channels(palette.surfaceSecondary),
     '--color-lantern-text': channels(palette.text),

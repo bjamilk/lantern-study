@@ -18,7 +18,7 @@ import {
     ONBOARDING_COMPLETE_VALUE,
     isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { getNoteStudyContent, isQuizzableNote } from '@lantern/shared';
+import { getNoteStudyContent, isQuizzableNote, pickOpenStudySetId } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -172,6 +172,7 @@ import {
 import { Button } from './components/ui';
 import CampusHubScreen from './components/campus/CampusHubScreen';
 import MeScreen from './components/layout/MeScreen';
+import { MeProgress } from './components/me/MeProgress';
 import { useModalHistory } from './components/layout/useModalHistory';
 import { peekStashedAuthLinkError } from './utils/authErrorHash';
 import GuestMarketplaceShell from './components/marketplace/GuestMarketplaceShell';
@@ -181,6 +182,7 @@ import AICompanionPanel from './components/AICompanionPanel';
 import { usePlatformAdmin } from './hooks/usePlatformAdmin';
 import { useCompanionStore } from './stores/companionStore';
 import { useNotesStore } from './stores/notesStore';
+import { useStudySetStore } from './stores/studySetStore';
 import { useStudyGoalsStore } from './stores/studyGoalsStore';
 import { useNoteHandlers } from './hooks/useNoteHandlers';
 import { AI_CREDIT_COSTS } from '@lantern/shared';
@@ -858,11 +860,17 @@ export const App: React.FC = () => {
                     case AppMode.NOTES: return 'Notes library';
                     case AppMode.NOTE_EDITOR: return selectedNote ? `Note: ${selectedNote.title}` : 'Note editor';
                     case AppMode.COURSE_WORKSPACE: return selectedNote ? `Course – ${selectedNote.title}` : 'Course workspace';
+                    case AppMode.STUDY_SET_WORKSPACE: return selectedNote ? `Study set – ${selectedNote.title}` : 'Study set';
                     default: return undefined;
                 }
             })(),
-            noteId: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE ? selectedNote?.id : undefined,
-            noteContext: (appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE) && selectedNote
+            courseId:
+                selectedNote?.courseId ||
+                (appMode === AppMode.COURSE_WORKSPACE
+                    ? parseAppRoute(location.pathname).params.courseId
+                    : undefined),
+            noteId: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE ? selectedNote?.id : undefined,
+            noteContext: (appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE) && selectedNote
                 ? getNoteStudyContent({
                     sourceType: selectedNote.sourceType,
                     body: selectedNote.body,
@@ -870,7 +878,7 @@ export const App: React.FC = () => {
                     attachments: selectedNote.attachments,
                   }).substring(0, 6000) || undefined
                 : undefined,
-            noteTitle: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE ? selectedNote?.title : undefined,
+            noteTitle: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE ? selectedNote?.title : undefined,
             studyGoal,
             activeSessionSummary: activeTestSession
                 ? `Taking a ${activeTestSession.config?.mode || 'test'} with ${activeTestSession.questions?.length ?? 0} questions`
@@ -878,7 +886,7 @@ export const App: React.FC = () => {
                 ? `Study session with ${activeStudySession.questions?.length ?? 0} questions`
                 : undefined,
         };
-    }, [testResults, groups, dueCardsCount, currentUser, transactions, budget, appMode, selectedChat, selectedDeck, activeTestSession, activeStudySession, selectedNote, studyGoal]);
+    }, [testResults, groups, dueCardsCount, currentUser, transactions, budget, appMode, selectedChat, selectedDeck, activeTestSession, activeStudySession, selectedNote, studyGoal, location.pathname]);
 
     const handleCompanionAction = React.useCallback((action: CompanionAction) => {
         switch (action.type) {
@@ -957,22 +965,28 @@ export const App: React.FC = () => {
                         // or neither does. The old loop left a deck announcing
                         // cards it did not contain whenever the connection went
                         // partway through.
+                        const fileCourseId = companionContext.courseId;
                         const saved = await saveGeneratedDeck({
                             jobId: `companion-${currentUser.id}-${Date.now()}`,
                             userId: currentUser.id,
                             deckName,
                             description: `Auto-generated by Lantern for: ${topics || 'weak areas review'}`,
+                            courseId: fileCourseId,
                             cards: generated.map((card) => ({ front: card.front, back: card.back })),
                         });
                         const newDeck =
                             useFlashcardStore.getState().decks.find((d) => d.id === saved.ref.id) ??
                             ({ id: saved.ref.id, name: saved.ref.name || deckName } as any);
-                        setSelectedDeck(newDeck);
-                        setAppMode(AppMode.DECK_DETAIL);
+                        if (fileCourseId) {
+                            navigateTo(AppMode.COURSE_WORKSPACE, { courseId: fileCourseId });
+                        } else {
+                            setSelectedDeck(newDeck);
+                            setAppMode(AppMode.DECK_DETAIL);
+                        }
                         showToast(`Created "${deckName}" with ${saved.saved} flashcards`, 'success');
                         addNotification(`Created "${deckName}" with ${saved.saved} flashcards!`);
                         useCompanionStore.getState().sendMessageStreaming(
-                            `[system] Flashcard generation complete: created ${generated.length} cards in the deck "${deckName}". Confirm to the user in a friendly way, mention they can find the deck in Flashcards.`,
+                            `[system] Flashcard generation complete: created ${generated.length} cards in the deck "${deckName}". Confirm to the user in a friendly way, mention they can find the deck ${fileCourseId ? 'in this course under Cards' : 'in Flashcards'}.`,
                             companionContext
                         );
                     } catch (err: any) {
@@ -982,7 +996,7 @@ export const App: React.FC = () => {
                 break;
             }
         }
-    }, [selectedChat, groups, setAppMode, setSelectedDeck, openModal, handleSelectChat, currentUser, companionContext, addNotification, noteHandlers, selectedNote, notes, showToast]);
+    }, [selectedChat, groups, setAppMode, setSelectedDeck, openModal, handleSelectChat, currentUser, companionContext, addNotification, noteHandlers, selectedNote, notes, showToast, navigateTo]);
     const duplicateInfo = useUIStore(s => s.duplicateInfo);
     const setDuplicateInfo = useUIStore(s => s.setDuplicateInfo);
     const messagesForChat = !selectedChat ? [] : selectedChat.chatType === 'group'
@@ -1051,6 +1065,23 @@ export const App: React.FC = () => {
      */
     const handleStartNewTest = () => {
         navigateToPath(TEST_BUILDER_PATH);
+    };
+
+    const openStudyDestination = async () => {
+        const store = useStudySetStore.getState();
+        store.closePicker();
+        try {
+            const sets = await store.loadSets();
+            const id = pickOpenStudySetId(sets, store.lastOpenedId);
+            if (id) {
+                store.touchOpened(id);
+                navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId: id });
+                return;
+            }
+        } catch {
+            // Show the picker if the list cannot load.
+        }
+        navigateTo(AppMode.STUDY_HUB);
     };
 
     /**
@@ -2104,21 +2135,20 @@ export const App: React.FC = () => {
                     onPracticeFailedQuestions={handlePracticeFailedQuestions}
                     onExplainAnswer={handleAIExplainAnswer} />;
             case AppMode.DASHBOARD:
-                return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser} offlineBundles={offlineBundles}
+                return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser}
                     studyActivityDays={studyActivityDays}
-                    onNavigateToChat={() => navigateTo(AppMode.CHAT)} allMessages={messages}
-                    userQuestionStats={userQuestionStats} onViewAnalysis={setAnalyzingResult}
+                    onNavigateToChat={() => navigateTo(AppMode.CHAT)}
                     onNavigateToFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
                     onOpenCreateDeck={handleOpenCreateDeckModal}
                     onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
-                    onNavigateToInvite={() => navigateTo(AppMode.INVITE_FRIENDS)}
                     onNavigateToCreateGroup={() => {
                         setCreateGroupReturnMode(AppMode.CHAT);
                         navigateTo(AppMode.CREATE_GROUP);
                     }}
                     onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
-                    onNavigateToStudyHub={() => navigateTo(AppMode.STUDY_HUB)}
+                    onNavigateToStudyHub={() => { void openStudyDestination(); }}
                     onOpenCourseWorkspace={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
+                    onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
                     onNavigateToTests={() => navigateTo(AppMode.TESTS_HOME)}
                     onOpenDeckById={(deckId) => {
                         const deck = decks.find((d) => d.id === deckId);
@@ -2126,11 +2156,7 @@ export const App: React.FC = () => {
                         else navigateTo(AppMode.DECK_DETAIL, { deckId });
                     }}
                     onOpenNoteById={(noteId) => { void noteHandlers.openNote(noteId); }}
-                    // The readiness card's "Add your exam date" lands on the tab
-                    // that edits it, not merely inside Settings.
                     onOpenAcademicSettings={() => {
-                        // openModal resets the tab to 'profile', so the tab is
-                        // chosen after it, not before.
                         openModal('settings');
                         useUIStore.getState().setSettingsTab('academic');
                     }}
@@ -2151,60 +2177,9 @@ export const App: React.FC = () => {
                     onOpenImportAndStudy={() => setShowImportAndStudy(true)}
                     onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
                     onReviewDueCards={handleFlashcardStudy}
-                    onViewTestResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
-                    dailyQuests={dailyQuests}
-                    questsLoaded={questsLoaded}
-                    onRefreshGamification={refreshDashboardGamification}
                     serverStreak={serverStreak}
-                    streakFreezes={streakFreezes}
-                    onPurchaseStreakFreeze={handlePurchaseStreakFreeze}
-                    dueCardsCount={dueCardsCount} flashcards={flashcards} pendingSyncCount={pendingSyncResults.length + pendingFlashcardReviews.length}
-                    unreadNotificationCount={notifications.filter(n => !n.read).length}
-                    onOpenQuickTest={handleOpenQuickTest} onOpenQuickStudy={handleOpenQuickStudy}
-                    onGetStudyRecommendations={handleAIStudyRecommendations}
-                    studyGoal={studyGoal}
-                    onStudyGoalChange={setStudyGoal}
-                    dailyQuiz={(() => {
-                        const quiz = getDailyQuizForToday();
-                        if (!quiz || quiz.sourceNoteTitle || !quiz.noteId) return quiz;
-                        const note = notes.find((n) => n.id === quiz.noteId);
-                        return note
-                            ? { ...quiz, sourceNoteTitle: note.title?.trim() || 'Untitled note' }
-                            : quiz;
-                    })()}
-                    dailyQuizProgress={dailyQuizProgress}
-                    dailyQuizNoteOptions={notes
-                        .filter(isQuizzableNote)
-                        .map((n) => ({
-                            id: n.id,
-                            title: n.title?.trim() || 'Untitled note',
-                        }))}
-                    startingDailyQuiz={startingDailyQuiz}
-                    onStartDailyQuiz={async (noteId) => {
-                        const source = notes.find((n) => n.id === noteId);
-                        // Re-check on start, not just when the list was built: a note
-                        // can be archived (or emptied) in another tab between render
-                        // and click, and the picker would still be holding its id.
-                        if (!source || !isQuizzableNote(source)) {
-                            showToast(
-                                source?.isArchived
-                                    ? 'That note is archived. Unarchive it to quiz from it.'
-                                    : 'Add or import a note with at least 50 characters to generate a daily quiz.',
-                                'info'
-                            );
-                            return;
-                        }
-                        setStartingDailyQuiz(true);
-                        try {
-                            await noteHandlers.handleStartDailyQuiz(noteId, source.title);
-                        } catch (e: any) {
-                            showToast(e?.message || 'Failed to generate daily quiz.', 'error');
-                        } finally {
-                            setStartingDailyQuiz(false);
-                        }
-                    }}
-                    onDailyQuizAnswer={answerDailyQuestion}
-                    onCompleteDailyQuiz={completeDailyQuiz}
+                    dueCardsCount={dueCardsCount}
+                    onOpenQuickTest={handleOpenQuickTest}
                     activeTestSession={activeTestSession}
                     activeStudySession={activeStudySession}
                     onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
@@ -2266,12 +2241,16 @@ export const App: React.FC = () => {
                         onRecordLecture={handleRecordLecture}
                         noteCount={notes.length}
                         onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
+                        onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
                         onOpenImport={() => setShowImportAndStudy(true)}
                     />
                 );
+            case AppMode.STUDY_SET_WORKSPACE:
             case AppMode.COURSE_WORKSPACE: {
-                const workspaceCourseId = parseAppRoute(location.pathname).params.courseId;
-                if (!workspaceCourseId) {
+                const workspaceRoute = parseAppRoute(location.pathname).params;
+                const workspaceCourseId = workspaceRoute.courseId;
+                const workspaceSetId = workspaceRoute.studySetId;
+                if (!workspaceCourseId && !workspaceSetId) {
                     return (
                     <StudyHubScreen
                         dueCardsCount={dueCardsCount}
@@ -2295,6 +2274,7 @@ export const App: React.FC = () => {
                         recentTestCount={testResults.length}
                         onViewRecentTests={() => navigateTo(AppMode.TESTS_HOME)}
                         onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
+                        onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
                         onOpenImport={() => setShowImportAndStudy(true)}
                     />
                     );
@@ -2302,11 +2282,13 @@ export const App: React.FC = () => {
                 return (
                     <CourseWorkspace
                         courseId={workspaceCourseId}
+                        studySetId={workspaceSetId}
                         theme={theme}
                         companionContext={companionContext}
                         onCompanionAction={handleCompanionAction}
                         onSelectDeck={handleSelectDeck}
                         onStartMatch={handleStartMatch}
+                        onStartCram={handleStartCram}
                         onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
                         onNewTest={handleStartNewTest}
                         onOpenTest={(testId) => navigateToPath(buildTestDetailPath(testId))}
@@ -3082,6 +3064,64 @@ export const App: React.FC = () => {
                     onOpenSettings={() => openModal('settings')}
                     onLogout={handleLogoutAndRedirect}
                     pendingSyncCount={pendingSyncResults.length + pendingFlashcardReviews.length}
+                    progress={
+                        <MeProgress
+                            currentUser={currentUser}
+                            groups={groups}
+                            testResults={testResults}
+                            theme={theme}
+                            offlineBundles={offlineBundles}
+                            studyActivityDays={studyActivityDays}
+                            dailyQuests={dailyQuests}
+                            questsLoaded={questsLoaded}
+                            onRefreshGamification={refreshDashboardGamification}
+                            serverStreak={serverStreak}
+                            streakFreezes={streakFreezes}
+                            onPurchaseStreakFreeze={handlePurchaseStreakFreeze}
+                            studyGoal={studyGoal}
+                            onStudyGoalChange={setStudyGoal}
+                            dailyQuiz={(() => {
+                                const quiz = getDailyQuizForToday();
+                                if (!quiz || quiz.sourceNoteTitle || !quiz.noteId) return quiz;
+                                const note = notes.find((n) => n.id === quiz.noteId);
+                                return note
+                                    ? { ...quiz, sourceNoteTitle: note.title?.trim() || 'Untitled note' }
+                                    : quiz;
+                            })()}
+                            dailyQuizProgress={dailyQuizProgress}
+                            dailyQuizNoteOptions={notes
+                                .filter(isQuizzableNote)
+                                .map((n) => ({
+                                    id: n.id,
+                                    title: n.title?.trim() || 'Untitled note',
+                                }))}
+                            startingDailyQuiz={startingDailyQuiz}
+                            onStartDailyQuiz={async (noteId) => {
+                                const source = notes.find((n) => n.id === noteId);
+                                if (!source || !isQuizzableNote(source)) {
+                                    showToast(
+                                        source?.isArchived
+                                            ? 'That note is archived. Unarchive it to quiz from it.'
+                                            : 'Add or import a note with at least 50 characters to generate a daily quiz.',
+                                        'info'
+                                    );
+                                    return;
+                                }
+                                setStartingDailyQuiz(true);
+                                try {
+                                    await noteHandlers.handleStartDailyQuiz(noteId, source.title);
+                                } catch (e: any) {
+                                    showToast(e?.message || 'Failed to generate daily quiz.', 'error');
+                                } finally {
+                                    setStartingDailyQuiz(false);
+                                }
+                            }}
+                            onDailyQuizAnswer={answerDailyQuestion}
+                            onCompleteDailyQuiz={completeDailyQuiz}
+                            onViewAnalysis={setAnalyzingResult}
+                            onViewTestResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
+                        />
+                    }
                 />
             );
         }
@@ -3145,7 +3185,7 @@ export const App: React.FC = () => {
             navigateTo(AppMode.CREATE_GROUP);
         },
         onNavigateToDashboard: () => navigateTo(AppMode.DASHBOARD),
-        onNavigateToStudy: () => navigateTo(AppMode.STUDY_HUB),
+        onNavigateToStudy: () => { void openStudyDestination(); },
         onNavigateToChat: () => navigateTo(AppMode.CHAT),
         onNavigateToCampus: goToCampus,
         onNavigateToMe: () => navigateToPath(ME_PATH),
@@ -3200,7 +3240,7 @@ export const App: React.FC = () => {
                         ? 'hidden md:block'
                         : ''
             }`}>
-            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult })} />
+            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult, studySetTitle: useStudySetStore.getState().resolveSet(parseAppRoute(location.pathname).params.studySetId)?.title })} />
             </div>
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <AccountSuspendedNotice variant="banner" />
@@ -3390,7 +3430,7 @@ export const App: React.FC = () => {
                     });
                     closeModal('usernameRequired');
                 }} />}
-            {appMode !== AppMode.COURSE_WORKSPACE && (
+            {appMode !== AppMode.COURSE_WORKSPACE && appMode !== AppMode.STUDY_SET_WORKSPACE && (
             <AICompanionPanel
                 context={companionContext}
                 onAction={handleCompanionAction}
@@ -3402,7 +3442,9 @@ export const App: React.FC = () => {
                     <ImportAndStudyModal
                         isOpen={showImportAndStudy}
                         onClose={() => setShowImportAndStudy(false)}
-                        onComplete={() => undefined}
+                        onComplete={() => {
+                            setShowImportAndStudy(false);
+                        }}
                         onOpenNote={(noteId) => { noteHandlers.openNote(noteId); setShowImportAndStudy(false); }}
                         onTurnIntoStudyProduct={(result) => {
                             setStudyProductSource({ noteIds: [result.noteId], title: result.noteTitle });

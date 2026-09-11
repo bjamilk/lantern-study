@@ -22,6 +22,7 @@ export interface Deck {
   is_shared?: boolean;
   /** Academic archive: decks.course_id (raw rows come back snake_case). */
   course_id?: string | null;
+  study_set_id?: string | null;
   /** Syllabus topic inside `course_id`; absent until 20260826120000 is applied. */
   topic_id?: string | null;
   created_at?: string;
@@ -97,6 +98,7 @@ function mapDeckFromApi(data: any): Deck | null {
     user_id: data.user_id,
     is_shared: data.is_shared ?? data.isShared,
     course_id: data.course_id ?? data.courseId ?? null,
+    study_set_id: data.study_set_id ?? data.studySetId ?? null,
     // Dropping this made a deck's topic vanish from the local row on every
     // fetchDecks, so the picker read empty after any refresh.
     topic_id: data.topic_id ?? data.topicId ?? null,

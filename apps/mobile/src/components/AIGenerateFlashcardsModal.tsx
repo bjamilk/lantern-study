@@ -74,6 +74,8 @@ interface AIGenerateFlashcardsModalProps {
    */
   deckId?: string;
   deckName?: string;
+  /** File a new deck under this course when generation is not adding to an existing deck. */
+  courseId?: string | null;
 }
 
 const STYLE_OPTIONS: Array<{ value: FlashcardGenerationStyle; label: string }> = [
@@ -93,6 +95,7 @@ export default function AIGenerateFlashcardsModal({
   onFlashcardsGenerated,
   deckId,
   deckName,
+  courseId,
 }: AIGenerateFlashcardsModalProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -203,6 +206,7 @@ export default function AIGenerateFlashcardsModal({
             cards: flashcards,
             deckId: targetDeck,
             deckName: deckName || 'your deck',
+            courseId: courseId ?? undefined,
           });
           return { artifact: ref, resultCount: saved };
         },

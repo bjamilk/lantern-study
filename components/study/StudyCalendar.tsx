@@ -5,12 +5,13 @@ import {
   WEEKDAY_LABELS,
   acceptStudyCalendar,
   calendarExamChanged,
-  calendarKindLabel,
+  calendarSessionLabel,
   calendarMonthGrid,
   calendarMonthTitle,
   calendarSessionFeature,
   composeCalendarNoteBody,
   generateStudyCalendar,
+  markCalendarSessionDone,
   newCalendarNoteTitle,
   parseCalendarNoteBody,
   resolveCalendarStudioNote,
@@ -18,6 +19,7 @@ import {
   studyCalendarBlocker,
   type StudyCalendarPlan,
   type StudyCalendarSession,
+  studySetNotePayload,
 } from '@lantern/shared';
 import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
@@ -30,6 +32,7 @@ import { useToastStore } from '../../stores/toastStore';
 
 interface StudyCalendarProps {
   courseId: string;
+  studySetId?: string;
   courseLabel: string;
   notes: StudyNote[];
   calendarNotes: StudyNote[];
@@ -47,6 +50,7 @@ function shiftMonth(year: number, month: number, delta: number): { year: number;
 
 export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   courseId,
+  studySetId,
   courseLabel,
   notes,
   calendarNotes,
@@ -110,13 +114,13 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
       const created = await createNote({
         title: newCalendarNoteTitle(courseLabel),
         body,
-        courseId,
+        ...studySetNotePayload({ courseId, studySetId }),
       });
       await onNoteReady(created.id);
       setPlanNoteId(created.id);
       return created.id;
     },
-    [courseId, courseLabel, createNote, onNoteReady, saveNote]
+    [courseId, courseLabel, createNote, onNoteReady, saveNote, studySetId]
   );
 
   const blocker = studyCalendarBlocker({ examDate, today, topics });
@@ -178,6 +182,19 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
     } finally {
       setWorking(false);
     }
+  };
+
+  const openSession = async (session: StudyCalendarSession) => {
+    if (plan && session.status !== 'done' && planNoteId) {
+      const next = markCalendarSessionDone(plan, session.id);
+      setPlan(next);
+      try {
+        await persist(next, planNoteId);
+      } catch {
+        // Opening the session still matters if the save lags.
+      }
+    }
+    onOpenSession(session);
   };
 
   const accept = async () => {
@@ -335,11 +352,13 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
                             <button
                               key={session.id}
                               type="button"
-                              onClick={() => onOpenSession(session)}
-                              className={`w-full min-h-[44px] rounded-md px-1 text-left ${FEATURE_TINT_BG[feature]} ${FEATURE_INK_TEXT[feature]}`}
+                              onClick={() => void openSession(session)}
+                              className={`w-full min-h-[44px] rounded-md px-1 text-left ${FEATURE_TINT_BG[feature]} ${FEATURE_INK_TEXT[feature]} ${
+                                session.status === 'done' ? 'opacity-70' : ''
+                              }`}
                             >
                               <span className="text-label block truncate">
-                                {calendarKindLabel(session.kind)} · {session.topicTitle}
+                                {calendarSessionLabel(session)}
                               </span>
                             </button>
                           );

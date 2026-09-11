@@ -805,6 +805,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           // the cards are saved (and notified) even if the student leaves.
           deckId={aiDeckId}
           deckName={decks.find((d) => d.id === aiDeckId)?.name}
+          courseId={decks.find((d) => d.id === aiDeckId)?.course_id}
         />
       ) : null}
 

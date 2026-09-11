@@ -2,7 +2,9 @@ import { create } from 'zustand';
 import { AppState, type AppStateStatus } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
+import { composeLectureNoteBody, displayLectureTranscript } from '@lantern/shared';
 import { maxLectureRecordingMs } from '@lantern/shared/utils/lectureAudio';
+import { startLiveCaptionStream } from '../services/liveSpeech';
 import { fetchAIUsage } from '../services/ai';
 import { transcribeAudioForNote } from '../services/notes';
 import {
@@ -138,6 +140,8 @@ type SessionRefs = {
   serviceRunning: boolean;
   /** Whether the screen lock is currently held. */
   keepAwake: boolean;
+  stopCaptions: (() => void) | null;
+  captionPersistTimer: ReturnType<typeof setTimeout> | null;
 };
 
 const session: SessionRefs = {
@@ -153,6 +157,8 @@ const session: SessionRefs = {
   failedUri: null,
   serviceRunning: false,
   keepAwake: false,
+  stopCaptions: null,
+  captionPersistTimer: null,
 };
 
 const KEEP_AWAKE_TAG = 'lecture-recording';
@@ -167,6 +173,57 @@ function clearTickTimer() {
 function clearAppStateSub() {
   session.appStateSub?.remove();
   session.appStateSub = null;
+}
+
+function stopCaptionStream() {
+  if (session.captionPersistTimer) {
+    clearTimeout(session.captionPersistTimer);
+    session.captionPersistTimer = null;
+  }
+  const stop = session.stopCaptions;
+  session.stopCaptions = null;
+  stop?.();
+}
+
+function persistLiveCaptions(get: () => LectureRecordingState) {
+  const state = get();
+  if (!state.noteId) return;
+  const display = displayLectureTranscript({
+    committed: state.committedTranscript,
+    interim: state.interimTranscript,
+    whisper: state.whisperTranscript,
+  });
+  if (!display.trim()) return;
+  const typed = session.currentBodyProvider?.() ?? '';
+  void useNotesStore
+    .getState()
+    .saveNote(state.noteId, { body: composeLectureNoteBody(typed, display) })
+    .catch(() => undefined);
+}
+
+function startCaptionStream(
+  set: (partial: Partial<LectureRecordingState>) => void,
+  get: () => LectureRecordingState
+) {
+  stopCaptionStream();
+  void startLiveCaptionStream({
+    getCommitted: () => get().committedTranscript,
+    onUpdate: (next) => {
+      set({
+        committedTranscript: next.committed,
+        interimTranscript: next.interim,
+      });
+      if (session.captionPersistTimer) clearTimeout(session.captionPersistTimer);
+      session.captionPersistTimer = setTimeout(() => persistLiveCaptions(get), 800);
+    },
+  }).then((stop) => {
+    if (!stop) return;
+    if (get().status !== 'recording' || get().pausedAt) {
+      stop();
+      return;
+    }
+    session.stopCaptions = stop;
+  });
 }
 
 /**
@@ -235,6 +292,7 @@ function resetSession(
 ) {
   clearTickTimer();
   clearAppStateSub();
+  stopCaptionStream();
   applyRecordingSideEffects('idle', null);
   session.recording = null;
   session.abort = null;
@@ -464,6 +522,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
       // After the state is set, so the notification's text is the title the
       // banner is showing.
       applyRecordingSideEffects('recording', noteTitle);
+      startCaptionStream(set, get);
     } catch {
       await resetAudioMode();
       useToastStore
@@ -563,6 +622,8 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
 
     clearTickTimer();
     clearAppStateSub();
+    persistLiveCaptions(get);
+    stopCaptionStream();
     session.recording = null;
     // The microphone is going down, so the notification goes with it.
     applyRecordingSideEffects('naming', noteTitle);
@@ -646,7 +707,9 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
     if (!rec?.pauseAsync) return;
     try {
       await rec.pauseAsync();
-      set({ pausedAt: Date.now(), meterDb: null, tick: Date.now() });
+      persistLiveCaptions(get);
+      stopCaptionStream();
+      set({ pausedAt: Date.now(), meterDb: null, tick: Date.now(), interimTranscript: '' });
     } catch {
       useToastStore.getState().showToast('Could not pause. Still recording.', 'info');
     }
@@ -665,6 +728,7 @@ export const useLectureRecordingStore = create<LectureRecordingState>((set, get)
         pausedTotalMs: pausedTotalAfterResume(pausedTotalMs, pausedAt),
         tick: Date.now(),
       });
+      startCaptionStream(set, get);
     } catch {
       // The recorder would not restart. Say so plainly and leave the session
       // paused with its audio intact rather than pretending it resumed.

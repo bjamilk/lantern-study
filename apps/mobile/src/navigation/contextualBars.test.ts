@@ -399,6 +399,7 @@ describe('the active item', () => {
     expect(accentForRoute('StudyHub')).toBeNull();
     expect(activeItem('CourseRoom')).toBeNull();
     expect(accentForRoute('CourseRoom')).toBeNull();
+    expect(activeItem('NotesStudio')).toBeNull();
     expect(activeItem('NotesList')).toBeNull();
   });
 

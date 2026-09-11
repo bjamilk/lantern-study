@@ -323,7 +323,7 @@ const AppShell: React.FC<AppShellProps> = ({
                       it counts, not floating beside it.
                     */}
                     <div className="md:hidden flex items-center gap-1 shrink-0">
-                        {appMode !== AppMode.COURSE_WORKSPACE ? (
+                        {appMode !== AppMode.COURSE_WORKSPACE && appMode !== AppMode.STUDY_SET_WORKSPACE ? (
                         <button
                             type="button"
                             onClick={toggleCompanion}

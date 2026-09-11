@@ -154,11 +154,14 @@ import {
 import { LibraryScreen } from '../screens/library/LibraryScreen';
 import { StudyHubScreen } from '../screens/study/StudyHubScreen';
 import { CourseRoomScreen } from '../screens/study/CourseRoomScreen';
+import { NotesStudioScreen } from '../screens/study/NotesStudioScreen';
 import { AdaptiveQuizScreen } from '../screens/study/AdaptiveQuizScreen';
 import { LectureStudioScreen } from '../screens/study/LectureStudioScreen';
 import { LessonStudioScreen } from '../screens/study/LessonStudioScreen';
 import { RecapStudioScreen } from '../screens/study/RecapStudioScreen';
 import { StudyCalendarScreen } from '../screens/study/StudyCalendarScreen';
+import { EssayStudioScreen } from '../screens/study/EssayStudioScreen';
+import { PlayStudioScreen } from '../screens/study/PlayStudioScreen';
 
 import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen } from '../screens/groups';
 
@@ -403,11 +406,14 @@ function StudyNavigator() {
       <StudyStack.Screen name="StudyHub" component={StudyHubScreen} />
 
       <StudyStack.Screen name="CourseRoom" component={CourseRoomScreen} />
+      <StudyStack.Screen name="NotesStudio" component={NotesStudioScreen} />
       <StudyStack.Screen name="AdaptiveQuiz" component={AdaptiveQuizScreen} />
       <StudyStack.Screen name="LectureStudio" component={LectureStudioScreen} />
       <StudyStack.Screen name="LessonStudio" component={LessonStudioScreen} />
       <StudyStack.Screen name="RecapStudio" component={RecapStudioScreen} />
       <StudyStack.Screen name="StudyCalendar" component={StudyCalendarScreen} />
+      <StudyStack.Screen name="EssayStudio" component={EssayStudioScreen} />
+      <StudyStack.Screen name="PlayStudio" component={PlayStudioScreen} />
 
       <StudyStack.Screen name="Library" component={LibraryScreen} />
 

@@ -5,13 +5,14 @@ import {
   courseWorkspaceLabel,
   isLectureNote,
   isWalkableAttachment,
+  formatCourseMaterialCounts,
   materialsForCourse,
   testsFiledInCourse,
   upsertWorkspaceRecent,
 } from './courseWorkspace';
 
 describe('course workspace helpers', () => {
-  it('lists eleven activities and Waves A–F as ready', () => {
+  it('lists eleven activities and Waves A–I as ready', () => {
     expect(WORKSPACE_ACTIVITIES.map((a) => a.id)).toEqual([
       'notes',
       'walkthrough',
@@ -37,6 +38,7 @@ describe('course workspace helpers', () => {
       'recap',
       'play',
       'plan',
+      'essay',
     ]);
   });
 
@@ -67,6 +69,15 @@ describe('course workspace helpers', () => {
       { id: '4', course_id: 'bio' },
     ];
     expect(materialsForCourse(notes, 'bio').map((n) => n.id)).toEqual(['1', '4']);
+  });
+
+  it('summarises what is filed in a course', () => {
+    expect(formatCourseMaterialCounts({ notes: 0, decks: 0 })).toBe(
+      'No materials yet — import or open to add some'
+    );
+    expect(formatCourseMaterialCounts({ notes: 1, decks: 2, tests: 3 })).toBe(
+      '1 note · 2 decks · 3 tests'
+    );
   });
 
   it('files tests by course, source note, or source deck', () => {

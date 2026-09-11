@@ -326,7 +326,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       data-tip-id={tipId}
       aria-label={accessibleName}
       aria-current={isActive ? 'page' : undefined}
-      className={`w-full flex items-center p-3 rounded-xl text-lantern-text-secondary hover:bg-lantern-surface hover:text-lantern-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
+      className={`w-full flex items-center p-3 rounded-xl text-lantern-nav-column-text-secondary hover:bg-white/10 hover:text-lantern-nav-column-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
           isActive
             // Duotone active treatment: tint fill on the row, ink on the
             // glyph and the label. `primary-text` (not bare `primary`) is the
@@ -348,7 +348,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       ) : null}
       {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
       {showText && countLabel ? (
-        <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-lantern-background-secondary px-2 py-0.5 text-label tracking-normal text-lantern-text-secondary">
+        <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-label tracking-normal text-lantern-nav-column-text-secondary">
           {countLabel}
         </span>
       ) : null}
@@ -366,12 +366,12 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-nav-column backdrop-blur-md text-lantern-text border-r border-lantern-border transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
-      <div className="flex items-center justify-between h-16 p-4 border-b border-lantern-border flex-shrink-0">
+    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-nav-column backdrop-blur-md text-lantern-nav-column-text border-r border-white/10 transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
+      <div className="flex items-center justify-between h-16 p-4 border-b border-white/10 flex-shrink-0">
         {showText && (
           <div className="flex items-center gap-2.5">
               <LanternIcon size={28} />
-              <h1 className="font-display text-title font-semibold tracking-tight text-lantern-text">Lantern Study</h1>
+              <h1 className="font-display text-title font-semibold tracking-tight text-lantern-nav-column-text">Lantern Study</h1>
           </div>
         )}
         <div className={`flex items-center space-x-1 ${!showText && 'w-full justify-center'}`}>
@@ -384,7 +384,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                 className={`relative p-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 ${
                   isChatsSectionExpanded
                     ? 'text-lantern-primary bg-lantern-primary-background'
-                    : 'text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-surface'
+                    : 'text-lantern-nav-column-text-secondary hover:text-lantern-nav-column-text hover:bg-white/10'
                 }`}
                 aria-expanded={isChatsSectionExpanded}
                 aria-label={
@@ -404,7 +404,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             )}
             <button
               onClick={handleSidebarToggle}
-              className="p-2 text-lantern-text-secondary hover:text-lantern-text hover:bg-lantern-surface rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
+              className="p-2 text-lantern-nav-column-text-secondary hover:text-lantern-nav-column-text hover:bg-white/10 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
               aria-label={effectiveExpanded ? "Collapse sidebar" : "Expand sidebar"}
             >
               <AppIcon name="menu" size={24} className="transition-transform duration-300" />
@@ -476,7 +476,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           {/* The two things that FOLLOW you. They are not places, so they sit
               apart from the five — but they are labelled, because an unnamed
               icon is a guess. */}
-          <div className="mt-3 border-t border-lantern-border px-2 pt-3 space-y-1">
+          <div className="mt-3 border-t border-white/10 px-2 pt-3 space-y-1">
             {currentAppMode !== AppMode.COURSE_WORKSPACE ? (
             <NavButton
               navFunc={onToggleCompanion}
@@ -497,7 +497,7 @@ const Sidebar: React.FC<SidebarProps> = ({
         </nav>
       </div>
 
-      <div className="mt-auto p-2 border-t border-lantern-border">
+      <div className="mt-auto p-2 border-t border-white/10">
         {/* Everything that used to live down here — theme, low-data, settings,
             logout, the points row — is Me now. What stays is the one thing that
             is about the app rather than about the student: whether it can reach

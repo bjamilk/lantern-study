@@ -122,6 +122,7 @@ describe('recap studio', () => {
       { id: 'n', title: 'Pulmonary Embolism', body },
       { id: 'r', title: 'Recap — Podcast · PE', body: '```lantern-recap\n{}\n```' },
       { id: 's', title: 'Lesson — Explore · PE', body: '```lantern-lesson\n{}\n```' },
+      { id: 'e', title: 'Essay — Draft', body: '```lantern-essay\n{}\n```' },
     ];
     expect(recapSourceNotes(notes).map((note) => note.id)).toEqual(['n', 'l']);
   });

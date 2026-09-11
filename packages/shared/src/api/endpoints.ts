@@ -69,6 +69,7 @@ import type {
   TestAttemptTally,
   TestSessionProvenance,
   UserCourse,
+  StudySet,
 } from "../types";
 
 const QUESTION_STAT_UUID_RE =
@@ -4859,6 +4860,24 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{ archived: number }>("/users/me/courses/archive-semester", {
         method: "POST",
         body: JSON.stringify({ academicYear }),
+      }),
+
+    fetchMyStudySets: () => apiRequest<StudySet[]>("/users/me/study-sets"),
+    createStudySet: (input: { title: string; courseId?: string | null }) =>
+      apiRequest<StudySet>("/users/me/study-sets", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    fetchStudySet: (setId: string) =>
+      apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`),
+    updateStudySet: (setId: string, patch: { title?: string; courseId?: string | null }) =>
+      apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
+        method: "PATCH",
+        body: JSON.stringify(patch),
+      }),
+    deleteStudySet: (setId: string) =>
+      apiRequest<void>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
+        method: "DELETE",
       }),
 
     setCourseCanonical: (courseId: string, isCanonical: boolean) =>

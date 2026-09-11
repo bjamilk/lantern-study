@@ -9,6 +9,7 @@ import {
   NOTES_STUDIO_DEPTHS,
   applyLectureNoteStamp,
   buildLectureAsk,
+  composeLectureNoteBody,
   displayLectureTranscript,
   formatLectureClock,
   hasEnoughNoteStudyContent,
@@ -18,6 +19,7 @@ import {
   materialsForCourse,
   newLectureNoteTitle,
   resolveLectureStudioNote,
+  studySetNotePayload,
   shouldCreateLectureNote,
   shouldDeleteDoorNoteOnDiscard,
   typedNotesFromBody,
@@ -44,7 +46,7 @@ import { summarizeNote } from '../../services/notes';
 type Props = NativeStackScreenProps<StudyStackParamList, 'LectureStudio'>;
 
 export function LectureStudioScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel, noteId } = route.params;
+  const { courseId, courseLabel, noteId, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
   const selectedNote = useNotesStore((s) => s.selectedNote);
@@ -109,6 +111,7 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
   const notesRef = useRef(notesBody);
+  const liveRef = useRef('');
   const doorRef = useRef<{ noteId: string; doorTitle: string } | null>(null);
   titleRef.current = title;
   notesRef.current = notesBody;
@@ -119,6 +122,7 @@ export function LectureStudioScreen({ navigation, route }: Props) {
     interim: interimTranscript,
     whisper: knownTranscript,
   });
+  liveRef.current = liveTranscript;
 
   useEffect(() => {
     if (activeId) void loadNote(activeId);
@@ -140,7 +144,7 @@ export function LectureStudioScreen({ navigation, route }: Props) {
     saveTimer.current = setTimeout(() => {
       void saveNote(activeNote.id, {
         title: titleRef.current,
-        body: notesRef.current,
+        body: composeLectureNoteBody(notesRef.current, liveRef.current),
       }).catch(() => undefined);
     }, 700);
   }, [activeNote, saveNote]);
@@ -179,7 +183,11 @@ export function LectureStudioScreen({ navigation, route }: Props) {
       let target = activeNote;
       if (!target) {
         const createdTitle = newLectureNoteTitle();
-        target = await createNote({ title: createdTitle, body: '', courseId });
+        target = await createNote({
+          title: createdTitle,
+          body: '',
+          ...studySetNotePayload({ courseId, studySetId }),
+        });
         doorRef.current = { noteId: target.id, doorTitle: createdTitle };
         setSelectedNote(target);
         await loadNote(target.id);
@@ -399,7 +407,7 @@ export function LectureStudioScreen({ navigation, route }: Props) {
                 ) : (
                   <T.Body tone="tertiary">
                     {recording
-                      ? 'Listening… on this phone the full transcript fills in after you stop.'
+                      ? 'Listening… captions appear here when this phone can transcribe live. The full transcript still lands after you stop.'
                       : 'Start recording. Captions appear here; the full transcript lands after you stop.'}
                   </T.Body>
                 )}

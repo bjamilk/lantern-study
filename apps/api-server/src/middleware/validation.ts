@@ -126,6 +126,9 @@ export const courseIdBodyRule = () =>
 export const topicIdBodyRule = () =>
   body('topicId').optional({ values: 'null' }).isUUID().withMessage('topicId must be a valid UUID');
 
+export const studySetIdBodyRule = () =>
+  body('studySetId').optional({ values: 'null' }).isUUID().withMessage('studySetId must be a valid UUID');
+
 // Group validation rules
 export const validateGroupId = [
   param('groupId').isUUID().withMessage('Group ID must be a valid UUID'),
@@ -318,6 +321,7 @@ export const validateNoteCreate = [
   body('groupId').optional().isUUID().withMessage('groupId must be a valid UUID'),
   body('sourceType').optional().isIn(['typed', 'youtube', 'pdf', 'audio', 'import', 'presentation', 'photos']).withMessage('Invalid sourceType'),
   courseIdBodyRule(),
+  studySetIdBodyRule(),
   topicIdBodyRule(),
 ];
 
@@ -333,6 +337,7 @@ export const validateNoteUpdate = [
   body('isArchived').optional().isBoolean().withMessage('isArchived must be a boolean'),
   body('isPinned').optional().isBoolean().withMessage('isPinned must be a boolean'),
   courseIdBodyRule(),
+  studySetIdBodyRule(),
   topicIdBodyRule(),
 ];
 
@@ -447,6 +452,7 @@ export const validateDeckCreate = [
   body('name').trim().isLength({ min: 1, max: 200 }).withMessage('Deck name must be 1-200 characters'),
   body('description').optional().isString().isLength({ max: 2000 }),
   courseIdBodyRule(),
+  studySetIdBodyRule(),
   topicIdBodyRule(),
 ];
 
@@ -468,6 +474,7 @@ export const validateDeckUpdate = [
   body('name').optional().trim().isLength({ min: 1, max: 200 }),
   body('description').optional().isString().isLength({ max: 2000 }),
   courseIdBodyRule(),
+  studySetIdBodyRule(),
   topicIdBodyRule(),
 ];
 

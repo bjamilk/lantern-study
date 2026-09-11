@@ -14,6 +14,7 @@ import {
   lectureStudioPriceLine,
   newLectureNoteTitle,
   preferLectureTranscript,
+  studySetNotePayload,
   resolveLectureStudioNote,
   shouldCreateLectureNote,
   shouldDeleteDoorNoteOnDiscard,
@@ -41,6 +42,7 @@ import {
 
 interface LectureStudioProps {
   courseId: string;
+  studySetId?: string;
   theme: 'light' | 'dark';
   note: (StudyNote & { attachments?: Array<{ extractedText?: string | null }> }) | null;
   lectures: Array<StudyNote & { attachments?: Array<{ extractedText?: string | null }> }>;
@@ -55,6 +57,7 @@ interface LectureStudioProps {
 
 export const LectureStudio: React.FC<LectureStudioProps> = ({
   courseId,
+  studySetId,
   note,
   lectures,
   turning,
@@ -220,7 +223,11 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const ensureNote = async (): Promise<StudyNote | null> => {
     if (activeNote) return activeNote;
     const createdTitle = newLectureNoteTitle();
-    const created = await createNote({ title: createdTitle, body: '', courseId });
+    const created = await createNote({
+      title: createdTitle,
+      body: '',
+      ...studySetNotePayload({ courseId, studySetId }),
+    });
     doorRef.current = { noteId: created.id, doorTitle: createdTitle };
     await onNoteReady(created.id);
     return created;

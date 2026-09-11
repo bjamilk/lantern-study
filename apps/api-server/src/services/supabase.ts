@@ -115,6 +115,7 @@ import { OPEN_ORDER_STATUSES } from "./marketplaceOrders";
 import {
   applyCourseFilter,
   courseFilterKey,
+  isMissingStudySetColumn,
   isMissingTopicColumn,
   type CourseFilter,
 } from "./academicCourses";
@@ -428,6 +429,13 @@ async function writeWithTopicFallback(
   payload: Record<string, any>,
 ): Promise<any> {
   const result = await run(payload);
+  if (result?.error && "study_set_id" in payload && isMissingStudySetColumn(result.error)) {
+    logger.warn(
+      "study_set_id missing — write retried without it (apply 20260911120000_study_sets.sql)",
+    );
+    const { study_set_id: _droppedSet, ...withoutSet } = payload;
+    return writeWithTopicFallback(run, withoutSet);
+  }
   if (!result?.error || !("topic_id" in payload) || !isMissingTopicColumn(result.error)) {
     return result;
   }
@@ -4050,6 +4058,7 @@ export class SupabaseService {
       description?: string;
       isShared?: boolean;
       courseId?: string | null;
+      studySetId?: string | null;
       topicId?: string | null;
     },
     userId: string,
@@ -4066,6 +4075,7 @@ export class SupabaseService {
         user_id: userId,
         is_shared: deckData.isShared ?? false,
         course_id: deckData.courseId || null,
+        ...(deckData.studySetId !== undefined ? { study_set_id: deckData.studySetId || null } : {}),
         ...(topicId !== undefined ? { topic_id: topicId } : {}),
       },
     );
@@ -4097,6 +4107,7 @@ export class SupabaseService {
       description?: string;
       isShared?: boolean;
       courseId?: string | null;
+      studySetId?: string | null;
       topicId?: string | null;
     },
     cards: NormalizedDeckCard[],
@@ -4111,6 +4122,9 @@ export class SupabaseService {
 
     const rpcResult = await this.tryCreateDeckWithCardsRpc(deckData, topicId, cards, userId);
     if (rpcResult) {
+      if (deckData.studySetId) {
+        await this.updateDeck(rpcResult.deckId, { studySetId: deckData.studySetId }, userId);
+      }
       await this.invalidateDeckCaches(userId, rpcResult.deckId);
       const deck = await this.getDeckRow(rpcResult.deckId);
       const flashcards = await this.getDeckCardRows(rpcResult.deckId);
@@ -4126,6 +4140,7 @@ export class SupabaseService {
         user_id: userId,
         is_shared: deckData.isShared ?? false,
         course_id: deckData.courseId || null,
+        ...(deckData.studySetId !== undefined ? { study_set_id: deckData.studySetId || null } : {}),
         ...(topicId !== undefined ? { topic_id: topicId } : {}),
       },
     );
@@ -4524,6 +4539,7 @@ export class SupabaseService {
       isPublic?: boolean;
       isShared?: boolean;
       courseId?: string | null;
+      studySetId?: string | null;
       topicId?: string | null;
     },
     userId: string,
@@ -4550,6 +4566,7 @@ export class SupabaseService {
         is_shared: updates.isShared,
         // undefined = untouched (dropped by JSON), null = cleared
         course_id: updates.courseId === undefined ? undefined : updates.courseId || null,
+        study_set_id: updates.studySetId === undefined ? undefined : updates.studySetId || null,
         ...(topicId !== undefined ? { topic_id: topicId } : {}),
       },
     );
@@ -15489,6 +15506,7 @@ export class SupabaseService {
       folderId: row.folder_id || undefined,
       groupId: row.group_id || undefined,
       courseId: row.course_id ?? null,
+      studySetId: row.study_set_id ?? null,
       ...topicIdOf(row),
       title: row.title,
       body: row.body || "",
@@ -15922,6 +15940,7 @@ export class SupabaseService {
       summary?: string;
       copiedFromNoteId?: string;
       courseId?: string | null;
+      studySetId?: string | null;
       topicId?: string | null;
     },
     options: {
@@ -15942,6 +15961,7 @@ export class SupabaseService {
         folder_id: payload.folderId || null,
         group_id: payload.groupId || null,
         course_id: payload.courseId || null,
+        ...(payload.studySetId !== undefined ? { study_set_id: payload.studySetId || null } : {}),
         ...(topicId !== undefined ? { topic_id: topicId } : {}),
         source_type: payload.sourceType || "typed",
         youtube_url: payload.youtubeUrl || null,
@@ -16007,6 +16027,7 @@ export class SupabaseService {
       // Course is the owner's archive taxonomy, same as folder placement —
       // and so is the topic inside it.
       delete (updates as Record<string, unknown>).courseId;
+      delete (updates as Record<string, unknown>).studySetId;
       delete (updates as Record<string, unknown>).topicId;
     }
 
@@ -16020,6 +16041,8 @@ export class SupabaseService {
       dbUpdates.group_id = updates.groupId || null;
     if (updates.courseId !== undefined)
       dbUpdates.course_id = updates.courseId || null;
+    if (updates.studySetId !== undefined)
+      dbUpdates.study_set_id = updates.studySetId || null;
     // Validated against the course the note ENDS UP with, before the first
     // write attempt, so a wrong-course topic 400s instead of being stored.
     const topicId = await this.resolveArtefactTopicPatch("notes", noteId, updates);

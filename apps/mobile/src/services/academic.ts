@@ -5,12 +5,17 @@
  * course picker reads it), invalidates on writes, and keeps the auth store's
  * academicProfile in step with PUT /users/:id.
  */
-import type { Course, CourseTopic, UserCourse } from '@lantern/shared/types';
+import type { Course, CourseTopic, StudySet, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear } from '@lantern/shared/academic';
 import { sortCourseTopics } from '@lantern/shared';
 import {
   archiveSemester,
+  createStudySet,
+  deleteStudySet,
   fetchMyCourses,
+  fetchMyStudySets,
+  fetchStudySet,
+  updateStudySet,
   fetchUserProfile,
   removeMyCourse,
   setMyCourses,
@@ -311,3 +316,6 @@ export async function courseHasTopics(courseId: string): Promise<boolean> {
     return false;
   }
 }
+
+export { fetchMyStudySets, createStudySet, fetchStudySet, updateStudySet, deleteStudySet };
+export type { StudySet };

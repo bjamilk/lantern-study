@@ -17,6 +17,7 @@ import {
   lessonStudioPriceLine,
   newLessonNoteTitle,
   normalizeGeneratedLesson,
+  studySetNotePayload,
   parseLessonCommand,
   parseLessonNoteBody,
   quizItemsFromLesson,
@@ -39,6 +40,7 @@ import { aiAskTutor, aiGenerateLesson, aiGenerateQuestions } from '../../service
 
 interface LessonStudioProps {
   courseId: string;
+  studySetId?: string;
   theme: 'light' | 'dark';
   notes: StudyNote[];
   selectedNote: StudyNote | null;
@@ -86,6 +88,7 @@ function SpeechRecognitionCtor(): (new () => BrowserSpeechRecognition) | null {
 
 export const LessonStudio: React.FC<LessonStudioProps> = ({
   courseId,
+  studySetId,
   notes,
   selectedNote,
   turning,
@@ -222,7 +225,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
       const created = await createNote({
         title: newLessonNoteTitle(chosen, note.title || 'Untitled note'),
         body: composeLessonNoteBody(next),
-        courseId,
+        ...studySetNotePayload({ courseId, studySetId }),
       });
       setLessonNoteId(created.id);
       setSession(next);

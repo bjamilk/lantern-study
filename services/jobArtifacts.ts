@@ -39,6 +39,7 @@ export interface SaveGeneratedDeckInput {
   description?: string;
   /** File the deck under a course/topic, as the door that opened it promised. */
   courseId?: string | null;
+  studySetId?: string | null;
   topicId?: string | null;
   /** Owner, for the local library refresh after the write lands. */
   userId?: string;
@@ -207,6 +208,7 @@ async function writeDeck(
     name: payload.deckName.slice(0, 80),
     description: payload.description,
     ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+    ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
     ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
     cards: payload.cards.map((card) => ({
       type: 'BASIC' as const,

@@ -368,6 +368,7 @@ export const mapDeckFromApi = (data: any): Deck => {
     description: data.description,
     createdAt: data.created_at || data.createdAt,
     courseId: data.courseId !== undefined ? data.courseId : (data.course_id ?? undefined),
+    studySetId: data.studySetId !== undefined ? data.studySetId : (data.study_set_id ?? undefined),
   };
 };
 

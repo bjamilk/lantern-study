@@ -1,10 +1,10 @@
 /**
  * Course workspace — Wave A of the academic replica.
  *
- * StudyFetch organises academic work around a Study Set. Lantern already files
- * notes, decks and tests by course, so the room is the enrolled course, not a
- * parallel object. This module is the activity list, Turn-into targets, and
- * the pure helpers both clients use to fill that room.
+ * StudyFetch organises academic work around a Study Set. The Study tab opens
+ * a personal set; a course is optional filing. This module is the activity
+ * list, Turn-into targets, and the pure helpers both clients use to fill that
+ * room.
  */
 import type { FeatureKey } from '../design';
 
@@ -124,7 +124,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
   {
     id: 'play',
     label: 'Play',
-    promise: 'Match game from this course’s cards',
+    promise: 'Match and speed games from this course’s cards',
     icon: 'game-controller',
     feature: 'flashcards',
     status: 'ready',
@@ -143,12 +143,12 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
     promise: 'Rubric feedback on a draft',
     icon: 'document',
     feature: 'tests',
-    status: 'later',
+    status: 'ready',
   },
 ];
 
 export const WORKSPACE_LATER_COPY =
-  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture, lesson, recap and play are ready now.';
+  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture, lesson, recap, play, plan and essay are ready now.';
 
 export type TurnIntoTargetId = 'cards' | 'test';
 
@@ -210,6 +210,28 @@ export function materialsForCourse<T extends { courseId?: string | null; course_
   courseId: string
 ): T[] {
   return items.filter((item) => filedCourseId(item) === courseId);
+}
+
+/** Hub and room captions: what is actually sitting in this course. */
+export function formatCourseMaterialCounts(counts: {
+  notes: number;
+  decks: number;
+  tests?: number;
+}): string {
+  const notes = counts.notes;
+  const decks = counts.decks;
+  const tests = counts.tests ?? 0;
+  if (notes === 0 && decks === 0 && tests === 0) {
+    return 'No materials yet — import or open to add some';
+  }
+  const parts = [
+    `${notes} ${notes === 1 ? 'note' : 'notes'}`,
+    `${decks} ${decks === 1 ? 'deck' : 'decks'}`,
+  ];
+  if (tests > 0) {
+    parts.push(`${tests} ${tests === 1 ? 'test' : 'tests'}`);
+  }
+  return parts.join(' · ');
 }
 
 /** Personal tests filed on the course, or minted from one of its notes/decks. */

@@ -79,6 +79,8 @@ export interface StudyNote {
   folderId?: string;
   /** Academic archive: notes.course_id (null clears). */
   courseId?: string | null;
+  /** Personal study set this note belongs to. */
+  studySetId?: string | null;
   /** Syllabus topic inside `courseId` (null clears); never set without a course. */
   topicId?: string | null;
   sourceType?: string;

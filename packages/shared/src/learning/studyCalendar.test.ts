@@ -11,6 +11,8 @@ import {
   calendarMonthGrid,
   calendarMonthTitle,
   calendarSessionFeature,
+  calendarSessionLabel,
+  markCalendarSessionDone,
   composeCalendarNoteBody,
   generateStudyCalendar,
   isCalendarNote,
@@ -122,6 +124,10 @@ describe('study calendar', () => {
     const accepted = acceptStudyCalendar(generated.plan, '2026-09-11T12:00:00.000Z');
     expect(accepted.acceptedAt).toBe('2026-09-11T12:00:00.000Z');
     expect(accepted.sessions.every((session) => session.status === 'accepted')).toBe(true);
+    const first = accepted.sessions[0]!;
+    const done = markCalendarSessionDone(accepted, first.id);
+    expect(done.sessions.find((session) => session.id === first.id)?.status).toBe('done');
+    expect(calendarSessionLabel({ ...first, status: 'done' })).toMatch(/^Done · /);
     const body = composeCalendarNoteBody(accepted);
     expect(body.includes(CALENDAR_FENCE)).toBe(true);
     expect(isCalendarNote({ title: newCalendarNoteTitle('PHARM 212'), body })).toBe(true);

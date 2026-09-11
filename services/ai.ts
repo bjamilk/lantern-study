@@ -388,6 +388,29 @@ export async function aiGenerateRecap(
   return aiRequest('/generate-recap', { notes, ...options });
 }
 
+export async function aiGradeEssay(
+  draft: string,
+  options?: {
+    rubricText?: string;
+    prompt?: string;
+    sourceNotes?: string;
+    sourceTitle?: string;
+  }
+): Promise<{
+  overall: number;
+  scores: Array<{
+    criterionId: string;
+    label: string;
+    score: number;
+    max: number;
+    comment: string;
+  }>;
+  feedback: string;
+  provider: string;
+}> {
+  return aiRequest('/grade-essay', { draft, ...options });
+}
+
 export async function aiEnhanceFlashcard(
   front: string,
   back: string

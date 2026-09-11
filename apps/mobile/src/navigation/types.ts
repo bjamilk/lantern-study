@@ -46,37 +46,53 @@ export type StudyStackParamList = {
   /**
    * One enrolled course as a room — notes, decks, tests and lectures together.
    */
-  CourseRoom: { courseId: string; courseLabel?: string };
+  CourseRoom: { courseId?: string; studySetId?: string; courseLabel?: string };
+  /**
+   * Notes studio for one course — enhance, turn into, ask, walk through.
+   * Distinct from NoteEditor; the room stays a dashboard.
+   */
+  NotesStudio: { courseId?: string; courseLabel?: string; noteId: string; studySetId?: string };
   /**
    * Adaptive quiz for one course — confirm, confidence 1–3, then explanation.
    * Distinct from TestTaking (submit-all).
    */
   AdaptiveQuiz: {
-    courseId: string;
+    courseId?: string;
     courseLabel?: string;
     noteId?: string;
+    studySetId?: string;
     seedItems?: import('@lantern/shared/learning').AdaptiveQuizItem[];
   };
   /**
    * Lecture studio for one course — my notes, live transcript, ask.
    * Distinct from NoteEditor; the room stays a dashboard.
    */
-  LectureStudio: { courseId: string; courseLabel?: string; noteId?: string };
+  LectureStudio: { courseId?: string; courseLabel?: string; noteId?: string; studySetId?: string };
   /**
    * Lesson studio for one course — board, plan, voice, chat.
    * Distinct from companion overlay; Explore skips, Mastery sequences.
    */
-  LessonStudio: { courseId: string; courseLabel?: string; noteId?: string };
+  LessonStudio: { courseId?: string; courseLabel?: string; noteId?: string; studySetId?: string };
   /**
    * Recap studio for one course — generated listen-through with transcript and ask.
    * Distinct from Narration, which reads the document page.
    */
-  RecapStudio: { courseId: string; courseLabel?: string; noteId?: string };
+  RecapStudio: { courseId?: string; courseLabel?: string; noteId?: string; studySetId?: string };
   /**
    * Study calendar for one course — month grid from exam date + outline.
    * Distinct from Library's outline editor; Edit outline still opens that sheet.
    */
-  StudyCalendar: { courseId: string; courseLabel?: string };
+  StudyCalendar: { courseId?: string; courseLabel?: string; studySetId?: string };
+  /**
+   * Essay studio for one course — practice feedback on a draft, with or without a rubric.
+   * Not an official grade. Distinct from generating exam essay questions.
+   */
+  EssayStudio: { courseId?: string; courseLabel?: string; noteId?: string; studySetId?: string };
+  /**
+   * Play hub for one course — Match plus speed games from this course's deck.
+   * Group duels stay in Chat.
+   */
+  PlayStudio: { courseId?: string; courseLabel?: string; studySetId?: string };
   /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on
@@ -92,7 +108,7 @@ export type StudyStackParamList = {
   FlashcardsList: undefined;
   DeckDetail: { deckId: string; deckName?: string };
   FlashcardReview: { deckId: string; deckName?: string };
-  CramSession: { deckId: string; deckName?: string; timedMinutes?: number };
+  CramSession: { deckId: string; deckName?: string; timedMinutes?: number; cardIds?: string[] };
   MatchStudy: { deckId: string; deckName?: string };
   LearnStudy: { deckId: string; deckName?: string };
   NotesList: undefined;

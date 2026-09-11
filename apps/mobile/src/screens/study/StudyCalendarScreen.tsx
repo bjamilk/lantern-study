@@ -8,15 +8,17 @@ import {
   WEEKDAY_LABELS,
   acceptStudyCalendar,
   calendarExamChanged,
-  calendarKindLabel,
+  calendarSessionLabel,
   calendarMonthGrid,
   calendarMonthTitle,
   calendarSessionFeature,
   composeCalendarNoteBody,
   generateStudyCalendar,
   isCalendarNote,
+  markCalendarSessionDone,
   materialsForCourse,
   newCalendarNoteTitle,
+  studySetNotePayload,
   parseCalendarNoteBody,
   resolveCalendarStudioNote,
   sessionsOnDate,
@@ -53,7 +55,7 @@ function sessionChipClass(kind: StudyCalendarSession['kind']): string {
 }
 
 export function StudyCalendarScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel } = route.params;
+  const { courseId, courseLabel, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
   const selectedNote = useNotesStore((s) => s.selectedNote);
@@ -129,13 +131,13 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
       const created = await createNote({
         title: newCalendarNoteTitle(label),
         body,
-        courseId,
+        ...studySetNotePayload({ courseId, studySetId }),
       });
       setPlanNoteId(created.id);
       await loadNote(created.id);
       return created.id;
     },
-    [courseId, createNote, label, loadNote, saveNote]
+    [courseId, createNote, label, loadNote, saveNote, studySetId]
   );
 
   const blocker = studyCalendarBlocker({ examDate, today, topics });
@@ -144,13 +146,18 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   const daySessions = selectedDate && plan ? sessionsOnDate(plan, selectedDate) : [];
 
   const openSession = (session: StudyCalendarSession) => {
+    if (plan && session.status !== 'done' && planNoteId) {
+      const next = markCalendarSessionDone(plan, session.id);
+      setPlan(next);
+      void persist(next, planNoteId).catch(() => undefined);
+    }
     if (session.kind === 'cards') {
       const deck = courseDecks.find((row) => row.id === session.targetId) || courseDecks[0];
       if (!deck) {
         showToast('File a deck in this course first.', 'info');
         return;
       }
-      navigation.navigate('DeckDetail', { deckId: deck.id, deckName: deck.name });
+      navigation.navigate('CramSession', { deckId: deck.id, deckName: deck.name });
       return;
     }
     navigation.navigate('AdaptiveQuiz', {
@@ -397,15 +404,39 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
                       onPress={() => openSession(session)}
                       className={`min-h-[44px] rounded-xl border px-3 py-2 ${sessionChipClass(session.kind)}`}
                     >
-                      <T.Body>
-                        {calendarKindLabel(session.kind)} · {session.topicTitle}
-                      </T.Body>
+                      <T.Body>{calendarSessionLabel(session)}</T.Body>
                       <T.Caption tone="secondary">{session.minutes} min</T.Caption>
                     </Pressable>
                   ))
                 )}
               </View>
             ) : null}
+          </View>
+        ) : null}
+
+        {calendars.length > 1 ? (
+          <View className="gap-2">
+            <T.Label tone="secondary">SAVED PLANS</T.Label>
+            {calendars.map((note) => (
+              <Pressable
+                key={note.id}
+                onPress={() => {
+                  const parsed = parseCalendarNoteBody(note.body);
+                  if (!parsed) return;
+                  setPlan(parsed);
+                  setPlanNoteId(note.id);
+                  setHoursPerWeek(parsed.hoursPerWeek);
+                  void loadNote(note.id);
+                }}
+                className={`min-h-[44px] rounded-xl border px-3 py-2 ${
+                  note.id === planNoteId
+                    ? 'border-lantern-feature-tests-ink bg-lantern-feature-tests-tint'
+                    : 'border-lantern-border'
+                }`}
+              >
+                <T.Body>{note.title || 'Plan'}</T.Body>
+              </Pressable>
+            ))}
           </View>
         ) : null}
 

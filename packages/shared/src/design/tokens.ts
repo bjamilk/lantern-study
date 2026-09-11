@@ -17,10 +17,12 @@ const lightBase = {
   // Warm off-white: hsl(30°, 50%, 96%) — easier on the eyes than cool alice-blue
   background: '#faf5f0',
   backgroundSecondary: '#f3ebe2',
-  // Desktop destination rail. Darker brown than the page cream so the menu
-  // column reads as chrome. Body and secondary ink clear AA; tertiary does not,
-  // so that rail uses secondary for muted glyphs.
-  navColumn: '#e4cab4',
+  // Desktop destination rail. Complementary indigo-ink navy against the warm
+  // cream page (StudyFetch-style dark chrome). Ink on this rail is
+  // `navColumnText` / `navColumnTextSecondary`, not page `text`.
+  navColumn: '#141221',
+  navColumnText: '#f8fafc',
+  navColumnTextSecondary: '#b8b3cc',
   surface: '#ffffff',
   surfaceSecondary: '#f1f5f9',
   card: '#ffffff',
@@ -108,7 +110,9 @@ const darkBase = {
   // X border gray (#2f3336). Chosen over the old navy family on user request.
   background: '#000000',
   backgroundSecondary: '#16181c',
-  navColumn: '#1c1814',
+  navColumn: '#141221',
+  navColumnText: '#f8fafc',
+  navColumnTextSecondary: '#b8b3cc',
   surface: '#101214',
   surfaceSecondary: '#1a1d21',
   card: '#101214',
@@ -479,6 +483,8 @@ export const cssVarNames = {
   background: '--color-background',
   backgroundSecondary: '--color-background-secondary',
   navColumn: '--color-nav-column',
+  navColumnText: '--color-nav-column-text',
+  navColumnTextSecondary: '--color-nav-column-text-secondary',
   surface: '--color-surface',
   surfaceSecondary: '--color-surface-secondary',
   text: '--color-text',
@@ -528,6 +534,8 @@ export function paletteToCssVars(palette: ThemePalette): Record<string, string> 
     [cssVarNames.background]: ch(palette.background),
     [cssVarNames.backgroundSecondary]: ch(palette.backgroundSecondary),
     [cssVarNames.navColumn]: ch(palette.navColumn),
+    [cssVarNames.navColumnText]: ch(palette.navColumnText),
+    [cssVarNames.navColumnTextSecondary]: ch(palette.navColumnTextSecondary),
     [cssVarNames.surface]: ch(palette.surface),
     [cssVarNames.surfaceSecondary]: ch(palette.surfaceSecondary),
     [cssVarNames.text]: ch(palette.text),

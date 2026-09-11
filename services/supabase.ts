@@ -1734,6 +1734,7 @@ export const mapDeckFromApi = (d: any): Deck => ({
   userId: d.user_id || d.userId,
   isShared: d.is_shared ?? d.isShared ?? false,
   courseId: d.courseId !== undefined ? d.courseId : (d.course_id ?? null),
+  studySetId: d.studySetId !== undefined ? d.studySetId : (d.study_set_id ?? null),
   // Absent until 20260826120000 is applied — null then, not undefined, so the
   // deck simply reads as "no topic" rather than breaking the picker.
   topicId: d.topicId !== undefined ? d.topicId : (d.topic_id ?? null),

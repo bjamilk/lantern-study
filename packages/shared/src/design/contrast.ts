@@ -170,18 +170,28 @@ export function allContrastChecks(): ContrastCheck[] {
   out.push(...primarySplitChecks(lightTheme, 'light'), ...primarySplitChecks(darkTheme, 'dark'));
 
   out.push(
-    check(`light text`, `nav column ${lightTheme.navColumn}`, lightTheme.text, lightTheme.navColumn),
     check(
-      `light textSecondary`,
+      `light navColumnText`,
       `nav column ${lightTheme.navColumn}`,
-      lightTheme.textSecondary,
+      lightTheme.navColumnText,
       lightTheme.navColumn
     ),
-    check(`dark text`, `nav column ${darkTheme.navColumn}`, darkTheme.text, darkTheme.navColumn),
     check(
-      `dark textSecondary`,
+      `light navColumnTextSecondary`,
+      `nav column ${lightTheme.navColumn}`,
+      lightTheme.navColumnTextSecondary,
+      lightTheme.navColumn
+    ),
+    check(
+      `dark navColumnText`,
       `nav column ${darkTheme.navColumn}`,
-      darkTheme.textSecondary,
+      darkTheme.navColumnText,
+      darkTheme.navColumn
+    ),
+    check(
+      `dark navColumnTextSecondary`,
+      `nav column ${darkTheme.navColumn}`,
+      darkTheme.navColumnTextSecondary,
       darkTheme.navColumn
     )
   );

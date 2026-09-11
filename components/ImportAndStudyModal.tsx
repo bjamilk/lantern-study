@@ -29,6 +29,8 @@ interface ImportAndStudyModalProps {
   onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
   /** File the imported note under this course (course workspace Import). */
   courseId?: string | null;
+  /** File the imported note into a study set. Course remains optional. */
+  studySetId?: string | null;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -40,6 +42,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   onOpenNote,
   onTurnIntoStudyProduct,
   courseId,
+  studySetId,
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -155,16 +158,25 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
 
   const fileImportedNote = useCallback(
     async (note: StudyNote): Promise<StudyNote> => {
-      if (!courseId || note.courseId === courseId) return note;
-      const updated = await notesApi.updateNote(note.id, { courseId });
+      const needsCourse = Boolean(courseId && note.courseId !== courseId);
+      const needsSet = Boolean(studySetId && note.studySetId !== studySetId);
+      if (!needsCourse && !needsSet) return note;
+      const updated = await notesApi.updateNote(note.id, {
+        ...(needsCourse ? { courseId } : {}),
+        ...(needsSet ? { studySetId } : {}),
+      });
       const notesState = useNotesStore.getState();
       notesState.setNotes([updated, ...notesState.notes.filter((n) => n.id !== updated.id)]);
       if (notesState.selectedNote?.id === updated.id) {
-        notesState.setSelectedNote({ ...notesState.selectedNote, courseId: updated.courseId });
+        notesState.setSelectedNote({
+          ...notesState.selectedNote,
+          courseId: updated.courseId,
+          studySetId: updated.studySetId,
+        });
       }
       return { ...note, ...updated };
     },
-    [courseId]
+    [courseId, studySetId]
   );
 
   const processContent = useCallback(
@@ -177,6 +189,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
           body,
           sourceType: sourceType as StudyNote['sourceType'],
           ...(courseId ? { courseId } : {}),
+          ...(studySetId ? { studySetId } : {}),
         });
         const note = await fileImportedNote(created);
         await runStudyGenerators(note);
@@ -185,7 +198,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         setStep('input');
       }
     },
-    [runStudyGenerators, fileImportedNote, courseId]
+    [runStudyGenerators, fileImportedNote, courseId, studySetId]
   );
 
   const handlePdf = async (file: File) => {

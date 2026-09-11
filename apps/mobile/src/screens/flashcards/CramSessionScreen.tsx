@@ -19,7 +19,7 @@ type NavigationProp = {
 
 interface Props {
   navigation: NavigationProp;
-  route: { params?: { deckId?: string; deckName?: string; timedMinutes?: number } };
+  route: { params?: { deckId?: string; deckName?: string; timedMinutes?: number; cardIds?: string[] } };
 }
 
 export function CramSessionScreen({ navigation, route }: Props) {
@@ -32,9 +32,16 @@ export function CramSessionScreen({ navigation, route }: Props) {
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Cram';
   const timedMinutes = route.params?.timedMinutes ?? 0;
+  const cardIds = route.params?.cardIds;
   const { flashcards } = useFlashcardStore();
 
-  const allCards = useMemo(() => flashcards[deckId] ?? [], [flashcards, deckId]);
+  const allCards = useMemo(() => {
+    const pool = flashcards[deckId] ?? [];
+    if (!cardIds?.length) return pool;
+    const wanted = new Set(cardIds);
+    const filtered = pool.filter((card) => wanted.has(card.id));
+    return filtered.length > 0 ? filtered : pool;
+  }, [flashcards, deckId, cardIds]);
   const [queue, setQueue] = useState<Flashcard[]>([]);
   const [index, setIndex] = useState(0);
   const [showBack, setShowBack] = useState(false);

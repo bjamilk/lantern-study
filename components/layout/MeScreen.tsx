@@ -8,16 +8,8 @@ import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { studyLevelLabel } from '@lantern/shared';
 
 /**
- * Me — the fifth destination.
- *
- * It is ME and nothing else: who I am, the two things I keep about my own
- * account (Budget, Downloads), the two switches that change how the app treats
- * me (dark mode, low-data), Settings, and the way out. Nothing here is a
- * feature other people use; nothing that belongs to a feature lives here.
- *
- * Budget and Downloads used to be sidebar entries competing with the places a
- * student actually goes. "Downloads" is the name — the screen is the same one
- * that was called Offline Activity, which described a state rather than a place.
+ * Me — the fifth destination: profile, account, and the student's own
+ * progress (goals, quizzes, achievements, test history).
  */
 export interface MeScreenProps {
   currentUser: User;
@@ -28,6 +20,7 @@ export interface MeScreenProps {
   onOpenSettings: () => void;
   onLogout: () => void;
   pendingSyncCount?: number;
+  progress?: React.ReactNode;
 }
 
 const Row: React.FC<{
@@ -103,6 +96,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
   onOpenSettings,
   onLogout,
   pendingSyncCount = 0,
+  progress,
 }) => {
   const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
@@ -117,8 +111,8 @@ const MeScreen: React.FC<MeScreenProps> = ({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-lantern-background">
-      <div className="mx-auto w-full max-w-2xl pb-10">
-        <div className="flex items-center gap-4 px-4 py-6">
+      <div className="mx-auto w-full max-w-4xl px-4 md:px-6 pb-10">
+        <div className="flex items-center gap-4 py-6">
           <Avatar
             name={currentUser.name}
             id={currentUser.id}
@@ -151,6 +145,8 @@ const MeScreen: React.FC<MeScreenProps> = ({
           </span>
           <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
         </button>
+
+        {progress}
 
         <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
           <Row

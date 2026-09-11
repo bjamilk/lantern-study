@@ -159,6 +159,7 @@ interface CostSpec {
  *   notes/:id/attachments/:id/narration (GET)           no limiter — replaying a paid script is free
  *   generate-lesson                                      aiRateLimitForFeature('lesson')
  *   generate-recap                                       aiRateLimitForFeature('recap')
+ *   grade-essay                                          aiRateLimitForFeature('essay')
  */
 export const AI_COST_SPECS: readonly CostSpec[] = [
   {
@@ -244,6 +245,13 @@ export const AI_COST_SPECS: readonly CostSpec[] = [
     detail: 'A listen-through of a note — summary, lecture, or podcast. Not a read-aloud of the page.',
     cost: AI_FEATURE_CREDIT_COST,
     featureKey: 'recap',
+  },
+  {
+    id: 'essay',
+    label: 'Grade a practice essay',
+    detail: 'Practice feedback on a draft, with or without a rubric. Not an official grade.',
+    cost: AI_FEATURE_CREDIT_COST,
+    featureKey: 'essay',
   },
   {
     id: 'study_recommendations',

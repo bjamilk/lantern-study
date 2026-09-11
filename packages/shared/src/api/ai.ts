@@ -420,6 +420,31 @@ export function createAIClient(config: AIClientConfig) {
       }>('/generate-recap', { notes, ...rest }, 'POST', onJobUpdate);
     },
 
+    aiGradeEssay: (
+      draft: string,
+      options?: {
+        rubricText?: string;
+        prompt?: string;
+        sourceNotes?: string;
+        sourceTitle?: string;
+        onJobUpdate?: JobUpdateHandler;
+      }
+    ) => {
+      const { onJobUpdate, ...rest } = options ?? {};
+      return aiRequest<{
+        overall: number;
+        scores: Array<{
+          criterionId: string;
+          label: string;
+          score: number;
+          max: number;
+          comment: string;
+        }>;
+        feedback: string;
+        provider: string;
+      }>('/grade-essay', { draft, ...rest }, 'POST', onJobUpdate);
+    },
+
     aiEnhanceFlashcard: (front: string, back: string) =>
       aiRequest<{ enhanced: AIGeneratedFlashcard; provider: string }>('/enhance-flashcard', {
         front,

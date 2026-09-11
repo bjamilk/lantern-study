@@ -1,41 +1,27 @@
 import React from 'react';
 import { getStudyAllDueLabel } from '@lantern/shared';
-import { Card, Button, StatPill } from '../ui';
+import { Button } from '../ui';
 import type { TestSessionData, StudySessionData } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 
 interface DashboardHeroProps {
   userName: string;
-  streak: number;
-  points: number;
-  xpLevel: number;
-  xpTitle: string;
-  xpProgressPercent: number;
-  pointsToNextLevel: number;
   dueCardsCount: number;
   totalTestsTaken: number;
   onPrimaryAction: () => void;
   activeTestSession?: TestSessionData | null;
   activeStudySession?: StudySessionData | null;
   onResumeSession?: () => void;
-  lowDataMode?: boolean;
 }
 
 export const DashboardHero: React.FC<DashboardHeroProps> = ({
   userName,
-  streak,
-  points,
-  xpLevel,
-  xpTitle,
-  xpProgressPercent,
-  pointsToNextLevel,
   dueCardsCount,
   totalTestsTaken,
   onPrimaryAction,
   activeTestSession,
   activeStudySession,
   onResumeSession,
-  lowDataMode,
 }) => {
   const greeting = (() => {
     const hour = new Date().getHours();
@@ -48,37 +34,25 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
     dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : 'Import & study';
 
   return (
-    <Card
-      // Plain surface: no accent rail, no gradient fill.
-      className="h-full"
-      padding="lg"
-      variant="elevated"
-    >
-      <div className="flex flex-col gap-4">
-        <div className="min-w-0">
-          <h1
-            className="font-display text-title md:text-display font-semibold tracking-tight text-lantern-text break-words"
-            title={`${greeting}, ${userName}`}
-          >
-            {greeting},{' '}
-            <span className="inline-block max-w-full align-bottom truncate">{userName}</span>
-          </h1>
-          <p className="text-lantern-text-secondary mt-1.5 text-body leading-relaxed">
-            {dueCardsCount > 0
-              ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review.`
-              : totalTestsTaken > 0
-                ? `You've completed ${totalTestsTaken} test${totalTestsTaken !== 1 ? 's' : ''}. What's next?`
-                : 'Import material or review flashcards to get started.'}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 flex-wrap">
-          <StatPill label="Streak" value={`${streak}d`} accent="accent" icon={<AppIcon name="flame" size={16} filled />} />
-          <StatPill label="Points" value={points.toLocaleString()} accent="primary" icon={<AppIcon name="sparkles" size={16} filled />} />
-        </div>
+    <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="min-w-0">
+        <h1
+          className="font-display text-title md:text-display font-semibold tracking-tight text-lantern-text break-words"
+          title={`${greeting}, ${userName}`}
+        >
+          {greeting},{' '}
+          <span className="inline-block max-w-full align-bottom truncate">{userName}</span>
+        </h1>
+        <p className="text-lantern-text-secondary mt-1.5 text-body leading-relaxed">
+          {dueCardsCount > 0
+            ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review.`
+            : totalTestsTaken > 0
+              ? 'Continue from a study set, or start a new one.'
+              : 'Import material or open a study set to get started.'}
+        </p>
       </div>
-
-      <div className="mt-4 flex flex-col sm:flex-row gap-3">
-        <Button size="lg" onClick={onPrimaryAction} className="sm:flex-1 sm:max-w-sm">
+      <div className="flex flex-col sm:flex-row gap-2 shrink-0">
+        <Button size="lg" onClick={onPrimaryAction}>
           <AppIcon name="school" size={20} />
           {primaryActionLabel}
         </Button>
@@ -89,27 +63,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
           </Button>
         )}
       </div>
-
-      <div className="mt-4 pt-4 border-t border-lantern-border">
-        <div className="flex items-center justify-between mb-1.5">
-          <span className="text-body font-bold tabular-nums text-lantern-text">
-            Level {xpLevel} — {xpTitle}
-          </span>
-          <span className="text-caption tabular-nums text-lantern-text-secondary">
-            {pointsToNextLevel > 0 ? `${pointsToNextLevel.toLocaleString()} XP to next level` : 'Max level'}
-          </span>
-        </div>
-        <div className="w-full bg-lantern-background-secondary rounded-full h-2.5 overflow-hidden">
-          {/* Clamped: the XP maths can hand this a negative or a >100 value
-              (a level boundary crossed between two fetches), and an unclamped
-              width paints the bar past its track or collapses it to nothing. */}
-          <div
-            className="h-full rounded-full bg-lantern-primary-fill transition-all duration-700"
-            style={{ width: `${Math.max(0, Math.min(100, xpProgressPercent))}%` }}
-          />
-        </div>
-      </div>
-    </Card>
+    </div>
   );
 };
 

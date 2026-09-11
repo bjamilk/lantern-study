@@ -67,7 +67,7 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   // Two emoji glyphs (streak flame, achievement icon) sized with
   // text-2xl/text-3xl. Artwork, not a type role — the scale has no step
   // for a 30 px pictograph. Permanent; do not migrate.
-  'components/DashboardScreen.tsx': 2,
+  'components/DashboardScreen.tsx': 1,
   'components/DeckDetailScreen.tsx': 36,
   'components/DiscoverScreen.tsx': 29,
   'components/DuplicateQuestionModal.tsx': 8,

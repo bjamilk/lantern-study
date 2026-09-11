@@ -29,6 +29,7 @@ import {
   generateFlashcardsFromNotes,
   generateLessonFromNotes,
   generateRecapFromNotes,
+  gradeEssayFromDraft,
   explainAnswer,
   getStudyRecommendations,
   askTutor,
@@ -220,6 +221,41 @@ router.post('/generate-recap', aiRateLimitForFeature('recap'), async (req: Authe
   } catch (error: any) {
     console.error('AI generate recap error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate a recap.') });
+  }
+});
+
+router.post('/grade-essay', aiRateLimitForFeature('essay'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { draft, rubricText, prompt, sourceNotes, sourceTitle } = req.body;
+    if (!draft || typeof draft !== 'string' || draft.trim().length < 50) {
+      res.status(400).json({ error: 'The draft must be at least 50 characters.' });
+      return;
+    }
+    const outcome = await runSyncOrEnqueue(
+      'ai.generate.essay',
+      { draft, rubricText, prompt, sourceNotes, sourceTitle },
+      userId,
+      async () => {
+        const generated = await gradeEssayFromDraft(draft, {
+          rubricText,
+          prompt,
+          sourceNotes,
+          sourceTitle,
+        });
+        await recordInference(req, 'grade-essay', generated);
+        return generated;
+      },
+      aiChargeFromRes(res)
+    );
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+    res.json(outcome.result);
+  } catch (error: any) {
+    console.error('AI grade essay error:', error.message);
+    res.status(503).json({ error: clientErrorMessage(error, 'Failed to grade the essay.') });
   }
 });
 

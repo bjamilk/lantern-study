@@ -766,6 +766,9 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         visible={aiModalOpen}
         onClose={() => setAiModalOpen(false)}
         onFlashcardsGenerated={handleAIGenerated}
+        deckId={deckId}
+        deckName={deckName}
+        courseId={deck?.course_id}
       />
 
       <CollaboratorsModal

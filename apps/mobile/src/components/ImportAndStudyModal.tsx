@@ -20,6 +20,7 @@ import { fetchAiHealth } from '../services/api';
 import { aiGenerateFlashcards } from '../services/ai';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useAuthStore } from '../stores/authStore';
+import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { useJobsStore } from '../stores/jobsStore';
 import { saveGeneratedDeck } from '../services/jobArtifacts';
@@ -48,6 +49,7 @@ interface ImportAndStudyModalProps {
   onOpenNote: (noteId: string) => void;
   onTurnIntoStudyProduct?: (result: ImportAndStudyResult) => void;
   courseId?: string | null;
+  studySetId?: string | null;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -59,6 +61,7 @@ export default function ImportAndStudyModal({
   onOpenNote,
   onTurnIntoStudyProduct,
   courseId,
+  studySetId,
 }: ImportAndStudyModalProps) {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -157,6 +160,7 @@ export default function ImportAndStudyModal({
                 deckName: `From: ${note.title}`,
                 description: `Generated from note: ${note.title}`,
                 courseId: courseId ?? undefined,
+                studySetId: studySetId ?? undefined,
               });
               flashcardCount = saved;
             }
@@ -182,13 +186,17 @@ export default function ImportAndStudyModal({
         },
       });
     },
-    [generateCards, generateQuiz, onComplete, courseId]
+    [generateCards, generateQuiz, onComplete, courseId, studySetId]
   );
 
   const fileNote = async (noteId: string) => {
-    if (!courseId) return;
+    if (!courseId && !studySetId) return;
     try {
-      await notesApi.updateNote(noteId, { courseId });
+      const updated = await notesApi.updateNote(noteId, {
+        ...(courseId ? { courseId } : {}),
+        ...(studySetId ? { studySetId } : {}),
+      });
+      useNotesStore.getState().upsertNote(updated);
     } catch {
       // The note still exists; filing can be fixed from the note.
     }
@@ -199,11 +207,12 @@ export default function ImportAndStudyModal({
     setStep('processing');
     setError(null);
     try {
-      const note = await notesApi.createNote({
+      const note = await useNotesStore.getState().createNote({
         title: 'Imported Notes',
         body: textContent.trim(),
         sourceType: 'typed',
         ...(courseId ? { courseId } : {}),
+        ...(studySetId ? { studySetId } : {}),
       });
       enrichNote(note);
     } catch (e: unknown) {
@@ -227,6 +236,10 @@ export default function ImportAndStudyModal({
         undefined,
         defaultPhotoNoteTitle()
       );
+      useNotesStore.getState().upsertNote({
+        ...uploaded.note,
+        attachments: uploaded.attachments,
+      });
       enrichNote({
         ...uploaded.note,
         attachments: uploaded.attachments,

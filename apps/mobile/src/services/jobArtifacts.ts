@@ -66,6 +66,7 @@ export interface SaveGeneratedDeckInput {
   deckName: string;
   description?: string;
   courseId?: string | null;
+  studySetId?: string | null;
   topicId?: string | null;
 }
 
@@ -258,6 +259,7 @@ async function writeDeck(
     name: payload.deckName.slice(0, 80),
     description: payload.description,
     ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+    ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
     ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
     cards: payload.cards,
   }).catch((error: unknown) => {
@@ -292,6 +294,7 @@ async function writeDeck(
     description: (rawDeck?.description as string) ?? payload.description,
     user_id: (rawDeck?.user_id as string) ?? (rawDeck?.userId as string),
     course_id: (rawDeck?.course_id as string) ?? (rawDeck?.courseId as string) ?? null,
+    study_set_id: (rawDeck?.study_set_id as string) ?? (rawDeck?.studySetId as string) ?? null,
     topic_id: (rawDeck?.topic_id as string) ?? (rawDeck?.topicId as string) ?? null,
     created_at: (rawDeck?.created_at as string) ?? new Date().toISOString(),
     updated_at: (rawDeck?.updated_at as string) ?? new Date().toISOString(),

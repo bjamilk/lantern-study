@@ -152,4 +152,14 @@ describe('academic routers are registered', () => {
     expect(usersMount).toBeGreaterThan(coursesMount);
     expect(server).toMatch(/^\s*app\.use\('\/api\/v1\/courses'/m);
   });
+
+  it('mounts /users/me/study-sets before /users in server.ts', () => {
+    const { readFileSync } = require('fs');
+    const { join } = require('path');
+    const server = readFileSync(join(__dirname, '../server.ts'), 'utf8') as string;
+    const setsMount = server.search(/^\s*app\.use\('\/api\/v1\/users\/me\/study-sets'/m);
+    const usersMount = server.search(/^\s*app\.use\('\/api\/v1\/users', userRoutes\)/m);
+    expect(setsMount).toBeGreaterThanOrEqual(0);
+    expect(usersMount).toBeGreaterThan(setsMount);
+  });
 });

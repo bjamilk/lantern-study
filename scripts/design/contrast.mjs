@@ -45,6 +45,9 @@ const NON_TEXT_VARS = new Set([
   '--color-background',
   '--color-background-secondary',
   '--color-nav-column',
+  // Rail ink is gated on `--color-nav-column` below, not on the page ground.
+  '--color-nav-column-text',
+  '--color-nav-column-text-secondary',
   '--color-surface',
   '--color-surface-secondary',
   '--color-border',
@@ -90,6 +93,8 @@ const PALETTE_VAR_MAP = {
   background: '--color-background',
   backgroundSecondary: '--color-background-secondary',
   navColumn: '--color-nav-column',
+  navColumnText: '--color-nav-column-text',
+  navColumnTextSecondary: '--color-nav-column-text-secondary',
   surface: '--color-surface',
   surfaceSecondary: '--color-surface-secondary',
   text: '--color-text',
@@ -458,13 +463,15 @@ function run() {
       check(`${t.name} --color-warning`, 'amber warning chip', warningInk, warningChipGround);
     }
 
-    // Destination rail: body and secondary ink on `--color-nav-column`.
-    // Tertiary fails AA on this brown, so the sidebar does not paint it there.
+    // Destination rail: dedicated ink on `--color-nav-column`, not page text.
     const navColumn = t.vars['--color-nav-column'];
-    const secondaryInk = t.vars['--color-text-secondary'];
-    if (navColumn) {
-      check(`${t.name} --color-text`, 'nav column', t.body, navColumn);
-      if (secondaryInk) check(`${t.name} --color-text-secondary`, 'nav column', secondaryInk, navColumn);
+    const navInk = t.vars['--color-nav-column-text'];
+    const navSecondaryInk = t.vars['--color-nav-column-text-secondary'];
+    if (navColumn && navInk) {
+      check(`${t.name} --color-nav-column-text`, 'nav column', navInk, navColumn);
+      if (navSecondaryInk) {
+        check(`${t.name} --color-nav-column-text-secondary`, 'nav column', navSecondaryInk, navColumn);
+      }
     }
 
     // The ink must also hold on the CARD, which in both themes is its own

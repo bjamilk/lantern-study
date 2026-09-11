@@ -22,6 +22,8 @@ import {
   materialsForCourse,
   newLessonNoteTitle,
   normalizeGeneratedLesson,
+  studySetNotePayload,
+  parseLessonCommand,
   parseLessonNoteBody,
   quizItemsFromLesson,
   speakTextForPage,
@@ -34,12 +36,14 @@ import { Button, ScreenHeader, T } from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
 import { useToastStore } from '../../stores/toastStore';
+import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { aiAskTutor, aiGenerateLesson, aiGenerateQuestions } from '../../services/ai';
+import { recognizeOnce } from '../../services/liveSpeech';
 
 type Props = NativeStackScreenProps<StudyStackParamList, 'LessonStudio'>;
 
 export function LessonStudioScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel, noteId } = route.params;
+  const { courseId, courseLabel, noteId, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
   const selectedNote = useNotesStore((s) => s.selectedNote);
@@ -60,7 +64,11 @@ export function LessonStudioScreen({ navigation, route }: Props) {
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [commandDraft, setCommandDraft] = useState('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoSpokeRef = useRef<string | null>(null);
+  const lectureStatus = useLectureRecordingStore((s) => s.status);
 
   useEffect(() => {
     const open = selectedNote && selectedNote.id === noteId ? selectedNote : lessons.find((row) => row.id === noteId);
@@ -70,6 +78,20 @@ export function LessonStudioScreen({ navigation, route }: Props) {
     setSession(parsed);
     setLessonNoteId(open.id);
     setMode(parsed.mode);
+    if (autoSpokeRef.current !== open.id && parsed.status !== 'ended') {
+      autoSpokeRef.current = open.id;
+      Speech.stop();
+      const page = currentLessonPage(parsed);
+      if (page) {
+        Speech.speak(speakTextForPage(page), {
+          rate: parsed.speechRate,
+          onDone: () => setSpeaking(false),
+          onStopped: () => setSpeaking(false),
+          onError: () => setSpeaking(false),
+        });
+        setSpeaking(true);
+      }
+    }
   }, [lessons, noteId, selectedNote]);
 
   const persist = useCallback(
@@ -165,10 +187,11 @@ export function LessonStudioScreen({ navigation, route }: Props) {
       const created = await createNote({
         title: newLessonNoteTitle(chosen, note.title || 'Untitled note'),
         body: composeLessonNoteBody(next),
-        courseId,
+        ...studySetNotePayload({ courseId, studySetId }),
       });
       setLessonNoteId(created.id);
       setSession(next);
+      autoSpokeRef.current = created.id;
       await loadNote(created.id);
       speakPage(next);
     } catch (error) {
@@ -202,6 +225,49 @@ export function LessonStudioScreen({ navigation, route }: Props) {
     }
   };
 
+  const runCommand = (raw: string) => {
+    const command = parseLessonCommand(raw);
+    if (command.type === 'chat') {
+      if (command.text) void sendChat(command.text);
+      return;
+    }
+    if (command.type === 'pause') {
+      stopSpeech();
+      return;
+    }
+    setSession((current) => {
+      if (!current) return current;
+      const next = applyLessonCommand(current, command);
+      persist(next, lessonNoteId);
+      if (command.type === 'next' || command.type === 'prev' || command.type === 'jump') {
+        speakPage(next);
+      }
+      return next;
+    });
+  };
+
+  const listenForCommand = async () => {
+    if (listening) return;
+    if (lectureStatus !== 'idle') {
+      showToast('A lecture is using the microphone.', 'info');
+      return;
+    }
+    setListening(true);
+    try {
+      const live = await recognizeOnce();
+      if (live) {
+        setCommandDraft(live);
+        runCommand(live);
+        return;
+      }
+      showToast('Type next, quiz me, slower, or faster if this phone cannot hear commands.', 'info');
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : 'Could not hear that command.', 'error');
+    } finally {
+      setListening(false);
+    }
+  };
+
   const page = session ? currentLessonPage(session) : null;
   const topic = session ? currentLessonTopic(session) : null;
   const progress = session ? lessonProgress(session) : { done: 0, total: 0, percent: 0 };
@@ -232,6 +298,8 @@ export function LessonStudioScreen({ navigation, route }: Props) {
                       if (parsed) {
                         setSession(parsed);
                         setLessonNoteId(note.id);
+                        autoSpokeRef.current = note.id;
+                        speakPage(parsed);
                       }
                     }}
                     className="min-h-[44px] rounded-xl border border-lantern-border px-3 py-2"
@@ -391,6 +459,13 @@ export function LessonStudioScreen({ navigation, route }: Props) {
               >
                 Slower
               </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onPress={() => updateSession((current) => applyLessonCommand(current, { type: 'faster' }))}
+              >
+                Faster
+              </Button>
               {quizItems.length > 0 ? (
                 <Button
                   size="sm"
@@ -423,6 +498,36 @@ export function LessonStudioScreen({ navigation, route }: Props) {
                 {turn.role === 'student' ? 'You' : 'Tutor'}: {turn.text}
               </T.Caption>
             ))}
+            <T.Caption tone="secondary">Say next, quiz me, slower, faster, or pause.</T.Caption>
+            <TextInput
+              value={commandDraft}
+              onChangeText={setCommandDraft}
+              placeholder="Voice command"
+              className="min-h-[44px] rounded-xl border border-lantern-border px-3 text-body text-lantern-text"
+              placeholderTextColor="#5b6a7f"
+            />
+            <View className="flex-row flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={listening}
+                onPress={() => void listenForCommand()}
+              >
+                {listening ? 'Listening…' : 'Listen'}
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!commandDraft.trim()}
+                onPress={() => {
+                  const text = commandDraft.trim();
+                  setCommandDraft('');
+                  runCommand(text);
+                }}
+              >
+                Run command
+              </Button>
+            </View>
             <TextInput
               value={askDraft}
               onChangeText={setAskDraft}

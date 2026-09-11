@@ -361,6 +361,7 @@ export async function createNote(payload: Partial<StudyNote>): Promise<StudyNote
       folderId: payload.folderId,
       groupId: payload.groupId,
       ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
+      ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
       ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
       sourceType: payload.sourceType,
       youtubeUrl: payload.youtubeUrl,
