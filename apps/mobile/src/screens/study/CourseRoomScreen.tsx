@@ -407,7 +407,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           title={label}
           subtitle={
             studySetId
-              ? 'This set houses every activity you start from here'
+              ? undefined
               : formatCourseMaterialCounts({
                   notes: studyNotes.length,
                   decks: courseDecks.length,

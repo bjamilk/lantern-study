@@ -161,6 +161,8 @@ import Package from 'lucide-react/dist/esm/icons/package.mjs';
 import Paintbrush from 'lucide-react/dist/esm/icons/paintbrush.mjs';
 import Palette from 'lucide-react/dist/esm/icons/palette.mjs';
 import Paperclip from 'lucide-react/dist/esm/icons/paperclip.mjs';
+import PanelLeftClose from 'lucide-react/dist/esm/icons/panel-left-close.mjs';
+import PanelLeftOpen from 'lucide-react/dist/esm/icons/panel-left-open.mjs';
 import Pause from 'lucide-react/dist/esm/icons/pause.mjs';
 import Pencil from 'lucide-react/dist/esm/icons/pencil.mjs';
 import Phone from 'lucide-react/dist/esm/icons/phone.mjs';
@@ -434,6 +436,8 @@ export const APP_ICONS = {
   'lifebuoy': LifeBuoy,
   'mail-open': MailOpen,
   'notifications-alert': BellRing,
+  'panel-left-close': PanelLeftClose,
+  'panel-left-open': PanelLeftOpen,
   'person-remove': UserMinus,
   'puzzle': Puzzle,
   'qr-code': QrCode,

@@ -60,7 +60,9 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
             onClick={action.onClick}
             className="flex flex-col items-center justify-center gap-3 min-h-[7.5rem] rounded-2xl border border-lantern-border bg-lantern-surface px-4 py-5 text-center hover:bg-lantern-background-secondary/70 transition-colors"
           >
-            {action.id === 'tutor' ? (
+            {action.id === 'import' ? (
+              <Illustration name="import-tray" feature="notes" size={40} />
+            ) : action.id === 'tutor' ? (
               <Illustration name="cards-fan" feature="flashcards" size={40} />
             ) : action.id === 'record' ? (
               <Illustration name="mic-wave" feature="recording" size={40} />

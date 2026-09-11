@@ -12,7 +12,7 @@ import {
 } from '@lantern/shared';
 import type { StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
-import { Button, Card, FeatureDisc, Illustration } from '../ui';
+import { Button, Card, FeatureDisc } from '../ui';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 
 interface StudySetHomeProps {
@@ -32,7 +32,6 @@ interface StudySetHomeProps {
 }
 
 export const StudySetHome: React.FC<StudySetHomeProps> = ({
-  setLabel,
   notes,
   deckCount,
   testCount,
@@ -52,6 +51,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   const more = STUDY_SET_HOME_TOOLS.filter(
     (tool) => !STUDY_SET_HOME_PRIMARY_TOOL_IDS.includes(tool.id)
   );
+  const hasMaterials = notes.length > 0 || deckCount > 0 || testCount > 0;
   const counts = formatCourseMaterialCounts({
     notes: notes.length,
     decks: deckCount,
@@ -64,24 +64,23 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
-      <div>
-        <p className="text-caption text-lantern-text-secondary">
-          {progress
-            ? `${progress.topics} topics · ${progress.covered} covered · ${progress.mastered} mastered`
-            : counts}
-        </p>
-        {progress && progress.topics > 0 ? (
-          <div className="mt-2 h-1.5 rounded-full bg-lantern-background-secondary overflow-hidden">
-            <div
-              className="h-full bg-lantern-primary-fill"
-              style={{ width: `${Math.round((progress.covered / progress.topics) * 100)}%` }}
-            />
-          </div>
-        ) : null}
-        <p className="text-body text-lantern-text-secondary mt-1">
-          Everything you study in {setLabel} stays in this set.
-        </p>
-      </div>
+      {progress || hasMaterials ? (
+        <div>
+          <p className="text-caption text-lantern-text-secondary">
+            {progress
+              ? `${progress.topics} topics · ${progress.covered} covered · ${progress.mastered} mastered`
+              : counts}
+          </p>
+          {progress && progress.topics > 0 ? (
+            <div className="mt-2 h-1.5 rounded-full bg-lantern-background-secondary overflow-hidden">
+              <div
+                className="h-full bg-lantern-primary-fill"
+                style={{ width: `${Math.round((progress.covered / progress.topics) * 100)}%` }}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {nextTopic ? (
         <Card padding="md">
@@ -126,14 +125,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
             </Button>
           </div>
         </Card>
-      ) : (
-        <div className="flex items-center gap-3">
-          <Illustration name="import-tray" feature="notes" size={32} />
-          <p className="text-body text-lantern-text-secondary">
-            Import a PDF or start a note. Quizzes, cards, lectures and games stay here.
-          </p>
-        </div>
-      )}
+      ) : null}
 
       <section>
         <h2 className="text-heading text-lantern-text mb-3">Start learning your own way</h2>
@@ -164,19 +156,11 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
             </button>
           ))}
         </section>
-      ) : (
-        <p className="text-caption text-lantern-text-secondary">
-          Add an exam date on the calendar when you have one.
-        </p>
-      )}
+      ) : null}
 
-      <section>
-        <h2 className="text-heading text-lantern-text mb-3">Recent materials</h2>
-        {notes.length === 0 ? (
-          <p className="text-body text-lantern-text-secondary">
-            Nothing filed in this set yet.
-          </p>
-        ) : (
+      {notes.length > 0 ? (
+        <section>
+          <h2 className="text-heading text-lantern-text mb-3">Recent materials</h2>
           <div className="space-y-2">
             {notes.slice(0, 8).map((note) => (
               <button
@@ -192,8 +176,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
               </button>
             ))}
           </div>
-        )}
-      </section>
+        </section>
+      ) : null}
     </div>
   );
 };

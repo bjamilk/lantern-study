@@ -167,7 +167,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     () => getTotalActiveUnreadChatCount(groups, dmThreads),
     [groups, dmThreads],
   );
-  const showChatsHeaderBadge = !isChatsSectionExpanded && totalUnreadChatCount > 0;
   
   const toggleParentGroupExpansion = (groupId: string) => {
     setExpandedParentGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
@@ -326,13 +325,12 @@ const Sidebar: React.FC<SidebarProps> = ({
       data-tip-id={tipId}
       aria-label={accessibleName}
       aria-current={isActive ? 'page' : undefined}
-      className={`w-full flex items-center p-3 rounded-xl text-lantern-nav-column-text-secondary hover:bg-white/10 hover:text-lantern-nav-column-text focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
+      className={`w-full flex items-center p-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
           isActive
-            // Duotone active treatment: tint fill on the row, ink on the
-            // glyph and the label. `primary-text` (not bare `primary`) is the
-            // TEXT half of the Wave 0 split — bare primary is the fill role.
-            ? 'bg-lantern-primary-background text-lantern-primary-text font-semibold shadow-lantern'
-            : ''
+            // Solid fill + white ink. The light primary tint on this dark
+            // column left the default nav-secondary label unreadable.
+            ? 'bg-lantern-primary-fill text-white font-semibold shadow-lantern'
+            : 'text-lantern-nav-column-text-secondary hover:bg-white/10 hover:text-lantern-nav-column-text'
       } ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''} ${!showText && 'justify-center'}`}
       disabled={!canInteractWithChats && !isSessionPaused}
       title={label}
@@ -343,12 +341,14 @@ const Sidebar: React.FC<SidebarProps> = ({
         <AppIcon
           name={icon}
           size={20}
-          className={`flex-shrink-0 ${showText ? 'mr-3' : ''} ${isActive ? 'text-lantern-primary-text' : ''}`}
+          className={`flex-shrink-0 ${showText ? 'mr-3' : ''} ${isActive ? 'text-white' : ''}`}
         />
       ) : null}
       {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
       {showText && countLabel ? (
-        <span aria-hidden="true" className="ml-2 shrink-0 rounded-full bg-white/10 px-2 py-0.5 text-label tracking-normal text-lantern-nav-column-text-secondary">
+        <span aria-hidden="true" className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-label tracking-normal ${
+          isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-lantern-nav-column-text-secondary'
+        }`}>
           {countLabel}
         </span>
       ) : null}
@@ -367,49 +367,38 @@ const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
     <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-nav-column backdrop-blur-md text-lantern-nav-column-text border-r border-white/10 transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
-      <div className="flex items-center justify-between h-16 p-4 border-b border-white/10 flex-shrink-0">
+      <div className={`flex items-center h-16 px-3 border-b border-white/10 flex-shrink-0 ${showText ? 'justify-between' : 'justify-center'}`}>
         {showText && (
-          <div className="flex items-center gap-2.5">
-              <LanternIcon size={28} />
-              <h1 className="font-display text-title font-semibold tracking-tight text-lantern-nav-column-text">Lantern Study</h1>
-          </div>
+          <button
+            type="button"
+            onClick={onNavigateToDashboard}
+            disabled={!canInteractWithChats && !isSessionPaused}
+            className={`flex items-center gap-2.5 min-w-0 rounded-lg px-1 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 ${
+              !canInteractWithChats && !isSessionPaused
+                ? 'opacity-50 cursor-not-allowed'
+                : 'hover:bg-white/10'
+            }`}
+            aria-label={DESTINATION_LABELS.home}
+            title={DESTINATION_LABELS.home}
+          >
+            <LanternIcon size={28} />
+            <span className="font-display text-title font-semibold tracking-tight text-lantern-nav-column-text">
+              Lantern Study
+            </span>
+          </button>
         )}
-        <div className={`flex items-center space-x-1 ${!showText && 'w-full justify-center'}`}>
-            {/* The chats panel is a disclosure, not a destination — Chat is the
-                destination, and clicking any row in the panel goes there. On the
-                chat screen the panel IS the screen's list, so it has no toggle. */}
-            {!columnPinned && (
-              <button
-                onClick={toggleChatsSection}
-                className={`relative p-2 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 ${
-                  isChatsSectionExpanded
-                    ? 'text-lantern-primary bg-lantern-primary-background'
-                    : 'text-lantern-nav-column-text-secondary hover:text-lantern-nav-column-text hover:bg-white/10'
-                }`}
-                aria-expanded={isChatsSectionExpanded}
-                aria-label={
-                  showChatsHeaderBadge
-                    ? `${isChatsSectionExpanded ? 'Hide' : 'Show'} chats panel, ${formatUnreadBadgeCount(totalUnreadChatCount)} unread`
-                    : `${isChatsSectionExpanded ? 'Hide' : 'Show'} chats panel`
-                }
-                title={isChatsSectionExpanded ? 'Hide chats panel' : 'Show chats panel'}
-              >
-                <AppIcon name="chatbubbles" size={24} />
-                {showChatsHeaderBadge && (
-                  <span aria-hidden="true" className="absolute top-0 right-0 bg-lantern-error-strong text-white text-label tracking-normal font-bold min-w-[1rem] h-4 px-1 flex items-center justify-center rounded-full">
-                    {formatUnreadBadgeCount(totalUnreadChatCount)}
-                  </span>
-                )}
-              </button>
-            )}
-            <button
-              onClick={handleSidebarToggle}
-              className="p-2 text-lantern-nav-column-text-secondary hover:text-lantern-nav-column-text hover:bg-white/10 rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
-              aria-label={effectiveExpanded ? "Collapse sidebar" : "Expand sidebar"}
-            >
-              <AppIcon name="menu" size={24} className="transition-transform duration-300" />
-            </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleSidebarToggle}
+          className="p-2 text-lantern-nav-column-text-secondary hover:text-lantern-nav-column-text hover:bg-white/10 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
+          aria-label={effectiveExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+          title={effectiveExpanded ? 'Collapse sidebar' : 'Expand sidebar'}
+        >
+          <AppIcon
+            name={effectiveExpanded ? 'panel-left-close' : 'panel-left-open'}
+            size={20}
+          />
+        </button>
       </div>
       
       <div className="flex-grow overflow-y-auto" data-testid="desktop-sidebar-scroll">

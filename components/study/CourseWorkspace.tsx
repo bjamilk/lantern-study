@@ -725,9 +725,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         <ScreenHeader
           title={label}
           subtitle={
-            studySetId
-              ? 'This set houses every activity you start from here'
-              : 'Notes, cards, tests and lectures in one room'
+            studySetId ? undefined : 'Notes, cards, tests and lectures in one room'
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">

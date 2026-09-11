@@ -191,11 +191,10 @@ describe('illustration placement', () => {
     expect(Object.fromEntries([...sites].sort())).toEqual({
       'components/AICompanionPanel.tsx': ['sparkles-book'],
       'components/CourseReadinessCard.tsx': ['readiness-ring'],
-      'components/dashboard/HomeQuickActions.tsx': ['cards-fan', 'mic-wave'],
+      'components/dashboard/HomeQuickActions.tsx': ['import-tray', 'cards-fan', 'mic-wave'],
       'components/DiscoverScreen.tsx': ['campus-hall'],
       'components/NotesScreen.tsx': ['notes-stack'],
       'components/OfflineModeScreen.tsx': ['download-phone'],
-      'components/study/StudySetHome.tsx': ['import-tray'],
       'components/TestsHomeScreen.tsx': ['test-sheet', 'empty-inbox'],
     });
   });
