@@ -43,6 +43,7 @@ import {
   SMART_NOTES_GUIDANCE_MAX_CHARS,
   type SmartNotesDepth,
 } from '@lantern/shared/utils/smartNotes';
+import { NOTES_STUDIO_DEPTHS } from '@lantern/shared';
 
 /**
  * One door out of this note: a neutral tile carrying its feature's disc, what
@@ -158,12 +159,6 @@ export interface NoteLearnPanelProps {
   onWalkthrough: () => void;
   onReadAloud: () => void;
 }
-
-const DEPTHS: ReadonlyArray<[SmartNotesDepth, string]> = [
-  ['concise', 'Concise'],
-  ['standard', 'Standard'],
-  ['deep', 'Deep dive'],
-];
 
 export function NoteLearnPanel({
   guidance,
@@ -328,7 +323,7 @@ export function NoteLearnPanel({
           accessibilityLabel="Guidance for smart notes"
         />
         <View className="flex-row gap-1">
-          {DEPTHS.map(([value, label]) => (
+          {NOTES_STUDIO_DEPTHS.map(({ id: value, label }) => (
             <Pressable
               key={value}
               onPress={() => onDepthChange(value)}

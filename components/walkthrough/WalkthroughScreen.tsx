@@ -47,6 +47,8 @@ export interface WalkthroughScreenProps {
   /** File name of the document, used in headings and in the tutor question. */
   documentLabel?: string;
   theme?: 'light' | 'dark';
+  /** `pane` fills the course-workspace canvas instead of a modal. */
+  variant?: 'modal' | 'pane';
 }
 
 const QUIZ_COST = AI_CREDIT_COSTS.generate_questions;
@@ -77,6 +79,7 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
   attachmentId,
   documentLabel,
   theme = 'light',
+  variant = 'modal',
 }) => {
   const isDark = theme === 'dark';
 
@@ -318,17 +321,10 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
 
   const panelTone = isDark ? 'bg-lantern-background' : 'bg-lantern-surface';
   const subtleText = isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary';
+  const pane = variant === 'pane';
 
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      ariaLabelledBy="walkthrough-title"
-      maxWidthClass="max-w-5xl"
-      panelClassName="p-0"
-      loading={companionOpen || narrationOpen}
-    >
-      <div className="flex flex-col">
+  const frame = (
+    <>
         <header className="flex items-start gap-3 border-b border-lantern-border p-4">
           <FeatureDisc feature="notes" size={32} icon={<AppIcon name="book-open" size={18} />} className="mt-0.5" />
           <div className="min-w-0 flex-1">
@@ -344,7 +340,7 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close walk-through"
+            aria-label={pane ? 'Back to notes' : 'Close walk-through'}
             className="rounded-lg p-2 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
           >
             <AppIcon name="close" size={18} />
@@ -360,7 +356,7 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
           </div>
         )}
 
-        <div className="flex flex-col gap-4 p-4 lg:flex-row">
+        <div className={`flex flex-col gap-4 p-4 lg:flex-row ${pane ? 'flex-1 min-h-0 overflow-hidden' : ''}`}>
           {/* ── Plan panel ─────────────────────────────────────────────── */}
           <aside className="lg:w-72 lg:shrink-0">
             <button
@@ -428,7 +424,7 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
           </aside>
 
           {/* ── Page viewer ────────────────────────────────────────────── */}
-          <section className="min-w-0 flex-1 space-y-3">
+          <section className={`min-w-0 flex-1 space-y-3 ${pane ? 'min-h-0 overflow-y-auto' : ''}`}>
             {loading && !result && (
               <p className={`text-body ${subtleText}`}>Opening the document…</p>
             )}
@@ -494,7 +490,7 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
                     </button>
                   </div>
 
-                  <div className="max-h-[46vh] overflow-y-auto p-3">
+                  <div className={`${pane ? 'flex-1 min-h-0 overflow-y-auto p-3' : 'max-h-[46vh] overflow-y-auto p-3'}`}>
                     {currentPage?.imageUrl ? (
                       <img
                         src={currentPage.imageUrl}
@@ -695,7 +691,6 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
             )}
           </section>
         </div>
-      </div>
       {narrationOpen && (
         <NarrationPlayer
           isOpen={narrationOpen}
@@ -709,6 +704,27 @@ const WalkthroughScreen: React.FC<WalkthroughScreenProps> = ({
           theme={theme}
         />
       )}
+    </>
+  );
+
+  if (pane) {
+    return (
+      <div className="flex flex-1 min-h-0 min-w-0 flex-col overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface">
+        {frame}
+      </div>
+    );
+  }
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      ariaLabelledBy="walkthrough-title"
+      maxWidthClass="max-w-5xl"
+      panelClassName="p-0"
+      loading={companionOpen || narrationOpen}
+    >
+      <div className="flex flex-col">{frame}</div>
     </Modal>
   );
 };

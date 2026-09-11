@@ -26,6 +26,11 @@ import {
   hasEnoughNoteStudyContent,
   MarkdownRenderer,
   MIN_NOTE_STUDY_CONTENT_CHARS,
+  buildSpanQuestion,
+  buildFigureQuestion,
+  canAskAboutHighlight,
+  highlightFromRange,
+  isWalkableAttachment,
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -45,6 +50,7 @@ import {
   retryYoutubeTranscript,
   runNoteOcr,
   waitForNoteOcr,
+  fetchNoteAttachmentPages,
 } from '../../services/notes';
 
 import { useAIHandlers } from '../../hooks/useAIHandlers';
@@ -55,7 +61,7 @@ import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifact
 import { JobProgressSheet } from '../../components/jobs';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
-import { Button, Card } from '../../components/ui';
+import { Button, Card, T } from '../../components/ui';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -124,6 +130,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [title, setTitle] = useState('');
 
   const [body, setBody] = useState('');
+  const [selection, setSelection] = useState({ start: 0, end: 0 });
 
   const [summary, setSummary] = useState('');
 
@@ -226,6 +233,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const [learnPanelHeight, setLearnPanelHeight] = useState(0);
   const openCompanionWithMessage = useCompanionStore(s => s.openWithMessage);
+  const setActiveNoteContext = useCompanionStore(s => s.setActiveNoteContext);
   const handleDocumentScrollLock = useCallback((locked: boolean) => {
     setParentScrollEnabled(!locked);
   }, []);
@@ -276,6 +284,12 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       ),
     [selectedNote?.attachments]
   );
+
+  useEffect(() => {
+    const attachment = selectedNote?.attachments?.find(isWalkableAttachment);
+    if (!attachment?.id) return;
+    void fetchNoteAttachmentPages(noteId, attachment.id, { images: true }).catch(() => undefined);
+  }, [noteId, selectedNote?.attachments]);
 
   const presentationAttachment = useMemo(
     () => selectedNote?.attachments?.find((a) => a.type === 'presentation'),
@@ -935,6 +949,31 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     );
   };
 
+  const highlight = highlightFromRange(body, selection.start, selection.end);
+  const askHighlightReady = canAskAboutHighlight(highlight);
+
+  const handleAskHighlight = () => {
+    if (!askHighlightReady) return;
+    const noteTitle = title || selectedNote?.title || 'Untitled Note';
+    void setActiveNoteContext({ id: noteId, title: noteTitle });
+    openCompanionWithMessage(buildSpanQuestion({ excerpt: highlight, noteTitle }), {
+      selectedSpan: highlight.trim(),
+      noteId,
+    });
+  };
+
+  const handleAskFigure = (attachment: NoteAttachment) => {
+    const noteTitle = title || selectedNote?.title || 'Untitled Note';
+    void setActiveNoteContext({ id: noteId, title: noteTitle });
+    openCompanionWithMessage(
+      buildFigureQuestion({
+        label: attachment.fileName || 'Photo',
+        excerpt: attachment.extractedText || undefined,
+      }),
+      { noteId }
+    );
+  };
+
   /**
    * Wave G: hand the generation to the jobs store instead of awaiting it here.
    *
@@ -1436,6 +1475,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 editable={isPhotoNote && canEdit}
                 onAttachmentsChange={handleImageAttachmentsChange}
                 onAddPhotos={isPhotoNote && canEdit ? handleAddPhotos : undefined}
+                onAskAboutFigure={handleAskFigure}
               />
             </ErrorBoundary>
           ) : null}
@@ -1600,6 +1640,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <TextInput
                 value={body}
                 onChangeText={setBody}
+                onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
                 editable={canEdit}
                 accessibilityLabel="Note body"
                 placeholder={
@@ -1621,6 +1662,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             value={body}
 
             onChangeText={setBody}
+            onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
             editable={canEdit}
             accessibilityLabel="Note body"
 
@@ -1636,6 +1678,18 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           />
           )}
+
+          {askHighlightReady ? (
+            <Pressable
+              onPress={handleAskHighlight}
+              accessibilityRole="button"
+              accessibilityLabel="Ask about the highlighted span"
+              className="mb-4 min-h-[44px] justify-center"
+            >
+              <T.Body>Ask about selection</T.Body>
+              <T.Caption tone="secondary">Lantern will cite the highlighted span.</T.Caption>
+            </Pressable>
+          ) : null}
 
 
 

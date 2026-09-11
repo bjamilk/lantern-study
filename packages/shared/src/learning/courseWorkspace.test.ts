@@ -11,7 +11,7 @@ import {
 } from './courseWorkspace';
 
 describe('course workspace helpers', () => {
-  it('lists eleven activities and only Wave A ones as ready', () => {
+  it('lists eleven activities and Waves A–C as ready', () => {
     expect(WORKSPACE_ACTIVITIES.map((a) => a.id)).toEqual([
       'notes',
       'walkthrough',
@@ -26,7 +26,16 @@ describe('course workspace helpers', () => {
       'essay',
     ]);
     const ready = WORKSPACE_ACTIVITIES.filter((a) => a.status === 'ready').map((a) => a.id);
-    expect(ready).toEqual(['notes', 'walkthrough', 'cards', 'test', 'lecture', 'play', 'plan']);
+    expect(ready).toEqual([
+      'notes',
+      'walkthrough',
+      'cards',
+      'quiz',
+      'test',
+      'lecture',
+      'play',
+      'plan',
+    ]);
   });
 
   it('offers cards and a practice test as Turn into targets', () => {

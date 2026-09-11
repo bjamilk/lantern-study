@@ -13,7 +13,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 import type { NoteAttachment } from '../services/notes';
 import { refreshNoteAttachmentUrl, reorderNoteAttachments } from '../services/notes';
-import { Button, Card } from './ui';
+import { Button, Card, T } from './ui';
 import { useTheme } from '../theme';
 import { AppIcon } from './ui/AppIcon';
 
@@ -23,6 +23,7 @@ interface NoteImageGalleryProps {
   editable?: boolean;
   onAttachmentsChange?: (attachments: NoteAttachment[]) => void;
   onAddPhotos?: () => void;
+  onAskAboutFigure?: (attachment: NoteAttachment) => void;
 }
 
 function sortOrderValue(attachment: NoteAttachment): number {
@@ -78,6 +79,7 @@ export function NoteImageGallery({
   editable = false,
   onAttachmentsChange,
   onAddPhotos,
+  onAskAboutFigure,
 }: NoteImageGalleryProps) {
   const { colors } = useTheme();
   const [ordered, setOrdered] = useState<NoteAttachment[]>([]);
@@ -262,6 +264,16 @@ export function NoteImageGallery({
                 <Text className="text-xs text-lantern-text-secondary mt-1" numberOfLines={1}>
                   {attachment.fileName}
                 </Text>
+              ) : null}
+              {onAskAboutFigure ? (
+                <Pressable
+                  onPress={() => onAskAboutFigure(attachment)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Ask about this figure"
+                  className="mt-1 min-h-[44px] justify-center"
+                >
+                  <T.Caption>Ask about this figure</T.Caption>
+                </Pressable>
               ) : null}
             </View>
           ))}

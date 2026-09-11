@@ -1838,6 +1838,16 @@ export interface CompanionUserContext {
   attachmentId?: string;
   /** 0-based page of `attachmentId`. */
   pageIndex?: number;
+  /**
+   * One-shot highlight from the notes studio. Quoted in the user message;
+   * sent with this Ask so the rail can show the span was the question.
+   */
+  selectedSpan?: string;
+  /**
+   * One-shot stem from the adaptive quiz. Quoted in the user message so the
+   * rail is asking about this question, not the whole note.
+   */
+  questionStem?: string;
   /** When set, companion grounding may include that class's published materials. */
   classId?: string;
   studyGoal?: StudyGoalMode;

@@ -119,8 +119,17 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       return;
     }
     switch (id) {
-      case 'notes':
+      case 'notes': {
+        const note =
+          selectedNote && selectedNote.courseId === courseId ? selectedNote : courseNotes[0];
+        if (!note) {
+          showToast('Import or create a note first.', 'info');
+          return;
+        }
+        selectNote(note.id);
+        navigation.navigate('NoteEditor', { noteId: note.id });
         return;
+      }
       case 'walkthrough': {
         const note = (selectedNote && selectedNote.courseId === courseId
           ? selectedNote
@@ -133,6 +142,16 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           return;
         }
         navigation.navigate('Walkthrough', { noteId: note.id, attachmentId: attachment.id });
+        return;
+      }
+      case 'quiz': {
+        const note =
+          selectedNote && selectedNote.courseId === courseId ? selectedNote : courseNotes[0];
+        navigation.navigate('AdaptiveQuiz', {
+          courseId,
+          courseLabel: label,
+          noteId: note?.id,
+        });
         return;
       }
       case 'cards':

@@ -4,6 +4,7 @@ import {
   hasEnoughNoteStudyContent,
   MIN_NOTE_STUDY_CONTENT_CHARS,
   MarkdownRenderer,
+  NOTES_STUDIO_DEPTHS,
 } from '@lantern/shared';
 import {
   SMART_NOTES_GUIDANCE_MAX_CHARS,
@@ -188,13 +189,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
           }`}
         />
         <div className="flex gap-1" role="radiogroup" aria-label="Smart Notes depth">
-          {(
-            [
-              ['concise', 'Concise'],
-              ['standard', 'Standard'],
-              ['deep', 'Deep dive'],
-            ] as Array<[SmartNotesDepth, string]>
-          ).map(([value, label]) => (
+          {NOTES_STUDIO_DEPTHS.map(({ id: value, label }) => (
             <button
               key={value}
               type="button"
@@ -216,7 +211,7 @@ const NoteLearnPanel: React.FC<NoteLearnPanelProps> = ({
         </div>
         {depth === 'deep' && (
           <p className={`text-[11px] ${isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-            Deep dive covers more of long sources and adds a review pass — takes longer and costs{' '}
+            Comprehensive covers more of long sources and adds a review pass — takes longer and costs{' '}
             {formatCreditCost(SMART_NOTES_CREDIT_COST.deep)}.
           </p>
         )}

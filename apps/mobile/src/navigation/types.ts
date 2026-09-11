@@ -48,6 +48,11 @@ export type StudyStackParamList = {
    */
   CourseRoom: { courseId: string; courseLabel?: string };
   /**
+   * Adaptive quiz for one course — confirm, confidence 1–3, then explanation.
+   * Distinct from TestTaking (submit-all).
+   */
+  AdaptiveQuiz: { courseId: string; courseLabel?: string; noteId?: string };
+  /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on
    * an editable topic list rather than near one.

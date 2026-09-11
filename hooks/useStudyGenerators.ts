@@ -5,9 +5,11 @@ import {
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
   isThinOrUnusableStudyContent,
+  isWalkableAttachment,
   MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared';
 import * as notesApi from '../services/notes';
+import { fetchNoteAttachmentPages } from '../services/apiEndpoints';
 import { aiGenerateFlashcards } from '../services/ai';
 import { saveGeneratedDeck, saveGeneratedTest } from '../services/jobArtifacts';
 import type { AiJobHooks } from '../stores/aiJobRunner';
@@ -193,6 +195,10 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
     ): Promise<ImportAndStudyResult> => {
       onStage('extract');
       const note = await refreshNoteAfterOcr(incoming);
+      const walkable = note.attachments?.find(isWalkableAttachment);
+      if (walkable?.id) {
+        void fetchNoteAttachmentPages(note.id, walkable.id, { images: true }).catch(() => undefined);
+      }
       const studyInput = {
         sourceType: note.sourceType,
         body: note.body,

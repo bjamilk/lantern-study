@@ -86,7 +86,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
     promise: 'Adaptive quiz with confidence ratings',
     icon: 'help-circle',
     feature: 'tests',
-    status: 'later',
+    status: 'ready',
   },
   {
     id: 'test',
@@ -147,7 +147,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
 ];
 
 export const WORKSPACE_LATER_COPY =
-  'This activity ships in a later wave. Notes, cards, tests, lecture and play are ready now.';
+  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture and play are ready now.';
 
 export type TurnIntoTargetId = 'cards' | 'test';
 

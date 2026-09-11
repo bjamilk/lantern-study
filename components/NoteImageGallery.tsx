@@ -12,6 +12,7 @@ interface NoteImageGalleryProps {
   editable?: boolean;
   onAttachmentsChange?: (attachments: NoteAttachment[]) => void;
   onAddPhotos?: () => void;
+  onAskAboutFigure?: (attachment: NoteAttachment) => void;
   className?: string;
 }
 
@@ -26,6 +27,7 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
   editable = false,
   onAttachmentsChange,
   onAddPhotos,
+  onAskAboutFigure,
   className = '',
 }) => {
   const isDark = theme === 'dark';
@@ -248,6 +250,15 @@ const NoteImageGallery: React.FC<NoteImageGalleryProps> = ({
               {attachment.fileName && (
                 <p className="text-xs text-lantern-text-tertiary mt-1 truncate">{attachment.fileName}</p>
               )}
+              {onAskAboutFigure ? (
+                <button
+                  type="button"
+                  onClick={() => onAskAboutFigure(attachment)}
+                  className="mt-1 text-caption text-lantern-text-secondary hover:underline"
+                >
+                  Ask about this figure
+                </button>
+              ) : null}
             </div>
           ))}
       </div>

@@ -11,7 +11,7 @@ import {
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
-import { AI_CREDIT_COSTS } from '@lantern/shared/utils/aiCredits';
+import { AI_CREDIT_COSTS, getSmartNotesCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { CompanionAction, CompanionUserContext, Deck, StudyNote } from '../../types';
 import { AppMode } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
@@ -21,7 +21,8 @@ import AICompanionPanel from '../AICompanionPanel';
 import WalkthroughScreen from '../walkthrough/WalkthroughScreen';
 import { ManageOutlineModal } from '../academic/ManageOutlineModal';
 import ImportAndStudyModal from '../ImportAndStudyModal';
-import { TurnIntoMenu } from './TurnIntoMenu';
+import { NotesStudio } from './NotesStudio';
+import { AdaptiveQuiz } from './AdaptiveQuiz';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
@@ -39,7 +40,7 @@ import * as notesApi from '../../services/notes';
 import { fetchCourseTopics } from '../../services/academic';
 import { getApiRoot, getAuthHeaders } from '../../services/supabase';
 import type { CourseTopic } from '../../types';
-import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
+import type { SmartNotesRequestOptions } from '@lantern/shared/utils/smartNotes';
 
 interface CourseWorkspaceProps {
   courseId: string;
@@ -89,9 +90,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [activity, setActivity] = useState<WorkspaceActivityId>('notes');
   const [importOpen, setImportOpen] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const [walkthroughOpen, setWalkthroughOpen] = useState(false);
   const [topics, setTopics] = useState<CourseTopic[]>([]);
   const [turning, setTurning] = useState(false);
+  const [writingQuiz, setWritingQuiz] = useState(false);
 
   const reloadNotes = useCallback(() => {
     return notesApi.fetchNotes({ courseId }).then((rows) => {
@@ -182,6 +183,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       void noteHandlers.handleCreateNote(newLectureNoteTitle(), { courseId });
       return;
     }
+    if (id === 'walkthrough') {
+      const current = useNotesStore.getState().selectedNote;
+      if (!current?.attachments?.find(isWalkableAttachment)) {
+        const fallback = notes.find((row) => row.attachments?.some(isWalkableAttachment));
+        if (fallback) void openNote(fallback.id);
+      }
+    }
     if (id === 'plan') {
       setOutlineOpen(true);
     }
@@ -264,11 +272,83 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
   };
 
-  const walkable = selectedNote?.attachments?.find(isWalkableAttachment);
-  const preview =
-    selectedNote && selectedNote.courseId === courseId
-      ? markdownToPreviewText(selectedNote.body || selectedNote.summary || '').slice(0, 180)
-      : '';
+  const handleWriteQuizQuestions = async (noteId: string) => {
+    const note =
+      notes.find((row) => row.id === noteId) ?? useNotesStore.getState().selectedNote;
+    if (!note || note.courseId !== courseId) {
+      throw new Error('Select a note in this course first.');
+    }
+    if (!hasEnoughNoteStudyContent(note)) {
+      throw new Error('Add more study content to this note first.');
+    }
+    setWritingQuiz(true);
+    try {
+      const run = () =>
+        notesApi.generateNoteQuiz(noteId, undefined, 10).then((row) => row.questions || []);
+      if (!aiJobUserId) return run();
+      const workspacePath = `/study/courses/${encodeURIComponent(courseId)}`;
+      return runAiJob(
+        {
+          userId: aiJobUserId,
+          kind: 'quiz',
+          title: note.title || 'Untitled note',
+          stages: ['Reading your note', 'Writing questions', 'Opening the quiz'],
+          creditCost: AI_CREDIT_COSTS.generate_questions,
+          target: { path: workspacePath, label: 'Back to course' },
+        },
+        async (report) => {
+          report(1);
+          const questions = await run();
+          report(2);
+          return questions;
+        }
+      );
+    } finally {
+      setWritingQuiz(false);
+    }
+  };
+
+  const handleStudioSmartNote = async (
+    editorState: { title?: string; body?: string },
+    options?: SmartNotesRequestOptions
+  ) => {
+    const note = useNotesStore.getState().selectedNote;
+    if (!note || note.courseId !== courseId) {
+      throw new Error('Select a note in this course first.');
+    }
+    const run = () => noteHandlers.handleSmartNote(note.id, editorState, options);
+    if (!aiJobUserId) return run();
+    const workspacePath = `/study/courses/${encodeURIComponent(courseId)}`;
+    return runAiJob(
+      {
+        userId: aiJobUserId,
+        kind: 'smart_notes',
+        title: editorState.title || note.title || 'Untitled note',
+        stages: ['Reading your note', 'Writing Smart Notes', 'Saving to your note'],
+        creditCost: getSmartNotesCreditCost(options?.depth),
+        target: { path: workspacePath, label: 'Back to course' },
+      },
+      async (report) => {
+        report(1);
+        const summary = await run();
+        report(2);
+        return summary;
+      }
+    );
+  };
+
+  const walkable = selectedNote?.attachments?.find(isWalkableAttachment)
+    || notes.find((row) => row.id === selectedNote?.id)?.attachments?.find(isWalkableAttachment);
+
+  const studioNote = selectedNote
+    ? {
+        ...selectedNote,
+        attachments:
+          selectedNote.attachments?.length
+            ? selectedNote.attachments
+            : notes.find((row) => row.id === selectedNote.id)?.attachments,
+      }
+    : null;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
@@ -385,54 +465,55 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </aside>
 
         <section className="hidden sm:flex flex-1 min-w-0 min-h-0">
+          {activity === 'notes' && studioNote && studioNote.courseId === courseId ? (
+            <NotesStudio
+              note={studioNote}
+              sourceAttachment={walkable}
+              theme={theme}
+              turning={turning}
+              onTurnInto={(target) => void handleTurnInto(target)}
+              onSmartNote={handleStudioSmartNote}
+            />
+          ) : activity === 'walkthrough' && selectedNote && walkable?.id ? (
+            <WalkthroughScreen
+              variant="pane"
+              isOpen
+              onClose={() => setActivity('notes')}
+              noteId={selectedNote.id}
+              noteTitle={selectedNote.title || 'Untitled note'}
+              attachmentId={walkable.id}
+              documentLabel={walkable.fileName}
+              theme={theme}
+            />
+          ) : activity === 'quiz' ? (
+            <AdaptiveQuiz
+              courseId={courseId}
+              theme={theme}
+              notes={notes}
+              selectedNoteId={selectedNote?.id}
+              testIds={courseTests.map((test) => test.id)}
+              canWalkthrough={Boolean(walkable)}
+              writing={writingQuiz}
+              onWriteQuestions={handleWriteQuizQuestions}
+              onOpenNotes={() => setActivity('notes')}
+              onOpenWalkthrough={() => handleActivity('walkthrough', 'ready')}
+            />
+          ) : (
           <Card padding="lg" className="flex-1 min-h-0 overflow-y-auto">
             {activity === 'notes' && (
               <div className="space-y-4">
                 <h2 className="text-heading">Notes</h2>
-                {selectedNote && selectedNote.courseId === courseId ? (
-                  <>
-                    <p className="text-body font-semibold">{selectedNote.title || 'Untitled note'}</p>
-                    {preview ? (
-                      <p className="text-caption text-lantern-text-secondary">{preview}</p>
-                    ) : (
-                      <p className="text-caption text-lantern-text-secondary">
-                        Open the note to add study content, then turn it into cards or a test here.
-                      </p>
-                    )}
-                    <div className="flex flex-wrap gap-2">
-                      <Button variant="secondary" onClick={() => onOpenNote(selectedNote.id)}>
-                        Open note
-                      </Button>
-                      {walkable && (
-                        <Button variant="secondary" onClick={() => setWalkthroughOpen(true)}>
-                          Walk through
-                        </Button>
-                      )}
-                    </div>
-                    <TurnIntoMenu disabled={turning} onSelect={(target) => void handleTurnInto(target)} />
-                  </>
-                ) : (
-                  <p className="text-body text-lantern-text-secondary">
-                    Pick a note from the list, or import material into this course.
-                  </p>
-                )}
+                <p className="text-body text-lantern-text-secondary">
+                  Pick a note from the list, or import material into this course.
+                </p>
               </div>
             )}
             {activity === 'walkthrough' && (
               <div className="space-y-4">
                 <h2 className="text-heading">Walkthrough</h2>
-                {walkable && selectedNote ? (
-                  <>
-                    <p className="text-body text-lantern-text-secondary">
-                      One page at a time from {selectedNote.title || 'this note'}.
-                    </p>
-                    <Button onClick={() => setWalkthroughOpen(true)}>Start walkthrough</Button>
-                  </>
-                ) : (
-                  <p className="text-body text-lantern-text-secondary">
-                    Select a note with a PDF or slides attached.
-                  </p>
-                )}
+                <p className="text-body text-lantern-text-secondary">
+                  Select a note with a PDF or slides attached.
+                </p>
               </div>
             )}
             {activity === 'cards' && (
@@ -526,6 +607,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               <p className="text-body text-lantern-text-secondary">Opening a lecture note to record…</p>
             )}
           </Card>
+          )}
         </section>
         </div>
 
@@ -541,16 +623,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </aside>
       </div>
 
-      {walkthroughOpen && selectedNote && walkable?.id && (
-        <WalkthroughScreen
-          isOpen={walkthroughOpen}
-          onClose={() => setWalkthroughOpen(false)}
-          noteId={selectedNote.id}
-          noteTitle={selectedNote.title || 'Untitled note'}
-          attachmentId={walkable.id}
-          theme={theme}
-        />
-      )}
       <ManageOutlineModal
         isOpen={outlineOpen}
         onClose={() => setOutlineOpen(false)}
