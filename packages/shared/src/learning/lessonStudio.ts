@@ -443,7 +443,8 @@ function splitMaterialSections(notes: string): Array<{ title: string; body: stri
   const sections: Array<{ title: string; body: string }> = [];
   matches.forEach((match, index) => {
     const start = (match.index ?? 0) + match[0].length;
-    const end = index + 1 < matches.length ? matches[index + 1].index ?? text.length : text.length;
+    const nextMatch = matches[index + 1];
+    const end = nextMatch?.index ?? text.length;
     const title = String(match[2] || '').trim();
     const body = text.slice(start, end).trim();
     if (title || body) sections.push({ title: title || `Topic ${index + 1}`, body });
@@ -550,6 +551,7 @@ export function resolveLessonStudioNote(input: {
   if (input.selectedNoteId && input.lessons.some((row) => row.id === input.selectedNoteId)) {
     return { action: 'resume', noteId: input.selectedNoteId };
   }
-  if (input.lessons[0]) return { action: 'resume', noteId: input.lessons[0].id };
+  const first = input.lessons[0];
+  if (first) return { action: 'resume', noteId: first.id };
   return { action: 'start' };
 }
