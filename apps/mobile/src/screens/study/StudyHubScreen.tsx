@@ -9,6 +9,7 @@ import {
   isValidStudySetTitle,
   materialsForStudySet,
   normalizeStudySetTitle,
+  pickOpenStudySetId,
   STUDY_SET_TITLE_MAX,
   studySetLabel,
 } from '@lantern/shared';
@@ -60,7 +61,14 @@ export function StudyHubScreen({ navigation }: Props) {
           void useFlashcardStore.getState().fetchDecks(userId).catch(() => undefined);
         }
         void useNotesStore.getState().loadNotes().catch(() => undefined);
-        void loadSets({ force: true }).catch(() => undefined);
+        const loaded = await loadSets({ force: true }).catch(() => [] as typeof sets);
+        if (!cancelled && !useStudySetStore.getState().picker) {
+          const openId = pickOpenStudySetId(loaded, useStudySetStore.getState().lastOpenedId);
+          if (openId) {
+            const title = loaded.find((row) => row.id === openId)?.title;
+            openSet(openId, title);
+          }
+        }
         const rows = await getMyActiveCourses().catch(() => [] as UserCourse[]);
         if (!cancelled) setCourses(rows);
       })();

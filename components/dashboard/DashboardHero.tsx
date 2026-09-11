@@ -1,8 +1,10 @@
 import React from 'react';
-import { getStudyAllDueLabel } from '@lantern/shared';
+import { getStudyAllDueLabel, resumeGreeting, studySetLabel } from '@lantern/shared';
 import { Button } from '../ui';
 import type { TestSessionData, StudySessionData } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
+import { useStudyResumeStore } from '../../stores/studyResumeStore';
+import { useStudySetStore } from '../../stores/studySetStore';
 
 interface DashboardHeroProps {
   userName: string;
@@ -23,6 +25,10 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   activeStudySession,
   onResumeSession,
 }) => {
+  const lastActivity = useStudyResumeStore((s) => s.lastActivity);
+  const lastSet = useStudySetStore((s) =>
+    s.lastOpenedId ? s.resolveSet(s.lastOpenedId) : s.sets[0] ?? null
+  );
   const greeting = (() => {
     const hour = new Date().getHours();
     if (hour < 12) return 'Good morning';
@@ -31,7 +37,8 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
   })();
 
   const primaryActionLabel =
-    dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : 'Import & study';
+    dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : lastActivity ? 'Continue' : 'Import & study';
+  const resumeLine = resumeGreeting(lastActivity, lastSet ? studySetLabel(lastSet) : undefined);
 
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -46,9 +53,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
         <p className="text-lantern-text-secondary mt-1.5 text-body leading-relaxed">
           {dueCardsCount > 0
             ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review.`
-            : totalTestsTaken > 0
-              ? 'Continue from a study set, or start a new one.'
-              : 'Import material or open a study set to get started.'}
+            : resumeLine}
         </p>
       </div>
       <div className="flex flex-col sm:flex-row gap-2 shrink-0">

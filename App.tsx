@@ -18,7 +18,7 @@ import {
     ONBOARDING_COMPLETE_VALUE,
     isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { getNoteStudyContent, isQuizzableNote, pickOpenStudySetId } from '@lantern/shared';
+import { buildStudySetPath, getNoteStudyContent, isQuizzableNote, parseStudySetPath, pickOpenStudySetId } from '@lantern/shared';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -1044,30 +1044,7 @@ export const App: React.FC = () => {
             };
         });
 
-    const handleShellNavigate = React.useCallback((mode: AppMode) => {
-        // Tapping Chat in bottom nav should return to the list, not stay on the open thread.
-        if (mode === AppMode.CHAT) {
-            navigateTo(AppMode.CHAT, {}, { replace: true });
-            return;
-        }
-        navigateTo(mode);
-    }, [navigateTo]);
-
-    const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
-    /**
-     * The Tests home's "New test".
-     *
-     * It used to reach into the group chat: pick the first group, switch the
-     * global tab to Chat and open the group's test-config modal. So pressing
-     * "New test" inside Study left Study, and a student with no group could not
-     * make a test at all. It now opens the builder page, which owns all three
-     * sources and is the only one of them that stays inside Study.
-     */
-    const handleStartNewTest = () => {
-        navigateToPath(TEST_BUILDER_PATH);
-    };
-
-    const openStudyDestination = async () => {
+    const openStudyDestination = useCallback(async () => {
         const store = useStudySetStore.getState();
         store.closePicker();
         try {
@@ -1082,6 +1059,42 @@ export const App: React.FC = () => {
             // Show the picker if the list cannot load.
         }
         navigateTo(AppMode.STUDY_HUB);
+    }, [navigateTo]);
+
+    const handleShellNavigate = React.useCallback((mode: AppMode) => {
+        // Tapping Chat in bottom nav should return to the list, not stay on the open thread.
+        if (mode === AppMode.CHAT) {
+            navigateTo(AppMode.CHAT, {}, { replace: true });
+            return;
+        }
+        if (mode === AppMode.STUDY_HUB) {
+            void openStudyDestination();
+            return;
+        }
+        navigateTo(mode);
+    }, [navigateTo, openStudyDestination]);
+
+    const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
+    /**
+     * The Tests home's "New test".
+     *
+     * It used to reach into the group chat: pick the first group, switch the
+     * global tab to Chat and open the group's test-config modal. So pressing
+     * "New test" inside Study left Study, and a student with no group could not
+     * make a test at all. It now opens the builder page, which owns all three
+     * sources and is the only one of them that stays inside Study.
+     */
+    const handleStartNewTest = () => {
+        const setPath = parseStudySetPath(location.pathname);
+        if (setPath?.studySetId) {
+            navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                studySetId: setPath.studySetId,
+                workspaceActivity: 'test',
+                createNew: true,
+            });
+            return;
+        }
+        navigateToPath(TEST_BUILDER_PATH);
     };
 
     /**
@@ -1164,11 +1177,13 @@ export const App: React.FC = () => {
      * Declared HERE, above the effect that depends on `testDetailId`: a `const`
      * named in a dependency list before its declaration throws at render.
      */
+    const studySetPath = parseStudySetPath(location.pathname);
     const onTestBuilderPath = normalizedPath === TEST_BUILDER_PATH;
     const testDetailId = (() => {
         const parsed = parseAppRoute(location.pathname);
         return parsed.standalone === 'test-detail' ? parsed.params.testId ?? null : null;
     })();
+    const setScopedTestId = studySetPath?.testId ?? null;
 
     const [testDetailError, setTestDetailError] = useState<string | null>(null);
     useEffect(() => {
@@ -1218,6 +1233,33 @@ export const App: React.FC = () => {
         return () => { cancelled = true; };
     }, [testDetailId, currentUser, navigateTo, setActiveTestResult]);
 
+    useEffect(() => {
+        if (!setScopedTestId || !currentUser) return;
+        let cancelled = false;
+        void (async () => {
+            const result = await fetchTestSessionById(setScopedTestId);
+            if (cancelled || !result) return;
+            const isFinished =
+                result.session?.status === 'completed' || Boolean(result.session?.endTime);
+            if (isFinished) {
+                setActiveTestResult(result);
+                return;
+            }
+            const plan = planRetake({ id: result.id, session: result.session }, { alreadyFetched: true });
+            if (plan.kind !== 'ready') return;
+            const session = { ...buildRetakeSession(plan), id: result.id };
+            const store = useTestStore.getState();
+            if (attemptKindFromConfig(plan.config) === 'practice') {
+                store.setActiveStudySession(session);
+                store.setActiveTestSession(null);
+                return;
+            }
+            store.setActiveTestSession(session);
+            store.setActiveStudySession(null);
+        })();
+        return () => { cancelled = true; };
+    }, [setScopedTestId, currentUser, setActiveTestResult]);
+
     /**
      * "Start" on the builder page, for the deck and note sources.
      *
@@ -1258,7 +1300,17 @@ export const App: React.FC = () => {
                     }),
                 }
             );
-            navigateToPath(buildTestDetailPath(created.testId), { replace: true });
+            const setPath = parseStudySetPath(location.pathname);
+            navigateToPath(
+              setPath?.studySetId
+                ? buildStudySetPath({
+                    studySetId: setPath.studySetId,
+                    activity: 'test',
+                    testId: created.testId,
+                  })
+                : buildTestDetailPath(created.testId),
+              { replace: true }
+            );
         } catch (error: any) {
             setTestBuilderError(error?.message || 'Could not build that test. Please try again.');
         } finally {
@@ -1294,8 +1346,20 @@ export const App: React.FC = () => {
             void openExisting().catch((e: any) => showToast(e?.message || 'Could not return to the lecture.', 'error'));
             return;
         }
-        void noteHandlers.handleCreateNote(newLectureNoteTitle(), { courseId })
-            .then(() => showToast('New note ready \u2014 press Record to start.', 'info'))
+        const lastSetId = useStudySetStore.getState().lastOpenedId;
+        void noteHandlers.handleCreateNote(newLectureNoteTitle(), {
+            courseId,
+            studySetId: lastSetId,
+        })
+            .then(() => {
+                if (lastSetId) {
+                    navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                        studySetId: lastSetId,
+                        workspaceActivity: 'lecture',
+                    });
+                }
+                showToast('New note ready \u2014 press Record to start.', 'info');
+            })
             .catch((e: any) => showToast(e?.message || 'Failed to create note', 'error'));
     };
 
@@ -2250,6 +2314,153 @@ export const App: React.FC = () => {
                 const workspaceRoute = parseAppRoute(location.pathname).params;
                 const workspaceCourseId = workspaceRoute.courseId;
                 const workspaceSetId = workspaceRoute.studySetId;
+                const setPath = parseStudySetPath(location.pathname);
+                if (workspaceSetId && setPath) {
+                    const backToSet = (activity: typeof setPath.activity, extras: Record<string, unknown> = {}) =>
+                        navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                            studySetId: workspaceSetId,
+                            workspaceActivity: activity,
+                            ...extras,
+                        });
+                    if (setPath.playSession === 'match') {
+                        const deck = selectedDeck || decks.find((row) => row.studySetId === workspaceSetId) || decks[0];
+                        if (deck) {
+                            return (
+                                <MatchStudyScreen
+                                    cards={flashcards.filter((fc) => fc.deckId === deck.id)}
+                                    deckName={deck.name}
+                                    onExit={() => backToSet('play')}
+                                    theme={theme}
+                                />
+                            );
+                        }
+                    }
+                    if (setPath.cardSession === 'review' && activeReviewSession) {
+                        return (
+                            <FlashcardReviewScreen
+                                session={activeReviewSession}
+                                onUpdateSrs={handleUpdateSrsData}
+                                onEndSession={() => {
+                                    setActiveReviewSession(null);
+                                    backToSet('cards', { deckId: setPath.deckId });
+                                }}
+                            />
+                        );
+                    }
+                    if (setPath.cardSession === 'cram' && activeCramSession) {
+                        return (
+                            <CramSessionScreen
+                                session={activeCramSession}
+                                onAnswer={handleCramAnswer}
+                                onEndSession={(stats) => {
+                                    handleEndCramSession(stats);
+                                    backToSet('cards', { deckId: setPath.deckId });
+                                }}
+                                onCramIncorrect={handleCramIncorrect}
+                            />
+                        );
+                    }
+                    if (setPath.cardSession === 'learn') {
+                        const deck = selectedDeck || decks.find((row) => row.id === setPath.deckId);
+                        if (deck) {
+                            return (
+                                <LearnStudyScreen
+                                    cards={flashcards.filter((fc) => fc.deckId === deck.id)}
+                                    deckName={deck.name}
+                                    onExit={() => backToSet('cards', { deckId: deck.id })}
+                                    theme={theme}
+                                />
+                            );
+                        }
+                    }
+                    if (setPath.activity === 'test' && setPath.createNew) {
+                        return (
+                            <TestBuilderScreen
+                                decks={decks
+                                    .filter((deck) => !deck.studySetId || deck.studySetId === workspaceSetId)
+                                    .map((deck) => ({
+                                        id: deck.id,
+                                        name: deck.name,
+                                        cardCount: flashcards.filter((card) => card.deckId === deck.id).length,
+                                    }))}
+                                notes={notes
+                                    .filter((note) => isQuizzableNote(note) && (!note.studySetId || note.studySetId === workspaceSetId))
+                                    .map((note) => ({ id: note.id, title: note.title }))}
+                                isBusy={isBuildingTest}
+                                busyLabel="Writing your questions\u2026 this keeps running if you leave the page."
+                                error={testBuilderError}
+                                onBack={() => backToSet('test')}
+                                onStart={(plan) => { void handleStartBuiltTest(plan); }}
+                                onOpenGroupChat={handleBuildTestWithGroup}
+                            />
+                        );
+                    }
+                    if (setPath.testId && (activeTestSession || activeStudySession)) {
+                        const session = activeTestSession || activeStudySession;
+                        if (session) {
+                            return (
+                                <TestTakingScreen
+                                    mode={activeStudySession ? 'study' : 'test'}
+                                    session={session}
+                                    onUpdateAnswer={handleUpdateAnswer}
+                                    onChangeQuestion={handleChangeQuestion}
+                                    onToggleBookmark={handleToggleBookmark}
+                                    onSubmitTest={handleSubmitTest}
+                                    onSubmitOfflineTest={handleSubmitTest}
+                                    onEndSession={handleEndStudySession}
+                                    onPauseSession={handlePauseSession}
+                                    onCancelSession={() => {
+                                        handleCancelActiveSession();
+                                        backToSet('test');
+                                    }}
+                                    isSubmittingTest={isSubmittingTest}
+                                />
+                            );
+                        }
+                    }
+                    if (setPath.activity === 'cards' && setPath.deckId && !setPath.cardSession) {
+                        const deck = selectedDeck?.id === setPath.deckId
+                            ? selectedDeck
+                            : decks.find((row) => row.id === setPath.deckId);
+                        if (deck) {
+                            return (
+                                <DeckDetailScreen
+                                    deck={deck}
+                                    flashcards={flashcards}
+                                    onBack={() => backToSet('cards')}
+                                    onStartReview={(next) => {
+                                        handleStartReview(next);
+                                        backToSet('cards', { deckId: next.id, cardSession: 'review' });
+                                    }}
+                                    onStartCram={(next) => {
+                                        handleStartCram(next);
+                                        backToSet('cards', { deckId: next.id, cardSession: 'cram' });
+                                    }}
+                                    onStartMatch={(next) => {
+                                        handleStartMatch(next);
+                                        backToSet('play', { playSession: 'match' });
+                                    }}
+                                    onStartLearn={(next) => {
+                                        handleStartLearn(next);
+                                        backToSet('cards', { deckId: next.id, cardSession: 'learn' });
+                                    }}
+                                    onOpenCreateFlashcard={handleOpenCreateFlashcardModal}
+                                    onOpenEditFlashcard={handleOpenEditFlashcardModal}
+                                    onDeleteFlashcard={handleDeleteFlashcard}
+                                    onOpenEditDeck={handleOpenEditDeckModal}
+                                    onMoveDeckToCourse={handleMoveDeckToCourse}
+                                    onDeleteDeck={handleDeleteDeck}
+                                    onGenerateFlashcards={handleGenerateFlashcards}
+                                    isGenerating={isGeneratingFlashcards}
+                                    onResetStatistics={handleResetDeckStatistics}
+                                    onExportDeck={handleExportDeck}
+                                    onLoadMoreCards={handleLoadMoreFlashcards}
+                                    onEnhanceFlashcard={handleAIEnhanceFlashcard}
+                                />
+                            );
+                        }
+                    }
+                }
                 if (!workspaceCourseId && !workspaceSetId) {
                     return (
                     <StudyHubScreen
@@ -2283,15 +2494,66 @@ export const App: React.FC = () => {
                     <CourseWorkspace
                         courseId={workspaceCourseId}
                         studySetId={workspaceSetId}
+                        routePath={setPath}
                         theme={theme}
                         companionContext={companionContext}
                         onCompanionAction={handleCompanionAction}
-                        onSelectDeck={handleSelectDeck}
-                        onStartMatch={handleStartMatch}
-                        onStartCram={handleStartCram}
-                        onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+                        onSelectDeck={(deck) => {
+                            setSelectedDeck(deck);
+                            if (workspaceSetId) {
+                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                                    studySetId: workspaceSetId,
+                                    workspaceActivity: 'cards',
+                                    deckId: deck.id,
+                                });
+                                return;
+                            }
+                            handleSelectDeck(deck);
+                        }}
+                        onStartMatch={(deck) => {
+                            handleStartMatch(deck);
+                            if (workspaceSetId) {
+                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                                    studySetId: workspaceSetId,
+                                    workspaceActivity: 'play',
+                                    playSession: 'match',
+                                });
+                            }
+                        }}
+                        onStartCram={(deck, timer, cardIds) => {
+                            handleStartCram(deck, timer, cardIds);
+                            if (workspaceSetId) {
+                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                                    studySetId: workspaceSetId,
+                                    workspaceActivity: 'cards',
+                                    deckId: deck.id,
+                                    cardSession: 'cram',
+                                });
+                            }
+                        }}
+                        onOpenNote={(noteId) => {
+                            if (workspaceSetId) {
+                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                                    studySetId: workspaceSetId,
+                                    workspaceActivity: 'notes',
+                                    noteId,
+                                });
+                                return;
+                            }
+                            void noteHandlers.openNote(noteId);
+                        }}
                         onNewTest={handleStartNewTest}
-                        onOpenTest={(testId) => navigateToPath(buildTestDetailPath(testId))}
+                        onOpenTest={(testId) => {
+                            if (workspaceSetId) {
+                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                                    studySetId: workspaceSetId,
+                                    workspaceActivity: 'test',
+                                    testId,
+                                });
+                                return;
+                            }
+                            navigateToPath(buildTestDetailPath(testId));
+                        }}
                         onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
                     />
                 );
@@ -3240,7 +3502,16 @@ export const App: React.FC = () => {
                         ? 'hidden md:block'
                         : ''
             }`}>
-            <Breadcrumb items={getBreadcrumbs({ appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult, studySetTitle: useStudySetStore.getState().resolveSet(parseAppRoute(location.pathname).params.studySetId)?.title })} />
+            <Breadcrumb items={getBreadcrumbs({
+                appMode,
+                selectedDeck,
+                libraryTab,
+                navigateTo,
+                setActiveTestResult,
+                studySetTitle: useStudySetStore.getState().resolveSet(parseAppRoute(location.pathname).params.studySetId)?.title,
+                studySetId: parseAppRoute(location.pathname).params.studySetId,
+                workspaceActivity: parseAppRoute(location.pathname).params.workspaceActivity,
+            })} />
             </div>
             <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             <AccountSuspendedNotice variant="banner" />

@@ -1,4 +1,11 @@
 import { canonicalizeJoinCode } from '@lantern/shared/academic';
+import {
+  buildStudySetPath,
+  parseStudySetPath,
+  type StudySetCardSession,
+  type StudySetPathActivity,
+  type StudySetPlaySession,
+} from '@lantern/shared/learning';
 import { AppMode } from '../types';
 
 export type LibraryTabParam = 'notes' | 'flashcards';
@@ -207,6 +214,14 @@ export interface AppRouteParams {
   courseId?: string;
   /** One personal study set: `/study/sets/:studySetId`. */
   studySetId?: string;
+  /** Nested tool under `/study/sets/:id/:activity`. */
+  workspaceActivity?: StudySetPathActivity;
+  createNew?: boolean;
+  cardSession?: StudySetCardSession;
+  playSession?: StudySetPlaySession;
+  quizId?: string;
+  /** Cross-set materials index: `/study/materials`. */
+  studyMaterials?: boolean;
   /** One personal test: `/study/tests/:testId`. */
   testId?: string;
   /** Join-class code on `/join/:code`. */
@@ -394,15 +409,24 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       // and so older links keep working — hydration rewrites it to the tab.
       return params.libraryTab ? `/library/${params.libraryTab}` : '/library';
     case AppMode.STUDY_HUB:
-      return '/study';
+      return params.studyMaterials ? '/study/materials' : '/study';
     case AppMode.COURSE_WORKSPACE:
       return params.courseId
         ? `/study/courses/${encodeURIComponent(params.courseId)}`
         : '/study';
     case AppMode.STUDY_SET_WORKSPACE:
-      return params.studySetId
-        ? `/study/sets/${encodeURIComponent(params.studySetId)}`
-        : '/study';
+      if (!params.studySetId) return '/study';
+      return buildStudySetPath({
+        studySetId: params.studySetId,
+        activity: params.workspaceActivity ?? 'home',
+        noteId: params.noteId,
+        deckId: params.deckId,
+        testId: params.testId,
+        quizId: params.quizId,
+        createNew: params.createNew,
+        cardSession: params.cardSession,
+        playSession: params.playSession,
+      });
     case AppMode.AI_TOOLS:
       return '/ai-tools';
     case AppMode.NOTE_EDITOR:
@@ -630,9 +654,25 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { mode: AppMode.LIBRARY, params: {} };
   }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
-  const studySetId = segment(path, /^\/study\/sets\/([^/]+)$/);
-  if (studySetId) {
-    return { mode: AppMode.STUDY_SET_WORKSPACE, params: { studySetId } };
+  if (path === '/study/materials') {
+    return { mode: AppMode.STUDY_HUB, params: { studyMaterials: true } };
+  }
+  const nestedSet = parseStudySetPath(path);
+  if (nestedSet) {
+    return {
+      mode: AppMode.STUDY_SET_WORKSPACE,
+      params: {
+        studySetId: nestedSet.studySetId,
+        workspaceActivity: nestedSet.activity,
+        ...(nestedSet.noteId ? { noteId: nestedSet.noteId } : {}),
+        ...(nestedSet.deckId ? { deckId: nestedSet.deckId } : {}),
+        ...(nestedSet.testId ? { testId: nestedSet.testId } : {}),
+        ...(nestedSet.quizId ? { quizId: nestedSet.quizId } : {}),
+        ...(nestedSet.createNew ? { createNew: true } : {}),
+        ...(nestedSet.cardSession ? { cardSession: nestedSet.cardSession } : {}),
+        ...(nestedSet.playSession ? { playSession: nestedSet.playSession } : {}),
+      },
+    };
   }
   const studyCourseId = segment(path, /^\/study\/courses\/([^/]+)$/);
   if (studyCourseId) {

@@ -3,10 +3,14 @@ import {
   STUDY_SET_HOME_PRIMARY_TOOL_IDS,
   STUDY_SET_HOME_TOOLS,
   formatCourseMaterialCounts,
+  pickRecommendedTopic,
+  studySetPlanProgress,
+  topicsFromReadingNotes,
   type StudySetHomeTool,
-  type StudySetHomeToolId,
+  type StudySetTopic,
+  type UpcomingExam,
 } from '@lantern/shared';
-import type { StudyNote } from '../../types';
+import type { StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 import { Button, Card, FeatureDisc, Illustration } from '../ui';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
@@ -17,9 +21,14 @@ interface StudySetHomeProps {
   deckCount: number;
   testCount: number;
   recommended?: StudyNote | null;
+  studySet?: StudySet | null;
+  planTopics?: StudySetTopic[];
+  exams?: UpcomingExam[];
   onTool: (tool: StudySetHomeTool) => void;
   onOpenNote: (noteId: string) => void;
   onOpenRecommended: (kind: 'read' | 'quiz' | 'lesson') => void;
+  onOpenPlan?: () => void;
+  onOpenCalendar?: () => void;
 }
 
 export const StudySetHome: React.FC<StudySetHomeProps> = ({
@@ -28,9 +37,14 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   deckCount,
   testCount,
   recommended,
+  studySet,
+  planTopics,
+  exams = [],
   onTool,
   onOpenNote,
   onOpenRecommended,
+  onOpenPlan,
+  onOpenCalendar,
 }) => {
   const primary = STUDY_SET_HOME_TOOLS.filter((tool) =>
     STUDY_SET_HOME_PRIMARY_TOOL_IDS.includes(tool.id)
@@ -43,17 +57,56 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
     decks: deckCount,
     tests: testCount,
   });
+  const derived = studySet ? topicsFromReadingNotes(studySet.id, notes) : null;
+  const topics = planTopics && planTopics.length > 0 ? planTopics : derived?.topics ?? [];
+  const progress = topics.length > 0 ? studySetPlanProgress(topics) : null;
+  const nextTopic = pickRecommendedTopic(topics, studySet?.mode || 'standard');
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
       <div>
-        <p className="text-caption text-lantern-text-secondary">{counts}</p>
+        <p className="text-caption text-lantern-text-secondary">
+          {progress
+            ? `${progress.topics} topics · ${progress.covered} covered · ${progress.mastered} mastered`
+            : counts}
+        </p>
+        {progress && progress.topics > 0 ? (
+          <div className="mt-2 h-1.5 rounded-full bg-lantern-background-secondary overflow-hidden">
+            <div
+              className="h-full bg-lantern-primary-fill"
+              style={{ width: `${Math.round((progress.covered / progress.topics) * 100)}%` }}
+            />
+          </div>
+        ) : null}
         <p className="text-body text-lantern-text-secondary mt-1">
           Everything you study in {setLabel} stays in this set.
         </p>
       </div>
 
-      {recommended ? (
+      {nextTopic ? (
+        <Card padding="md">
+          <p className="text-label uppercase text-lantern-text-secondary mb-1">
+            Recommended from your study plan
+          </p>
+          <h3 className="text-heading text-lantern-text mb-2 truncate">{nextTopic.title}</h3>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => onOpenRecommended('lesson')}>
+              Tutor
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => onOpenRecommended('read')}>
+              Read
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => onOpenRecommended('quiz')}>
+              Quiz
+            </Button>
+            {onOpenPlan ? (
+              <Button size="sm" variant="ghost" onClick={onOpenPlan}>
+                Show more
+              </Button>
+            ) : null}
+          </div>
+        </Card>
+      ) : recommended ? (
         <Card padding="md">
           <p className="text-label uppercase text-lantern-text-secondary mb-1">
             Continue from this set
@@ -96,6 +149,27 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
         </div>
       </section>
 
+      {exams.length > 0 ? (
+        <section>
+          <h2 className="text-heading text-lantern-text mb-3">Exam dates</h2>
+          {exams.map((exam) => (
+            <button
+              key={`${exam.examDate}-${exam.title}`}
+              type="button"
+              onClick={() => onOpenCalendar?.()}
+              className="w-full rounded-xl border border-lantern-border bg-lantern-surface p-3 text-left mb-2"
+            >
+              <span className="block text-body font-semibold">{exam.title}</span>
+              <span className="block text-caption text-lantern-text-secondary">{exam.examDate}</span>
+            </button>
+          ))}
+        </section>
+      ) : (
+        <p className="text-caption text-lantern-text-secondary">
+          Add an exam date on the calendar when you have one.
+        </p>
+      )}
+
       <section>
         <h2 className="text-heading text-lantern-text mb-3">Recent materials</h2>
         {notes.length === 0 ? (
@@ -123,10 +197,6 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
     </div>
   );
 };
-
-function toolById(id: StudySetHomeToolId): StudySetHomeTool {
-  return STUDY_SET_HOME_TOOLS.find((tool) => tool.id === id) ?? STUDY_SET_HOME_TOOLS[0];
-}
 
 function ToolPill({
   tool,

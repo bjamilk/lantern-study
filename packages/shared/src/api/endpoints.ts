@@ -321,6 +321,7 @@ export function createApiEndpoints(client: ApiClient) {
         description?: string;
         courseId?: string | null;
         topicId?: string | null;
+        studySetId?: string | null;
         source?: { noteId?: string; jobId?: string };
         /** Idempotency key; defaults to `source.jobId` server-side. */
         clientKey?: string;
@@ -1648,6 +1649,7 @@ export function createApiEndpoints(client: ApiClient) {
       sourceJobId?: string | null;
       courseId?: string | null;
       topicId?: string | null;
+      studySetId?: string | null;
       config?: Record<string, unknown>;
     }) =>
       apiRequest<{
@@ -4863,18 +4865,60 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     fetchMyStudySets: () => apiRequest<StudySet[]>("/users/me/study-sets"),
-    createStudySet: (input: { title: string; courseId?: string | null }) =>
+    createStudySet: (input: {
+      title: string;
+      courseId?: string | null;
+      description?: string | null;
+      folderId?: string | null;
+    }) =>
       apiRequest<StudySet>("/users/me/study-sets", {
         method: "POST",
         body: JSON.stringify(input),
       }),
     fetchStudySet: (setId: string) =>
       apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`),
-    updateStudySet: (setId: string, patch: { title?: string; courseId?: string | null }) =>
+    updateStudySet: (
+      setId: string,
+      patch: {
+        title?: string;
+        courseId?: string | null;
+        description?: string | null;
+        folderId?: string | null;
+        visibility?: "private" | "public";
+        mode?: "cram" | "standard" | "comprehensive";
+      }
+    ) =>
       apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
         method: "PATCH",
         body: JSON.stringify(patch),
       }),
+    touchStudySet: (setId: string) =>
+      apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}/touch`, {
+        method: "POST",
+      }),
+    fetchStudyResume: () => apiRequest("/users/me/study-resume"),
+    fetchStudySetFolders: () => apiRequest("/users/me/study-sets/folders"),
+    createStudySetFolder: (input: { title: string }) =>
+      apiRequest("/users/me/study-sets/folders", {
+        method: "POST",
+        body: JSON.stringify(input),
+      }),
+    deleteStudySetFolder: (folderId: string) =>
+      apiRequest(`/users/me/study-sets/folders/${encodeURIComponent(folderId)}`, {
+        method: "DELETE",
+      }),
+    fetchStudySetPlan: (setId: string) =>
+      apiRequest(`/users/me/study-sets/${encodeURIComponent(setId)}/plan`),
+    replaceStudySetPlan: (setId: string, input: unknown) =>
+      apiRequest(`/users/me/study-sets/${encodeURIComponent(setId)}/plan`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+    updateStudySetTopicStatus: (setId: string, topicId: string, status: string) =>
+      apiRequest(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/topics/${encodeURIComponent(topicId)}`,
+        { method: "PATCH", body: JSON.stringify({ status }) }
+      ),
     deleteStudySet: (setId: string) =>
       apiRequest<void>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
         method: "DELETE",

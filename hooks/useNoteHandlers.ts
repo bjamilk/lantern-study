@@ -75,15 +75,18 @@ export function useNoteHandlers(currentUserId?: string) {
    *  recorder), so the note is recognisable in the list a week later. */
   const handleCreateNote = useCallback(async (
     title?: string,
-    options?: { courseId?: string | null }
+    options?: { courseId?: string | null; studySetId?: string | null }
   ) => {
     const note = await createNote({
       title: title || 'Untitled Note',
       body: '',
       ...(options?.courseId ? { courseId: options.courseId } : {}),
+      ...(options?.studySetId ? { studySetId: options.studySetId } : {}),
     });
     setSelectedNote(note);
-    navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
+    if (!options?.studySetId) {
+      navigateTo(AppMode.NOTE_EDITOR, { noteId: note.id });
+    }
     trackQuestProgress('create_note');
     trackNoteCreated('editor');
     return note;
@@ -391,6 +394,7 @@ export function useNoteHandlers(currentUserId?: string) {
           sourceNoteId: note.id,
           questions,
           courseId: note.courseId,
+          studySetId: note.studySetId,
         });
       }
       return withTitle;

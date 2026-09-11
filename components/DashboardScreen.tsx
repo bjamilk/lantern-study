@@ -11,12 +11,14 @@ import SavedSessionsList from './SavedSessionsList';
 import { useUIStore } from '../stores/uiStore';
 import { Card } from './ui';
 import { computeStudyStreak, getDashboardFirstName } from '@lantern/shared/utils';
-import type { StudyActivityDay } from '@lantern/shared';
+import { upcomingExamsFromNotes, type StudyActivityDay } from '@lantern/shared';
+import { useNotesStore } from '../stores/notesStore';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
 import { HomeQuickActions } from './dashboard/HomeQuickActions';
 import { HomeStudySets } from './dashboard/HomeStudySets';
+import { HomeRecentMaterials } from './dashboard/HomeRecentMaterials';
 import AiJobsCard from './jobs/AiJobsCard';
 import Modal from './ui/Modal';
 import {
@@ -27,7 +29,6 @@ import {
   readOnboardingAcademicDone,
   shouldShowAcademicFallbackBanner,
 } from '../utils/onboardingAcademic';
-import CourseReadinessCard from './CourseReadinessCard';
 import { JoinClassCard } from './classes/JoinClassCard';
 import { WorkspaceJumpBack } from './study/WorkspaceJumpBack';
 import { ClassWorkCard } from './classes/ClassWorkCard';
@@ -184,6 +185,8 @@ export default function DashboardScreen({
     if (quickActionPicker === 'test') onOpenQuickTest?.(groupId);
     setQuickActionPicker(null);
   }, [quickActionPicker, onOpenQuickTest]);
+  const notes = useNotesStore((s) => s.notes);
+  const upcomingExams = useMemo(() => upcomingExamsFromNotes(notes), [notes]);
 
   return (
     <div
@@ -254,22 +257,49 @@ export default function DashboardScreen({
               onOpenStudyHub={onNavigateToStudyHub}
             />
 
+            <HomeRecentMaterials
+              onOpenNote={onOpenNoteById}
+              onOpenStudySet={onOpenStudySet}
+            />
+
             <section>
-              <h2 className="text-title font-semibold text-lantern-text mb-4">Recent activity</h2>
+              <h2 className="text-title font-semibold text-lantern-text mb-4">Upcoming</h2>
               <div className="space-y-3">
                 {onOpenCourseWorkspace && <WorkspaceJumpBack onOpen={onOpenCourseWorkspace} />}
                 <ClassWorkCard />
                 <div className="empty:hidden">
                   <AiJobsCard />
                 </div>
+                <Card padding="md" className="rounded-2xl">
+                  <p className="text-body font-semibold text-lantern-text">Upcoming exam</p>
+                  {upcomingExams[0] ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        upcomingExams[0].studySetId
+                          ? onOpenStudySet?.(upcomingExams[0].studySetId)
+                          : onNavigateToStudyHub?.()
+                      }
+                      className="mt-1 w-full text-left"
+                    >
+                      <p className="text-caption text-lantern-text-secondary">
+                        {upcomingExams[0].title} · {upcomingExams[0].examDate}
+                      </p>
+                    </button>
+                  ) : (
+                    <p className="text-caption text-lantern-text-secondary mt-1">
+                      Add an exam date on a study set calendar when you have one.
+                    </p>
+                  )}
+                </Card>
               </div>
             </section>
 
             <HomeQuickActions
               onImport={onOpenImportAndStudy ?? onNavigateToAITools}
-              onOpenTests={onNavigateToTests}
+              onOpenTests={onNavigateToStudyHub ?? onNavigateToTests}
               onToggleCompanion={onToggleCompanion}
-              onReviewDueCards={onReviewDueCards}
+              onOpenTutor={onNavigateToStudyHub}
               onRecordLecture={onRecordLecture}
               onOpenStudyHub={onNavigateToStudyHub}
             />
@@ -315,12 +345,6 @@ export default function DashboardScreen({
                 Keep a day going to protect it.
               </p>
             </Card>
-            <CourseReadinessCard
-              onOpenDeck={onOpenDeckById}
-              onOpenNote={onOpenNoteById}
-              onOpenTests={onNavigateToTests}
-              onOpenAcademicSettings={onOpenAcademicSettings}
-            />
             <JoinClassCard />
           </aside>
         </div>

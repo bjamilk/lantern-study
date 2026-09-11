@@ -171,7 +171,7 @@ describe('tests, results and flashcard review modes have real urls', () => {
     expect(isRoutableAppMode(AppMode.COURSE_WORKSPACE)).toBe(true);
     expect(parseAppRoute('/study/sets/set-1')).toEqual({
       mode: AppMode.STUDY_SET_WORKSPACE,
-      params: { studySetId: 'set-1' },
+      params: { studySetId: 'set-1', workspaceActivity: 'home' },
     });
     expect(buildAppPath(AppMode.STUDY_SET_WORKSPACE, { studySetId: 'set-1' })).toBe(
       '/study/sets/set-1'
@@ -342,6 +342,44 @@ describe('the Shop sub-states are places with urls', () => {
     // …and does not collide with the Study hub or a running session.
     expect(parseAppRoute('/study').mode).toBe(AppMode.STUDY_HUB);
     expect(parseAppRoute('/study/session').mode).toBe(AppMode.STUDY_ACTIVE);
+  });
+
+  it('keeps nested study-set tools on STUDY_SET_WORKSPACE', () => {
+    expect(parseAppRoute('/study/sets/set-a/quiz')).toEqual({
+      mode: AppMode.STUDY_SET_WORKSPACE,
+      params: { studySetId: 'set-a', workspaceActivity: 'quiz' },
+    });
+    expect(parseAppRoute('/study/sets/set-a/cards/deck-1/review')).toEqual({
+      mode: AppMode.STUDY_SET_WORKSPACE,
+      params: {
+        studySetId: 'set-a',
+        workspaceActivity: 'cards',
+        deckId: 'deck-1',
+        cardSession: 'review',
+      },
+    });
+    expect(parseAppRoute('/study/sets/set-a/play/match')).toEqual({
+      mode: AppMode.STUDY_SET_WORKSPACE,
+      params: {
+        studySetId: 'set-a',
+        workspaceActivity: 'play',
+        playSession: 'match',
+      },
+    });
+    expect(
+      buildAppPath(AppMode.STUDY_SET_WORKSPACE, {
+        studySetId: 'set-a',
+        workspaceActivity: 'test',
+        createNew: true,
+      })
+    ).toBe('/study/sets/set-a/test/new');
+    expect(parseAppRoute('/study/materials')).toEqual({
+      mode: AppMode.STUDY_HUB,
+      params: { studyMaterials: true },
+    });
+    expect(resolveActiveDestination(AppMode.STUDY_SET_WORKSPACE, '/study/sets/set-a/quiz')).toBe(
+      'study'
+    );
   });
 
   it('reads the open sub-state straight off the path', () => {

@@ -245,6 +245,8 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         sortRaw === 'oldest' || sortRaw === 'highestScore' ? sortRaw : 'newest';
       const from = typeof req.query.from === 'string' && req.query.from ? req.query.from : undefined;
       const to = typeof req.query.to === 'string' && req.query.to ? req.query.to : undefined;
+      const studySetId =
+        typeof req.query.studySetId === 'string' && req.query.studySetId ? req.query.studySetId : undefined;
 
       logger.debug('Fetching tests', { page, limit, status, courseId, topicId, lean, sort, from, to, userId });
 
@@ -272,14 +274,20 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
         logger.debug('getUserTests returned', { testsCount: tests?.length, total });
 
+        const filed = studySetId
+          ? (tests || []).filter((row: { studySetId?: string | null; study_set_id?: string | null }) =>
+              (row.studySetId || row.study_set_id) === studySetId
+            )
+          : tests;
+
         res.json({
           success: true,
-          data: tests,
+          data: filed,
           pagination: {
             page,
             limit,
-            total,
-            hasMore: page * limit < total,
+            total: studySetId ? filed.length : total,
+            hasMore: studySetId ? false : page * limit < total,
           },
         });
       } catch (error) {
@@ -319,7 +327,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
-      const { title, questions, sourceJobId, courseId, topicId, config } = req.body || {};
+      const { title, questions, sourceJobId, courseId, topicId, studySetId, config } = req.body || {};
       // Accepts `source: { deckId }` / `source: { noteId }` as well as the flat
       // `sourceNoteId` older clients send.
       const source = readPersonalTestSource(req.body);
@@ -367,6 +375,7 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
               sourceJobId: typeof sourceJobId === 'string' ? sourceJobId : null,
               courseId: typeof courseId === 'string' ? courseId : null,
               topicId: typeof topicId === 'string' ? topicId : null,
+              studySetId: typeof studySetId === 'string' ? studySetId : null,
               config: config && typeof config === 'object' ? config : null,
             },
             userId

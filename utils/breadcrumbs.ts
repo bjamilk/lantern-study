@@ -1,3 +1,4 @@
+import type { StudySetPathActivity } from '@lantern/shared/learning';
 import { AppMode, Deck } from '../types';
 import { BreadcrumbItem } from '../components/layout/Breadcrumb';
 import { AppRouteParams } from './appRoutes';
@@ -10,10 +11,21 @@ interface BreadcrumbContext {
   navigateTo: (mode: AppMode, params?: AppRouteParams) => void;
   setActiveTestResult: (result: any) => void;
   studySetTitle?: string | null;
+  studySetId?: string | null;
+  workspaceActivity?: StudySetPathActivity;
 }
 
 export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
-  const { appMode, selectedDeck, libraryTab, navigateTo, setActiveTestResult, studySetTitle } = ctx;
+  const {
+    appMode,
+    selectedDeck,
+    libraryTab,
+    navigateTo,
+    setActiveTestResult,
+    studySetTitle,
+    studySetId,
+    workspaceActivity,
+  } = ctx;
 
   switch (appMode) {
     case AppMode.LIBRARY:
@@ -32,11 +44,21 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
         { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
         { label: 'Course' },
       ];
-    case AppMode.STUDY_SET_WORKSPACE:
-      return [
+    case AppMode.STUDY_SET_WORKSPACE: {
+      const crumbs: BreadcrumbItem[] = [
         { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
-        { label: studySetTitle?.trim() || 'Study set' },
+        {
+          label: studySetTitle?.trim() || 'Study set',
+          onClick:
+            studySetId && workspaceActivity && workspaceActivity !== 'home'
+              ? () => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })
+              : undefined,
+        },
       ];
+      const activityLabel = studySetActivityLabel(workspaceActivity);
+      if (activityLabel) crumbs.push({ label: activityLabel });
+      return crumbs;
+    }
     case AppMode.AI_TOOLS:
       return [
         { label: 'Study', onClick: () => navigateTo(AppMode.STUDY_HUB) },
@@ -142,4 +164,26 @@ export function getBreadcrumbs(ctx: BreadcrumbContext): BreadcrumbItem[] {
     default:
       return [];
   }
+}
+
+function studySetActivityLabel(activity?: StudySetPathActivity): string | null {
+  if (!activity || activity === 'home') return null;
+  const labels: Record<StudySetPathActivity, string> = {
+    home: 'Home',
+    add: 'Add materials',
+    notes: 'Notes',
+    walkthrough: 'Walkthrough',
+    cards: 'Cards',
+    quiz: 'Quiz',
+    test: 'Test',
+    lecture: 'Lecture',
+    lesson: 'Tutor',
+    recap: 'Recap',
+    play: 'Play',
+    plan: 'Plan',
+    calendar: 'Calendar',
+    essay: 'Essay',
+    read: 'Read',
+  };
+  return labels[activity] ?? null;
 }

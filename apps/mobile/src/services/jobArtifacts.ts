@@ -87,6 +87,7 @@ export interface SaveGeneratedTestInput {
   sourceDeckId?: string;
   courseId?: string | null;
   topicId?: string | null;
+  studySetId?: string | null;
   /** Question rows, exactly as the generator produced them. */
   questions: unknown[];
 }
@@ -157,6 +158,7 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     sourceDeckId: input.sourceDeckId,
     courseId: input.courseId,
     topicId: input.topicId,
+    studySetId: input.studySetId,
     questions: input.questions,
   };
   jobs.recordPendingSave(input.jobId, payload);
@@ -347,6 +349,7 @@ async function writeTest(
     ...(serverJobId ? { sourceJobId: serverJobId } : {}),
     ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
     ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
+    ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
     // The server resolves the note's own title and that always wins; this is
     // the fallback it falls back TO, and without it a test whose note title
     // could not be read back landed with no provenance at all — the row said

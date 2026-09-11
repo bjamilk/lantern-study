@@ -13,7 +13,7 @@ interface HomeQuickActionsProps {
   onImport?: () => void;
   onOpenTests?: () => void;
   onToggleCompanion?: () => void;
-  onReviewDueCards?: () => void;
+  onOpenTutor?: () => void;
   onRecordLecture?: () => void;
   onOpenStudyHub?: () => void;
 }
@@ -22,7 +22,7 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
   onImport,
   onOpenTests,
   onToggleCompanion,
-  onReviewDueCards,
+  onOpenTutor,
   onRecordLecture,
   onOpenStudyHub,
 }) => {
@@ -36,8 +36,8 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
     onToggleCompanion
       ? { id: 'ai', label: 'Chat with Lantern', icon: 'sparkles' as const, onClick: onToggleCompanion }
       : null,
-    onReviewDueCards
-      ? { id: 'review', label: 'Review cards', icon: 'albums' as const, onClick: onReviewDueCards }
+    onOpenTutor
+      ? { id: 'tutor', label: 'Tutor', icon: 'school' as const, onClick: onOpenTutor }
       : null,
     onRecordLecture
       ? { id: 'record', label: 'Record a lecture', icon: 'mic' as const, onClick: onRecordLecture }
@@ -60,7 +60,7 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
             onClick={action.onClick}
             className="flex flex-col items-center justify-center gap-3 min-h-[7.5rem] rounded-2xl border border-lantern-border bg-lantern-surface px-4 py-5 text-center hover:bg-lantern-background-secondary/70 transition-colors"
           >
-            {action.id === 'review' ? (
+            {action.id === 'tutor' ? (
               <Illustration name="cards-fan" feature="flashcards" size={40} />
             ) : action.id === 'record' ? (
               <Illustration name="mic-wave" feature="recording" size={40} />

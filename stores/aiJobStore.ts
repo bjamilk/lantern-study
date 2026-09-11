@@ -90,6 +90,7 @@ export type PendingAiSave =
       deckId?: string;
       /** File the deck under a course/topic, as the door that opened it promised. */
       courseId?: string | null;
+      studySetId?: string | null;
       topicId?: string | null;
       cards: GeneratedCard[];
     }
@@ -100,6 +101,7 @@ export type PendingAiSave =
       /** A test built from a deck's cards. Mutually exclusive with the note. */
       sourceDeckId?: string;
       courseId?: string | null;
+      studySetId?: string | null;
       topicId?: string | null;
       questions: unknown[];
       /**

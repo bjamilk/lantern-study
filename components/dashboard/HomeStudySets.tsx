@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import {
   courseWorkspaceLabel,
-  formatCourseMaterialCounts,
   isCalendarNote,
+  isLectureNote,
   materialsForStudySet,
   studySetLabel,
 } from '@lantern/shared';
@@ -80,6 +80,10 @@ export const HomeStudySets: React.FC<HomeStudySetsProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {sets.slice(0, 4).map((set) => {
             const filedCourse = set.courseId ? resolveCourse(set.courseId) : null;
+            const setNotes = materialsForStudySet(notes, set.id).filter((note) => !isCalendarNote(note));
+            const setDecks = materialsForStudySet(decks, set.id);
+            const lectures = setNotes.filter(isLectureNote).length;
+            const current = setNotes[0]?.title;
             return (
               <button
                 key={set.id}
@@ -92,16 +96,34 @@ export const HomeStudySets: React.FC<HomeStudySetsProps> = ({
                   {studySetLabel(set)}
                 </p>
                 <p className="mt-1 text-caption text-lantern-text-secondary">
-                  {filedCourse ? courseWorkspaceLabel(filedCourse) : 'Standalone'}
-                  {' · '}
-                  {formatCourseMaterialCounts({
-                    notes: materialsForStudySet(notes, set.id).filter((note) => !isCalendarNote(note)).length,
-                    decks: materialsForStudySet(decks, set.id).length,
-                  })}
+                  {setNotes.length} materials
+                  {lectures ? ` / ${lectures} lectures` : ''}
+                  {setNotes.length ? ` / ${setNotes.length} notes` : ''}
+                  {setDecks.length ? ` / ${setDecks.length} cards` : ''}
+                </p>
+                <p className="mt-1 text-caption text-lantern-text-tertiary">
+                  {set.lastStudiedAt
+                    ? `Last studied ${new Date(set.lastStudiedAt).toLocaleDateString()}`
+                    : filedCourse
+                      ? courseWorkspaceLabel(filedCourse)
+                      : 'Not studied yet'}
+                  {current ? ` · ${current}` : ''}
                 </p>
               </button>
             );
           })}
+          {onOpenStudySet ? (
+            <button
+              type="button"
+              onClick={() => setCreateOpen(true)}
+              className="rounded-2xl border border-dashed border-lantern-border p-5 text-left hover:bg-lantern-background-secondary/70"
+            >
+              <span className="text-body font-semibold">Create another set</span>
+              <span className="block text-caption text-lantern-text-secondary mt-1">
+                Level up your library
+              </span>
+            </button>
+          ) : null}
         </div>
       )}
 

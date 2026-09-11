@@ -2584,7 +2584,7 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
-  const { folderId, groupId, archived, courseId, topicId } = req.query;
+  const { folderId, groupId, archived, courseId, topicId, studySetId } = req.query;
   let archivedFilter: boolean | undefined;
   if (archived === 'true' || archived === '1') archivedFilter = true;
   else if (archived === 'false' || archived === '0') archivedFilter = false;
@@ -2606,6 +2606,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
     archived: archivedFilter,
     courseFilter,
     topicFilter,
+    studySetId: typeof studySetId === 'string' && studySetId ? studySetId : undefined,
   });
   res.json({ success: true, data: notes });
 }));

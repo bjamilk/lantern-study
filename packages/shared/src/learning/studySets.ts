@@ -5,6 +5,7 @@
  */
 export const STUDY_SET_TITLE_MAX = 80;
 export const STUDY_SET_TITLE_MIN = 1;
+export const STUDY_SET_DESCRIPTION_MAX = 280;
 
 export function normalizeStudySetTitle(title: string): string {
   return title.replace(/\s+/g, ' ').trim();

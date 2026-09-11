@@ -185,7 +185,12 @@ export const archiveSemester = (academicYear: string): Promise<{ archived: numbe
 
 export const fetchMyStudySets = () => academicRequest<StudySet[]>('/users/me/study-sets');
 
-export const createStudySet = (input: { title: string; courseId?: string | null }) =>
+export const createStudySet = (input: {
+  title: string;
+  courseId?: string | null;
+  description?: string | null;
+  folderId?: string | null;
+}) =>
   academicRequest<StudySet>('/users/me/study-sets', {
     method: 'POST',
     body: JSON.stringify(input),
@@ -194,11 +199,56 @@ export const createStudySet = (input: { title: string; courseId?: string | null 
 export const fetchStudySet = (setId: string) =>
   academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`);
 
-export const updateStudySet = (setId: string, patch: { title?: string; courseId?: string | null }) =>
+export const updateStudySet = (
+  setId: string,
+  patch: {
+    title?: string;
+    courseId?: string | null;
+    description?: string | null;
+    folderId?: string | null;
+    visibility?: 'private' | 'public';
+    mode?: 'cram' | 'standard' | 'comprehensive';
+  }
+) =>
   academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {
     method: 'PATCH',
     body: JSON.stringify(patch),
   });
+
+export const touchStudySet = (setId: string) =>
+  academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}/touch`, {
+    method: 'POST',
+  });
+
+export const fetchStudyResume = () => academicRequest('/users/me/study-resume');
+
+export const fetchStudySetFolders = () => academicRequest('/users/me/study-sets/folders');
+
+export const createStudySetFolder = (input: { title: string }) =>
+  academicRequest('/users/me/study-sets/folders', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+
+export const deleteStudySetFolder = (folderId: string) =>
+  academicRequest(`/users/me/study-sets/folders/${encodeURIComponent(folderId)}`, {
+    method: 'DELETE',
+  });
+
+export const fetchStudySetPlan = (setId: string) =>
+  academicRequest(`/users/me/study-sets/${encodeURIComponent(setId)}/plan`);
+
+export const replaceStudySetPlan = (setId: string, input: unknown) =>
+  academicRequest(`/users/me/study-sets/${encodeURIComponent(setId)}/plan`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  });
+
+export const updateStudySetTopicStatus = (setId: string, topicId: string, status: string) =>
+  academicRequest(
+    `/users/me/study-sets/${encodeURIComponent(setId)}/topics/${encodeURIComponent(topicId)}`,
+    { method: 'PATCH', body: JSON.stringify({ status }) }
+  );
 
 export const deleteStudySet = (setId: string) =>
   academicRequest<void>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {

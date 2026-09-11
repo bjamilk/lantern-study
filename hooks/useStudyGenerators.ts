@@ -122,6 +122,7 @@ export async function runTestGenerator(
 
   onStage('reading');
   let content = '';
+  let studySetId: string | undefined;
   if (plan.source === 'deck') {
     const cards = useFlashcardStore
       .getState()
@@ -130,8 +131,12 @@ export async function runTestGenerator(
     if (!content) {
       throw new Error('That deck has no cards to build questions from yet.');
     }
+    studySetId =
+      useFlashcardStore.getState().decks.find((row) => row.id === plan.sourceId)?.studySetId ||
+      undefined;
   } else {
     const note = await notesApi.fetchNote(plan.sourceId);
+    studySetId = note.studySetId || undefined;
     const studyInput = {
       sourceType: note.sourceType,
       body: note.body,
@@ -168,6 +173,7 @@ export async function runTestGenerator(
     // matter what the builder's summary line had promised.
     config: testConfigForPlan(plan),
     questions,
+    ...(studySetId ? { studySetId } : {}),
   });
 
   return { testId: saved.ref.id, title: saved.ref.name || title, questionCount: saved.saved };

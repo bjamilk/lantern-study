@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ADAPTIVE_CONFIDENCE_CHOICES,
   ADAPTIVE_PAUSE_AFTER_MISSES,
@@ -39,6 +39,8 @@ interface AdaptiveQuizProps {
   onWriteQuestions: (noteId: string) => Promise<unknown[]>;
   onOpenNotes: () => void;
   onOpenWalkthrough: () => void;
+  preferredTestId?: string | null;
+  onComplete?: (result: { mastery: number; sourceNoteId: string | null }) => void;
 }
 
 function poolFromUnknown(payload: unknown): AdaptiveQuizItem[] {
@@ -69,6 +71,8 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
   onWriteQuestions,
   onOpenNotes,
   onOpenWalkthrough,
+  preferredTestId,
+  onComplete,
 }) => {
   const openWithMessage = useCompanionStore((s) => s.openWithMessage);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
@@ -77,6 +81,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
   const [sourceNoteId, setSourceNoteId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const completedRef = useRef(false);
 
   const noteOrder = useMemo(() => {
     const selected = notes.find((note) => note.id === selectedNoteId);
@@ -90,6 +95,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
       if (seedItems && seedItems.length > 0) {
         setSourceTitle('This lesson');
         setSourceNoteId(noteOrder[0]?.id ?? null);
+        completedRef.current = false;
         setSession(startAdaptiveQuiz(seedItems));
         return;
       }
@@ -99,11 +105,15 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
         if (items.length > 0) {
           setSourceTitle(note.title || 'Untitled note');
           setSourceNoteId(note.id);
+          completedRef.current = false;
           setSession(startAdaptiveQuiz(items));
           return;
         }
       }
-      for (const testId of testIds) {
+      const orderedTests = preferredTestId
+        ? [preferredTestId, ...testIds.filter((id) => id !== preferredTestId)]
+        : testIds;
+      for (const testId of orderedTests) {
         const row = await fetchTestSessionById(testId);
         const items = poolFromUnknown(row?.session?.questions ?? row?.questions);
         if (items.length > 0) {
@@ -117,6 +127,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
               ? row.session.config.sourceNoteId
               : noteOrder[0]?.id ?? null
           );
+          completedRef.current = false;
           setSession(startAdaptiveQuiz(items));
           return;
         }
@@ -128,7 +139,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [noteOrder, seedItems, testIds]);
+  }, [noteOrder, preferredTestId, seedItems, testIds]);
 
   useEffect(() => {
     void loadExisting();
@@ -146,11 +157,18 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
       const note = notes.find((row) => row.id === noteId);
       setSourceTitle(note?.title || 'Untitled note');
       setSourceNoteId(noteId);
+      completedRef.current = false;
       setSession(startAdaptiveQuiz(items));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write questions.');
     }
   };
+
+  useEffect(() => {
+    if (!session || session.phase !== 'done' || completedRef.current) return;
+    completedRef.current = true;
+    onComplete?.({ mastery: masteryPercent(session), sourceNoteId });
+  }, [onComplete, session, sourceNoteId]);
 
   const item = session ? currentAdaptiveItem(session) : null;
   const mastery = session ? masteryPercent(session) : 0;

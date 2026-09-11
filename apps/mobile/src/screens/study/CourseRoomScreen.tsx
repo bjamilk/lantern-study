@@ -4,6 +4,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import {
+  STUDY_SET_HOME_PRIMARY_TOOL_IDS,
+  STUDY_SET_HOME_TOOLS,
   WORKSPACE_ACTIVITIES,
   WORKSPACE_LATER_COPY,
   TURN_INTO_TARGETS,
@@ -85,6 +87,13 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (studySetId) touchOpened(studySetId);
   }, [studySetId, touchOpened]);
+
+  useEffect(() => {
+    const unsub = navigation.addListener('beforeRemove', () => {
+      if (studySetId) useStudySetStore.getState().openPicker();
+    });
+    return unsub;
+  }, [navigation, studySetId]);
 
   useEffect(() => {
     if (courseId) void touchWorkspaceRecent(courseId);
@@ -373,6 +382,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           sourceNoteId: note.id,
           questions: session.questions,
           courseId: courseId || undefined,
+          studySetId,
         });
         return { artifact: ref, resultCount: saved };
       },
@@ -405,17 +415,48 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 })
           }
           right={
-            <Pressable onPress={() => openCompanion()} accessibilityRole="button" accessibilityLabel="Ask">
-              <T.Caption>Ask</T.Caption>
-            </Pressable>
+            <View className="flex-row items-center gap-3">
+              {studySetId ? (
+                <Pressable
+                  onPress={() => {
+                    useStudySetStore.getState().openPicker();
+                    navigation.navigate('StudyHub');
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="All study sets"
+                >
+                  <T.Caption>All sets</T.Caption>
+                </Pressable>
+              ) : null}
+              <Pressable onPress={() => openCompanion()} accessibilityRole="button" accessibilityLabel="Ask">
+                <T.Caption>Ask</T.Caption>
+              </Pressable>
+            </View>
           }
         />
 
         <View className="flex-row flex-wrap gap-2 mb-4">
-          {WORKSPACE_ACTIVITIES.map((item) => (
+          {(studySetId
+            ? STUDY_SET_HOME_TOOLS.filter((tool) => STUDY_SET_HOME_PRIMARY_TOOL_IDS.includes(tool.id))
+            : WORKSPACE_ACTIVITIES
+          ).map((item) => (
             <Pressable
               key={item.id}
-              onPress={() => handleActivity(item.id, item.status)}
+              onPress={() => {
+                if ('activity' in item && item.id === 'import') {
+                  setImportOpen(true);
+                  return;
+                }
+                if ('activity' in item && item.id === 'ask') {
+                  openCompanion();
+                  return;
+                }
+                if ('activity' in item && item.activity) {
+                  handleActivity(item.activity, 'ready');
+                  return;
+                }
+                if ('status' in item) handleActivity(item.id, item.status);
+              }}
               accessibilityRole="button"
               accessibilityLabel={item.label}
               className="w-[47%] min-h-[72px] rounded-xl border border-lantern-border bg-lantern-surface px-3 py-3 active:opacity-80"
@@ -425,7 +466,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 <View className="flex-1 min-w-0">
                   <T.Body numberOfLines={1}>{item.label}</T.Body>
                   <T.Caption tone="secondary" numberOfLines={1}>
-                    {item.status === 'later' ? 'Later wave' : item.promise}
+                    {'promise' in item ? item.promise : ''}
                   </T.Caption>
                 </View>
               </View>

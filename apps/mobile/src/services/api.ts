@@ -261,6 +261,7 @@ export interface PersonalTestRequest {
   sourceJobId?: string;
   courseId?: string | null;
   topicId?: string | null;
+  studySetId?: string | null;
   /**
    * Config the route folds into the session. `sourceNoteTitle` is the
    * server's documented FALLBACK for the note's title (its own read of the

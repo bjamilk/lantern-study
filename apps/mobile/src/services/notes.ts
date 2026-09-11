@@ -130,8 +130,20 @@ export const deleteNoteFolder = (folderId: string) =>
  * client-side (see NotesScreen `filteredNotes`), so a server-side filter here
  * would only ever have been a dead second path.
  */
-export const fetchNotes = (folderId?: string) =>
-  notesRequest<StudyNote[]>(folderId ? `?folderId=${encodeURIComponent(folderId)}` : '');
+export const fetchNotes = (
+  folderIdOrOptions?: string | { folderId?: string; studySetId?: string }
+) => {
+  if (typeof folderIdOrOptions === 'string' || folderIdOrOptions == null) {
+    return notesRequest<StudyNote[]>(
+      folderIdOrOptions ? `?folderId=${encodeURIComponent(folderIdOrOptions)}` : ''
+    );
+  }
+  const params = new URLSearchParams();
+  if (folderIdOrOptions.folderId) params.set('folderId', folderIdOrOptions.folderId);
+  if (folderIdOrOptions.studySetId) params.set('studySetId', folderIdOrOptions.studySetId);
+  const qs = params.toString();
+  return notesRequest<StudyNote[]>(qs ? `?${qs}` : '');
+};
 export const fetchNote = (noteId: string) =>
   notesRequest<StudyNote & { attachments?: NoteAttachment[] }>(`/${noteId}`);
 export const createNote = (payload: Partial<StudyNote>) =>

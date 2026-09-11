@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
 import {
   isCalendarNote,
+  isLectureNote,
   materialsForStudySet,
   studySetLabel,
-  formatCourseMaterialCounts,
   courseWorkspaceLabel,
+  sortStudySets,
+  STUDY_SET_SORTS,
+  type StudySetSortId,
 } from '@lantern/shared';
 import { ScreenHeader, Card, Button, FeatureDisc } from './ui';
 import SavedSessionsList from './SavedSessionsList';
@@ -15,6 +18,8 @@ import { useNotesStore } from '../stores/notesStore';
 import { useStudySetStore } from '../stores/studySetStore';
 import { useToastStore } from '../stores/toastStore';
 import CreateStudySetModal from './study/CreateStudySetModal';
+import { StudySetSettingsModal } from './study/StudySetSettingsModal';
+import type { StudySet } from '../types';
 
 interface StudyHubScreenProps {
   dueCardsCount: number;
@@ -62,20 +67,39 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   const sets = useStudySetStore((s) => s.sets);
   const showToast = useToastStore((s) => s.showToast);
   const [createOpen, setCreateOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<StudySetSortId>('lastAccessed');
+  const [editing, setEditing] = useState<StudySet | null>(null);
+  const lastOpenedId = useStudySetStore((s) => s.lastOpenedId);
+  const removeSet = useStudySetStore((s) => s.removeSet);
+  const folders = useStudySetStore((s) => s.folders);
+  const loadFolders = useStudySetStore((s) => s.loadFolders);
+  const createFolder = useStudySetStore((s) => s.createFolder);
+  const [folderId, setFolderId] = useState<string | 'all'>('all');
+  const [folderTitle, setFolderTitle] = useState('');
 
   useEffect(() => {
     void loadMyCourses();
     void loadSets().catch(() => undefined);
-  }, [loadMyCourses, loadSets]);
+    void loadFolders().catch(() => undefined);
+  }, [loadFolders, loadMyCourses, loadSets]);
 
   const hasPausedSession = Boolean(activeTestSession || activeStudySession);
+  const visibleSets = useMemo(() => {
+    const filtered = sets.filter((set) => {
+      const matchesQuery = studySetLabel(set).toLowerCase().includes(query.trim().toLowerCase());
+      const matchesFolder = folderId === 'all' || set.folderId === folderId;
+      return matchesQuery && matchesFolder;
+    });
+    return sortStudySets(filtered, sort, lastOpenedId);
+  }, [folderId, lastOpenedId, query, sets, sort]);
 
   return (
     <div className="flex-1 flex flex-col overflow-y-auto bg-lantern-background text-lantern-text">
       <div className="px-4 md:px-6 lg:px-8 py-6 w-full space-y-6">
         <ScreenHeader
-          title="Study"
-          subtitle="A study set houses every activity you start — notes, quizzes, cards, lectures and games."
+          title="Which study set are you working on today?"
+          subtitle="Search, sort, or start a new set. Every tool you open stays inside it."
         />
 
         {pausedSessions.length > 0 && onResumePausedSession && onAbandonPausedSession ? (
@@ -109,13 +133,86 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             <div>
               <h2 className="text-heading text-lantern-text">Your study sets</h2>
               <p className="text-caption text-lantern-text-secondary mt-1">
-                Open a set to study, or name a new one.
+                Last accessed, recently created, or A–Z.
               </p>
             </div>
             {onOpenStudySet ? (
-              <Button onClick={() => setCreateOpen(true)}>New study set</Button>
+              <Button onClick={() => setCreateOpen(true)}>Create study set</Button>
             ) : null}
           </div>
+          {sets.length > 0 || folders.length > 0 ? (
+            <div className="flex flex-wrap gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setFolderId('all')}
+                className={`min-h-[36px] rounded-full border px-3 text-caption ${
+                  folderId === 'all'
+                    ? 'border-transparent bg-lantern-primary-fill text-white'
+                    : 'border-lantern-border text-lantern-text-secondary'
+                }`}
+              >
+                All
+              </button>
+              {folders.map((folder) => (
+                <button
+                  key={folder.id}
+                  type="button"
+                  onClick={() => setFolderId(folder.id)}
+                  className={`min-h-[36px] rounded-full border px-3 text-caption ${
+                    folderId === folder.id
+                      ? 'border-transparent bg-lantern-primary-fill text-white'
+                      : 'border-lantern-border text-lantern-text-secondary'
+                  }`}
+                >
+                  {folder.title}
+                </button>
+              ))}
+              <form
+                className="flex min-w-[12rem] flex-1 gap-2"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const title = folderTitle.trim();
+                  if (!title) return;
+                  void createFolder(title)
+                    .then(() => setFolderTitle(''))
+                    .catch((error) => {
+                      showToast(error instanceof Error ? error.message : 'Could not create that folder.', 'error');
+                    });
+                }}
+              >
+                <input
+                  value={folderTitle}
+                  onChange={(event) => setFolderTitle(event.target.value)}
+                  placeholder="Create folder"
+                  className="min-h-[44px] flex-1 rounded-xl border border-lantern-border bg-lantern-surface px-3 text-body"
+                />
+                <Button type="submit" size="sm" variant="secondary">
+                  Add
+                </Button>
+              </form>
+            </div>
+          ) : null}
+          {sets.length > 0 ? (
+            <div className="flex flex-col sm:flex-row gap-2 mb-4">
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search study sets"
+                className="flex-1 min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-body"
+              />
+              <select
+                value={sort}
+                onChange={(event) => setSort(event.target.value as StudySetSortId)}
+                className="min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-caption"
+              >
+                {STUDY_SET_SORTS.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           {sets.length === 0 ? (
             <button
               type="button"
@@ -132,37 +229,78 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             </button>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {sets.map((set) => {
+              {visibleSets.map((set) => {
                 const filedCourse = set.courseId ? resolveCourse(set.courseId) : null;
+                const setNotes = materialsForStudySet(notes, set.id).filter((note) => !isCalendarNote(note));
+                const setDecks = materialsForStudySet(decks, set.id);
+                const lectures = setNotes.filter(isLectureNote).length;
                 return (
-                  <button
+                  <div
                     key={set.id}
-                    type="button"
-                    onClick={() => {
-                      touchOpened(set.id);
-                      onOpenStudySet?.(set.id);
-                    }}
-                    className="flex items-start gap-3 p-4 rounded-2xl border border-lantern-border bg-lantern-surface text-left hover:bg-lantern-background-secondary"
+                    className="flex items-start gap-3 p-4 rounded-2xl border border-lantern-border bg-lantern-surface"
                   >
-                    <FeatureDisc feature="notes" icon={<AppIcon name="albums" size={20} />} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-body font-semibold text-lantern-text truncate">
-                        {studySetLabel(set)}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        touchOpened(set.id);
+                        onOpenStudySet?.(set.id);
+                      }}
+                      className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                    >
+                      <FeatureDisc feature="notes" icon={<AppIcon name="albums" size={20} />} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-body font-semibold text-lantern-text truncate">
+                          {studySetLabel(set)}
+                        </span>
+                        <span className="block text-caption text-lantern-text-secondary mt-1">
+                          {setNotes.length} materials
+                          {lectures ? ` / ${lectures} lectures` : ''}
+                          {setNotes.length ? ` / ${setNotes.length} notes` : ''}
+                          {setDecks.length ? ` / ${setDecks.length} cards` : ''}
+                        </span>
+                        <span className="block text-caption text-lantern-text-tertiary mt-1">
+                          {set.lastStudiedAt
+                            ? `Last studied ${new Date(set.lastStudiedAt).toLocaleDateString()}`
+                            : filedCourse
+                              ? courseWorkspaceLabel(filedCourse)
+                              : 'Not studied yet'}
+                          {setNotes[0]?.title ? ` · ${setNotes[0].title}` : ''}
+                        </span>
                       </span>
-                      <span className="block text-caption text-lantern-text-secondary mt-1">
-                        {filedCourse ? courseWorkspaceLabel(filedCourse) : 'Standalone'}
-                        {' · '}
-                        {formatCourseMaterialCounts({
-                          notes: materialsForStudySet(notes, set.id).filter(
-                            (note) => !isCalendarNote(note)
-                          ).length,
-                          decks: materialsForStudySet(decks, set.id).length,
-                        })}
-                      </span>
-                    </span>
-                  </button>
+                    </button>
+                    <div className="flex flex-col gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditing(set)}
+                        className="text-caption text-lantern-primary-text hover:underline"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void removeSet(set.id).catch((error) => {
+                            showToast(error instanceof Error ? error.message : 'Could not delete that set.', 'error');
+                          });
+                        }}
+                        className="text-caption text-lantern-error hover:underline"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
+              <button
+                type="button"
+                onClick={() => setCreateOpen(true)}
+                className="min-h-[8rem] rounded-2xl border border-dashed border-lantern-border p-4 text-left hover:bg-lantern-background-secondary"
+              >
+                <span className="text-body font-semibold">Create study set</span>
+                <span className="block text-caption text-lantern-text-secondary mt-1">
+                  Name a set, then add materials.
+                </span>
+              </button>
             </div>
           )}
         </Card>
@@ -175,6 +313,13 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           showToast('Study set created.', 'success');
           onOpenStudySet?.(created.id);
         }}
+      />
+      <StudySetSettingsModal
+        isOpen={Boolean(editing)}
+        studySet={editing}
+        onClose={() => setEditing(null)}
+        onSaved={() => setEditing(null)}
+        onDeleted={() => setEditing(null)}
       />
     </div>
   );

@@ -234,9 +234,22 @@ export interface StudySet {
   id: string;
   userId: string;
   title: string;
+  description?: string | null;
   courseId?: string | null;
+  folderId?: string | null;
+  coverPath?: string | null;
+  visibility?: 'private' | 'public';
+  mode?: 'cram' | 'standard' | 'comprehensive';
+  lastStudiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface StudySetFolder {
+  id: string;
+  userId: string;
+  title: string;
+  createdAt: string;
 }
 
 /**

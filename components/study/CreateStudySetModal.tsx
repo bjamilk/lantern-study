@@ -1,5 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { isValidStudySetTitle, normalizeStudySetTitle, STUDY_SET_TITLE_MAX } from '@lantern/shared';
+import {
+  isValidStudySetTitle,
+  normalizeStudySetTitle,
+  STUDY_SET_DESCRIPTION_MAX,
+  STUDY_SET_TITLE_MAX,
+} from '@lantern/shared';
 import type { Course } from '../../types';
 import { Button } from '../ui';
 import { Input } from '../ui/Input';
@@ -9,7 +14,7 @@ import { CoursePicker } from '../academic/CoursePicker';
 interface CreateStudySetModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onCreate: (input: { title: string; courseId?: string | null }) => Promise<void> | void;
+  onCreate: (input: { title: string; courseId?: string | null; description?: string | null }) => Promise<void> | void;
 }
 
 export const CreateStudySetModal: React.FC<CreateStudySetModalProps> = ({
@@ -18,6 +23,7 @@ export const CreateStudySetModal: React.FC<CreateStudySetModalProps> = ({
   onCreate,
 }) => {
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
   const [course, setCourse] = useState<Course | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +31,7 @@ export const CreateStudySetModal: React.FC<CreateStudySetModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     setTitle('');
+    setDescription('');
     setCourse(null);
     setSaving(false);
     setError(null);
@@ -40,7 +47,11 @@ export const CreateStudySetModal: React.FC<CreateStudySetModalProps> = ({
     setSaving(true);
     setError(null);
     try {
-      await onCreate({ title: next, courseId: course?.id ?? null });
+      await onCreate({
+        title: next,
+        courseId: course?.id ?? null,
+        description: description.trim() || null,
+      });
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create that study set.');
@@ -55,7 +66,7 @@ export const CreateStudySetModal: React.FC<CreateStudySetModalProps> = ({
         New study set
       </h2>
       <p className="text-caption text-lantern-text-secondary mb-4">
-        Name it first. Filing under a course is optional.
+        Name it first. Add materials next — Lantern will generate the tools.
       </p>
       <form onSubmit={(event) => void handleSubmit(event)} className="space-y-4">
         <Input
@@ -66,6 +77,15 @@ export const CreateStudySetModal: React.FC<CreateStudySetModalProps> = ({
           maxLength={STUDY_SET_TITLE_MAX}
           aria-label="Study set name"
         />
+        <label className="block">
+          <span className="text-caption text-lantern-text-secondary">Description (optional)</span>
+          <textarea
+            value={description}
+            onChange={(event) => setDescription(event.target.value.slice(0, STUDY_SET_DESCRIPTION_MAX))}
+            rows={2}
+            className="mt-1 w-full rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-body"
+          />
+        </label>
         <CoursePicker
           value={course}
           compact

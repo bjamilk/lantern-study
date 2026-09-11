@@ -7433,6 +7433,7 @@ export class SupabaseService {
       sourceJobId?: string | null;
       courseId?: string | null;
       topicId?: string | null;
+      studySetId?: string | null;
       config?: Record<string, any> | null;
     },
     userId: string,
@@ -7495,12 +7496,16 @@ export class SupabaseService {
           : (payload.config as any)?.source || "personal",
     };
 
+    const studySetId =
+      typeof payload.studySetId === "string" && payload.studySetId ? payload.studySetId : null;
+
     const { data, error } = await writeWithTopicFallback(
       (row) => this.supabase.from("test_sessions").insert(row).select().single(),
       {
         user_id: userId,
         course_id: courseId,
         ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        ...(studySetId ? { study_set_id: studySetId } : {}),
         config,
         questions: payload.questions,
         user_answers: {},
@@ -7534,6 +7539,7 @@ export class SupabaseService {
       id: session.id,
       config: session.config || {},
       courseId: session.course_id ?? session.config?.courseId ?? null,
+      studySetId: session.study_set_id ?? session.config?.studySetId ?? null,
       ...topicIdOf(session),
       questions,
       userAnswers: answers,
@@ -15739,6 +15745,7 @@ export class SupabaseService {
       courseFilter?: CourseFilter;
       /** Same, one level down (notes.topic_id): unfiled → no topic in that course. */
       topicFilter?: CourseFilter;
+      studySetId?: string;
     },
   ) {
     const buildOwnedQuery = (withTopic: boolean) => {
@@ -15751,6 +15758,7 @@ export class SupabaseService {
 
       if (options?.folderId) query = query.eq("folder_id", options.folderId);
       if (options?.groupId) query = query.eq("group_id", options.groupId);
+      if (options?.studySetId) query = query.eq("study_set_id", options.studySetId);
       query = applyCourseFilter(query, "course_id", options?.courseFilter);
       if (withTopic) {
         query = applyCourseFilter(query, "topic_id", options?.topicFilter);
@@ -15770,6 +15778,9 @@ export class SupabaseService {
     // array type so the mapped rows below stay inferable.
     let { data: ownedRows, error: ownedError }: { data: any[] | null; error: any } =
       await buildOwnedQuery(true);
+    if (ownedError && options?.studySetId && isMissingStudySetColumn(ownedError)) {
+      return [];
+    }
     if (
       ownedError &&
       topicFilterApplies(options?.topicFilter) &&
@@ -15791,7 +15802,7 @@ export class SupabaseService {
       .map((row: any) => this.mapNote(row, { accessRole: "owner" }));
 
     // Folder/group/course filtered lists stay owned-only (shared notes keep owner's placement).
-    if (options?.folderId || options?.groupId || courseFiltered) {
+    if (options?.folderId || options?.groupId || options?.studySetId || courseFiltered) {
       return this.attachNoteSearchText(owned);
     }
 

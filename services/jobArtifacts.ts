@@ -67,6 +67,7 @@ export interface SaveGeneratedTestInput {
   config?: Record<string, unknown>;
   courseId?: string | null;
   topicId?: string | null;
+  studySetId?: string | null;
 }
 
 /** The copy a save failure is reported with when the request never landed. */
@@ -145,6 +146,7 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     ...(input.config ? { config: input.config } : {}),
     ...(input.courseId !== undefined ? { courseId: input.courseId } : {}),
     ...(input.topicId !== undefined ? { topicId: input.topicId } : {}),
+    ...(input.studySetId !== undefined ? { studySetId: input.studySetId } : {}),
   };
   jobs.recordPendingSave(input.jobId, payload);
 
@@ -277,6 +279,7 @@ async function writeTest(
     ...(payload.config ? { config: payload.config } : {}),
     ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
     ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
+    ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
     questions: payload.questions,
   } as Parameters<typeof createPersonalTest>[0]).catch((error: unknown) => {
     throw asSaveError(error);
@@ -302,7 +305,9 @@ async function writeTest(
       // The test itself, not the list. A generated test used to hand back
       // `/tests`, so "Open" and the push notification dropped the student on
       // a list of everything and left them to spot which row was theirs.
-      route: buildTestDetailPath(id),
+      route: payload.studySetId
+        ? `/study/sets/${encodeURIComponent(payload.studySetId)}/test/${encodeURIComponent(id)}`
+        : buildTestDetailPath(id),
       name: (test?.title as string) || payload.title,
     },
     saved: questions.length,

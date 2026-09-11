@@ -309,6 +309,19 @@ router.get(
   })
 );
 
+// GET /api/v1/users/me/study-resume — Home resume index for study sets
+router.get(
+  '/me/study-resume',
+  authMiddleware,
+  asyncHandler(async (req: AuthenticatedRequest, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+    const { getStudySetsService } = await import('../services/studySets');
+    const data = await getStudySetsService(supabaseService).resume(userId);
+    res.json({ success: true, data });
+  })
+);
+
 // GET /api/v1/users/me/moderation — caller's active strikes + suspension
 // (Phase 1 · E). Suspended accounts are blocked by authMiddleware before they
 // get here, so this mainly powers the strikes hint in settings.

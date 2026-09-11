@@ -329,12 +329,14 @@ export async function fetchNotes(options?: {
   courseId?: string | null;
   /** Topic within `courseId`; the literal `'null'` is "in the course, under no topic". */
   topicId?: string | null;
+  studySetId?: string;
   /** When set, only active (`false`) or archived (`true`) notes. Omit for both. */
   archived?: boolean;
 }): Promise<StudyNote[]> {
   const params = new URLSearchParams();
   if (options?.folderId) params.set('folderId', options.folderId);
   if (options?.groupId) params.set('groupId', options.groupId);
+  if (options?.studySetId) params.set('studySetId', options.studySetId);
   if (options?.courseId) params.set('courseId', options.courseId);
   // Never alone: a topic only means something inside its course (services/library.ts).
   if (options?.courseId && options.courseId !== UNFILED_COURSE_ID && options?.topicId) {

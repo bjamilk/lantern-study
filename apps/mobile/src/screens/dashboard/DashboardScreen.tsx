@@ -51,6 +51,7 @@ import { useTestStore } from '../../stores/testStore';
 import { Card, Button, FeatureRow, FeatureTile, T } from '../../components/ui';
 
 import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard';
+import { HomeStudySetsCard } from '../../components/dashboard/HomeStudySetsCard';
 
 import { DashboardQuickLinks } from '../../components/dashboard/DashboardQuickLinks';
 import { GettingStartedChecklist } from '../../components/dashboard/GettingStartedChecklist';
@@ -826,6 +827,13 @@ export function DashboardScreen({ navigation }: Props) {
           progressNote={
             progress.mode === 'stale' ? lastSyncedLabel(progress.syncedAt) : undefined
           }
+        />
+
+        <HomeStudySetsCard
+          onOpenSet={(studySetId, title) =>
+            parent?.navigate('StudyTab', toTab('CourseRoom', { studySetId, courseLabel: title }))
+          }
+          onOpenHub={() => parent?.navigate('StudyTab', toTab('StudyHub'))}
         />
 
         {/* CARD 2 — the screen's ONE tint panel, in the tests family's sky.

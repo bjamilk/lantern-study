@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StudySet } from '@lantern/shared/types';
 import {
   createStudySet as apiCreate,
@@ -6,6 +7,8 @@ import {
   fetchMyStudySets,
   updateStudySet as apiUpdate,
 } from '../services/academic';
+
+const LAST_OPENED_KEY = 'lantern.lastStudySetId';
 
 interface StudySetState {
   sets: StudySet[];
@@ -25,14 +28,21 @@ interface StudySetState {
 export const useStudySetStore = create<StudySetState>((set, get) => ({
   sets: [],
   loaded: false,
-  lastOpenedId: null,
+  lastOpenedId: null as string | null,
   picker: false,
 
   loadSets: async (options) => {
     if (get().loaded && !options?.force) return get().sets;
-    const rows = await fetchMyStudySets().catch(() => [] as StudySet[]);
+    const [rows, stored] = await Promise.all([
+      fetchMyStudySets().catch(() => [] as StudySet[]),
+      AsyncStorage.getItem(LAST_OPENED_KEY).catch(() => null),
+    ]);
     const sets = Array.isArray(rows) ? rows : [];
-    set({ sets, loaded: true });
+    set({
+      sets,
+      loaded: true,
+      lastOpenedId: get().lastOpenedId || stored,
+    });
     return sets;
   },
 
@@ -64,6 +74,7 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
     const id = setId.trim();
     if (!id) return;
     set({ lastOpenedId: id, picker: false });
+    void AsyncStorage.setItem(LAST_OPENED_KEY, id).catch(() => undefined);
   },
 
   openPicker: () => set({ picker: true }),
