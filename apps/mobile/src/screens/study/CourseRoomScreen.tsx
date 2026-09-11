@@ -8,8 +8,10 @@ import {
   TURN_INTO_TARGETS,
   courseWorkspaceLabel,
   hasEnoughNoteStudyContent,
+  isCalendarNote,
   isLectureNote,
   isLessonNote,
+  isRecapNote,
   isWalkableAttachment,
   materialsForCourse,
   newLectureNoteTitle,
@@ -73,10 +75,15 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     (enrolment ? courseWorkspaceLabel(enrolment.course) : 'Course');
 
   const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const studyNotes = useMemo(
+    () => courseNotes.filter((note) => !isCalendarNote(note)),
+    [courseNotes]
+  );
   const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
   const lectures = useMemo(() => courseNotes.filter(isLectureNote), [courseNotes]);
   const lessons = useMemo(() => courseNotes.filter(isLessonNote), [courseNotes]);
-  const noteIds = useMemo(() => new Set(courseNotes.map((n) => n.id)), [courseNotes]);
+  const recaps = useMemo(() => courseNotes.filter(isRecapNote), [courseNotes]);
+  const noteIds = useMemo(() => new Set(studyNotes.map((n) => n.id)), [studyNotes]);
   const deckIds = useMemo(() => new Set(courseDecks.map((d) => d.id)), [courseDecks]);
   const courseTests = useMemo(
     () =>
@@ -119,7 +126,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     switch (id) {
       case 'notes': {
         const note =
-          selectedNote && selectedNote.courseId === courseId ? selectedNote : courseNotes[0];
+          selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+            ? selectedNote
+            : studyNotes[0];
         if (!note) {
           showToast('Import or create a note first.', 'info');
           return;
@@ -129,9 +138,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         return;
       }
       case 'walkthrough': {
-        const note = (selectedNote && selectedNote.courseId === courseId
+        const note = (selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
           ? selectedNote
-          : courseNotes.find((n) => n.attachments?.some(isWalkableAttachment))) as
+          : studyNotes.find((n) => n.attachments?.some(isWalkableAttachment))) as
           | (StudyNote & { attachments?: Array<{ id?: string; type?: string }> })
           | undefined;
         const attachment = note?.attachments?.find(isWalkableAttachment);
@@ -144,7 +153,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       }
       case 'quiz': {
         const note =
-          selectedNote && selectedNote.courseId === courseId ? selectedNote : courseNotes[0];
+          selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+            ? selectedNote
+            : studyNotes[0];
         navigation.navigate('AdaptiveQuiz', {
           courseId,
           courseLabel: label,
@@ -180,6 +191,18 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         });
         return;
       }
+      case 'recap': {
+        const note =
+          selectedNote && selectedNote.courseId === courseId && isRecapNote(selectedNote)
+            ? selectedNote
+            : courseNotes.find(isRecapNote);
+        navigation.navigate('RecapStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note?.id,
+        });
+        return;
+      }
       case 'play':
         if (courseDecks[0]) {
           navigation.navigate('MatchStudy', {
@@ -191,9 +214,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         }
         return;
       case 'plan':
-        navigation.navigate('Library', {
-          manageOutlineCourseId: courseId,
-          manageOutlineCourseLabel: label,
+        navigation.navigate('StudyCalendar', {
+          courseId,
+          courseLabel: label,
         });
         return;
       default:
@@ -312,10 +335,10 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           <T.Caption tone="secondary" className="mb-2">
             Notes
           </T.Caption>
-          {courseNotes.length === 0 ? (
+          {studyNotes.length === 0 ? (
             <T.Body tone="secondary">No notes in this course yet.</T.Body>
           ) : (
-            courseNotes.map((note, index) => (
+            studyNotes.map((note, index) => (
               <View key={note.id} className={index > 0 ? 'border-t border-lantern-border' : undefined}>
                 <Pressable
                   onPress={() => {
@@ -330,6 +353,14 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                     }
                     if (isLessonNote(note)) {
                       navigation.navigate('LessonStudio', {
+                        courseId,
+                        courseLabel: label,
+                        noteId: note.id,
+                      });
+                      return;
+                    }
+                    if (isRecapNote(note)) {
+                      navigation.navigate('RecapStudio', {
                         courseId,
                         courseLabel: label,
                         noteId: note.id,
@@ -447,6 +478,31 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
               >
                 <T.Body numberOfLines={1}>{note.title || 'Lesson'}</T.Body>
+              </Pressable>
+            ))
+          )}
+        </Card>
+
+        <Card className="mb-3">
+          <T.Caption tone="secondary" className="mb-2">
+            Recaps
+          </T.Caption>
+          {recaps.length === 0 ? (
+            <T.Body tone="secondary">Start a recap from a note.</T.Body>
+          ) : (
+            recaps.map((note, index) => (
+              <Pressable
+                key={note.id}
+                onPress={() =>
+                  navigation.navigate('RecapStudio', {
+                    courseId,
+                    courseLabel: label,
+                    noteId: note.id,
+                  })
+                }
+                className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
+              >
+                <T.Body numberOfLines={1}>{note.title || 'Recap'}</T.Body>
               </Pressable>
             ))
           )}

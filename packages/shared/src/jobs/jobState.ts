@@ -221,6 +221,7 @@ export function jobKindFromName(name: string | undefined): JobKind {
     case 'ai.explain.answer':
       return 'explain';
     case 'ai.generate.lesson':
+    case 'ai.generate.recap':
     case 'ai.ask.tutor':
       return 'tutor';
     case 'ai.companion.message':

@@ -129,6 +129,11 @@ export const DEFAULT_AI_FEATURE_LIMITS = {
    */
   lesson: 10,
   /**
+   * A generated listen-through of a note (summary / lecture / podcast).
+   * Same daily shape as a lesson — one generated session, not a chat turn.
+   */
+  recap: 10,
+  /**
    * Asking a question out loud, from the walk-through.
    *
    * A spoken question is the same question typed — it must not cost a lecture.
@@ -261,6 +266,7 @@ export const AI_FEATURE_LIMIT_NOUNS: Record<string, string> = {
   study_recommendations: 'study suggestions',
   listing_description: 'listing descriptions',
   lesson: 'lessons',
+  recap: 'recaps',
   voice_ask: 'spoken questions',
 };
 

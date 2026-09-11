@@ -11,7 +11,7 @@ import {
 } from './courseWorkspace';
 
 describe('course workspace helpers', () => {
-  it('lists eleven activities and Waves A–E as ready', () => {
+  it('lists eleven activities and Waves A–F as ready', () => {
     expect(WORKSPACE_ACTIVITIES.map((a) => a.id)).toEqual([
       'notes',
       'walkthrough',
@@ -34,6 +34,7 @@ describe('course workspace helpers', () => {
       'test',
       'lecture',
       'lesson',
+      'recap',
       'play',
       'plan',
     ]);

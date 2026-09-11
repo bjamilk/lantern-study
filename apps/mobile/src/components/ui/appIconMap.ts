@@ -97,6 +97,7 @@ import Globe from 'lucide-react-native/icons/globe';
 import GraduationCap from 'lucide-react-native/icons/graduation-cap';
 import Handshake from 'lucide-react-native/icons/handshake';
 import HardDrive from 'lucide-react-native/icons/hard-drive';
+import Headphones from 'lucide-react-native/icons/headphones';
 import Heart from 'lucide-react-native/icons/heart';
 import House from 'lucide-react-native/icons/house';
 import Image from 'lucide-react-native/icons/image';
@@ -271,6 +272,7 @@ export const APP_ICONS = {
   'globe': Globe,
   'grid': LayoutGrid,
   'hand-left': Handshake,
+  'headphones': Headphones,
   'heart': Heart,
   'help-circle': CircleQuestionMark,
   'home': House,

@@ -28,6 +28,7 @@ import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
   generateLessonFromNotes,
+  generateRecapFromNotes,
   explainAnswer,
   getStudyRecommendations,
   askTutor,
@@ -189,6 +190,36 @@ router.post('/generate-lesson', aiRateLimitForFeature('lesson'), async (req: Aut
   } catch (error: any) {
     console.error('AI generate lesson error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate a lesson.') });
+  }
+});
+
+router.post('/generate-recap', aiRateLimitForFeature('recap'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { notes, style, length, sourceTitle, subject } = req.body;
+    if (!notes || typeof notes !== 'string' || notes.trim().length < 50) {
+      res.status(400).json({ error: 'Notes must be at least 50 characters.' });
+      return;
+    }
+    const outcome = await runSyncOrEnqueue(
+      'ai.generate.recap',
+      { notes, style, length, sourceTitle, subject },
+      userId,
+      async () => {
+        const generated = await generateRecapFromNotes(notes, { style, length, sourceTitle, subject });
+        await recordInference(req, 'generate-recap', generated);
+        return generated;
+      },
+      aiChargeFromRes(res)
+    );
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+    res.json(outcome.result);
+  } catch (error: any) {
+    console.error('AI generate recap error:', error.message);
+    res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate a recap.') });
   }
 });
 

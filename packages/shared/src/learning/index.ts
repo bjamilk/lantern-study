@@ -6,3 +6,5 @@ export * from './notesStudio';
 export * from './adaptiveQuiz';
 export * from './lectureStudio';
 export * from './lessonStudio';
+export * from './recapStudio';
+export * from './studyCalendar';

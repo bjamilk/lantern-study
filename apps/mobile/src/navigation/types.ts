@@ -68,6 +68,16 @@ export type StudyStackParamList = {
    */
   LessonStudio: { courseId: string; courseLabel?: string; noteId?: string };
   /**
+   * Recap studio for one course — generated listen-through with transcript and ask.
+   * Distinct from Narration, which reads the document page.
+   */
+  RecapStudio: { courseId: string; courseLabel?: string; noteId?: string };
+  /**
+   * Study calendar for one course — month grid from exam date + outline.
+   * Distinct from Library's outline editor; Edit outline still opens that sheet.
+   */
+  StudyCalendar: { courseId: string; courseLabel?: string };
+  /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on
    * an editable topic list rather than near one.

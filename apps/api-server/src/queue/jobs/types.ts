@@ -74,6 +74,7 @@ export type AIJobName =
   | "ai.generate.questions"
   | "ai.generate.flashcards"
   | "ai.generate.lesson"
+  | "ai.generate.recap"
   | "ai.explain.answer"
   | "ai.study.recommendations"
   | "ai.ask.tutor"

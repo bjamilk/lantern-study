@@ -370,6 +370,24 @@ export async function aiGenerateLesson(
   return aiRequest('/generate-lesson', { notes, ...options });
 }
 
+export async function aiGenerateRecap(
+  notes: string,
+  options?: {
+    style?: 'summary' | 'lecture' | 'podcast';
+    length?: 'short' | 'medium' | 'long';
+    sourceTitle?: string;
+    subject?: string;
+  }
+): Promise<{
+  style: 'summary' | 'lecture' | 'podcast';
+  length: 'short' | 'medium' | 'long';
+  sourceTitle: string;
+  segments: Array<{ id: string; title: string; spoken: string; sourceCite: string }>;
+  provider: string;
+}> {
+  return aiRequest('/generate-recap', { notes, ...options });
+}
+
 export async function aiEnhanceFlashcard(
   front: string,
   back: string

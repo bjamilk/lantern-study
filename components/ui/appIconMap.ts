@@ -122,6 +122,7 @@ import GraduationCap from 'lucide-react/dist/esm/icons/graduation-cap.mjs';
 import Handshake from 'lucide-react/dist/esm/icons/handshake.mjs';
 import HardDrive from 'lucide-react/dist/esm/icons/hard-drive.mjs';
 import Hash from 'lucide-react/dist/esm/icons/hash.mjs';
+import Headphones from 'lucide-react/dist/esm/icons/headphones.mjs';
 import Heart from 'lucide-react/dist/esm/icons/heart.mjs';
 import House from 'lucide-react/dist/esm/icons/house.mjs';
 import Image from 'lucide-react/dist/esm/icons/image.mjs';
@@ -314,6 +315,7 @@ export const APP_ICONS = {
   'globe': Globe,
   'grid': LayoutGrid,
   'hand-left': Handshake,
+  'headphones': Headphones,
   'heart': Heart,
   'help-circle': CircleQuestionMark,
   'home': House,

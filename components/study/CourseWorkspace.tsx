@@ -4,15 +4,20 @@ import {
   WORKSPACE_LATER_COPY,
   courseWorkspaceLabel,
   hasEnoughNoteStudyContent,
+  isCalendarNote,
   isLectureNote,
   isLessonNote,
+  isRecapNote,
   isWalkableAttachment,
   materialsForCourse,
   newLectureNoteTitle,
+  resolveCalendarStudioNote,
   resolveLectureStudioNote,
   resolveLessonStudioNote,
+  resolveRecapStudioNote,
   testsFiledInCourse,
   type AdaptiveQuizItem,
+  type StudyCalendarSession,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
@@ -30,6 +35,8 @@ import { NotesStudio } from './NotesStudio';
 import { AdaptiveQuiz } from './AdaptiveQuiz';
 import { LectureStudio } from './LectureStudio';
 import { LessonStudio } from './LessonStudio';
+import { RecapStudio } from './RecapStudio';
+import { StudyCalendar } from './StudyCalendar';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useNotesStore } from '../../stores/notesStore';
@@ -143,17 +150,20 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const course = resolveCourse(courseId) ?? myCourses.find((row) => row.course.id === courseId)?.course;
   const label = course ? courseWorkspaceLabel(course) : 'Course';
 
-  const notes = useMemo(() => {
+  const filedNotes = useMemo(() => {
     const byId = new Map<string, StudyNote>();
     for (const note of [...storeNotes, ...fetchedNotes]) {
       byId.set(note.id, note);
     }
     return materialsForCourse([...byId.values()], courseId);
   }, [storeNotes, fetchedNotes, courseId]);
+  const calendars = useMemo(() => filedNotes.filter(isCalendarNote), [filedNotes]);
+  const notes = useMemo(() => filedNotes.filter((note) => !isCalendarNote(note)), [filedNotes]);
 
   const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
   const lectures = useMemo(() => notes.filter(isLectureNote), [notes]);
   const lessons = useMemo(() => notes.filter(isLessonNote), [notes]);
+  const recaps = useMemo(() => notes.filter(isRecapNote), [notes]);
   const steeredToLecture = useRef(false);
   useEffect(() => {
     steeredToLecture.current = false;
@@ -219,6 +229,17 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     void openNote(decision.noteId);
   }, [activity, lessons, openNote, selectedNote?.id]);
 
+  useEffect(() => {
+    if (activity !== 'recap') return;
+    const decision = resolveRecapStudioNote({
+      recaps,
+      selectedNoteId: selectedNote?.id,
+    });
+    if (decision.action !== 'resume') return;
+    if (selectedNote?.id === decision.noteId) return;
+    void openNote(decision.noteId);
+  }, [activity, recaps, openNote, selectedNote?.id]);
+
   const handleActivity = (id: WorkspaceActivityId, status: 'ready' | 'later') => {
     if (status === 'later') {
       showToast(WORKSPACE_LATER_COPY, 'info');
@@ -226,6 +247,23 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
     setActivity(id);
     if (id === 'quiz') setQuizSeed(null);
+    if (id === 'notes') {
+      const current = useNotesStore.getState().selectedNote;
+      if (current && isCalendarNote(current)) {
+        const fallback = notes[0];
+        if (fallback) void openNote(fallback.id);
+      }
+    }
+    if (id === 'plan') {
+      const decision = resolveCalendarStudioNote({
+        calendars,
+        selectedNoteId: selectedNote?.id,
+      });
+      if (decision.action === 'resume') {
+        void openNote(decision.noteId);
+      }
+      return;
+    }
     if (id === 'lecture') {
       const decision = resolveLectureStudioNote({
         lectures,
@@ -248,6 +286,16 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       }
       return;
     }
+    if (id === 'recap') {
+      const decision = resolveRecapStudioNote({
+        recaps,
+        selectedNoteId: selectedNote?.id,
+      });
+      if (decision.action === 'resume') {
+        void openNote(decision.noteId);
+      }
+      return;
+    }
     if (id === 'walkthrough') {
       const current = useNotesStore.getState().selectedNote;
       if (!current?.attachments?.find(isWalkableAttachment)) {
@@ -255,9 +303,21 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         if (fallback) void openNote(fallback.id);
       }
     }
-    if (id === 'plan') {
-      setOutlineOpen(true);
+  };
+
+  const openCalendarSession = async (session: StudyCalendarSession) => {
+    if (session.kind === 'cards') {
+      const deck = courseDecks.find((row) => row.id === session.targetId) || courseDecks[0];
+      if (!deck) {
+        showToast('File a deck in this course first.', 'info');
+        return;
+      }
+      onSelectDeck(deck);
+      return;
     }
+    if (session.targetId) await openNote(session.targetId);
+    setQuizSeed(null);
+    setActivity('quiz');
   };
 
   const handleTurnInto = async (target: TurnIntoTargetId) => {
@@ -476,7 +536,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 selected: selectedNote?.id === note.id,
                 onClick: () => {
                   void openNote(note.id);
-                  setActivity(isLectureNote(note) ? 'lecture' : isLessonNote(note) ? 'lesson' : 'notes');
+                  setActivity(
+                    isLectureNote(note)
+                      ? 'lecture'
+                      : isLessonNote(note)
+                        ? 'lesson'
+                        : isRecapNote(note)
+                          ? 'recap'
+                          : 'notes'
+                  );
                 },
               }))}
             />
@@ -534,6 +602,21 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 },
               }))}
             />
+            <MaterialGroup
+              title="Recaps"
+              empty="Start a recap from a note"
+              items={recaps.map((note) => ({
+                id: note.id,
+                label: note.title || 'Recap',
+                feature: 'ai' as const,
+                icon: 'headphones' as const,
+                selected: selectedNote?.id === note.id,
+                onClick: () => {
+                  void openNote(note.id);
+                  setActivity('recap');
+                },
+              }))}
+            />
             <button
               type="button"
               onClick={onOpenLibrary}
@@ -545,7 +628,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </aside>
 
         <section className="hidden sm:flex flex-1 min-w-0 min-h-[32rem]">
-          {activity === 'notes' && studioNote && studioNote.courseId === courseId ? (
+          {activity === 'notes' && studioNote && studioNote.courseId === courseId && !isCalendarNote(studioNote) ? (
             <NotesStudio
               note={studioNote}
               sourceAttachment={walkable}
@@ -570,7 +653,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               courseId={courseId}
               theme={theme}
               notes={notes}
-              selectedNoteId={selectedNote?.id}
+              selectedNoteId={
+                selectedNote && !isCalendarNote(selectedNote) ? selectedNote.id : undefined
+              }
               testIds={courseTests.map((test) => test.id)}
               canWalkthrough={Boolean(walkable)}
               writing={writingQuiz}
@@ -602,13 +687,49 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               courseId={courseId}
               theme={theme}
               notes={notes}
-              selectedNote={selectedNote && selectedNote.courseId === courseId ? selectedNote : null}
+              selectedNote={
+                selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+                  ? selectedNote
+                  : null
+              }
               turning={turning}
               onTurnInto={(target) => void handleTurnInto(target)}
               onOpenQuiz={(items) => {
                 setQuizSeed(items);
                 setActivity('quiz');
               }}
+              onNoteReady={async (noteId) => {
+                await openNote(noteId);
+                void reloadNotes().catch(() => undefined);
+              }}
+            />
+          ) : activity === 'recap' ? (
+            <RecapStudio
+              courseId={courseId}
+              theme={theme}
+              notes={notes}
+              selectedNote={
+                selectedNote && selectedNote.courseId === courseId && !isCalendarNote(selectedNote)
+                  ? selectedNote
+                  : null
+              }
+              turning={turning}
+              onTurnInto={(target) => void handleTurnInto(target)}
+              onNoteReady={async (noteId) => {
+                await openNote(noteId);
+                void reloadNotes().catch(() => undefined);
+              }}
+            />
+          ) : activity === 'plan' ? (
+            <StudyCalendar
+              courseId={courseId}
+              courseLabel={label}
+              notes={notes}
+              calendarNotes={calendars}
+              decks={courseDecks}
+              topics={topics}
+              onEditOutline={() => setOutlineOpen(true)}
+              onOpenSession={(session) => void openCalendarSession(session)}
               onNoteReady={async (noteId) => {
                 await openNote(noteId);
                 void reloadNotes().catch(() => undefined);
@@ -696,34 +817,14 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 )}
               </div>
             )}
-            {activity === 'plan' && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between gap-3">
-                  <h2 className="text-heading">Plan</h2>
-                  <Button size="sm" onClick={() => setOutlineOpen(true)}>
-                    Edit outline
-                  </Button>
-                </div>
-                {topics.length === 0 ? (
-                  <p className="text-body text-lantern-text-secondary">
-                    Add topics so this course has a syllabus to study against.
-                  </p>
-                ) : (
-                  <ol className="space-y-2">
-                    {topics.map((topic) => (
-                      <li key={topic.id} className="text-body">
-                        {topic.title}
-                      </li>
-                    ))}
-                  </ol>
-                )}
-              </div>
-            )}
             {activity === 'lecture' && (
               <p className="text-body text-lantern-text-secondary">Open lecture on a wider screen.</p>
             )}
             {activity === 'lesson' && (
               <p className="text-body text-lantern-text-secondary">Open lesson on a wider screen.</p>
+            )}
+            {activity === 'recap' && (
+              <p className="text-body text-lantern-text-secondary">Open recap on a wider screen.</p>
             )}
           </Card>
           )}
@@ -781,7 +882,7 @@ function MaterialGroup({
     id: string;
     label: string;
     feature: 'notes' | 'flashcards' | 'tests' | 'recording' | 'ai';
-    icon: 'document-text' | 'layers' | 'clipboard' | 'mic' | 'school';
+    icon: 'document-text' | 'layers' | 'clipboard' | 'mic' | 'school' | 'headphones';
     selected: boolean;
     onClick: () => void;
   }>;

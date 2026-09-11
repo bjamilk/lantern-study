@@ -18,6 +18,7 @@ export type WorkspaceIconName =
   | 'mic'
   | 'school'
   | 'volume-medium'
+  | 'headphones'
   | 'game-controller'
   | 'calendar'
   | 'document'
@@ -116,9 +117,9 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
     id: 'recap',
     label: 'Recap',
     promise: 'Generated listen-through',
-    icon: 'volume-medium',
+    icon: 'headphones',
     feature: 'ai',
-    status: 'later',
+    status: 'ready',
   },
   {
     id: 'play',
@@ -131,7 +132,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
   {
     id: 'plan',
     label: 'Plan',
-    promise: 'Syllabus outline for this course',
+    promise: 'Study calendar and syllabus outline',
     icon: 'calendar',
     feature: 'tests',
     status: 'ready',
@@ -147,7 +148,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
 ];
 
 export const WORKSPACE_LATER_COPY =
-  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture, lesson and play are ready now.';
+  'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture, lesson, recap and play are ready now.';
 
 export type TurnIntoTargetId = 'cards' | 'test';
 

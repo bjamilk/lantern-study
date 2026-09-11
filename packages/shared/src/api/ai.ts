@@ -400,6 +400,26 @@ export function createAIClient(config: AIClientConfig) {
       }>('/generate-lesson', { notes, ...rest }, 'POST', onJobUpdate);
     },
 
+    aiGenerateRecap: (
+      notes: string,
+      options?: {
+        style?: 'summary' | 'lecture' | 'podcast';
+        length?: 'short' | 'medium' | 'long';
+        sourceTitle?: string;
+        subject?: string;
+        onJobUpdate?: JobUpdateHandler;
+      }
+    ) => {
+      const { onJobUpdate, ...rest } = options ?? {};
+      return aiRequest<{
+        style: 'summary' | 'lecture' | 'podcast';
+        length: 'short' | 'medium' | 'long';
+        sourceTitle: string;
+        segments: Array<{ id: string; title: string; spoken: string; sourceCite: string }>;
+        provider: string;
+      }>('/generate-recap', { notes, ...rest }, 'POST', onJobUpdate);
+    },
+
     aiEnhanceFlashcard: (front: string, back: string) =>
       aiRequest<{ enhanced: AIGeneratedFlashcard; provider: string }>('/enhance-flashcard', {
         front,

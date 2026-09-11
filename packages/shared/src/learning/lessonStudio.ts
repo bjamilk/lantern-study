@@ -14,6 +14,7 @@ import {
   type AdaptiveQuizKind,
 } from './adaptiveQuiz';
 import { isLectureNote } from './courseWorkspace';
+import { isCalendarNote } from './studyCalendar';
 
 export type LessonMode = 'explore' | 'mastery';
 
@@ -67,6 +68,7 @@ export function lessonSourceNotes<
     .filter(
       (note) =>
         !isLessonNote(note) &&
+        !isCalendarNote(note) &&
         hasEnoughNoteStudyContent({
           ...note,
           body: note.body ?? undefined,

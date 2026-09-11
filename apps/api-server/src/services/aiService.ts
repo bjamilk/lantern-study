@@ -24,7 +24,14 @@ import {
   type FlashcardTypeMix,
 } from '@lantern/shared/flashcards';
 import { normalizeFlashcardCount } from '@lantern/shared/utils/flashcardGeneration';
-import { normalizeGeneratedLesson, type LessonMode } from '@lantern/shared/learning';
+import {
+  normalizeGeneratedLesson,
+  normalizeGeneratedRecap,
+  recapSegmentCap,
+  type LessonMode,
+  type RecapLength,
+  type RecapStyle,
+} from '@lantern/shared/learning';
 export { SMART_NOTES_GUIDANCE_MAX_CHARS };
 export type { SmartNotesDepth };
 export type { ExamFormat };
@@ -1444,6 +1451,79 @@ ${options.subject ? `Subject: ${options.subject}.` : ''}`;
         sourceTitle: session.sourceTitle,
         plan: session.plan,
         pages: session.pages,
+        provider,
+        usage,
+      };
+    }
+  );
+}
+
+export async function generateRecapFromNotes(
+  notes: string,
+  options: {
+    style?: RecapStyle;
+    length?: RecapLength;
+    sourceTitle?: string;
+    subject?: string;
+  } = {}
+): Promise<{
+  style: RecapStyle;
+  length: RecapLength;
+  sourceTitle: string;
+  segments: ReturnType<typeof normalizeGeneratedRecap>['segments'];
+  provider: string;
+  usage?: AiUsage;
+}> {
+  const style: RecapStyle =
+    options.style === 'lecture' || options.style === 'podcast' ? options.style : 'summary';
+  const length: RecapLength =
+    options.length === 'short' || options.length === 'long' ? options.length : 'medium';
+  const cap = recapSegmentCap(length);
+  const source = notes.substring(0, 6000);
+  const sourceTitle = options.sourceTitle?.trim() || 'this note';
+  const voice =
+    style === 'podcast'
+      ? 'Conversational, as if talking to a classmate on a commute.'
+      : style === 'lecture'
+        ? 'Taught like a short class recap. Address the listener.'
+        : 'Tight summary. Lead each beat with the point.';
+
+  return withAiResponseCache(
+    'generate_recap',
+    source,
+    { style, length, sourceTitle, subject: options.subject },
+    async () => {
+      const systemPrompt = `You write a listen-through recap of study notes. This is NOT a read-aloud of the source and NOT a dump of the PDF text.
+Return ONLY valid JSON:
+{"segments":[{"title":"...","spoken":"2-4 spoken sentences the player will read","sourceCite":"a short verbatim quote from the notes this beat covers"}]}
+
+Rules:
+- ${cap} segments or fewer. Never more than ${cap}.
+- spoken is a rewrite. Short sentences. No markdown. Do not copy paragraphs from the notes.
+- Every segment has a sourceCite: a short quote (under 140 characters) taken from the notes.
+- ${voice}
+${options.subject ? `Subject: ${options.subject}.` : ''}`;
+
+      const { text, provider, usage } = await chatCompletion(
+        systemPrompt,
+        `Write a ${style} recap (${length}) from:\n\n${source}`,
+        { temperature: 0.6, jsonOutput: true, maxTokens: 2000 }
+      );
+      const parsed = extractJSON(text);
+      const session = normalizeGeneratedRecap(parsed, {
+        style,
+        length,
+        sourceNoteId: '',
+        sourceTitle,
+      });
+      if (session.segments.length === 0) {
+        throw new Error('Recap generation produced no segments');
+      }
+      return {
+        style: session.style,
+        length: session.length,
+        sourceTitle: session.sourceTitle,
+        segments: session.segments,
         provider,
         usage,
       };

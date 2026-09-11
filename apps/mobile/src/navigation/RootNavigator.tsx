@@ -157,6 +157,8 @@ import { CourseRoomScreen } from '../screens/study/CourseRoomScreen';
 import { AdaptiveQuizScreen } from '../screens/study/AdaptiveQuizScreen';
 import { LectureStudioScreen } from '../screens/study/LectureStudioScreen';
 import { LessonStudioScreen } from '../screens/study/LessonStudioScreen';
+import { RecapStudioScreen } from '../screens/study/RecapStudioScreen';
+import { StudyCalendarScreen } from '../screens/study/StudyCalendarScreen';
 
 import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen } from '../screens/groups';
 
@@ -404,6 +406,8 @@ function StudyNavigator() {
       <StudyStack.Screen name="AdaptiveQuiz" component={AdaptiveQuizScreen} />
       <StudyStack.Screen name="LectureStudio" component={LectureStudioScreen} />
       <StudyStack.Screen name="LessonStudio" component={LessonStudioScreen} />
+      <StudyStack.Screen name="RecapStudio" component={RecapStudioScreen} />
+      <StudyStack.Screen name="StudyCalendar" component={StudyCalendarScreen} />
 
       <StudyStack.Screen name="Library" component={LibraryScreen} />
 

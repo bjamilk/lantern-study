@@ -7,6 +7,7 @@ import {
   generateQuestionsFromNotes,
   generateFlashcardsFromNotes,
   generateLessonFromNotes,
+  generateRecapFromNotes,
   explainAnswer,
   getStudyRecommendations,
   askTutor,
@@ -173,6 +174,18 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
         subject,
       });
       await recordInference(userId, "generate-lesson", result);
+      return result;
+    }
+    case "ai.generate.recap": {
+      const { notes, style, length, sourceTitle, subject } = job.data;
+      await progress.stage("generating");
+      const result = await generateRecapFromNotes(notes, {
+        style,
+        length,
+        sourceTitle,
+        subject,
+      });
+      await recordInference(userId, "generate-recap", result);
       return result;
     }
     case "ai.generate.flashcards": {
