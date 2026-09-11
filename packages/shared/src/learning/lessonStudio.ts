@@ -64,7 +64,15 @@ export function lessonSourceNotes<
   T extends { id: string; title?: string | null; body?: string | null; sourceType?: string | null },
 >(notes: readonly T[]): T[] {
   return notes
-    .filter((note) => !isLessonNote(note) && hasEnoughNoteStudyContent(note))
+    .filter(
+      (note) =>
+        !isLessonNote(note) &&
+        hasEnoughNoteStudyContent({
+          ...note,
+          body: note.body ?? undefined,
+          sourceType: note.sourceType ?? undefined,
+        })
+    )
     .slice()
     .sort((a, b) => Number(isLectureNote(a)) - Number(isLectureNote(b)));
 }
