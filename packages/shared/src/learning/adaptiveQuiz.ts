@@ -98,17 +98,20 @@ export function resolveAdaptiveCorrectAnswer(
   const trimmed = String(correctAnswer || '').trim();
   if (!trimmed || !options?.length) return trimmed;
 
-  const letterMatch = trimmed.match(/^([A-Da-d])[.)]?$/);
-  if (letterMatch) {
-    const idx = letterMatch[1].toUpperCase().charCodeAt(0) - 65;
-    if (idx >= 0 && idx < options.length) return options[idx]!;
+  const letter = trimmed.match(/^([A-Da-d])[.)]?$/)?.[1];
+  if (letter) {
+    const idx = letter.toUpperCase().charCodeAt(0) - 65;
+    const picked = options[idx];
+    if (picked) return picked;
   }
 
-  const numMatch = trimmed.match(/^(\d+)$/);
-  if (numMatch) {
-    const raw = parseInt(numMatch[1], 10);
-    if (raw >= 1 && raw <= options.length) return options[raw - 1]!;
-    if (raw >= 0 && raw < options.length) return options[raw]!;
+  const digits = trimmed.match(/^(\d+)$/)?.[1];
+  if (digits) {
+    const raw = parseInt(digits, 10);
+    const fromOne = options[raw - 1];
+    if (raw >= 1 && raw <= options.length && fromOne) return fromOne;
+    const fromZero = options[raw];
+    if (raw >= 0 && raw < options.length && fromZero) return fromZero;
   }
 
   const normalizedCorrect = normalizeAdaptiveAnswer(trimmed);
