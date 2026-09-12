@@ -56,22 +56,86 @@ export const memoryAuthStorage: SupportedStorage = {
   },
 };
 
-function normalizeMemorySession(session: Partial<Session> | null): Session | null {
-  if (!session?.access_token || !session.user) return null;
+/** `exp` claim of a JWT, or null. The BFF's happy-path /session payload omits
+ * expires_at entirely (apps/api-server/src/routes/auth.ts serializeClientSession
+ * is called there without expires_in/expires_at), which left the proactive
+ * refresh timer unarmed and the access token silently dying after ~1h. */
+function accessTokenExpiry(accessToken: string): number | null {
+  try {
+    const payload = accessToken.split('.')[1];
+    if (!payload) return null;
+    const json = JSON.parse(
+      decodeURIComponent(
+        atob(payload.replace(/-/g, '+').replace(/_/g, '/'))
+          .split('')
+          .map((c) => `%${`00${c.charCodeAt(0).toString(16)}`.slice(-2)}`)
+          .join('')
+      )
+    ) as { exp?: number };
+    return typeof json.exp === 'number' ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Accept what the server actually sends.
+ *
+ * The BFF returns `{ data: { session, user } }` — `user` is a SIBLING of
+ * `session`, and several handlers serialize a session object that carries no
+ * `user` of its own. Requiring `session.user` therefore rejected valid 200
+ * payloads. A session is usable as soon as it has an `access_token`; the user
+ * is taken from `session.user`, else the payload's sibling `user`, else left
+ * null (the token still authenticates every API call).
+ */
+function normalizeMemorySession(
+  session: Partial<Session> | null | undefined,
+  fallbackUser?: unknown
+): Session | null {
+  if (!session?.access_token) return null;
+  const user = (session.user ?? fallbackUser ?? null) as Session['user'];
   return {
     access_token: session.access_token,
     refresh_token: session.refresh_token || 'cookie-managed',
     expires_in: session.expires_in,
-    expires_at: session.expires_at,
+    expires_at: session.expires_at ?? accessTokenExpiry(session.access_token) ?? undefined,
     token_type: session.token_type || 'bearer',
-    user: session.user,
+    user,
   } as Session;
 }
 
-export function applyMemorySession(session: Session | null): void {
-  memorySession = normalizeMemorySession(session);
-  setCachedAuthToken(memorySession?.access_token ?? null, memorySession?.user?.id ?? null);
-  armCookieRefreshTimer(memorySession?.expires_at ?? null);
+/** Normalize a BFF auth response body, pairing `data.session` with `data.user`. */
+function normalizeSessionBody(body: unknown): Session | null {
+  const data = (body as { data?: { session?: Partial<Session>; user?: unknown } })?.data;
+  return normalizeMemorySession(data?.session ?? null, data?.user);
+}
+
+/**
+ * Install a session into memory + the token cache.
+ *
+ * `null` means "explicitly signed out" and wipes the cache. A non-null payload
+ * we cannot parse does NOT: wiping on a 200 the normalizer happened to reject
+ * is what produced the boot redirect loop (cache emptied, restore still
+ * reporting ok). Keep whatever token we already had and say so loudly.
+ */
+export function applyMemorySession(session: Partial<Session> | null, fallbackUser?: unknown): void {
+  if (session === null) {
+    memorySession = null;
+    setCachedAuthToken(null, null);
+    armCookieRefreshTimer(null);
+    return;
+  }
+  const normalized = normalizeMemorySession(session, fallbackUser);
+  if (!normalized) {
+    console.error(
+      '[auth] session payload rejected',
+      typeof session === 'object' ? Object.keys(session as object) : typeof session
+    );
+    return; // keep the existing cached token
+  }
+  memorySession = normalized;
+  setCachedAuthToken(normalized.access_token, normalized.user?.id ?? null);
+  armCookieRefreshTimer(normalized.expires_at ?? null);
 }
 
 // ─── Proactive refresh ──────────────────────────────────────
@@ -158,22 +222,26 @@ export async function loginViaCookieBff(
   return { session };
 }
 
+/** Returns the NORMALIZED session (or null) — never a raw payload the cache
+ * would have rejected, so callers can't report success on an empty cache. */
 export async function refreshCookieSession(): Promise<Session | null> {
   const response = await cookieAuthFetch('/refresh', { method: 'POST' });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) return null;
-  const session = body.data?.session as Session | undefined;
+  const session = normalizeSessionBody(body);
   if (session) applyMemorySession(session);
-  return session ?? null;
+  else console.error('[auth] refresh payload rejected', Object.keys(body?.data ?? body ?? {}));
+  return session;
 }
 
 export async function fetchCookieSession(): Promise<Session | null> {
   const response = await cookieAuthFetch('/session', { method: 'GET' });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) return null;
-  const session = body.data?.session as Session | undefined;
+  const session = normalizeSessionBody(body);
   if (session) applyMemorySession(session);
-  return session ?? null;
+  else console.error('[auth] session payload rejected', Object.keys(body?.data ?? body ?? {}));
+  return session;
 }
 
 export type CookieSessionResolveResult =
@@ -203,7 +271,7 @@ export async function restoreCookieSession(
           return { ok: false, reason: 'network' };
         }
         const refreshBody = await refreshResponse.json().catch(() => ({}));
-        const refreshed = normalizeMemorySession(refreshBody.data?.session);
+        const refreshed = normalizeSessionBody(refreshBody);
         if (refreshed) {
           applyMemorySession(refreshed);
           return { ok: true, session: refreshed };
@@ -220,7 +288,10 @@ export async function restoreCookieSession(
       }
 
       const body = await sessionResponse.json().catch(() => ({}));
-      const session = normalizeMemorySession(body.data?.session);
+      const session = normalizeSessionBody(body);
+      if (!session) {
+        console.error('[auth] session payload rejected', Object.keys(body?.data ?? body ?? {}));
+      }
       if (session) {
         applyMemorySession(session);
         return { ok: true, session };

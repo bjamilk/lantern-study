@@ -577,6 +577,65 @@ const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
   }
 };
 
+// ─── Cookie-mode token restore (single-flight + bounded) ────────────────────
+// Every fetch that boots the app calls getAuthHeaders(). With an empty cache
+// in cookie mode each one used to run its OWN getSession + /auth/refresh +
+// /auth/session + setSession (which itself costs two /auth/v1/user calls) —
+// dozens of concurrent callers produced the observed 64-requests-in-6s storm
+// against a session that never landed. Share one in-flight restore, and stop
+// after a bounded number of failures instead of looping forever.
+const MAX_COOKIE_RESTORE_ATTEMPTS = 3;
+let cookieRestoreInFlight: Promise<string | null> | null = null;
+let cookieRestoreFailures = 0;
+
+/** Test/boot hook: forget the per-page-load restore budget. */
+export function resetCookieRestoreState(): void {
+  cookieRestoreInFlight = null;
+  cookieRestoreFailures = 0;
+}
+
+async function restoreCookieTokenSingleFlight(): Promise<string | null> {
+  if (_cachedAccessToken) return _cachedAccessToken;
+  if (cookieRestoreInFlight) return cookieRestoreInFlight;
+  if (cookieRestoreFailures >= MAX_COOKIE_RESTORE_ATTEMPTS) {
+    // Give up honestly rather than hammer the BFF for the rest of the page life.
+    return null;
+  }
+
+  cookieRestoreInFlight = (async () => {
+    const session = await getSessionWithTimeout(1000);
+    if (session?.access_token) return session.access_token as string;
+
+    const refreshed = (await refreshCookieSession()) ?? (await fetchCookieSession());
+    if (!refreshed?.access_token) return null;
+    try {
+      // Push into supabase-js so PostgREST/realtime use the same token.
+      await supabase.auth.setSession({
+        access_token: refreshed.access_token,
+        refresh_token: refreshed.refresh_token || 'cookie-managed',
+      });
+    } catch {
+      // ignore — the memory cache is enough for REST API calls
+    }
+    return refreshed.access_token;
+  })()
+    .catch(() => null)
+    .then((resolved) => {
+      if (resolved) {
+        _cachedAccessToken = resolved;
+        cookieRestoreFailures = 0;
+      } else {
+        cookieRestoreFailures += 1;
+      }
+      return resolved;
+    })
+    .finally(() => {
+      cookieRestoreInFlight = null;
+    });
+
+  return cookieRestoreInFlight;
+}
+
 // Helper function to get authenticated headers
 // Uses cached token for instant resolution (~0ms) on the hot path.
 // Only calls getSession() on the very first cold call when no cache/localStorage token exists.
@@ -593,35 +652,11 @@ export const getAuthHeaders = async (): Promise<Record<string, string>> => {
     }
   }
   
-  // 3. Cookie BFF: restore session from HttpOnly cookies
+  // 3. Cookie BFF: restore session from HttpOnly cookies (single-flight)
   if (!token && cookieMode) {
-    const session = await getSessionWithTimeout(1000);
-    if (session?.access_token) {
-      token = session.access_token;
-      _cachedAccessToken = token;
-    }
+    token = await restoreCookieTokenSingleFlight();
   }
 
-  if (!token && cookieMode) {
-    const refreshed = (await refreshCookieSession()) ?? (await fetchCookieSession());
-    if (refreshed?.access_token) {
-      token = refreshed.access_token;
-      _cachedAccessToken = token;
-      if (refreshed?.access_token) {
-        token = refreshed.access_token;
-        _cachedAccessToken = token;
-        try {
-          await supabase.auth.setSession({
-            access_token: refreshed.access_token,
-            refresh_token: refreshed.refresh_token || 'cookie-managed',
-          });
-        } catch {
-          // ignore — memory cache is enough for API calls
-        }
-      }
-    }
-  }
-  
   // 4. SLOW PATH (cold start only): Fall back to getSession with short timeout
   if (!token && !cookieMode) {
     const session = await getSessionWithTimeout(2000);
