@@ -46,6 +46,34 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'turn-into-and-due-counts-1-0-51',
+    title:
+      'Turn any Lantern AI answer into cards, a test or a lesson; Home counts due cards one way (1.0.51)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-12',
+    summary:
+      'A single companion answer can become flashcards, a test or a lesson without copying anything by hand: Turn Into files the answer as a note in the current set, then opens the generation flow or studio that already exists. Home’s "Study all N due" and the review session it starts now read the same plan total, so the number a student sees is the number they get. Companion citations persist, the flashcards due summary stops failing, tests started in a set carry that set, and the web app stays signed in on a fresh page load.',
+    details: [
+      'Turn Into sits on a single chat answer on web and mobile: the answer is filed as a note in the current set, then the existing generation flow or studio opens on it — no new pipeline, no copy-paste.',
+      'Home’s "Study all N due" button and the review session it starts both count from one plan total, so the two can no longer disagree.',
+      'Companion citations are persisted rather than held in memory for the life of the response (migration 20260912090000_companion_message_citations.sql).',
+      'The flashcards due-summary endpoint no longer returns a 500.',
+      'A test started inside a study set carries that set’s id, so the result lands back in the set it came from.',
+      'The web app stays signed in on a fresh page load instead of bouncing to sign-in (3450eea0).',
+    ],
+    howToUse: [
+      'Web or mobile → Lantern AI: on any single answer, use Turn Into → flashcards, test or lesson. The answer is saved as a note in the set you are in, then the usual generation or studio screen opens.',
+      'Home → "Study all N due": the count and the session that starts from it come from the same plan total.',
+      'Open a study set and start a test from it: the result is attributed to that set.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Migration 20260912090000_companion_message_citations.sql is hand-applied: citations persist across reload only after the migration. Before it is applied, citations still render in the live response and disappear on reload — that is the missing migration, not a new bug.',
+    ],
+    commits: ['2906506e', '3450eea0'],
+  },
+  {
     id: 'shop-shell-1-0-40',
     title: 'Mobile 1.0.40 — Amazon-shaped Shop shell: Cart/You header, You hub, Payouts, seller home',
     area: 'marketplace',
