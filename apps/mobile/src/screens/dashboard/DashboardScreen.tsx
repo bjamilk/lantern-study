@@ -58,9 +58,9 @@ import { HomeUpcomingExam } from '../../components/dashboard/HomeUpcomingExam';
 import {
   nearestUpcomingExam,
   resumeRouteForHref,
-  topDueDeck,
   type HomeQuickActionId,
 } from '../../components/dashboard/homeSections';
+import { dueReviewPlan } from '@lantern/shared/learning';
 
 import { GettingStartedChecklist } from '../../components/dashboard/GettingStartedChecklist';
 import { DashboardInsights } from '../../components/dashboard/DashboardInsights';
@@ -781,24 +781,32 @@ export function DashboardScreen({ navigation }: Props) {
   );
 
   /**
-   * The deck "Study all N due" reviews: the one with the most cards due.
+   * What "Study all N due" plans to review, by the one shared rule.
    *
-   * There is no cross-deck review screen on the phone — `FlashcardReview`
-   * takes a single `deckId` — so the button opens the biggest pile rather than
-   * the deck LIST, which is what it did on build 189 and is why a button that
-   * said "study 68" handed over 26 decks and a Study button each (Wave P
-   * device pass, defect 4). Counted from the loaded cards, exactly as
-   * `dueCount` is, so the deck it picks and the number on the button can never
-   * come from two different tallies.
+   * `dueReviewPlan` is the same planner web runs, so the phone and the browser
+   * can no longer pick different decks from the same cards — the old
+   * local `topDueDeck` (now deleted) and web's inlined copy disagreed on ties,
+   * among other things.
+   *
+   * The phone opens the first leg AND hands the route the rest of the queue,
+   * so the session chains deck by deck and actually deals the N the button
+   * counted. It opens a review rather than the deck LIST, which is what build
+   * 189 did and is why a button that said "study 68" handed over 26 decks and
+   * a Study button each (Wave P device pass, defect 4).
+   *
+   * Counted from the loaded cards, exactly as `dueCount` is, so the deck it
+   * picks and the number on the button come from one tally.
    */
-  const reviewDeck = useMemo(() => {
-    const rows = Object.entries(flashcardsByDeck).map(([deckId, cards]) => ({
-      deckId,
-      deckName: decks.find((deck) => deck.id === deckId)?.name,
-      dueCount: cards.filter((card) => isCardDue(card.srsData)).length,
-    }));
-    return topDueDeck(rows);
-  }, [flashcardsByDeck, decks]);
+  const reviewPlan = useMemo(
+    () =>
+      dueReviewPlan(
+        decks.map((deck) => ({ id: deck.id, name: deck.name })),
+        (deckId) =>
+          (flashcardsByDeck[deckId] ?? []).filter((card) => isCardDue(card.srsData))
+      ),
+    [flashcardsByDeck, decks]
+  );
+  const reviewDeck = reviewPlan.first;
 
   const handlePrimaryAction = useCallback(() => {
     if (primaryAction.kind === 'review') {
@@ -813,6 +821,9 @@ export function DashboardScreen({ navigation }: Props) {
         toTab('FlashcardReview', {
           deckId: reviewDeck.deckId,
           deckName: reviewDeck.deckName ?? undefined,
+          // The whole queue, so the session continues into the next deck when
+          // this one ends and the button's N is the N actually dealt.
+          queueDeckIds: reviewPlan.legs.map((leg) => leg.deckId),
         })
       );
       return;
@@ -822,7 +833,7 @@ export function DashboardScreen({ navigation }: Props) {
       return;
     }
     setImportOpen(true);
-  }, [primaryAction, parent, openResumeHref, reviewDeck]);
+  }, [primaryAction, parent, openResumeHref, reviewDeck, reviewPlan]);
 
   /**
    * The set a "last set's …" door opens. The set most recently opened, else

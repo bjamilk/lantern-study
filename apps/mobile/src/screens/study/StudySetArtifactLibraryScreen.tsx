@@ -28,6 +28,7 @@ import {
   studySetLabel,
   testsFiledInStudySet,
 } from '@lantern/shared';
+import { pluralize } from '@lantern/shared/utils/plural';
 import type { StudyStackParamList } from '../../navigation/types';
 import { Button, Card, FeatureDisc, ScreenHeader, T } from '../../components/ui';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -150,7 +151,7 @@ export function StudySetArtifactLibraryScreen({ navigation, route }: Props) {
         title: deck.name || 'Deck',
         meta:
           typeof deck.card_count === 'number'
-            ? `${deck.card_count} card${deck.card_count === 1 ? '' : 's'}`
+            ? pluralize(deck.card_count, 'card')
             : undefined,
         feature: 'flashcards' as const,
         icon: 'layers' as const,
@@ -162,7 +163,7 @@ export function StudySetArtifactLibraryScreen({ navigation, route }: Props) {
         return {
           id: row.id,
           title: test?.name || 'Test',
-          meta: test ? `${test.questionCount} question${test.questionCount === 1 ? '' : 's'}` : undefined,
+          meta: test ? pluralize(test.questionCount, 'question') : undefined,
           feature: 'tests' as const,
           icon: 'clipboard' as const,
         };

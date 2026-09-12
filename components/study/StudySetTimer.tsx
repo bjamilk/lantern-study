@@ -1,39 +1,58 @@
 import React, { useEffect, useState } from 'react';
 import { Button } from '../ui';
+import {
+  formatStudyTimer,
+  isStudyTimerExpired,
+  isStudyTimerRunning,
+  selectStudySetTimer,
+  studyTimerAccessibilityLabel,
+  studyTimerRemaining,
+  useStudySetTimerStore,
+} from '../../stores/studySetTimerStore';
 
-const DEFAULT_SECONDS = 25 * 60;
+interface StudySetTimerProps {
+  /** Which set's clock this is. Timers are per-set, exactly as on the phone. */
+  setId?: string;
+}
 
-export const StudySetTimer: React.FC = () => {
-  const [remaining, setRemaining] = useState(DEFAULT_SECONDS);
-  const [running, setRunning] = useState(false);
+/**
+ * The button is a VIEW of the store, not the timer itself.
+ *
+ * Nothing here counts down. The interval exists only so the digits change on
+ * screen; every value comes from `Date.now()` against the stored start
+ * instant, so a dropped tick, a backgrounded tab and a reload all cost
+ * nothing.
+ */
+export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
+  const timer = useStudySetTimerStore(selectStudySetTimer(setId));
+  const toggle = useStudySetTimerStore((s) => s.toggle);
+  const [now, setNow] = useState(() => Date.now());
+
+  const running = isStudyTimerRunning(timer);
+  const remaining = studyTimerRemaining(timer, now);
+  const expired = isStudyTimerExpired(timer, now);
 
   useEffect(() => {
-    if (!running) return;
-    const id = window.setInterval(() => {
-      setRemaining((value) => {
-        if (value <= 1) {
-          setRunning(false);
-          return 0;
-        }
-        return value - 1;
-      });
-    }, 1000);
+    if (!running || remaining <= 0) return;
+    const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
-  }, [running]);
+  }, [running, remaining <= 0]);
 
-  const minutes = Math.floor(remaining / 60);
-  const seconds = remaining % 60;
+  // A reload lands mid-second; re-read the clock once on mount so the first
+  // paint is not up to a second stale.
+  useEffect(() => {
+    setNow(Date.now());
+  }, []);
 
   return (
     <Button
       variant="secondary"
-      onClick={() => {
-        if (remaining === 0) setRemaining(DEFAULT_SECONDS);
-        setRunning((value) => !value);
-      }}
-      aria-label={running ? 'Pause study timer' : 'Start 25 minute timer'}
+      onClick={() => toggle(setId)}
+      aria-label={studyTimerAccessibilityLabel(timer, now)}
+      title={expired ? "Time's up — start another 25 minutes" : undefined}
     >
-      {String(minutes).padStart(2, '0')}:{String(seconds).padStart(2, '0')}
+      {formatStudyTimer(remaining)}
+      {expired ? <span className="ml-1.5 text-caption">Time’s up</span> : null}
     </Button>
   );
 };

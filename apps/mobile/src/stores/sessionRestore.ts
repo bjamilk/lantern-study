@@ -127,3 +127,56 @@ export function restoreRetryDelayMs(attempt: number): number {
   const exponent = Math.min(safeAttempt - 1, 30);
   return Math.min(RESTORE_RETRY_BASE_MS * 2 ** exponent, RESTORE_RETRY_MAX_MS);
 }
+
+/**
+ * Which root route the boot gate may render.
+ *
+ * - `splash` — the restore has not resolved yet. The ONLY honest answer while
+ *   a stored session might still be on its way.
+ * - `sign-in` — the restore resolved to no session (or a refusal).
+ * - `app` — a session is in hand: refreshed, or read from disk and being
+ *   restored on.
+ */
+export type BootGateRoute = 'splash' | 'sign-in' | 'app';
+
+export interface BootGateInput {
+  /** `useAuthStore.isInitialized`: the restore has reached a conclusion. */
+  isInitialized: boolean;
+  /** `useAuthStore.user != null` — true from the moment the STORED session is adopted. */
+  hasUser: boolean;
+  /** The navigator's hard cap has fired (see BOOT_GATE_MAX_MS). */
+  gateTimedOut: boolean;
+}
+
+/**
+ * The bug this exists to prevent (found on a device pass, 2026-09-12): the
+ * navigator's escape hatch — a 10 s `bootTimedOut` meant only to stop the boot
+ * screen hanging forever — dropped the splash while `initialize()` was STILL
+ * PENDING. `user` is null in that window, so the very next branch rendered
+ * "Sign in to continue" to a signed-in student for 25-30 s, until the stored
+ * session finally landed and Home replaced it. A pending restore is not a
+ * signed-out student, and the gate must never guess that it is.
+ *
+ * Order matters: `hasUser` is checked FIRST, so a restore that timed out on a
+ * cached session enters the app even after the cap fires — which is the whole
+ * point of the classifier in `planSessionRestore`.
+ */
+export function resolveBootGate({
+  isInitialized,
+  hasUser,
+  gateTimedOut,
+}: BootGateInput): BootGateRoute {
+  if (hasUser) return 'app';
+  if (isInitialized) return 'sign-in';
+  return gateTimedOut ? 'sign-in' : 'splash';
+}
+
+/**
+ * Hard cap on the pending splash.
+ *
+ * Sized to outlast the store's own boot budget (a bounded storage read plus
+ * one capped refresh attempt), so under every failure `initialize()` resolves
+ * first and this cap never fires. It exists only so a store that never
+ * settles at all cannot strand the student on a boot screen forever.
+ */
+export const BOOT_GATE_MAX_MS = 16_000;

@@ -270,24 +270,24 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
           sort,
           from,
           to,
+          // In the query, not in a post-filter here. Filtering the page after
+          // the fact meant `total` counted only the rows that happened to land
+          // on it and `hasMore` was hard-coded false, so a set with more tests
+          // than one page silently lost the older ones with no way to reach
+          // them.
+          studySetId,
         });
 
         logger.debug('getUserTests returned', { testsCount: tests?.length, total });
 
-        const filed = studySetId
-          ? (tests || []).filter((row: { studySetId?: string | null; study_set_id?: string | null }) =>
-              (row.studySetId || row.study_set_id) === studySetId
-            )
-          : tests;
-
         res.json({
           success: true,
-          data: filed,
+          data: tests,
           pagination: {
             page,
             limit,
-            total: studySetId ? filed.length : total,
-            hasMore: studySetId ? false : page * limit < total,
+            total,
+            hasMore: page * limit < total,
           },
         });
       } catch (error) {

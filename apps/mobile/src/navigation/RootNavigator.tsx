@@ -67,6 +67,7 @@ import { AICompanionPanel } from '../components/AICompanionPanel';
 import { FeatureTipsHost } from '../components/featureTips/FeatureTipsHost';
 
 import { BootLoadingScreen } from '../components/BootLoadingScreen';
+import { resolveBootGate, BOOT_GATE_MAX_MS } from '../stores/sessionRestore';
 
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -1216,8 +1217,15 @@ function RootNavigatorInner() {
    */
   const [profileSetupMode, setProfileSetupMode] = useState<'username' | 'academic'>('username');
 
-  // If auth/bootstrap never finishes, force past BootLoadingScreen (looks like splash).
+  // If bootstrap (onboarding/profile fetch) never finishes, force past
+  // BootLoadingScreen. This must NOT decide the auth route: see authGateTimedOut.
   const [bootTimedOut, setBootTimedOut] = useState(false);
+  /**
+   * Hard cap on the PENDING-restore splash, and nothing else. The auth route
+   * is decided by `resolveBootGate`; this flag is only its last resort, sized
+   * to outlast the store's own boot budget so it effectively never fires.
+   */
+  const [authGateTimedOut, setAuthGateTimedOut] = useState(false);
 
 
 
@@ -1458,8 +1466,25 @@ function RootNavigatorInner() {
     return () => clearTimeout(timer);
   }, []);
 
+  useEffect(() => {
+    const timer = setTimeout(() => setAuthGateTimedOut(true), BOOT_GATE_MAX_MS);
+    return () => clearTimeout(timer);
+  }, []);
+
+  /**
+   * Splash vs sign-in vs app. A pending restore renders the boot screen — never
+   * the sign-in form, which used to appear for 25-30 s on a cold start once
+   * the 10 s `bootTimedOut` escape hatch dropped the splash while `user` was
+   * still null. See stores/sessionRestore.resolveBootGate.
+   */
+  const bootGate = resolveBootGate({
+    isInitialized,
+    hasUser: !!user,
+    gateTimedOut: authGateTimedOut,
+  });
+
   if (
-    (!isInitialized && !bootTimedOut) ||
+    bootGate === 'splash' ||
     (user && !onboardingChecked && !isPasswordRecovery && !bootTimedOut)
   ) {
     return <BootLoadingScreen />;

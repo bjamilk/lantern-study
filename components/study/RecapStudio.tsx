@@ -24,6 +24,8 @@ import {
   type RecapStyle,
   type TurnIntoTargetId,
   studySetNotePayload,
+  scopeNoun,
+  scopedCopy,
 } from '@lantern/shared';
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyNote } from '../../types';
@@ -290,7 +292,7 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
           <h3 className="text-label uppercase text-lantern-text-secondary">New recap</h3>
           {sources.length === 0 ? (
             <p className="text-body text-lantern-text-secondary">
-              Import or write a note in this course first. The recap is built from that material.
+              {scopedCopy('recapSourceEmpty', scopeNoun(studySetId, courseId))}
             </p>
           ) : (
             <>
@@ -514,7 +516,7 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
                 })
               }
             >
-              Open in Lantern AI
+              Ask Lantern
             </button>
           </div>
         </aside>

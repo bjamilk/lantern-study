@@ -13,7 +13,11 @@ export interface SourceChipProps {
   onPress?: () => void;
   /** When given, draws a trailing × that detaches the source. */
   onRemove?: () => void;
-  /** Passed down rather than read from a store, matching AICompanionPanel. */
+  /**
+   * Kept for the call sites that thread theme through by hand, but no longer
+   * read: both halves of the `ai` pair are theme-aware tokens, so the one
+   * class works in light and dark without a branch.
+   */
   theme?: 'light' | 'dark';
   className?: string;
 }
@@ -30,15 +34,20 @@ export function SourceChip({
   detail,
   onPress,
   onRemove,
-  theme = 'light',
   className = '',
 }: SourceChipProps) {
   const label = detail ? `${title} · ${detail}` : title;
 
-  const tone =
-    theme === 'dark'
-      ? 'border-lantern-primary/40 bg-lantern-primary/15 text-lantern-primary-light'
-      : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary';
+  /**
+   * The companion's own lilac, not the primary ramp.
+   *
+   * A citation is the companion saying where it read something, so it wears the
+   * `ai` feature pair — `ai` ink on the `ai` tint — the way the phone's
+   * citation chip does. In the primary indigo it was indistinguishable from the
+   * dozen other pills the app already draws in that hue, and the two surfaces
+   * disagreed about what a source looks like.
+   */
+  const tone = 'border-lantern-feature-ai-ink/30 bg-lantern-feature-ai-tint text-lantern-feature-ai-ink';
 
   const body = (
     <>

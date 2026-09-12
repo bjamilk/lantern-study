@@ -3,6 +3,7 @@ import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummar
 import {
   isCalendarNote,
   isLectureNote,
+  formatStudySetCardCounts,
   materialsForStudySet,
   studySetLabel,
   courseWorkspaceLabel,
@@ -257,10 +258,11 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                           {studySetLabel(set)}
                         </span>
                         <span className="block text-caption text-lantern-text-secondary mt-1">
-                          {setNotes.length} materials
-                          {lectures ? ` / ${lectures} lectures` : ''}
-                          {setNotes.length ? ` / ${setNotes.length} notes` : ''}
-                          {setDecks.length ? ` / ${setDecks.length} cards` : ''}
+                          {formatStudySetCardCounts({
+                            notes: setNotes.length,
+                            decks: setDecks.length,
+                            lectures,
+                          })}
                         </span>
                         <span className="block text-caption text-lantern-text-tertiary mt-1">
                           {set.lastStudiedAt

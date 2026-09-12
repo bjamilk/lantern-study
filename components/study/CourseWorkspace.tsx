@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   WORKSPACE_ACTIVITIES,
   scopeNoun,
+  scopedCopy,
   workspaceActivityPromise,
   WORKSPACE_LATER_COPY,
   courseWorkspaceLabel,
@@ -42,6 +43,7 @@ import {
   type WorkspaceActivityId,
 } from '@lantern/shared';
 import { AI_CREDIT_COSTS, getSmartNotesCreditCost } from '@lantern/shared/utils/aiCredits';
+import { pluralize } from '@lantern/shared/utils/plural';
 import type { CompanionAction, CompanionUserContext, Deck, StudyNote } from '../../types';
 import { AppMode } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
@@ -131,6 +133,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const aiJobUserId = useAiJobUserId();
   const showToast = useToastStore((s) => s.showToast);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
+  const companionNote = useCompanionStore((s) => s.activeNoteContext);
   const closeCompanion = useCompanionStore((s) => s.close);
   const resetCompanionForScope = useCompanionStore((s) => s.resetForScope);
 
@@ -167,6 +170,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const [outlineOpen, setOutlineOpen] = useState(false);
   const [topics, setTopics] = useState<CourseTopic[]>([]);
   const [turning, setTurning] = useState(false);
+  // A turn-into asked for a note the room had not opened; it runs once that
+  // note is the selected one.
+  const [pendingTurnInto, setPendingTurnInto] = useState<{ target: TurnIntoTargetId; noteId: string } | null>(null);
   const [writingQuiz, setWritingQuiz] = useState(false);
   const [quizSeed, setQuizSeed] = useState<AdaptiveQuizItem[] | null>(null);
   const [planTopics, setPlanTopics] = useState<StudySetTopic[]>([]);
@@ -285,7 +291,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   const course = resolveCourse(courseId) ?? myCourses.find((row) => row.course.id === courseId)?.course;
   const label = studySetId ? studySetLabel(studySet || { title: '' }) : course ? courseWorkspaceLabel(course) : 'Course';
-  const roomNoun = studySetId ? 'set' : 'course';
+  const roomNoun = scopeNoun(studySetId, courseId);
   const workspacePath = studySetId
     ? `/study/sets/${encodeURIComponent(studySetId)}`
     : `/study/courses/${encodeURIComponent(courseId)}`;
@@ -659,9 +665,26 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     [courseTests]
   );
 
-  const handleTurnInto = async (target: TurnIntoTargetId) => {
+  /**
+   * Turn-into always acts on the note the caller names, not on whatever the
+   * room happens to have open: the companion can attach a note the room has
+   * never opened. The note handlers read the SELECTED note, so a named note
+   * that is not selected has to be opened first, and the work has to wait for
+   * that to land (see `pendingTurnInto` below) — running in the same tick
+   * would generate from the previously selected note.
+   */
+  const handleTurnInto = async (target: TurnIntoTargetId, noteId?: string) => {
     if (!currentUserId) {
       showToast('Sign in to generate study materials.', 'error');
+      return;
+    }
+    if (noteId && useNotesStore.getState().selectedNote?.id !== noteId) {
+      await openNote(noteId);
+      if (useNotesStore.getState().selectedNote?.id !== noteId) {
+        showToast('Could not open that note.', 'error');
+        return;
+      }
+      setPendingTurnInto({ target, noteId });
       return;
     }
     const note = useNotesStore.getState().selectedNote;
@@ -743,6 +766,19 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       setTurning(false);
     }
   };
+
+  // The deferred half of `handleTurnInto`: the note it was asked for is now
+  // both loaded and selected, so the note handlers — which close over the
+  // selected note — will read the right one.
+  useEffect(() => {
+    if (!pendingTurnInto || selectedNote?.id !== pendingTurnInto.noteId) return;
+    const { target } = pendingTurnInto;
+    setPendingTurnInto(null);
+    void handleTurnInto(target);
+    // handleTurnInto is re-created every render; re-running on its identity
+    // would fire the job twice.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingTurnInto, selectedNote?.id]);
 
   const handleWriteQuizQuestions = async (noteId: string) => {
     const note =
@@ -830,7 +866,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              {studySetId ? <StudySetTimer /> : null}
+              {studySetId ? <StudySetTimer setId={studySetId} /> : null}
               {!companionRail ? (
                 <Button
                   variant="secondary"
@@ -976,7 +1012,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             ) : null}
             <MaterialGroup
               title={`Notes${readingNotes.length ? ` · ${readingNotes.length}` : ''}`}
-              empty={studySetId ? 'No notes in this set yet' : 'No notes in this course yet'}
+              empty={scopedCopy('notesEmpty', roomNoun)}
               items={readingNotes.map((note) => ({
                 id: note.id,
                 label: note.title || 'Untitled note',
@@ -1004,7 +1040,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             {courseTests.length > 0 ? (
               <MaterialGroup
                 title={`Tests · ${courseTests.length}`}
-                empty={studySetId ? 'No tests from this set yet' : 'No tests from this course yet'}
+                empty={scopedCopy('testsEmpty', roomNoun)}
                 items={courseTests.map((test) => ({
                   id: test.id,
                   label: test.title || 'Test',
@@ -1520,7 +1556,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                     New note
                   </Button>
                   <Button variant="secondary" onClick={() => setImportOpen(true)}>
-                    {studySetId ? 'Import into this set' : 'Import into this course'}
+                    {scopedCopy('importAction', roomNoun)}
                   </Button>
                 </div>
               </div>
@@ -1566,7 +1602,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                     items={courseDecks.map((deck) => ({
                       id: deck.id,
                       title: deck.name,
-                      meta: `${flashcards.filter((card) => card.deckId === deck.id).length} cards`,
+                      meta: pluralize(flashcards.filter((card) => card.deckId === deck.id).length, 'card'),
                       feature: 'flashcards' as const,
                       icon: 'layers' as const,
                     }))}
@@ -1584,9 +1620,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 </div>
                 {courseTests.length === 0 ? (
                   <p className="text-body text-lantern-text-secondary">
-                    {studySetId
-                      ? 'Turn a note into a practice test, or build one from this set’s decks.'
-                      : 'Turn a note into a practice test, or build one from this course’s decks.'}
+                    {scopedCopy('testsFromDecks', roomNoun)}
                   </p>
                 ) : (
                   courseTests.map((test) => (
@@ -1634,6 +1668,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                   void openNote(noteId);
                   go('notes', { noteId });
                 }}
+                // The six targets, on whatever note the companion has
+                // attached — the same handler, credits and ticks the studios
+                // use, so nothing here is a second implementation.
+                onTurnInto={(target, noteId) => void handleTurnInto(target, noteId)}
+                turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
               />
             </div>
           </div>
@@ -1644,6 +1683,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             context={companionContext}
             onAction={onCompanionAction}
             theme={theme}
+            onTurnInto={(target, noteId) => void handleTurnInto(target, noteId)}
+            turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
           />
         )}
       </div>

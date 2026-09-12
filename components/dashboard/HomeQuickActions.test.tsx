@@ -18,7 +18,7 @@ const render = () =>
 const LABELS = [
   'Import materials',
   'Create a quiz',
-  'Chat with Lantern',
+  'Ask Lantern',
   'Tutor',
   'Record a lecture',
   'Open Study',
@@ -44,7 +44,7 @@ describe('HomeQuickActions', () => {
 
   it('never repeats a hue — six doors, six feature tints', () => {
     const html = render();
-    // `Tutor` and `Chat with Lantern` both wore the `ai` pink, so two of six
+    // `Tutor` and the companion door both wore the `ai` pink, so two of six
     // tiles were indistinguishable by colour.
     const tinted = html.match(/bg-lantern-feature-([a-z]+)-tint/g) || [];
     expect(new Set(tinted).size).toBe(LABELS.length);

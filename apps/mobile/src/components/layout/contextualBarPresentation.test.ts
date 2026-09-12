@@ -15,7 +15,7 @@ const STUDY: ContextualPillInput[] = [
   { id: 'flashcards', label: 'Flashcards' },
   { id: 'tests', label: 'Tests' },
   { id: 'record', label: 'Record' },
-  { id: 'ai', label: 'AI' },
+  { id: 'ai', label: 'Ask' },
 ];
 
 // A four-item `above` row — the shape of the deck, note, walk-through and

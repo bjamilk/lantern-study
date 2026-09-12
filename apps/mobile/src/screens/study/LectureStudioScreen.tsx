@@ -15,6 +15,7 @@ import {
   hasEnoughNoteStudyContent,
   isLectureNote,
   latestLectureTranscript,
+  lectureNoteParts,
   lectureStudioPriceLine,
   studioMaterials,
   newLectureNoteTitle,
@@ -22,9 +23,12 @@ import {
   studySetNotePayload,
   shouldCreateLectureNote,
   shouldDeleteDoorNoteOnDiscard,
-  typedNotesFromBody,
+  type LectureTabId,
 } from '@lantern/shared';
-import type { SmartNotesDepth } from '@lantern/shared/utils/smartNotes';
+import {
+  upsertSmartNotesSection,
+  type SmartNotesDepth,
+} from '@lantern/shared/utils/smartNotes';
 import {
   SMART_NOTES_CREDIT_COST,
   formatCreditCost,
@@ -35,6 +39,8 @@ import { Button, ScreenHeader, T } from '../../components/ui';
 import { NoteBody } from '../../components/NoteBody';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
+import { LectureTabs } from '../../components/lecture/LectureTabs';
+import { lectureStudioView } from './lectureStudioView';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -117,6 +123,8 @@ export function LectureStudioScreen({ navigation, route }: Props) {
    * class is the whole point of this pane.
    */
   const [editingNotes, setEditingNotes] = useState(false);
+  /** null = follow the default rule; a value = the student picked that tab. */
+  const [requestedTab, setRequestedTab] = useState<LectureTabId | null>(null);
   const [starting, setStarting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
@@ -127,12 +135,24 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   notesRef.current = notesBody;
 
   const knownTranscript = whisperTranscript || latestLectureTranscript(activeNote?.attachments);
+  /**
+   * The stored body split into the three texts the tabs show. Reading the typed
+   * notes through the planner is what keeps the generated Smart Notes block —
+   * appended to the END of the body, after the transcript — out of the editable
+   * text box, the same rule the web studio follows.
+   */
+  const storedParts = lectureNoteParts({
+    body: activeNote?.body ?? '',
+    attachments: activeNote?.attachments ?? [],
+  });
   const liveTranscript = displayLectureTranscript({
     committed: committedTranscript,
     interim: interimTranscript,
     whisper: knownTranscript,
   });
   liveRef.current = liveTranscript;
+  const enhancedRef = useRef('');
+  enhancedRef.current = storedParts.enhanced;
 
   useEffect(() => {
     if (activeId) void loadNote(activeId);
@@ -145,8 +165,18 @@ export function LectureStudioScreen({ navigation, route }: Props) {
       return;
     }
     setTitle(activeNote.title || '');
-    setNotesBody(typedNotesFromBody(activeNote.body || '', knownTranscript));
+    setNotesBody(storedParts.typed);
   }, [activeNote?.id, activeNote?.title, activeNote?.body, knownTranscript, decision]);
+
+  /**
+   * Put the body back together for a save. The typed notes no longer carry the
+   * generated section, so every write has to re-attach it — otherwise the first
+   * autosave after enhancing would silently delete the enhanced notes.
+   */
+  const composeBody = useCallback((typed: string, transcript: string) => {
+    const base = composeLectureNoteBody(typed, transcript);
+    return enhancedRef.current ? upsertSmartNotesSection(base, enhancedRef.current) : base;
+  }, []);
 
   const scheduleSave = useCallback(() => {
     if (!activeNote) return;
@@ -154,10 +184,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
     saveTimer.current = setTimeout(() => {
       void saveNote(activeNote.id, {
         title: titleRef.current,
-        body: composeLectureNoteBody(notesRef.current, liveRef.current),
+        body: composeBody(notesRef.current, liveRef.current),
       }).catch(() => undefined);
     }, 700);
-  }, [activeNote, saveNote]);
+  }, [activeNote, composeBody, saveNote]);
 
   useEffect(() => () => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
@@ -177,7 +207,19 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   }, [recording]);
   const busy = status === 'uploading' || status === 'transcribing' || status === 'naming';
   const paused = recording && Boolean(pausedAt);
-  const showConsent = !consented && status === 'idle';
+
+  const tabSource = {
+    body: activeNote?.body ?? '',
+    attachments: activeNote?.attachments ?? [],
+    liveTranscript,
+  };
+
+  /**
+   * The consent door only stands in front of a lecture with nothing to read;
+   * an existing one opens on its tabs with the consent line as a slim bar.
+   */
+  const view = lectureStudioView({ source: tabSource, consented, status });
+  const showConsent = view.showConsent;
 
   const handleNotesChange = (next: string) => {
     const stamped = recording ? applyLectureNoteStamp(notesRef.current, next, elapsedMs) : next;
@@ -271,7 +313,13 @@ export function LectureStudioScreen({ navigation, route }: Props) {
     }
     setWriting(true);
     try {
-      await saveNote(activeNote.id, snapshot);
+      // Save the WHOLE lecture first: summarize reads the note from the server,
+      // and writing back only the typed half used to delete the transcript —
+      // the part worth summarizing — before the model ever saw it.
+      await saveNote(activeNote.id, {
+        title: snapshot.title,
+        body: composeBody(snapshot.body, liveRef.current),
+      });
       const result = await summarizeNote(activeNote.id, { depth });
       if (result.note) {
         setSelectedNote({
@@ -301,7 +349,7 @@ export function LectureStudioScreen({ navigation, route }: Props) {
             accessibilityLabel={LECTURE_ASK_JUST_SAID}
             className="min-h-[44px] justify-center"
           >
-            <T.Body>Ask</T.Body>
+            <T.Body>Ask Lantern</T.Body>
           </Pressable>
         }
       />
@@ -368,6 +416,30 @@ export function LectureStudioScreen({ navigation, route }: Props) {
         ) : (
           <View className="gap-4">
             {recording ? <LecturePreflightCard /> : null}
+            {view.showConsentBar ? (
+              <View className="gap-1 rounded-xl border border-lantern-border bg-lantern-surface p-3">
+                <Pressable
+                  onPress={() => {
+                    const next = !agreed;
+                    setAgreed(next);
+                    setConsented(next);
+                  }}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked: agreed }}
+                  className="min-h-[44px] flex-row items-center gap-2"
+                >
+                  <View
+                    className={`h-5 w-5 rounded border ${
+                      agreed
+                        ? 'bg-lantern-feature-recording-ink border-lantern-feature-recording-ink'
+                        : 'border-lantern-border bg-lantern-surface'
+                    }`}
+                  />
+                  <T.Body>I can record this lecture.</T.Body>
+                </Pressable>
+                <T.Caption tone="secondary">{LECTURE_CONSENT_LINE}</T.Caption>
+              </View>
+            ) : null}
             <View className="flex-row flex-wrap gap-2">
               {recording ? (
                 <>
@@ -386,70 +458,86 @@ export function LectureStudioScreen({ navigation, route }: Props) {
                   </Button>
                 </>
               ) : busy ? null : (
-                <Button size="sm" disabled={starting} onPress={() => void handleStart()}>
+                <Button
+                  size="sm"
+                  disabled={starting || !consented}
+                  onPress={() => void handleStart()}
+                >
                   {activeNote ? 'Resume' : 'Start'}
                 </Button>
               )}
             </View>
 
-            <View>
-              <View className="flex-row items-center justify-between">
-                <T.Label>My notes</T.Label>
-                <Pressable
-                  onPress={() => setEditingNotes((was) => !was)}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: editingNotes }}
-                  accessibilityLabel={editingNotes ? 'Done editing notes' : 'Edit notes'}
-                  className="min-h-[44px] justify-center px-2"
-                >
-                  <T.Caption>{editingNotes ? 'Done' : 'Edit'}</T.Caption>
-                </Pressable>
+            <TextInput
+              value={title}
+              onChangeText={(value) => {
+                setTitle(value);
+                scheduleSave();
+              }}
+              accessibilityLabel="Lecture title"
+              className="rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-heading text-lantern-text"
+            />
+
+            {recording || busy ? (
+              <View>
+                <T.Label>Live transcript</T.Label>
+                <View className="mt-2 min-h-[120px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
+                  {liveTranscript ? (
+                    <T.Body>{liveTranscript}</T.Body>
+                  ) : (
+                    <T.Body tone="tertiary">
+                      Listening… captions appear here when this phone can transcribe live. The full
+                      transcript still lands after you stop.
+                    </T.Body>
+                  )}
+                </View>
               </View>
-              <TextInput
-                value={title}
-                onChangeText={(value) => {
-                  setTitle(value);
-                  scheduleSave();
-                }}
-                accessibilityLabel="Lecture title"
-                className="mt-2 mb-2 rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-heading text-lantern-text"
-              />
-              {editingNotes ? (
-                <TextInput
-                  value={notesBody}
-                  onChangeText={handleNotesChange}
-                  accessibilityLabel="Typed lecture notes"
-                  placeholder="Type during class. New paragraphs get a timestamp."
-                  multiline
-                  className="min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3 text-body text-lantern-text"
-                />
-              ) : (
-                <View
-                  accessibilityLabel="Typed lecture notes"
-                  className="min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3"
-                >
-                  <NoteBody
-                    body={notesBody}
-                    emptyLine="Type during class. New paragraphs get a timestamp."
-                  />
+            ) : null}
+
+            {/* The lecture surface, shared with the Library door. */}
+            <LectureTabs
+              noteId={activeNote?.id}
+              source={tabSource}
+              recording={recording}
+              tab={requestedTab}
+              onTabChange={setRequestedTab}
+              renderNotes={() => (
+                <View>
+                  <View className="flex-row items-center justify-between">
+                    <T.Label>My notes</T.Label>
+                    <Pressable
+                      onPress={() => setEditingNotes((was) => !was)}
+                      accessibilityRole="button"
+                      accessibilityState={{ selected: editingNotes }}
+                      accessibilityLabel={editingNotes ? 'Done editing notes' : 'Edit notes'}
+                      className="min-h-[44px] justify-center px-2"
+                    >
+                      <T.Caption>{editingNotes ? 'Done' : 'Edit'}</T.Caption>
+                    </Pressable>
+                  </View>
+                  {editingNotes ? (
+                    <TextInput
+                      value={notesBody}
+                      onChangeText={handleNotesChange}
+                      accessibilityLabel="Typed lecture notes"
+                      placeholder="Type during class. New paragraphs get a timestamp."
+                      multiline
+                      className="mt-2 min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3 text-body text-lantern-text"
+                    />
+                  ) : (
+                    <View
+                      accessibilityLabel="Typed lecture notes"
+                      className="mt-2 min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3"
+                    >
+                      <NoteBody
+                        body={notesBody}
+                        emptyLine="Type during class. New paragraphs get a timestamp."
+                      />
+                    </View>
+                  )}
                 </View>
               )}
-            </View>
-
-            <View>
-              <T.Label>Live transcript</T.Label>
-              <View className="mt-2 min-h-[120px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
-                {liveTranscript ? (
-                  <T.Body>{liveTranscript}</T.Body>
-                ) : (
-                  <T.Body tone="tertiary">
-                    {recording
-                      ? 'Listening… captions appear here when this phone can transcribe live. The full transcript still lands after you stop.'
-                      : 'Start recording. Captions appear here; the full transcript lands after you stop.'}
-                  </T.Body>
-                )}
-              </View>
-            </View>
+            />
 
             <View>
               <T.Label>Ask</T.Label>

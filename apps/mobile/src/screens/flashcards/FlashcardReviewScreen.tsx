@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ScrollView, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { FlashcardType, FLASHCARD_GRADE_LABELS } from '@lantern/shared';
+import { continueDueReviewLabel, dueReviewProgress } from '@lantern/shared/learning';
+import { isCardDue } from '@lantern/shared/utils/srs';
 import type { PerformanceRating } from '@lantern/shared/utils';
 import {
   FlashcardReviewAdvanceGuard,
@@ -37,11 +39,22 @@ function withHaptic(action: () => Promise<void>) {
 
 type NavigationProp = {
   goBack: () => void;
+  /** Swap this deck's session for the next one, so Back still leaves review. */
+  replace: (
+    screen: 'FlashcardReview',
+    params: { deckId: string; deckName?: string; queueDeckIds?: string[] }
+  ) => void;
 };
 
 interface Props {
   navigation: NavigationProp;
-  route: { params?: { deckId?: string; deckName?: string } };
+  /**
+   * `queueDeckIds` is the whole cross-deck due queue Home planned, in order.
+   * Without it this screen is one deck and stops there, which is why a Home
+   * button that said "Study all 68 due" used to deal 17; with it the session
+   * continues deck by deck until the queue is spent.
+   */
+  route: { params?: { deckId?: string; deckName?: string; queueDeckIds?: string[] } };
 }
 
 const GRADE_BUTTONS: {
@@ -79,6 +92,63 @@ const GRADE_TEXT_CLASS: Record<(typeof GRADE_BUTTONS)[number]['variant'], string
 };
 
 const EMPTY_CARDS: Flashcard[] = [];
+
+/** One deck's share of the cross-deck plan, as it stood when the chain began. */
+interface ChainLeg {
+  deckId: string;
+  deckName: string;
+  dueCount: number;
+}
+
+/**
+ * The chain's leg sizes, frozen for the life of the chain.
+ *
+ * The counter has to say "18 / 68" on the second deck, and 68 is only knowable
+ * while the first deck's cards are still due. Grading them makes them not-due,
+ * so a re-count at leg 2 would report 38 and the total would shrink under the
+ * student — the opposite of the promise Home made. Each leg is a separate
+ * mount (`navigation.replace`), so the snapshot lives at module scope rather
+ * than in a ref: it is the one thing that must outlive the screen.
+ *
+ * It is re-seeded whenever a chain is entered at its first deck, which is the
+ * only way Home starts one, so a new day's plan never reads yesterday's sizes.
+ */
+let chainSnapshot: { key: string; legs: ChainLeg[] } | null = null;
+
+/**
+ * Freeze (or reuse) the leg sizes for the queue this session belongs to.
+ *
+ * `sessionTotal` wins for the deck on screen, because that is the number of
+ * cards this session will actually deal; the other legs are counted from the
+ * store. Returns [] for a lone deck, which is the signal to keep the plain
+ * "n / deckDue" counter.
+ */
+function resolveChainLegs(
+  queueDeckIds: string[] | undefined,
+  deckId: string,
+  sessionTotal: number,
+  decks: { id: string; name?: string | null }[],
+  flashcards: Record<string, Flashcard[]>
+): ChainLeg[] {
+  const ids = queueDeckIds ?? [];
+  if (ids.length <= 1 || sessionTotal <= 0) return [];
+  const at = ids.indexOf(deckId);
+  if (at < 0) return [];
+
+  const key = ids.join('|');
+  if (at > 0 && chainSnapshot?.key === key) return chainSnapshot.legs;
+
+  const legs = ids.map((id, i) => ({
+    deckId: id,
+    deckName: (decks.find(d => d.id === id)?.name ?? '').trim() || 'Untitled deck',
+    dueCount:
+      i === at
+        ? sessionTotal
+        : (flashcards[id] ?? EMPTY_CARDS).filter(card => isCardDue(card.srsData)).length,
+  }));
+  chainSnapshot = { key, legs };
+  return legs;
+}
 
 type GradeCounts = Record<PerformanceRating, number>;
 const ZERO_GRADE_COUNTS: GradeCounts = { again: 0, hard: 0, good: 0, easy: 0 };
@@ -123,6 +193,8 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const deckId = route.params?.deckId ?? '';
   const deckName = route.params?.deckName ?? 'Review';
   const deck = useFlashcardStore(s => s.decks.find(d => d.id === deckId));
+  const allDecks = useFlashcardStore(s => s.decks);
+  const allFlashcards = useFlashcardStore(s => s.flashcards);
 
   // Phase 3 M / 4 V — course + topic ride the existing heartbeat so Discover
   // presence can open a real study room, not only a review-intent count.
@@ -202,6 +274,45 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const progress = sessionTotal ? Math.min(index + 1, sessionTotal) : 0;
   const nextCard = queue[index + 1];
   const canUndo = undoSnapshot != null;
+
+  /**
+   * Where this card sits in the WHOLE plan Home opened, not just this deck.
+   *
+   * Null for an ordinary single-deck session, which keeps its "n / deckDue".
+   */
+  const chainLegs = resolveChainLegs(
+    route.params?.queueDeckIds,
+    deckId,
+    sessionTotal,
+    allDecks,
+    allFlashcards
+  );
+  const chainProgress = dueReviewProgress(
+    { legs: chainLegs },
+    chainLegs.findIndex(leg => leg.deckId === deckId),
+    index
+  );
+
+  /**
+   * The next deck in the queue that still has due cards.
+   *
+   * Read at render from the store, not from what Home planned, so a deck the
+   * student cleared elsewhere in the meantime is skipped rather than offered
+   * as an empty session. Decks whose cards are not loaded look empty and are
+   * skipped too — the offer is only ever made for cards we can prove are due.
+   */
+  const nextLeg = useMemo(() => {
+    const queue = route.params?.queueDeckIds ?? [];
+    const at = queue.indexOf(deckId);
+    if (at < 0) return null;
+    for (const id of queue.slice(at + 1)) {
+      const dueCount = (allFlashcards[id] ?? EMPTY_CARDS).filter(card => isCardDue(card.srsData)).length;
+      if (dueCount === 0) continue;
+      const name = (allDecks.find(d => d.id === id)?.name ?? '').trim();
+      return { deckId: id, deckName: name || 'Untitled deck', dueCount };
+    }
+    return null;
+  }, [route.params?.queueDeckIds, deckId, allFlashcards, allDecks]);
 
   // Anki-style interval preview: what each grade would schedule for THIS card,
   // computed once per card. Uses the same maxInterval source the store schedules
@@ -513,7 +624,22 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
               Undo last card
             </Button>
           ) : null}
-          <Button fullWidth onPress={() => navigation.goBack()}>
+          {nextLeg ? (
+            <Button
+              fullWidth
+              accessibilityLabel={continueDueReviewLabel(nextLeg)}
+              onPress={() =>
+                navigation.replace('FlashcardReview', {
+                  deckId: nextLeg.deckId,
+                  deckName: nextLeg.deckName,
+                  queueDeckIds: route.params?.queueDeckIds,
+                })
+              }
+            >
+              {continueDueReviewLabel(nextLeg)}
+            </Button>
+          ) : null}
+          <Button fullWidth variant={nextLeg ? 'secondary' : 'primary'} onPress={() => navigation.goBack()}>
             Done
           </Button>
         </View>
@@ -575,15 +701,30 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
             </Button>
           ) : null}
           <Text className="text-sm font-medium text-lantern-text-secondary" style={{ color: colors.textSecondary }}>
-            {progress} / {sessionTotal}
+            {chainProgress ? `${chainProgress.overall} / ${chainProgress.total}` : `${progress} / ${sessionTotal}`}
           </Text>
         </View>
       </View>
 
+      {chainProgress ? (
+        <Text
+          className="text-caption px-4 pb-2 text-lantern-text-secondary"
+          style={{ color: colors.textSecondary }}
+          accessibilityLabel={`${chainProgress.deckLabel}, card ${chainProgress.overall} of ${chainProgress.total}`}
+        >
+          {chainProgress.deckLabel}
+        </Text>
+      ) : null}
+
       <View className="h-1 mx-4 rounded-full bg-lantern-background-secondary overflow-hidden mb-2">
         <View
           className="h-full bg-lantern-primary-fill rounded-full"
-          style={{ width: `${(progress / sessionTotal) * 100}%`, backgroundColor: colors.primaryFill }}
+          style={{
+            // Matches the counter above it: a chained session fills across the
+            // whole plan, so the bar does not reset to empty on every deck.
+            width: `${((chainProgress ? chainProgress.overall / chainProgress.total : progress / sessionTotal) || 0) * 100}%`,
+            backgroundColor: colors.primaryFill,
+          }}
         />
       </View>
 

@@ -91,6 +91,7 @@ const mockReadStoredSession = jest.fn();
 
 import { useAuthStore } from './authStore';
 import { useUIStore } from './uiStore';
+import { resolveBootGate } from './sessionRestore';
 
 const STORED_SESSION = {
   access_token: 'stored-access-token',
@@ -443,5 +444,125 @@ describe('initialize() called again on a session this launch already confirmed',
     await rebooting;
     await flush();
     expect(useAuthStore.getState().sessionState).toBe('authenticated');
+  });
+});
+
+/**
+ * What the boot gate would render for the store's real state at each moment.
+ *
+ * The device bug this locks down: on a cold start the navigator dropped the
+ * boot screen on a 10 s timer while `initialize()` was still pending, and
+ * `user` was null in that window, so a signed-in student got the sign-in form
+ * for 25-30 s before Home appeared.
+ */
+const gateFor = (gateTimedOut = false) => {
+  const { isInitialized, user } = useAuthStore.getState();
+  return resolveBootGate({ isInitialized, hasUser: !!user, gateTimedOut });
+};
+
+describe('the boot gate never fakes a signed-out student', () => {
+  it('pending restore → splash, even past the navigator cap', async () => {
+    // The stalled path: storage itself does not answer.
+    mockReadStoredSession.mockImplementation(() => new Promise(() => {}));
+    refreshSession.mockImplementation(stalledRefresh);
+
+    const booting = useAuthStore.getState().initialize();
+    await flush();
+
+    expect(useAuthStore.getState().isInitialized).toBe(false);
+    expect(gateFor()).toBe('splash');
+    // The old 10 s escape hatch is exactly where the sign-in form used to appear.
+    jest.advanceTimersByTime(10_000);
+    await flush();
+    expect(gateFor()).toBe('splash');
+
+    void booting;
+  });
+
+  it('a stalled storage read still resolves inside the boot budget', async () => {
+    mockReadStoredSession.mockImplementation(() => new Promise(() => {}));
+    refreshSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    const booting = useAuthStore.getState().initialize();
+    await flush();
+    expect(gateFor()).toBe('splash');
+
+    // Storage budget, then the refresh answers: the store concludes on its
+    // own, so the navigator's hard cap never has to.
+    jest.advanceTimersByTime(5_001);
+    await flush();
+    await booting;
+    await flush();
+
+    expect(useAuthStore.getState().isInitialized).toBe(true);
+    expect(gateFor()).toBe('sign-in');
+  });
+
+  it('a late storage answer is adopted rather than left on the sign-in form', async () => {
+    let handOverSession!: (session: unknown) => void;
+    mockReadStoredSession.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          handOverSession = resolve;
+        })
+    );
+    refreshSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    const booting = useAuthStore.getState().initialize();
+    await flush();
+    jest.advanceTimersByTime(5_001);
+    await flush();
+    await booting;
+    await flush();
+
+    handOverSession(STORED_SESSION);
+    await flush();
+
+    expect(useAuthStore.getState().user?.id).toBe('user-1');
+    expect(useAuthStore.getState().sessionState).toBe('restoring');
+    expect(gateFor()).toBe('app');
+  });
+
+  it('resolved to no session → sign-in', async () => {
+    mockReadStoredSession.mockResolvedValue(null);
+    refreshSession.mockResolvedValue({ data: { session: null }, error: null });
+
+    await useAuthStore.getState().initialize();
+    await flush();
+
+    expect(useAuthStore.getState().sessionState).toBe('signed-out');
+    expect(gateFor()).toBe('sign-in');
+  });
+
+  it('a definitive refusal → sign-in', async () => {
+    mockReadStoredSession.mockResolvedValue(STORED_SESSION);
+    refreshSession.mockResolvedValue({
+      data: { session: null },
+      error: { name: 'AuthApiError', status: 400, code: 'invalid_grant', message: 'Invalid Refresh Token' },
+    });
+
+    await useAuthStore.getState().initialize();
+    await flush();
+
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(useAuthStore.getState().sessionState).toBe('signed-out');
+    expect(gateFor()).toBe('sign-in');
+  });
+
+  it('a refresh timeout on a cached session → the app, not the sign-in form', async () => {
+    mockReadStoredSession.mockResolvedValue(STORED_SESSION);
+    refreshSession.mockImplementation(stalledRefresh);
+
+    const booting = useAuthStore.getState().initialize();
+    await flush();
+    expect(gateFor()).toBe('app');
+
+    jest.advanceTimersByTime(8_001);
+    await booting;
+    await flush();
+
+    expect(useAuthStore.getState().sessionState).toBe('restoring');
+    // Even with the navigator's last-resort cap fired.
+    expect(gateFor(true)).toBe('app');
   });
 });

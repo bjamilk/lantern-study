@@ -3,6 +3,7 @@ import {
   courseWorkspaceLabel,
   isCalendarNote,
   isLectureNote,
+  formatStudySetCardCounts,
   materialsForStudySet,
   studySetLabel,
   STUDY_SET_TILE,
@@ -103,10 +104,11 @@ export const HomeStudySets: React.FC<HomeStudySetsProps> = ({
                   {studySetLabel(set)}
                 </p>
                 <p className="mt-1 text-caption text-lantern-text-secondary">
-                  {setNotes.length} materials
-                  {lectures ? ` / ${lectures} lectures` : ''}
-                  {setNotes.length ? ` / ${setNotes.length} notes` : ''}
-                  {setDecks.length ? ` / ${setDecks.length} cards` : ''}
+                  {formatStudySetCardCounts({
+                    notes: setNotes.length,
+                    decks: setDecks.length,
+                    lectures,
+                  })}
                 </p>
                 <p className="mt-1 text-caption text-lantern-text-tertiary">
                   {set.lastStudiedAt

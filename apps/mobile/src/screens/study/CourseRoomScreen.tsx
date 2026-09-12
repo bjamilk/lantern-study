@@ -41,6 +41,7 @@ import {
   type StudySetUnit,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
+  scopedCopy,
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
@@ -318,7 +319,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           return;
         }
         if (courseDecks.length === 0) {
-          showToast('No decks in this course yet. Turn a note into cards.', 'info');
+          showToast(scopedCopy('decksEmpty', scopeNoun(studySetId, courseIdParam)), 'info');
           return;
         }
         navigation.navigate('Library', { tab: 'flashcards' });
@@ -471,7 +472,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           return { artifact: ref, resultCount: saved };
         },
       });
-      showToast(studySetId ? 'Building flashcards for this set…' : 'Building flashcards for this course…', 'info');
+      showToast(scopedCopy('buildingCards', scopeNoun(studySetId, courseIdParam)), 'info');
       return;
     }
 
@@ -498,7 +499,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         return { artifact: ref, resultCount: saved };
       },
     });
-    showToast(studySetId ? 'Building a practice test for this set…' : 'Building a practice test for this course…', 'info');
+    showToast(scopedCopy('buildingTest', scopeNoun(studySetId, courseIdParam)), 'info');
   };
 
   const selectNote = useCallback(
@@ -540,8 +541,8 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                   <T.Caption>All sets</T.Caption>
                 </Pressable>
               ) : null}
-              <Pressable onPress={() => useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label })} accessibilityRole="button" accessibilityLabel="Ask">
-                <T.Caption>Ask</T.Caption>
+              <Pressable onPress={() => useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label })} accessibilityRole="button" accessibilityLabel="Ask Lantern">
+                <T.Caption>Ask Lantern</T.Caption>
               </Pressable>
               {studySetId ? (
                 <Pressable
@@ -798,7 +799,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             {studySetId ? 'Recent materials' : `Notes${studyNotes.length ? ` · ${studyNotes.length}` : ''}`}
           </T.Caption>
           {(studySetId ? [...lectures, ...studyNotes] : studyNotes).length === 0 ? (
-            <T.Body tone="secondary">{studySetId ? 'No notes in this set yet.' : 'No notes in this course yet.'}</T.Body>
+            <T.Body tone="secondary">{`${scopedCopy('notesEmpty', scopeNoun(studySetId, courseIdParam))}.`}</T.Body>
           ) : studySetId ? (
             <View className="gap-3">
               {[...lectures, ...studyNotes].slice(0, 8).map((note) => (
@@ -1000,7 +1001,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         ) : null}
 
         <Button className="mb-3" onPress={() => setImportOpen(true)}>
-          {studySetId ? 'Import into this set' : 'Import into this course'}
+          {scopedCopy('importAction', scopeNoun(studySetId, courseIdParam))}
         </Button>
         <Button
           variant="ghost"

@@ -31,6 +31,7 @@ import {
   canAskAboutHighlight,
   highlightFromRange,
   isWalkableAttachment,
+  isLectureNote,
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -86,6 +87,7 @@ import {
   useLectureRecordingStore,
 } from '../../stores/lectureRecordingStore';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
+import { LectureTabs } from '../../components/lecture/LectureTabs';
 import { recordCardBlockedReason } from '../../components/lecture/lectureStatusCopy';
 import { shouldDeleteDoorNoteOnDiscard } from '../study/recorderDoor';
 import * as ImagePicker from 'expo-image-picker';
@@ -269,6 +271,15 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const isYoutubeNote =
     selectedNote?.sourceType === 'youtube' || Boolean(selectedNote?.youtubeVideoId);
   const isPhotoNote = selectedNote?.sourceType === 'photos';
+  /**
+   * A lecture is four things at once, and this screen is the door the Library
+   * opens. Until Wave 3 it showed the stored body as one scroll — the
+   * transcript dumped under the typed notes, no Enhanced tab, and the recording
+   * with nowhere to live — while the same note opened from a set room got the
+   * full surface. Same predicate, same planner, same component now; Edit still
+   * opens the raw body so nothing the student typed is unreachable.
+   */
+  const isLectureSurface = Boolean(selectedNote && isLectureNote(selectedNote));
   const youtubeAttachment = useMemo(
     () => selectedNote?.attachments?.find((a) => a.type === 'youtube'),
     [selectedNote?.attachments]
@@ -1734,6 +1745,29 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               />
               )}
             </>
+          ) : reading && isLectureSurface ? (
+            <View className="mb-4">
+              <LectureTabs
+                noteId={noteId}
+                source={{ body, attachments: selectedNote?.attachments ?? [] }}
+                renderNotes={({ typed }) => (
+                  <Pressable
+                    onPress={canEdit ? () => setMode('edit') : undefined}
+                    accessibilityRole={canEdit ? 'button' : undefined}
+                    accessibilityLabel="Note body"
+                  >
+                    <NoteBody
+                      body={typed}
+                      emptyLine={
+                        canEdit
+                          ? 'You typed nothing during this lecture. Tap to add notes.'
+                          : 'No notes of their own here.'
+                      }
+                    />
+                  </Pressable>
+                )}
+              />
+            </View>
           ) : reading ? (
             /* The reading view for a plain note: the shared block renderer the
                studios use, so a heading is a heading and a table is a table.

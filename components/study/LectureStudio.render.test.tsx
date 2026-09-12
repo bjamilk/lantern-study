@@ -1,5 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  SMART_NOTES_END,
+  SMART_NOTES_HEADING,
+  SMART_NOTES_START,
+} from '@lantern/shared/utils/smartNotes';
+import { LectureStudio } from './LectureStudio';
 import { NoteReadingView } from './NoteReadingView';
 
 /** The reading state the lecture studio's "My notes" pane opens in. */
@@ -32,5 +38,142 @@ describe('LectureStudio reading view', () => {
     // to be: 17 over a 15 body reads flat on a phone. See NoteReadingView.
     expect(html).toMatch(/<h2 class="text-title font-display font-semibold[^"]*">After class<\/h2>/);
     expect(visibleText(html)).not.toContain('#');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The tab row: a note shows exactly the surfaces it actually has.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `vi.mock` factories are hoisted above every import, so each one builds its
+ * own selector-shaped stand-in rather than sharing a helper from this file —
+ * a shared const is not initialised yet when the factory runs.
+ */
+function selectable(state: Record<string, unknown>) {
+  const hook = (selector?: (s: Record<string, unknown>) => unknown) =>
+    selector ? selector(state) : state;
+  hook.getState = () => state;
+  return hook;
+}
+
+vi.mock('../../stores/notesStore', () => ({
+  useNotesStore: selectable({ saveNote: vi.fn(), createNote: vi.fn(), removeNote: vi.fn() }),
+}));
+vi.mock('../../stores/companionStore', () => ({
+  useCompanionStore: selectable({ openWithMessage: vi.fn(), setActiveNoteContext: vi.fn() }),
+}));
+vi.mock('../../stores/toastStore', () => ({
+  useToastStore: selectable({ showToast: vi.fn() }),
+}));
+vi.mock('../../stores/lectureRecordingStore', () => ({
+  useLectureRecordingStore: selectable({
+    status: 'idle',
+    noteId: null,
+    startedAt: null,
+    pausedAt: null,
+    pausedTotalMs: 0,
+    tick: 0,
+    committedTranscript: '',
+    interimTranscript: '',
+    whisperTranscript: '',
+    start: vi.fn(),
+    stopAndTranscribe: vi.fn(),
+    pauseRecording: vi.fn(),
+    resumeRecording: vi.fn(),
+    discard: vi.fn(),
+    cancelTranscription: vi.fn(),
+    setCurrentBodyProvider: vi.fn(),
+  }),
+  getSessionElapsedMs: () => 0,
+}));
+// The audio tab's player talks to the API to re-sign its URL; the tab row is
+// what this suite is about, so the network layer stays out of it.
+vi.mock('../../services/notes', () => ({
+  refreshNoteAttachmentUrl: vi.fn(async () => ({
+    url: 'https://example.test/a.webm',
+    expiresIn: 1,
+  })),
+}));
+
+const TRANSCRIPT = 'Enzymes lower activation energy.';
+
+const FULL_BODY = `[0:00] mine
+
+Transcript
+
+${TRANSCRIPT}
+
+${SMART_NOTES_START}
+${SMART_NOTES_HEADING}
+
+- Enzymes cut the activation barrier.
+${SMART_NOTES_END}
+`;
+
+const noteWith = (body: string, attachments: unknown[] = []) =>
+  ({
+    id: 'note-1',
+    userId: 'u1',
+    title: 'Lecture — 6 Sep',
+    body,
+    sourceType: 'audio',
+    createdAt: '2026-09-06T00:00:00.000Z',
+    updatedAt: '2026-09-06T00:00:00.000Z',
+    attachments,
+  }) as never;
+
+const tabNames = (html: string) =>
+  Array.from(html.matchAll(/role="tab"[^>]*>([^<]*)</g)).map((match) => match[1]);
+
+describe('LectureStudio tab row', () => {
+  const renderStudio = (note: unknown) =>
+    render(
+      <LectureStudio
+        courseId="course-1"
+        theme="light"
+        note={note as never}
+        lectures={note ? [note as never] : []}
+        onTurnInto={() => undefined}
+        onSmartNote={async () => undefined}
+        onNoteReady={async () => undefined}
+      />
+    );
+
+  it('shows all four tabs for a note that has all four sources', () => {
+    const html = renderStudio(
+      noteWith(FULL_BODY, [
+        {
+          id: 'att-1',
+          type: 'audio',
+          fileUrl: 'https://example.test/lecture.webm',
+          fileName: 'lecture.webm',
+          extractedText: TRANSCRIPT,
+        },
+      ])
+    );
+    expect(tabNames(html)).toEqual(['My Notes', 'Enhanced Notes', 'Transcript', 'Audio']);
+    // Enhanced notes exist, so that is the tab the studio opens on.
+    expect(html).toMatch(/aria-selected="true"[^>]*>Enhanced Notes</);
+  });
+
+  it('shows only My Notes for a bare note', () => {
+    const html = renderStudio(noteWith('Just what I typed in class.'));
+    expect(tabNames(html)).toEqual(['My Notes']);
+    expect(html).toMatch(/aria-selected="true"[^>]*>My Notes</);
+    // No transcript, no recording, no generated notes — so no tab claims one.
+    // (Checked on the tab row, not the page: "Audio recap" is a Turn into target.)
+    expect(tabNames(html)).not.toContain('Audio');
+    expect(tabNames(html)).not.toContain('Transcript');
+    expect(visibleText(html)).not.toContain('Enhanced Notes');
+  });
+
+  it('keeps the generated section out of the transcript tab', () => {
+    const html = renderStudio(noteWith(FULL_BODY));
+    expect(tabNames(html)).toEqual(['My Notes', 'Enhanced Notes', 'Transcript']);
+    // The Enhanced panel is the open one and carries the generated bullet;
+    // the sentinel comments never reach the screen.
+    expect(visibleText(html)).toContain('Enzymes cut the activation barrier.');
+    expect(html).not.toContain('lantern:smart-notes');
   });
 });

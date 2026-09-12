@@ -1,5 +1,6 @@
 import React from 'react';
 import { primaryHomeAction, resumeGreeting, studySetLabel } from '@lantern/shared';
+import { pluralize } from '@lantern/shared/utils/plural';
 import { Button } from '../ui';
 import type { TestSessionData, StudySessionData } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
@@ -54,7 +55,7 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
         </h1>
         <p className="text-lantern-text-secondary mt-1.5 text-body leading-relaxed">
           {dueCardsCount > 0
-            ? `${dueCardsCount} card${dueCardsCount !== 1 ? 's' : ''} ready to review.`
+            ? `${pluralize(dueCardsCount, 'card')} ready to review.`
             : resumeLine}
         </p>
       </div>

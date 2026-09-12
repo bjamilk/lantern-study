@@ -184,3 +184,80 @@ describe('companion send failures stay visible', () => {
     expect(state.error).toBe('Network error');
   });
 });
+
+/**
+ * The streaming reducer itself.
+ *
+ * The parity brief suspected the web store only rendered at the `done` frame
+ * (which is what the mobile store did before its own fix). It does not — it has
+ * appended per token all along — so this suite pins that behaviour down rather
+ * than changing it: the panel's caret, and the whole point of streaming, rest
+ * on each token being visible in the thread the moment it lands.
+ */
+describe('companion streaming reducer', () => {
+  const streamWith = async (
+    drive: (
+      onToken: (t: string) => void,
+      onDone: (r: {
+        actions: unknown[];
+        citations: unknown;
+        messageId?: string;
+        userMessageId?: string;
+        conversationId?: string;
+      }) => void
+    ) => void | Promise<void>
+  ) => {
+    const { companionSendMessageStream } = await import('../services/ai');
+    (companionSendMessageStream as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (
+        _text: string,
+        _ctx: unknown,
+        onToken: (t: string) => void,
+        onDone: (r: any) => void
+      ) => {
+        await drive(onToken, onDone);
+      }
+    );
+    await useCompanionStore.getState().sendMessageStreaming('Explain osmosis');
+  };
+
+  it('appends each token to the open answer as it arrives', async () => {
+    const seen: string[] = [];
+    await streamWith((onToken, onDone) => {
+      for (const token of ['Osmosis ', 'is ', 'diffusion']) {
+        onToken(token);
+        const msgs = useCompanionStore.getState().messages;
+        // Read the assistant bubble mid-stream: it must already be growing,
+        // and `isStreaming` must still be true so the caret is drawn.
+        seen.push(msgs[msgs.length - 1].content);
+        expect(useCompanionStore.getState().isStreaming).toBe(true);
+      }
+      onDone({ actions: [], citations: null });
+    });
+
+    expect(seen).toEqual(['Osmosis ', 'Osmosis is ', 'Osmosis is diffusion']);
+  });
+
+  it('finalises on the done frame: real ids, no duplicate bubble, caret gone', async () => {
+    await streamWith((onToken, onDone) => {
+      onToken('Osmosis is diffusion');
+      onDone({
+        actions: [],
+        citations: null,
+        messageId: '11111111-2222-4333-8444-555555555555',
+        userMessageId: '66666666-7777-4888-8999-aaaaaaaaaaaa',
+        conversationId: 'conv-9',
+      });
+    });
+
+    const state = useCompanionStore.getState();
+    // One question, one answer — the done frame REPLACES the optimistic
+    // bubble's id rather than appending a second copy of the same answer.
+    expect(state.messages).toHaveLength(2);
+    expect(state.messages[0].id).toBe('66666666-7777-4888-8999-aaaaaaaaaaaa');
+    expect(state.messages[1].id).toBe('11111111-2222-4333-8444-555555555555');
+    expect(state.messages[1].content).toBe('Osmosis is diffusion');
+    expect(state.isStreaming).toBe(false);
+    expect(state.activeConversationId).toBe('conv-9');
+  });
+});

@@ -91,6 +91,19 @@ export interface UpcomingExam {
   studySetId?: string;
 }
 
+/**
+ * What Home's Upcoming card and the set room's exam list should call an exam.
+ *
+ * A generated plan note is titled `Plan — <set>` (`newCalendarNoteTitle`), and
+ * that whole title was being rendered as the exam name, so Home read
+ * "Plan — PHARM 212 · 2026-09-30". The exam is not the plan; name the set.
+ */
+export function examTitleFromNote(title: string | null | undefined): string {
+  const trimmed = (title || '').trim();
+  const named = trimmed.replace(/^(?:Plan|Lesson|Recap|Essay)\s+[—-]\s+/, '').trim();
+  return named || trimmed || 'Exam';
+}
+
 export function upcomingExamsFromNotes(
   notes: readonly { title?: string | null; body?: string | null; studySetId?: string | null }[],
   today = todayDateOnlyLocal()
@@ -102,7 +115,7 @@ export function upcomingExamsFromNotes(
       return [
         {
           examDate: plan.examDate,
-          title: (note.title || '').trim() || 'Exam',
+          title: examTitleFromNote(note.title),
           studySetId: note.studySetId || undefined,
         },
       ];

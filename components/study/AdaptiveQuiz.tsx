@@ -23,9 +23,128 @@ import { AI_CREDIT_COSTS, formatCreditCost } from '@lantern/shared/utils/aiCredi
 import type { StudyNote } from '../../types';
 import { Button } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
-import { getNoteQuiz } from '../../services/notes';
+import { getNoteQuiz, updateNoteQuiz } from '../../services/notes';
 import { fetchTestSessionById } from '../../services/supabase';
 import { useCompanionStore } from '../../stores/companionStore';
+
+/**
+ * Where a half-finished adaptive session lives between page loads.
+ *
+ * The session was `useState` and nothing else: a reload — a deploy, a crash, a
+ * stray ⌘R — threw away a twenty-question attempt, with the mastery it had
+ * earned, and dropped the student back on "Write questions". There is no
+ * server endpoint that stores an adaptive session, but the note's quiz row
+ * already has an `answers` map that PATCH writes verbatim, so the progress
+ * rides in it under a reserved key alongside the per-question answers.
+ *
+ * The key is prefixed so it can never collide with a question id, and the
+ * whole blob is discarded rather than half-applied if the note's questions
+ * have changed underneath it — resuming into a pool that no longer matches
+ * would show the student a question they never saw at a mastery they never
+ * earned.
+ */
+export const ADAPTIVE_PROGRESS_KEY = '__adaptive_progress_v1';
+
+interface AdaptiveProgress {
+  v: 1;
+  /** The pool this progress was taken against; a mismatch invalidates it. */
+  itemIds: string[];
+  queue: string[];
+  cursor: number;
+  phase: AdaptiveQuizSession['phase'];
+  draft: string;
+  lockedAnswer: string;
+  lastGrade: AdaptiveQuizSession['lastGrade'];
+  attempts: AdaptiveQuizSession['attempts'];
+  consecutiveMisses: number;
+}
+
+/**
+ * The `answers` map to PATCH for this session.
+ *
+ * Graded answers are written under their own question ids too, so the row
+ * stays readable to anything that already understands a quiz's answers; the
+ * reserved key carries the parts a plain answer map cannot express — queue
+ * order, cursor, phase and confidence.
+ */
+export function encodeAdaptiveProgress(
+  session: AdaptiveQuizSession
+): Record<string, string> {
+  const answers: Record<string, string> = {};
+  for (const attempt of session.attempts) {
+    answers[attempt.itemId] = attempt.answer;
+  }
+  const progress: AdaptiveProgress = {
+    v: 1,
+    itemIds: session.items.map((item) => item.id),
+    queue: session.queue,
+    cursor: session.cursor,
+    phase: session.phase,
+    draft: session.draft,
+    lockedAnswer: session.lockedAnswer,
+    lastGrade: session.lastGrade,
+    attempts: session.attempts,
+    consecutiveMisses: session.consecutiveMisses,
+  };
+  answers[ADAPTIVE_PROGRESS_KEY] = JSON.stringify(progress);
+  return answers;
+}
+
+/**
+ * Rebuild a session from a stored answers map, or null when there is nothing
+ * trustworthy to resume.
+ *
+ * `items` come from the freshly loaded pool rather than from storage, so the
+ * stems and options a resumed session shows are always the current ones.
+ */
+export function decodeAdaptiveProgress(
+  answers: Record<string, string> | null | undefined,
+  items: AdaptiveQuizItem[]
+): AdaptiveQuizSession | null {
+  const raw = answers?.[ADAPTIVE_PROGRESS_KEY];
+  if (!raw || items.length === 0) return null;
+
+  let parsed: AdaptiveProgress;
+  try {
+    parsed = JSON.parse(raw) as AdaptiveProgress;
+  } catch {
+    return null;
+  }
+
+  if (!parsed || parsed.v !== 1) return null;
+  if (!Array.isArray(parsed.itemIds) || !Array.isArray(parsed.queue)) return null;
+  if (!Array.isArray(parsed.attempts)) return null;
+
+  // The pool must be the same pool, in the same order. Regenerated questions
+  // mean the stored cursor points at something else entirely.
+  const poolIds = items.map((item) => item.id);
+  if (parsed.itemIds.length !== poolIds.length) return null;
+  if (parsed.itemIds.some((id, index) => id !== poolIds[index])) return null;
+
+  const known = new Set(poolIds);
+  if (parsed.queue.length === 0 || parsed.queue.some((id) => !known.has(id))) return null;
+  if (parsed.attempts.some((attempt) => !known.has(attempt.itemId))) return null;
+
+  if (typeof parsed.cursor !== 'number' || parsed.cursor < 0) return null;
+  if (parsed.cursor >= parsed.queue.length && parsed.phase !== 'done') return null;
+
+  // A finished quiz is not something to resume into; the student gets a fresh
+  // one, which is what the "Quiz again" button would have given them anyway.
+  if (parsed.phase === 'done') return null;
+
+  return {
+    items,
+    queue: parsed.queue,
+    cursor: parsed.cursor,
+    phase: parsed.phase,
+    draft: typeof parsed.draft === 'string' ? parsed.draft : '',
+    lockedAnswer: typeof parsed.lockedAnswer === 'string' ? parsed.lockedAnswer : '',
+    lastGrade: parsed.lastGrade ?? null,
+    attempts: parsed.attempts,
+    consecutiveMisses:
+      typeof parsed.consecutiveMisses === 'number' ? parsed.consecutiveMisses : 0,
+  };
+}
 
 interface AdaptiveQuizProps {
   courseId: string;
@@ -82,6 +201,16 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const completedRef = useRef(false);
+  /**
+   * The note whose quiz row this session may be written back to.
+   *
+   * Set ONLY when the questions came from that note's own quiz. A session
+   * seeded from a lesson or read out of a test session has no row of its own,
+   * and writing its progress into some unrelated note's answers would corrupt
+   * that note's quiz — so those sessions stay unpersisted rather than
+   * persisted to the wrong place.
+   */
+  const [persistNoteId, setPersistNoteId] = useState<string | null>(null);
 
   const noteOrder = useMemo(() => {
     const selected = notes.find((note) => note.id === selectedNoteId);
@@ -95,6 +224,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
       if (seedItems && seedItems.length > 0) {
         setSourceTitle('This lesson');
         setSourceNoteId(noteOrder[0]?.id ?? null);
+        setPersistNoteId(null);
         completedRef.current = false;
         setSession(startAdaptiveQuiz(seedItems));
         return;
@@ -105,8 +235,12 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
         if (items.length > 0) {
           setSourceTitle(note.title || 'Untitled note');
           setSourceNoteId(note.id);
+          setPersistNoteId(note.id);
           completedRef.current = false;
-          setSession(startAdaptiveQuiz(items));
+          // A session left half-finished before a reload resumes at the same
+          // question with the mastery it had earned; anything that no longer
+          // matches the pool starts clean.
+          setSession(decodeAdaptiveProgress(quiz?.answers, items) ?? startAdaptiveQuiz(items));
           return;
         }
       }
@@ -127,6 +261,7 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
               ? row.session.config.sourceNoteId
               : noteOrder[0]?.id ?? null
           );
+          setPersistNoteId(null);
           completedRef.current = false;
           setSession(startAdaptiveQuiz(items));
           return;
@@ -157,12 +292,34 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
       const note = notes.find((row) => row.id === noteId);
       setSourceTitle(note?.title || 'Untitled note');
       setSourceNoteId(noteId);
+      setPersistNoteId(noteId);
       completedRef.current = false;
       setSession(startAdaptiveQuiz(items));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write questions.');
     }
   };
+
+  /**
+   * Write the session back, best effort.
+   *
+   * Fire-and-forget on purpose: a failed save must never block the student's
+   * next question or raise an error over a quiz that is working. The cost of
+   * losing one write is one question's worth of progress, because the next
+   * rating writes the whole session again.
+   */
+  const persistSession = useCallback(
+    (next: AdaptiveQuizSession) => {
+      if (!persistNoteId) return;
+      void updateNoteQuiz(persistNoteId, {
+        answers: encodeAdaptiveProgress(next),
+        completed: next.phase === 'done',
+      }).catch(() => {
+        /* the next rating writes it again */
+      });
+    },
+    [persistNoteId]
+  );
 
   useEffect(() => {
     if (!session || session.phase !== 'done' || completedRef.current) return;
@@ -321,9 +478,14 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
                     <button
                       key={choice.id}
                       type="button"
-                      onClick={() =>
-                        setSession(rateAdaptiveConfidence(session, choice.id as AdaptiveConfidence))
-                      }
+                      onClick={() => {
+                        const next = rateAdaptiveConfidence(
+                          session,
+                          choice.id as AdaptiveConfidence
+                        );
+                        setSession(next);
+                        persistSession(next);
+                      }}
                       className="min-h-[44px] rounded-full border border-lantern-border bg-lantern-surface px-3 text-body text-lantern-text hover:border-lantern-text-tertiary"
                     >
                       {choice.label}
@@ -360,7 +522,17 @@ export const AdaptiveQuiz: React.FC<AdaptiveQuizProps> = ({
             ) : null}
 
             {session.phase === 'feedback' ? (
-              <Button onClick={() => setSession(advanceAdaptiveQuiz(session))}>Next</Button>
+              <Button
+                onClick={() => {
+                  const next = advanceAdaptiveQuiz(session);
+                  setSession(next);
+                  // Advancing off the last question is what makes the quiz
+                  // done; without this write the row never records that.
+                  persistSession(next);
+                }}
+              >
+                Next
+              </Button>
             ) : null}
 
             {session.phase === 'paused' ? (

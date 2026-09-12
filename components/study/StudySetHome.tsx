@@ -151,8 +151,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
         <section>
           <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
             <Headline accent="study plan" feature="ai">
-            Recommended from your study plan
-          </Headline>
+              Recommended from your study plan
+            </Headline>
             {onOpenPlan ? (
               <button
                 type="button"
@@ -281,9 +281,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
       {exams.length > 0 ? (
         <section>
-          <Headline accent="Exam" feature="tests" className="mb-4">
-            Exam dates
-          </Headline>
+          <h2 className="text-title text-lantern-text mb-4">Exam dates</h2>
           {exams.map((exam) => (
             <button
               key={`${exam.examDate}-${exam.title}`}

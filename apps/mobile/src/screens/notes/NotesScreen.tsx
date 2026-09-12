@@ -54,7 +54,8 @@ import { courseHasTopics, getMyActiveCourses } from '../../services/academic';
 import { useUIStore } from '../../stores/uiStore';
 import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import type { Course, CourseTopic } from '@lantern/shared/types';
-import { COURSE_TOPIC_COPY } from '@lantern/shared';
+import { COURSE_TOPIC_COPY, isLectureNote } from '@lantern/shared';
+import { toTab } from '../../navigation/nestedTab';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -704,6 +705,32 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  /**
+   * Which door a note row opens.
+   *
+   * A lecture is not a body of text — it is typed notes, enhanced notes, a
+   * transcript and a recording. Opening one in the plain editor showed the
+   * transcript dumped into the note and hid the audio entirely (build 192).
+   * A lecture that belongs to a set or course goes to the studio, which can
+   * also resume the take; a loose one goes to the editor, which now renders
+   * the same tabs. Nested navigates use `toTab` so the Study tab keeps its
+   * own root underneath (navigation/nestedTab.ts).
+   */
+  const openNoteRow = (note: StudyNote) => {
+    if (isLectureNote(note) && (note.studySetId || note.courseId)) {
+      navigation.navigate(
+        'StudyTab',
+        toTab('LectureStudio', {
+          noteId: note.id,
+          ...(note.courseId ? { courseId: note.courseId } : {}),
+          ...(note.studySetId ? { studySetId: note.studySetId } : {}),
+        })
+      );
+      return;
+    }
+    navigation.navigate('NoteEditor', { noteId: note.id });
   };
 
   const handleCreateNote = async () => {
@@ -1543,7 +1570,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                     if (manageable) toggleNoteSelected(item.id);
                     return;
                   }
-                  navigation.navigate('NoteEditor', { noteId: item.id });
+                  openNoteRow(item);
                 }}
                 onLongPress={manageable || isSharedNote(item) ? () => handleNoteOptions(item) : undefined}
               />

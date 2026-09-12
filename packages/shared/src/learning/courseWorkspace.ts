@@ -8,6 +8,7 @@
  */
 import type { FeatureKey } from '../design';
 import { AI_CREDIT_COSTS, AI_FEATURE_CREDIT_COST, formatCreditCost } from '../utils/aiCredits';
+import { pluralize } from '../utils/plural';
 
 /** AppIcon names that exist on both web and mobile maps. */
 export type WorkspaceIconName =
@@ -117,7 +118,10 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
   },
   {
     id: 'lesson',
-    label: 'Lesson',
+    // The door is named for the feature (Tutor); the thing it produces is a
+    // lesson. Home, the set room and the studio header all say Tutor now, so a
+    // student never meets three names for one activity.
+    label: 'Tutor',
     promise: 'Structured tutor session with a plan you can skip or master',
     icon: 'school',
     feature: 'ai',
@@ -285,12 +289,9 @@ export function formatCourseMaterialCounts(counts: {
   if (notes === 0 && decks === 0 && tests === 0) {
     return 'No materials yet — import or open to add some';
   }
-  const parts = [
-    `${notes} ${notes === 1 ? 'note' : 'notes'}`,
-    `${decks} ${decks === 1 ? 'deck' : 'decks'}`,
-  ];
+  const parts = [pluralize(notes, 'note'), pluralize(decks, 'deck')];
   if (tests > 0) {
-    parts.push(`${tests} ${tests === 1 ? 'test' : 'tests'}`);
+    parts.push(pluralize(tests, 'test'));
   }
   return parts.join(' · ');
 }
@@ -373,4 +374,65 @@ export function workspaceActivityPromise(
 ): string {
   const scoped = SCOPED_ACTIVITY_PROMISES[activity];
   return scoped ? scoped(scope) : promise;
+}
+
+/**
+ * The counts line under a study set card, on Home and in the Study hub.
+ *
+ * Both screens hand-rolled the same template literal and both got it wrong the
+ * same way: "1 materials" was unguarded, the note count was printed twice
+ * (once as "materials", once as "notes"), and a count of DECKS was labelled
+ * "cards" — so three decks holding two hundred flashcards read "3 cards".
+ * One formatter, so the card says what it counts.
+ */
+export function formatStudySetCardCounts(counts: {
+  notes: number;
+  decks: number;
+  lectures?: number;
+}): string {
+  const notes = Math.max(0, counts.notes ?? 0);
+  const decks = Math.max(0, counts.decks ?? 0);
+  const lectures = Math.max(0, counts.lectures ?? 0);
+  if (notes === 0 && decks === 0) return 'No materials yet';
+  const parts: string[] = [];
+  if (notes > 0) parts.push(pluralize(notes, 'note'));
+  if (lectures > 0) parts.push(pluralize(lectures, 'lecture'));
+  if (decks > 0) parts.push(pluralize(decks, 'deck'));
+  return parts.join(' · ');
+}
+
+/**
+ * Copy that names the container the student is standing in.
+ *
+ * Every one of these lines existed twice — once saying "course", once saying
+ * "set" — behind a `studySetId ? … : …` ternary at the call site, or worse,
+ * only in the course wording on a screen a set can open. The scope is decided
+ * once by `scopeNoun`, and the call site asks for a key.
+ *
+ * Copy that is genuinely course-only (enrolment, the lecturer, a class code,
+ * a shared syllabus outline) is NOT in this table: a set has no lecturer, so
+ * that wording stays where it is rather than being made scope-aware.
+ */
+const SCOPED_COPY = {
+  notesEmpty: (s: WorkspaceScope) => `No notes in this ${s} yet`,
+  testsEmpty: (s: WorkspaceScope) => `No tests from this ${s} yet`,
+  decksEmpty: (s: WorkspaceScope) => `No decks in this ${s} yet. Turn a note into cards.`,
+  importAction: (s: WorkspaceScope) => `Import into this ${s}`,
+  testsFromDecks: (s: WorkspaceScope) =>
+    `Turn a note into a practice test, or build one from this ${s}’s decks.`,
+  buildingCards: (s: WorkspaceScope) => `Building flashcards for this ${s}…`,
+  buildingTest: (s: WorkspaceScope) => `Building a practice test for this ${s}…`,
+  lessonSourceEmpty: (s: WorkspaceScope) =>
+    `Import or write a note in this ${s} first. The lesson is built from that material.`,
+  recapSourceEmpty: (s: WorkspaceScope) =>
+    `Import or write a note in this ${s} first. The recap is built from that material.`,
+  essayPhotoImport: (s: WorkspaceScope) =>
+    `Import the photo as a note in this ${s}, then load it here.`,
+} as const;
+
+export type ScopedCopyKey = keyof typeof SCOPED_COPY;
+
+/** One scope-aware line. A set says "set"; a course says "course". */
+export function scopedCopy(key: ScopedCopyKey, scope: WorkspaceScope = 'course'): string {
+  return SCOPED_COPY[key](scope);
 }

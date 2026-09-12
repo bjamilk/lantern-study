@@ -11,17 +11,27 @@ import {
   formatLectureClock,
   hasEnoughNoteStudyContent,
   latestLectureTranscript,
+  lectureAudioAttachment,
+  lectureNoteParts,
   lectureStudioPriceLine,
+  lectureTabs,
+  lectureTranscriptLines,
   newLectureNoteTitle,
   preferLectureTranscript,
   studySetNotePayload,
   resolveLectureStudioNote,
+  resolveLectureTab,
   shouldCreateLectureNote,
   shouldDeleteDoorNoteOnDiscard,
-  splitLectureNoteBody,
+  type LectureAttachmentLike,
+  type LectureTabId,
   type TurnIntoTargetId,
 } from '@lantern/shared';
-import type { SmartNotesDepth, SmartNotesRequestOptions } from '@lantern/shared/utils/smartNotes';
+import {
+  upsertSmartNotesSection,
+  type SmartNotesDepth,
+  type SmartNotesRequestOptions,
+} from '@lantern/shared/utils/smartNotes';
 import {
   SMART_NOTES_CREDIT_COST,
   formatCreditCost,
@@ -31,8 +41,10 @@ import type { StudyNote } from '../../types';
 import { Button } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
+import { Tab, TabList, TabPanel, Tabs } from '../ui/Tabs';
 import { TurnIntoMenu } from './TurnIntoMenu';
 import { NoteReadingView } from './NoteReadingView';
+import { LectureAudioPlayer } from './LectureAudioPlayer';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -45,8 +57,8 @@ interface LectureStudioProps {
   courseId: string;
   studySetId?: string;
   theme: 'light' | 'dark';
-  note: (StudyNote & { attachments?: Array<{ extractedText?: string | null }> }) | null;
-  lectures: Array<StudyNote & { attachments?: Array<{ extractedText?: string | null }> }>;
+  note: (StudyNote & { attachments?: LectureAttachmentLike[] }) | null;
+  lectures: Array<StudyNote & { attachments?: LectureAttachmentLike[] }>;
   turning?: boolean;
   /** Targets already made from a note, so the menu can tick them. */
   turnIntoExisting?: (noteId: string) => Partial<Record<TurnIntoTargetId, boolean>>;
@@ -125,6 +137,8 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
    * class is the whole point of this pane.
    */
   const [editingNotes, setEditingNotes] = useState(false);
+  /** null = follow the default rule; a value = the student picked that tab. */
+  const [requestedTab, setRequestedTab] = useState<LectureTabId | null>(null);
   const [starting, setStarting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
@@ -134,7 +148,17 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   notesRef.current = notesBody;
 
   const knownTranscript = whisperTranscript || latestLectureTranscript(activeNote?.attachments);
-  const savedTranscript = splitLectureNoteBody(activeNote?.body || '', knownTranscript).transcript;
+  /**
+   * The stored body, split into the three texts the tabs show. Reading the
+   * typed notes through the planner (rather than `splitLectureNoteBody` alone)
+   * is what keeps the generated Smart Notes block — which is appended to the
+   * END of the body, after the transcript — out of the editable textarea.
+   */
+  const storedParts = lectureNoteParts({
+    body: activeNote?.body ?? '',
+    attachments: activeNote?.attachments ?? [],
+  });
+  const savedTranscript = preferLectureTranscript(storedParts.transcript, knownTranscript);
   const persistableTranscript = preferLectureTranscript(
     savedTranscript,
     displayLectureTranscript({
@@ -156,8 +180,20 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
       return;
     }
     setTitle(activeNote.title || '');
-    setNotesBody(splitLectureNoteBody(activeNote.body || '', knownTranscript).typed);
+    setNotesBody(storedParts.typed);
   }, [activeNote?.id, activeNote?.title, activeNote?.body, knownTranscript, decision]);
+
+  /**
+   * Put the body back together for a save. The typed notes no longer carry the
+   * generated section, so every write has to re-attach it — otherwise the first
+   * autosave after enhancing would silently delete the enhanced notes.
+   */
+  const enhancedRef = useRef('');
+  enhancedRef.current = storedParts.enhanced;
+  const composeBody = useCallback((typed: string, transcript: string) => {
+    const base = composeLectureNoteBody(typed, transcript);
+    return enhancedRef.current ? upsertSmartNotesSection(base, enhancedRef.current) : base;
+  }, []);
 
   const scheduleSave = useCallback(() => {
     if (!activeNote) return;
@@ -165,10 +201,10 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     saveTimer.current = setTimeout(() => {
       void saveNote(activeNote.id, {
         title: titleRef.current,
-        body: composeLectureNoteBody(notesRef.current, persistableTranscript),
+        body: composeBody(notesRef.current, persistableTranscript),
       }).catch(() => undefined);
     }, 700);
-  }, [activeNote, persistableTranscript, saveNote]);
+  }, [activeNote, composeBody, persistableTranscript, saveNote]);
 
   const flushNote = useCallback(() => {
     if (!activeNote) return;
@@ -176,16 +212,13 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    const transcript = preferLectureTranscript(
-      splitLectureNoteBody(activeNote.body || '', knownTranscript).transcript,
-      persistableTranscript
-    );
+    const transcript = preferLectureTranscript(savedTranscript, persistableTranscript);
     if (!notesRef.current.trim() && !transcript.trim()) return;
     void saveNote(activeNote.id, {
       title: titleRef.current,
-      body: composeLectureNoteBody(notesRef.current, transcript),
+      body: composeBody(notesRef.current, transcript),
     }).catch(() => undefined);
-  }, [activeNote, knownTranscript, persistableTranscript, saveNote]);
+  }, [activeNote, composeBody, savedTranscript, persistableTranscript, saveNote]);
 
   const flushNoteRef = useRef(flushNote);
   flushNoteRef.current = flushNote;
@@ -334,8 +367,16 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     }
     setWriting(true);
     try {
-      await saveNote(activeNote.id, snapshot);
-      await onSmartNote(snapshot, { depth });
+      // Save the WHOLE lecture, not the typed half. `snapshot.body` is only
+      // what the student typed, so writing it straight back used to delete the
+      // transcript from the note — and the transcript is the part worth
+      // summarizing in the first place.
+      const full = {
+        title: snapshot.title,
+        body: composeBody(snapshot.body, persistableTranscript),
+      };
+      await saveNote(activeNote.id, full);
+      await onSmartNote(full, { depth });
       showToast('Enhanced notes saved on this lecture.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not enhance notes.', 'error');
@@ -345,8 +386,66 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   };
 
   const writeCost = formatCreditCost(getSmartNotesCreditCost(depth));
-  const showConsent = !consented && status === 'idle';
   const canEnhance = status === 'idle' || busy;
+
+  const tabSource = {
+    body: activeNote?.body ?? '',
+    attachments: activeNote?.attachments ?? [],
+    liveTranscript,
+  };
+  const tabs = lectureTabs(tabSource);
+  const tab = resolveLectureTab(tabSource, requestedTab, { recording });
+  const transcriptLines = lectureTranscriptLines(
+    preferLectureTranscript(storedParts.transcript, liveTranscript)
+  );
+  const audioRow = lectureAudioAttachment(tabSource);
+  const hasEnhancedTab = tabs.some((row) => row.id === 'enhanced');
+
+  /**
+   * The consent gate is a door, not a wall. It used to cover the whole pane
+   * whenever nothing was recording, so opening a lecture you took last week —
+   * with its notes, its transcript and its audio all saved — asked "Start a
+   * lecture?" and showed you none of them. It now only stands in front of a
+   * lecture that has nothing to read yet; an existing one opens on its tabs and
+   * carries the consent line as a slim bar above them instead.
+   */
+  const hasSomethingToShow = tabs.length > 1 || storedParts.typed.trim().length > 0;
+  const showConsent = !consented && status === 'idle' && !hasSomethingToShow;
+
+  /**
+   * One node, two homes: the depth picker lives inside the Enhanced tab once
+   * that tab exists, and in the toolbar before it does — a lecture with no
+   * generated notes yet still has to be able to make some.
+   */
+  const enhanceControls = canEnhance ? (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-label uppercase text-lantern-text-secondary">Enhance</span>
+      <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Notes depth">
+        {NOTES_STUDIO_DEPTHS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            role="radio"
+            aria-checked={depth === option.id}
+            onClick={() => setDepth(option.id)}
+            className={`min-h-[44px] rounded-full border px-3 text-body ${
+              depth === option.id
+                ? 'border-lantern-primary bg-lantern-primary text-white'
+                : 'border-lantern-border bg-lantern-surface text-lantern-text hover:border-lantern-text-tertiary'
+            }`}
+          >
+            {option.label}
+            <span className="ml-1 text-caption font-normal opacity-80">
+              · {formatCreditCost(SMART_NOTES_CREDIT_COST[option.id])}
+            </span>
+          </button>
+        ))}
+      </div>
+      <Button size="sm" onClick={() => void enhanceNotes()} loading={writing} disabled={writing || busy}>
+        Enhance notes · {writeCost}
+      </Button>
+    </div>
+  ) : null;
 
   return (
     <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface">
@@ -427,112 +526,172 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
         </div>
       ) : (
         <>
-          {canEnhance ? (
-            <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-lantern-border px-3 py-2">
-              <span className="text-label uppercase text-lantern-text-secondary">Enhance</span>
-              <div className="flex flex-wrap gap-1" role="radiogroup" aria-label="Notes depth">
-                {NOTES_STUDIO_DEPTHS.map((option) => (
-                  <button
-                    key={option.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={depth === option.id}
-                    onClick={() => setDepth(option.id)}
-                    className={`min-h-[44px] rounded-full border px-3 text-body ${
-                      depth === option.id
-                        ? 'border-lantern-primary bg-lantern-primary text-white'
-                        : 'border-lantern-border bg-lantern-surface text-lantern-text hover:border-lantern-text-tertiary'
-                    }`}
-                  >
-                    {option.label}
-                    <span className="ml-1 text-caption font-normal opacity-80">
-                      · {formatCreditCost(SMART_NOTES_CREDIT_COST[option.id])}
-                    </span>
-                  </button>
-                ))}
-              </div>
-              <Button size="sm" onClick={() => void enhanceNotes()} loading={writing} disabled={writing || busy}>
-                Enhance notes · {writeCost}
-              </Button>
-              <TurnIntoMenu
-                disabled={turning || !activeNote}
-                existing={activeNote ? turnIntoExisting?.(activeNote.id) : undefined}
-                onSelect={onTurnInto}
-              />
+          <div className="shrink-0 flex flex-wrap items-center gap-2 border-b border-lantern-border px-3 py-2">
+            <input
+              value={title}
+              onChange={(event) => {
+                setTitle(event.target.value);
+                scheduleSave();
+              }}
+              aria-label="Lecture title"
+              className="min-w-0 flex-1 bg-transparent text-heading font-semibold text-lantern-text outline-none"
+            />
+            <TurnIntoMenu
+              disabled={turning || !activeNote}
+              existing={activeNote ? turnIntoExisting?.(activeNote.id) : undefined}
+              onSelect={onTurnInto}
+            />
+          </div>
+
+          {!consented && status === 'idle' ? (
+            <div className="shrink-0 flex flex-wrap items-center gap-3 border-b border-lantern-border px-3 py-2">
+              <label className="flex items-center gap-2 text-body">
+                <input
+                  type="checkbox"
+                  checked={agreed}
+                  onChange={(event) => {
+                    setAgreed(event.target.checked);
+                    setConsented(event.target.checked);
+                  }}
+                />
+                <span>I can record this lecture.</span>
+              </label>
+              <span className="text-caption text-lantern-text-secondary">{LECTURE_CONSENT_LINE}</span>
             </div>
           ) : null}
 
-          <div className="shrink-0 border-b border-lantern-border p-3 max-h-[40%] overflow-y-auto">
-            <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Live transcript</h2>
-            {liveTranscript ? (
-              <p className="text-body whitespace-pre-wrap">{liveTranscript}</p>
-            ) : (
-              <p className="text-body text-lantern-text-tertiary">
-                {recording
-                  ? 'Listening… captions appear in a few seconds.'
-                  : 'Captions save into this note as you go. The full Whisper transcript lands after you stop.'}
-              </p>
-            )}
-          </div>
+          {!hasEnhancedTab && enhanceControls ? (
+            <div className="shrink-0 border-b border-lantern-border px-3 py-2">{enhanceControls}</div>
+          ) : null}
 
-          <div className="flex-1 min-h-0 grid lg:grid-cols-2">
-            <div className="min-h-0 flex flex-col border-b lg:border-b-0 lg:border-r border-lantern-border p-3">
-              <div className="mb-2 flex items-center justify-between gap-2">
-                <h2 className="text-label uppercase text-lantern-text-secondary">My notes</h2>
-                <button
-                  type="button"
-                  aria-pressed={editingNotes}
-                  onClick={() => setEditingNotes((was) => !was)}
-                  className="inline-flex min-h-[44px] items-center rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary"
-                >
-                  {editingNotes ? 'Done' : 'Edit'}
-                </button>
-              </div>
-              <input
-                value={title}
-                onChange={(event) => {
-                  setTitle(event.target.value);
-                  scheduleSave();
-                }}
-                aria-label="Lecture title"
-                className="mb-2 w-full bg-transparent text-heading font-semibold text-lantern-text outline-none"
-              />
-              {editingNotes ? (
-                <textarea
-                  value={notesBody}
-                  onChange={(event) => handleNotesChange(event.target.value)}
-                  aria-label="Typed lecture notes"
-                  placeholder="Type during class. New paragraphs get a timestamp."
-                  className="flex-1 min-h-[10rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
-                />
+          {recording || busy ? (
+            <div className="shrink-0 border-b border-lantern-border p-3 max-h-[30%] overflow-y-auto">
+              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Live transcript</h2>
+              {liveTranscript ? (
+                <p className="text-body whitespace-pre-wrap">{liveTranscript}</p>
               ) : (
-                <div
-                  aria-label="Typed lecture notes"
-                  className="flex-1 min-h-[10rem] w-full overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3"
-                >
-                  <NoteReadingView
-                    body={notesBody}
-                    emptyLine="Type during class. New paragraphs get a timestamp."
-                  />
-                </div>
+                <p className="text-body text-lantern-text-tertiary">
+                  Listening… captions appear in a few seconds.
+                </p>
               )}
             </div>
+          ) : null}
 
-            <div className="min-h-0 flex flex-col p-3">
-              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Ask</h2>
-              <p className="text-caption text-lantern-text-secondary mb-2">{LECTURE_ASK_KEEP_LISTENING}</p>
+          <Tabs
+            value={tab}
+            onValueChange={(next) => setRequestedTab(next as LectureTabId)}
+            variant="segmented"
+            aria-label="Lecture"
+            className="flex-1 min-h-0 flex flex-col"
+          >
+            <TabList className="shrink-0 mx-3 mt-3 overflow-x-auto">
+              {tabs.map((row, index) => (
+                <Tab
+                  key={row.id}
+                  value={row.id}
+                  index={index}
+                  /* A take owns the pane: nothing may pull a typing student off My Notes. */
+                  disabled={recording && row.id !== 'notes'}
+                >
+                  {row.label}
+                </Tab>
+              ))}
+            </TabList>
+
+            <div className="flex-1 min-h-0 overflow-y-auto">
+              <TabPanel value="notes" className="flex h-full min-h-0 flex-col p-3">
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <h2 className="text-label uppercase text-lantern-text-secondary">My notes</h2>
+                  <button
+                    type="button"
+                    aria-pressed={editingNotes}
+                    onClick={() => setEditingNotes((was) => !was)}
+                    className="inline-flex min-h-[44px] items-center rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary"
+                  >
+                    {editingNotes ? 'Done' : 'Edit'}
+                  </button>
+                </div>
+                {editingNotes ? (
+                  <textarea
+                    value={notesBody}
+                    onChange={(event) => handleNotesChange(event.target.value)}
+                    aria-label="Typed lecture notes"
+                    placeholder="Type during class. New paragraphs get a timestamp."
+                    className="flex-1 min-h-[10rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+                  />
+                ) : (
+                  <div
+                    aria-label="Typed lecture notes"
+                    className="flex-1 min-h-[10rem] w-full overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3"
+                  >
+                    <NoteReadingView
+                      body={notesBody}
+                      emptyLine="Type during class. New paragraphs get a timestamp."
+                    />
+                  </div>
+                )}
+              </TabPanel>
+
+              <TabPanel value="enhanced" className="space-y-3 p-3">
+                <NoteReadingView
+                  body={storedParts.enhanced}
+                  emptyLine="No enhanced notes yet."
+                />
+                {enhanceControls ? (
+                  <div className="border-t border-lantern-border pt-3">{enhanceControls}</div>
+                ) : null}
+              </TabPanel>
+
+              <TabPanel value="transcript" className="p-3">
+                {transcriptLines.length ? (
+                  <ol className="space-y-2">
+                    {transcriptLines.map((line, index) => (
+                      <li key={`${line.time ?? ''}-${index}`} className="flex gap-3">
+                        {/* The gutter time is a caption; the sentence stays body prose. */}
+                        <span className="w-12 shrink-0 text-caption tabular-nums text-lantern-text-secondary">
+                          {line.time ?? ''}
+                        </span>
+                        <span className="min-w-0 text-body text-lantern-text">{line.text}</span>
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <p className="text-body text-lantern-text-tertiary">
+                    Captions save into this note as you go. The full Whisper transcript lands after
+                    you stop.
+                  </p>
+                )}
+              </TabPanel>
+
+              <TabPanel value="audio">
+                {activeNote && audioRow ? (
+                  <LectureAudioPlayer noteId={activeNote.id} attachment={audioRow} />
+                ) : (
+                  <p className="p-3 text-body text-lantern-text-tertiary">
+                    No recording is saved on this lecture yet.
+                  </p>
+                )}
+              </TabPanel>
+            </div>
+          </Tabs>
+
+          <div className="shrink-0 border-t border-lantern-border p-3">
+            <div className="mb-2 flex flex-wrap items-baseline gap-2">
+              <h2 className="text-label uppercase text-lantern-text-secondary">Ask Lantern</h2>
+              <p className="text-caption text-lantern-text-secondary">{LECTURE_ASK_KEEP_LISTENING}</p>
+            </div>
+            <div className="flex flex-wrap items-start gap-2">
               <textarea
                 value={askDraft}
                 onChange={(event) => setAskDraft(event.target.value)}
                 aria-label="Ask about the lecture"
                 placeholder={LECTURE_ASK_JUST_SAID}
-                className="min-h-[7rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+                rows={2}
+                className="min-w-0 flex-1 resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
               />
-              <div className="mt-2">
-                <Button size="sm" variant="secondary" onClick={() => void askAboutLecture()}>
-                  {LECTURE_ASK_JUST_SAID}
-                </Button>
-              </div>
+              <Button size="sm" variant="secondary" onClick={() => void askAboutLecture()}>
+                {LECTURE_ASK_JUST_SAID}
+              </Button>
             </div>
           </div>
         </>

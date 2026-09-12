@@ -127,7 +127,12 @@ export type StudyStackParamList = {
     | undefined;
   FlashcardsList: undefined;
   DeckDetail: { deckId: string; deckName?: string };
-  FlashcardReview: { deckId: string; deckName?: string };
+  /**
+   * `queueDeckIds` is the cross-deck due queue this session belongs to, in
+   * order (this deck included). Home sends it so the session can run all N
+   * cards its button counted instead of stopping after the first deck.
+   */
+  FlashcardReview: { deckId: string; deckName?: string; queueDeckIds?: string[] };
   CramSession: { deckId: string; deckName?: string; timedMinutes?: number; cardIds?: string[] };
   MatchStudy: { deckId: string; deckName?: string };
   LearnStudy: { deckId: string; deckName?: string };

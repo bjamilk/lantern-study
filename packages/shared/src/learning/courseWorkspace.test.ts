@@ -12,6 +12,8 @@ import {
   upsertWorkspaceRecent,
   scopeNoun,
   workspaceActivityPromise,
+  scopedCopy,
+  formatStudySetCardCounts,
   type WorkspaceIconName,
 } from './courseWorkspace';
 
@@ -227,5 +229,78 @@ describe('workspace icons', () => {
     expect(byId('quiz')).toBe('help-circle');
     expect(byId('test')).not.toBe(byId('quiz'));
     expect(byId('test')).not.toBe(byId('plan'));
+  });
+});
+
+describe('scopedCopy', () => {
+  it('names the container the student is actually standing in', () => {
+    expect(scopedCopy('notesEmpty', 'set')).toBe('No notes in this set yet');
+    expect(scopedCopy('notesEmpty', 'course')).toBe('No notes in this course yet');
+    expect(scopedCopy('importAction', 'set')).toBe('Import into this set');
+    expect(scopedCopy('importAction', 'course')).toBe('Import into this course');
+  });
+
+  it('defaults to the course wording, so an un-passed scope is the old behaviour', () => {
+    expect(scopedCopy('decksEmpty')).toBe(scopedCopy('decksEmpty', 'course'));
+  });
+
+  it('never leaves the other container’s noun in a line', () => {
+    const keys = [
+      'notesEmpty',
+      'testsEmpty',
+      'decksEmpty',
+      'importAction',
+      'testsFromDecks',
+      'buildingCards',
+      'buildingTest',
+      'lessonSourceEmpty',
+      'recapSourceEmpty',
+      'essayPhotoImport',
+    ] as const;
+    for (const key of keys) {
+      expect(scopedCopy(key, 'set')).not.toMatch(/\bcourse\b/);
+      expect(scopedCopy(key, 'course')).not.toMatch(/\bset\b/);
+    }
+  });
+
+  it('reads the scope off a study set id', () => {
+    expect(scopeNoun('set-1', null)).toBe('set');
+    expect(scopeNoun('  ', 'course-1')).toBe('course');
+    expect(scopeNoun(null, 'course-1')).toBe('course');
+  });
+
+  it('scopes an activity promise without touching the unscoped ones', () => {
+    expect(workspaceActivityPromise('notes', 'x', 'set')).toBe('Read and edit this set’s notes');
+    expect(workspaceActivityPromise('notes', 'x', 'course')).toBe('Read and edit this course’s notes');
+    expect(workspaceActivityPromise('plan', 'Study calendar and syllabus outline', 'set')).toBe(
+      'Study calendar and syllabus outline'
+    );
+  });
+});
+
+describe('counts', () => {
+  it('never says "1 notes" or "1 decks"', () => {
+    expect(formatCourseMaterialCounts({ notes: 1, decks: 1, tests: 1 })).toBe('1 note · 1 deck · 1 test');
+    expect(formatCourseMaterialCounts({ notes: 0, decks: 2 })).toBe('0 notes · 2 decks');
+  });
+
+  it('counts decks as decks on the set card, and drops the empty parts', () => {
+    // The Home set card said "1 materials", printed the note count twice, and
+    // labelled a count of DECKS "cards".
+    expect(formatStudySetCardCounts({ notes: 1, decks: 0 })).toBe('1 note');
+    expect(formatStudySetCardCounts({ notes: 4, decks: 3, lectures: 1 })).toBe(
+      '4 notes · 1 lecture · 3 decks'
+    );
+    expect(formatStudySetCardCounts({ notes: 0, decks: 0 })).toBe('No materials yet');
+  });
+});
+
+describe('the tutor door has one name', () => {
+  it('names the feature Tutor wherever a door is named', () => {
+    expect(WORKSPACE_ACTIVITIES.find((row) => row.id === 'lesson')?.label).toBe('Tutor');
+  });
+
+  it('still calls the artefact it produces a lesson', () => {
+    expect(TURN_INTO_TARGETS.find((row) => row.id === 'lesson')?.label).toBe('Lesson');
   });
 });

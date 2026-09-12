@@ -33,7 +33,7 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
   /**
    * Six doors, six glyphs, six hues.
    *
-   * Two faults were visible on the live grid. Tutor and Chat with Lantern both
+   * Two faults were visible on the live grid. Tutor and the companion door both
    * took the `ai` hue, so two of six tiles were the same pink; and Import and
    * Record drew a bare `Illustration`, whose only tinted shape is a small
    * ground ellipse that vanishes on a surface — those two tiles read as
@@ -52,7 +52,7 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
       ? { id: 'test', label: 'Create a quiz', icon: 'clipboard-check' as const, feature: 'tests' as const, onClick: onOpenTests }
       : null,
     onToggleCompanion
-      ? { id: 'ai', label: 'Chat with Lantern', icon: 'sparkles' as const, feature: 'ai' as const, onClick: onToggleCompanion }
+      ? { id: 'ai', label: 'Ask Lantern', icon: 'sparkles' as const, feature: 'ai' as const, onClick: onToggleCompanion }
       : null,
     onOpenTutor
       ? { id: 'tutor', label: 'Tutor', icon: 'school' as const, feature: 'campus' as const, onClick: onOpenTutor }

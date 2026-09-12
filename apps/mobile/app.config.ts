@@ -223,7 +223,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // home with a "Needs you" strip; Buy Again; order rows with status pills;
   // and the buy/sell tools that lived behind a "..." menu are all visible.
   // Shop moves to the top bar, Jobs to the profile drawer; both are pilot-only.
-  version: '1.0.49',
+  version: '1.0.50',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

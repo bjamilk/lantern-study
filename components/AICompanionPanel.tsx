@@ -20,7 +20,22 @@ import { transcribeAudioForNote } from '../services/notes';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageInline from './AIUsageInline';
 import ReactMarkdown from 'react-markdown';
+// The phone's hand-rolled bubble parser renders tables; without gfm the web
+// bubble showed the same answer's table as a row of raw pipes.
+import remarkGfm from 'remark-gfm';
 import type { MdProps } from './ui/markdownProps';
+import type { TurnIntoTargetId } from '@lantern/shared';
+import { TurnIntoMenu } from './study/TurnIntoMenu';
+import { CompanionHistory } from './companion/CompanionHistory';
+import { CompanionPrompts } from './companion/CompanionPrompts';
+import { MessageActions } from './companion/MessageActions';
+import {
+  EXPLAIN_SIMPLY_PROMPT,
+  composerKeyIntent,
+  deriveChatTitle,
+  previousUserMessage,
+} from './companion/companionScope';
+import { cancelSpeech, isSpeechSupported, speak } from './narration/speechEngine';
 
 /**
  * Compact markdown mapping for chat bubbles: the model is instructed to use
@@ -34,9 +49,36 @@ const bubbleMarkdownComponents = {
   ul: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLUListElement>>) => <ul className="my-1 pl-4 list-disc space-y-0.5" {...props} />,
   ol: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLOListElement>>) => <ol className="my-1 pl-4 list-decimal space-y-0.5" {...props} />,
   li: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLLIElement>>) => <li className="leading-relaxed" {...props} />,
-  strong: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLElement>>) => <strong className="font-semibold" {...props} />,
+  /* A bold lead-in is the model's own structure — "**Why it matters:** …" — so
+     it takes the page's full ink rather than inheriting the body tone, which is
+     what made every lead-in read as ordinary text. */
+  strong: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLElement>>) => (
+    <strong className="font-semibold text-lantern-text dark:text-white" {...props} />
+  ),
+  /* Tinted, not grey: a quote in an answer is nearly always the source
+     sentence being quoted back, and the `ai` wash marks it as the companion's
+     own voice rather than a generic callout. */
+  blockquote: ({ node: _node, ...props }: MdProps<React.BlockquoteHTMLAttributes<HTMLQuoteElement>>) => (
+    <blockquote
+      className="my-1.5 rounded-r-lg border-l-[3px] border-lantern-feature-ai-ink/50 bg-lantern-feature-ai-tint/50 py-1 pl-2.5 pr-2 italic"
+      {...props}
+    />
+  ),
   code: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLElement>>) => (
     <code className="px-1 py-0.5 rounded bg-black/10 dark:bg-white/10 text-[0.85em]" {...props} />
+  ),
+  table: ({ node: _node, ...props }: MdProps<React.TableHTMLAttributes<HTMLTableElement>>) => (
+    /* Wide tables scroll inside their own box; the thread must never scroll
+       sideways. */
+    <div className="my-1.5 overflow-x-auto">
+      <table className="w-full border-collapse text-left" {...props} />
+    </div>
+  ),
+  th: ({ node: _node, ...props }: MdProps<React.ThHTMLAttributes<HTMLTableCellElement>>) => (
+    <th className="border border-lantern-border px-2 py-1 font-semibold" {...props} />
+  ),
+  td: ({ node: _node, ...props }: MdProps<React.TdHTMLAttributes<HTMLTableCellElement>>) => (
+    <td className="border border-lantern-border px-2 py-1" {...props} />
   ),
   a: ({ node: _node, ...props }: MdProps<React.AnchorHTMLAttributes<HTMLAnchorElement>>) => (
     <a className="underline" target="_blank" rel="noopener noreferrer" {...props} />
@@ -73,17 +115,24 @@ interface AICompanionPanelProps {
    * `rail` is the docked pane in a course workspace — always visible, no close.
    */
   variant?: 'drawer' | 'rail';
+  /**
+   * Turn the attached note into a study product — the same six targets the
+   * studios offer, reusing `TurnIntoMenu`.
+   *
+   * A prop rather than a call into the pipeline, because the whole turn-into
+   * flow (credits, existing-target ticks, navigation to what it made) lives in
+   * `CourseWorkspace`; reaching into it from here would mean a second
+   * implementation that spends credits by a different path. The control is only
+   * drawn when a host supplies this AND a note is attached.
+   *
+   * The attached note is passed through, because the note the companion holds
+   * is not always the note the host has open — the picker above attaches a
+   * note without opening it.
+   */
+  onTurnInto?: (target: TurnIntoTargetId, noteId: string) => void;
+  /** Targets already made from the attached note, so nobody pays twice. */
+  turnIntoExisting?: Partial<Record<TurnIntoTargetId, boolean>>;
 }
-
-const QUICK_PROMPTS = [
-  'What should I study today?',
-  'Generate flashcards for my weak topics',
-  'Quiz me on my weak topics',
-  'Give me a study tip',
-  'Explain spaced repetition',
-  'Build my study plan for this week',
-  'How am I spending this month?',
-];
 
 const MIN_DICTATION_MS = 800;
 const MAX_DICTATION_MS = 60_000;
@@ -145,6 +194,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   onOpenNote,
   theme = 'light',
   variant = 'drawer',
+  onTurnInto,
+  turnIntoExisting,
 }) => {
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
@@ -166,16 +217,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showHistoryList, setShowHistoryList] = useState(false);
-  const [confirmDeleteConversationId, setConfirmDeleteConversationId] = useState<string | null>(null);
-
-  // Auto-disarm the two-tap trash: Safari doesn't focus buttons on click, so
-  // the onBlur disarm never fires there and an armed trash would stay red.
-  useEffect(() => {
-    if (!confirmDeleteConversationId) return;
-    const id = window.setTimeout(() => setConfirmDeleteConversationId(null), 4000);
-    return () => window.clearTimeout(id);
-  }, [confirmDeleteConversationId]);
   const [showNotePicker, setShowNotePicker] = useState(false);
+  const [showTurnInto, setShowTurnInto] = useState(false);
+  const [promptsExpanded, setPromptsExpanded] = useState(false);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [noteSearch, setNoteSearch] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -293,10 +340,37 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     injectAssistantMessage,
   ]);
 
-  // Scroll to bottom on new messages / streaming tokens
-  useEffect(() => {
+  /**
+   * How far from the bottom still counts as "following the stream". One line
+   * of slack, so a rounding pixel or a smooth-scroll still settling does not
+   * read as "the student scrolled away".
+   */
+  const AT_BOTTOM_SLACK_PX = 48;
+
+  const handleMessagesScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_SLACK_PX);
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading, isStreaming]);
+    setIsAtBottom(true);
+  }, []);
+
+  /**
+   * Follow the stream — but only while the student is already at the bottom.
+   *
+   * The old effect scrolled on every token unconditionally, so scrolling up to
+   * re-read the paragraph above yanked you back down a few times a second for
+   * as long as the answer kept arriving; the answer was unreadable until it
+   * finished. Now scrolling up simply stops the follow and raises the "Jump to
+   * latest" pill, which is the same bargain every chat app makes.
+   */
+  useEffect(() => {
+    if (!isAtBottom) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading, isStreaming, isAtBottom]);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -529,6 +603,16 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     ...context,
   }), [currentUser?.firstName, currentUser?.name, context]);
 
+  /**
+   * The header's name for this thread. Derived from the messages rather than
+   * read off the server's conversation row, so a brand-new chat is named the
+   * moment the student's first question lands — before the row exists.
+   */
+  const chatTitle = useMemo(
+    () => (messages.length ? deriveChatTitle(messages) : 'Lantern AI'),
+    [messages]
+  );
+
   const isSending = isLoading || isStreaming;
   const isBusy = isSending || isLoadingHistory;
   const dictationBusy = isRecording || isTranscribing;
@@ -560,6 +644,100 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     trackAIAnalyticsEvent('companion_message_sent', { screen: context?.currentScreen });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, isBusy, dictationBusy, sendMessageStreaming, enrichedContext, resizeInput]);
+
+  const handleCopyMessage = useCallback(
+    (content: string) => {
+      const write = navigator?.clipboard?.writeText?.(content);
+      if (!write) {
+        showToast('Copying is not available in this browser.', 'error');
+        return;
+      }
+      void write
+        .then(() => showToast('Copied to clipboard', 'success'))
+        .catch(() => showToast('Could not copy that.', 'error'));
+    },
+    [showToast]
+  );
+
+  /**
+   * Read aloud, as a toggle: the same button stops it. The engine speaks one
+   * utterance at a time, so the id in state is what tells a row whether IT is
+   * the one talking — without it every row would show "Stop".
+   */
+  const handleToggleSpeak = useCallback(
+    (messageId: string, content: string) => {
+      if (speakingMessageId === messageId) {
+        cancelSpeech();
+        setSpeakingMessageId(null);
+        return;
+      }
+      cancelSpeech();
+      setSpeakingMessageId(messageId);
+      speak({
+        text: content,
+        rate: 1,
+        onEnd: () => setSpeakingMessageId((id) => (id === messageId ? null : id)),
+        onError: () => {
+          setSpeakingMessageId((id) => (id === messageId ? null : id));
+          showToast('Could not read that aloud.', 'error');
+        },
+      });
+      trackAIAnalyticsEvent('companion_read_aloud');
+    },
+    [speakingMessageId, showToast]
+  );
+
+  // Nothing should keep talking after the drawer closes. The rail stays
+  // mounted, so it only falls silent on unmount.
+  useEffect(() => {
+    if (variant === 'rail' || isOpen) return;
+    cancelSpeech();
+    setSpeakingMessageId(null);
+  }, [isOpen, variant]);
+
+  useEffect(() => () => cancelSpeech(), []);
+
+  /**
+   * Ask the SAME question again. The thread is server-backed with no edit or
+   * delete-one-message endpoint, so this appends a fresh turn rather than
+   * replacing the answer in place — which is also the honest reading of the
+   * button: you get another attempt, and the one you did not like stays above
+   * it for comparison.
+   */
+  const handleRegenerate = useCallback(
+    (messageId: string) => {
+      const question = previousUserMessage(messages, messageId);
+      if (!question) {
+        showToast('Nothing to regenerate from.', 'info');
+        return;
+      }
+      trackAIAnalyticsEvent('companion_regenerate');
+      void handleSend(question);
+    },
+    [messages, handleSend, showToast]
+  );
+
+  const handleExplainSimply = useCallback(() => {
+    trackAIAnalyticsEvent('companion_explain_simply');
+    void handleSend(EXPLAIN_SIMPLY_PROMPT);
+  }, [handleSend]);
+
+  const handleComposerKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      const intent = composerKeyIntent({
+        key: e.key,
+        shiftKey: e.shiftKey,
+        altKey: e.altKey,
+        ctrlKey: e.ctrlKey,
+        metaKey: e.metaKey,
+        nativeEvent: { isComposing: e.nativeEvent?.isComposing },
+      });
+      if (intent !== 'send') return;
+      e.preventDefault();
+      void handleSend();
+    },
+    [handleSend]
+  );
 
   const handleClear = async () => {
     setShowClearConfirm(false);
@@ -606,12 +784,28 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             <AppIcon name="sparkles" size={20} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <p id="ai-companion-title" className="font-semibold text-sm text-lantern-primary">Lantern AI</p>
+            {/* The chat's own name, from the first thing that was asked. The
+                header used to say "Lantern AI" over every thread, so the one
+                open chat was indistinguishable from the fifty in history. */}
+            <p id="ai-companion-title" className="font-semibold text-sm text-lantern-text dark:text-white truncate">
+              {chatTitle}
+            </p>
             <p className={`text-xs truncate ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
               {context?.currentScreen ? `On: ${context.currentScreen}` : 'Your AI study companion'}
             </p>
           </div>
           <div className="flex items-center gap-0.5">
+            {onTurnInto && activeNoteContext && (
+              <button
+                onClick={() => { setShowTurnInto((v) => !v); setShowHistoryList(false); }}
+                title="Turn this note into something"
+                aria-label="Turn into"
+                aria-expanded={showTurnInto}
+                className={`p-1.5 rounded-lg transition-colors ${showTurnInto ? 'text-lantern-feature-ai-ink' : theme === 'dark' ? 'hover:bg-lantern-surface-secondary text-lantern-text-tertiary' : 'hover:bg-lantern-background-secondary text-lantern-text-secondary'}`}
+              >
+                <AppIcon name="apps" size={16} />
+              </button>
+            )}
             <button
               onClick={handleOpenHistory}
               title="Past chats"
@@ -670,103 +864,24 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         )}
 
         {showHistoryList ? (
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
-            <div className="flex items-center justify-between px-1 mb-2">
-              <p className={`text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-                Past chats
-              </p>
-              <button
-                type="button"
-                onClick={handleNewChat}
-                className="text-xs font-medium text-lantern-primary hover:underline"
-              >
-                New chat
-              </button>
-            </div>
-            {isLoadingConversations && conversations.length === 0 ? (
-              <div className="flex items-center justify-center gap-2 py-8 text-sm text-lantern-text-secondary">
-                <TypingDots />
-                <span>Loading chats…</span>
-              </div>
-            ) : conversations.length === 0 ? (
-              <p className="px-2 py-8 text-sm text-center text-lantern-text-secondary">
-                No past chats yet. Start a conversation and it will show up here.
-              </p>
-            ) : (
-              conversations.map((conversation) => {
-                const isActive = conversation.id === activeConversationId;
-                const confirmingDelete = confirmDeleteConversationId === conversation.id;
-                return (
-                  <div key={conversation.id} className="relative group">
-                  <button
-                    type="button"
-                    onClick={() => void handleSelectConversation(conversation)}
-                    className={`w-full text-left rounded-xl px-3 py-2.5 pr-9 transition-colors border
-                      ${isActive
-                        ? theme === 'dark'
-                          ? 'border-lantern-primary/40 bg-lantern-primary/15'
-                          : 'border-lantern-primary/30 bg-lantern-primary-background'
-                        : theme === 'dark'
-                          ? 'border-transparent hover:bg-lantern-surface-secondary'
-                          : 'border-transparent hover:bg-lantern-background-secondary'
-                      }`}
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <p className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}>
-                        {conversation.title}
-                      </p>
-                      <span className={`text-[11px] flex-shrink-0 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-                        {formatRelativeTime(conversation.updatedAt)}
-                      </span>
-                    </div>
-                    {conversation.noteTitle && (
-                      <p className="mt-0.5 text-[11px] text-lantern-primary truncate flex items-center gap-1">
-                        <AppIcon name="document-text" size={12} className="flex-shrink-0" />
-                        {conversation.noteTitle}
-                      </p>
-                    )}
-                    {conversation.preview && (
-                      <p className={`mt-0.5 text-xs line-clamp-2 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-                        {conversation.preview}
-                      </p>
-                    )}
-                  </button>
-                  {/* Two-tap delete: first tap arms (icon turns red), second deletes. */}
-                  <button
-                    type="button"
-                    aria-label={confirmingDelete ? `Confirm delete "${conversation.title}"` : `Delete "${conversation.title}"`}
-                    title={confirmingDelete ? 'Tap again to delete' : 'Delete chat'}
-                    onClick={() => {
-                      if (confirmingDelete) {
-                        setConfirmDeleteConversationId(null);
-                        void deleteConversation(conversation.id);
-                      } else {
-                        setConfirmDeleteConversationId(conversation.id);
-                      }
-                    }}
-                    onBlur={() => setConfirmDeleteConversationId((id) => (id === conversation.id ? null : id))}
-                    className={`absolute right-2 bottom-2 p-1.5 rounded-lg transition-opacity
-                      ${confirmingDelete
-                        ? 'opacity-100 text-red-500 bg-red-500/10'
-                        : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 text-lantern-text-tertiary hover:text-red-500'}`}
-                  >
-                    <AppIcon name="trash" size={14} />
-                  </button>
-                  </div>
-                );
-              })
-            )}
-            <button
-              type="button"
-              onClick={() => setShowHistoryList(false)}
-              className="w-full mt-2 py-2 text-xs text-lantern-text-secondary hover:underline"
-            >
-              Back to chat
-            </button>
-          </div>
+          <CompanionHistory
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            isLoading={isLoadingConversations}
+            onSelect={(conversation) => void handleSelectConversation(conversation)}
+            onDelete={(conversationId) => void deleteConversation(conversationId)}
+            onNewChat={handleNewChat}
+            onBack={() => setShowHistoryList(false)}
+            formatRelativeTime={formatRelativeTime}
+          />
         ) : (
-        /* Messages area */
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
+        /* Messages area. `relative` anchors the "Jump to latest" pill. */
+        <div className="relative flex-1 min-h-0 flex flex-col">
+        <div
+          ref={scrollRef}
+          onScroll={handleMessagesScroll}
+          className="flex-1 overflow-y-auto px-4 py-3 space-y-4"
+        >
           {isLoadingHistory && (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-lantern-text-secondary">
               <TypingDots />
@@ -775,7 +890,13 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
           )}
 
           {!isLoadingHistory && messages.length === 0 && !isBusy && (
-            <EmptyState theme={theme} onQuickPrompt={handleSend} />
+            <EmptyState
+              theme={theme}
+              onQuickPrompt={handleSend}
+              promptsExpanded={promptsExpanded}
+              onTogglePrompts={() => setPromptsExpanded((v) => !v)}
+              disabled={isBusy || dictationBusy}
+            />
           )}
 
           {!isLoadingHistory && messages.map(msg => (
@@ -786,6 +907,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               onAction={handleAction}
               onOpenNote={onOpenNote}
               isStreaming={isStreaming && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id}
+              busy={isBusy}
+              isSpeaking={speakingMessageId === msg.id}
+              onCopy={handleCopyMessage}
+              onToggleSpeak={handleToggleSpeak}
+              onRegenerate={handleRegenerate}
+              onExplainSimply={handleExplainSimply}
             />
           ))}
 
@@ -804,6 +931,19 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
 
           <div ref={messagesEndRef} />
         </div>
+        {/* Scrolling up stops the auto-follow; this is how you get back without
+            hunting for the bottom of a still-growing answer. */}
+        {!isAtBottom && (
+          <button
+            type="button"
+            onClick={jumpToLatest}
+            className="absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1 rounded-full border border-lantern-border bg-lantern-surface px-3 py-1.5 text-xs font-medium text-lantern-text shadow-lg dark:bg-lantern-surface-secondary"
+          >
+            <AppIcon name="chevron-down" size={14} />
+            Jump to latest
+          </button>
+        )}
+        </div>
         )}
 
         {/* Input area — pad above home indicator; stays above bottom nav when that is visible */}
@@ -816,6 +956,20 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
                 title={activeNoteContext.title}
                 theme={theme}
                 onRemove={() => void handleClearNoteContext()}
+              />
+            </div>
+          )}
+          {/* The six targets, on the note that is attached — the same menu the
+              studios draw, not a second one. */}
+          {showTurnInto && onTurnInto && activeNoteContext && (
+            <div className="mb-2 rounded-xl border border-lantern-border bg-lantern-surface p-2.5 dark:bg-lantern-surface-secondary">
+              <TurnIntoMenu
+                disabled={isBusy}
+                existing={turnIntoExisting}
+                onSelect={(target) => {
+                  setShowTurnInto(false);
+                  onTurnInto(target, activeNoteContext.id);
+                }}
               />
             </div>
           )}
@@ -919,7 +1073,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
-              // Enter inserts a newline on purpose — only the Send button sends.
+              // Enter sends, Shift+Enter opens a line — see `composerKeyIntent`,
+              // which also drops the Enter that commits an IME composition.
+              onKeyDown={handleComposerKeyDown}
               placeholder={
                 isRecording
                   ? 'Listening…'
@@ -944,9 +1100,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               onClick={() => handleSend()}
               disabled={!input.trim() || isBusy || dictationBusy}
               aria-label="Send message"
-              className="flex-shrink-0 p-1.5 rounded-lg bg-lantern-primary text-white disabled:opacity-40 hover:bg-lantern-primary-dark transition-colors"
+              title="Send (Enter)"
+              className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-full bg-lantern-primary-fill text-white disabled:opacity-40 hover:bg-lantern-primary-dark transition-colors"
             >
-              <AppIcon name="send" size={16} />
+              <AppIcon name="arrow-up" size={16} />
             </button>
           </div>
           {(isRecording || isTranscribing) && (
@@ -1003,6 +1160,13 @@ interface MessageBubbleProps {
   onAction: (action: CompanionAction) => void;
   onOpenNote?: (noteId: string) => void;
   isStreaming?: boolean;
+  /** A send is in flight — the two actions that spend a credit are held. */
+  busy?: boolean;
+  isSpeaking?: boolean;
+  onCopy?: (content: string) => void;
+  onToggleSpeak?: (messageId: string, content: string) => void;
+  onRegenerate?: (messageId: string) => void;
+  onExplainSimply?: () => void;
 }
 
 /**
@@ -1018,7 +1182,34 @@ export function buildCitationChipLabels(excerpts: number[]): string[] {
   return unique.map((n) => `Excerpt ${n}`);
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction, onOpenNote, isStreaming }) => {
+/**
+ * One turn in the thread.
+ *
+ * The anatomy, which is the point of this component:
+ *
+ *   - The ASSISTANT's answer sits on the page ground with no bubble at all,
+ *     with the Lantern mark alone in the gutter. An answer is usually the
+ *     longest thing on screen, and wrapping several paragraphs, a list and a
+ *     table in a grey rounded box made a document look like an SMS; the mark in
+ *     the margin already says who is speaking.
+ *   - The STUDENT's question keeps a bubble, in a pale grey — not the brand
+ *     fill it used to have. A saturated indigo block is the loudest thing on
+ *     the screen, which put the emphasis on the question rather than on the
+ *     answer the student is here to read.
+ */
+const MessageBubble: React.FC<MessageBubbleProps> = ({
+  message,
+  theme,
+  onAction,
+  onOpenNote,
+  isStreaming,
+  busy,
+  isSpeaking,
+  onCopy,
+  onToggleSpeak,
+  onRegenerate,
+  onExplainSimply,
+}) => {
   const isUser = message.role === 'user';
   const setMessageFeedback = useCompanionStore((s) => s.setMessageFeedback);
   const feedback = message.feedback ?? null;
@@ -1049,36 +1240,51 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
     }
   };
 
-  return (
-    <div className={`flex items-start gap-2 ${isUser ? 'flex-row-reverse' : ''}`}>
-      {!isUser && (
-        <div className="flex items-center justify-center w-7 h-7 rounded-full bg-lantern-primary flex-shrink-0 mt-0.5">
-          <AppIcon name="sparkles" size={16} className="text-white" />
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div
+          className={`max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-md px-3 py-2 text-sm leading-relaxed
+            ${theme === 'dark'
+              ? 'bg-lantern-surface-secondary text-white'
+              : 'bg-lantern-background-secondary text-lantern-text'
+            }`}
+        >
+          {message.content}
         </div>
-      )}
-      <div className={`flex flex-col gap-1.5 max-w-[85%] ${isUser ? 'items-end' : 'items-start'}`}>
-        <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed ${isUser || isStreaming ? 'whitespace-pre-wrap' : ''}
-          ${isUser
-            ? 'bg-lantern-primary text-white rounded-tr-none'
-            : theme === 'dark'
-              ? 'bg-lantern-surface-secondary text-white rounded-tl-none'
-              : 'bg-lantern-background-secondary text-lantern-text rounded-tl-none'
-          }`}>
-          {isUser || isStreaming ? (
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-2.5">
+      {/* The mark in the gutter is what says "Lantern" now that the answer has
+          no bubble of its own. */}
+      <div className="mt-0.5 flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-lantern-feature-ai-tint">
+        <AppIcon name="sparkles" size={15} className="text-lantern-feature-ai-ink" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
+        <div
+          className={`w-full text-sm leading-relaxed ${isStreaming ? 'whitespace-pre-wrap' : ''}
+            ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}
+        >
+          {isStreaming ? (
             // Plain while streaming: the caret stays inline with the text and
             // half-typed markdown never renders literally mid-stream.
             message.content
           ) : (
-            <ReactMarkdown components={bubbleMarkdownComponents}>{withHardBreaks(message.content)}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={bubbleMarkdownComponents}>
+              {withHardBreaks(message.content)}
+            </ReactMarkdown>
           )}
           {isStreaming && (
-            <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-current animate-pulse align-middle" />
+            <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-current align-middle" />
           )}
         </div>
         {/* Where this answer was read from. Excerpt numbers, never page
             numbers — the pipeline has no pages. */}
-        {!isUser && !isStreaming && message.citations && (
-          <div className="flex flex-wrap gap-1.5 mt-1">
+        {!isStreaming && message.citations && (
+          <div className="flex flex-wrap gap-1.5">
             {buildCitationChipLabels(message.citations.excerpts).map((detail) => (
               <SourceChip
                 key={detail}
@@ -1101,7 +1307,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
         )}
         {/* Action buttons */}
         {message.actions && message.actions.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-0.5">
+          <div className="flex flex-wrap gap-1.5">
             {message.actions.map((action, i) => (
               <button
                 key={i}
@@ -1117,45 +1323,33 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
             ))}
           </div>
         )}
-        {/* Thumbs feedback (only on completed, persisted assistant messages) */}
-        {canRate && (
-          <div className="flex items-center gap-1 mt-0.5" role="group" aria-label="Rate this response">
-            <button
-              type="button"
-              onClick={() => void handleFeedback('up')}
-              title={feedback === 'up' ? 'Remove upvote' : 'Good response'}
-              aria-pressed={feedback === 'up'}
-              aria-label="Thumbs up"
-              className={`p-1 rounded transition-colors
-                ${feedback === 'up'
-                  ? 'text-green-500'
-                  : theme === 'dark' ? 'text-lantern-text-secondary hover:text-green-400' : 'text-lantern-text-tertiary hover:text-green-500'
-                }`}
-            >
-              {feedback === 'up' ? <AppIcon name="thumbs-up" size={14} /> : <AppIcon name="thumbs-up" size={14} />}
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleFeedback('down')}
-              title={feedback === 'down' ? 'Remove downvote' : 'Poor response'}
-              aria-pressed={feedback === 'down'}
-              aria-label="Thumbs down"
-              className={`p-1 rounded transition-colors
-                ${feedback === 'down'
-                  ? 'text-red-500'
-                  : theme === 'dark' ? 'text-lantern-text-secondary hover:text-red-400' : 'text-lantern-text-tertiary hover:text-red-500'
-                }`}
-            >
-              {feedback === 'down' ? <AppIcon name="thumbs-down" size={14} /> : <AppIcon name="thumbs-down" size={14} />}
-            </button>
-          </div>
+        {/* Copy / read aloud / ask again / explain simply / the two thumbs. */}
+        {!isStreaming && message.content.trim() && (
+          <MessageActions
+            onCopy={() => onCopy?.(message.content)}
+            onToggleSpeak={() => onToggleSpeak?.(message.id, message.content)}
+            isSpeaking={Boolean(isSpeaking)}
+            canSpeak={isSpeechSupported()}
+            onRegenerate={() => onRegenerate?.(message.id)}
+            onExplainSimply={() => onExplainSimply?.()}
+            onRate={(rating) => void handleFeedback(rating)}
+            feedback={feedback}
+            canRate={canRate}
+            busy={busy}
+          />
         )}
       </div>
     </div>
   );
 };
 
-const EmptyState: React.FC<{ theme: 'light' | 'dark'; onQuickPrompt: (text: string) => void }> = ({ theme, onQuickPrompt }) => (
+const EmptyState: React.FC<{
+  theme: 'light' | 'dark';
+  onQuickPrompt: (text: string) => void;
+  promptsExpanded: boolean;
+  onTogglePrompts: () => void;
+  disabled?: boolean;
+}> = ({ theme, onQuickPrompt, promptsExpanded, onTogglePrompts, disabled }) => (
   <div className="flex flex-col items-center gap-4 py-6 text-center">
     {/* The AI empty state's spot illustration (§5.6). It replaces a plain
         indigo disc: the disc was a container with a glyph in it, and this is
@@ -1168,23 +1362,15 @@ const EmptyState: React.FC<{ theme: 'light' | 'dark'; onQuickPrompt: (text: stri
         Your personal AI study companion. Ask me anything.
       </p>
     </div>
-    <div className="flex flex-wrap justify-center gap-2 mt-1">
-      {QUICK_PROMPTS.map(p => (
-        <button
-          key={p}
-          onClick={() => onQuickPrompt(p)}
-          className={`text-xs px-3 py-1.5 rounded-full border transition-colors
-            ${theme === 'dark'
-              ? 'border-lantern-border text-lantern-text-tertiary hover:bg-lantern-surface-secondary'
-              : 'border-lantern-border text-lantern-text-secondary hover:bg-lantern-background-secondary'
-            }`}
-        >
-          {p}
-        </button>
-      ))}
-    </div>
+    <CompanionPrompts
+      expanded={promptsExpanded}
+      onToggleExpanded={onTogglePrompts}
+      onAsk={onQuickPrompt}
+      disabled={disabled}
+    />
   </div>
 );
+
 
 const TypingDots: React.FC = () => (
   <div className="flex items-center gap-1 h-5">

@@ -1,5 +1,7 @@
 import {
   planSessionRestore,
+  resolveBootGate,
+  BOOT_GATE_MAX_MS,
   restoreRetryDelayMs,
   RESTORE_RETRY_MAX_MS,
   type SessionRestoreNetworkResult,
@@ -104,5 +106,49 @@ describe('restoreRetryDelayMs', () => {
   it('is finite for any input', () => {
     expect(restoreRetryDelayMs(0)).toBe(1_000);
     expect(restoreRetryDelayMs(Number.NaN)).toBe(1_000);
+  });
+});
+
+describe('resolveBootGate', () => {
+  it('shows the splash while the restore is still pending', () => {
+    expect(
+      resolveBootGate({ isInitialized: false, hasUser: false, gateTimedOut: false })
+    ).toBe('splash');
+  });
+
+  it('shows sign-in only once the restore has resolved to no session', () => {
+    expect(
+      resolveBootGate({ isInitialized: true, hasUser: false, gateTimedOut: false })
+    ).toBe('sign-in');
+  });
+
+  it('enters the app the moment a session is in hand, pending or not', () => {
+    expect(resolveBootGate({ isInitialized: false, hasUser: true, gateTimedOut: false })).toBe(
+      'app'
+    );
+    expect(resolveBootGate({ isInitialized: true, hasUser: true, gateTimedOut: false })).toBe(
+      'app'
+    );
+  });
+
+  it('keeps a cached session in the app even after the hard cap fires', () => {
+    // The classifier's timeout/offline plan is `route: app` on a stored
+    // session; the navigator's last-resort cap must not overrule it.
+    expect(resolveBootGate({ isInitialized: true, hasUser: true, gateTimedOut: true })).toBe('app');
+    expect(resolveBootGate({ isInitialized: false, hasUser: true, gateTimedOut: true })).toBe(
+      'app'
+    );
+  });
+
+  it('falls back to sign-in only if the cap fires with nothing restored', () => {
+    expect(resolveBootGate({ isInitialized: false, hasUser: false, gateTimedOut: true })).toBe(
+      'sign-in'
+    );
+  });
+
+  it('caps the pending splash well past the store boot budget', () => {
+    // Storage read (5 s) + one capped refresh (8 s) must both fit inside it,
+    // so the store always resolves first and this cap never fires in practice.
+    expect(BOOT_GATE_MAX_MS).toBeGreaterThan(5_000 + 8_000);
   });
 });

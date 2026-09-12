@@ -25,6 +25,8 @@ import {
   type LessonMode,
   type LessonSession,
   type TurnIntoTargetId,
+  scopeNoun,
+  scopedCopy,
 } from '@lantern/shared';
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyNote } from '../../types';
@@ -308,7 +310,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
     return (
       <div className="flex-1 min-h-0 overflow-y-auto rounded-lantern-xl border border-lantern-border bg-lantern-surface p-4 space-y-4">
         <div>
-          <h2 className="text-heading">Lesson</h2>
+          <h2 className="text-heading">Tutor</h2>
           <p className="text-body text-lantern-text-secondary mt-1">{lessonStudioPriceLine()}</p>
         </div>
         {lessons.length > 0 ? (
@@ -330,7 +332,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
           <h3 className="text-label uppercase text-lantern-text-secondary">New lesson</h3>
           {sources.length === 0 ? (
             <p className="text-body text-lantern-text-secondary">
-              Import or write a note in this course first. The lesson is built from that material.
+              {scopedCopy('lessonSourceEmpty', scopeNoun(studySetId, courseId))}
             </p>
           ) : (
             <>
@@ -561,7 +563,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
                 )
               }
             >
-              Open in Lantern AI
+              Ask Lantern
             </button>
           </div>
         </aside>

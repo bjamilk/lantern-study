@@ -17,6 +17,8 @@ import {
   startEssaySession,
   studySetNotePayload,
   type EssaySession,
+  scopeNoun,
+  scopedCopy,
 } from '@lantern/shared';
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyNote } from '../../types';
@@ -116,7 +118,7 @@ export function EssayStudio({
 
   const loadFromFile = async (file: File) => {
     if (file.type.startsWith('image/')) {
-      showToast('Import the photo as a note in this course, then load it here.', 'info');
+      showToast(scopedCopy('essayPhotoImport', scopeNoun(studySetId, courseId)), 'info');
       return;
     }
     const text = await file.text();

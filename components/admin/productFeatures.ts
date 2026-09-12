@@ -1161,7 +1161,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
     id: 'in-app-dialogs-1-0-45',
     title: 'Every dialog is the app\u2019s own, and BACK is never a dead key (1.0.45)',
-    area: 'core',
+    area: 'platform',
     status: 'shipped',
     shippedAt: '2026-09-08',
     summary:
@@ -1178,14 +1178,15 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Press BACK on a dialog: a confirm cancels, a single-button notice runs that button.',
     ],
     surfaces: ['mobile'],
-    adminNotes:
+    adminNotes: [
       'A student reporting a "stuck" screen on an older build was almost certainly on an OK-only system alert where BACK was inert.',
+    ],
     commits: ['c0c53f05'],
   },
   {
     id: 'study-shop-own-bar-1-0-45',
     title: 'Study and Shop take over the bottom bar, and the door you are in is named (1.0.45)',
-    area: 'core',
+    area: 'platform',
     status: 'shipped',
     shippedAt: '2026-09-08',
     summary:
@@ -1201,14 +1202,15 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Move between doors without climbing back to the hub; the leading button returns you to the rest of the app.',
     ],
     surfaces: ['mobile'],
-    adminNotes:
+    adminNotes: [
       'Founder decision on 2026-09-08, overturning the earlier rule that the global bar never moves. The rationale comments in navigation/contextualBars.ts were rewritten to match.',
+    ],
     commits: ['3e402eda', 'c8c544e3', '840ccf00'],
   },
   {
     id: 'board-mark-answered-1-0-45',
     title: 'A community question can be marked answered (1.0.45)',
-    area: 'community',
+    area: 'groups',
     status: 'shipped',
     shippedAt: '2026-09-08',
     summary:
@@ -1225,14 +1227,15 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'The post menu offers Clear accepted answer once one is set.',
     ],
     surfaces: ['mobile', 'web'],
-    adminNotes:
+    adminNotes: [
       'Requires migration 20260908120000 (applied 2026-09-08). A database without answered_message_id gets a 503 and the honest not-enabled copy, never a 500.',
+    ],
     commits: ['db54b617'],
   },
   {
     id: 'honest-ai-allowance-identity-1-0-45',
     title: 'The app stopped stating an AI allowance and a name it was never given (1.0.45)',
-    area: 'core',
+    area: 'platform',
     status: 'shipped',
     shippedAt: '2026-09-08',
     summary:
@@ -1248,8 +1251,9 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Me \u2192 Usage & limits shows "Checking your AI uses\u2026" rather than a number, when the figures are not known.',
     ],
     surfaces: ['mobile', 'web'],
-    adminNotes:
+    adminNotes: [
       'Migration 20260908140000 must be hand-applied for new signups; existing rows are untouched. The release notes for that migration carry the count query and the optional backfill.',
+    ],
     commits: ['51317dd2', '46f4e714'],
   },
   {
@@ -1326,6 +1330,63 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
       'Everything else in Wave 1 (studio scoping, deck filing, honest refusal reasons, Turn Into, running-job visibility) is live without the migration.',
     ],
     commits: ['cfcb4dea'],
+  },
+  {
+    id: 'studyfetch-look-note-typography-1-0-48',
+    title: 'StudyFetch look on web and phone, real note typography, and Home doors that open (1.0.48)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-12',
+    summary:
+      'Wave 2: web and mobile wear the same StudyFetch-style skin — cream ground, charcoal rail, pastel door tiles with black art and a hard shadow, black pill buttons and Bitter serif titles. Notes render with a real heading hierarchy instead of flat text, companion citations are chips, the cross-set attachment leak is closed, and the Home doors go where they say.',
+    details: [
+      'One look on both clients: cream ground, charcoal rail, pastel door tiles carrying black art and a hard shadow, black pill buttons, Bitter serif titles with an italic accent, and a mint hue for sets.',
+      'The mobile tab bar is a black pill that keeps all five labels rather than dropping them to fit.',
+      'Notes and lecture notes render through a shared block parser, so headings, subheadings and body text carry a real hierarchy; an Edit toggle switches between the rendered note and its source.',
+      'Companion citations render as chips instead of inline noise, and the attachment leak that let one set’s file follow you into another set is fixed.',
+      'Home doors work: the Record tile no longer throws, Continue continues where you left off, and quiz and tutor open distinct doors instead of the same one.',
+      'Web: a set’s Plan tab carries an exam-date field.',
+      'Mobile: the Home set list caches, so it renders from cache and says it is offline rather than showing nothing.',
+    ],
+    howToUse: [
+      'Open the app on web or phone: the new look applies everywhere; Home tiles are the doors into Record, quiz, tutor and Continue.',
+      'Open a note or lecture note: it renders with headings; use Edit to see and change the source.',
+      'Web → a study set → Plan: set the exam date for that set.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'A student reporting flat, heading-less notes, a Record tile that crashes, or a companion attachment showing up in the wrong set was on 1.0.47 or earlier; all four need the 1.0.48 build.',
+    ],
+    commits: ['11c4e9e7'],
+  },
+  {
+    id: 'mobile-parity-wave-p-1-0-49',
+    title: 'The phone catches up with the web app: Home, the set room, the companion and Me (1.0.49)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-12',
+    summary:
+      'Wave P brings mobile up to the web app: Home in web’s order with six door tiles and a review button that actually reviews, a set room with a persistent timer, a server-backed plan and set-scoped doors, new upload, settings and artifact-library screens with folders, a companion that says what it is scoped to, and a Me progress hub with readable charts. Web gets serif headings by default, stream errors that keep the exchange, and citations back from the queue worker.',
+    details: [
+      'Mobile Home follows the web order, with six door tiles and a review button that starts a review instead of going nowhere.',
+      'The set room holds a persistent timer, a server-backed plan, doors scoped to that set, and responds to touch as soon as it opens.',
+      'New mobile screens: upload, settings, and an artifact library organised into folders.',
+      'The companion shows the scope it is answering in, offers scoped prompt chips, has a real empty state, a searchable history and six named actions; an attachment is stamped with the room it belongs to.',
+      'The companion no longer re-opens after the app is backgrounded, and a send cannot fire twice.',
+      'Me is a progress hub, with chart axes that can be read.',
+      'Web: serif headings render by default, a stream error keeps the exchange instead of discarding it, and the queue worker returns citations.',
+    ],
+    howToUse: [
+      'Mobile → Home: six door tiles in the web’s order; the review button starts a review.',
+      'Open a study set: the room carries the timer, the plan and the set’s own doors; upload, settings and the artifact library are reachable from there.',
+      'Mobile → AI: the scope line says what the companion is answering over; chips, history search and the six actions sit with it.',
+      'Mobile → Me: the progress hub.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      '"Study all N due" still reviews the largest deck rather than everything due — known, and a Wave 3 item; a student reporting it is not hitting a new bug.',
+    ],
+    commits: ['97ad22f1'],
   },
 ];
 

@@ -52,6 +52,30 @@ interface UndoSnapshot {
   newCount: number;
 }
 
+/**
+ * How many decks the session's queue actually spans.
+ *
+ * "Study all due" deals one cross-deck queue here, so a header that named only
+ * the first deck made a 68-card, four-deck session look like one deck's pile.
+ * Read off the queue itself rather than passed in, so the wording can never
+ * disagree with the cards being dealt.
+ */
+export function queueDeckCount(cardQueue: readonly Pick<Flashcard, 'deckId'>[]): number {
+  return new Set(cardQueue.map(card => card.deckId)).size;
+}
+
+/**
+ * The header counter: "12 / 68 across 4 decks", or plain "12 / 68" for one deck.
+ *
+ * Position is across the whole queue on both platforms, so a student who was
+ * promised 68 can see which of the 68 they are on instead of a per-deck count
+ * that stops at 17.
+ */
+export function flashcardReviewCounterLabel(position: number, total: number, deckCount: number): string {
+  const base = `${position} / ${total}`;
+  return deckCount > 1 ? `${base} across ${deckCount} decks` : base;
+}
+
 /** mm:ss elapsed label for the end-of-session summary. */
 function formatElapsed(ms: number): string {
   const totalSeconds = Math.max(0, Math.round(ms / 1000));
@@ -597,13 +621,24 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
     );
   }
 
+  const queueDecks = queueDeckCount(session.cardQueue);
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-lantern-background">
       <div className="min-h-full flex flex-col p-4 md:p-6">
       <div className="flex-shrink-0 flex justify-between items-center mb-4">
-        <h1 className="text-xl font-semibold text-rose-600 dark:text-rose-400">{session.deck.name}</h1>
+        <h1 className="text-title font-semibold text-rose-600 dark:text-rose-400">
+          {session.deck.name}
+          {queueDecks > 1 ? (
+            <span className="ml-2 text-caption font-medium text-lantern-text-secondary">
+              and {queueDecks - 1} more deck{queueDecks - 1 === 1 ? '' : 's'}
+            </span>
+          ) : null}
+        </h1>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-lantern-text-secondary mr-2">{currentIndex + 1} / {session.cardQueue.length}</span>
+          <span className="text-caption text-lantern-text-secondary mr-2">
+            {flashcardReviewCounterLabel(currentIndex + 1, session.cardQueue.length, queueDecks)}
+          </span>
           <button
             type="button"
             onClick={handleUndo}

@@ -7,6 +7,7 @@
  */
 import { LECTURE_TRANSCRIPTION_PRICE_RULE } from '../utils/aiCredits';
 import { lectureCapacityLine } from '../utils/lectureAudio';
+import { extractSmartNotesSection, stripSmartNotesSection } from '../utils/smartNotes';
 
 const MONTHS = [
   'Jan',
@@ -277,4 +278,220 @@ export function resolveLectureStudioNote(input: {
   const today = input.lectures.find((row) => (row.title ?? '').trim() === input.todayTitle);
   if (today) return { action: 'resume', noteId: today.id };
   return { action: 'create', title: input.todayTitle };
+}
+
+/* ------------------------------------------------------------------ *
+ * The lecture surface: My Notes / Enhanced Notes / Transcript / Audio
+ * ------------------------------------------------------------------ */
+
+/**
+ * A lecture note is four things at once — what the student typed, what the
+ * model wrote from it, what was said, and the recording itself. They used to
+ * be stacked down one scroll, so the transcript pushed the notes off screen
+ * and the audio had nowhere to live at all. This is the planner both clients
+ * ask which of the four surfaces a given note actually has, so neither can
+ * invent an empty tab and neither can quietly drop one.
+ */
+export type LectureTabId = 'notes' | 'enhanced' | 'transcript' | 'audio';
+
+export const LECTURE_TAB_LABELS: Record<LectureTabId, string> = {
+  notes: 'My Notes',
+  enhanced: 'Enhanced Notes',
+  transcript: 'Transcript',
+  audio: 'Audio',
+};
+
+export interface LectureAttachmentLike {
+  id?: string;
+  type?: string | null;
+  fileUrl?: string | null;
+  fileName?: string | null;
+  extractedText?: string | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+export interface LectureTabSource {
+  body?: string | null;
+  attachments?: LectureAttachmentLike[] | null;
+  /** Captions that exist only in memory during a take, not yet in the body. */
+  liveTranscript?: string;
+}
+
+export interface LectureTab {
+  id: LectureTabId;
+  label: string;
+}
+
+/** The storage path the API can re-sign when a saved `fileUrl` has expired. */
+export function lectureAudioStoragePath(row: LectureAttachmentLike | null | undefined): string {
+  const path = row?.metadata?.['storagePath'];
+  return typeof path === 'string' ? path.trim() : '';
+}
+
+/**
+ * The recording for this note, newest last.
+ *
+ * A signed `fileUrl` is the normal case, but the transcribe route writes the
+ * row with `fileUrl: undefined` when signing failed and keeps `storagePath` in
+ * the metadata — that row is still playable, because the client re-signs
+ * through `GET /notes/:noteId/attachments/:id/url`. Counting it as audio is
+ * what stops a real recording from having no tab.
+ */
+export function lectureAudioAttachment(
+  source: LectureTabSource
+): LectureAttachmentLike | null {
+  const rows = source.attachments ?? [];
+  for (let index = rows.length - 1; index >= 0; index -= 1) {
+    const row = rows[index];
+    if (!row || (row.type ?? '') !== 'audio') continue;
+    if ((row.fileUrl ?? '').trim()) return row;
+    if (row.id && lectureAudioStoragePath(row)) return row;
+  }
+  return null;
+}
+
+export interface LectureNoteParts {
+  /** What the student typed — no generated section, no transcript. */
+  typed: string;
+  /** The Smart Notes section's markdown, or '' when none has been written. */
+  enhanced: string;
+  transcript: string;
+}
+
+/**
+ * Split one stored body into the three texts the tabs show.
+ *
+ * Order matters: Smart Notes are appended to the END of the body, which is
+ * after the `Transcript` heading, so stripping the generated section first is
+ * what keeps the enhanced notes from being read back as part of the transcript.
+ */
+export function lectureNoteParts(source: LectureTabSource): LectureNoteParts {
+  const body = source.body ?? '';
+  const enhanced = (extractSmartNotesSection(body) ?? '').trim();
+  const base = stripSmartNotesSection(body);
+  const whisper = latestLectureTranscript(source.attachments);
+  const split = splitLectureNoteBody(base, whisper);
+  const transcript = preferLectureTranscript(
+    preferLectureTranscript(split.transcript, whisper),
+    (source.liveTranscript ?? '').trim()
+  );
+  return { typed: split.typed, enhanced, transcript };
+}
+
+/** Which of the four surfaces this note has. My Notes is never absent. */
+export function lectureTabs(source: LectureTabSource): LectureTab[] {
+  const parts = lectureNoteParts(source);
+  const ids: LectureTabId[] = ['notes'];
+  if (parts.enhanced) ids.push('enhanced');
+  if (parts.transcript.trim()) ids.push('transcript');
+  if (lectureAudioAttachment(source)) ids.push('audio');
+  return ids.map((id) => ({ id, label: LECTURE_TAB_LABELS[id] }));
+}
+
+/** Anything a student could read back: typed notes, enhanced notes, captions, audio. */
+export function lectureNoteHasContent(source: LectureTabSource): boolean {
+  const parts = lectureNoteParts(source);
+  if (parts.typed.trim()) return true;
+  if (parts.enhanced.trim()) return true;
+  if (parts.transcript.trim()) return true;
+  return Boolean(lectureAudioAttachment(source));
+}
+
+export interface LectureConsentGateInput {
+  source: LectureTabSource;
+  /** The student has ticked "I can record this lecture" in this session. */
+  consented: boolean;
+  /** The recorder is idle — no take running, uploading or transcribing. */
+  idle: boolean;
+}
+
+/**
+ * The consent gate is a door, not a wall.
+ *
+ * It used to cover the whole studio whenever nothing was recording, so opening
+ * a lecture taken last week — notes, transcript and audio all saved — asked
+ * "Start a lecture?" and showed none of them, which is exactly how the Android
+ * build lost its tab row. A lecture that already has something to read opens on
+ * its tabs and carries the consent line as a slim bar instead.
+ */
+export function showLectureConsentGate(input: LectureConsentGateInput): boolean {
+  if (input.consented) return false;
+  if (!input.idle) return false;
+  return !lectureNoteHasContent(input.source);
+}
+
+export interface LectureTabOptions {
+  /** A take is running: the student is typing, so nothing may steal the pane. */
+  recording?: boolean;
+}
+
+/**
+ * Where the studio opens: the enhanced notes when they exist, otherwise the
+ * student's own. While recording it is always My Notes — the live captions run
+ * beside the pane, and flipping a class typist onto a read-only tab would lose
+ * whatever they were mid-sentence on.
+ */
+export function defaultLectureTab(
+  source: LectureTabSource,
+  options: LectureTabOptions = {}
+): LectureTabId {
+  if (options.recording) return 'notes';
+  return lectureTabs(source).some((tab) => tab.id === 'enhanced') ? 'enhanced' : 'notes';
+}
+
+/** Keep a chosen tab only while it still exists; otherwise fall to the default. */
+export function resolveLectureTab(
+  source: LectureTabSource,
+  requested: LectureTabId | null | undefined,
+  options: LectureTabOptions = {}
+): LectureTabId {
+  if (options.recording) return 'notes';
+  if (requested && lectureTabs(source).some((tab) => tab.id === requested)) return requested;
+  return defaultLectureTab(source, options);
+}
+
+export interface LectureTranscriptLine {
+  /** `12:04` when the line carries a gutter time, absent otherwise. */
+  time?: string;
+  text: string;
+}
+
+const TRANSCRIPT_TIME_RE = /^\[?(\d{1,2}:\d{2}(?::\d{2})?)\]?\s*/;
+
+/** Caption rows for the Transcript tab, with the gutter time lifted off. */
+export function lectureTranscriptLines(transcript: string): LectureTranscriptLine[] {
+  return (transcript ?? '')
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const match = TRANSCRIPT_TIME_RE.exec(line);
+      if (!match) return { text: line };
+      return { time: match[1], text: line.slice(match[0].length).trim() };
+    })
+    .filter((row) => row.text.length > 0);
+}
+
+/** Playback rates offered on both clients. Slower than 1x is not useful here. */
+export const LECTURE_AUDIO_SPEEDS = [1, 1.25, 1.5] as const;
+
+export type LectureAudioSpeed = (typeof LECTURE_AUDIO_SPEEDS)[number];
+
+export function nextLectureAudioSpeed(speed: number): LectureAudioSpeed {
+  const at = LECTURE_AUDIO_SPEEDS.indexOf(speed as LectureAudioSpeed);
+  return LECTURE_AUDIO_SPEEDS[(at + 1) % LECTURE_AUDIO_SPEEDS.length] ?? 1;
+}
+
+export function formatLectureAudioSpeed(speed: number): string {
+  return `${speed}×`;
+}
+
+/** `m:ss` for a playhead in seconds, matching the recorder's clock. */
+export function formatLectureAudioTime(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  return formatLectureClock(seconds * 1000);
+}
+
+export function lectureAudioFileName(row: LectureAttachmentLike | null | undefined): string {
+  return (row?.fileName ?? '').trim() || 'lecture-recording';
 }

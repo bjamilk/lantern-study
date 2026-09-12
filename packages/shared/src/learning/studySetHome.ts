@@ -66,7 +66,10 @@ export const STUDY_SET_HOME_TOOLS: readonly StudySetHomeTool[] = [
   },
   {
     id: 'lesson',
-    label: 'Start a tutoring session',
+    // One name for the feature. This row used to say "Start a tutoring
+    // session" while the card 100px away said "Tutor" and the studio header
+    // said "Lesson" — three names, one door.
+    label: 'Start a tutor session',
     promise: 'A structured lesson from your notes',
     icon: 'school',
     feature: 'ai',

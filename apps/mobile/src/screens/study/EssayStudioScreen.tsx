@@ -23,6 +23,8 @@ import {
   selectEssayAttempt,
   startEssaySession,
   type EssaySession,
+  scopeNoun,
+  scopedCopy,
 } from '@lantern/shared';
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyStackParamList } from '../../navigation/types';
@@ -121,7 +123,7 @@ export function EssayStudioScreen({ navigation, route }: Props) {
     if (picked.canceled || !picked.assets[0]) return;
     const asset = picked.assets[0];
     if ((asset.mimeType ?? '').startsWith('image/')) {
-      showToast('Import the photo as a note in this course, then load it here.', 'info');
+      showToast(scopedCopy('essayPhotoImport', scopeNoun(studySetId, courseId)), 'info');
       setImportOpen(true);
       return;
     }

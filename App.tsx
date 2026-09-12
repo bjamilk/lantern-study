@@ -18,7 +18,8 @@ import {
     ONBOARDING_COMPLETE_VALUE,
     isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { buildStudySetPath, getNoteStudyContent, isQuizzableNote, parseStudySetPath, pickOpenStudySetId } from '@lantern/shared';
+import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isQuizzableNote, parseStudySetPath, pickOpenStudySetId } from '@lantern/shared';
+import { buildFlashcardReviewQueue, getTodayStudyCounts, isNewFlashcard, normalizeUserSettings } from '@lantern/shared/settings';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
 import { useAuthStore } from './stores/authStore';
@@ -1371,21 +1372,57 @@ export const App: React.FC = () => {
 
     const handleOpenQuickTest = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
     const handleOpenQuickStudy = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
+    /**
+     * "Study all N due" — all N of them, across every deck.
+     *
+     * This used to rank the decks by due count and open the biggest one, so a
+     * button that said 68 started a session of 17 and ended there; the other 51
+     * cards were counted, promised, and then unreachable from the door that
+     * counted them. `FlashcardSession.cardQueue` is a list of cards, not a deck,
+     * so the web review screen can carry the whole cross-deck queue — it only
+     * needs `deck` for its title and its presence intent, which is why the
+     * largest pile is still what names the session.
+     *
+     * Each deck's share is built with the SAME rule a single-deck review uses,
+     * so the session never deals a card `handleStartReview` would have held
+     * back. The new-card allowance is spent across the whole plan rather than
+     * per deck: it is a daily budget, and giving every deck a fresh one would
+     * introduce many times the student's configured limit in a single sitting.
+     */
     const handleFlashcardStudy = () => {
-        const getDueCards = useFlashcardStore.getState().getDueCards;
-        const ranked = decks
-            .map(d => ({ deck: d, due: getDueCards(d.id).length }))
-            .filter(x => x.due > 0)
-            .sort((a, b) => b.due - a.due);
-        const best = ranked[0];
-        if (best?.deck) {
-            handleSelectDeck(best.deck);
-            handleStartReview(best.deck);
-        } else if (decks.length === 0) {
+        if (decks.length === 0) {
             showToast('No flashcard decks available. Create a deck first.', 'error');
-        } else {
-            showToast('No cards ready to review right now.', 'info');
+            return;
         }
+        const settings = normalizeUserSettings(currentUser?.settings);
+        let newIntroducedToday = getTodayStudyCounts(useTestStore.getState().studyActivityDays).newFlashcards;
+        const plan = dueReviewPlan(decks, (deckId) => {
+            const queue = buildFlashcardReviewQueue(
+                flashcards.filter(fc => fc.deckId === deckId),
+                {
+                    srsNewCardsPerDay: settings.study.srsNewCardsPerDay,
+                    newCardsIntroducedToday: newIntroducedToday,
+                }
+            );
+            newIntroducedToday += queue.filter(isNewFlashcard).length;
+            return queue;
+        });
+
+        const topDeck = plan.first ? decks.find(d => d.id === plan.first!.deckId) : undefined;
+        if (!plan.first || !topDeck) {
+            showToast('No cards ready to review right now.', 'info');
+            return;
+        }
+
+        handleSelectDeck(topDeck);
+        // One deck due: the ordinary path, which keeps its own "new-card limit
+        // reached" explanations.
+        if (plan.legs.length === 1) {
+            handleStartReview(topDeck);
+            return;
+        }
+        setActiveReviewSession({ deck: topDeck, cardQueue: plan.queue });
+        setAppMode(AppMode.FLASHCARD_REVIEW);
     };
     const handleStudyDeck = (deck: import('./types').Deck) => {
         handleSelectDeck(deck);

@@ -310,7 +310,7 @@ describe('the Study row itself', () => {
       'Flashcards',
       'Tests',
       'Record',
-      'AI',
+      'Ask',
     ]);
   });
 
@@ -637,7 +637,7 @@ describe('the deck row', () => {
 describe('the note row', () => {
   it('is Learn · Cards · Test · AI', () => {
     expect(noteBar().items.map(item => item.id)).toEqual(['learn', 'cards', 'test', 'ai']);
-    expect(noteBar().items.map(item => item.label)).toEqual(['Learn', 'Cards', 'Test', 'AI']);
+    expect(noteBar().items.map(item => item.label)).toEqual(['Learn', 'Cards', 'Test', 'Ask']);
   });
 
   it('paints teal (§7.2) with nothing active', () => {
@@ -976,6 +976,31 @@ describe('the community row', () => {
     expect(source).toContain("useScreenActions('CommunityDetail'");
     for (const action of ['communityChat', 'communityBoards', 'communityRooms']) {
       expect(source).toContain(action);
+    }
+  });
+});
+
+// The companion door was read five ways on one device pass: "Ask", "Ask
+// Lantern", "AI" on this row, "Lantern AI" on the panel header, and the room's
+// tutor row taken for the same thing. One door, one name — **Ask Lantern**,
+// shortened to "Ask" where a row of five leaves no room for two words. The
+// bare "AI" names nothing a student can point at, so it is gone for good.
+describe('the companion door wears one name', () => {
+  it('labels every AI row item "Ask", never "AI"', () => {
+    for (const bar of Object.values(CONTEXTUAL_BARS)) {
+      for (const item of bar.items) {
+        if (item.id !== 'ai') continue;
+        expect(item.label).toBe('Ask');
+      }
+    }
+  });
+
+  it('keeps the product name "Lantern AI" off every row', () => {
+    for (const bar of Object.values(CONTEXTUAL_BARS)) {
+      for (const item of bar.items) {
+        expect(item.label).not.toBe('AI');
+        expect(item.label).not.toBe('Lantern AI');
+      }
     }
   });
 });

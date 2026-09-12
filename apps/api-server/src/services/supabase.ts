@@ -7114,6 +7114,17 @@ export class SupabaseService {
       sort?: "newest" | "oldest" | "highestScore";
       from?: string;
       to?: string;
+      /**
+       * Only tests filed to this study set (test_sessions.study_set_id).
+       *
+       * It belongs in the QUERY, not in the caller. The route used to fetch one
+       * page and filter it in JS, then report `total: filed.length` and
+       * `hasMore: false` — so a set whose tests were older than the newest 20
+       * lost them silently, and the count on screen was the count of whatever
+       * happened to survive that page. Pushing it down here is what makes
+       * pagination and `total` describe the same rows.
+       */
+      studySetId?: string;
     } = {},
   ): Promise<{ tests: any[]; total: number }> {
     const {
@@ -7126,13 +7137,16 @@ export class SupabaseService {
       sort = "newest",
       from,
       to,
+      studySetId,
     } = options;
     const offset = (page - 1) * limit;
     const sortKey = sort || "newest";
     const fromKey = from || "";
     const toKey = to || "";
 
-    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
+    // studySetId is part of the key: without it a filtered page and an
+    // unfiltered one would share a cache entry and serve each other's rows.
+    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:set:${studySetId || ""}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
 
     return cacheService.cached(
       cacheKey,
@@ -7158,6 +7172,7 @@ export class SupabaseService {
           paused_at,
           updated_at,
           title,
+          ${studySetId ? "study_set_id," : ""}
           ${completedLean ? "" : "questions,"}
           user_answers,
           test_results (
@@ -7194,6 +7209,9 @@ export class SupabaseService {
 
         query = applyCourseFilter(query, "course_id", courseFilter);
         query = applyCourseFilter(query, "topic_id", topicFilter);
+        if (studySetId) {
+          query = query.eq("study_set_id", studySetId);
+        }
 
         if (from) {
           query = query.gte("start_time", from);
@@ -7248,6 +7266,7 @@ export class SupabaseService {
             fallback = fallback.eq("status", "abandoned");
           fallback = applyCourseFilter(fallback, "course_id", courseFilter);
           fallback = applyCourseFilter(fallback, "topic_id", topicFilter);
+          if (studySetId) fallback = fallback.eq("study_set_id", studySetId);
           if (from) fallback = fallback.gte("start_time", from);
           if (to) fallback = fallback.lte("start_time", to);
           const retry = await fallback
@@ -7267,6 +7286,16 @@ export class SupabaseService {
               return (bScore || 0) - (aScore || 0);
             });
           }
+        }
+
+        // Before 20260911120000_study_sets.sql no session can be filed to a
+        // set, so a set filter matches nothing. Empty is the honest answer;
+        // dropping the filter would hand back every test the user owns.
+        if (error && studySetId && isMissingStudySetColumn(error)) {
+          logger.warn(
+            "study_set_id missing on test_sessions — set filter matched nothing (apply 20260911120000_study_sets.sql)",
+          );
+          return { tests: [], total: 0 };
         }
 
         if (error && topicFilterApplies(topicFilter) && isMissingTopicColumn(error)) {

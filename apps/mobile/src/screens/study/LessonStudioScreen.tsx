@@ -286,7 +286,7 @@ export function LessonStudioScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      <ScreenHeader title={courseLabel || 'Lesson'} onBack={() => navigation.goBack()} />
+      <ScreenHeader title={courseLabel || 'Tutor'} onBack={() => navigation.goBack()} />
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ padding: 16, paddingBottom: tabBarClearance, gap: 12 }}
@@ -294,7 +294,7 @@ export function LessonStudioScreen({ navigation, route }: Props) {
       >
         {!session ? (
           <View className="gap-3">
-            <T.Heading>Lesson</T.Heading>
+            <T.Heading>Tutor</T.Heading>
             <T.Body tone="secondary">{lessonStudioPriceLine()}</T.Body>
             {lessons.length > 0 ? (
               <View className="gap-2">

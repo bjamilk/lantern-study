@@ -233,8 +233,12 @@ export function NotesStudioScreen({ navigation, route }: Props) {
         subtitle="Notes studio"
         onBack={() => navigation.goBack()}
         right={
-          <Pressable onPress={() => openCompanion()} accessibilityRole="button" accessibilityLabel="Ask">
-            <T.Caption>Ask</T.Caption>
+          <Pressable
+            onPress={() => openCompanion()}
+            accessibilityRole="button"
+            accessibilityLabel="Ask Lantern"
+          >
+            <T.Caption>Ask Lantern</T.Caption>
           </Pressable>
         }
       />

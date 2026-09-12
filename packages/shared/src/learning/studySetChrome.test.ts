@@ -3,6 +3,7 @@ import {
   resumeKindFromActivity,
   studySetCompanionPrompts,
   upcomingExamsFromNotes,
+  examTitleFromNote,
 } from './studySetChrome';
 
 describe('studySetChrome', () => {
@@ -34,5 +35,24 @@ describe('studySetChrome', () => {
       '2026-09-11'
     );
     expect(exams).toEqual([{ examDate: '2099-06-01', title: 'BIO 201', studySetId: 'set-1' }]);
+  });
+});
+
+describe('examTitleFromNote', () => {
+  it('names the set, not the plan note it was read off', () => {
+    // Home's Upcoming card rendered the raw note title, so a generated plan
+    // note surfaced as "Plan — PHARM 212" where the exam's name belonged.
+    expect(examTitleFromNote('Plan — PHARM 212')).toBe('PHARM 212');
+    expect(examTitleFromNote('Recap — BIO 201')).toBe('BIO 201');
+  });
+
+  it('leaves a title a student wrote alone', () => {
+    expect(examTitleFromNote('Midterm plan')).toBe('Midterm plan');
+    expect(examTitleFromNote('  ')).toBe('Exam');
+    expect(examTitleFromNote(null)).toBe('Exam');
+  });
+
+  it('does not strip a prefix down to nothing', () => {
+    expect(examTitleFromNote('Plan — ')).toBe('Plan —');
   });
 });

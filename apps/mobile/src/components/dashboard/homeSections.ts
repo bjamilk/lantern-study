@@ -83,7 +83,7 @@ export const HOME_QUICK_ACTIONS: readonly HomeQuickActionSpec[] = [
     illustration: 'import-tray',
   },
   { id: 'quiz', label: 'Create a quiz', icon: 'clipboard-check', feature: 'tests' },
-  { id: 'companion', label: 'Chat with Lantern', icon: 'sparkles', feature: 'ai' },
+  { id: 'companion', label: 'Ask Lantern', icon: 'sparkles', feature: 'ai' },
   { id: 'tutor', label: 'Tutor', icon: 'school', feature: 'campus' },
   {
     id: 'record',
@@ -356,37 +356,6 @@ export function homeQuickActionGrid({
   // is the wrap this function exists to prevent.
   const tileWidth = Math.max(0, Math.floor((available - gutter * (columns - 1)) / columns));
   return { columns, tileWidth, gutter };
-}
-
-/* ------------------------------------------------------------------ *
- * 7. Which deck the "Study all N due" button reviews
- * ------------------------------------------------------------------ */
-
-export interface DeckDueCount {
-  deckId: string;
-  deckName?: string | null;
-  dueCount: number;
-}
-
-/**
- * The deck a cross-deck "Study all N due" tap should open.
- *
- * The phone has no cross-deck review screen — `FlashcardReview` takes one
- * `deckId` — so the honest nearest thing is the deck holding the most due
- * cards, which is where a student clearing a backlog would start anyway.
- * Sending the tap to `FlashcardsList` instead (what Wave P shipped) makes the
- * button lie: it says "study 68" and hands over a list of 26 decks.
- *
- * Ties break on deck id so two runs of the same data pick the same deck.
- * Decks with nothing due are never returned, so a stale count cannot open a
- * review with no cards in it.
- */
-export function topDueDeck(decks: readonly DeckDueCount[]): DeckDueCount | null {
-  const due = decks.filter((deck) => deck.deckId && deck.dueCount > 0);
-  if (due.length === 0) return null;
-  return [...due].sort(
-    (a, b) => b.dueCount - a.dueCount || a.deckId.localeCompare(b.deckId)
-  )[0];
 }
 
 /* ------------------------------------------------------------------ *

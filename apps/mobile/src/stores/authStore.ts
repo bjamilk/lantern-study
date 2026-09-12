@@ -95,6 +95,46 @@ const BOOT_REFRESH_TIMEOUT_MS = 8_000;
 const BOOT_TIMEOUT_MARKER = 'auth-init-timeout';
 
 /**
+ * How long the handset's own storage may take to hand back the stored session.
+ *
+ * `readStoredSession()` used to be awaited unbounded. It is "local", but on a
+ * cold start it is the first touch of the native storage module and it can
+ * stall well past the refresh budget — and until it answers, `initialize()`
+ * has not reached ANY conclusion, which is the window the boot gate used to
+ * fill with the sign-in form. Bounding it means the store always reaches a
+ * conclusion inside a budget the gate can outlast.
+ */
+const BOOT_STORAGE_TIMEOUT_MS = 5_000;
+
+/**
+ * The stored session, or null if the read did not answer in time.
+ *
+ * Timing out here is NOT proof of a signed-out student, so the late answer is
+ * still adopted if it arrives (see `initialize`); this only stops a stalled
+ * storage read from holding the whole boot open.
+ */
+async function readStoredSessionBounded(): Promise<{
+  session: Session | null;
+  late: Promise<Session | null> | null;
+}> {
+  const read = readStoredSession().catch(() => null);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timedOut = Symbol('storage-timeout');
+  const raced = await Promise.race([
+    read,
+    new Promise<typeof timedOut>((resolve) => {
+      timer = setTimeout(() => resolve(timedOut), BOOT_STORAGE_TIMEOUT_MS);
+    }),
+  ]);
+  if (timer) clearTimeout(timer);
+  if (raced === timedOut) {
+    console.warn('[Auth] the stored session read did not answer in time; continuing without it');
+    return { session: null, late: read };
+  }
+  return { session: raced as Session | null, late: null };
+}
+
+/**
  * Fallback display name so a restoring boot greets the student, not "User".
  *
  * This name is not only a greeting: it is the identity the app stamps on the
@@ -266,7 +306,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       // `supabase.auth.getSession()` cannot answer this: auth-js refreshes
       // inside it once the access token is past its expiry margin, which is
       // the very call that stalls here.
-      const stored = await readStoredSession();
+      const { session: stored, late: lateStoredRead } = await readStoredSessionBounded();
+
+      // A storage read that overran its budget still matters: if it lands
+      // while this launch has nobody signed in, adopt it rather than leaving
+      // a signed-in student looking at the sign-in form.
+      if (lateStoredRead) {
+        const epochAtRead = sessionEpoch;
+        void lateStoredRead.then((late) => {
+          if (!late || epochAtRead !== sessionEpoch || get().user) return;
+          set({
+            user: late.user,
+            session: late,
+            profileName: displayNameFromUser(late.user),
+            sessionState: 'restoring',
+            isInitialized: true,
+            isLoading: false,
+          });
+          scheduleSessionRestoreRetry(set, get);
+        });
+      }
 
       // Step 2 — render the app on the stored session IMMEDIATELY.
       //

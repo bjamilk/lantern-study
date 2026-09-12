@@ -226,7 +226,10 @@ const STUDY_BAR: ContextualBarSpec = {
     },
     {
       id: 'ai',
-      label: 'AI',
+      // The companion door is "Ask Lantern" everywhere a door is named. This
+      // row has five items and no room for two words, so it wears the short
+      // form "Ask" — never "AI", which named nothing the student could see.
+      label: 'Ask',
       icon: 'sparkles',
       feature: 'ai',
       target: { kind: 'ai' },
@@ -346,7 +349,10 @@ const NOTE_BAR: ContextualBarSpec = {
     },
     {
       id: 'ai',
-      label: 'AI',
+      // The companion door is "Ask Lantern" everywhere a door is named. This
+      // row has five items and no room for two words, so it wears the short
+      // form "Ask" — never "AI", which named nothing the student could see.
+      label: 'Ask',
       icon: 'sparkles',
       feature: 'ai',
       target: { kind: 'ai' },

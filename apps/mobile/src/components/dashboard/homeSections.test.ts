@@ -7,7 +7,6 @@ import {
   homeRegions,
   lastStudiedLabel,
   shouldRefetchSets,
-  topDueDeck,
   nearestUpcomingExam,
   resumeRouteForHref,
   studySetCountsLabel,
@@ -297,32 +296,6 @@ describe('homeQuickActionGrid', () => {
 
   it('never returns a negative width on an absurd screen', () => {
     expect(homeQuickActionGrid({ screenWidth: 0 }).tileWidth).toBe(0);
-  });
-});
-
-describe('topDueDeck', () => {
-  it('picks the deck holding the most due cards', () => {
-    expect(
-      topDueDeck([
-        { deckId: 'a', deckName: 'Anatomy', dueCount: 12 },
-        { deckId: 'b', deckName: 'Biochem', dueCount: 40 },
-        { deckId: 'c', deckName: 'Cells', dueCount: 16 },
-      ])
-    ).toEqual({ deckId: 'b', deckName: 'Biochem', dueCount: 40 });
-  });
-
-  it('ignores decks with nothing due, so a review never opens empty', () => {
-    expect(topDueDeck([{ deckId: 'a', dueCount: 0 }])).toBeNull();
-    expect(topDueDeck([])).toBeNull();
-  });
-
-  it('breaks ties on deck id, so two renders pick the same deck', () => {
-    const rows = [
-      { deckId: 'z', dueCount: 5 },
-      { deckId: 'a', dueCount: 5 },
-    ];
-    expect(topDueDeck(rows)?.deckId).toBe('a');
-    expect(topDueDeck([...rows].reverse())?.deckId).toBe('a');
   });
 });
 

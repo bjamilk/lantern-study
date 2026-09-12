@@ -187,3 +187,201 @@ describe('lecture studio helpers', () => {
     ).toBe(true);
   });
 });
+
+import {
+  SMART_NOTES_END,
+  SMART_NOTES_HEADING,
+  SMART_NOTES_START,
+  upsertSmartNotesSection,
+} from '../utils/smartNotes';
+import {
+  defaultLectureTab,
+  formatLectureAudioTime,
+  lectureAudioAttachment,
+  lectureAudioFileName,
+  lectureNoteParts,
+  lectureTabs,
+  lectureTranscriptLines,
+  nextLectureAudioSpeed,
+  resolveLectureTab,
+  showLectureConsentGate,
+} from './lectureStudio';
+
+const TYPED = '[0:00] mine';
+const TRANSCRIPT = 'Enzymes lower activation energy.';
+const ENHANCED = '- Enzymes cut the activation barrier.';
+
+const withEnhanced = (body: string) =>
+  `${body}\n\n${SMART_NOTES_START}\n${SMART_NOTES_HEADING}\n\n${ENHANCED}\n${SMART_NOTES_END}\n`;
+
+const audioRow = {
+  id: 'att-audio',
+  type: 'audio',
+  fileUrl: 'https://example.test/lecture.webm?token=abc',
+  fileName: 'lecture.webm',
+  extractedText: TRANSCRIPT,
+};
+
+const tabIds = (source: Parameters<typeof lectureTabs>[0]) =>
+  lectureTabs(source).map((tab) => tab.id);
+
+describe('lecture tab planner', () => {
+  it('gives a bare note only My Notes', () => {
+    expect(tabIds({ body: 'Just what I typed.' })).toEqual(['notes']);
+    expect(tabIds({})).toEqual(['notes']);
+    expect(lectureTabs({}).map((tab) => tab.label)).toEqual(['My Notes']);
+  });
+
+  it('opens each tab from its own source and all four together', () => {
+    const body = composeLectureNoteBody(TYPED, TRANSCRIPT);
+    expect(tabIds({ body: withEnhanced(TYPED) })).toEqual(['notes', 'enhanced']);
+    expect(tabIds({ body })).toEqual(['notes', 'transcript']);
+    expect(tabIds({ body: TYPED, attachments: [{ extractedText: TRANSCRIPT }] })).toEqual([
+      'notes',
+      'transcript',
+    ]);
+    expect(tabIds({ body: TYPED, attachments: [audioRow] })).toEqual([
+      'notes',
+      'transcript',
+      'audio',
+    ]);
+    expect(tabIds({ body: withEnhanced(body), attachments: [audioRow] })).toEqual([
+      'notes',
+      'enhanced',
+      'transcript',
+      'audio',
+    ]);
+  });
+
+  it('counts a recording whose signed URL failed but whose storage path was kept', () => {
+    const unsigned = {
+      id: 'att-2',
+      type: 'audio',
+      fileName: 'lecture.webm',
+      metadata: { storagePath: 'user/lecture.webm' },
+    };
+    expect(tabIds({ body: TYPED, attachments: [unsigned] })).toEqual(['notes', 'audio']);
+    expect(lectureAudioAttachment({ attachments: [unsigned] })).toBe(unsigned);
+    // No URL and no path is not a playable row, so it opens no tab.
+    expect(tabIds({ body: TYPED, attachments: [{ id: 'att-3', type: 'audio' }] })).toEqual([
+      'notes',
+    ]);
+    // A PDF is never the lecture's audio.
+    expect(
+      lectureAudioAttachment({ attachments: [{ id: 'p', type: 'pdf', fileUrl: 'x' }] })
+    ).toBeNull();
+    // Newest recording wins when a note was recorded into twice.
+    expect(lectureAudioAttachment({ attachments: [audioRow, unsigned] })).toBe(unsigned);
+  });
+
+  it('keeps the generated section out of the transcript and the typed notes', () => {
+    const parts = lectureNoteParts({
+      body: withEnhanced(composeLectureNoteBody(TYPED, TRANSCRIPT)),
+      attachments: [audioRow],
+    });
+    expect(parts.typed).toBe(TYPED);
+    expect(parts.transcript).toBe(TRANSCRIPT);
+    expect(parts.enhanced).toBe(ENHANCED);
+    expect(parts.transcript).not.toContain('Enzymes cut');
+    expect(parts.typed).not.toContain('Transcript');
+  });
+
+  it('counts live captions as a transcript before anything is saved', () => {
+    expect(tabIds({ body: TYPED, liveTranscript: 'Listening now' })).toEqual([
+      'notes',
+      'transcript',
+    ]);
+    expect(lectureNoteParts({ body: TYPED, liveTranscript: '   ' }).transcript).toBe('');
+  });
+
+  it('opens on the enhanced notes when they exist, and on My Notes otherwise', () => {
+    expect(defaultLectureTab({ body: withEnhanced(TYPED) })).toBe('enhanced');
+    expect(defaultLectureTab({ body: composeLectureNoteBody(TYPED, TRANSCRIPT) })).toBe('notes');
+    expect(defaultLectureTab({})).toBe('notes');
+  });
+
+  it('pins the pane to My Notes while a take is running', () => {
+    const source = { body: withEnhanced(TYPED), attachments: [audioRow] };
+    expect(defaultLectureTab(source, { recording: true })).toBe('notes');
+    expect(resolveLectureTab(source, 'audio', { recording: true })).toBe('notes');
+    expect(resolveLectureTab(source, 'audio')).toBe('audio');
+  });
+
+  it('drops a chosen tab that the note no longer has', () => {
+    expect(resolveLectureTab({ body: TYPED }, 'audio')).toBe('notes');
+    expect(resolveLectureTab({ body: withEnhanced(TYPED) }, 'transcript')).toBe('enhanced');
+    expect(resolveLectureTab({ body: TYPED }, null)).toBe('notes');
+  });
+
+  it('lifts a gutter time off a caption line and leaves plain lines alone', () => {
+    expect(lectureTranscriptLines('[0:12] Entropy rises.\nNo stamp here.\n\n[1:04]\n')).toEqual([
+      { time: '0:12', text: 'Entropy rises.' },
+      { text: 'No stamp here.' },
+    ]);
+    expect(lectureTranscriptLines('12:04:09 long lecture')).toEqual([
+      { time: '12:04:09', text: 'long lecture' },
+    ]);
+    expect(lectureTranscriptLines('')).toEqual([]);
+  });
+
+  it('cycles the playback speed and formats a playhead', () => {
+    expect(nextLectureAudioSpeed(1)).toBe(1.25);
+    expect(nextLectureAudioSpeed(1.25)).toBe(1.5);
+    expect(nextLectureAudioSpeed(1.5)).toBe(1);
+    expect(nextLectureAudioSpeed(9)).toBe(1);
+    expect(formatLectureAudioTime(0)).toBe('0:00');
+    expect(formatLectureAudioTime(75.4)).toBe('1:15');
+    expect(formatLectureAudioTime(Number.NaN)).toBe('0:00');
+    expect(lectureAudioFileName(audioRow)).toBe('lecture.webm');
+    expect(lectureAudioFileName({ type: 'audio' })).toBe('lecture-recording');
+  });
+});
+
+
+/**
+ * The Android studio showed no tab row at all on build 193: its consent gate
+ * replaced the whole surface whenever the recorder was idle, so a saved lecture
+ * — enhanced notes and all — was unreachable. These pin both halves: the
+ * planner really does find the tabs in a body written the way the app writes
+ * one, and the gate stands aside for a lecture that has something to read.
+ */
+describe('a saved lecture, written the way the app writes it', () => {
+  /** Exactly what the studio saves: transcript into the body, then enhance. */
+  const savedBody = upsertSmartNotesSection(
+    composeLectureNoteBody(TYPED, TRANSCRIPT),
+    ENHANCED
+  );
+
+  it('plans three tabs from the stored body, four once audio is attached', () => {
+    expect(tabIds({ body: savedBody })).toEqual(['notes', 'enhanced', 'transcript']);
+    expect(tabIds({ body: savedBody, attachments: [audioRow] })).toEqual([
+      'notes',
+      'enhanced',
+      'transcript',
+      'audio',
+    ]);
+    const parts = lectureNoteParts({ body: savedBody });
+    expect(parts.typed).toBe(TYPED);
+    expect(parts.enhanced).toBe(ENHANCED);
+    expect(parts.transcript).toBe(TRANSCRIPT);
+  });
+
+  it('opens the lecture instead of the consent door when there is something to read', () => {
+    const idle = { consented: false, idle: true };
+    expect(showLectureConsentGate({ ...idle, source: { body: savedBody } })).toBe(false);
+    expect(showLectureConsentGate({ ...idle, source: { body: 'Just what I typed.' } })).toBe(
+      false
+    );
+    expect(showLectureConsentGate({ ...idle, source: { attachments: [audioRow] } })).toBe(false);
+  });
+
+  it('still asks before a lecture that has nothing on it yet', () => {
+    expect(showLectureConsentGate({ source: {}, consented: false, idle: true })).toBe(true);
+    expect(showLectureConsentGate({ source: { body: '   ' }, consented: false, idle: true })).toBe(
+      true
+    );
+    // Already agreed, or a take already running: never in the way.
+    expect(showLectureConsentGate({ source: {}, consented: true, idle: true })).toBe(false);
+    expect(showLectureConsentGate({ source: {}, consented: false, idle: false })).toBe(false);
+  });
+});
