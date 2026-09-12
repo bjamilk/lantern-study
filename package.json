@@ -90,10 +90,10 @@
     }
   },
   "dependencies": {
-    "katex": "^0.16.8",
-    "lucide-react": "1.41.0",
-    "react": "19.1.0",
-    "react-dom": "19.1.0",
+    "katex": "^0.18.7",
+    "lucide-react": "1.43.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
     "rehype-katex": "^6.0.0",
     "rehype-sanitize": "^6.0.0",
