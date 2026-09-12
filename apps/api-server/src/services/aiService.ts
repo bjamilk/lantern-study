@@ -2092,6 +2092,13 @@ export interface CompanionChatResult {
   groundedExcerpts: number;
   /** Where in the document those excerpts came from, 1-based, in reading order. */
   groundedExcerptIndexes: number[];
+  /**
+   * The note those excerpts came from, ready to render as source chips.
+   * Null whenever nothing was read — a clarifying question, or a reply with no
+   * note attached. There are no page numbers anywhere in this chain, so the
+   * only honest thing a chip can say is "<note title> · Excerpt N".
+   */
+  citations?: { noteId: string; noteTitle: string; excerpts: number[] } | null;
 }
 
 /**
@@ -2148,6 +2155,7 @@ export async function companionChat(
     activeSessionSummary,
     noteContext,
     noteTitle,
+    noteId,
     studyGoal,
   } = context;
   // A page scope is a fact about WHERE the excerpts came from, so it only
@@ -2178,6 +2186,8 @@ export async function companionChat(
       groundingLabel: COMPANION_GROUNDING_LABELS.general,
       groundedExcerpts: 0,
       groundedExcerptIndexes: [],
+      // Nothing was read, so there is nothing to cite.
+      citations: null,
     };
   }
 
@@ -2293,6 +2303,22 @@ Only include ACTIONS when genuinely useful, not on every reply. Never include AC
     ? 'general'
     : declaredGrounding ?? 'notes';
 
+  const excerptIndexes = hasNoteExcerpts
+    ? noteSelection.chunks.map((chunk) => chunk.index + 1)
+    : [];
+
+  // A citation needs a note to point at. Grounding can be 'notes' without a
+  // noteId (a class-corpus answer), and a chip that cannot be opened is worse
+  // than no chip, so the id is what gates this — not the grounding flag.
+  const citations =
+    grounding === 'notes' && noteId && excerptIndexes.length > 0
+      ? {
+          noteId,
+          noteTitle: (noteTitle && noteTitle.trim()) || 'Untitled note',
+          excerpts: excerptIndexes,
+        }
+      : null;
+
   return {
     reply,
     actions,
@@ -2301,9 +2327,8 @@ Only include ACTIONS when genuinely useful, not on every reply. Never include AC
     grounding,
     groundingLabel: COMPANION_GROUNDING_LABELS[grounding],
     groundedExcerpts: hasNoteExcerpts ? noteSelection.chunks.length : 0,
-    groundedExcerptIndexes: hasNoteExcerpts
-      ? noteSelection.chunks.map((chunk) => chunk.index + 1)
-      : [],
+    groundedExcerptIndexes: excerptIndexes,
+    citations,
   };
 }
 

@@ -24,6 +24,7 @@ import { AppIcon } from '../ui/AppIcon';
 import NotePdfViewer from '../NotePdfViewer';
 import NoteImageGallery from '../NoteImageGallery';
 import { TurnIntoMenu } from './TurnIntoMenu';
+import { NoteReadingView } from './NoteReadingView';
 import { fetchNoteAttachmentPages } from '../../services/apiEndpoints';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
@@ -102,6 +103,11 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const [highlight, setHighlight] = useState('');
   const [writing, setWriting] = useState(false);
+  /**
+   * Notes open rendered — a hierarchy, not markdown source. Edit swaps in the
+   * textarea that used to be the only state this pane had.
+   */
+  const [editing, setEditing] = useState(false);
   const [pages, setPages] = useState<Array<{ pageIndex: number; text: string; imageUrl?: string }>>(
     []
   );
@@ -184,6 +190,9 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
     if (el && el.selectionEnd > el.selectionStart) {
       return highlightFromRange(el.value, el.selectionStart, el.selectionEnd);
     }
+    // Reading mode has no textarea, so Ask reads the document selection.
+    const selected = typeof window !== 'undefined' ? window.getSelection()?.toString() || '' : '';
+    if (selected.trim()) return selected;
     return highlight;
   }, [highlight]);
 
@@ -257,8 +266,13 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
   useEffect(() => {
     const onSelectionChange = () => {
       const el = notesRef.current;
-      if (!el || document.activeElement !== el) return;
-      setHighlight(highlightFromRange(el.value, el.selectionStart, el.selectionEnd));
+      if (el && document.activeElement === el) {
+        setHighlight(highlightFromRange(el.value, el.selectionStart, el.selectionEnd));
+        return;
+      }
+      // Reading mode: the selection lives in the rendered note, not a textarea.
+      const selected = window.getSelection()?.toString() || '';
+      if (selected.trim()) setHighlight(selected);
     };
     document.addEventListener('selectionchange', onSelectionChange);
     return () => document.removeEventListener('selectionchange', onSelectionChange);
@@ -295,6 +309,14 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
         <Button size="sm" onClick={() => void writeNotes()} loading={writing} disabled={writing}>
           Write notes · {writeCost}
         </Button>
+        <button
+          type="button"
+          aria-pressed={editing}
+          onClick={() => setEditing((was) => !was)}
+          className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary"
+        >
+          {editing ? 'Done' : 'Edit'}
+        </button>
         <TurnIntoMenu disabled={turning} existing={turnIntoExisting?.(note.id)} onSelect={onTurnInto} />
         <button
           type="button"
@@ -367,20 +389,32 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
             aria-label="Note title"
             className="mb-2 w-full bg-transparent text-heading font-semibold text-lantern-text outline-none"
           />
-          <textarea
-            ref={notesRef}
-            value={body}
-            onChange={(event) => {
-              setBody(event.target.value);
-              scheduleSave();
-            }}
-            onSelect={onBodySelect}
-            onKeyUp={onBodySelect}
-            onMouseUp={onBodySelect}
-            aria-label="Structured notes"
-            placeholder="Your notes sit here. Highlight a sentence and Ask, or write notes from the source."
-            className="flex-1 min-h-[12rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
-          />
+          {editing ? (
+            <textarea
+              ref={notesRef}
+              value={body}
+              onChange={(event) => {
+                setBody(event.target.value);
+                scheduleSave();
+              }}
+              onSelect={onBodySelect}
+              onKeyUp={onBodySelect}
+              onMouseUp={onBodySelect}
+              aria-label="Structured notes"
+              placeholder="Your notes sit here. Highlight a sentence and Ask, or write notes from the source."
+              className="flex-1 min-h-[12rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+            />
+          ) : (
+            <div
+              aria-label="Structured notes"
+              className="flex-1 min-h-[12rem] w-full overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3"
+            >
+              <NoteReadingView
+                body={body}
+                emptyLine="Your notes sit here. Highlight a sentence and Ask, or write notes from the source."
+              />
+            </div>
+          )}
           {showLectureTranscript ? (
             <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3">
               <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Transcript</h2>

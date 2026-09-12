@@ -1,4 +1,11 @@
-import { mergeResumeActivities, resumeGreeting } from './studyResume';
+import {
+  mergeResumeActivities,
+  primaryHomeAction,
+  resumeGreeting,
+  resumeKindPresentation,
+  type StudyResumeKind,
+} from './studyResume';
+import { WORKSPACE_ACTIVITIES } from './courseWorkspace';
 
 describe('study resume', () => {
   it('writes a flashcards greeting with the set title', () => {
@@ -28,5 +35,76 @@ describe('study resume', () => {
     const merged = mergeResumeActivities(first, { ...first, title: 'Quiz again' }, [first]);
     expect(merged.recentActivities).toHaveLength(1);
     expect(merged.lastActivity.title).toBe('Quiz again');
+  });
+});
+
+describe('primaryHomeAction', () => {
+  const lastActivity = {
+    kind: 'lesson' as const,
+    title: 'Lesson',
+    studySetId: 's',
+    href: '/study/sets/s/lesson',
+    at: '2026-09-11T00:00:00.000Z',
+  };
+
+  it('reviews due cards before anything else', () => {
+    expect(primaryHomeAction({ dueCardsCount: 4, lastActivity })).toEqual({
+      kind: 'review',
+      label: 'Study all 4 due',
+    });
+  });
+
+  it('continues to the resume record href', () => {
+    expect(primaryHomeAction({ dueCardsCount: 0, lastActivity })).toEqual({
+      kind: 'continue',
+      label: 'Continue',
+      href: '/study/sets/s/lesson',
+    });
+  });
+
+  it('falls back to import when there is nothing to continue', () => {
+    expect(primaryHomeAction({ dueCardsCount: 0, lastActivity: null })).toEqual({
+      kind: 'import',
+      label: 'Import & study',
+    });
+    // A resume record with a blank href cannot be navigated to either.
+    expect(
+      primaryHomeAction({ dueCardsCount: 0, lastActivity: { ...lastActivity, href: '  ' } }).kind
+    ).toBe('import');
+  });
+});
+
+describe('resumeKindPresentation', () => {
+  const KINDS: StudyResumeKind[] = [
+    'note',
+    'lecture',
+    'quiz',
+    'cards',
+    'recap',
+    'lesson',
+    'play',
+    'test',
+    'essay',
+  ];
+
+  it('maps every kind to a workspace activity row', () => {
+    for (const kind of KINDS) {
+      const presentation = resumeKindPresentation(kind);
+      const row = WORKSPACE_ACTIVITIES.find(
+        (activity) => activity.icon === presentation.icon && activity.feature === presentation.feature
+      );
+      expect(row ? kind : `no workspace row for ${kind}`).toBe(kind);
+    }
+  });
+
+  it('never falls back to the notes glyph for lesson, play, essay or recap', () => {
+    const notes = resumeKindPresentation('note');
+    for (const kind of ['lesson', 'play', 'essay', 'recap'] as StudyResumeKind[]) {
+      expect(resumeKindPresentation(kind).icon).not.toBe(notes.icon);
+    }
+    expect(resumeKindPresentation('recap')).toEqual({ icon: 'headphones', feature: 'ai' });
+    expect(resumeKindPresentation('lesson')).toEqual({ icon: 'school', feature: 'ai' });
+    expect(resumeKindPresentation('play')).toEqual({ icon: 'game-controller', feature: 'flashcards' });
+    expect(resumeKindPresentation('essay')).toEqual({ icon: 'document', feature: 'tests' });
   });
 });

@@ -10,17 +10,32 @@ interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   fullWidth?: boolean;
 }
 
+/**
+ * Primary is a SOLID INK PILL, not an indigo one (2026-09-11 direction).
+ *
+ * `--color-ink` inverts between themes and `--color-surface` inverts with it,
+ * so `bg-lantern-ink text-lantern-surface` is a near-black pill with a white
+ * label in light and a near-white pill with a near-black label in dark, from
+ * ONE pair of classes. Spelling it as `dark:` overrides instead would have put
+ * the same fact in two places and let them drift.
+ *
+ * Both pill variants are fully round (`rounded-full` below beats the size
+ * step's own radius) and flat: the reference has no shadow under a button, and
+ * a hairline is what separates the secondary from the paper it sits on.
+ */
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    'bg-lantern-primary-fill hover:bg-lantern-primary-dark text-white shadow-lantern hover:shadow-lantern-md active:translate-y-px',
+    'bg-lantern-ink text-lantern-surface hover:opacity-90 active:translate-y-px',
   secondary:
-    'bg-lantern-surface/90 border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary hover:border-lantern-primary/30 shadow-lantern',
+    'bg-lantern-surface border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary',
   accent:
     'bg-lantern-accent hover:brightness-95 text-white shadow-lantern hover:shadow-lantern-md',
   ghost:
     'bg-transparent text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text',
+  // Destructive stays RED and stays saturated: it is the one action whose
+  // colour is the warning, so it does not become an ink pill with the rest.
   // error-strong, not error: white on `--color-error` is 3.76:1 in dark.
-  danger: 'bg-lantern-error-strong hover:brightness-95 text-white shadow-lantern',
+  danger: 'bg-lantern-error-strong hover:brightness-95 text-white',
 };
 
 // Sizes are STEPS, not Tailwind's default ramp. The primary button used to
@@ -30,9 +45,9 @@ const variantClasses: Record<ButtonVariant, string> = {
 // still wins over the step's own weight — Tailwind emits fontWeight after
 // fontSize — so every variant keeps the same voice at three sizes.
 const sizeClasses: Record<ButtonSize, string> = {
-  sm: 'px-3 py-1.5 text-caption rounded-lg',
-  md: 'px-4 py-2.5 text-body rounded-lantern',
-  lg: 'px-6 py-3 text-heading rounded-lantern',
+  sm: 'px-4 py-1.5 text-caption',
+  md: 'px-5 py-2.5 text-body',
+  lg: 'px-7 py-3 text-heading',
 };
 
 export const Button: React.FC<ButtonProps> = ({
@@ -47,7 +62,7 @@ export const Button: React.FC<ButtonProps> = ({
 }) => (
   <button
     disabled={disabled || loading}
-    className={`inline-flex items-center justify-center gap-2 font-semibold tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-lantern-background disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0 ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
+    className={`inline-flex items-center justify-center gap-2 rounded-full font-semibold tracking-tight transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/50 focus-visible:ring-offset-2 focus-visible:ring-offset-lantern-background disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-y-0 ${variantClasses[variant]} ${sizeClasses[size]} ${fullWidth ? 'w-full' : ''} ${className}`}
     {...props}
   >
     {loading && (

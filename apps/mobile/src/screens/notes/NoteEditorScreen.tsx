@@ -62,6 +62,7 @@ import { JobProgressSheet } from '../../components/jobs';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
 import { Button, Card, T } from '../../components/ui';
+import { NoteBody } from '../../components/NoteBody';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { ErrorBoundary } from '../../components/ErrorBoundary';
@@ -133,6 +134,29 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [selection, setSelection] = useState({ start: 0, end: 0 });
 
   const [summary, setSummary] = useState('');
+
+  /**
+   * READ or EDIT — and READ is the default for a note that has anything in it.
+   *
+   * This screen was a bare `TextInput` and nothing else, so opening the
+   * "Pancreatitis" note off a set's notes list showed `#`, `##`, `**bold**`,
+   * bullets and pipe tables literally, all at the 14 sp body size (build 186's
+   * device pass). Lane N gave the studios a reading state —
+   * `components/NoteBody.tsx` over the shared block parser
+   * (`@lantern/shared/utils/noteBlocks`, which is also what strips the Smart
+   * Notes sentinels) — and the one screen every note in the library actually
+   * opens into never got it.
+   *
+   * So: a note with content opens in READ, with `Edit` in the header; `Done`
+   * saves and comes back. A brand-new or empty note opens straight in EDIT —
+   * there is nothing to read, and making the student press Edit before they
+   * can type is the door the recorder and the import paths walk through. A
+   * view-only note is always READ; `canEdit` is the gate, not the mode.
+   *
+   * Everything else on this screen — autosave, the recorder, attachments, the
+   * Learn panel — is unchanged and lives outside the swap.
+   */
+  const [mode, setMode] = useState<'read' | 'edit'>('read');
 
   const lectureStatus = useLectureRecordingStore((s) => s.status);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
@@ -604,7 +628,10 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     setTitle(selectedNote.title);
     setBody(selectedNote.body);
     setSummary(selectedNote.summary || '');
-  }, [selectedNote, noteId]);
+    // Decided once, at open, from what the note actually holds. Re-deciding on
+    // every store update would throw the student out of the editor mid-word.
+    setMode(!canEdit || (selectedNote.body ?? '').trim().length > 0 ? 'read' : 'edit');
+  }, [selectedNote, noteId, canEdit]);
 
   useEffect(() => {
     if (!canEdit) {
@@ -1190,6 +1217,22 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   };
 
+  /** A note nobody may edit can only ever be read; see the `mode` comment. */
+  const reading = mode === 'read' || !canEdit;
+
+  /**
+   * Done is a commit, not just a mode flip: the autosave timer may still be
+   * holding the last keystrokes, so cancel it and write once, now. Leaving the
+   * body untouched writes nothing — this must not mint a revision per toggle.
+   */
+  const handleDoneEditing = () => {
+    cancelPendingSave();
+    setMode('read');
+    if (!canEdit) return;
+    if (selectedNote && title === selectedNote.title && body === selectedNote.body) return;
+    void saveNote(noteId, { title, body }).catch(() => {});
+  };
+
   const handleCopy = async () => {
     try {
       const copy = await copyNote(noteId);
@@ -1261,6 +1304,23 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
           <Text className="text-xs text-lantern-text-tertiary shrink-0">Saving...</Text>
 
+        ) : null}
+
+        {/* The one control that switches the body between the reading view and
+            the editor. It is a header control rather than a floating button so
+            it cannot scroll away from a long note. */}
+        {canEdit ? (
+          <Pressable
+            hitSlop={8}
+            onPress={() => (reading ? setMode('edit') : handleDoneEditing())}
+            className="px-2 py-2 rounded-lg shrink-0 active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
+            accessibilityRole="button"
+            accessibilityLabel={reading ? 'Edit note' : 'Done editing'}
+          >
+            <Text className="text-sm font-semibold text-lantern-primary-text">
+              {reading ? 'Edit' : 'Done'}
+            </Text>
+          </Pressable>
         ) : null}
 
         {isOwner ? (
@@ -1637,6 +1697,23 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <Text className="text-sm font-semibold text-lantern-text mb-2">
                 Your notes
               </Text>
+              {reading ? (
+                <Pressable
+                  onPress={canEdit ? () => setMode('edit') : undefined}
+                  accessibilityRole={canEdit ? 'button' : undefined}
+                  accessibilityLabel="Note body"
+                  className="mb-4"
+                >
+                  <NoteBody
+                    body={body}
+                    emptyLine={
+                      canEdit
+                        ? 'No notes of your own yet. Tap Edit to add some.'
+                        : 'No notes of their own here.'
+                    }
+                  />
+                </Pressable>
+              ) : (
               <TextInput
                 value={body}
                 onChangeText={setBody}
@@ -1655,7 +1732,27 @@ export function NoteEditorScreen({ navigation, route }: Props) {
                 textAlignVertical="top"
                 className="w-full min-h-[160px] p-4 rounded-xl border border-lantern-border bg-lantern-surface text-sm leading-relaxed text-lantern-text mb-4"
               />
+              )}
             </>
+          ) : reading ? (
+            /* The reading view for a plain note: the shared block renderer the
+               studios use, so a heading is a heading and a table is a table.
+               Tapping it is the second way into the editor. */
+            <Pressable
+              onPress={canEdit ? () => setMode('edit') : undefined}
+              accessibilityRole={canEdit ? 'button' : undefined}
+              accessibilityLabel="Note body"
+              className="mb-4"
+            >
+              <NoteBody
+                body={body}
+                emptyLine={
+                  canEdit
+                    ? 'This note is empty. Tap Edit to start writing.'
+                    : 'This note is empty.'
+                }
+              />
+            </Pressable>
           ) : (
           <TextInput
 

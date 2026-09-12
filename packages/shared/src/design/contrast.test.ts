@@ -14,6 +14,7 @@ import {
   featureAccentsLight,
   featureAccents,
   lightTheme,
+  darkTheme,
   type,
   typeScaleToCssVars,
   featureAccentPairsToCssVars,
@@ -72,15 +73,25 @@ describe('design token contrast', () => {
     }
   });
 
-  it('keeps every light tint within 1.2:1 of white, so a tinted card reads as coloured, not lighter', () => {
+  /**
+   * 2026-09-11: the cap was 1.2:1 and the four StudyFetch pastels the founder
+   * asked for are 1.16-1.33 — the cyan is 1.27, the violet 1.33. The old
+   * number was not a legibility rule (body ink on every tint is gated above at
+   * 13:1 or better); it was a taste rule from a wave whose tints were
+   * near-white washes. The direction replaced that taste, so the number moves
+   * with it. It is kept as a cap at all, rather than deleted, because the
+   * thing it really prevents is a "tint" saturated enough to be an ink — at
+   * 1.5:1 a panel starts competing with the black glyph drawn on it.
+   */
+  it('keeps every light tint within 1.35:1 of white, so a panel stays a ground and never becomes an ink', () => {
     for (const key of FEATURE_KEYS) {
-      expect(contrastRatio(featureAccentsLight[key].tint, '#ffffff')).toBeLessThanOrEqual(1.2);
+      expect(contrastRatio(featureAccentsLight[key].tint, '#ffffff')).toBeLessThanOrEqual(1.35);
     }
   });
 });
 
 describe('feature accent tokens', () => {
-  it('carries the eight spec keys in both themes', () => {
+  it('carries the nine spec keys in both themes', () => {
     expect([...FEATURE_KEYS]).toEqual([
       'notes',
       'flashcards',
@@ -90,16 +101,43 @@ describe('feature accent tokens', () => {
       'groups',
       'campus',
       'budget',
+      'sets',
     ]);
     expect(Object.keys(featureAccentsLight)).toEqual([...FEATURE_KEYS]);
     expect(Object.keys(featureAccentsDark)).toEqual([...FEATURE_KEYS]);
   });
 
-  it('holds the spec §5.6 hex values exactly', () => {
-    expect(featureAccentsLight.notes).toEqual({ ink: '#0f766e', tint: '#ccfbf1' });
+  /**
+   * The four tints the 2026-09-11 direction NAMES, pinned to the hex it names.
+   * These are measurements off StudyFetch, not preferences: a later wave that
+   * wants to nudge one is changing the reference, and should have to say so
+   * here. `budget` is pinned too, as the one family the pass did not touch.
+   */
+  it('holds the StudyFetch pastels and the untouched families exactly', () => {
+    expect(featureAccentsLight.tests.tint).toBe('#bbeef0');
+    expect(featureAccentsLight.flashcards.tint).toBe('#bcf887');
+    expect(featureAccentsLight.recording.tint).toBe('#f9f284');
+    expect(featureAccentsLight.ai.tint).toBe('#f5d5ff');
     expect(featureAccentsLight.budget).toEqual({ ink: '#b45309', tint: '#fef3c7' });
-    expect(featureAccentsDark.notes).toEqual({ ink: '#5eead4', tint: '#0f2f2c' });
     expect(featureAccentsDark.budget).toEqual({ ink: '#fbbf24', tint: '#3a2a08' });
+  });
+
+  /**
+   * The light palette the 2026-09-11 pass shipped, as a snapshot. Every value
+   * here is a number someone measured off the reference product; a silent
+   * drift back to the old cream/navy is exactly the regression this catches.
+   */
+  it('holds the StudyFetch ground, rail and hairline', () => {
+    expect(lightTheme.background).toBe('#f7f6ef');
+    expect(lightTheme.backgroundSecondary).toBe('#f2f0e8');
+    expect(lightTheme.surface).toBe('#ffffff');
+    expect(lightTheme.border).toBe('#eceae0');
+    expect(lightTheme.navColumn).toBe('#171717');
+    expect(lightTheme.navColumnActive).toBe('#383838');
+    expect(lightTheme.ink).toBe('#191919');
+    // The ink INVERTS: a black pill on the black page would be a hole, and
+    // whatever sits on the pill is `surface`, which inverts with it.
+    expect(darkTheme.ink).toBe('#f5f5f5');
   });
 
   it('keeps the nine legacy keys as aliases so the existing call sites compile', () => {
@@ -119,14 +157,19 @@ describe('feature accent tokens', () => {
     expect(featureAccents.admin).toBe(featureAccentsLight.campus.ink);
     expect(featureAccents.marketplace).toBe(featureAccentsLight.campus.ink);
     expect(featureAccents.offline).toBe(featureAccentsLight.budget.ink);
-    // dashboard was the indigo primary and stays byte-identical.
-    expect(featureAccents.dashboard).toBe(lightTheme.primary);
+    // `dashboard` USED to be byte-identical to the indigo primary, which is
+    // why the alias was safe to ship. The 2026-09-11 pass moved the `ai`
+    // family to StudyFetch's violet, so the alias now genuinely repaints its
+    // remaining call sites — which is the intent, not a regression. Pinned to
+    // the new ink so a third value cannot arrive unannounced.
+    expect(featureAccents.dashboard).toBe('#7b2cab');
+    expect(featureAccents.dashboard).not.toBe(lightTheme.primary);
   });
 
   it('emits ink and tint as RGB channels, not hex', () => {
     const vars = featureAccentPairsToCssVars(featureAccentsLight);
-    expect(vars['--color-feature-notes-ink']).toBe('15 118 110');
-    expect(vars['--color-feature-notes-tint']).toBe('204 251 241');
+    expect(vars['--color-feature-notes-ink']).toBe('107 96 49');
+    expect(vars['--color-feature-notes-tint']).toBe('239 235 221');
     expect(Object.keys(vars)).toHaveLength(FEATURE_KEYS.length * 2);
   });
 });
@@ -179,8 +222,8 @@ describe('lanternCssVars', () => {
   it('gives light and dark different feature inks but the same type scale', () => {
     const light = lanternCssVars('light');
     const dark = lanternCssVars('dark');
-    expect(light['--color-feature-notes-ink']).toBe('15 118 110');
-    expect(dark['--color-feature-notes-ink']).toBe('94 234 212');
+    expect(light['--color-feature-notes-ink']).toBe('107 96 49');
+    expect(dark['--color-feature-notes-ink']).toBe('226 218 194');
     expect(light['--type-title-size']).toBe(dark['--type-title-size']);
   });
 

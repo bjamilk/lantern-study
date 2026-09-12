@@ -22,9 +22,9 @@ import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { pluralize } from '@lantern/shared/utils/plural';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useTheme } from '../../theme';
+import { serifDisplayStyle, useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
-import { BackButton, CourseChip, EmptyState, FeatureDisc, useFeatureAccent } from '../../components/ui';
+import { BackButton, Button, CourseChip, EmptyState, FeatureDisc, useFeatureAccent } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
 import { trackTestStarted } from '../../services/productAnalytics';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -682,17 +682,27 @@ export default function TestScreen() {
               looking at History, TestBuilder had no entrance anywhere in the
               app (device finding T1, build 162). A door that disappears as
               soon as the shelf is non-empty is not a door. */}
-          <TouchableOpacity
+          {/* The shared primary pill, not a hand-rolled `primaryFill` one: the
+              direction's primary is the page's INK under its ground (black in
+              light, white in dark) and this was the last indigo fill on the
+              Tests root. `Button` renders non-string children as given, so the
+              glyph and the word are painted in the same `background` the
+              primitive's own label uses. */}
+          <Button
+            variant="primary"
+            size="sm"
             onPress={handleNewTest}
-            activeOpacity={0.8}
-            style={[styles.newTestButton, { backgroundColor: colors.primaryFill }]}
-            accessibilityRole="button"
             accessibilityLabel="New test. Choose a deck, a note, or your group."
             testID="tests-new-test"
           >
-            <AppIcon name="add" size={16} color="#ffffff" importantForAccessibility="no" />
-            <Text style={styles.newTestButtonText}>New test</Text>
-          </TouchableOpacity>
+            <AppIcon
+              name="add"
+              size={16}
+              color={colors.background}
+              importantForAccessibility="no"
+            />
+            <Text style={[styles.newTestButtonText, { color: colors.background }]}>New test</Text>
+          </Button>
         </View>
         <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]}>
           Review scores in History · Launch saved tests under Available Tests
@@ -1105,19 +1115,12 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 999,
   },
-  newTestButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    minHeight: 44,
-  },
+  // The pill itself is `Button`'s now (height, radius and padding included);
+  // only the word's step survives here, and its colour is passed at the call
+  // site because it is the theme's ground, not a fixed white.
   newTestButtonText: {
     ...typeScale.body,
     fontWeight: '700',
-    color: '#ffffff',
   },
   clearHistoryText: {
     ...typeScale.body,
@@ -1125,7 +1128,11 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     ...typeScale.display,
-    fontWeight: 'bold',
+    // The screen's h1 is a DISPLAY role, so it is the serif (theme/fonts.ts).
+    // It rendered sans here while the headings inside the page were Bitter —
+    // the "serif one level too deep" finding. `serifDisplayStyle` also resets
+    // the weight, which the face itself carries.
+    ...serifDisplayStyle(),
     color: '#ffffff',
   },
   headerSubtitle: {

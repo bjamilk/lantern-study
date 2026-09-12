@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
@@ -38,9 +38,10 @@ import {
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, Card, FeatureDisc, ScreenHeader, T } from '../../components/ui';
+import { Button, Card, DoorTile, doorTileColumnWidth, FeatureDisc, ScreenHeader, T } from '../../components/ui';
 import { type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { DOOR_TILE } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
 import { useFlashcardStore } from '../../stores/flashcardStore';
@@ -71,6 +72,20 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
   const courseId = studySet?.courseId || courseIdParam || '';
   const tabBarClearance = useTabBarClearance(16);
+  // The door grid's column width, computed from the screen rather than from a
+  // percentage class. `w-[47%]` looked like two up but left the gutter to
+  // whatever `gap-2` happened to be, so the doors never landed on the measured
+  // 28 px gutter and their heights were whatever their content measured — the
+  // exact thing `doorTileLayout` exists to stop. The screen's own horizontal
+  // padding is 16 here, not the door grid's 13, so it is what gets paid.
+  const { width: screenWidth } = useWindowDimensions();
+  const doorGutter = DOOR_TILE.gridGutter;
+  const doorWidth = doorTileColumnWidth({
+    screenWidth,
+    columns: 2,
+    pageMargin: 16,
+    gutter: doorGutter,
+  });
   const showToast = useToastStore((s) => s.showToast);
   const startJob = useJobsStore((s) => s.startJob);
   const loadNote = useNotesStore((s) => s.loadNote);
@@ -88,6 +103,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const [skippedTopicIds, setSkippedTopicIds] = useState<string[]>([]);
   const openCompanion = useCompanionStore((s) => s.open);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
+  const resetCompanionForScope = useCompanionStore((s) => s.resetForScope);
 
   useEffect(() => {
     void loadSets().catch(() => undefined);
@@ -127,11 +143,19 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     return studySetId ? note.studySetId === studySetId : Boolean(courseId) && note.courseId === courseId;
   };
 
+  // The attachment belongs to the room it was made in. It is persisted, so
+  // without this a note attached in one set stayed stapled to every question
+  // asked in the next one — across app restarts.
+  useEffect(() => {
+    resetCompanionForScope(studySetId ?? courseId ?? null);
+  }, [courseId, studySetId, resetCompanionForScope]);
+
   useEffect(() => {
     if (!selectedNote || !noteInRoom(selectedNote)) return;
     void setActiveNoteContext({
       id: selectedNote.id,
       title: selectedNote.title || 'Untitled note',
+      scopeId: studySetId ?? courseId ?? null,
     });
   }, [courseId, studySetId, selectedNote, setActiveNoteContext]);
 
@@ -517,51 +541,53 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           />
         ) : null}
 
-        <View className="flex-row flex-wrap gap-2 mb-4">
+        {/* The set room's tools, as DOORS (founder direction 2026-09-11): a
+            pastel panel with a black drawing over a white caption strip, two
+            up, rather than the old white boxes with a 32 dp mark in the
+            corner. The promise line each tool carries is not drawn — a door's
+            picture is its promise — but it is not lost either: it goes into
+            the accessible name, so a screen reader still hears what the tool
+            will do before it is opened. */}
+        <View
+          className="flex-row flex-wrap mb-4"
+          style={{ gap: doorGutter }}
+        >
           {(studySetId
             ? STUDY_SET_HOME_TOOLS.filter((tool) => STUDY_SET_HOME_PRIMARY_TOOL_IDS.includes(tool.id))
             : WORKSPACE_ACTIVITIES
-          ).map((item) => (
-            <Pressable
-              key={item.id}
-              onPress={() => {
-                if ('activity' in item && item.id === 'import') {
-                  setImportOpen(true);
-                  return;
-                }
-                if ('activity' in item && item.id === 'ask') {
-                  openCompanion();
-                  return;
-                }
-                if ('activity' in item && item.activity) {
-                  handleActivity(item.activity, 'ready');
-                  return;
-                }
-                if ('status' in item) handleActivity(item.id, item.status);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={item.label}
-              className="w-[47%] min-h-[72px] rounded-xl border border-lantern-border bg-lantern-surface px-3 py-3 active:opacity-80"
-            >
-              <View className="flex-row items-center gap-2">
-                <FeatureDisc feature={item.feature} icon={item.icon as AppIconName} size={32} />
-                <View className="flex-1 min-w-0">
-                  <T.Body numberOfLines={1}>{item.label}</T.Body>
-                  <T.Caption tone="secondary" numberOfLines={1}>
-                    {'promise' in item
-                      ? 'status' in item
-                        ? workspaceActivityPromise(
-                            item.id,
-                            item.promise,
-                            scopeNoun(studySetId, courseId)
-                          )
-                        : item.promise
-                      : ''}
-                  </T.Caption>
-                </View>
-              </View>
-            </Pressable>
-          ))}
+          ).map((item) => {
+            const promise =
+              'promise' in item
+                ? 'status' in item
+                  ? workspaceActivityPromise(item.id, item.promise, scopeNoun(studySetId, courseId))
+                  : item.promise
+                : '';
+            return (
+              <DoorTile
+                key={item.id}
+                feature={item.feature}
+                icon={item.icon as AppIconName}
+                title={item.label}
+                width={doorWidth}
+                accessibilityLabel={[item.label, promise].filter(Boolean).join('. ')}
+                onPress={() => {
+                  if ('activity' in item && item.id === 'import') {
+                    setImportOpen(true);
+                    return;
+                  }
+                  if ('activity' in item && item.id === 'ask') {
+                    openCompanion();
+                    return;
+                  }
+                  if ('activity' in item && item.activity) {
+                    handleActivity(item.activity, 'ready');
+                    return;
+                  }
+                  if ('status' in item) handleActivity(item.id, item.status);
+                }}
+              />
+            );
+          })}
         </View>
 
         {studySetId ? (
@@ -884,6 +910,14 @@ function SetHomeRecommended({
   onAddSyllabus: () => void;
   onAddExam: () => void;
 }) {
+  const { width: screenWidth } = useWindowDimensions();
+  const doorGutter = DOOR_TILE.gridGutter;
+  const doorWidth = doorTileColumnWidth({
+    screenWidth,
+    columns: 2,
+    pageMargin: 16,
+    gutter: doorGutter,
+  });
   const derived = topicsFromReadingNotes(studySetId, notes);
   const topics = derived.topics.filter((topic) => !skippedTopicIds.includes(topic.id));
   const current = pickRecommendedTopic(topics);
@@ -921,10 +955,19 @@ function SetHomeRecommended({
     <View className="mb-4">
       <T.Caption tone="secondary">{topicIndexLabel(topics, current)}</T.Caption>
       <T.Title className="mt-1 mb-3">{current.title}</T.Title>
-      <View className="gap-3">
+      {/* The recommended next steps, as DOORS two up rather than as a
+          full-width stack. The eyebrow ("Because you read…") is what made each
+          of these a full-width card; it now rides in the accessible name, so
+          the row of doors stays scannable and the reason is still announced. */}
+      <View className="flex-row flex-wrap" style={{ gap: doorGutter }}>
         {cards.map((card) => (
-          <Pressable
+          <DoorTile
             key={card.id}
+            feature={card.feature}
+            icon={card.icon as AppIconName}
+            title={card.label}
+            width={doorWidth}
+            accessibilityLabel={[card.eyebrow, card.label].filter(Boolean).join('. ')}
             onPress={() => {
               const noteId = current.sourceNoteIds[0];
               if (card.id === 'ask') onAsk();
@@ -936,14 +979,7 @@ function SetHomeRecommended({
               else if (card.id === 'play') onOpenActivity('play');
               else if (card.id === 'test') onOpenActivity('test');
             }}
-            className="rounded-2xl border border-lantern-border bg-lantern-surface p-3"
-          >
-            <T.Caption tone="secondary">{card.eyebrow}</T.Caption>
-            <View className="mt-2 mb-2">
-              <FeatureDisc feature={card.feature} icon={card.icon as AppIconName} size={40} />
-            </View>
-            <T.Body>{card.label}</T.Body>
-          </Pressable>
+          />
         ))}
       </View>
       <View className="flex-row items-center justify-between mt-2">

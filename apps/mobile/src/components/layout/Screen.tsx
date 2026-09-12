@@ -17,7 +17,6 @@ import {
   type ScreenEdge,
   type ScreenEdgeInsets,
 } from './screenInsets';
-import { replacesGlobalBar } from '../../navigation/contextualBars';
 
 /**
  * THE STATUS-BAR DECISION (founder report 2: "content slides under the clock")
@@ -142,14 +141,6 @@ export function useScreenBottomPadding({
     base,
     contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
     present: contextual !== null && (bottom === 'tabBar' || (bottom === 'auto' && tabBarPresent)),
-    // A `replace`-mode section (Study, Shop — founder decision 2026-09-08) puts
-    // this row IN the global bar's slot, so its 56 dp content height comes back
-    // out and a screen pads for one strip, not two. Derived from the same
-    // `contextual` spec the row itself renders from, so a screen's padding can
-    // never disagree with the chrome actually drawn beneath it. Ignored by the
-    // arithmetic whenever `present` is false (a hidden row stands in no slot).
-    replaceMode: replacesGlobalBar(contextual),
-    globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
   });
 }
 

@@ -100,74 +100,38 @@ describe('contextualBarClearance', () => {
   });
 });
 
-describe('contextualBarClearance in replace mode', () => {
-  // Study and Shop take the global bar's place (founder decision, 2026-09-08).
-  // The row stands where the bar was, so the bar's own 56 dp content height
-  // must come back out of the base — a screen pads for one strip, not two.
-  it('takes the global bar back out so the row stands in its place', () => {
+describe('contextualBarClearance stacks the row ON TOP of the global bar', () => {
+  // Build 185's device pass put the five tabs back on every route, so the row
+  // and the bar are BOTH on screen and a screen has to clear both. The old
+  // `replace` arithmetic subtracted the bar's 56 dp content height; if that
+  // subtraction survived anywhere, the last row of every Study and Shop list
+  // would sit under the bar — the offline-box failure, exactly.
+  it('adds the row to the full bar clearance, never subtracting the bar', () => {
     const base = tabBarClearance(0);
-    expect(
-      contextualBarClearance({
-        base,
-        contentHeight: 44,
-        present: true,
-        replaceMode: true,
-        globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
-      })
-    ).toBe(base + 44 - TAB_BAR_CONTENT_HEIGHT);
+    const withRow = contextualBarClearance({ base, contentHeight: 44, present: true });
+    expect(withRow).toBe(base + 44);
+    expect(withRow).toBeGreaterThan(base);
+    // The bar's own height is still in there: this is two strips, not one.
+    expect(withRow).toBeGreaterThan(44 + TAB_BAR_CONTENT_HEIGHT);
   });
 
-  it('is exactly the removed bar shorter than the same route in above mode', () => {
-    // The whole point of the mode: the difference between the two is the global
-    // bar's content height and nothing else. If the subtraction is dropped this
-    // fails, because replace mode would clear for two bars like above mode does.
+  it('takes no mode argument at all, so no caller can ask for the old shape', () => {
+    // An extra key is ignored at runtime; the type rejects it. The point of the
+    // assertion is that the SAME number comes back either way — there is no
+    // second behaviour left to select.
     const base = tabBarClearance(24);
-    const above = contextualBarClearance({ base, contentHeight: 44, present: true });
-    const replace = contextualBarClearance({
+    const plain = contextualBarClearance({ base, contentHeight: 44, present: true });
+    const withStray = contextualBarClearance({
+      ...({ replaceMode: true, globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT } as object),
       base,
       contentHeight: 44,
       present: true,
-      replaceMode: true,
-      globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
     });
-    expect(above - replace).toBe(TAB_BAR_CONTENT_HEIGHT);
-    // And it is the honest safe-area sum: 44 dp row + the floored inset + gap +
-    // extra, with no 56 dp bar in it.
-    expect(replace).toBe(tabBarClearance(24) - TAB_BAR_CONTENT_HEIGHT + 44);
+    expect(withStray).toBe(plain);
   });
 
-  it('never returns less than the row even when the base is degenerate', () => {
-    // A NaN base with the bar subtracted would go negative; the floor keeps it
-    // at the strip a screen must clear.
-    expect(
-      contextualBarClearance({
-        base: Number.NaN,
-        contentHeight: 44,
-        present: true,
-        replaceMode: true,
-        globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
-      })
-    ).toBe(44);
-  });
-
-  it('is the plain base in either mode when the row is hidden (the immersive case)', () => {
-    // An immersive route, or any route with no registry entry: `present` is
-    // false, nothing stands in the bar's place, so there is no bar to subtract
-    // and no row to add. Both modes fall back to the global bar's own
-    // clearance. (The keyboard is NOT this case: it hides the row inside the
-    // component, while the clearance callers still pass `present` from the
-    // route's spec — correctly, because in replace mode the exit control keeps
-    // the slot occupied at the row's own height.)
+  it('is the plain base when the row is hidden (the immersive case)', () => {
     const base = tabBarClearance(48);
-    expect(
-      contextualBarClearance({
-        base,
-        contentHeight: 44,
-        present: false,
-        replaceMode: true,
-        globalBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
-      })
-    ).toBe(base);
     expect(contextualBarClearance({ base, contentHeight: 44, present: false })).toBe(base);
   });
 });

@@ -10,7 +10,36 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SHEET, useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
+import { Title } from './Text';
+
+/**
+ * The grabber — the 64x6 dp bar at the top of every sheet in the app.
+ *
+ * It is not decoration and it is not a control: it is the affordance that says
+ * "this panel is draggable and dismissable", which is the only visual cue a
+ * sheet has once it has stopped animating. Exported so the other sheets in the
+ * app draw the same one rather than each inventing a width.
+ *
+ * Hidden from the screen reader: a reader dismisses the sheet with the
+ * standard back/escape gesture, and announcing a nameless bar helps nobody.
+ */
+export function SheetGrabber() {
+  const { colors } = useTheme();
+  return (
+    <View className="items-center pb-3" importantForAccessibility="no-hide-descendants">
+      <View
+        style={{
+          width: SHEET.grabberWidth,
+          height: SHEET.grabberHeight,
+          borderRadius: SHEET.grabberRadius,
+          backgroundColor: colors.border,
+        }}
+      />
+    </View>
+  );
+}
 
 export interface ActionSheetItem {
   label: string;
@@ -54,6 +83,7 @@ export function ActionSheet({
   // Same edge-to-edge trap as ConfirmSheetHost: without the inset the last
   // row sinks under the system navigation bar.
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   const select = (item: ActionSheetItem) => {
     if (item.disabled) return;
     // Close first so the sheet is never left open behind a modal or an alert
@@ -69,16 +99,31 @@ export function ActionSheet({
           accessibilityViewIsModal
           accessibilityLabel={title}
           onPress={(e) => e.stopPropagation?.()}
-          className="bg-lantern-surface rounded-t-3xl pt-5"
-        style={{ paddingBottom: insets.bottom + 20 }}
+          className="pt-3"
+          style={{
+            // The sheet's ground is the page CREAM, not white (founder
+            // direction 2026-09-11): its rows are white, and a white panel
+            // under white rows is one flat plane with dividers drawn on it.
+            // Cream under white is two planes, which is what makes a row read
+            // as a thing you can press.
+            backgroundColor: colors.background,
+            borderTopLeftRadius: SHEET.topRadius,
+            borderTopRightRadius: SHEET.topRadius,
+            paddingBottom: insets.bottom + 20,
+          }}
         >
+          <SheetGrabber />
           {title ? (
-            <Text
-              className="text-lg font-bold text-lantern-text px-5 mb-3"
+            // The serif display step — a sheet's heading is a screen's h1 in a
+            // panel, so it takes the same voice. `text-lg` was 15.75 sp here,
+            // which is smaller than the rows it was introducing.
+            <Title
+              className="px-5 mb-3"
+              numberOfLines={2}
               accessibilityRole="header"
             >
               {title}
-            </Text>
+            </Title>
           ) : null}
 
           <ScrollView className="max-h-[28rem]" showsVerticalScrollIndicator={false}>
@@ -98,8 +143,14 @@ export function ActionSheet({
                 // minHeight guarantees the 44pt touch target even at the
                 // smallest font-size setting, where padding + one line lands
                 // right on the boundary.
-                style={{ minHeight: 44 }}
-                className={`flex-row items-center gap-3 px-5 py-3.5 active:bg-lantern-background-secondary ${
+                style={{
+                  minHeight: SHEET.rowMinHeight,
+                  backgroundColor: colors.surface,
+                  borderRadius: SHEET.rowRadius,
+                  borderWidth: 1,
+                  borderColor: colors.border,
+                }}
+                className={`mx-4 mb-2 flex-row items-center gap-3 px-4 py-3 active:opacity-80 ${
                   item.disabled ? 'opacity-40' : ''
                 }`}
               >
@@ -128,13 +179,19 @@ export function ActionSheet({
             ))}
           </ScrollView>
 
-          <View className="px-5 pt-3">
+          <View className="px-4 pt-2">
             <Pressable
               onPress={onClose}
               accessibilityRole="button"
-              className="py-3 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center"
+              style={{
+                minHeight: SHEET.rowMinHeight,
+                borderRadius: SHEET.rowRadius,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+              className="items-center justify-center active:opacity-80"
             >
-              <Text className="font-semibold text-lantern-text">{cancelLabel}</Text>
+              <Text className="font-semibold text-body text-lantern-text">{cancelLabel}</Text>
             </Pressable>
           </View>
         </Pressable>

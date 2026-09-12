@@ -18,9 +18,7 @@ import {
   CONTEXTUAL_BAR_SEGMENTS,
   accentForRoute,
   activeItem,
-  contextualExitControl,
   planContextualPress,
-  replacesGlobalBar,
   specForRoute,
   type ContextualBarItem,
   type ContextualBarSpec,
@@ -840,72 +838,48 @@ describe('params pass-through, in general', () => {
   });
 });
 
-describe('replace vs above: where each row sits (founder decision, 2026-09-08)', () => {
-  it('makes every registry state a mode, one of the two', () => {
-    // The mode is required by the type; this proves it at runtime too, so a
-    // fifth registry with a garbage value cannot slip a third behaviour in.
+describe('where every row sits: ABOVE the global bar, with no mode to choose', () => {
+  // Build 185's device pass reverted the 2026-09-08 `replace` mode: inside
+  // Study and Shop the five labelled tabs were simply gone. The registry no
+  // longer carries a `mode`, `replacesGlobalBar` and `contextualExitControl` no
+  // longer exist, and these assertions are what stops them coming back — a row
+  // that cannot declare a placement cannot take the global bar away.
+  it('gives no registry a mode, or any other placement field', () => {
     for (const [route, spec] of entries()) {
-      expect(['replace', 'above']).toContain(spec.mode);
+      expect(spec).not.toHaveProperty('mode');
       expect(typeof route).toBe('string');
     }
   });
 
-  it('replaces the global bar in Study and Shop — the two sections', () => {
-    // Founder decision 1: a section of co-equal doors takes the bar's place.
-    expect(studyBar().mode).toBe('replace');
-    expect(shopBar().mode).toBe('replace');
-    expect(replacesGlobalBar(studyBar())).toBe(true);
-    expect(replacesGlobalBar(shopBar())).toBe(true);
+  it('keeps no replace/exit escape hatch in the registry source', () => {
+    // A source scan because the thing being asserted is an ABSENCE: a helper
+    // re-added here would be wired straight back into the chrome.
+    const src = fs.readFileSync(path.join(__dirname, 'contextualBars.ts'), 'utf8');
+    expect(src).not.toMatch(/export function replacesGlobalBar/);
+    expect(src).not.toMatch(/export function contextualExitControl/);
+    expect(src).not.toMatch(/^\s*mode: /m);
   });
 
-  it('keeps the row above the global bar on every single pass-through screen', () => {
-    // Founder decision 3: a deck, a note, a document and a community are screens
-    // you pass through, not sections; taking the global bar away would strand
-    // the student inside one of them.
-    for (const bar of [deckBar(), noteBar(), walkthroughBar(), barFor('CommunityDetail')]) {
-      expect(bar.mode).toBe('above');
-      expect(replacesGlobalBar(bar)).toBe(false);
+  it('still resolves a spec for the two sections and the pass-through screens', () => {
+    // The rows themselves are untouched by the revert — only where they sit.
+    for (const bar of [
+      studyBar(),
+      shopBar(),
+      deckBar(),
+      noteBar(),
+      walkthroughBar(),
+      barFor('CommunityDetail'),
+      specForRoute('Campus', { segment: 'shop' }),
+    ]) {
+      expect(bar?.items.length).toBeGreaterThan(0);
     }
-  });
-
-  it('replaces the bar on the Shop SEGMENT of Campus too, not only the browse list', () => {
-    // The shop a student lands on is Campus's `shop` segment; it is the same
-    // section, so it takes the bar's place the same way.
-    expect(replacesGlobalBar(specForRoute('Campus', { segment: 'shop' }))).toBe(true);
-  });
-
-  it('never removes the global bar where there is no row to stand in its place', () => {
-    // A null spec is not a replace: on a route with no row the global bar stays
-    // put. This is what stops the bar vanishing on Dashboard, Me or an unknown
-    // route.
-    expect(replacesGlobalBar(null)).toBe(false);
-    expect(replacesGlobalBar(undefined)).toBe(false);
-    expect(replacesGlobalBar(specForRoute('Dashboard'))).toBe(false);
-    expect(replacesGlobalBar(specForRoute('DeckDetail'))).toBe(false);
   });
 });
 
 // Build 175 gave every registry a `name` and drew it as a leading section title
-// on the no-selection replace rows; build 176's device pass removed both — a
+// on the no-selection rows; build 176's device pass removed both — a
 // no-selection row now labels every door instead (contextualBarPresentation.ts).
 // The registry no longer carries a `name`, so there is nothing to assert here.
-
-describe('the exit control of a replace-mode row (founder decision 2)', () => {
-  it('is Back when the focused stack has a screen to pop', () => {
-    expect(contextualExitControl(true)).toBe('back');
-  });
-
-  it('is Home at the section root, with nothing behind you', () => {
-    expect(contextualExitControl(false)).toBe('home');
-  });
-
-  it('is never inert: anything but a real "can pop" falls to Home', () => {
-    // Home works from anywhere; an exit that does nothing is the one thing this
-    // control may never be. A garbage input must not produce a dead Back.
-    expect(contextualExitControl(undefined as unknown as boolean)).toBe('home');
-    expect(contextualExitControl(null as unknown as boolean)).toBe('home');
-  });
-});
 
 describe('the community row', () => {
   const communityBar = (): ContextualBarSpec => barFor('CommunityDetail');

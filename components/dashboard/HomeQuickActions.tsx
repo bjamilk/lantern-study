@@ -1,11 +1,15 @@
 import React from 'react';
 import { Illustration } from '../ui';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
+import { FeatureDisc } from '../ui/FeatureDisc';
+import type { FeatureKey } from '../ui/featureClasses';
 
 interface QuickAction {
   id: string;
   label: string;
   icon: AppIconName;
+  /** Hue for the tile's disc. Identity, never state. */
+  feature: FeatureKey;
   onClick: () => void;
 }
 
@@ -26,26 +30,32 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
   onRecordLecture,
   onOpenStudyHub,
 }) => {
-  const actions: QuickAction[] = [
+  /**
+   * Six doors, six glyphs. Tutor and Open Study both wore `school` and the
+   * three plain tiles fell to a grey disc, so half the grid looked alike: the
+   * tile that opens a tutor now carries the lesson mortarboard on the AI hue
+   * and the hub carries a library.
+   */
+  const actions: QuickAction[] = ([
     onImport
-      ? { id: 'import', label: 'Import materials', icon: 'cloud-upload' as const, onClick: onImport }
+      ? { id: 'import', label: 'Import materials', icon: 'cloud-upload' as const, feature: 'notes' as const, onClick: onImport }
       : null,
     onOpenTests
-      ? { id: 'test', label: 'Create a quiz', icon: 'clipboard-check' as const, onClick: onOpenTests }
+      ? { id: 'test', label: 'Create a quiz', icon: 'clipboard-check' as const, feature: 'tests' as const, onClick: onOpenTests }
       : null,
     onToggleCompanion
-      ? { id: 'ai', label: 'Chat with Lantern', icon: 'sparkles' as const, onClick: onToggleCompanion }
+      ? { id: 'ai', label: 'Chat with Lantern', icon: 'sparkles' as const, feature: 'ai' as const, onClick: onToggleCompanion }
       : null,
     onOpenTutor
-      ? { id: 'tutor', label: 'Tutor', icon: 'school' as const, onClick: onOpenTutor }
+      ? { id: 'tutor', label: 'Tutor', icon: 'school' as const, feature: 'ai' as const, onClick: onOpenTutor }
       : null,
     onRecordLecture
-      ? { id: 'record', label: 'Record a lecture', icon: 'mic' as const, onClick: onRecordLecture }
+      ? { id: 'record', label: 'Record a lecture', icon: 'mic' as const, feature: 'recording' as const, onClick: onRecordLecture }
       : null,
     onOpenStudyHub
-      ? { id: 'study', label: 'Open Study', icon: 'school' as const, onClick: onOpenStudyHub }
+      ? { id: 'study', label: 'Open Study', icon: 'library' as const, feature: 'notes' as const, onClick: onOpenStudyHub }
       : null,
-  ].filter((action): action is QuickAction => action != null);
+  ] as (QuickAction | null)[]).filter((action): action is QuickAction => action != null);
 
   if (actions.length === 0) return null;
 
@@ -61,15 +71,14 @@ export const HomeQuickActions: React.FC<HomeQuickActionsProps> = ({
             className="flex flex-col items-center justify-center gap-3 min-h-[7.5rem] rounded-2xl border border-lantern-border bg-lantern-surface px-4 py-5 text-center hover:bg-lantern-background-secondary/70 transition-colors"
           >
             {action.id === 'import' ? (
-              <Illustration name="import-tray" feature="notes" size={40} />
-            ) : action.id === 'tutor' ? (
-              <Illustration name="cards-fan" feature="flashcards" size={40} />
+              <Illustration name="import-tray" feature={action.feature} size={40} />
             ) : action.id === 'record' ? (
-              <Illustration name="mic-wave" feature="recording" size={40} />
+              <Illustration name="mic-wave" feature={action.feature} size={40} />
             ) : (
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-lantern-background-secondary text-lantern-text">
-                <AppIcon name={action.icon} size={20} />
-              </span>
+              <FeatureDisc
+                feature={action.feature}
+                icon={<AppIcon name={action.icon} size={20} />}
+              />
             )}
             <span className="text-body font-medium text-lantern-text">{action.label}</span>
           </button>

@@ -12,6 +12,7 @@ import {
   upsertWorkspaceRecent,
   scopeNoun,
   workspaceActivityPromise,
+  type WorkspaceIconName,
 } from './courseWorkspace';
 
 describe('course workspace helpers', () => {
@@ -164,5 +165,67 @@ describe('scopeNoun', () => {
     expect(workspaceActivityPromise('play', play?.promise ?? '', 'course')).toBe(play?.promise);
     const quiz = WORKSPACE_ACTIVITIES.find((item) => item.id === 'quiz');
     expect(workspaceActivityPromise('quiz', quiz?.promise ?? '', 'set')).toBe(quiz?.promise);
+  });
+});
+
+/**
+ * Every glyph the two registries name, as a value.
+ *
+ * `Record<WorkspaceIconName, true>` makes this exhaustive at COMPILE time: a
+ * name added to the union and forgotten here is a type error, and a name here
+ * that is not in the union is one too. The test below then walks the registry
+ * rows at RUN time, which is the half a type cannot do on its own — the union
+ * says which glyphs are legal, not which ones a row actually reaches for.
+ *
+ * WHAT THIS CATCHES, and why it is not redundant with `icon: WorkspaceIconName`
+ * on the row type: the union is the contract that both AppIcon maps
+ * (`components/ui/appIconMap.ts` and `apps/mobile/src/components/ui/
+ * appIconMap.ts`) promise to satisfy. A name reaching a registry row without
+ * passing through this list is a name nobody checked either map for, and the
+ * failure mode is a blank square on one platform only — exactly the shape of
+ * bug that reaches a phone and not a reviewer.
+ */
+const WORKSPACE_ICON_NAMES: Record<WorkspaceIconName, true> = {
+  'document-text': true,
+  book: true,
+  layers: true,
+  'help-circle': true,
+  clipboard: true,
+  'clipboard-check': true,
+  mic: true,
+  school: true,
+  'volume-medium': true,
+  headphones: true,
+  'game-controller': true,
+  calendar: true,
+  document: true,
+  'cloud-upload': true,
+  'git-branch': true,
+  sparkles: true,
+  library: true,
+  albums: true,
+};
+
+describe('workspace icons', () => {
+  it('draws every activity and turn-into row with a glyph in the union', () => {
+    const legal = Object.keys(WORKSPACE_ICON_NAMES);
+    // Reported as a pair of lists rather than a loop of bare `toContain`s:
+    // jest's `expect` takes no message argument, so a loop would say only
+    // "expected array to contain string" without naming the row.
+    const stray = (rows: readonly { id: string; icon: string }[]) =>
+      rows.filter((row) => !legal.includes(row.icon)).map((row) => `${row.id}:${row.icon}`);
+    expect(stray(WORKSPACE_ACTIVITIES)).toEqual([]);
+    expect(stray(TURN_INTO_TARGETS)).toEqual([]);
+  });
+
+  it('gives a test its own glyph, distinct from a quiz and from a plan', () => {
+    // A test is the one activity that ends in a mark. It shared `clipboard`
+    // with the quiz and the plan until 2026-09-11, which made three different
+    // objects the same shape in a list of eleven.
+    const byId = (id: string) => WORKSPACE_ACTIVITIES.find((row) => row.id === id)?.icon;
+    expect(byId('test')).toBe('clipboard-check');
+    expect(byId('quiz')).toBe('help-circle');
+    expect(byId('test')).not.toBe(byId('quiz'));
+    expect(byId('test')).not.toBe(byId('plan'));
   });
 });

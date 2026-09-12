@@ -3,6 +3,25 @@ export { useTheme, useColors, lightColors, darkColors, ColorsThemeProvider } fro
 export type { ThemeColors, ThemeMode } from './ThemeContext';
 export { ThemeScope } from './ThemeScope';
 export { lightLanternVars, darkLanternVars } from './lanternCssVars';
+// The display face, and the one rule about which strings get it.
+export {
+  SERIF_FAMILIES,
+  PLATFORM_SERIF,
+  serifFamily,
+  serifDisplayStyle,
+  type SerifWeight,
+} from './fonts';
+// The measured shell geometry: pill, button, door, type tile, sheet, card.
+export {
+  BUTTON,
+  CARD,
+  DOOR_TILE,
+  MEASURED_DENSITY,
+  SHEET,
+  TAB_PILL,
+  TYPE_TILE,
+  dpFromMeasuredPx,
+} from './surfaceMetrics';
 
 /**
  * Blend a theme hex colour with alpha for inline styles.

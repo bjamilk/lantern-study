@@ -29,7 +29,11 @@ export {
   type AIStudyRecommendation,
   type AIStudyPerformanceData,
 } from './ai';
-export { createCompanionClient, type LanternCompanionClient } from './companion';
+export {
+  createCompanionClient,
+  normalizeCompanionCitation,
+  type LanternCompanionClient,
+} from './companion';
 export {
   parseGlobalAIUsageFromHeaders,
   parseGlobalAIUsageFromHeaderReader,

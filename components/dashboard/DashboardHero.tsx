@@ -1,5 +1,5 @@
 import React from 'react';
-import { getStudyAllDueLabel, resumeGreeting, studySetLabel } from '@lantern/shared';
+import { primaryHomeAction, resumeGreeting, studySetLabel } from '@lantern/shared';
 import { Button } from '../ui';
 import type { TestSessionData, StudySessionData } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
@@ -36,8 +36,10 @@ export const DashboardHero: React.FC<DashboardHeroProps> = ({
     return 'Good evening';
   })();
 
-  const primaryActionLabel =
-    dueCardsCount > 0 ? getStudyAllDueLabel(dueCardsCount) : lastActivity ? 'Continue' : 'Import & study';
+  // Label and destination come from one call (`primaryHomeAction`), which the
+  // screen's `onPrimaryAction` reads too — a button that says "Continue"
+  // therefore cannot land somewhere else.
+  const primaryActionLabel = primaryHomeAction({ dueCardsCount, lastActivity }).label;
   const resumeLine = resumeGreeting(lastActivity, lastSet ? studySetLabel(lastSet) : undefined);
 
   return (

@@ -7,7 +7,10 @@ import { useScreenBottomPadding } from '../layout/Screen';
 import { useToastStore } from '../../stores/toastStore';
 import { useConfirmStore } from '../../stores/confirmStore';
 import { BackButton } from './BackButton';
-import { useTheme } from '../../theme';
+// The shared sheet affordance. ActionSheet owns it; the confirm sheet draws
+// the same one so the two panels are visibly the same object.
+import { SheetGrabber } from './ActionSheet';
+import { BUTTON, CARD, SHEET, serifDisplayStyle, useTheme } from '../../theme';
 import {
   featureAccentsDark,
   featureAccentsLight,
@@ -16,33 +19,78 @@ import {
 } from '@lantern/shared/design';
 import { FeatureDisc, smallTextInk } from './FeatureDisc';
 import { Illustration } from './Illustration';
-import { type AppIconName } from './AppIcon';
-import { Heading, Label } from './Text';
+import { AppIcon, type AppIconName } from './AppIcon';
+import { Body, Heading, Label } from './Text';
 
 type Variant = 'primary' | 'secondary' | 'accent' | 'ghost' | 'danger';
 type Size = 'sm' | 'md' | 'lg';
 
-const variantClass: Record<Variant, string> = {
-  primary: 'bg-lantern-primary-fill active:bg-lantern-primary-dark',
-  secondary: 'bg-lantern-surface border border-lantern-border',
-  accent: 'bg-lantern-accent active:opacity-90',
-  ghost: 'bg-transparent',
-  danger: 'bg-lantern-error active:opacity-90',
+/**
+ * The button, in the StudyFetch anatomy (founder direction 2026-09-11).
+ *
+ * Measured at 240x94 px on a 420 dpi phone: 36 dp tall at radius 18, i.e.
+ * FULLY rounded. A primary is a black fill under a white label; a secondary is
+ * the same pill with no fill and a hairline; a destructive is the same pill
+ * filled red. There is no indigo button any more — the accent survives as
+ * text and as a glyph, and a screen that had two indigo fills on it had two
+ * things claiming to be the one next step.
+ *
+ * WHY THE HEIGHT AND RADIUS ARE INLINE STYLE AND NOT CLASSES. This project's
+ * NativeWind inlines `rem` at 14, so `py-2.5` is 8.75 and `rounded-2xl` is 22
+ * — neither is the measured number, and a Tailwind height class cannot reach
+ * 36 at all. The numbers live in `theme/surfaceMetrics.ts` beside the pill the
+ * bottom bar draws, because a lit tab and a primary button are the same object
+ * at two widths and must not drift apart.
+ */
+const BUTTON_SIZE: Record<Size, { height: number; radius: number; paddingHorizontal: number }> = {
+  sm: { height: BUTTON.heightSmall, radius: BUTTON.radiusSmall, paddingHorizontal: 14 },
+  md: { height: BUTTON.height, radius: BUTTON.radius, paddingHorizontal: BUTTON.paddingHorizontal },
+  lg: { height: BUTTON.heightLarge, radius: BUTTON.radiusLarge, paddingHorizontal: 22 },
 };
 
-const textClass: Record<Variant, string> = {
-  primary: 'text-white',
-  secondary: 'text-lantern-text',
-  accent: 'text-white',
-  ghost: 'text-lantern-text-secondary',
-  danger: 'text-white',
-};
-
-const sizeClass: Record<Size, string> = {
-  sm: 'px-3 py-2 rounded-lg',
-  md: 'px-4 py-2.5 rounded-2xl',
-  lg: 'px-6 py-3 rounded-2xl',
-};
+/**
+ * Fill and label, per variant, resolved against the theme rather than named as
+ * classes: "black" is the page's ink in light and its paper in dark, and there
+ * is no Tailwind token for "the inverse of the text colour".
+ */
+function useButtonSkin(variant: Variant): {
+  backgroundColor: string;
+  borderColor?: string;
+  label: string;
+  spinner: string;
+} {
+  const { colors } = useTheme();
+  switch (variant) {
+    case 'primary':
+      // Black in light, white in dark, each under the other's ink. The label
+      // is `textInverse`'s job in neither theme — it is literally the ground.
+      return {
+        backgroundColor: colors.text,
+        label: colors.background,
+        spinner: colors.background,
+      };
+    case 'secondary':
+      return {
+        backgroundColor: 'transparent',
+        borderColor: colors.border,
+        label: colors.text,
+        spinner: colors.text,
+      };
+    case 'danger':
+      // `errorStrong`, not `error`: this fill carries a WHITE label, and
+      // dark's `error` (#ef4444) is 3.76:1 under white.
+      return { backgroundColor: colors.errorStrong, label: '#ffffff', spinner: '#ffffff' };
+    case 'accent':
+      return { backgroundColor: colors.accent, label: '#ffffff', spinner: '#ffffff' };
+    case 'ghost':
+    default:
+      return {
+        backgroundColor: 'transparent',
+        label: colors.textSecondary,
+        spinner: colors.textSecondary,
+      };
+  }
+}
 
 interface Props {
   children: React.ReactNode;
@@ -54,6 +102,8 @@ interface Props {
   onPress?: () => void;
   className?: string;
   accessibilityLabel?: string;
+  /** For the source-scan wiring tests and for e2e. Passed to the Pressable. */
+  testID?: string;
 }
 
 export function Button({
@@ -66,9 +116,13 @@ export function Button({
   onPress,
   className = '',
   accessibilityLabel,
+  testID,
 }: Props) {
+  const skin = useButtonSkin(variant);
+  const box = BUTTON_SIZE[size];
   return (
     <Pressable
+      testID={testID}
       onPress={onPress}
       disabled={disabled || loading}
       accessibilityRole="button"
@@ -76,22 +130,131 @@ export function Button({
         accessibilityLabel ?? (typeof children === 'string' ? children : undefined)
       }
       accessibilityState={{ disabled: !!(disabled || loading), busy: !!loading }}
-      className={`flex-row items-center justify-center ${variantClass[variant]} ${sizeClass[size]} ${fullWidth ? 'w-full' : ''} ${disabled ? 'opacity-50' : ''} ${className}`}
+      style={{
+        // `minHeight`, not `height`: a label that wraps (a long word at the
+        // largest font-size setting) must grow the pill rather than overflow
+        // it, and the measured 36 is the floor the direction specifies.
+        minHeight: box.height,
+        borderRadius: box.radius,
+        paddingHorizontal: box.paddingHorizontal,
+        backgroundColor: skin.backgroundColor,
+        ...(skin.borderColor ? { borderWidth: 1, borderColor: skin.borderColor } : null),
+      }}
+      className={`flex-row items-center justify-center gap-2 active:opacity-80 ${fullWidth ? 'w-full' : ''} ${disabled ? 'opacity-50' : ''} ${className}`}
     >
-      {loading ? <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? '#4f46e5' : '#fff'} /> : null}
+      {loading ? <ActivityIndicator color={skin.spinner} /> : null}
       {typeof children === 'string' ? (
         // Not its own TalkBack stop — the Pressable already announces this
         // label, so leaving the Text important made every Button say its
         // caption twice ("Send", then "Send" again).
         <Text
           importantForAccessibility="no"
-          className={`font-semibold text-sm ${textClass[variant]}`}
+          style={{ color: skin.label }}
+          className="font-semibold text-body"
         >
           {children}
         </Text>
       ) : (
         children
       )}
+    </Pressable>
+  );
+}
+
+/**
+ * The SEGMENTED CONTROL, and the one skin it shares with the primary button.
+ *
+ * A selected segment is the page's INK under the page's GROUND — black pill,
+ * white label in light; the inverse in dark — which is the same relationship
+ * `Button`'s primary variant and the bottom bar's lit tab already draw. It is
+ * not `primaryFill`: the indigo fill is the treatment this direction removed
+ * (see the Button comment above), and a screen carrying an indigo segment beside
+ * a black primary button has two controls claiming to be the one live thing.
+ *
+ * There is no Tailwind token for "the inverse of the text colour", so the two
+ * colours come off the theme rather than out of a class, exactly as the button
+ * skin does.
+ */
+export function useSegmentSkin(selected: boolean): { backgroundColor: string; color: string } {
+  const { colors } = useTheme();
+  return selected
+    ? { backgroundColor: colors.text, color: colors.background }
+    : { backgroundColor: colors.surface, color: colors.text };
+}
+
+export interface SegmentedOption<Id extends string> {
+  id: Id;
+  label: string;
+  /** Drawn before the label, in the segment's own foreground. */
+  icon?: AppIconName;
+  /** Spoken instead of the label, where the word alone is ambiguous. */
+  accessibilityLabel?: string;
+}
+
+/**
+ * Two or more mutually exclusive filters in one hairline-bordered box.
+ *
+ * `min-h-[44px]` per segment is Material's target, and the box clips its own
+ * corners so the selected fill takes the container's radius rather than drawing
+ * a square corner over it.
+ */
+export function Segmented<Id extends string>({
+  options,
+  value,
+  onChange,
+  className = '',
+}: {
+  options: readonly SegmentedOption<Id>[];
+  value: Id;
+  onChange: (id: Id) => void;
+  className?: string;
+}) {
+  return (
+    <View
+      className={`flex-row rounded-lg border border-lantern-border overflow-hidden ${className}`}
+    >
+      {options.map((option) => (
+        <SegmentedItem
+          key={option.id}
+          option={option}
+          selected={option.id === value}
+          onPress={() => onChange(option.id)}
+        />
+      ))}
+    </View>
+  );
+}
+
+function SegmentedItem<Id extends string>({
+  option,
+  selected,
+  onPress,
+}: {
+  option: SegmentedOption<Id>;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const skin = useSegmentSkin(selected);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={{ backgroundColor: skin.backgroundColor }}
+      className="flex-1 min-h-[44px] flex-row items-center justify-center gap-1"
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      accessibilityLabel={option.accessibilityLabel ?? option.label}
+    >
+      {option.icon ? (
+        <AppIcon name={option.icon} size={14} color={skin.color} importantForAccessibility="no" />
+      ) : null}
+      <Text
+        importantForAccessibility="no"
+        numberOfLines={1}
+        style={{ color: skin.color }}
+        className="text-caption font-semibold"
+      >
+        {option.label}
+      </Text>
     </Pressable>
   );
 }
@@ -143,7 +306,13 @@ export function Card({
   countLabel,
   illustration,
 }: CardProps) {
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
+  // Radius 16 and padding 20, from the measured direction rather than from
+  // Tailwind: `rounded-lantern-xl` is 20 and `p-4` is 14 at this project's
+  // NativeWind rem, so neither class reaches the numbers. One shape for every
+  // neutral container in the app — the feature variant only moves where the
+  // padding sits, never how round the box is.
+  const shell = { borderRadius: CARD.radius } as const;
   const accent =
     variant === 'feature' && feature
       ? (isDark ? featureAccentsDark : featureAccentsLight)[feature]
@@ -153,8 +322,9 @@ export function Card({
     const showCount = typeof count === 'number' && count > 0;
     return (
       <View
-        className={`bg-lantern-surface rounded-lantern-xl border border-lantern-border overflow-hidden ${className}`}
+        className={`bg-lantern-surface border border-lantern-border overflow-hidden ${className}`}
         style={{
+          ...shell,
           shadowColor: '#000',
           shadowOffset: { width: 0, height: 2 },
           shadowOpacity: 0.06,
@@ -187,14 +357,14 @@ export function Card({
           ) : null}
         </View>
         {illustration ? (
-          <View className="p-4 flex-row items-start gap-3">
+          <View style={{ padding: CARD.padding }} className="flex-row items-start gap-3">
             <View className="flex-1 min-w-0">{children}</View>
             {/* Decorative: the band's title already names the card, so this
                 is hidden from the screen reader rather than announced. */}
             <Illustration name={illustration} feature={feature} size={72} />
           </View>
         ) : (
-          <View className="p-4">{children}</View>
+          <View style={{ padding: CARD.padding }}>{children}</View>
         )}
       </View>
     );
@@ -202,8 +372,11 @@ export function Card({
 
   return (
     <View
-      className={`bg-lantern-surface rounded-lantern-xl border border-lantern-border p-4 ${className}`}
+      className={`bg-lantern-surface border border-lantern-border ${className}`}
       style={{
+        ...shell,
+        padding: CARD.padding,
+        borderColor: colors.border,
         // Neutral black, never a tinted slate: on this app's warm cream
         // surfaces a blue-black shadow reads as a coloured edge around the box
         // rather than as depth. The softness is unchanged — only the hue.
@@ -248,10 +421,16 @@ export function ScreenHeader({
         <BackButton onPress={onBack} style={{ marginLeft: -8, marginRight: 4 }} />
       ) : null}
       <View className="flex-1 min-w-0 pr-3">
-        {/* `title` step: 22/28/-0.02em/700. Was `text-2xl` — 21 sp at this
-            project's NativeWind rem of 14, i.e. a size that existed nowhere in
-            the scale. */}
-        <Text className="text-title font-bold text-lantern-text">{title}</Text>
+        {/* `title` step: 22/28/-0.02em/700, and the SERIF one — this is a
+            screen's h1, which is the `title` display role (theme/fonts.ts).
+            The class alone left every screen that uses this header (the set
+            room, the Study hub, 20 others) drawing its h1 in the platform sans
+            while the headings INSIDE the page were Bitter, i.e. the serif
+            applied one level too deep. `serifDisplayStyle()` also resets the
+            weight, because the face carries it and a `font-bold` against a
+            single-weight family is a faux-bold on iOS and dropped on Android
+            — so the class keeps the SIZE and the style brings the family. */}
+        <Text style={serifDisplayStyle()} className="text-title text-lantern-text">{title}</Text>
         {subtitle ? <Text className="text-caption text-lantern-text-secondary mt-0.5">{subtitle}</Text> : null}
       </View>
       {right}
@@ -345,6 +524,7 @@ export function ConfirmSheetHost() {
   // Cancel/Confirm row sinks under the system navigation bar and cannot be
   // tapped on devices with 3-button nav.
   const insets = useSafeAreaInsets();
+  const { colors } = useTheme();
   if (!open || !options) return null;
   return (
     <Modal transparent animationType="fade" visible={open} onRequestClose={handleCancel}>
@@ -352,23 +532,42 @@ export function ConfirmSheetHost() {
         <View
           accessibilityViewIsModal
           accessibilityLabel={options.title}
-          className="bg-lantern-surface rounded-t-3xl px-5 pt-5"
-          style={{ paddingBottom: insets.bottom + 20 }}
+          className="px-5 pt-3"
+          style={{
+            // Cream ground, ~23 dp top corners and a grabber: the one sheet
+            // anatomy, shared with ActionSheet (founder direction 2026-09-11).
+            backgroundColor: colors.background,
+            borderTopLeftRadius: SHEET.topRadius,
+            borderTopRightRadius: SHEET.topRadius,
+            paddingBottom: insets.bottom + 20,
+          }}
         >
-          <Text className="text-lg font-bold text-lantern-text mb-2" accessibilityRole="header">
+          <SheetGrabber />
+          {/* The serif title step, like every other sheet heading. */}
+          <Heading
+            style={{ ...serifDisplayStyle(), fontSize: 22, lineHeight: 28 }}
+            className="mb-2"
+            accessibilityRole="header"
+          >
             {options.title}
-          </Text>
-          <Text className="text-sm text-lantern-text-secondary mb-5">{options.message}</Text>
+          </Heading>
+          <Body tone="secondary" className="mb-5">
+            {options.message}
+          </Body>
           <View className="flex-row gap-3">
-            <Pressable onPress={handleCancel} className="flex-1 py-3 rounded-2xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary items-center">
-              <Text className="font-semibold text-lantern-text">{options.cancelLabel || 'Cancel'}</Text>
-            </Pressable>
-            <Pressable
+            {/* The two pill variants, not two hand-rolled boxes: a sheet's
+                choice is the same object as any other choice in the app. */}
+            <Button variant="secondary" fullWidth className="flex-1" onPress={handleCancel}>
+              {options.cancelLabel || 'Cancel'}
+            </Button>
+            <Button
+              variant={options.danger ? 'danger' : 'primary'}
+              fullWidth
+              className="flex-1"
               onPress={handleConfirm}
-              className={`flex-1 py-3 rounded-2xl items-center ${options.danger ? 'bg-red-500' : 'bg-lantern-primary-fill'}`}
             >
-              <Text className="font-semibold text-white">{options.confirmLabel || 'Confirm'}</Text>
-            </Pressable>
+              {options.confirmLabel || 'Confirm'}
+            </Button>
           </View>
         </View>
       </View>
@@ -378,7 +577,10 @@ export function ConfirmSheetHost() {
 
 export { NotificationRow } from './NotificationRow';
 export { FeatureHero } from './FeatureHero';
-export { ActionSheet, type ActionSheetItem } from './ActionSheet';
+export { ActionSheet, SheetGrabber, type ActionSheetItem } from './ActionSheet';
+// The one bottom-sheet shell: grabber, 23 dp corners, cream ground, serif
+// heading, keyboard-safe body. See SheetShell.tsx for why it is one component.
+export { SheetShell, type SheetShellProps } from './SheetShell';
 export { LoadingState, ErrorState, InlineErrorBanner, EmptyState } from './AsyncStates';
 export { IconButton } from './IconButton';
 export { BackButton } from './BackButton';
@@ -399,6 +601,15 @@ export {
   useFeatureAccent,
   type FeatureDiscSize,
 } from './FeatureDisc';
+// The hub's unit: pastel panel, white caption strip, hard offset shadow.
+export {
+  DoorTile,
+  doorIllustrationSize,
+  doorTileColumnWidth,
+  doorTileLayout,
+  type DoorTileLayout,
+  type DoorTileProps,
+} from './DoorTile';
 // The ten spot illustrations, rendered. Doors, tiles, empty states, heroes.
 export {
   Illustration,

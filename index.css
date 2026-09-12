@@ -2,6 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ===== Display face: Bitter (SIL OFL 1.1, public/fonts/OFL.txt) =====
+   The 2026-09-11 StudyFetch direction asks for a serif display voice with one
+   italic accent word per section heading, which is why the italic is shipped
+   and not synthesised: a browser's fake italic is a shear of the upright, and
+   Bitter's true italic has different letterforms in exactly the lowercase an
+   accent word is made of.
+
+   Four faces, not two: upright and italic at 400 and 600. They are single
+   instances pulled off the variable font and subset to latin + latin-ext, so
+   each is under 40 KB — the whole variable font subset to the same range was
+   65 KB per style, and nothing here interpolates a weight.
+
+   `swap`: the headline is the first thing painted on a hub, so it renders in
+   Georgia immediately and reflows once, rather than holding the page blank. */
+@font-face {
+  font-family: 'Bitter';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/bitter-latin-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Bitter';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/bitter-latin-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Bitter';
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/bitter-latin-italic-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Bitter';
+  font-style: italic;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/bitter-latin-italic-600.woff2') format('woff2');
+}
+
 /* Mobile home-indicator / notch spacing */
 @layer utilities {
   .safe-area-bottom {
@@ -64,12 +107,21 @@ svg[data-slot="icon"].w-24 {
 
 /* ===== Lantern Design Tokens (CSS Variables) ===== */
 :root {
-  /* Warm off-white: hsl(30°, 50%, 96%) */
-  --color-background: 250 245 240;
-  --color-background-secondary: 243 235 226;
-  --color-nav-column: 20 18 33;
-  --color-nav-column-text: 248 250 252;
-  --color-nav-column-text-secondary: 184 179 204;
+  /* Paper ground, measured off StudyFetch (2026-09-11): #f7f6ef page,
+     #f2f0e8 second plane, white cards. */
+  --color-background: 247 246 239;
+  --color-background-secondary: 242 240 232;
+  /* Charcoal rail, #171717. Its glyphs are the light grey below; the lit item
+     is that glyph turned white inside the `-active` grey pill — no hue. */
+  --color-nav-column: 23 23 23;
+  --color-nav-column-text: 245 245 245;
+  --color-nav-column-text-secondary: 163 163 163;
+  --color-nav-column-active: 56 56 56;
+  /* Near-black, not #000: the ink every StudyFetch-shaped primitive is drawn
+     in — the solid button pill, the line illustration on a pastel panel, and
+     the hard offset shadow under a hub tile. Pure black against a warm paper
+     ground reads as a hole; #191919 reads as ink. */
+  --color-ink: 25 25 25;
   --color-surface: 255 255 255;
   --color-surface-secondary: 241 245 249;
   --color-text: 15 23 42;
@@ -106,14 +158,24 @@ svg[data-slot="icon"].w-24 {
   /* New this wave: sky-700. sky-500 (the old `info` token) was 2.63:1 as text
      on cream, which is why no info var ever shipped. */
   --color-info: 3 105 161;
-  --color-border: 197 206 221;
+  /* Hairline #eceae0: one step off the second plane, so a card's edge is a
+     seam rather than a rule and needs no shadow to separate from the page. */
+  --color-border: 236 234 224;
   --radius-lg: 16px;
   --radius-xl: 20px;
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.05);
   --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 8px rgba(15, 23, 42, 0.06);
+  /* The StudyFetch hub-tile shadow: a hard offset in the ink, no blur and no
+     alpha. It is drawn in `--color-ink`, which inverts with the theme, so the
+     tile keeps an edge on the black page instead of casting black on black. */
+  --shadow-hard: 4px 4px 0 0 rgb(var(--color-ink));
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-display: var(--font-sans);
+  /* The display voice is now a SERIF, which is the single biggest thing that
+     makes the StudyFetch reference read as a study product rather than a SaaS
+     dashboard. Georgia is the fallback because it is metrically close enough
+     that the swap does not reflow a headline by a whole line. */
+  --font-display: 'Bitter', Georgia, 'Times New Roman', serif;
   /* Was missing entirely; `code, pre, kbd, samp` and any serif prose had no
      token to reach for. System faces only - no font bytes ship this wave. */
   --font-serif: ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
@@ -127,22 +189,24 @@ svg[data-slot="icon"].w-24 {
      (`featureAccentsLight` / `featureAccentsDark`). `scripts/design/contrast.mjs`
      fails if this block and that file disagree, or if any ink drops below
      4.5:1 on its tint, on the surface or on the page ground. */
-  --color-feature-notes-ink: 15 118 110;
-  --color-feature-notes-tint: 204 251 241;
-  --color-feature-flashcards-ink: 77 124 15;
-  --color-feature-flashcards-tint: 236 252 203;
-  --color-feature-tests-ink: 3 105 161;
-  --color-feature-tests-tint: 224 242 254;
-  --color-feature-recording-ink: 162 28 175;
-  --color-feature-recording-tint: 250 232 255;
-  --color-feature-ai-ink: 79 70 229;
-  --color-feature-ai-tint: 238 242 255;
+  --color-feature-notes-ink: 107 96 49;
+  --color-feature-notes-tint: 239 235 221;
+  --color-feature-flashcards-ink: 63 98 18;
+  --color-feature-flashcards-tint: 188 248 135;
+  --color-feature-tests-ink: 11 90 97;
+  --color-feature-tests-tint: 187 238 240;
+  --color-feature-recording-ink: 92 82 0;
+  --color-feature-recording-tint: 249 242 132;
+  --color-feature-ai-ink: 123 44 171;
+  --color-feature-ai-tint: 245 213 255;
   --color-feature-groups-ink: 4 120 87;
   --color-feature-groups-tint: 209 250 229;
   --color-feature-campus-ink: 109 40 217;
   --color-feature-campus-tint: 237 233 254;
   --color-feature-budget-ink: 180 83 9;
   --color-feature-budget-tint: 254 243 199;
+  --color-feature-sets-ink: 11 95 80;
+  --color-feature-sets-tint: 185 240 226;
 
   /* @deprecated one release: the nine pre-wave feature vars, now aliases of
      the light inks above so the ~38 existing call sites keep rendering.
@@ -171,9 +235,10 @@ svg[data-slot="icon"].w-24 {
   color-scheme: dark;
   --color-background: 0 0 0;
   --color-background-secondary: 22 24 28;
-  --color-nav-column: 20 18 33;
-  --color-nav-column-text: 248 250 252;
-  --color-nav-column-text-secondary: 184 179 204;
+  --color-nav-column: 23 23 23;
+  --color-nav-column-text: 245 245 245;
+  --color-nav-column-text-secondary: 163 163 163;
+  --color-nav-column-active: 56 56 56;
   --color-surface: 16 18 20;
   --color-surface-secondary: 26 29 33;
   --color-text: 248 250 252;
@@ -211,22 +276,28 @@ svg[data-slot="icon"].w-24 {
   --color-info: 125 211 252;
 
   /* Feature accents - spec v3 5.6 dark column. */
-  --color-feature-notes-ink: 94 234 212;
-  --color-feature-notes-tint: 15 47 44;
-  --color-feature-flashcards-ink: 190 242 100;
-  --color-feature-flashcards-tint: 26 46 10;
-  --color-feature-tests-ink: 125 211 252;
-  --color-feature-tests-tint: 12 42 59;
-  --color-feature-recording-ink: 240 171 252;
-  --color-feature-recording-tint: 59 15 64;
-  --color-feature-ai-ink: 129 140 248;
-  --color-feature-ai-tint: 28 28 58;
+  /* Inverted: see the :root note. The pill is near-white, its label is
+     `--color-surface`. */
+  --color-ink: 245 245 245;
+
+  --color-feature-notes-ink: 226 218 194;
+  --color-feature-notes-tint: 42 38 32;
+  --color-feature-flashcards-ink: 184 240 122;
+  --color-feature-flashcards-tint: 28 46 14;
+  --color-feature-tests-ink: 138 230 236;
+  --color-feature-tests-tint: 12 42 46;
+  --color-feature-recording-ink: 247 238 122;
+  --color-feature-recording-tint: 58 52 8;
+  --color-feature-ai-ink: 233 184 255;
+  --color-feature-ai-tint: 47 27 61;
   --color-feature-groups-ink: 110 231 183;
   --color-feature-groups-tint: 11 46 34;
   --color-feature-campus-ink: 196 181 253;
   --color-feature-campus-tint: 42 27 77;
   --color-feature-budget-ink: 251 191 36;
   --color-feature-budget-tint: 58 42 8;
+  --color-feature-sets-ink: 127 232 208;
+  --color-feature-sets-tint: 13 46 40;
 
   /* @deprecated one release - see the :root block. The var() indirection means
      the dark inks are picked up automatically. */
@@ -261,6 +332,17 @@ svg[data-slot="icon"].w-24 {
 .font-low-data {
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* ===== The display voice is a serif =====
+   `text-display` and `text-title` are the two steps that carry a screen's
+   name, and they are the only two that take the serif. Tailwind's fontSize
+   tuple cannot carry a family, so the mapping lives here rather than in
+   tailwind.config.js — a call site that wants the serif on something else
+   still reaches for `font-display` directly. */
+.text-display,
+.text-title {
+  font-family: var(--font-display);
 }
 
 html,

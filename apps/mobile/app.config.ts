@@ -223,7 +223,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // home with a "Needs you" strip; Buy Again; order rows with status pills;
   // and the buy/sell tools that lived behind a "..." menu are all visible.
   // Shop moves to the top bar, Jobs to the profile drawer; both are pilot-only.
-  version: '1.0.47',
+  version: '1.0.48',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',
@@ -331,7 +331,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     './plugins/withFmtCxx17',
     // Bounds READ_EXTERNAL_STORAGE to API <= 32 — see the plugin.
     './plugins/withScopedStoragePermission',
-    'expo-font',
+    // The display face, EMBEDDED rather than fetched at boot: a heading that
+    // arrives one frame late reflows the hub under the student's thumb, and on
+    // a cold start with no network it never arrives at all. The two files are
+    // static instances of upstream's variable Bitter (SIL OFL 1.1 — the licence
+    // sits beside them in assets/fonts/OFL.txt), one family per weight because
+    // Android resolves a bundled face by family name and drops `fontWeight`.
+    // See src/theme/fonts.ts, which names the families this registers.
+    //
+    // These only exist in a binary built AFTER this entry landed; an older
+    // install falls back to the system face, which is why no layout depends on
+    // the serif's metrics.
+    [
+      'expo-font',
+      {
+        fonts: ['./assets/fonts/Bitter-Regular.ttf', './assets/fonts/Bitter-SemiBold.ttf'],
+      },
+    ],
     // Required for Android push: the plugin wires the notification service and
     // the default channel/icon into the manifest. Its absence is half of why a
     // background push has never been deliverable on Android.

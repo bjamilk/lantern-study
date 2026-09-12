@@ -1835,11 +1835,26 @@ export interface CompanionAction {
   payload?: Record<string, string>;
 }
 
+/**
+ * Where an assistant reply was read from, for the source chips under it.
+ *
+ * `excerpts` are 1-based chunk positions inside that one note, in reading
+ * order. There are no page numbers in this pipeline, so a chip reads
+ * "<note title> · Excerpt 3" and never claims a page.
+ */
+export interface CompanionCitation {
+  noteId: string;
+  noteTitle: string;
+  excerpts: number[];
+}
+
 export interface CompanionMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   actions?: CompanionAction[];
+  /** Source chips for this reply. Live-session only — not persisted server-side. */
+  citations?: CompanionCitation | null;
   /** User rating for assistant replies; null/undefined = none. */
   feedback?: 'up' | 'down' | null;
   created_at: string;

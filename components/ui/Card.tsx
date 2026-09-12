@@ -52,10 +52,17 @@ const variantClasses: Record<CardVariant, string> = {
   feature: 'bg-lantern-surface border border-lantern-border',
 };
 
+/**
+ * 20 px is the `md` step since the 2026-09-11 pass — the reference gives a card
+ * noticeably more breathing room than the old 16/20 responsive pair, and the
+ * pair itself was a hedge: a card that needs a tighter inset on a phone is a
+ * card with too much in it. `sm` and `lg` bracket it for dense rows and hero
+ * panels.
+ */
 const paddingClasses = {
   none: '',
   sm: 'p-3',
-  md: 'p-4 md:p-5',
+  md: 'p-5',
   lg: 'p-6',
 };
 
@@ -90,7 +97,10 @@ export const Card: React.FC<CardProps> = ({
     <Tag
       type={onClick ? 'button' : undefined}
       onClick={onClick}
-      className={`rounded-lantern-xl ${variantClasses[variant]} ${outerPadding} ${interactive} ${className}`}
+      // 16 px (`--radius-lg`), not 20: the reference's cards are squarer than
+      // Lantern's were, and the softer corner is what made a white card on a
+      // near-white ground read as a bubble rather than a sheet.
+      className={`rounded-lantern ${variantClasses[variant]} ${outerPadding} ${interactive} ${className}`}
     >
       {hasBand ? (
         <>

@@ -1,20 +1,13 @@
 /**
  * The arithmetic and the two yes/no decisions behind the contextual row.
  *
- * Spec v3 §7.2, as amended by the founder (2026-09-08). The row is a 44 dp
- * segment strip inside the absolutely-positioned chrome view. Where it sits
- * depends on the registry's mode (navigation/contextualBars.ts):
- *
- * - `above` — drawn directly ABOVE the global bottom bar, today's behaviour.
- *   Its clearance is the bar's clearance PLUS the row.
- * - `replace` — drawn IN the global bar's slot; the global bar is not on screen
- *   in that section. Its clearance is the bar's clearance with the bar's own
- *   content height taken back OUT and the row put in its place, so a screen
- *   pads for one strip and not two.
- *
- * The mode is a boolean input here — `replaceMode` on the clearance call — not
- * an import: this file cannot import the registry (see below), so the chrome
- * passes {@link replacesGlobalBar}(spec) in the way it already passes `present`.
+ * Spec v3 §7.2. The row is a 44 dp segment strip inside the
+ * absolutely-positioned chrome view, drawn directly ABOVE the global bottom bar
+ * on every route that has one — there is no mode and no second placement any
+ * more (build 185's device pass reverted `replace`; see
+ * navigation/contextualBars.ts). Its clearance is therefore always the global
+ * bar's clearance PLUS the row: a screen pads for BOTH strips, because both are
+ * on screen.
  *
  * The row's items are a property of the FOCUSED ROUTE — exactly as `immersive`
  * already is — never of scrolling, the keyboard or a selection.
@@ -134,22 +127,6 @@ export interface ContextualClearanceInput {
   contentHeight: number;
   /** Whether the row is on screen for this route. */
   present: boolean;
-  /**
-   * True when this row REPLACES the global bar (Study, Shop). The global bar is
-   * then NOT on screen, so its own content height is taken back out of `base`
-   * and the row stands in its place: the total is safe-area + row, not
-   * safe-area + bar + row. Defaults false, which is today's `above` behaviour,
-   * so every existing caller is unchanged until it opts in.
-   */
-  replaceMode?: boolean;
-  /**
-   * The global bar's own content height (screenInsets.TAB_BAR_CONTENT_HEIGHT,
-   * 56). ONLY read in replace mode, to remove the bar that is no longer drawn.
-   * An input rather than an import so this file stays node-testable in
-   * isolation. Defaults 0, which makes replace mode a no-op if a caller forgets
-   * it — the safe direction, since the result then only ever over-clears.
-   */
-  globalBarContentHeight?: number;
 }
 
 /**
@@ -161,25 +138,25 @@ export interface ContextualClearanceInput {
  *
  * - No row (`present` false): the global bar's own clearance, `base`. This is
  *   every route outside a registry, and the immersive case where the row is
- *   hidden entirely — nothing stands in the bar's place, so there is nothing to
- *   add or subtract.
- * - `above` mode: `base` PLUS the row, the two bars stacked.
- * - `replace` mode: `base` PLUS the row MINUS the global bar's content height,
- *   because the bar is gone and the row occupies its slot. Floored at the row
- *   itself so a degenerate `base` can never return less than the strip a screen
- *   must clear.
+ *   hidden entirely.
+ * - A row on screen: `base` PLUS the row — the two strips are STACKED, always,
+ *   because the row sits above a global bar that is still drawn.
+ *
+ * There used to be a third case: `replace` mode subtracted the global bar's own
+ * content height, because the bar came off screen under Study and Shop. The bar
+ * no longer does (the device pass on build 185 put the five tabs back on every
+ * route), so the subtraction is gone rather than merely unused — a clearance
+ * that still removed 56 dp would hide the last row of every Study and Shop list
+ * behind the bar, which is precisely the offline-box failure.
  */
 export function contextualBarClearance({
   base,
   contentHeight,
   present,
-  replaceMode = false,
-  globalBarContentHeight = 0,
 }: ContextualClearanceInput): number {
   const row = contextualBarHeight(present, contentHeight);
   if (!present) return px(base);
-  if (!replaceMode) return px(base) + row;
-  return Math.max(row, px(base) + row - px(globalBarContentHeight));
+  return px(base) + row;
 }
 
 /**

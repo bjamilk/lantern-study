@@ -32,26 +32,27 @@ import {
  *
  * A 44 dp strip carrying a few doors *within* the destination you are in — so a
  * student can go Library → Tests without climbing out to the hub. WHERE it sits
- * is the registry's `mode` (navigation/contextualBars.ts): a `replace`-mode row
- * (Study, Shop) stands IN the global bar's slot, and an `above`-mode row (deck,
- * note, walk-through, community) sits above an unchanged global bar. This file
- * draws both.
+ * is no longer a question: ALWAYS directly above the global five-tab bar, inside
+ * the same chrome view, on every registry. The `replace` mode that let Study and
+ * Shop stand in the global bar's slot was reverted after build 185's device pass
+ * (navigation/contextualBars.ts), and with it the leading exit control that made
+ * taking the bar away survivable.
  *
  * HOW an item is drawn — founder decision 4, amended by "label every door on a
  * no-selection surface" (build 176). One of two surfaces, chosen by
- * `planContextualRow`:
+ * `planContextualRow` from the SELECTION alone:
  *
- * - A `replace` row WITH a selection: the selected door shows its label beside
+ * - A row WITH a selection: the selected door shows its label beside
  *   its icon inside a filled pill; every other item is its icon alone. The
  *   pill's fill is the feature's own `tint` ground and its label the feature's
  *   `ink` — the pair the contrast gate (scripts/design/contrast.mjs) already
  *   asserts clears 4.5:1 in BOTH themes. The word is `text-body` (15 sp), one
  *   line, tail-ellipsised and font-capped so "Flashcards" (the worst case) stays
  *   inside the row even at a large accessibility text size.
- * - Every OTHER row — an `above` row (deck, note, walk-through, community), OR a
- *   `replace` row with NO selection (the Study hub, Notes, the Shop root): a
+ * - Every OTHER row — a pass-through row (deck, note, walk-through, community),
+ *   or any row with NO selection (the Study hub, Notes, the Shop root): a
  *   small label UNDER every icon. Build 175 tried a leading section TITLE on the
- *   no-selection replace rows; build 176's device pass rejected it — it spent a
+ *   no-selection rows; build 176's device pass rejected it — it spent a
  *   third of the bar naming a section the app bar already names, and squeezed the
  *   five doors narrower. So a no-selection surface now shares the pass-through
  *   row's one code path: every door names itself, because a student there lacks
@@ -63,13 +64,10 @@ import {
  * (tested); this file is the untestable shell over them, because mobile jest is
  * node-env and cannot render a native component.
  *
- * A `replace`-mode row also carries ONE leading exit control (founder decision
- * 2): Back when the focused stack can pop, Home at the section root — never
- * inert, one position, and the way out now that the global bar is gone. That
- * control is NOT drawn here, and deliberately so. BottomTabBar draws it, because
- * it owns the whole bottom slot and OUTLIVES this component: the row unmounts
- * while the keyboard is up, and an exit that went with it would leave a
- * replace-mode section with no way out at all. One exit, in one file.
+ * The row carries NO exit control of its own. It never needed one except while
+ * it could take the global bar away, and it cannot: the five destinations are
+ * always on screen below it, which is every row's way out — including while the
+ * keyboard is up and this row has stood itself down.
  *
  * What its CONTENTS are a function of: THE FOCUSED ROUTE (and, for a route that
  * hosts more than one destination, the segment its params name). Not scroll, not
@@ -119,13 +117,23 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
       accessibilityLabel={plan.accessibleName}
     >
       {plan.variant === 'selectedPill' ? (
-        // The SELECTED door: icon + label on the feature's own tint chip. Icon
-        // and word share the feature `ink`, the pair contrast.mjs gates ≥4.5:1
-        // on this tint in both themes. `rounded-full`/`self-center` keep the
-        // pill tight around its content and inside the 44 dp row; `flex-shrink`
-        // lets a long word ellipsise rather than push the pill past the row.
+        // The SELECTED door: icon over label on the feature's own tint pill.
+        // Icon and word share the feature `ink`, the pair contrast.mjs gates
+        // ≥4.5:1 on this tint in both themes.
+        //
+        // STACKED, not side by side — founder direction 2026-09-11, and the
+        // same shape the global bar's lit tab now takes. A horizontal word cost
+        // ~48 dp of chrome, which the row could only pay by taking three shares
+        // of its width and leaving the four doors beside it with no room for a
+        // label at all. Stacked, the pill needs exactly what its neighbours
+        // need, so every door on the row keeps its name and this one still
+        // reads as the place you are standing.
+        //
+        // `rounded-full`/`self-center` keep the pill tight around its content
+        // and inside the 44 dp row; `max-w-full` plus the word's own tail
+        // ellipsis let a long label truncate rather than push the pill past it.
         <View
-          className="max-w-full flex-row items-center self-center rounded-full px-2.5 py-1"
+          className="max-w-full items-center self-center rounded-full px-1.5 py-1"
           style={{ backgroundColor: tint }}
         >
           <AppIcon
@@ -140,17 +148,17 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
             numberOfLines={CONTEXTUAL_PILL_LABEL.numberOfLines}
             ellipsizeMode={CONTEXTUAL_PILL_LABEL.ellipsizeMode}
             maxFontSizeMultiplier={CONTEXTUAL_PILL_LABEL.maxFontSizeMultiplier}
-            // `text-body` (15 sp) is a scale step; the pill promotes the word
-            // from the old unreadable 11 sp. `shrink` pairs with the pill's
-            // `max-w-full` so "Flashcards" truncates instead of overflowing.
-            className="text-body ml-1.5 shrink font-semibold"
+            // `text-label` (11 sp), the same step as every other word on this
+            // row and on the global bar — the pill's fill is what promotes it
+            // now, not a larger size the row cannot afford.
+            className="text-label text-center font-bold"
             style={{ color: ink }}
           >
             {plan.label}
           </Text>
         </View>
       ) : plan.variant === 'labeledIcon' ? (
-        // An `above` row's item, OR a door on a no-selection `replace` row (the
+        // A pass-through row's item, OR a door on a row with no selection (the
         // Study hub, the Shop root): icon with a small label UNDER it, no fill —
         // the same shape the global tab labels use (`text-label`, 11 sp), so a
         // pass-through toolbar and a section hub alike read as a labelled row
@@ -178,11 +186,9 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
           </Text>
         </View>
       ) : (
-        // Every non-selected door on a `replace` row WITH a selection: its icon
-        // alone, stroked in its own identity. No label on screen — but the
-        // accessible name above still carries it, and the selected door's pill
-        // names the place. (A replace row with NO selection never reaches here:
-        // there every door is a `labeledIcon`.)
+        // The `iconOnly` variant, which no surface produces today: every door
+        // on every row is labelled. Kept as the honest fallback — the accessible
+        // name above still carries the word.
         <AppIcon
           name={item.icon}
           size={18}
@@ -366,14 +372,11 @@ export function ContextualBar({
   // shell with an empty registry is byte-for-byte today's shell.
   if (!rendered) return null;
 
-  // The row's mode and its selection decide the surface: the selected door's
-  // pill on a replace row that has one, or a label under every icon everywhere
-  // else (an above row, or a no-selection replace row like the Study hub). Every
-  // item keeps its full label as an accessible name. (The replace-mode exit
-  // control is drawn by BottomTabBar — see this file's header for why it cannot
-  // live here.)
+  // The SELECTION decides the surface: the selected door's pill on a row that
+  // has one, or a label under every icon on a row that is none of its own doors
+  // (the Study hub, a deck, a note). Every item keeps its full label as an
+  // accessible name.
   const rowPlan = planContextualRow({
-    mode: rendered.mode,
     items: rendered.items,
     selectedId: current?.id,
   });

@@ -132,6 +132,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const showToast = useToastStore((s) => s.showToast);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
   const closeCompanion = useCompanionStore((s) => s.close);
+  const resetCompanionForScope = useCompanionStore((s) => s.resetForScope);
 
   const loadMyCourses = useAcademicStore((s) => s.loadMyCourses);
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
@@ -249,8 +250,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   useEffect(() => {
     if (courseId) touchWorkspaceRecent(courseId);
     closeCompanion();
+    // The attachment belongs to the room it was made in. Watching `courseId`
+    // alone let a note attached in one course-less set stay stapled to every
+    // question asked in the next one, so the set id leads here.
+    resetCompanionForScope(studySetId ?? courseId ?? null);
     void loadMyCourses();
-  }, [courseId, loadMyCourses, closeCompanion]);
+  }, [courseId, studySetId, loadMyCourses, closeCompanion, resetCompanionForScope]);
 
   useEffect(() => {
     let cancelled = false;
@@ -411,10 +416,14 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       await loadNote(noteId);
       const note = useNotesStore.getState().selectedNote;
       if (note) {
-        void setActiveNoteContext({ id: note.id, title: note.title || 'Untitled note' });
+        void setActiveNoteContext({
+          id: note.id,
+          title: note.title || 'Untitled note',
+          scopeId: studySetId ?? courseId ?? null,
+        });
       }
     },
-    [loadNote, setActiveNoteContext]
+    [loadNote, setActiveNoteContext, studySetId, courseId]
   );
 
   useEffect(() => {
@@ -1618,6 +1627,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 context={companionContext}
                 onAction={onCompanionAction}
                 theme={theme}
+                // A citation chip in the docked rail opens the cited note in
+                // the room's own Notes studio, the same way every other
+                // "open this note" in this workspace does.
+                onOpenNote={(noteId) => {
+                  void openNote(noteId);
+                  go('notes', { noteId });
+                }}
               />
             </div>
           </div>

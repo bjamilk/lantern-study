@@ -1,52 +1,66 @@
 import React from 'react';
-import { AppIcon } from './AppIcon';
-import { Card } from './Card';
 import { Illustration, type IllustrationName } from './Illustration';
-import { FEATURE_INK_TEXT, type FeatureKey } from './featureClasses';
+import {
+  FEATURE_INK_TEXT,
+  FEATURE_PANEL_INK_OVERRIDE,
+  FEATURE_PANEL_INK_TEXT,
+  FEATURE_TINT_BG,
+  type FeatureKey,
+} from './featureClasses';
 
 /** A door's picture, and the one size it gets. Mirrors mobile's `FeatureTile`. */
 export const DOOR_ILLUSTRATION_SIZE = 56;
+/** The rendered size of the stand-in glyph when a door has no illustration. */
+export const DOOR_GLYPH_SIZE = 32;
 
 export interface DoorTileProps {
   feature: FeatureKey;
-  /** The band glyph — the FEATURE's mark. Size it at the call site (`w-6 h-6`). */
-  icon: React.ReactNode;
   /**
-   * The door's spot illustration (§5.6: doors and empty states are the only
-   * two places one may appear). It is drawn in the BODY, on the chevron's row,
-   * never in the band — see the note below. Omitting it draws the door exactly
-   * as before.
+   * The footer glyph — the FEATURE's mark, drawn small under the panel in the
+   * feature's own ink. Size it at the call site (`w-4 h-4`).
    */
+  icon: React.ReactNode;
+  /** The door's picture, drawn as a line illustration on the pastel panel. */
   illustration?: IllustrationName;
   title: string;
   /** One line, a promise rather than a description of the screen behind it. */
   promise: string;
-  /** Count pill in the band: "12 due", "3 saved". Omitted when there is nothing to count. */
+  /** Count pill: "12 due", "3 saved". Omitted when there is nothing to count. */
   count?: string;
   onClick: () => void;
   className?: string;
 }
 
 /**
- * A door: neutral card, feature-tint band with a glyph and a count, a one-line
- * promise, and a chevron in the feature's ink (§5.6 "Feature tile").
+ * A door, in the StudyFetch anatomy the 2026-09-11 direction asks for:
  *
- * Four to five on a hub and nowhere else. A door that turns up on every screen
- * has stopped being a door and is just decoration with a link in it.
+ *   white card
+ *   ├─ a flat pastel PANEL over the top two thirds, with a black line
+ *   │  illustration centred on it
+ *   ├─ the title and its one-line promise
+ *   └─ a footer row: the feature's glyph in the feature's ink, and the count
  *
- * WHERE THE PICTURE GOES (§5.6 "Imagery rule"), and why not in the band:
+ * and the whole card sits on a hard black offset shadow — 4 px, no blur, no
+ * alpha, drawn in `--color-ink`.
  *
- *   1. Tint budget, which is the binding one. The band is 32 px of a ~132 px
- *      tile, i.e. 24% against a 25% cap. Growing it to 56 px to fit a 96-unit
- *      asset puts the door at 56/132 ≈ 42% — over the cap on all nine doors at
- *      once. In the body the picture costs no tint at all: the only filled part
- *      of the asset is its ground ellipse, and the ~64 px of height it adds
- *      takes the tile DOWN to about 19%.
- *   2. The band already carries a mark. The glyph is the FEATURE's mark and the
- *      illustration is the DOOR's picture; stacked in one strip they read as two
- *      competing logos.
- *   3. It is what mobile does (`FeatureTile` in apps/mobile), so one door looks
- *      like the same door on both platforms — from the same asset.
+ * WHAT CHANGED, AND WHY THE OLD TINT-CAP RULE WENT WITH IT. The previous door
+ * was a neutral card with a 32 px tint BAND, sized that way to keep the tile
+ * under a 25%-tint cap. That cap was the whole reason the picture could not go
+ * on the colour: a 56 px band put the tile at 42%. The reference product
+ * inverts the ratio deliberately — the panel is the tile's largest element,
+ * and it is what makes a wall of doors scannable by hue at arm's length. So
+ * the cap is gone and the panel is ~66%.
+ *
+ * The cap was never a legibility rule: nothing is set ON the panel except a
+ * line illustration, and the title, promise and count all sit on the white
+ * body below it. `contrast.test.ts` still gates body ink on every tint, and
+ * still caps how saturated a tint may be, which is the part that was load
+ * bearing. `DoorTile.test.tsx` now asserts this anatomy instead of the ratio.
+ *
+ * DARK MODE. The panel becomes the feature's dark tint and the line glyph
+ * becomes the feature's light ink (`FEATURE_PANEL_INK_TEXT`) — flat black on a
+ * near-black panel is the one way this anatomy breaks. The offset shadow is
+ * drawn in `--color-ink`, which inverts, so the card keeps an edge.
  *
  * The picture is decorative: the title, promise and count already say what the
  * door is, so `Illustration` goes unlabelled and stays out of the a11y tree.
@@ -61,48 +75,58 @@ export const DoorTile: React.FC<DoorTileProps> = ({
   onClick,
   className = '',
 }) => (
-  <Card
-    variant="feature"
-    feature={feature}
-    padding="md"
+  <button
+    type="button"
     onClick={onClick}
-    className={className}
-    band={icon}
-    // `caption` (13 px), not `label` (11 px): the spec forbids setting an ink
-    // below 12 px because lime clears AA on its own tint by only 0.10, and this
-    // pill is painted in whichever ink the tile carries.
-    bandTrailing={
-      count ? (
-        <span className={`text-caption font-semibold tabular-nums ${FEATURE_INK_TEXT[feature]}`}>
-          {count}
-        </span>
-      ) : undefined
-    }
+    className={`group text-left w-full overflow-hidden rounded-lantern-xl border border-lantern-border bg-lantern-surface shadow-lantern-hard transition-transform duration-150 active:translate-x-px active:translate-y-px focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40 ${className}`}
   >
-    <div className="flex flex-col gap-2">
-      <div className="min-w-0">
-        <p className="text-heading text-lantern-text">{title}</p>
-        <p className="text-caption text-lantern-text-secondary mt-0.5">{promise}</p>
-      </div>
-      <div className="flex items-end justify-between gap-2">
-        {illustration ? (
-          <Illustration
-            name={illustration}
-            feature={feature}
-            size={DOOR_ILLUSTRATION_SIZE}
-          />
-        ) : (
-          <span />
-        )}
-        <AppIcon
-          name="chevron-forward"
-          size={20}
-          className={`shrink-0 ${FEATURE_INK_TEXT[feature]}`}
-          aria-hidden={true}
+    <div
+      data-testid="door-panel"
+      className={`flex h-28 items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
+    >
+      {illustration ? (
+        <Illustration
+          name={illustration}
+          feature={feature}
+          size={DOOR_ILLUSTRATION_SIZE}
+          className={FEATURE_PANEL_INK_OVERRIDE[feature]}
         />
+      ) : (
+        // No drawing for this door yet: the feature's own glyph stands in, at
+        // the illustration's weight rather than the footer's. The `icon` node
+        // is sized for the footer by its call site, so the panel re-sizes the
+        // SVG it contains instead of asking every caller to pass it twice.
+        <span
+          data-testid="door-panel-glyph"
+          aria-hidden="true"
+          className="flex items-center justify-center [&_svg]:w-8 [&_svg]:h-8"
+        >
+          {icon}
+        </span>
+      )}
+    </div>
+    <div className="p-4 md:p-5">
+      <p className="text-heading text-lantern-text">{title}</p>
+      <p className="text-caption text-lantern-text-secondary mt-0.5">{promise}</p>
+      <div className="mt-3 flex items-center justify-between gap-2">
+        <span
+          data-testid="door-footer-glyph"
+          aria-hidden="true"
+          className={`flex items-center ${FEATURE_INK_TEXT[feature]}`}
+        >
+          {icon}
+        </span>
+        {count ? (
+          // `caption` (13 px), not `label` (11 px): this pill is painted in
+          // whichever ink the tile carries, and the spec forbids setting an ink
+          // below 12 px.
+          <span className={`text-caption font-semibold tabular-nums ${FEATURE_INK_TEXT[feature]}`}>
+            {count}
+          </span>
+        ) : null}
       </div>
     </div>
-  </Card>
+  </button>
 );
 
 export default DoorTile;

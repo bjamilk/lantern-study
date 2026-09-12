@@ -1,7 +1,11 @@
 import React from 'react';
 import { isLectureNote, notePreviewText } from '@lantern/shared';
 import { AppIcon } from '../ui/AppIcon';
-import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
+import {
+  FEATURE_INK_TEXT,
+  FEATURE_PANEL_INK_TEXT,
+  FEATURE_TINT_BG,
+} from '../ui/featureClasses';
 
 export interface StudySetMaterialTileNote {
   id: string;
@@ -39,7 +43,8 @@ export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
       >
         {lecture ? (
           <span
-            className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-surface ${FEATURE_INK_TEXT.recording}`}
+            aria-hidden="true"
+            className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-lantern-surface ${FEATURE_PANEL_INK_TEXT.recording}`}
           >
             <AppIcon name="mic" size={20} />
           </span>
@@ -50,7 +55,15 @@ export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
         )}
       </div>
       <div className="flex items-center gap-2 px-3 py-2.5">
-        <AppIcon name={lecture ? 'mic' : 'document-text'} size={16} />
+        {/* Tinted to the material's own hue, not left in body ink: this glyph
+            is the only thing distinguishing a lecture tile from a note tile
+            once the preview text is scrolled past, and an untinted mark made
+            the two rows identical at a glance. */}
+        <AppIcon
+          name={lecture ? 'mic' : 'document-text'}
+          size={16}
+          className={lecture ? FEATURE_INK_TEXT.recording : FEATURE_INK_TEXT.notes}
+        />
         <span className="text-body font-semibold truncate">{note.title || 'Untitled note'}</span>
       </div>
     </button>

@@ -5,6 +5,7 @@
 import { getApiBaseUrl } from '@lantern/shared';
 import { AI_USAGE_UNKNOWN, resolveAIUsageFallback } from '@lantern/shared/utils/aiUsage';
 import {
+  normalizeCompanionCitation,
   parseGlobalAIUsageFromHeaderReader,
   parseGlobalAIUsageFromHeaders,
   xhrHeaderReader,
@@ -13,6 +14,7 @@ import {
 import type { AIUsageSnapshot } from '@lantern/shared/ai';
 import type {
   CompanionAction,
+  CompanionCitation,
   CompanionConversation,
   CompanionUserContext,
 } from '../types';
@@ -478,6 +480,7 @@ export async function companionSendMessage(
   reply: string;
   actions: CompanionAction[];
   provider: string;
+  citations?: CompanionCitation | null;
   conversationId?: string;
 }> {
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
@@ -547,6 +550,8 @@ export async function clearCompanionHistory(
 
 export type CompanionStreamDone = {
   actions: CompanionAction[];
+  /** Which note excerpts this reply was read out of, for the source chips. */
+  citations?: CompanionCitation | null;
   messageId?: string;
   userMessageId?: string;
   conversationId?: string;
@@ -608,6 +613,7 @@ export async function companionSendMessageStream(
           if (data.done) {
             onDone({
               actions: (data.actions as CompanionAction[]) || [],
+              citations: normalizeCompanionCitation(data.citations),
               messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
               userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
               conversationId:

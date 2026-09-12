@@ -22,6 +22,7 @@ import type { SmartNotesDepth } from '@lantern/shared/utils/smartNotes';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
 import { Button, ScreenHeader, T } from '../../components/ui';
+import { NoteBody } from '../../components/NoteBody';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
@@ -239,7 +240,16 @@ export function NotesStudioScreen({ navigation, route }: Props) {
       />
       <ScrollView
         className="flex-1"
-        contentContainerStyle={{ padding: 16, paddingBottom: tabBarClearance, gap: 12 }}
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingTop: 16,
+          // Both bars: the global tab bar AND the Study contextual row. Not
+          // `padding: 16` with a bottom override — the shorthand made the real
+          // clearance easy to lose in a later edit, which is how the Edit/Ask
+          // row ended up under the nav on build 187.
+          paddingBottom: tabBarClearance,
+          gap: 12,
+        }}
       >
         {!note ? (
           <T.Body tone="secondary">{studySetId ? 'Open a note in this set first.' : 'Open a note in this course first.'}</T.Body>
@@ -262,8 +272,11 @@ export function NotesStudioScreen({ navigation, route }: Props) {
                 </Button>
               ))}
             </View>
-            <T.Body>{note.body || 'This note is empty. Edit it to add study content.'}</T.Body>
-            <View className="flex-row flex-wrap gap-2">
+            <NoteBody body={note.body} />
+            {/* `shrink-0`: a flex column will happily crush an action row to
+                nothing (the offline-box trap). The row keeps its measured
+                height and the padding above clears the bars. */}
+            <View className="flex-row flex-wrap gap-2 shrink-0 min-h-[44px]">
               <Button
                 variant="secondary"
                 onPress={() => navigation.navigate('NoteEditor', { noteId: note.id })}

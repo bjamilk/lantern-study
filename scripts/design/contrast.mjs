@@ -48,6 +48,9 @@ const NON_TEXT_VARS = new Set([
   // Rail ink is gated on `--color-nav-column` below, not on the page ground.
   '--color-nav-column-text',
   '--color-nav-column-text-secondary',
+  // The grey pill behind the lit rail item: a ground. What sits on it is
+  // `--color-nav-column-text`, gated against this below.
+  '--color-nav-column-active',
   '--color-surface',
   '--color-surface-secondary',
   '--color-border',
@@ -95,6 +98,8 @@ const PALETTE_VAR_MAP = {
   navColumn: '--color-nav-column',
   navColumnText: '--color-nav-column-text',
   navColumnTextSecondary: '--color-nav-column-text-secondary',
+  navColumnActive: '--color-nav-column-active',
+  ink: '--color-ink',
   surface: '--color-surface',
   surfaceSecondary: '--color-surface-secondary',
   text: '--color-text',
@@ -114,7 +119,7 @@ const PALETTE_VAR_MAP = {
   border: '--color-border',
 };
 
-/** The eight feature identities, in spec order. */
+/** The nine feature identities, in spec order (`sets` added 2026-09-11). */
 const FEATURE_KEYS = [
   'notes',
   'flashcards',
@@ -124,6 +129,7 @@ const FEATURE_KEYS = [
   'groups',
   'campus',
   'budget',
+  'sets',
 ];
 
 // ---------------------------------------------------------------- colour math
@@ -471,6 +477,21 @@ function run() {
       check(`${t.name} --color-nav-column-text`, 'nav column', navInk, navColumn);
       if (navSecondaryInk) {
         check(`${t.name} --color-nav-column-text-secondary`, 'nav column', navSecondaryInk, navColumn);
+      }
+      // The lit rail item is the SAME outline glyph turned white inside a grey
+      // pill — the one place on the rail where the ground is not the rail. If
+      // the pill ever drifts lighter, the white glyph on it fails here.
+      const navActive = t.vars['--color-nav-column-active'];
+      if (navActive) {
+        check(`${t.name} --color-nav-column-text`, 'nav active pill', navInk, navActive);
+        // And the pill has to be visible AS a pill against the rail it sits
+        // on. 3:1 is the non-text threshold for a UI shape, but the gate has
+        // no large-text bucket, so this is recorded as drift instead.
+        if (ratio(parseChannels(navActive), parseChannels(navColumn)) < 1.25) {
+          drift.push(
+            `${t.name} --color-nav-column-active is only ${ratio(parseChannels(navActive), parseChannels(navColumn)).toFixed(2)}:1 on the rail — the lit pill would be invisible`
+          );
+        }
       }
     }
 

@@ -1,3 +1,4 @@
+import { notePlainPreview } from '../utils/noteBlocks';
 import type { FeatureKey } from '../design';
 import type { WorkspaceActivityId, WorkspaceIconName } from './courseWorkspace';
 
@@ -180,16 +181,14 @@ export const STUDY_SET_RECOMMENDED_CARDS: readonly StudySetRecommendedCard[] = [
   { id: 'test', label: 'Practice test', eyebrow: 'Exam conditions', icon: 'clipboard', feature: 'tests', primary: false },
 ];
 
+/**
+ * The tile preview. This used to strip headings and HTML only, so a body's
+ * `**bold**`, `- ` bullets and `>` quotes reached the set room's "Recent
+ * materials" tiles literally. `notePlainPreview` is the one stripper both
+ * clients share.
+ */
 export function notePreviewText(body: string | null | undefined, max = 160): string {
-  const plain = (body || '')
-    .replace(/<!--[\s\S]*?-->/g, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/`{3}[\s\S]*?`{3}/g, ' ')
-    .replace(/#{1,6}\s+/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  if (!plain) return '';
-  return plain.length > max ? `${plain.slice(0, max).trim()}…` : plain;
+  return notePlainPreview(body, max);
 }
 
 export type QuizTypeCounts = Record<

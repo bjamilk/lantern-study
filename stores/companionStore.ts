@@ -17,6 +17,14 @@ import {
 export type CompanionNoteContext = {
   id: string;
   title: string;
+  /**
+   * Which room the attachment belongs to (study set id, else course id).
+   *
+   * Without this the persisted attachment leaked: two course-less sets look
+   * identical to a `courseId`-only effect, so a note attached in set A was
+   * still stapled to every question asked in set B — on web and on the phone.
+   */
+  scopeId?: string | null;
 };
 
 const NOTE_CONTEXT_STORAGE_KEY = 'lantern_companion_note_context';
@@ -26,11 +34,12 @@ function readPersistedNoteContext(): CompanionNoteContext | null {
   try {
     const raw = localStorage.getItem(NOTE_CONTEXT_STORAGE_KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as { id?: unknown; title?: unknown };
+    const parsed = JSON.parse(raw) as { id?: unknown; title?: unknown; scopeId?: unknown };
     if (typeof parsed.id !== 'string' || !parsed.id.trim()) return null;
     return {
       id: parsed.id.trim(),
       title: typeof parsed.title === 'string' && parsed.title.trim() ? parsed.title.trim() : 'Untitled note',
+      scopeId: typeof parsed.scopeId === 'string' && parsed.scopeId.trim() ? parsed.scopeId.trim() : null,
     };
   } catch {
     return null;
@@ -87,6 +96,12 @@ interface CompanionState {
 
   activeNoteContext: CompanionNoteContext | null;
   setActiveNoteContext: (ctx: CompanionNoteContext | null) => Promise<void>;
+  /**
+   * Drop the attachment when the student moves to a different room. A null
+   * scope means "nowhere in particular" and never clears, so opening the
+   * companion from the dashboard doesn't detach a note mid-question.
+   */
+  resetForScope: (scopeId: string | null) => void;
 
   activeConversationId: string | null;
   /** True after "New chat" until the first message creates a server thread. */
@@ -204,6 +219,31 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     set((s) => ({ messages: [...s.messages, assistantMsg], error: null }));
   },
 
+  resetForScope: (scopeId) => {
+    if (!scopeId) return;
+    const current = get().activeNoteContext;
+    if (!current) return;
+    // An attachment with no recorded scope predates this field. Treat it as
+    // belonging to wherever it is first seen rather than clearing it blind.
+    if (current.scopeId == null) {
+      const adopted = { ...current, scopeId };
+      persistNoteContext(adopted);
+      set({ activeNoteContext: adopted });
+      return;
+    }
+    if (current.scopeId === scopeId) return;
+    persistNoteContext(null);
+    persistConversationId(null);
+    set({
+      activeNoteContext: null,
+      activeConversationId: null,
+      pendingNewConversation: true,
+      messages: [],
+      historyLoaded: true,
+      error: null,
+    });
+  },
+
   setActiveNoteContext: async (ctx) => {
     const prev = get().activeNoteContext;
     const nextId = ctx?.id ?? null;
@@ -272,7 +312,11 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
 
   startNewChat: () => {
     persistConversationId(null);
+    // A new chat is a new chat: leaving the attachment on silently scoped the
+    // student's next question to a note they thought they had walked away from.
+    persistNoteContext(null);
     set({
+      activeNoteContext: null,
       activeConversationId: null,
       pendingNewConversation: true,
       messages: [],
@@ -362,7 +406,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }));
 
     try {
-      const { reply, actions, conversationId } = await companionSendMessage(text, mergedContext);
+      const { reply, actions, citations, conversationId } = await companionSendMessage(text, mergedContext);
       if (conversationId) {
         persistConversationId(conversationId);
       }
@@ -371,6 +415,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         role: 'assistant',
         content: reply,
         actions: actions?.length ? actions : undefined,
+        citations: citations ?? null,
         created_at: new Date().toISOString(),
       };
       set(s => ({
@@ -425,7 +470,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           ),
         }));
       },
-      ({ actions, messageId, userMessageId, conversationId }) => {
+      ({ actions, citations, messageId, userMessageId, conversationId }) => {
         if (conversationId) {
           persistConversationId(conversationId);
         }
@@ -436,6 +481,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
                 ...m,
                 id: messageId || m.id,
                 actions: actions.length ? actions : undefined,
+                citations: citations ?? null,
               };
             }
             if (userMessageId && m.id === tempUserMsg.id) {

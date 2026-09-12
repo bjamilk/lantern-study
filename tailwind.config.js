@@ -48,6 +48,8 @@ module.exports = {
         lantern: 'var(--shadow-sm)',
         'lantern-md': 'var(--shadow-md)',
         'lantern-lg': 'var(--shadow-lg)',
+        // Hard offset, no blur, drawn in the theme's ink — the hub-tile edge.
+        'lantern-hard': 'var(--shadow-hard)',
       },
       colors: {
         lantern: {
@@ -64,6 +66,10 @@ module.exports = {
           'nav-column': 'rgb(var(--color-nav-column) / <alpha-value>)',
           'nav-column-text': 'rgb(var(--color-nav-column-text) / <alpha-value>)',
           'nav-column-text-secondary': 'rgb(var(--color-nav-column-text-secondary) / <alpha-value>)',
+          // The grey pill behind the lit rail item, and the theme's strong ink
+          // (solid button pill, panel line glyph, hard offset shadow).
+          'nav-column-active': 'rgb(var(--color-nav-column-active) / <alpha-value>)',
+          ink: 'rgb(var(--color-ink) / <alpha-value>)',
           surface: 'rgb(var(--color-surface) / <alpha-value>)',
           'surface-secondary': 'rgb(var(--color-surface-secondary) / <alpha-value>)',
           text: 'rgb(var(--color-text) / <alpha-value>)',
@@ -112,6 +118,8 @@ module.exports = {
             'campus-tint': 'rgb(var(--color-feature-campus-tint) / <alpha-value>)',
             'budget-ink': 'rgb(var(--color-feature-budget-ink) / <alpha-value>)',
             'budget-tint': 'rgb(var(--color-feature-budget-tint) / <alpha-value>)',
+            'sets-ink': 'rgb(var(--color-feature-sets-ink) / <alpha-value>)',
+            'sets-tint': 'rgb(var(--color-feature-sets-tint) / <alpha-value>)',
             dashboard: 'rgb(var(--color-feature-dashboard) / <alpha-value>)',
             library: 'rgb(var(--color-feature-library) / <alpha-value>)',
             admin: 'rgb(var(--color-feature-admin) / <alpha-value>)',

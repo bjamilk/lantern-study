@@ -1,8 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  KeyboardAvoidingView,
   ActivityIndicator,
-  Modal,
   Pressable,
   Switch,
   Text,
@@ -24,8 +22,8 @@ import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { useJobsStore } from '../stores/jobsStore';
 import { saveGeneratedDeck } from '../services/jobArtifacts';
-import { Button } from './ui';
-import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
+import { useTheme } from '../theme';
+import { Button, SheetShell } from './ui';
 import { AppIcon } from './ui/AppIcon';
 
 export interface ImportAndStudyResult {
@@ -63,6 +61,7 @@ export default function ImportAndStudyModal({
   courseId,
   studySetId,
 }: ImportAndStudyModalProps) {
+  const { colors } = useTheme();
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -287,28 +286,45 @@ export default function ImportAndStudyModal({
   };
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={handleClose}>
-      {/* The keyboard lands exactly where a bottom-anchored sheet sits, and on
-          Android 15+ (this app targets SDK 36) the window is not resized, so
-          the input and its confirm button were covered with no scroll range.
-          Making the KeyboardAvoidingView the overlay lifts the sheet, and its
-          max-height then resolves against the keyboard-free box. */}
-      <KeyboardAvoidingView
-        behavior={SCREEN_KEYBOARD_BEHAVIOR}
-        className="flex-1 bg-black/50 justify-center px-4"
-      >
-        <View className="bg-lantern-surface rounded-2xl overflow-hidden">
-          <View className="flex-row items-center justify-between px-4 py-3 border-b border-lantern-border">
-            <View className="flex-row items-center gap-2">
-              <AppIcon name="sparkles" size={18} color="#8b5cf6" />
-              <Text className="text-lg font-bold text-lantern-text">Import & Study</Text>
-            </View>
-            <Pressable onPress={handleClose} className="p-1">
-              <AppIcon name="close" size={22} color="#94a3b8" />
-            </Pressable>
-          </View>
-
-          <View className="p-4">
+    // The shared sheet shell (components/ui/SheetShell.tsx). This panel was a
+    // centred white card with a 15.75 sp sans heading and no grabber — the one
+    // sheet in the app that had never been given the contract, which is exactly
+    // what build 185's device pass found. The shell also owns the keyboard
+    // handling this file used to do by hand, and adds the half it was missing:
+    // `keyboardShouldPersistTaps`, without which the first tap on the confirm
+    // button is swallowed to dismiss the IME.
+    <SheetShell
+      visible={visible}
+      onClose={handleClose}
+      title="Import & Study"
+      headerRight={
+        <Pressable
+          onPress={handleClose}
+          className="p-1"
+          accessibilityRole="button"
+          accessibilityLabel="Close"
+        >
+          <AppIcon name="close" size={22} color={colors.textSecondary} />
+        </Pressable>
+      }
+      // Pinned below the scroll area, never inside it. On build 186 this
+      // button sat at the end of the body and went off the bottom of the
+      // window with the toggles clipped above it; with the keyboard up it was
+      // a 14 px sliver. A sheet's primary action is chrome, not content.
+      // The button is ALWAYS drawn on the input step, disabled until there is
+      // text — build 187 hid it entirely while the box was empty, so the sheet
+      // opened with no visible action and the student had to guess that typing
+      // would summon one. A disabled control teaches what the step wants; an
+      // absent one teaches nothing.
+      footer={
+        step === 'input' ? (
+          <Button fullWidth disabled={!textContent.trim()} onPress={() => void processText()}>
+            Import text
+          </Button>
+        ) : null
+      }
+    >
+      <View>
             {step === 'input' ? (
               <>
                 <Text className="text-sm text-lantern-text-secondary mb-3">
@@ -357,10 +373,6 @@ export default function ImportAndStudyModal({
                   </View>
                 </View>
 
-                {textContent.trim() ? (
-                  <Button onPress={() => void processText()}>Import text</Button>
-                ) : null}
-
                 {error ? <Text className="text-sm text-red-500 mt-2">{error}</Text> : null}
               </>
             ) : null}
@@ -407,9 +419,7 @@ export default function ImportAndStudyModal({
                 ) : null}
               </View>
             ) : null}
-          </View>
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
+      </View>
+    </SheetShell>
   );
 }

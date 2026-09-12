@@ -49,8 +49,6 @@ import { planStackNavigate } from './stackNavigate';
 
 import { BottomTabBar } from '../components/layout/BottomTabBar';
 import { ContextualBar } from '../components/layout/ContextualBar';
-import { canPopFocusedStack } from '../components/layout/bottomBarComposition';
-import { replacesGlobalBar, contextualExitControl } from './contextualBars';
 import {
   TAB_ROUTE_BY_KEY,
   resolveActiveTab,
@@ -938,46 +936,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     [navigation, state]
   );
 
-  /**
-   * REPLACE MODE — Study and Shop take the global bar's place (founder decision
-   * 2026-09-08). All four of the swap's moving parts read the SAME `contextual`
-   * spec (derived in ChromeContext from the focused route the effect below
-   * publishes), so the bar coming off screen, the exit control, the row itself
-   * and every screen's bottom padding change together on one route and can never
-   * disagree.
-   */
-  const replaceGlobalTabs = replacesGlobalBar(contextual);
-
-  /**
-   * The focused tab's own stack state — the child navigator the row's items
-   * dispatch into. Its `key` is the dispatch target and its `index`/`routes`
-   * are what decide Back vs Home.
-   */
-  const childStackState = state.routes[state.index]?.state as
-    | { key?: string; index?: number; routes?: unknown[] }
-    | undefined;
-
-  /**
-   * The replace-mode exit control: `back` when the focused stack can pop, `home`
-   * when it is at the section root (rules lane). Never inert — one position that
-   * always does something, which is what makes taking the global bar away safe.
-   */
-  const exitControl = contextualExitControl(canPopFocusedStack(childStackState));
-
-  const onExit = useCallback(() => {
-    // Back: pop the focused stack, addressed at the same child navigator key the
-    // row's items dispatch into — the same navigation path, so hardware Back and
-    // this control agree.
-    if (exitControl === 'back' && childStackState?.key) {
-      navigation.dispatch({ ...StackActions.pop(1), target: childStackState.key });
-      return;
-    }
-    // Home: leave the section for the Home tab, which carries no replace
-    // registry, so the global five render again. Also the fallback for a `back`
-    // with nothing to pop — Home works from anywhere, and the exit is never inert.
-    navigation.navigate('HomeTab' as never);
-  }, [exitControl, childStackState?.key, navigation]);
-
   const navigateTab = (tab: BottomTabKey) => {
 
     const routeName = TAB_ROUTE_BY_KEY[tab];
@@ -1045,10 +1003,6 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
           unreadChatCount={unreadChatCount}
 
           above={<ContextualBar onNavigate={navigateWithinFocusedStack} />}
-
-          replaceGlobalTabs={replaceGlobalTabs}
-
-          exit={{ control: exitControl, onPress: onExit }}
 
         />
 

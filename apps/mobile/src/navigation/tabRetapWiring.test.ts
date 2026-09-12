@@ -85,11 +85,20 @@ describe('the wiring the duotone bar must not have broken', () => {
     expect(bar).toMatch(/onPress=\{\(\) => onTabPress\(tab\.key\)\}/);
   });
 
-  it('draws the current icon with a tone, never with its own press handler', () => {
+  it('paints the glyph in the pill\'s own foreground, never with its own press handler', () => {
     // An AppIcon takes no onPress and must not be given one: a pressable icon
     // would take the touch and the bar's button would never fire.
+    //
+    // And the TONE is `neutral` in both states, which is the only tone that
+    // honours `color` (appIconTone.resolveIconTone). The lit tab used to be
+    // `tone={active ? 'active' : 'neutral'}` with `feature="ai"`, which drew the
+    // AI feature's lavender duotone ON the black pill and silently ignored the
+    // `color` beside it — build 185's device-pass finding.
     const icon = bar.slice(bar.indexOf('<AppIcon'), bar.indexOf('/>', bar.indexOf('<AppIcon')));
-    expect(icon).toContain("tone={active ? 'active' : 'neutral'}");
+    expect(icon).toContain('tone="neutral"');
+    expect(icon).toContain('color={active ? onPillColor : inactiveColor}');
+    expect(icon).not.toContain("tone={active ? 'active'");
+    expect(icon).not.toContain('feature=');
     expect(icon).not.toContain('onPress');
   });
 

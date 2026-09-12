@@ -27,28 +27,34 @@ const ABOVE: ContextualPillInput[] = [
   { id: 'd', label: 'Members' },
 ];
 
+// A row that HAS a door for the focused route (Study, Shop) and a
+// pass-through row that never does (deck, note, walk-through, community). Since
+// build 185 removed the registry's `mode`, the only difference between them is
+// whether a selection is supplied — which is exactly what these two helpers say.
 const replace = (items: readonly ContextualPillInput[], selectedId: string | null | undefined) =>
-  planContextualRow({ mode: 'replace', items, selectedId });
+  planContextualRow({ items, selectedId });
 
 const above = (items: readonly ContextualPillInput[]) =>
-  planContextualRow({ mode: 'above', items, selectedId: null });
+  planContextualRow({ items, selectedId: null });
 
-describe('planContextualRow: a replace row WITH a selection (founder decision 4)', () => {
-  it('draws the selected door as a pill and every other door icon-only', () => {
+describe('planContextualRow: a replace row WITH a selection (2026-09-11 direction)', () => {
+  it('draws the selected door as a pill and LABELS every other door', () => {
     const { items } = replace(STUDY, 'flashcards');
     expect(items.filter((p) => p.variant === 'selectedPill').map((p) => p.id)).toEqual([
       'flashcards',
     ]);
-    // Every other item is icon-only — the whole of decision 4, which FAILS the
-    // moment the selected row goes back to a label under every door here.
-    expect(items.filter((p) => p.variant === 'iconOnly').map((p) => p.id)).toEqual([
+    // The device-pass finding this replaces: on Library, Flashcards and Tests
+    // the in-Study row drew four NAMELESS glyphs beside one word. Every door on
+    // the row now carries its name, lit or not.
+    expect(items.filter((p) => p.variant === 'labeledIcon').map((p) => p.id)).toEqual([
       'library',
       'tests',
       'record',
       'ai',
     ]);
-    // showLabel tracks the variant: drawn for the pill, hidden for the icons.
-    expect(items.filter((p) => p.showLabel).map((p) => p.id)).toEqual(['flashcards']);
+    // No surface on this bar hides a word any more.
+    expect(items.filter((p) => p.variant === 'iconOnly')).toEqual([]);
+    expect(items.every((p) => p.showLabel)).toBe(true);
   });
 
   it('marks exactly the matching door selected', () => {
@@ -56,15 +62,15 @@ describe('planContextualRow: a replace row WITH a selection (founder decision 4)
     expect(items.filter((p) => p.selected).map((p) => p.id)).toEqual(['ai']);
   });
 
-  it('gives the selected door the bigger share and every other the equal one', () => {
+  it('gives every door the SAME share, selected or not', () => {
+    // The selected door's word is stacked under its icon now, so it needs no
+    // more width than its neighbours. A bigger share here would take that width
+    // straight back out of their labels, which is the bug this replaces.
     const { items } = replace(STUDY, 'flashcards');
     for (const p of items) {
-      expect(p.flex).toBe(
-        p.variant === 'selectedPill'
-          ? CONTEXTUAL_SEGMENT_FLEX.selected
-          : CONTEXTUAL_SEGMENT_FLEX.unselected,
-      );
+      expect(p.flex).toBe(CONTEXTUAL_SEGMENT_FLEX.unselected);
     }
+    expect(CONTEXTUAL_SEGMENT_FLEX.selected).toBe(CONTEXTUAL_SEGMENT_FLEX.unselected);
   });
 });
 
@@ -94,7 +100,7 @@ describe('planContextualRow: a replace row with NO selection labels every door (
     // draw identically. If the two ever diverge into look-alike branches, this
     // catches it.
     const asReplace = replace(STUDY, null).items;
-    const asAbove = planContextualRow({ mode: 'above', items: STUDY, selectedId: null }).items;
+    const asAbove = planContextualRow({ items: STUDY, selectedId: null }).items;
     expect(asReplace).toEqual(asAbove);
   });
 });
@@ -110,10 +116,15 @@ describe('planContextualRow: an above row labels EVERY icon (founder decision 3)
     expect(items.some((p) => p.selected)).toBe(false);
   });
 
-  it('ignores any stray selectedId — an above item is never the current screen', () => {
-    const { items } = planContextualRow({ mode: 'above', items: ABOVE, selectedId: 'a' });
-    expect(items.every((p) => p.variant === 'labeledIcon')).toBe(true);
-    expect(items.some((p) => p.selected)).toBe(false);
+  it('pills the matching door when one is given, on any row', () => {
+    // Was: "an above row ignores a stray selectedId", which the removed `mode`
+    // enforced. Selection alone now decides, and a pass-through row simply has
+    // no item matching its focused route, so it passes null and never gets here.
+    const { items } = planContextualRow({ items: ABOVE, selectedId: 'a' });
+    expect(items.filter((p) => p.selected).map((p) => p.id)).toEqual(['a']);
+    expect(items.filter((p) => p.variant === 'selectedPill').map((p) => p.id)).toEqual(['a']);
+    // And every other door keeps its word: no surface hides a label.
+    expect(items.every((p) => p.showLabel)).toBe(true);
   });
 
   it('gives every labelled icon the same equal share', () => {
@@ -152,24 +163,33 @@ describe('the drawn word has room to BE a word', () => {
   const NARROW_PHONE = 360;
   const EXIT_WIDTH = 48;
 
-  it('fits the longest door label in the selected pill — Study, five doors, with an exit', () => {
-    // Study is five items AND a replace-mode exit, so it is the tightest pill row
-    // in the app. If the selected share is dropped back to an equal one, this is
-    // ~14 dp and FAILS: the promoted label would ellipsise to "L…".
-    const space = contextualPillLabelSpace({
+  it('costs the pill only its own padding more than a bare labelled door', () => {
+    // The pill stacks its word now, so the icon costs height rather than width
+    // and the only thing the selected door pays over its neighbours is the
+    // fill's horizontal padding. When that gap grows, the pill has gone back to
+    // spending the row's width sideways and the four beside it lose their
+    // labels again — which is the whole bug this replaces.
+    const pill = contextualPillLabelSpace({
       rowWidth: NARROW_PHONE,
       exitWidth: EXIT_WIDTH,
       itemCount: 5,
     });
-    expect(space).toBeGreaterThanOrEqual(LONGEST_PILL_LABEL_WIDTH);
+    const plain = contextualLabeledIconLabelSpace({
+      rowWidth: NARROW_PHONE,
+      itemCount: 5,
+      exitWidth: EXIT_WIDTH,
+    });
+    expect(plain - pill).toBeLessThanOrEqual(12);
+    expect(pill).toBeGreaterThan(0);
   });
 
-  it('fits the pill on the Shop row and on an above-mode row with no exit', () => {
+  it('fits the longest word in the pill on the Shop row', () => {
+    // Shop is three doors plus the exit — the roomiest replace row, and the one
+    // where the pill's word must clear the pessimistic ceiling outright rather
+    // than sit on it. (An `above` row is not tested here: it never has a
+    // selection, so it never draws a pill at all.)
     expect(
       contextualPillLabelSpace({ rowWidth: NARROW_PHONE, exitWidth: EXIT_WIDTH, itemCount: 3 }),
-    ).toBeGreaterThanOrEqual(LONGEST_PILL_LABEL_WIDTH);
-    expect(
-      contextualPillLabelSpace({ rowWidth: NARROW_PHONE, exitWidth: 0, itemCount: 4 }),
     ).toBeGreaterThanOrEqual(LONGEST_PILL_LABEL_WIDTH);
   });
 
@@ -209,8 +229,10 @@ describe('the drawn word has room to BE a word', () => {
     expect(withExit).toBeLessThan(LONGEST_LABELED_ICON_WIDTH);
   });
 
-  it('gives the selected segment a bigger share than any icon-only one', () => {
-    expect(CONTEXTUAL_SEGMENT_FLEX.selected).toBeGreaterThan(CONTEXTUAL_SEGMENT_FLEX.unselected);
+  it('gives the selected segment no more width than any other door', () => {
+    // The inverse of what this asserted before 2026-09-11, and deliberately so:
+    // the bigger share was paid for out of the four unlabelled doors.
+    expect(CONTEXTUAL_SEGMENT_FLEX.selected).toBe(CONTEXTUAL_SEGMENT_FLEX.unselected);
   });
 });
 

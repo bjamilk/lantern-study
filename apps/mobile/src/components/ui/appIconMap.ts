@@ -65,6 +65,7 @@ import CircleQuestionMark from 'lucide-react-native/icons/circle-question-mark';
 import CircleStop from 'lucide-react-native/icons/circle-stop';
 import CircleUser from 'lucide-react-native/icons/circle-user';
 import CircleX from 'lucide-react-native/icons/circle-x';
+import ClipboardCheck from 'lucide-react-native/icons/clipboard-check';
 import ClipboardList from 'lucide-react-native/icons/clipboard-list';
 import Clock from 'lucide-react-native/icons/clock';
 import CloudCheck from 'lucide-react-native/icons/cloud-check';
@@ -234,6 +235,7 @@ export const APP_ICONS = {
   'chevron-forward': ChevronRight,
   'chevron-up': ChevronUp,
   'clipboard': ClipboardList,
+  'clipboard-check': ClipboardCheck,
   'close': X,
   'close-circle': CircleX,
   'cloud-done': CloudCheck,

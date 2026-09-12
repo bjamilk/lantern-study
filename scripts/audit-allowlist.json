@@ -23,6 +23,14 @@
       "reason": "Same chain as GHSA-w3rx-r6r6-pgpr: metro -> image-size, build-time only. No patched image-size release exists yet (vulnerable range '*').",
       "unblockedBy": "expo@57 major upgrade (forbidden for now) once metro picks up a patched image-size. Re-check whenever Expo SDK is bumped.",
       "added": "2026-08-11"
+    },
+    {
+      "id": "GHSA-2883-xcg3-v3hh",
+      "package": "js-yaml",
+      "title": "maxTotalMergeKeys does not limit CPU use for empty merge sources",
+      "reason": "Dev-toolchain only: js-yaml reaches the tree solely through lint/test/build tooling — eslint -> @eslint/eslintrc (4.3.1), ts-jest -> @jest/transform -> babel-plugin-istanbul -> @istanbuljs/load-nyc-config, and expo -> @expo/cli -> @expo/xcpretty (3.15.1); no api-server production dependency, web bundle, or react-native runtime path reaches it, so it never parses input in the deployed API/web/mobile runtime.",
+      "unblockedBy": "Patched js-yaml 4.3.2 / 5.x exists; unblocked by an overrides bump to js-yaml ^4.3.2 once the @expo/xcpretty 3.x pin is resolved (it already resolves 'invalid' against the existing ^4.3.1 override). Re-check whenever Expo SDK or eslint is bumped.",
+      "added": "2026-09-12"
     }
   ]
 }

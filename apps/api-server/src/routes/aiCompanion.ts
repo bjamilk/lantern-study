@@ -414,7 +414,7 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           role: 'user' | 'assistant';
           content: string;
         }>;
-        const { reply, actions, provider } = await companionChat(
+        const { reply, actions, provider, citations } = await companionChat(
           message.trim(),
           history,
           { ...trustedContext, noteId: effectiveNoteId || undefined }
@@ -442,7 +442,16 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           message.trim()
         );
 
-        return { reply, actions, provider, conversationId: conversation.id };
+        return {
+          reply,
+          actions,
+          provider,
+          // Which excerpts of which note this reply was read out of. Live only:
+          // ai_companion_messages has no column for it, so a reloaded thread
+          // shows the answer without chips rather than with invented ones.
+          citations: citations ?? null,
+          conversationId: conversation.id,
+        };
       }
     ,
       aiChargeFromRes(res)
@@ -525,7 +534,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       role: 'user' | 'assistant';
       content: string;
     }>;
-    const { reply, actions } = await companionChat(message.trim(), history, {
+    const { reply, actions, citations } = await companionChat(message.trim(), history, {
       ...trustedContext,
       noteId: effectiveNoteId || undefined,
     });
@@ -556,6 +565,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     sendEvent({
       done: true,
       actions,
+      citations: citations ?? null,
       messageId: assistantMessageId,
       userMessageId,
       conversationId: conversation.id,

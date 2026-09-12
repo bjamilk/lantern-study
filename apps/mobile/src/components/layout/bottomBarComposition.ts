@@ -1,74 +1,88 @@
 /**
- * The two composition decisions the bottom chrome makes once the registry has
- * declared a row's mode (navigation/contextualBars.ts, founder decision
- * 2026-09-08): whether the global five-tab bar is on screen at all, and — when
- * it is not — whether the focused section's stack can go Back or is at its root.
+ * How ONE tab of the global bottom bar is drawn.
  *
- * Pure and IMPORT-FREE on purpose, exactly like screenInsets.ts and
- * tabPressBehavior.ts next door: mobile jest runs on the `node` environment
- * with `testMatch: ['**\/*.test.ts']` and cannot transform a native module, so
+ * WHAT USED TO BE HERE, and why it is gone: `planBottomBarComposition` and
+ * `canPopFocusedStack` decided whether the global five-tab bar was on screen at
+ * all (the 2026-09-08 `replace` mode) and, when it was not, whether the
+ * section's single exit control read Back or Home. Build 185's device pass
+ * found the consequence — inside Study and Shop the five labelled tabs were
+ * simply missing — and the mode is reverted: the contextual row now sits ABOVE
+ * an unchanged global bar on every route (navigation/contextualBars.ts). With
+ * no route that can take the bar away there is no composition left to decide
+ * and no exit to place, so both rules are deleted rather than left answering a
+ * question nobody asks.
+ *
+ * Pure on purpose, exactly like screenInsets.ts and tabPressBehavior.ts next
+ * door: mobile jest runs on the `node` environment with
+ * `testMatch: ['**\/*.test.ts']` and cannot transform a native module, so
  * every decision the bottom bar makes lives here and is exercised in
  * bottomBarComposition.test.ts. BottomTabBar.tsx and RootNavigator's
  * CustomTabBar are then a thin shell over these numbers.
+ *
+ * The one import is `theme/surfaceMetrics`, which is itself pure data and
+ * imports nothing — the measured pill geometry belongs beside the button that
+ * shares it, not retyped here.
  */
+import { TAB_PILL } from '../../theme/surfaceMetrics';
 
 /**
- * The nested state of the focused tab's own stack, in the shape React
- * Navigation reports it on the parent tab navigator's `state.routes[i].state`.
- * A tab whose stack has not navigated yet has no nested state at all.
+ * How ONE tab is drawn — the founder direction of 2026-09-11, in numbers.
+ *
+ * The lit tab is a black PILL carrying a white glyph and a white label; every
+ * other tab is a grey outline glyph with its label underneath, on the bare
+ * page ground. That is the whole signal: shape and ground change, not just a
+ * hue, so a reader who cannot separate two colours still knows where they are.
+ *
+ * TWO THINGS THIS ENCODES THAT ARE EASY TO GET WRONG.
+ *
+ * 1. `showLabel` is unconditionally TRUE. StudyFetch drops the idle labels and
+ *    keeps only the lit one; Lantern may not, because its five are the whole
+ *    product's map rather than one section's toolbar. The in-Study row shipped
+ *    without them on Library/Flashcards/Tests and that was the build-176
+ *    device-pass finding — four unlabelled glyphs and one word. A boolean that
+ *    is always true looks silly until someone reintroduces the ternary.
+ *
+ * 2. The pill's width is CLAMPED to the segment it sits in. The measurement is
+ *    117 dp, taken off a bar with fewer destinations; five segments on a 360 dp
+ *    phone are 72 dp each, so an unclamped 117 would overlap its neighbours —
+ *    and on Android an overlapping absolutely-sized child does not clip, it
+ *    draws over the next tab's glyph.
  */
-export interface FocusedStackState {
-  index?: number;
-  routes?: readonly unknown[];
+export interface TabPresentation {
+  /** The black pill behind the lit tab. `null` on every idle tab. */
+  pillWidth: number | null;
+  /** The pill's height, and therefore its diameter: it is fully rounded. */
+  pillHeight: number;
+  pillRadius: number;
+  /** The glyph, white inside the pill and a grey outline outside it. */
+  glyphSize: number;
+  /** Always true. See note 1 above. */
+  showLabel: boolean;
 }
 
 /**
- * Can the focused tab's stack pop — is there a screen behind the one on top?
- *
- * This is the sole input to the rules lane's `contextualExitControl`: true → the
- * replace-mode exit control is Back (pop the stack), false → it is Home (the
- * section root, with nothing behind it). One position, never inert.
- *
- * A stack entered by a nested navigate that dropped its own root
- * (planTabRootReset builds `[Library]`, index 0) reports false, so the exit is
- * Home — the honest answer, because there is genuinely nothing to pop back to
- * and a Back that did nothing is the one thing this control may never be. A tab
- * still showing its declared root (no nested state yet) reports false for the
- * same reason.
+ * The pill's width inside a segment of `segmentWidth`, or the measured maximum
+ * when the segment is not known yet (the first layout pass reports 0).
  */
-export function canPopFocusedStack(childState: FocusedStackState | undefined | null): boolean {
-  if (!childState || !Array.isArray(childState.routes) || childState.routes.length === 0) {
-    return false;
+export function tabPillWidth(segmentWidth: number | null | undefined): number {
+  if (typeof segmentWidth !== 'number' || !Number.isFinite(segmentWidth) || segmentWidth <= 0) {
+    return TAB_PILL.maxWidth;
   }
-  const index =
-    typeof childState.index === 'number' ? childState.index : childState.routes.length - 1;
-  return index > 0;
+  return Math.min(TAB_PILL.maxWidth, segmentWidth);
 }
 
-export interface BottomBarComposition {
-  /**
-   * Render the global five-tab row. False in `replace` mode — the section's own
-   * row stands in the bar's slot and the global five are not on screen.
-   */
-  showGlobalTabs: boolean;
-  /**
-   * Render the single leading exit control. True ONLY in `replace` mode: it is
-   * the way out that makes taking the global bar away safe. An `above`-mode row
-   * keeps the global bar (its own way out) and carries no exit control.
-   */
-  showExit: boolean;
-}
-
-/**
- * How the bottom bar composes for a route whose row does (`replace`) or does not
- * (`above`, or no row at all) take the global bar's slot.
- *
- * The standing rule this encodes — the one that must not ship a fifth dead
- * control: in replace mode the global five are NOT on screen and exactly one
- * leading exit control IS, so the way out is never lost; in every other case
- * the five are on screen and there is no exit control, byte-for-byte today's
- * shell.
- */
-export function planBottomBarComposition({ replace }: { replace: boolean }): BottomBarComposition {
-  return { showGlobalTabs: !replace, showExit: replace };
+export function planTabPresentation({
+  active,
+  segmentWidth,
+}: {
+  active: boolean;
+  segmentWidth?: number | null;
+}): TabPresentation {
+  return {
+    pillWidth: active ? tabPillWidth(segmentWidth) : null,
+    pillHeight: TAB_PILL.height,
+    pillRadius: TAB_PILL.radius,
+    glyphSize: active ? TAB_PILL.activeGlyphSize : TAB_PILL.inactiveGlyphSize,
+    showLabel: true,
+  };
 }

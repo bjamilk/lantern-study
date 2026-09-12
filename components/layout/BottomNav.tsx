@@ -108,20 +108,29 @@ const BottomNav: React.FC<BottomNavProps> = ({
                             data-tip-id={tab.tipId}
                             onClick={tab.onSelect}
                             className={`flex flex-col items-center justify-center flex-1 min-h-[44px] relative transition-colors ${
-                                isActive ? 'text-lantern-primary-text' : 'text-lantern-text-secondary hover:text-lantern-text'
+                                isActive ? '' : 'text-lantern-text-secondary hover:text-lantern-text'
                             }`}
                         >
-                            {/* Duotone active treatment (§5.6): one outline glyph
-                                in every state — the solid swap made the lit tab a
-                                different shape — carried in a tint pill, with the
-                                label kept and bolded. Shape + weight + aria-current,
-                                so the lit tab is never colour alone. */}
+                            {/* 2026-09-11: the lit tab is an INK pill with the
+                                glyph and label reversed out of it — the phone
+                                echo of the rail's grey pill and of the primary
+                                button, so "selected" is one shape across the
+                                product instead of three.
+
+                                Still one outline glyph in every state (a solid
+                                swap made the lit tab a different shape), still
+                                labelled, still bolded, still `aria-current`: the
+                                pill is the fourth signal, never the only one.
+
+                                The pill wraps the glyph AND the label, so the
+                                colour that reverses out of it is `--color-
+                                surface`, which inverts with `--color-ink`. */}
                             <div
-                                className={`relative flex items-center justify-center rounded-full px-3 py-0.5 ${
-                                    isActive ? 'bg-lantern-primary-background' : ''
+                                className={`relative flex flex-col items-center justify-center rounded-full px-3 py-1 ${
+                                    isActive ? 'bg-lantern-ink text-lantern-surface' : ''
                                 }`}
                             >
-                                <AppIcon name={tab.icon} size={24} />
+                                <AppIcon name={tab.icon} size={22} />
                                 {badgeCount > 0 ? (
                                     <span
                                         aria-hidden="true"
@@ -130,10 +139,14 @@ const BottomNav: React.FC<BottomNavProps> = ({
                                         {shown}
                                     </span>
                                 ) : null}
+                                <span
+                                    className={`text-label tracking-normal mt-0.5 font-medium ${
+                                        isActive ? 'font-semibold' : ''
+                                    }`}
+                                >
+                                    {label}
+                                </span>
                             </div>
-                            <span className={`text-label tracking-normal mt-0.5 font-medium ${isActive ? 'font-semibold' : ''}`}>
-                                {label}
-                            </span>
                         </button>
                     );
                 })}

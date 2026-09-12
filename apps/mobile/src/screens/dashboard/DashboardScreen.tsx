@@ -112,6 +112,8 @@ import { confirmSheet } from '../../stores/confirmStore';
 import { tabularNums } from '../../design/typeScale';
 import { readWorkspaceRecents } from '../../utils/workspaceRecents';
 import { getMyActiveCourses } from '../../services/academic';
+import { useStudySetStore } from '../../stores/studySetStore';
+import { useOnlineEffect } from '../../hooks';
 import { courseWorkspaceLabel } from '@lantern/shared';
 import type { UserCourse } from '@lantern/shared/types';
 import type { WorkspaceRecent } from '@lantern/shared';
@@ -581,13 +583,26 @@ export function DashboardScreen({ navigation }: Props) {
     }, [user?.id, selectedPeriod, fetchStats])
   );
 
+  // The set list is the one Home section that used to sit out a pull-to-refresh
+  // and only recover on a tab re-entry — it is not part of `load()`, so refresh
+  // and reconnect have to ask it directly.
+  useOnlineEffect(() => {
+    void useStudySetStore.getState().notifyReconnected();
+  }, []);
+
   const onRefresh = async () => {
 
     setRefreshing(true);
 
     setReadinessReloadToken((n) => n + 1);
 
-    await load();
+    await Promise.all([
+      load(),
+      useStudySetStore
+        .getState()
+        .loadSets({ force: true })
+        .catch(() => undefined),
+    ]);
 
     setRefreshing(false);
 

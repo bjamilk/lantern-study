@@ -13,7 +13,9 @@ import {
 } from '@lantern/shared';
 import type { StudyNote } from '../../types';
 import { Button, Card } from '../ui';
+import { ExamDateField } from './ExamDateField';
 import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
+import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
 
 interface StudySetPlanPanelProps {
@@ -32,6 +34,12 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   onStart,
 }) => {
   const showToast = useToastStore((s) => s.showToast);
+  // The exam date the plan is built from lives on the set. This tab is the
+  // only place a set-scoped student can reach it — StudyCalendar, which used
+  // to own the field, is never rendered for a set.
+  const studySets = useStudySetStore((s) => s.sets);
+  const loadStudySets = useStudySetStore((s) => s.loadSets);
+  const examDate = studySets.find((row) => row.id === studySetId)?.examDate ?? null;
   const fallback = useMemo(() => topicsFromReadingNotes(studySetId, notes), [notes, studySetId]);
   const [units, setUnits] = useState<StudySetUnit[]>([fallback.unit]);
   const [topics, setTopics] = useState<StudySetTopic[]>(fallback.topics);
@@ -39,6 +47,12 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const [diagnosticIndex, setDiagnosticIndex] = useState<number | null>(null);
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
   const timelineUnits = unitsForTopics(units, topics);
+
+  // A set opened straight into the Plan tab may reach here before the sets
+  // store has any row, which would show an empty field over a saved date.
+  useEffect(() => {
+    void loadStudySets().catch(() => undefined);
+  }, [loadStudySets]);
 
   useEffect(() => {
     let cancelled = false;
@@ -93,6 +107,11 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
+      <ExamDateField
+        studySetId={studySetId}
+        value={examDate}
+        onSaved={() => undefined}
+      />
       <div>
         <h2 className="text-heading">Study plan</h2>
         <p className="text-caption text-lantern-text-secondary mt-1">

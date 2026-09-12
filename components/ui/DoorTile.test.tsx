@@ -5,135 +5,125 @@ import { describe, expect, it } from 'vitest';
 import { DoorTile, DOOR_ILLUSTRATION_SIZE } from './DoorTile';
 
 /**
- * §5.6's tint cap, applied to the one component that can break it on nine
- * screens at once.
+ * The door's ANATOMY, which is the thing the 2026-09-11 StudyFetch direction
+ * actually specifies: a white card, a flat pastel panel across the top with a
+ * black line drawing on it, a hard offset shadow in the ink, and a footer
+ * glyph tinted to the feature's own hue.
  *
- * "No card may be more than 25% tint" is arithmetic, not taste: a door is a
- * tint band over a neutral body, so the cap is a statement about two numbers
- * the markup itself carries — the band's height class and the body's padding
- * class. This suite reads BOTH out of the rendered HTML rather than restating
- * them, so growing the band to fit a picture (h-8 → h-14, which is 42% on a
- * door and is exactly how this regressed) fails here instead of at review.
+ * WHAT THIS SUITE REPLACED. It used to assert a 25%-tint cap by reading the
+ * band's height class and the body's padding class back out of the HTML and
+ * doing arithmetic on them. That cap is gone — the panel is now deliberately
+ * about two thirds of the tile — and the reasoning is in `DoorTile.tsx`. The
+ * cap was never what kept a door legible (nothing is set on the panel but a
+ * drawing; body ink on every tint is still gated in
+ * `packages/shared/src/design/contrast.test.ts`), so replacing it with an
+ * anatomy check is not a weakening: the failure modes below are the ones that
+ * would actually make a wall of doors stop working.
  *
- * The picture therefore lives in the BODY, on the chevron's row, the way
- * mobile's `FeatureTile` draws it. That placement is asserted too: a door whose
- * illustration migrates back into the band would still pass a pure-ratio check
- * once someone re-grew the band, so the two rules are tested together.
+ * Each assertion reads a value the MARKUP carries rather than restating a
+ * constant, so the test fails when the component changes rather than when
+ * someone forgets to update a number here.
  */
 
-/** Tailwind's spacing scale: `h-8` = 8 × 4 px. */
-const SPACING_PX = 4;
-/** §5.6. */
-const TINT_CAP = 0.25;
+const glyph = <span data-testid="glyph" className="w-4 h-4" />;
 
-const glyph = <span data-testid="glyph" className="w-6 h-6" />;
+/**
+ * Passed through a binding, not written as `illustration="notes-stack"` in the
+ * JSX below. `Illustration.test.tsx` greps the component tree for that literal
+ * attribute to police which SCREENS carry art, and a literal here would
+ * register this test file as an eighth screen.
+ */
+const PICTURE = 'notes-stack' as const;
 
-const render = (illustration?: 'notes-stack') =>
+const render = (props: Partial<React.ComponentProps<typeof DoorTile>> = {}) =>
   renderToStaticMarkup(
     <DoorTile
       feature="notes"
       icon={glyph}
-      illustration={illustration}
+      illustration={PICTURE}
       title="Library"
       promise="Turn slides into cards"
       count="12 items"
       onClick={() => {}}
+      {...props}
     />,
   );
 
-/** The band strip and the body, split at the body's padding wrapper. */
-function halves(html: string): { band: string; body: string } {
+/** The panel strip and the body, split at the body's padding wrapper. */
+function halves(html: string): { panel: string; body: string } {
   const at = html.indexOf('<div class="p-4');
   expect(at, 'body padding wrapper').toBeGreaterThan(-1);
-  return { band: html.slice(0, at), body: html.slice(at) };
+  return { panel: html.slice(0, at), body: html.slice(at) };
 }
 
-/** Band height in px, read from the class the band actually rendered with. */
-function bandPx(html: string): number {
-  const m = html.match(/class="flex h-(\d+) /);
-  expect(m, 'band height class').not.toBeNull();
-  return Number(m![1]) * SPACING_PX;
-}
-
-/** Body padding in px per side, for the base step and the `md:` step. */
-function bodyPaddingPx(body: string): { base: number; md: number } {
-  const m = body.match(/<div class="p-(\d+) md:p-(\d+)"/);
-  expect(m, 'body padding classes').not.toBeNull();
-  return { base: Number(m![1]) * SPACING_PX, md: Number(m![2]) * SPACING_PX };
-}
-
-/**
- * The body's own content height, from the type scale the door uses:
- * a 24 px heading, 2 px of `mt-0.5`, an 18 px caption, an 8 px `gap-2`, and the
- * bottom row — the 20 px chevron, or the picture when it is taller.
- */
-function contentPx(illustrationPx: number): number {
-  const HEADING = 24;
-  const MT = 2;
-  const CAPTION = 18;
-  const GAP = 8;
-  const CHEVRON = 20;
-  return HEADING + MT + CAPTION + GAP + Math.max(CHEVRON, illustrationPx);
-}
-
-function tintRatios(html: string, illustrationPx: number) {
-  const band = bandPx(html);
-  const pad = bodyPaddingPx(halves(html).body);
-  const at = (p: number) => band / (band + p * 2 + contentPx(illustrationPx));
-  return { base: at(pad.base), md: at(pad.md) };
-}
-
-describe('DoorTile tint budget (§5.6: a card is at most 25% tint)', () => {
-  it('keeps a door with a picture under the cap, at both padding steps', () => {
-    const { base, md } = tintRatios(render('notes-stack'), DOOR_ILLUSTRATION_SIZE);
-    expect(base).toBeLessThanOrEqual(TINT_CAP);
-    expect(md).toBeLessThanOrEqual(TINT_CAP);
-    // Not merely legal — the picture's height is what buys the headroom.
-    expect(base).toBeLessThan(0.2);
-  });
-
-  it('keeps a door without one under the cap too', () => {
-    const { base, md } = tintRatios(render(), 0);
-    expect(base).toBeLessThanOrEqual(TINT_CAP);
-    expect(md).toBeLessThanOrEqual(TINT_CAP);
-  });
-
-  it('would fail if the band grew to hold the picture', () => {
-    // The regression this suite exists for, spelled out: the same tile with a
-    // 56 px band is 42%. Left as arithmetic on the numbers above so the
-    // threshold cannot be met by quietly editing the helper.
-    const grown = 56;
-    const ratio = grown / (grown + 16 * 2 + contentPx(DOOR_ILLUSTRATION_SIZE));
-    expect(ratio).toBeGreaterThan(TINT_CAP);
-  });
-});
-
-describe('DoorTile composition', () => {
-  it('puts the feature glyph in the band and the picture in the body', () => {
-    const { band, body } = halves(render('notes-stack'));
-    expect(band).toContain('data-testid="glyph"');
-    // The band carries no drawing: the ground ellipse is the asset's tell.
-    expect(band).not.toContain('<ellipse');
-    expect(band).not.toContain('<svg');
-    expect(body).toContain('<ellipse');
-    expect(body).toContain(`width="${DOOR_ILLUSTRATION_SIZE}"`);
-  });
-
-  it('draws the picture on the chevron’s own row, below the promise', () => {
-    const { body } = halves(render('notes-stack'));
-    const promise = body.indexOf('Turn slides into cards');
-    const picture = body.indexOf('<ellipse');
-    const chevron = body.lastIndexOf('<svg');
-    expect(promise).toBeGreaterThan(-1);
-    expect(picture).toBeGreaterThan(promise);
-    expect(chevron).toBeGreaterThan(picture);
-  });
-
-  it('still renders a door with no picture, band and chevron intact', () => {
-    const { band, body } = halves(render());
-    expect(band).toContain('data-testid="glyph"');
-    expect(band).toContain('12 items');
+describe('DoorTile anatomy (StudyFetch, 2026-09-11)', () => {
+  it('draws a pastel panel across the top, with the picture ON it', () => {
+    const html = render();
+    const { panel, body } = halves(html);
+    expect(panel).toContain('data-testid="door-panel"');
+    // The panel is the feature's TINT — a ground, never an ink.
+    expect(panel).toContain('bg-lantern-feature-notes-tint');
+    // The drawing moved out of the body and onto the colour. Its ground
+    // ellipse is the asset's tell.
+    expect(panel).toContain('<ellipse');
+    expect(panel).toContain(`width="${DOOR_ILLUSTRATION_SIZE}"`);
     expect(body).not.toContain('<ellipse');
-    expect(body).toContain('<svg');
+  });
+
+  it('sets the panel drawing in the ink, not in the feature hue', () => {
+    const { panel } = halves(render());
+    // `!` because `Illustration` names its own `text-*` class and two
+    // utilities of equal specificity are resolved by stylesheet order. Losing
+    // this repaints every drawing from black to a mid-tone on its own pastel.
+    expect(panel).toContain('!text-lantern-ink');
+    // …and inverts in dark, where flat black on a near-black panel is invisible.
+    expect(panel).toContain('dark:!text-lantern-feature-notes-ink');
+  });
+
+  it('sits on a hard offset shadow drawn in the ink', () => {
+    const html = render();
+    expect(html).toContain('shadow-lantern-hard');
+    // The shadow is a token so it can invert with the theme. A literal black
+    // offset would vanish against the dark page, which is the regression.
+    expect(html).not.toContain('shadow-[4px_4px_0_0_#191919]');
+  });
+
+  it('tints the footer glyph to the hue and keeps the count beside it', () => {
+    const { body } = halves(render());
+    const footer = body.indexOf('data-testid="door-footer-glyph"');
+    expect(footer).toBeGreaterThan(-1);
+    expect(body.slice(footer)).toContain('text-lantern-feature-notes-ink');
+    expect(body.slice(footer)).toContain('data-testid="glyph"');
+    expect(body).toContain('12 items');
+  });
+
+  it('orders the tile panel, then title, then promise, then footer', () => {
+    const html = render();
+    const panel = html.indexOf('data-testid="door-panel"');
+    const title = html.indexOf('Library');
+    const promise = html.indexOf('Turn slides into cards');
+    const footer = html.indexOf('data-testid="door-footer-glyph"');
+    expect(panel).toBeLessThan(title);
+    expect(title).toBeLessThan(promise);
+    expect(promise).toBeLessThan(footer);
+  });
+
+  it('stands the feature glyph in for a door that has no drawing yet', () => {
+    const { panel, body } = halves(render({ illustration: undefined }));
+    expect(panel).not.toContain('<ellipse');
+    // The glyph appears twice — once enlarged on the panel, once in the footer
+    // — rather than leaving the panel empty.
+    expect(panel).toContain('data-testid="glyph"');
+    // Asserted through the testid rather than the arbitrary-variant class:
+    // `[&_svg]:w-8` is serialised with the ampersand HTML-escaped, so matching
+    // the class as written passes nowhere and fails for the wrong reason.
+    expect(panel).toContain('data-testid="door-panel-glyph"');
+    expect(body).toContain('data-testid="door-footer-glyph"');
+  });
+
+  it('renders a door with nothing to count, without an empty pill', () => {
+    const html = render({ count: undefined });
+    expect(html).toContain('data-testid="door-footer-glyph"');
+    expect(html).not.toContain('tabular-nums');
   });
 });

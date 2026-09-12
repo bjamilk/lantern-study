@@ -14,8 +14,23 @@
  */
 import React from 'react';
 import { Text, type TextProps, type TextStyle } from 'react-native';
-import { useTheme } from '../../theme';
+import { useTheme, serifDisplayStyle } from '../../theme';
 import { typeScale, tabularNums, type TypeStepName } from '../../design/typeScale';
+
+/**
+ * The two DISPLAY steps, and the only strings in the app set in the serif.
+ *
+ * `display` is a hub's greeting and a score numeral; `title` is a screen's h1
+ * and a bottom sheet's heading. Everything from `heading` down stays in the
+ * platform sans — a serif at 17 sp and under loses its brackets on a 420 dpi
+ * phone and reads as blurred sans rather than as a second voice.
+ *
+ * The face carries its own weight (see theme/fonts.ts), so the style below
+ * also resets `fontWeight`: the scale sets '700' on both steps, and a 700
+ * against a single-weight custom family is a synthesised faux-bold on iOS and
+ * a silently ignored hint on Android.
+ */
+const SERIF_STEPS: readonly TypeStepName[] = ['display', 'title'];
 
 export type TypeTone = 'text' | 'secondary' | 'tertiary';
 
@@ -35,7 +50,11 @@ function useToneColor(tone: TypeTone): string {
 }
 
 function makeStep(step: TypeStepName) {
-  const base = typeScale[step];
+  // Resolved once per step, at module load, not per render: `serifDisplayStyle`
+  // reads `Platform` and nothing that can change while the app is running.
+  const base: TextStyle = SERIF_STEPS.includes(step)
+    ? { ...typeScale[step], ...serifDisplayStyle() }
+    : typeScale[step];
   const Component = React.forwardRef<Text, TypeProps>(function TypeStepText(
     { tone = 'text', tabular, style, ...rest },
     ref

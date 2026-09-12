@@ -280,4 +280,44 @@ describe('explaining one page', () => {
     expect(result.groundedExcerpts).toBe(0);
     expect(result.groundedExcerptIndexes).toEqual([]);
   });
+
+  it('cites the note the excerpts were read out of', async () => {
+    mockGroq('Answer.\nSOURCE:notes');
+
+    const result = await companionChat('What does the Land Use Act say?', [], {
+      noteId: 'note-1',
+      noteTitle: 'Land law',
+      noteContext: LONG_NOTE,
+    });
+
+    expect(result.citations).not.toBeNull();
+    expect(result.citations?.noteId).toBe('note-1');
+    expect(result.citations?.noteTitle).toBe('Land law');
+    // The chips must not invent sources the grounding row doesn't claim.
+    expect(result.citations?.excerpts).toEqual(result.groundedExcerptIndexes);
+  });
+
+  it('cites nothing when there is no note to point at', async () => {
+    mockGroq('Answer.\nSOURCE:notes');
+
+    const result = await companionChat('What does the Land Use Act say?', [], {
+      noteContext: LONG_NOTE,
+    });
+
+    expect(result.groundedExcerpts).toBeGreaterThan(0);
+    expect(result.citations).toBeNull();
+  });
+
+  it('cites nothing on a clarifying question', async () => {
+    // The clarity gate answers before anything is read, so a chip here would
+    // point at excerpts that were never put in front of the model.
+    const result = await companionChat('?', [], {
+      noteId: 'note-1',
+      noteTitle: 'Land law',
+      noteContext: LONG_NOTE,
+    });
+
+    expect(result.provider).toBe('clarity-gate');
+    expect(result.citations).toBeNull();
+  });
 });

@@ -7,7 +7,6 @@ import { ResolvedAvatar } from '../ResolvedAvatar';
 import AIUsageBadge, { useAIUsage } from '../AIUsageBadge';
 import { useChrome } from './ChromeContext';
 import { tabTitle } from './tabRouting';
-import { replacesGlobalBar } from '../../navigation/contextualBars';
 import { campusAppBarTitleOverride } from '../../screens/campus/campusSegments';
 import { AppIcon } from '../ui/AppIcon';
 
@@ -46,23 +45,21 @@ interface Props {
  * chat that draws its own header — renders without it.
  */
 export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCount }: Props) {
-  const { activeTab, immersive, contextual, profileAvatarUri, profileName } = useChrome();
+  const { activeTab, immersive, profileAvatarUri, profileName } = useChrome();
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
   const usage = useAIUsage();
 
   if (immersive) return null;
 
-  // The one place the title is not just the section name: while Shop's row has
-  // taken the whole bottom bar (founder replace-mode), the section the student
-  // is in is Shop, not its parent Campus, so the app-bar must say "Shop". The
-  // decision — and the reason it is Shop's alone — lives in the pure planner;
-  // this reads the same `replacesGlobalBar(contextual)` the bottom bar itself
-  // reads, so the title and the bar can never disagree. Leaving Shop (the
-  // global five come back → no replace row) restores the "Campus" title.
+  // The title names the section that OWNS the bottom bar, and since build 185
+  // reverted the replace mode that is always the lit global tab: Shop's row now
+  // sits ABOVE an unchanged Campus bar rather than taking its place, so the
+  // screen is honestly Campus and the override (which only ever fired while
+  // Shop owned the bottom) is passed its `false` case. The rule itself stays in
+  // the pure planner, ready if a section ever owns the bottom again.
   const title =
-    campusAppBarTitleOverride({ activeTab, shopOwnsBottomBar: replacesGlobalBar(contextual) }) ??
-    tabTitle(activeTab);
+    campusAppBarTitleOverride({ activeTab, shopOwnsBottomBar: false }) ?? tabTitle(activeTab);
 
   const creditLabel =
     usage.limit > 0

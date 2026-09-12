@@ -43,6 +43,8 @@ import {
   CourseChip,
   FeatureDisc,
   ScreenHeader,
+  Segmented,
+  useSegmentSkin,
   type ActionSheetItem,
 } from '../../components/ui';
 import { noteRowMark } from './noteRowMark';
@@ -278,6 +280,9 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     setSelectedFolderId,
     setError,
   } = useNotesStore();
+  // The "All notes" chip is one of the same family of filters as the two
+  // Segmented switches below it, so it borrows their skin rather than a class.
+  const allNotesSkin = useSegmentSkin(!selectedFolderId);
   // Library archive: course filter picked in the Library tree (uuid or 'null' = unfiled).
   const courseFilter = useUIStore((s) => s.libraryCourseFilter);
   const setCourseFilter = useUIStore((s) => s.setLibraryCourseFilter);
@@ -1238,18 +1243,22 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       ) : null}
 
       <View className="px-4 mb-1.5 flex-row items-center gap-1.5">
+        {/* The folder row's "everything" chip. Selected, it wears the same ink
+            ground the `Segmented` halves below it do (`useSegmentSkin`), not
+            the old indigo `primary-fill`: two selected controls on one screen
+            may not be two different colours. */}
         <Pressable
           onPress={() => setSelectedFolderId(null)}
+          style={{ backgroundColor: allNotesSkin.backgroundColor }}
           className={`shrink-0 px-2.5 py-2 rounded-lg ${
-            !selectedFolderId
-              ? 'bg-lantern-primary-fill'
-              : 'bg-lantern-surface border border-lantern-border'
+            selectedFolderId ? 'border border-lantern-border' : ''
           }`}
+          accessibilityRole="button"
+          accessibilityState={{ selected: !selectedFolderId }}
         >
           <Text
-            className={`text-caption font-semibold ${
-              !selectedFolderId ? 'text-white' : 'text-lantern-text'
-            }`}
+            style={{ color: allNotesSkin.color }}
+            className="text-caption font-semibold"
             numberOfLines={1}
           >
             All notes
@@ -1316,58 +1325,35 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       {/* Two binary switches on one row: stacked, they spent 92px of an 844px
           screen on four words. */}
       <View className="mx-4 mb-2 flex-row items-center gap-2">
-        <View className="flex-1 flex-row rounded-lg border border-lantern-border overflow-hidden">
-          {(['mine', 'shared'] as const).map((filter) => (
-            <Pressable
-              key={filter}
-              onPress={() => setOwnershipFilter(filter)}
-              className={`flex-1 min-h-[44px] items-center justify-center ${
-                ownershipFilter === filter ? 'bg-lantern-primary-fill' : 'bg-lantern-surface'
-              }`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: ownershipFilter === filter }}
-              accessibilityLabel={filter === 'mine' ? 'Show notes I own' : 'Show notes shared with me'}
-            >
-              <Text
-                className={`text-caption font-semibold ${
-                  ownershipFilter === filter ? 'text-white' : 'text-lantern-text'
-                }`}
-              >
-                {filter === 'mine' ? 'Mine' : 'Shared'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-        <View className="flex-1 flex-row rounded-lg border border-lantern-border overflow-hidden">
-          {(['active', 'archived'] as const).map((filter) => (
-            <Pressable
-              key={filter}
-              onPress={() => setListFilter(filter)}
-              className={`flex-1 min-h-[44px] flex-row items-center justify-center gap-1 ${
-                listFilter === filter ? 'bg-lantern-primary-fill' : 'bg-lantern-surface'
-              }`}
-              accessibilityRole="button"
-              accessibilityState={{ selected: listFilter === filter }}
-              accessibilityLabel={filter === 'active' ? 'Show active notes' : 'Show archived notes'}
-            >
-              {filter === 'archived' ? (
-                <AppIcon
-                  name="archive"
-                  size={14}
-                  color={listFilter === filter ? '#ffffff' : colors.textSecondary}
-                />
-              ) : null}
-              <Text
-                className={`text-caption font-semibold ${
-                  listFilter === filter ? 'text-white' : 'text-lantern-text'
-                }`}
-                numberOfLines={1}
-              >
-                {filter === 'active' ? 'Active' : 'Archived'}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        {/* Both switches are the shared `Segmented` primitive: the selected
+            half is the page's ink under the page's ground — the same black
+            pill the primary button and the lit tab draw — where these two
+            hardcoded `bg-lantern-primary-fill`, the indigo that direction
+            removed (build 185's device pass found them still indigo inside
+            Library). */}
+        <Segmented
+          className="flex-1"
+          value={ownershipFilter}
+          onChange={setOwnershipFilter}
+          options={[
+            { id: 'mine', label: 'Mine', accessibilityLabel: 'Show notes I own' },
+            { id: 'shared', label: 'Shared', accessibilityLabel: 'Show notes shared with me' },
+          ]}
+        />
+        <Segmented
+          className="flex-1"
+          value={listFilter}
+          onChange={setListFilter}
+          options={[
+            { id: 'active', label: 'Active', accessibilityLabel: 'Show active notes' },
+            {
+              id: 'archived',
+              label: 'Archived',
+              icon: 'archive',
+              accessibilityLabel: 'Show archived notes',
+            },
+          ]}
+        />
       </View>
 
       {/* Embedded, the Library's box drives this list instead (`listQuery`), so

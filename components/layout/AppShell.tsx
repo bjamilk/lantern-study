@@ -203,7 +203,11 @@ const AppShell: React.FC<AppShellProps> = ({
                 // real width (18rem or 5rem) plus the column's 20rem.
                 sideColumn !== null
                   ? (isSidebarExpanded ? 'md:ml-[38rem]' : 'md:ml-[25rem]')
-                  : isSidebarExpanded ? 'md:ml-72' : 'md:ml-20'
+                  // Tracks the rail's own widths (components/Sidebar.tsx:
+                  // `w-56` / `w-16`), which the 2026-09-11 pass narrowed from
+                  // 288/80 px. The rail is `fixed`, so this margin is the only
+                  // thing keeping the page out from under it.
+                  : isSidebarExpanded ? 'md:ml-56' : 'md:ml-16'
             } ${isSessionPaused && !lectureBannerVisible ? 'pt-12' : ''}`}>
                 {/* Paused session banner (mobile only).  Make it fixed so it never scrolls away and
                     add top padding to main content when shown so nothing is hidden underneath. */}

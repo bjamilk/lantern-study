@@ -49,6 +49,20 @@ import { transcribeAudioForNote } from '../services/notes';
 import { trackAIAnalyticsEvent } from '../services/ai';
 import { AppIcon } from './ui/AppIcon';
 
+/**
+ * One chip per excerpt while the list is short enough to read; past three they
+ * collapse into one. Excerpt numbers, never page numbers — the companion
+ * pipeline has no notion of pages, so a chip must not imply one.
+ */
+function citationChipLabels(excerpts: number[]): string[] {
+  const unique = Array.from(new Set(excerpts.filter((n) => Number.isFinite(n) && n > 0))).sort(
+    (a, b) => a - b
+  );
+  if (!unique.length) return [];
+  if (unique.length > 3) return [`Excerpts ${unique.join(', ')}`];
+  return unique.map((n) => `Excerpt ${n}`);
+}
+
 function formatRelativeTime(iso: string): string {
   const ts = Date.parse(iso);
   if (!Number.isFinite(ts)) return '';
@@ -693,6 +707,33 @@ export function AICompanionPanel({ context }: Props) {
                   )
                   )}
                 </View>
+                {/* Where this answer was read from. Tapping opens that note
+                    through the same route the action chips use. */}
+                {!isUser && item.citations && citationChipLabels(item.citations.excerpts).length > 0 && (
+                  <View className="flex-row flex-wrap gap-1.5 mt-1.5">
+                    {citationChipLabels(item.citations.excerpts).map((detail: string) => (
+                      <Pressable
+                        key={`${item.id}-cite-${detail}`}
+                        onPress={() => {
+                          close();
+                          MOBILE_ACTION_ROUTES.open_note_learn?.({
+                            noteId: item.citations!.noteId,
+                          });
+                        }}
+                        accessibilityLabel={`Open ${item.citations!.noteTitle}, ${detail}`}
+                        className="flex-row items-center max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5"
+                      >
+                        <AppIcon name="document-text" size={12} color={ai.ink} />
+                        <T.Label
+                          style={{ marginLeft: 5, flexShrink: 1, color: ai.ink }}
+                          numberOfLines={1}
+                        >
+                          {`${item.citations!.noteTitle} · ${detail}`}
+                        </T.Label>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
                 {/* Action chips — the web panel had these from day one; mobile
                     silently dropped them, so the companion's suggestions were
                     dead ends here. */}

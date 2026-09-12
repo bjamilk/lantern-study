@@ -5,6 +5,7 @@ import {
   isLectureNote,
   materialsForStudySet,
   studySetLabel,
+  STUDY_SET_TILE,
 } from '@lantern/shared';
 import { Button, Card, FeatureDisc } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
@@ -58,7 +59,10 @@ export const HomeStudySets: React.FC<HomeStudySetsProps> = ({
       {sets.length === 0 ? (
         <Card padding="lg" className="rounded-2xl">
           <div className="flex items-start gap-4">
-            <FeatureDisc feature="notes" icon={<AppIcon name="albums" size={20} />} />
+            <FeatureDisc
+                  feature={STUDY_SET_TILE.feature}
+                  icon={<AppIcon name={STUDY_SET_TILE.icon} size={20} />}
+                />
             <div className="min-w-0 flex-1">
               <p className="text-body font-semibold text-lantern-text">Level up your library</p>
               <p className="text-caption text-lantern-text-secondary mt-1">
@@ -91,7 +95,10 @@ export const HomeStudySets: React.FC<HomeStudySetsProps> = ({
                 onClick={() => onOpenStudySet?.(set.id)}
                 className="rounded-2xl border border-lantern-border bg-lantern-surface p-5 text-left hover:bg-lantern-background-secondary/70 transition-colors"
               >
-                <FeatureDisc feature="notes" icon={<AppIcon name="albums" size={20} />} />
+                <FeatureDisc
+                  feature={STUDY_SET_TILE.feature}
+                  icon={<AppIcon name={STUDY_SET_TILE.icon} size={20} />}
+                />
                 <p className="mt-4 text-body font-semibold text-lantern-text truncate">
                   {studySetLabel(set)}
                 </p>

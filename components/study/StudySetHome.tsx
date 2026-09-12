@@ -19,6 +19,9 @@ import {
 import type { StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 import { Button, Card } from '../ui';
+import { DoorTile } from '../ui/DoorTile';
+import { FeatureDisc } from '../ui/FeatureDisc';
+import { Headline } from '../ui/Headline';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 import { StudySetMaterialTile } from './StudySetMaterialTile';
 
@@ -147,7 +150,9 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
       {currentTopic ? (
         <section>
           <div className="flex flex-wrap items-end justify-between gap-2 mb-3">
-            <h2 className="text-heading text-lantern-text">Recommended from your study plan</h2>
+            <Headline accent="study plan" feature="ai">
+            Recommended from your study plan
+          </Headline>
             {onOpenPlan ? (
               <button
                 type="button"
@@ -193,20 +198,21 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                 </Button>
               ) : null}
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {recommendedCards.map((card) => (
-                <button
+                // The three ways into a topic are doors, not bespoke cards:
+                // same anatomy, same pastel panel, same hard edge as every
+                // other door in the product. The card's `eyebrow` ("Read the
+                // note", "Drill the deck") is already a one-line promise, so
+                // it becomes the door's promise rather than a fourth line.
+                <DoorTile
                   key={card.id}
-                  type="button"
+                  feature={card.feature}
+                  icon={<AppIcon name={card.icon} size={16} />}
+                  title={card.label}
+                  promise={card.eyebrow}
                   onClick={() => onOpenRecommended(card.id)}
-                  className="rounded-2xl border border-lantern-border bg-lantern-surface text-left overflow-hidden hover:border-lantern-text-tertiary"
-                >
-                  <p className="px-3 pt-3 text-caption text-lantern-text-secondary">{card.eyebrow}</p>
-                  <div className={`mx-3 mt-2 h-24 rounded-xl flex items-center justify-center ${FEATURE_TINT_BG[card.feature]} ${FEATURE_INK_TEXT[card.feature]}`}>
-                    <AppIcon name={card.icon} size={32} />
-                  </div>
-                  <p className="px-3 py-3 text-body font-semibold">{card.label}</p>
-                </button>
+                />
               ))}
             </div>
             <button
@@ -239,22 +245,45 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
       ) : null}
 
       <section>
-        <h2 className="text-heading text-lantern-text mb-3">Start learning your own way</h2>
-        <div className="grid grid-cols-2 gap-2">
-          {primary.map((tool) => (
-            <ToolPill key={tool.id} tool={tool} onClick={() => onTool(tool)} />
-          ))}
+        <Headline accent="your own way" feature="sets" className="mb-4">
+          Start learning your own way
+        </Headline>
+        {/* The four primary tools are DOORS — the thing this screen exists to
+            offer — and the rest stay chips. Turning all eleven into doors
+            would be eleven pastel panels on one screen, which is the point at
+            which the hue stops telling you anything. */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {primary.map((tool) => {
+            const door = {
+              feature: tool.feature,
+              icon: <AppIcon name={tool.icon} size={16} />,
+              title: tool.label,
+              promise: tool.promise,
+              onClick: () => onTool(tool),
+            };
+            // The deck door is the one that carries art: a fan of cards says
+            // "flashcards" at a glance in a row of otherwise glyph-only
+            // doors, and it is the surface the drawing was authored for.
+            // Written as a literal so the placement ledger can see it.
+            return tool.id === 'cards' ? (
+              <DoorTile key={tool.id} {...door} illustration="cards-fan" />
+            ) : (
+              <DoorTile key={tool.id} {...door} />
+            );
+          })}
         </div>
-        <div className="flex flex-wrap gap-2 mt-3">
+        <div className="flex flex-wrap gap-2 mt-4">
           {more.map((tool) => (
-            <ToolPill key={tool.id} tool={tool} compact onClick={() => onTool(tool)} />
+            <ToolPill key={tool.id} tool={tool} onClick={() => onTool(tool)} />
           ))}
         </div>
       </section>
 
       {exams.length > 0 ? (
         <section>
-          <h2 className="text-heading text-lantern-text mb-3">Exam dates</h2>
+          <Headline accent="Exam" feature="tests" className="mb-4">
+            Exam dates
+          </Headline>
           {exams.map((exam) => (
             <button
               key={`${exam.examDate}-${exam.title}`}
@@ -271,7 +300,9 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
 
       {notes.length > 0 ? (
         <section>
-          <h2 className="text-heading text-lantern-text mb-3">Recent materials</h2>
+          <Headline accent="materials" feature="notes" className="mb-4">
+            Recent materials
+          </Headline>
           <div className="grid grid-cols-1 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {notes.slice(0, 8).map((note) => (
               <StudySetMaterialTile
@@ -287,29 +318,24 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   );
 };
 
-function ToolPill({
-  tool,
-  compact,
-  onClick,
-}: {
-  tool: StudySetHomeTool;
-  compact?: boolean;
-  onClick: () => void;
-}) {
+/**
+ * A secondary tool, as a chip.
+ *
+ * The `compact` flag is gone: the four primary tools are `DoorTile`s now, so
+ * this is only ever the small form and a size prop with one caller is a prop
+ * that will drift. The mark is a rounded pastel SQUARE with a black glyph —
+ * the same `FeatureDisc` anatomy as every other typed row — so a chip and the
+ * door it duplicates are recognisably the same object.
+ */
+function ToolPill({ tool, onClick }: { tool: StudySetHomeTool; onClick: () => void }) {
   return (
     <button
       type="button"
       onClick={onClick}
       title={tool.promise}
-      className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border border-lantern-border bg-lantern-surface px-3 text-left hover:border-lantern-text-tertiary ${
-        compact ? 'text-caption' : 'w-full text-body font-medium px-4 py-3'
-      }`}
+      className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-lantern-border bg-lantern-surface pl-1.5 pr-4 text-caption text-left hover:bg-lantern-background-secondary"
     >
-      <span
-        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${FEATURE_TINT_BG[tool.feature]} ${FEATURE_INK_TEXT[tool.feature]}`}
-      >
-        <AppIcon name={tool.icon} size={16} />
-      </span>
+      <FeatureDisc size={32} feature={tool.feature} icon={<AppIcon name={tool.icon} size={16} />} />
       {tool.label}
     </button>
   );

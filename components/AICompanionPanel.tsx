@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { AppIcon } from './ui/AppIcon';
+import { SourceChip } from './ui/SourceChip';
 import { useCompanionStore } from '../stores/companionStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useAuthStore } from '../stores/authStore';
@@ -19,29 +20,31 @@ import { transcribeAudioForNote } from '../services/notes';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageInline from './AIUsageInline';
 import ReactMarkdown from 'react-markdown';
+import type { MdProps } from './ui/markdownProps';
 
 /**
  * Compact markdown mapping for chat bubbles: the model is instructed to use
  * bullets/bold, but replies rendered as raw text (`**bold**` and `- ` shown
  * literally). Spacing stays tight so short answers still look like chat.
+ *
+ * Every mapping drops `node` — see `MdProps`.
  */
 const bubbleMarkdownComponents = {
-  p: (props: React.HTMLAttributes<HTMLParagraphElement>) => <p className="my-1 first:mt-0 last:mb-0" {...props} />,
-  ul: (props: React.HTMLAttributes<HTMLUListElement>) => <ul className="my-1 pl-4 list-disc space-y-0.5" {...props} />,
-  ol: (props: React.HTMLAttributes<HTMLOListElement>) => <ol className="my-1 pl-4 list-decimal space-y-0.5" {...props} />,
-  li: (props: React.HTMLAttributes<HTMLLIElement>) => <li className="leading-relaxed" {...props} />,
-  strong: (props: React.HTMLAttributes<HTMLElement>) => <strong className="font-semibold" {...props} />,
-  code: (props: React.HTMLAttributes<HTMLElement>) => (
+  p: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLParagraphElement>>) => <p className="my-1 first:mt-0 last:mb-0" {...props} />,
+  ul: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLUListElement>>) => <ul className="my-1 pl-4 list-disc space-y-0.5" {...props} />,
+  ol: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLOListElement>>) => <ol className="my-1 pl-4 list-decimal space-y-0.5" {...props} />,
+  li: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLLIElement>>) => <li className="leading-relaxed" {...props} />,
+  strong: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLElement>>) => <strong className="font-semibold" {...props} />,
+  code: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLElement>>) => (
     <code className="px-1 py-0.5 rounded bg-black/10 dark:bg-white/10 text-[0.85em]" {...props} />
   ),
-  a: (props: React.AnchorHTMLAttributes<HTMLAnchorElement>) => (
+  a: ({ node: _node, ...props }: MdProps<React.AnchorHTMLAttributes<HTMLAnchorElement>>) => (
     <a className="underline" target="_blank" rel="noopener noreferrer" {...props} />
   ),
-  h1: (props: React.HTMLAttributes<HTMLHeadingElement>) => <p className="font-semibold my-1" {...props} />,
-  h2: (props: React.HTMLAttributes<HTMLHeadingElement>) => <p className="font-semibold my-1" {...props} />,
-  h3: (props: React.HTMLAttributes<HTMLHeadingElement>) => <p className="font-semibold my-1" {...props} />,
+  h1: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLHeadingElement>>) => <p className="font-semibold my-1" {...props} />,
+  h2: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLHeadingElement>>) => <p className="font-semibold my-1" {...props} />,
+  h3: ({ node: _node, ...props }: MdProps<React.HTMLAttributes<HTMLHeadingElement>>) => <p className="font-semibold my-1" {...props} />,
 };
-
 /**
  * CommonMark collapses single newlines into spaces, but replies (and stored
  * history) often use plain newlines as line breaks. Convert them to hard
@@ -59,6 +62,11 @@ import { Illustration } from './ui/Illustration';
 interface AICompanionPanelProps {
   context?: CompanionUserContext;
   onAction?: (action: CompanionAction) => void;
+  /**
+   * Open one note by id — what a source chip under an answer does. Without it
+   * a chip falls back to the Notes list, which is still true but coarser.
+   */
+  onOpenNote?: (noteId: string) => void;
   theme?: 'light' | 'dark';
   /**
    * `drawer` is the overlay that follows every screen.
@@ -134,6 +142,7 @@ function formatRelativeTime(iso: string): string {
 const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   context,
   onAction,
+  onOpenNote,
   theme = 'light',
   variant = 'drawer',
 }) => {
@@ -757,6 +766,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               message={msg}
               theme={theme}
               onAction={handleAction}
+              onOpenNote={onOpenNote}
               isStreaming={isStreaming && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id}
             />
           ))}
@@ -784,27 +794,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
           {activeNoteContext && (
             <div className="mb-2 flex items-center gap-2">
-              <div
-                className={`inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs
-                  ${theme === 'dark'
-                    ? 'border-lantern-primary/40 bg-lantern-primary/15 text-lantern-primary-light'
-                    : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary'
-                  }`}
-              >
-                <AppIcon name="document-text" size={14} className="flex-shrink-0" />
-                <span className="truncate font-medium" title={activeNoteContext.title}>
-                  {activeNoteContext.title}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => void handleClearNoteContext()}
-                  title="Remove note context"
-                  aria-label="Remove note context"
-                  className="flex-shrink-0 rounded-full p-0.5 hover:bg-black/10 dark:hover:bg-white/10"
-                >
-                  <AppIcon name="close" size={14} />
-                </button>
-              </div>
+              <SourceChip
+                title={activeNoteContext.title}
+                theme={theme}
+                onRemove={() => void handleClearNoteContext()}
+              />
             </div>
           )}
           {showNotePicker && (
@@ -989,10 +983,24 @@ interface MessageBubbleProps {
   message: CompanionMessage;
   theme: 'light' | 'dark';
   onAction: (action: CompanionAction) => void;
+  onOpenNote?: (noteId: string) => void;
   isStreaming?: boolean;
 }
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction, isStreaming }) => {
+/**
+ * One chip per excerpt while the list is short enough to read; past three they
+ * collapse into a single chip, because eight pills say less than one.
+ */
+export function buildCitationChipLabels(excerpts: number[]): string[] {
+  const unique = Array.from(new Set(excerpts.filter((n) => Number.isFinite(n) && n > 0))).sort(
+    (a, b) => a - b
+  );
+  if (!unique.length) return [];
+  if (unique.length > 3) return [`Excerpts ${unique.join(', ')}`];
+  return unique.map((n) => `Excerpt ${n}`);
+}
+
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction, onOpenNote, isStreaming }) => {
   const isUser = message.role === 'user';
   const setMessageFeedback = useCompanionStore((s) => s.setMessageFeedback);
   const feedback = message.feedback ?? null;
@@ -1049,6 +1057,30 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, theme, onAction,
             <span className="inline-block w-0.5 h-3.5 ml-0.5 bg-current animate-pulse align-middle" />
           )}
         </div>
+        {/* Where this answer was read from. Excerpt numbers, never page
+            numbers — the pipeline has no pages. */}
+        {!isUser && !isStreaming && message.citations && (
+          <div className="flex flex-wrap gap-1.5 mt-1">
+            {buildCitationChipLabels(message.citations.excerpts).map((detail) => (
+              <SourceChip
+                key={detail}
+                title={message.citations!.noteTitle}
+                detail={detail}
+                theme={theme}
+                onPress={
+                  onOpenNote
+                    ? () => onOpenNote(message.citations!.noteId)
+                    : () =>
+                        onAction({
+                          type: 'navigate_to_notes',
+                          label: message.citations!.noteTitle,
+                          payload: { noteId: message.citations!.noteId },
+                        })
+                }
+              />
+            ))}
+          </div>
+        )}
         {/* Action buttons */}
         {message.actions && message.actions.length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-0.5">

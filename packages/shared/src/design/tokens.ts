@@ -14,15 +14,30 @@ export const lanternColors = {
 } as const;
 
 const lightBase = {
-  // Warm off-white: hsl(30°, 50%, 96%) — easier on the eyes than cool alice-blue
-  background: '#faf5f0',
-  backgroundSecondary: '#f3ebe2',
-  // Desktop destination rail. Complementary indigo-ink navy against the warm
-  // cream page (StudyFetch-style dark chrome). Ink on this rail is
-  // `navColumnText` / `navColumnTextSecondary`, not page `text`.
-  navColumn: '#141221',
-  navColumnText: '#f8fafc',
-  navColumnTextSecondary: '#b8b3cc',
+  // Paper ground, measured off StudyFetch (2026-09-11 direction): a warm
+  // near-neutral rather than the old peachy cream, so the pastel panels on
+  // top of it read as the only colour on the screen.
+  background: '#f7f6ef',
+  backgroundSecondary: '#f2f0e8',
+  // Desktop destination rail: near-black charcoal, not navy. Its glyphs are
+  // light-grey outlines (`navColumnTextSecondary`), the lit one sits in a grey
+  // pill (`navColumnActive`) with a white glyph — no hue anywhere on the rail.
+  navColumn: '#171717',
+  navColumnText: '#f5f5f5',
+  navColumnTextSecondary: '#a3a3a3',
+  /** The grey pill behind the lit rail item. A ground, never text. */
+  navColumnActive: '#383838',
+  /**
+   * The STRONG ink of the current theme — the solid button pill, the line
+   * illustration on a pastel panel, the hard offset shadow under a hub tile.
+   * It inverts between themes on purpose: a black pill on a black page is a
+   * hole, so dark gets a near-white pill with a dark label. Whatever sits ON
+   * it is `surface`, which inverts with it.
+   *
+   * Near-black rather than #000 in light: pure black against a warm paper
+   * ground reads as a cut-out.
+   */
+  ink: '#191919',
   surface: '#ffffff',
   surfaceSecondary: '#f1f5f9',
   card: '#ffffff',
@@ -80,10 +95,12 @@ const lightBase = {
   // on cream (5.48) and white (5.93) and is the value `--color-info` carries.
   info: '#0369a1',
   infoBackground: '#e0f2fe',
-  border: '#c5cedd',
-  borderLight: '#e2e8f0',
+  // Hairline, not a rule: StudyFetch separates planes with a warm grey one
+  // step off the second plane, which is why its cards float without shadows.
+  border: '#eceae0',
+  borderLight: '#f0eee6',
   tabBar: '#ffffff',
-  tabBarBorder: '#c5cedd',
+  tabBarBorder: '#eceae0',
   tabBarActive: lanternColors.primary,
   tabBarInactive: '#5b6a7f',
   inputBackground: '#f1f5f9',
@@ -110,9 +127,12 @@ const darkBase = {
   // X border gray (#2f3336). Chosen over the old navy family on user request.
   background: '#000000',
   backgroundSecondary: '#16181c',
-  navColumn: '#141221',
-  navColumnText: '#f8fafc',
-  navColumnTextSecondary: '#b8b3cc',
+  navColumn: '#171717',
+  navColumnText: '#f5f5f5',
+  navColumnTextSecondary: '#a3a3a3',
+  navColumnActive: '#383838',
+  /** See lightBase.ink — the pill inverts, the label on it is `surface`. */
+  ink: '#f5f5f5',
   surface: '#101214',
   surfaceSecondary: '#1a1d21',
   card: '#101214',
@@ -212,6 +232,11 @@ export const FEATURE_KEYS = [
   'groups',
   'campus',
   'budget',
+  // Ninth identity, added with the 2026-09-11 StudyFetch pass: a study SET is
+  // a container for the other eight, so it could not borrow one of their hues
+  // without claiming to be that kind of object. Mint — the cyan family the
+  // tests/quiz pastel comes from, one step green.
+  'sets',
 ] as const;
 
 export type FeatureKey = (typeof FEATURE_KEYS)[number];
@@ -219,25 +244,39 @@ export type FeatureKey = (typeof FEATURE_KEYS)[number];
 export type FeatureAccentPair = { ink: string; tint: string };
 
 export const featureAccentsLight: Record<FeatureKey, FeatureAccentPair> = {
-  notes: { ink: '#0f766e', tint: '#ccfbf1' },
-  flashcards: { ink: '#4d7c0f', tint: '#ecfccb' },
-  tests: { ink: '#0369a1', tint: '#e0f2fe' },
-  recording: { ink: '#a21caf', tint: '#fae8ff' },
-  ai: { ink: '#4f46e5', tint: '#eef2ff' },
+  // 2026-09-11: the tints are StudyFetch's own pastels, measured off the
+  // product — cyan #bbeef0 (test/quiz/sets), green #bcf887 (cards/match),
+  // yellow #f9f284 (lecture), violet #f5d5ff (recap/tutor/chat). The INKS are
+  // not StudyFetch's: it sets its glyphs in black, which is legal on a panel
+  // and illegal as the count-pill text those same inks carry here. Each is
+  // the darkest step of the pastel's own hue that clears AA on the pastel, on
+  // white and on the paper ground.
+  notes: { ink: '#6b6031', tint: '#efebdd' },
+  flashcards: { ink: '#3f6212', tint: '#bcf887' },
+  tests: { ink: '#0b5a61', tint: '#bbeef0' },
+  recording: { ink: '#5c5200', tint: '#f9f284' },
+  ai: { ink: '#7b2cab', tint: '#f5d5ff' },
   groups: { ink: '#047857', tint: '#d1fae5' },
   campus: { ink: '#6d28d9', tint: '#ede9fe' },
   budget: { ink: '#b45309', tint: '#fef3c7' },
+  sets: { ink: '#0b5f50', tint: '#b9f0e2' },
 };
 
 export const featureAccentsDark: Record<FeatureKey, FeatureAccentPair> = {
-  notes: { ink: '#5eead4', tint: '#0f2f2c' },
-  flashcards: { ink: '#bef264', tint: '#1a2e0a' },
-  tests: { ink: '#7dd3fc', tint: '#0c2a3b' },
-  recording: { ink: '#f0abfc', tint: '#3b0f40' },
-  ai: { ink: '#818cf8', tint: '#1c1c3a' },
+  // Dark keeps the light column's HUE and inverts the roles: the pastel
+  // becomes the ink and a near-black of the same hue becomes the tint. Five
+  // moved with the light column (notes teal -> warm grey, flashcards lime ->
+  // green, tests sky -> cyan, recording fuchsia -> yellow, ai indigo ->
+  // violet) so a lecture is yellow in both themes, not yellow and magenta.
+  notes: { ink: '#e2dac2', tint: '#2a2620' },
+  flashcards: { ink: '#b8f07a', tint: '#1c2e0e' },
+  tests: { ink: '#8ae6ec', tint: '#0c2a2e' },
+  recording: { ink: '#f7ee7a', tint: '#3a3408' },
+  ai: { ink: '#e9b8ff', tint: '#2f1b3d' },
   groups: { ink: '#6ee7b7', tint: '#0b2e22' },
   campus: { ink: '#c4b5fd', tint: '#2a1b4d' },
   budget: { ink: '#fbbf24', tint: '#3a2a08' },
+  sets: { ink: '#7fe8d0', tint: '#0d2e28' },
 };
 
 /**
@@ -254,7 +293,10 @@ export const featureAccentsDark: Record<FeatureKey, FeatureAccentPair> = {
  * contrast.mjs` parses it out of this file to gate the substitute.
  */
 export const featureSmallTextInkLight: Partial<Record<FeatureKey, string>> = {
-  flashcards: '#3f6212',
+  // Empty since 2026-09-11: lime #4d7c0f was the one ink tight enough on its
+  // own tint (4.60:1) to need a darker substitute under 12 px, and the
+  // StudyFetch pass replaced it with #3f6212 — the substitute itself — as the
+  // base ink. Every ink now clears AA on its own tint by at least 0.7.
 };
 
 /** Dark needs no override; kept so the two themes stay symmetric. */
@@ -485,6 +527,8 @@ export const cssVarNames = {
   navColumn: '--color-nav-column',
   navColumnText: '--color-nav-column-text',
   navColumnTextSecondary: '--color-nav-column-text-secondary',
+  navColumnActive: '--color-nav-column-active',
+  ink: '--color-ink',
   surface: '--color-surface',
   surfaceSecondary: '--color-surface-secondary',
   text: '--color-text',

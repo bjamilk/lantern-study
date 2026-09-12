@@ -32,6 +32,7 @@ import { Button } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 import { TurnIntoMenu } from './TurnIntoMenu';
+import { NoteReadingView } from './NoteReadingView';
 import { useNotesStore } from '../../stores/notesStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -118,6 +119,12 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const [askDraft, setAskDraft] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const [writing, setWriting] = useState(false);
+  /**
+   * Notes read as a hierarchy by default; Edit brings back the textarea. A
+   * lecture that starts recording flips to Edit on its own — typing during
+   * class is the whole point of this pane.
+   */
+  const [editingNotes, setEditingNotes] = useState(false);
   const [starting, setStarting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
@@ -214,6 +221,10 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   const elapsedMs = getSessionElapsedMs({ startedAt, pausedAt, pausedTotalMs });
   void tick;
   const recording = status === 'recording';
+
+  useEffect(() => {
+    if (recording) setEditingNotes(true);
+  }, [recording]);
   const busy = status === 'uploading' || status === 'transcribing';
   const paused = recording && Boolean(pausedAt);
 
@@ -466,7 +477,17 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
 
           <div className="flex-1 min-h-0 grid lg:grid-cols-2">
             <div className="min-h-0 flex flex-col border-b lg:border-b-0 lg:border-r border-lantern-border p-3">
-              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">My notes</h2>
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="text-label uppercase text-lantern-text-secondary">My notes</h2>
+                <button
+                  type="button"
+                  aria-pressed={editingNotes}
+                  onClick={() => setEditingNotes((was) => !was)}
+                  className="inline-flex min-h-[44px] items-center rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary"
+                >
+                  {editingNotes ? 'Done' : 'Edit'}
+                </button>
+              </div>
               <input
                 value={title}
                 onChange={(event) => {
@@ -476,13 +497,25 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
                 aria-label="Lecture title"
                 className="mb-2 w-full bg-transparent text-heading font-semibold text-lantern-text outline-none"
               />
-              <textarea
-                value={notesBody}
-                onChange={(event) => handleNotesChange(event.target.value)}
-                aria-label="Typed lecture notes"
-                placeholder="Type during class. New paragraphs get a timestamp."
-                className="flex-1 min-h-[10rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
-              />
+              {editingNotes ? (
+                <textarea
+                  value={notesBody}
+                  onChange={(event) => handleNotesChange(event.target.value)}
+                  aria-label="Typed lecture notes"
+                  placeholder="Type during class. New paragraphs get a timestamp."
+                  className="flex-1 min-h-[10rem] w-full resize-none rounded-xl border border-lantern-border bg-lantern-background p-3 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
+                />
+              ) : (
+                <div
+                  aria-label="Typed lecture notes"
+                  className="flex-1 min-h-[10rem] w-full overflow-y-auto rounded-xl border border-lantern-border bg-lantern-background p-3"
+                >
+                  <NoteReadingView
+                    body={notesBody}
+                    emptyLine="Type during class. New paragraphs get a timestamp."
+                  />
+                </div>
+              )}
             </div>
 
             <div className="min-h-0 flex flex-col p-3">

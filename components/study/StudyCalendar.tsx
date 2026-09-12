@@ -26,16 +26,14 @@ import {
   type StudyCalendarPlan,
   type StudyCalendarSession,
   studySetNotePayload,
-  EXAM_DATE_UNSUPPORTED_COPY,
-  examDateSaveOutcome,
   scopeNoun,
 } from '@lantern/shared';
 import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import type { CourseTopic, Deck, StudyNote } from '../../types';
-import { Button, Input } from '../ui';
+import { Button } from '../ui';
+import { ExamDateField } from './ExamDateField';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
-import { updateStudySet } from '../../services/academic';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useStudySetStore } from '../../stores/studySetStore';
@@ -72,13 +70,11 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   onNoteReady,
 }) => {
   const myCourses = useAcademicStore((s) => s.myCourses);
-  const updateMyCourse = useAcademicStore((s) => s.updateMyCourse);
   const createNote = useNotesStore((s) => s.createNote);
   const saveNote = useNotesStore((s) => s.saveNote);
   const showToast = useToastStore((s) => s.showToast);
 
   const studySets = useStudySetStore((s) => s.sets);
-  const loadStudySets = useStudySetStore((s) => s.loadSets);
 
   const enrolment = myCourses.find((row) => row.course.id === courseId);
   const studySet = studySetId ? studySets.find((row) => row.id === studySetId) ?? null : null;
@@ -101,8 +97,6 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   const [hoursPerWeek, setHoursPerWeek] = useState(
     resumed?.plan.hoursPerWeek || DEFAULT_HOURS_PER_WEEK
   );
-  const [examDraft, setExamDraft] = useState(examDate || '');
-  const [savingExam, setSavingExam] = useState(false);
   const [working, setWorking] = useState(false);
   const today = todayDateOnlyLocal();
   const todayDate = new Date(Number(today.slice(0, 4)), Number(today.slice(5, 7)) - 1, 1);
@@ -110,10 +104,6 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   const [layout, setLayout] = useState<'week' | 'month'>('week');
   const [weekStart, setWeekStart] = useState(() => calendarWeekStart());
   const noteExams = useMemo(() => upcomingExamsFromNotes(calendarNotes, today), [calendarNotes, today]);
-
-  useEffect(() => {
-    setExamDraft(examDate || '');
-  }, [examDate]);
 
   useEffect(() => {
     if (!resumed) return;
@@ -144,45 +134,6 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   const blocker = studyCalendarBlocker({ examDate, today, topics });
   const grid = calendarMonthGrid(view.year, view.month);
   const examChanged = plan ? calendarExamChanged(plan, examDate) : false;
-
-  const saveExamDate = async () => {
-    const value = examDraft.trim();
-    if (value && !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      showToast('Exam date must be YYYY-MM-DD.', 'error');
-      return;
-    }
-    setSavingExam(true);
-    try {
-      // The set is the primary container, so its own date is what a set-scoped
-      // Plan tab writes. A course room has no set and still writes the
-      // enrolment, which is what exam reminders read.
-      if (studySetId) {
-        const updated = await updateStudySet(studySetId, { examDate: value || null });
-        await loadStudySets({ force: true });
-        // A 200 is not evidence: the production API can answer without storing
-        // the date, so the returned row has to echo it back.
-        if (examDateSaveOutcome(value || null, updated) === 'unsupported') {
-          showToast(EXAM_DATE_UNSUPPORTED_COPY, 'info');
-          return;
-        }
-        showToast(value ? 'Exam date saved.' : 'Exam date cleared.', 'success');
-        return;
-      }
-      if (!enrolment) {
-        showToast('Open this plan from a study set or a course to save a date.', 'info');
-        return;
-      }
-      await updateMyCourse(courseId, {
-        examDate: value || null,
-        academicYear: enrolment.academicYear,
-      });
-      showToast(value ? 'Exam date saved. Reminders still use this date.' : 'Exam date cleared.', 'success');
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not save the exam date.', 'error');
-    } finally {
-      setSavingExam(false);
-    }
-  };
 
   const generate = async () => {
     if (!examDate) {
@@ -265,20 +216,12 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block">
-          <span className="text-caption text-lantern-text-secondary">Exam date</span>
-          <div className="mt-1 flex gap-2">
-            <Input
-              type="date"
-              value={examDraft}
-              onChange={(event) => setExamDraft(event.target.value)}
-              className="text-body flex-1"
-            />
-            <Button size="sm" variant="secondary" loading={savingExam} onClick={() => void saveExamDate()}>
-              Save
-            </Button>
-          </div>
-        </label>
+        <ExamDateField
+          studySetId={studySetId}
+          courseId={courseId}
+          value={examDate}
+          onSaved={() => undefined}
+        />
         <div>
           <p className="text-caption text-lantern-text-secondary">Hours per week</p>
           <div className="mt-1 flex flex-wrap gap-2">

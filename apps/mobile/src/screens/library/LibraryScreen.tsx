@@ -15,7 +15,7 @@ import { fetchLibraryOverview } from '../../services/api';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
-import { useTheme } from '../../theme';
+import { serifDisplayStyle, useTheme } from '../../theme';
 import { useLibrarySearch } from '../../hooks/useLibrarySearch';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -307,7 +307,11 @@ export function LibraryScreen({ navigation, route }: Props) {
             block of its own bought nothing but height. The archive totals moved
             into the course tree's collapsed summary. */}
         <View className="mb-2 flex-row items-center gap-2">
-          <Text className="text-title font-bold text-lantern-text">Library</Text>
+          {/* The screen's h1 — a `title` display role, so the serif face
+                  (theme/fonts.ts). It read sans while the headings inside the
+                  page were Bitter. The style carries the family and resets the
+                  weight the face already has; the class keeps the size. */}
+              <Text style={serifDisplayStyle()} className="text-title text-lantern-text">Library</Text>
           <View className="flex-1 flex-row items-center gap-2 px-3 py-1.5 rounded-xl border border-lantern-border bg-lantern-surface min-h-[44px]">
             <AppIcon name="search" size={16} color={colors.inputPlaceholder} />
             <TextInput

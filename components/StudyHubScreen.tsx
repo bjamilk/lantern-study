@@ -9,6 +9,7 @@ import {
   sortStudySets,
   STUDY_SET_SORTS,
   type StudySetSortId,
+  STUDY_SET_TILE,
 } from '@lantern/shared';
 import { ScreenHeader, Card, Button, FeatureDisc } from './ui';
 import SavedSessionsList from './SavedSessionsList';
@@ -247,7 +248,10 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
                       }}
                       className="flex min-w-0 flex-1 items-start gap-3 text-left"
                     >
-                      <FeatureDisc feature="notes" icon={<AppIcon name="albums" size={20} />} />
+                      <FeatureDisc
+                  feature={STUDY_SET_TILE.feature}
+                  icon={<AppIcon name={STUDY_SET_TILE.icon} size={20} />}
+                />
                       <span className="min-w-0 flex-1">
                         <span className="block text-body font-semibold text-lantern-text truncate">
                           {studySetLabel(set)}

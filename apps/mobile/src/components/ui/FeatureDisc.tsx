@@ -1,13 +1,17 @@
 /**
  * `FeatureDisc` — the one way a feature announces itself on mobile.
  *
- * Spec v3 §5.6 "Icon rule": a glyph that stands for a FEATURE sits on a
- * rounded disc filled with that feature's `tint`, drawn in that feature's
- * `ink`. Three sizes and no others: 40 (a tile's own mark), 32 (a row's mark),
- * 24 (a dense list). Anything smaller is an inline glyph, not a disc.
+ * Spec v3 §5.6 "Icon rule", as amended by the founder direction of 2026-09-11:
+ * a glyph that stands for a FEATURE sits on a pastel rounded SQUARE — a
+ * squircle at 0.3 of its own side, not a circle — filled with that feature's
+ * `tint` and drawn in BLACK. Four sizes and no others: 56 (a door's mark), 40
+ * (a card's), 32 (a row's), 24 (a dense list's). Anything smaller is an inline
+ * glyph, not a tile.
  *
- * The pair comes from tokens.ts (`featureAccentsLight` / `featureAccentsDark`)
+ * The tint comes from tokens.ts (`featureAccentsLight` / `featureAccentsDark`)
  * so hue = feature identity everywhere, and never a fresh hex at a call site.
+ * The glyph does NOT: it is the page's own ink, so the mark is a black shape
+ * on colour rather than a coloured shape on the same colour.
  */
 import React from 'react';
 import { Pressable, View } from 'react-native';
@@ -19,7 +23,7 @@ import {
   type FeatureKey,
   type IllustrationName,
 } from '@lantern/shared/design';
-import { useTheme } from '../../theme';
+import { TYPE_TILE, useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
 import {
   TILE_BAND_HEIGHT,
@@ -59,11 +63,30 @@ export function smallTextInk(
   return themed === base ? accent.ink : themed;
 }
 
-/** 40 = tile mark, 32 = row mark, 24 = dense list mark. No other size. */
-export type FeatureDiscSize = 40 | 32 | 24;
+/**
+ * The four sizes a type tile comes in, and nothing between them.
+ *
+ * 56 is a door's own mark, 40 a card's, 32 a row's and 24 a dense list's.
+ * (46 dp on a list row and 44 in a sheet are StudyFetch's two measured sizes;
+ * they round to this app's 40/32 ladder rather than adding two more steps that
+ * differ from their neighbours by 2 dp and read identically.)
+ */
+export type FeatureDiscSize = 56 | 40 | 32 | 24;
 
-const GLYPH_FOR_DISC: Record<FeatureDiscSize, number> = { 40: 22, 32: 18, 24: 14 };
-const RADIUS_FOR_DISC: Record<FeatureDiscSize, number> = { 40: 14, 32: 11, 24: 8 };
+/**
+ * Geometry, from the measured fractions rather than a hand-written map: a
+ * squircle at 0.3 of the side with a glyph at half. Computed once at module
+ * load, because four sizes times two numbers is not worth a render.
+ */
+const DISC_SIZES: readonly FeatureDiscSize[] = [56, 40, 32, 24];
+
+const GLYPH_FOR_DISC = Object.fromEntries(
+  DISC_SIZES.map((size) => [size, Math.round(size * TYPE_TILE.glyphFraction)])
+) as Record<FeatureDiscSize, number>;
+
+const RADIUS_FOR_DISC = Object.fromEntries(
+  DISC_SIZES.map((size) => [size, Math.round(size * TYPE_TILE.radiusFraction)])
+) as Record<FeatureDiscSize, number>;
 
 export function FeatureDisc({
   feature,
@@ -87,6 +110,16 @@ export function FeatureDisc({
 }) {
   const { colors } = useTheme();
   const accent = useFeatureAccent(feature);
+  // The glyph on a PASTEL tile is the page's own ink — near-black in light,
+  // near-white in dark — not the feature's hue (founder direction: "pastel
+  // rounded square with a BLACK glyph"). Hue stays the tile's job; drawing an
+  // indigo glyph on an indigo pastel is what made a row of these read as eight
+  // shades of the same smudge rather than as eight shapes.
+  //
+  // The `surface` variant is the exception and keeps the ink: there the disc
+  // sits ON the tint (a card's band), so the pastel is behind the tile rather
+  // than in it, and the ink is the only colour left to say which feature it is.
+  const glyphColor = variant === 'surface' ? accent.ink : colors.text;
   return (
     <View
       style={{
@@ -104,7 +137,7 @@ export function FeatureDisc({
       <AppIcon
         name={icon}
         size={GLYPH_FOR_DISC[size]}
-        color={accent.ink}
+        color={glyphColor}
         importantForAccessibility="no"
       />
     </View>

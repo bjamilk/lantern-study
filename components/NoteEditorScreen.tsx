@@ -33,6 +33,7 @@ import NoteCollaboratorsModal from './NoteCollaboratorsModal';
 import Modal from './ui/Modal';
 import NotePdfViewer from './NotePdfViewer';
 import NoteImageGallery from './NoteImageGallery';
+import { NoteReadingView } from './study/NoteReadingView';
 import { Button } from './ui';
 import { FEATURE_INK_TEXT } from './ui/featureClasses';
 import * as notesApi from '../services/notes';
@@ -1236,10 +1237,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
               <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
                 Your notes
               </h4>
+              {isViewer ? (
+                <div
+                  aria-label="Note body"
+                  className="w-full min-h-[160px] sm:min-h-[200px] overflow-y-auto rounded-xl border border-lantern-border bg-lantern-surface p-3 sm:p-4"
+                >
+                  <NoteReadingView body={body} emptyLine="This note is empty." />
+                </div>
+              ) : (
               <textarea
                 value={body}
                 onChange={e => handleBodyChange(e.target.value)}
-                readOnly={isViewer || transcribingForThisNote}
+                readOnly={transcribingForThisNote}
                 aria-label="Note body"
                 placeholder={
                   isPhotoNote
@@ -1252,12 +1261,20 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                   isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
                 }`}
               />
+              )}
+            </div>
+          ) : isViewer ? (
+            <div
+              aria-label="Note body"
+              className="w-full min-h-[240px] sm:min-h-[360px] overflow-y-auto rounded-xl border border-lantern-border bg-lantern-surface p-3 sm:p-4"
+            >
+              <NoteReadingView body={body} emptyLine="This note is empty." />
             </div>
           ) : (
           <textarea
             value={body}
             onChange={e => handleBodyChange(e.target.value)}
-            readOnly={isViewer || transcribingForThisNote}
+            readOnly={transcribingForThisNote}
             aria-label="Note body"
             placeholder="Start typing your notes... Use headings, lists, and structure for better AI study tools."
             className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${

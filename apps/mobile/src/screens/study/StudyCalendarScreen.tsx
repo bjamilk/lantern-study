@@ -46,6 +46,12 @@ import {
   setMyCourseExamDate,
 } from '../../services/academic';
 import type { CourseTopic, UserCourse } from '@lantern/shared/types';
+// The tertiary-ink token, not a hex: the `placeholderTextColor` literals in
+// these studios had drifted off the palette (one was still #94a3b8, which the
+// UI-02 pass retired for failing AA on the warm page ground). The prop takes a
+// colour and never a class, so the value comes from the theme hook rather than
+// the light palette, which would pin the placeholder to light ink in dark mode.
+import { useColors } from '../../theme';
 
 type Props = NativeStackScreenProps<StudyStackParamList, 'StudyCalendar'>;
 
@@ -61,6 +67,7 @@ function sessionChipClass(kind: StudyCalendarSession['kind']): string {
 }
 
 export function StudyCalendarScreen({ navigation, route }: Props) {
+  const colors = useColors();
   const { courseId, courseLabel, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
@@ -319,7 +326,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
           value={examDraft}
           onChangeText={setExamDraft}
           placeholder="YYYY-MM-DD"
-          placeholderTextColor="#94a3b8"
+          placeholderTextColor={colors.textTertiary}
           autoCapitalize="none"
           autoCorrect={false}
           className="min-h-[44px] rounded-xl border border-lantern-border px-3 text-body text-lantern-text"

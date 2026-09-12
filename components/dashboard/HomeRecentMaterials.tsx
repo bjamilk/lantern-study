@@ -1,5 +1,10 @@
 import React, { useEffect } from 'react';
-import { isCalendarNote, isLectureNote, notePreviewText } from '@lantern/shared';
+import {
+  isCalendarNote,
+  isLectureNote,
+  notePreviewText,
+  resumeKindPresentation,
+} from '@lantern/shared';
 import { Card } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
@@ -10,11 +15,14 @@ import { useStudySetStore } from '../../stores/studySetStore';
 interface HomeRecentMaterialsProps {
   onOpenNote?: (noteId: string) => void;
   onOpenStudySet?: (studySetId: string) => void;
+  /** Route navigation, so a recent activity reopens the activity itself. */
+  onNavigatePath?: (path: string) => void;
 }
 
 export const HomeRecentMaterials: React.FC<HomeRecentMaterialsProps> = ({
   onOpenNote,
   onOpenStudySet,
+  onNavigatePath,
 }) => {
   const notes = useNotesStore((s) => s.notes);
   const resume = useStudyResumeStore();
@@ -72,7 +80,7 @@ export const HomeRecentMaterials: React.FC<HomeRecentMaterialsProps> = ({
                 )}
               </div>
               <div className="flex items-center gap-2 px-3 py-2.5">
-                <AppIcon name={lecture ? 'mic' : 'document-text'} size={16} />
+                <AppIcon name={resumeKindPresentation(lecture ? 'lecture' : 'note').icon} size={16} />
                 <span className="text-body font-semibold truncate">{item.title}</span>
               </div>
             </button>
@@ -83,20 +91,25 @@ export const HomeRecentMaterials: React.FC<HomeRecentMaterialsProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-4">
           {resume.recentActivities.slice(0, 3).map((activity) => {
             const quiz = activity.kind === 'quiz' || activity.kind === 'test';
-            const lecture = activity.kind === 'lecture';
-            const feature = quiz ? 'tests' : lecture ? 'recording' : activity.kind === 'cards' ? 'flashcards' : activity.kind === 'recap' ? 'ai' : 'notes';
+            // One registry row per kind, so a recap wears headphones and a
+            // lesson a mortarboard instead of every non-card falling to a page.
+            const { icon, feature } = resumeKindPresentation(activity.kind);
             return (
               <Card key={activity.href} padding="none" className="overflow-hidden">
                 <button
                   type="button"
-                  onClick={() => onOpenStudySet?.(activity.studySetId)}
+                  onClick={() => {
+                    // The tile promises the activity, not the set it lives in.
+                    if (activity.href && onNavigatePath) onNavigatePath(activity.href);
+                    else onOpenStudySet?.(activity.studySetId);
+                  }}
                   className="w-full text-left"
                 >
                   <div className={`h-20 px-3 py-3 ${FEATURE_TINT_BG[feature]} ${FEATURE_INK_TEXT[feature]}`}>
                     {quiz ? (
                       <p className="text-caption line-clamp-3">{activity.title}</p>
                     ) : (
-                      <AppIcon name={lecture ? 'mic' : quiz ? 'help-circle' : activity.kind === 'cards' ? 'layers' : 'document-text'} size={22} />
+                      <AppIcon name={icon} size={22} />
                     )}
                   </div>
                   <div className="px-3 py-3">

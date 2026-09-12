@@ -136,14 +136,17 @@ const PRIMITIVES = new Set([
   'components/ui/Illustration.tsx',
   'components/ui/DoorTile.tsx',
   'components/ui/EmptyState.tsx',
-  'components/ui/Illustration.test.tsx',
 ]);
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) walk(full, out);
-    else if (/\.tsx$/.test(entry.name)) out.push(full);
+    // Suites are not surfaces. A test that renders a door with a picture — or
+    // merely NAMES the prop in a comment, as `DoorTile.test.tsx` does — is not
+    // a screen a student can reach, and counting it would make the ledger a
+    // record of the test suite rather than of the product.
+    else if (/\.tsx$/.test(entry.name) && !/\.test\.tsx$/.test(entry.name)) out.push(full);
   }
   return out;
 }
@@ -191,10 +194,14 @@ describe('illustration placement', () => {
     expect(Object.fromEntries([...sites].sort())).toEqual({
       'components/AICompanionPanel.tsx': ['sparkles-book'],
       'components/CourseReadinessCard.tsx': ['readiness-ring'],
-      'components/dashboard/HomeQuickActions.tsx': ['import-tray', 'cards-fan', 'mic-wave'],
+      'components/dashboard/HomeQuickActions.tsx': ['import-tray', 'mic-wave'],
       'components/DiscoverScreen.tsx': ['campus-hall'],
       'components/NotesScreen.tsx': ['notes-stack'],
       'components/OfflineModeScreen.tsx': ['download-phone'],
+      // The Home tile that once held `cards-fan` is a FeatureDisc now, so the
+      // deck's drawing lives on the door it was authored for: the Flashcards
+      // door in a study set's "start learning your own way" row.
+      'components/study/StudySetHome.tsx': ['cards-fan'],
       'components/TestsHomeScreen.tsx': ['test-sheet', 'empty-inbox'],
     });
   });

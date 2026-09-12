@@ -325,11 +325,14 @@ const Sidebar: React.FC<SidebarProps> = ({
       data-tip-id={tipId}
       aria-label={accessibleName}
       aria-current={isActive ? 'page' : undefined}
-      className={`w-full flex items-center p-3 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 transition-all duration-150 relative ${
+      className={`w-full flex items-center p-2.5 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all duration-150 relative ${
           isActive
-            // Solid fill + white ink. The light primary tint on this dark
-            // column left the default nav-secondary label unreadable.
-            ? 'bg-lantern-primary-fill text-white font-semibold shadow-lantern'
+            // 2026-09-11: a GREY pill, not an indigo fill. The reference's rail
+            // carries no hue at all — the lit item is the same outline glyph
+            // turned white inside a grey pill, so the rail never competes with
+            // the pastels on the page beside it. The glyph stays the same
+            // shape and the label gains weight, so "lit" is never colour alone.
+            ? 'bg-lantern-nav-column-active text-lantern-nav-column-text font-semibold'
             : 'text-lantern-nav-column-text-secondary hover:bg-white/10 hover:text-lantern-nav-column-text'
       } ${!canInteractWithChats ? 'opacity-50 cursor-not-allowed' : ''} ${!showText && 'justify-center'}`}
       disabled={!canInteractWithChats && !isSessionPaused}
@@ -339,15 +342,21 @@ const Sidebar: React.FC<SidebarProps> = ({
         renderIcon(`flex-shrink-0 ${showText ? 'mr-3' : ''}`)
       ) : icon ? (
         <AppIcon
+          // 16 px outline glyphs: the reference's rail marks are small and
+          // quiet, and the label is what you read. `currentColor` carries the
+          // light grey (or the lit white) down from the button, so the glyph
+          // has no colour of its own to keep in step.
           name={icon}
-          size={20}
-          className={`flex-shrink-0 ${showText ? 'mr-3' : ''} ${isActive ? 'text-white' : ''}`}
+          size={16}
+          className={`flex-shrink-0 ${showText ? 'mr-3' : ''}`}
         />
       ) : null}
       {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
       {showText && countLabel ? (
         <span aria-hidden="true" className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-label tracking-normal ${
-          isActive ? 'bg-white/20 text-white' : 'bg-white/10 text-lantern-nav-column-text-secondary'
+          isActive
+            ? 'bg-white/20 text-lantern-nav-column-text'
+            : 'bg-white/10 text-lantern-nav-column-text-secondary'
         }`}>
           {countLabel}
         </span>
@@ -366,7 +375,7 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <>
-    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-nav-column backdrop-blur-md text-lantern-nav-column-text border-r border-white/10 transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-72' : 'w-20'}`} data-expanded={effectiveExpanded}>
+    <div className={`fixed inset-y-0 left-0 z-40 flex flex-col bg-lantern-nav-column backdrop-blur-md text-lantern-nav-column-text border-r border-white/10 transition-all duration-300 ease-in-out ${effectiveExpanded ? 'w-56' : 'w-16'}`} data-expanded={effectiveExpanded}>
       <div className={`flex items-center h-16 px-3 border-b border-white/10 flex-shrink-0 ${showText ? 'justify-between' : 'justify-center'}`}>
         {showText && (
           <button
@@ -449,7 +458,10 @@ const Sidebar: React.FC<SidebarProps> = ({
             />
             <NavButton
               navFunc={onNavigateToCampus}
-              icon="institution"
+              // `business` — the reference's own mark for a campus/org
+              // destination, and the glyph mobile's bottom bar already uses for
+              // Campus. `institution` was a second drawing of the same idea.
+              icon="business"
               label={DESTINATION_LABELS.campus}
               isActive={destinationActive('campus')}
               tipId="nav.marketplace"
@@ -527,7 +539,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     <aside
       aria-label={communityColumnOpen ? (activeCommunity?.name || 'Community') : 'Chats'}
       aria-hidden={!columnOpen}
-      className={`fixed inset-y-0 z-30 bg-lantern-background-secondary/95 backdrop-blur-md border-r border-lantern-border overflow-hidden transition-all duration-300 ease-in-out ${effectiveExpanded ? 'left-72' : 'left-20'} ${columnOpen ? 'w-80' : 'w-0 border-r-0'}`}
+      className={`fixed inset-y-0 z-30 bg-lantern-background-secondary/95 backdrop-blur-md border-r border-lantern-border overflow-hidden transition-all duration-300 ease-in-out ${effectiveExpanded ? 'left-56' : 'left-16'} ${columnOpen ? 'w-80' : 'w-0 border-r-0'}`}
     >
       {communityColumnOpen && onCommunityNavigate && (
         <CommunityColumn onNavigate={onCommunityNavigate} />

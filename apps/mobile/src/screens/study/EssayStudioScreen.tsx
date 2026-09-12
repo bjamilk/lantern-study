@@ -32,10 +32,17 @@ import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { useNotesStore } from '../../stores/notesStore';
 import { useToastStore } from '../../stores/toastStore';
 import { aiGradeEssay } from '../../services/ai';
+// The tertiary-ink token, not a hex: the `placeholderTextColor` literals in
+// these studios had drifted off the palette (one was still #94a3b8, which the
+// UI-02 pass retired for failing AA on the warm page ground). The prop takes a
+// colour and never a class, so the value comes from the theme hook rather than
+// the light palette, which would pin the placeholder to light ink in dark mode.
+import { useColors } from '../../theme';
 
 type Props = NativeStackScreenProps<StudyStackParamList, 'EssayStudio'>;
 
 export function EssayStudioScreen({ navigation, route }: Props) {
+  const colors = useColors();
   const { courseId, courseLabel, noteId, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
@@ -225,7 +232,7 @@ export function EssayStudioScreen({ navigation, route }: Props) {
           onChangeText={(text) => updateSession((current) => ({ ...current, prompt: text }))}
           multiline
           className="min-h-[64px] rounded-xl border border-lantern-border px-3 py-2 text-body text-lantern-text"
-          placeholderTextColor="#5b6a7f"
+          placeholderTextColor={colors.textTertiary}
         />
         <T.Caption tone="secondary">Draft</T.Caption>
         <TextInput
@@ -234,7 +241,7 @@ export function EssayStudioScreen({ navigation, route }: Props) {
           multiline
           placeholder="Paste the assignment here, or load a note."
           className="min-h-[160px] rounded-xl border border-lantern-border px-3 py-2 text-body text-lantern-text"
-          placeholderTextColor="#5b6a7f"
+          placeholderTextColor={colors.textTertiary}
         />
         <View className="flex-row flex-wrap gap-2">
           <Button variant="secondary" onPress={() => void loadFromFile()}>
@@ -288,7 +295,7 @@ export function EssayStudioScreen({ navigation, route }: Props) {
           multiline
           placeholder={'- Definition\n- Treatment\n- Signs'}
           className="min-h-[96px] rounded-xl border border-lantern-border px-3 py-2 text-body text-lantern-text"
-          placeholderTextColor="#5b6a7f"
+          placeholderTextColor={colors.textTertiary}
         />
         <Button disabled={grading} onPress={() => void grade()}>
           {grading

@@ -4,12 +4,33 @@
 
 import type {
   CompanionAction,
+  CompanionCitation,
   CompanionConversation,
   CompanionUserContext,
 } from '../types';
 import type { AIClientConfig } from './ai';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 import { JobStillRunningError, createJobClient } from '../jobs/jobClient';
+
+/**
+ * Read a citation off a wire payload. Anything malformed becomes null: a
+ * source chip that points nowhere is worse than no chip at all.
+ */
+export function normalizeCompanionCitation(raw: unknown): CompanionCitation | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const c = raw as { noteId?: unknown; noteTitle?: unknown; excerpts?: unknown };
+  if (typeof c.noteId !== 'string' || !c.noteId.trim()) return null;
+  const excerpts = Array.isArray(c.excerpts)
+    ? c.excerpts.filter((n): n is number => typeof n === 'number' && Number.isFinite(n) && n > 0)
+    : [];
+  if (!excerpts.length) return null;
+  return {
+    noteId: c.noteId.trim(),
+    noteTitle:
+      typeof c.noteTitle === 'string' && c.noteTitle.trim() ? c.noteTitle.trim() : 'Untitled note',
+    excerpts,
+  };
+}
 
 type CompanionRequestOptions = {
   /** When false, never update the global usage badge from this response. */
@@ -93,6 +114,7 @@ export function createCompanionClient(config: AIClientConfig) {
         reply: string;
         actions: CompanionAction[];
         provider: string;
+        citations?: CompanionCitation | null;
         conversationId?: string;
       }>('/message', 'POST', { message, context }),
 
@@ -156,6 +178,7 @@ export function createCompanionClient(config: AIClientConfig) {
       onToken: (token: string) => void,
       onDone: (result: {
         actions: CompanionAction[];
+        citations?: CompanionCitation | null;
         messageId?: string;
         userMessageId?: string;
         conversationId?: string;
@@ -172,6 +195,7 @@ export function createCompanionClient(config: AIClientConfig) {
           const result = await companionRequest<{
             reply: string;
             actions: CompanionAction[];
+            citations?: CompanionCitation | null;
             messageId?: string;
             userMessageId?: string;
             conversationId?: string;
@@ -179,6 +203,7 @@ export function createCompanionClient(config: AIClientConfig) {
           if (result.reply) onToken(result.reply);
           onDone({
             actions: result.actions || [],
+            citations: result.citations ?? null,
             messageId: result.messageId,
             userMessageId: result.userMessageId,
             conversationId: result.conversationId,
@@ -263,6 +288,7 @@ export function createCompanionClient(config: AIClientConfig) {
               if (data.done) {
                 onDone({
                   actions: (data.actions as CompanionAction[]) || [],
+                  citations: normalizeCompanionCitation(data.citations),
                   messageId: typeof data.messageId === 'string' ? data.messageId : undefined,
                   userMessageId:
                     typeof data.userMessageId === 'string' ? data.userMessageId : undefined,

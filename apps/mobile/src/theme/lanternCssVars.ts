@@ -63,6 +63,11 @@ function paletteToLanternVars(palette: ThemePalette, pairs: Record<FeatureKey, F
     '--color-lantern-nav-column': channels(palette.navColumn),
     '--color-lantern-nav-column-text': channels(palette.navColumnText),
     '--color-lantern-nav-column-text-secondary': channels(palette.navColumnTextSecondary),
+    // 2026-09-11 StudyFetch pass: the grey pill behind the lit rail item, and
+    // the theme's strong ink (the solid button pill / panel line glyph), which
+    // inverts between themes so a pill is never ink-on-ink.
+    '--color-lantern-nav-column-active': channels(palette.navColumnActive),
+    '--color-lantern-ink': channels(palette.ink),
     '--color-lantern-surface': channels(palette.surface),
     '--color-lantern-surface-secondary': channels(palette.surfaceSecondary),
     '--color-lantern-text': channels(palette.text),

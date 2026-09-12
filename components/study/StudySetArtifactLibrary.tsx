@@ -2,7 +2,7 @@ import React from 'react';
 import { notePreviewText } from '@lantern/shared';
 import { FeatureDisc } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
-import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
+import { FEATURE_PANEL_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 
 export interface ArtifactCard {
   id: string;
@@ -66,8 +66,6 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
         ))}
         {items.map((item) => {
           const preview = item.preview ? notePreviewText(item.preview, 140) : '';
-          const recap = item.feature === 'ai' && item.icon === 'headphones';
-          const tutor = item.feature === 'ai' && item.icon === 'school';
           return (
             <button
               key={item.id}
@@ -75,15 +73,20 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
               onClick={() => onOpen(item.id)}
               className="min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary"
             >
-              <div
-                className={`h-24 px-3 py-3 ${
-                  recap || tutor ? FEATURE_TINT_BG.ai : item.feature === 'tests' ? FEATURE_TINT_BG.tests : FEATURE_TINT_BG.flashcards
-                }`}
-              >
+              {/* The panel is the item's OWN hue. It used to be a three-arm
+                  ternary over `ai`/`tests`/everything-else, whose first arm
+                  re-derived `ai` from the icon and whose last arm painted a
+                  recap, a lesson, an essay and a plan all in the flashcards
+                  green — four different objects wearing the fifth one's
+                  colour. `item.feature` was right there the whole time. */}
+              <div className={`h-24 px-3 py-3 ${FEATURE_TINT_BG[item.feature]}`}>
                 {item.feature === 'tests' && preview ? (
                   <p className="text-caption text-lantern-text line-clamp-4">{preview}</p>
                 ) : (
-                  <span className={`inline-flex h-10 w-10 items-center justify-center rounded-full bg-lantern-surface ${FEATURE_INK_TEXT[item.feature]}`}>
+                  <span
+                    aria-hidden="true"
+                    className={`inline-flex h-10 w-10 items-center justify-center rounded-[14px] bg-lantern-surface ${FEATURE_PANEL_INK_TEXT[item.feature]}`}
+                  >
                     <AppIcon name={item.icon} size={18} />
                   </span>
                 )}

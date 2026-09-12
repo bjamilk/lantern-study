@@ -111,34 +111,36 @@ export interface ContextualRowPlan {
 }
 
 /**
- * Choose the row's presentation from its mode, its items and which item (if any)
- * is the current screen.
+ * Choose the row's presentation from its items and which item (if any) is the
+ * current screen.
  *
  * `selectedId` is the id of the active item — the door whose target IS the
  * focused route — or null/undefined when nothing on the row is the current
- * screen (Study's hub, Notes, the Shop root, and every `above` row, none of
- * whose items is ever a place you stand on).
+ * screen (Study's hub, Notes, the Shop root, and every pass-through row, none
+ * of whose items is ever a place you stand on).
  *
  * The two surfaces, in the order the branches test them:
  *
- * - A `replace` row WITH a matching selection → the selected door is a
- *   `selectedPill`, the rest icon-only. Decision 4, unchanged.
- * - Everything else (an `above` row, or a `replace` row with no selection) →
- *   every item is a `labeledIcon`, equal shares. The founder's decision: a
- *   no-selection surface names each door rather than the section, and it shares
- *   the pass-through row's one code path.
+ * - A row WITH a matching selection → the selected door is a `selectedPill`,
+ *   every other door a labelled icon.
+ * - No selection → every item is a `labeledIcon`, equal shares: a surface that
+ *   is none of its own doors names each door rather than the section.
  */
 export function planContextualRow({
-  mode,
   items,
   selectedId,
 }: {
-  mode: 'replace' | 'above';
   items: readonly ContextualPillInput[];
   selectedId: string | null | undefined;
 }): ContextualRowPlan {
-  const selected =
-    mode === 'replace' && selectedId != null && items.some(item => item.id === selectedId);
+  // SELECTION ALONE decides the surface. There used to be a `mode` gate here
+  // (`mode === 'replace' && …`), and with the replace mode removed it would
+  // have taken the selected door's pill down with it: every row, including
+  // Study's, would draw five identical labelled icons and nothing would say
+  // which door IS the screen. A row whose registry has no door for the focused
+  // route simply passes `selectedId` as null and lands in the first branch, so
+  // the pass-through rows (deck, note, walk-through, community) are unchanged.
+  const selected = selectedId != null && items.some(item => item.id === selectedId);
 
   if (!selected) {
     // An `above` row, or a `replace` row with no door selected: label every
@@ -157,6 +159,23 @@ export function planContextualRow({
     };
   }
 
+  // A replace row WITH a selection. EVERY door is labelled — the selected one
+  // inside its pill, the rest under their icons — and every door takes the
+  // same share.
+  //
+  // WHAT CHANGED, AND WHY (founder direction 2026-09-11, superseding decision
+  // 4's "icon-only" half). Decision 4 hid the four unselected labels to buy the
+  // selected one a horizontal word, and on device that is what the Study row
+  // looked like on Library, Flashcards and Tests: four nameless glyphs beside
+  // one word. The fix is not to squeeze the four; it is to stop spending the
+  // row's width horizontally. The selected door now stacks its word UNDER its
+  // icon inside the pill, exactly as the four beside it do and exactly as the
+  // global bar's lit tab does, so all five need only the labelled-icon space —
+  // which {@link contextualLabeledIconLabelSpace} already measures as fitting.
+  //
+  // The pill survives as the SHAPE that says "you are here"; only its
+  // direction changed. Nothing about the accent logic moved: the pill is still
+  // the selected door's own tint under its own ink.
   return {
     items: items.map(item => {
       const isSelected = item.id === selectedId;
@@ -164,8 +183,8 @@ export function planContextualRow({
         id: item.id,
         label: item.label,
         selected: isSelected,
-        variant: isSelected ? 'selectedPill' : 'iconOnly',
-        showLabel: isSelected,
+        variant: isSelected ? 'selectedPill' : 'labeledIcon',
+        showLabel: true,
         accessibleName: item.label,
         flex: isSelected ? CONTEXTUAL_SEGMENT_FLEX.selected : CONTEXTUAL_SEGMENT_FLEX.unselected,
       };
@@ -174,29 +193,41 @@ export function planContextualRow({
 }
 
 /**
- * How the row divides its width: the SELECTED PILL takes a bigger share.
+ * How the row divides its width: EQUALLY, on every surface.
  *
- * With everything icon-only (a selection's non-selected doors) or every item a
- * `labeledIcon` (an `above` row, or a no-selection `replace` row), the shares
- * are equal and the row divides exactly as it always has — no gap, no
- * left-packing. The `selected` share goes only to the one door that carries the
- * pill's horizontal word.
+ * The `selected` share used to be 3, and it had to be: the selected door drew
+ * its word HORIZONTALLY beside its icon, which costs ~48 dp of chrome before
+ * the first letter, and at an equal share that leaves ~14 dp and the word
+ * ellipsised to "L…". The bigger share paid for that, out of the four doors
+ * beside it — which is why they had no room for a word at all and were drawn
+ * icon-only.
+ *
+ * Since the founder direction of 2026-09-11 the selected door stacks its word
+ * under its icon like every other door, so it needs no more room than they do
+ * and they get their labels back. The two keys are kept, and kept equal, so the
+ * intent is legible: there is no longer a door on this row that is wider than
+ * its neighbours. Raising `selected` again would silently re-starve the four.
  */
 export const CONTEXTUAL_SEGMENT_FLEX = {
-  selected: 3,
+  selected: 1,
   unselected: 1,
 };
 
 /**
  * Everything the SELECTED PILL spends on chrome before the first letter, in dp.
  *
- * The segment's own `px-1` (3.5 each side), the pill's `px-2.5` (8.75 each
- * side), the 18 dp icon and the `ml-1.5` (5.25) between icon and word — at
- * NativeWind's rem of 14. Kept here, next to the rule that has to clear it, so
- * a padding change in ContextualBar.tsx that quietly starves the label shows up
- * as a failing number rather than as a screenshot no one takes.
+ * Now that the pill STACKS its word under its icon (founder direction
+ * 2026-09-11) the icon costs height rather than width, so the chrome is only
+ * padding: the segment's own `px-1` (3.5 each side) plus the pill's `px-1.5`
+ * (5.25 each side) at NativeWind's rem of 14. It was 48 when the word sat
+ * beside a 18 dp icon — that 30 dp is exactly what the four doors beside it
+ * were paying for, and exactly why they had no labels.
+ *
+ * Kept here, next to the rule that has to clear it, so a padding change in
+ * ContextualBar.tsx that quietly starves the label shows up as a failing
+ * number rather than as a screenshot no one takes.
  */
-export const CONTEXTUAL_PILL_CHROME_WIDTH = 48;
+export const CONTEXTUAL_PILL_CHROME_WIDTH = 18;
 
 /**
  * The chrome a LABELED ICON spends on either side of its (vertically stacked)
@@ -210,10 +241,13 @@ export const CONTEXTUAL_LABELED_ICON_CHROME_WIDTH = 8;
  * `itemCount` items, once the exit control and the pill's chrome are paid.
  *
  * `rowWidth` is the bar's width, `exitWidth` the leading exit control's. The
- * selected pill is ONE OF the items, so the shares are `selected` plus
- * `itemCount - 1` unselected. Pure arithmetic on the same flex shares the
- * component uses, so the test can assert the worst real row — Study's five items
- * on the narrowest phone — still fits "Flashcards".
+ * selected pill is ONE OF the items and now takes the same share as the rest
+ * (see {@link CONTEXTUAL_SEGMENT_FLEX}), so the arithmetic is the labelled
+ * icon's with the pill's own padding subtracted on top — the pill is the only
+ * thing on this row that pays for a fill.
+ *
+ * Pure arithmetic on the same shares the component uses, so the test can assert
+ * the worst real row — Study's five items plus the exit on the narrowest phone.
  */
 export function contextualPillLabelSpace({
   rowWidth,
@@ -225,9 +259,7 @@ export function contextualPillLabelSpace({
   itemCount: number;
 }): number {
   if (itemCount <= 0) return 0;
-  const shares = CONTEXTUAL_SEGMENT_FLEX.selected + (itemCount - 1) * CONTEXTUAL_SEGMENT_FLEX.unselected;
-  const selectedWidth = ((rowWidth - exitWidth) * CONTEXTUAL_SEGMENT_FLEX.selected) / shares;
-  return selectedWidth - CONTEXTUAL_PILL_CHROME_WIDTH;
+  return (rowWidth - exitWidth) / itemCount - CONTEXTUAL_PILL_CHROME_WIDTH;
 }
 
 /**
@@ -256,9 +288,16 @@ export function contextualLabeledIconLabelSpace({
 
 /**
  * The longest label any door carries into a selected pill ("Flashcards", 10
- * characters) at the pill's 15 sp semibold, taken at a deliberately pessimistic
- * 7.5 dp per character. A row that leaves less than this ellipsises the promoted
- * word.
+ * characters), at the same deliberately pessimistic 7.5 dp per character as
+ * every other drawn word on this row.
+ *
+ * The pill's word is now the 11 sp `label` step stacked under its icon rather
+ * than the old 15 sp beside it, so this is the SAME ceiling as
+ * {@link LONGEST_LABELED_ICON_WIDTH} and carries the same accepted trade: on
+ * the narrowest phone the tightest row (Study's five doors plus the exit) sits
+ * just under it and the tenth glyph may go to the tail ellipsis, while the full
+ * word is always announced. Kept as its own name because the pill pays a little
+ * more chrome than a bare labelled icon does.
  */
 export const LONGEST_PILL_LABEL_WIDTH = 75;
 

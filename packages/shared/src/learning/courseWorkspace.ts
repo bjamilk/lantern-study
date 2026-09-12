@@ -16,6 +16,11 @@ export type WorkspaceIconName =
   | 'layers'
   | 'help-circle'
   | 'clipboard'
+  // A TEST is the one activity that ends in a mark, so it gets the clipboard
+  // with the tick rather than the same clipboard a quiz and a plan already
+  // share. Present in both icon maps (`components/ui/appIconMap.ts` and
+  // `apps/mobile/src/components/ui/appIconMap.ts`).
+  | 'clipboard-check'
   | 'mic'
   | 'school'
   | 'volume-medium'
@@ -26,7 +31,11 @@ export type WorkspaceIconName =
   | 'cloud-upload'
   | 'git-branch'
   | 'sparkles'
-  | 'library';
+  | 'library'
+  // A study SET's own mark (`STUDY_SET_TILE` in studySets.ts). Already in both
+  // icon maps; it joins the union so the set chip in studySetChrome.ts can
+  // name it without a cast.
+  | 'albums';
 
 export type WorkspaceActivityId =
   | 'notes'
@@ -94,7 +103,7 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
     id: 'test',
     label: 'Test',
     promise: 'Practice under exam conditions',
-    icon: 'clipboard',
+    icon: 'clipboard-check',
     feature: 'tests',
     status: 'ready',
   },
@@ -173,7 +182,7 @@ export const TURN_INTO_TARGETS: readonly TurnIntoTarget[] = [
     id: 'test',
     label: 'Practice test',
     promise: 'A saved test you can sit again',
-    icon: 'clipboard',
+    icon: 'clipboard-check',
     feature: 'tests',
   },
   {

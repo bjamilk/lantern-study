@@ -100,3 +100,17 @@ export function studySetNotePayload(input: {
     ...(input.studySetId ? { studySetId: input.studySetId } : {}),
   };
 }
+
+/**
+ * How a STUDY SET draws itself: one glyph, one hue, named once.
+ *
+ * Three screens drew a set's tile inline — Study Hub, Home's set list and
+ * Home's empty state — and all three hard-coded `feature="notes"`, which said
+ * a set IS a note. A set is a container for notes, decks, tests and lectures,
+ * so it takes the ninth identity (`sets`, mint) rather than borrowing the hue
+ * of one of the things inside it.
+ *
+ * Exported as a const object rather than two constants so a call site cannot
+ * take the glyph and forget the hue.
+ */
+export const STUDY_SET_TILE = { icon: 'albums', feature: 'sets' } as const;

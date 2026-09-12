@@ -1275,6 +1275,58 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     commits: ['41df865'],
   },
+  {
+    id: 'ai-answers-full-width-1-0-46',
+    title: 'Lantern AI answers render full-width on Android (1.0.46)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-10',
+    summary:
+      'Companion answers on Android collapsed to roughly one character per line, which made every reply unreadable. Answers now fill the bubble, and the markdown the model actually writes renders as structure instead of raw syntax.',
+    details: [
+      'The answer text no longer collapses to a single character per line on Android \u2014 the bubble takes the width it is given, so a long reply reads as paragraphs.',
+      'Markdown blocks render: headings, nested and numbered bullets, tables, and fenced code, rather than printing their source characters.',
+      'AI colours and type roles moved onto design tokens, so the companion follows the palette in both light and dark instead of carrying hard-coded values.',
+      'A typing indicator shows while an answer is being produced, so a slow reply no longer looks like a dead screen.',
+    ],
+    howToUse: [
+      'Study \u2192 AI: ask anything. Answers arrive full-width, with headings, lists, tables and code blocks laid out.',
+    ],
+    surfaces: ['mobile'],
+    adminNotes: [
+      'A student reporting "the AI reply is one letter per line" or unreadable answers was on 1.0.45 or earlier on Android; the fix requires the 1.0.46 build, not an OTA-only change.',
+    ],
+    commits: ['79e27c30'],
+  },
+  {
+    id: 'study-set-parity-wave-1-1-0-47',
+    title: 'Study sets scope the studios, and generated work is filed where it belongs (1.0.47)',
+    area: 'notes',
+    status: 'partial',
+    shippedAt: '2026-09-11',
+    summary:
+      'Wave 1 of study-set parity: six mobile studios are scoped by the study set you are in, generated decks are filed into that set on both clients, refused saves say why and can be retried, and Turn Into offers six destinations with honest costs. Study sets carry their own exam date, which stays switched off until migration 20260911140000 is applied.',
+    details: [
+      'Six mobile studios are scoped by study set, so what you see in a studio is the set you opened, not everything you own.',
+      'A generated deck is filed into its study set on web and mobile; the API returns study_set_id so the client files it rather than guessing.',
+      'A refused save shows the server\u2019s own reason instead of a generic failure, and retry works from that message \u2014 previously the work was simply lost.',
+      'Turn Into sits at the top of the notes studio and offers six destinations with honest costs, with Play marked free.',
+      'Plan and Essay are primary set tools rather than buried entries, and copy says "set" when you are in a set.',
+      'The notes studio shows a running job, so a generation in flight is visible instead of appearing to have done nothing.',
+      'Each study set carries its own exam date; until the migration lands the UI says exam dates are not switched on yet rather than failing.',
+    ],
+    howToUse: [
+      'Open a study set, then any studio: Library, Flashcards, Tests, Record, AI and Notes are scoped to that set.',
+      'Notes studio \u2192 Turn Into: pick one of six destinations; Play is free and the rest show their cost up front.',
+      'Set tools: Plan and Essay are on the set itself.',
+    ],
+    surfaces: ['mobile', 'web', 'api', 'database'],
+    adminNotes: [
+      'Feature shipped incomplete until the migration is applied: 20260911140000_study_set_exam_date.sql is hand-applied. Until then per-set exam dates stay off and the UI says so \u2014 a student reporting "I cannot set an exam date on my set" is hitting that, not a bug.',
+      'Everything else in Wave 1 (studio scoping, deck filing, honest refusal reasons, Turn Into, running-job visibility) is live without the migration.',
+    ],
+    commits: ['cfcb4dea'],
+  },
 ];
 
 export function sortProductFeatures(entries: ProductFeatureEntry[]): ProductFeatureEntry[] {

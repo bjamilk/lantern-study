@@ -36,10 +36,17 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
 import { useToastStore } from '../../stores/toastStore';
 import { aiAskTutor, aiGenerateRecap } from '../../services/ai';
+// The tertiary-ink token, not a hex: the `placeholderTextColor` literals in
+// these studios had drifted off the palette (one was still #94a3b8, which the
+// UI-02 pass retired for failing AA on the warm page ground). The prop takes a
+// colour and never a class, so the value comes from the theme hook rather than
+// the light palette, which would pin the placeholder to light ink in dark mode.
+import { useColors } from '../../theme';
 
 type Props = NativeStackScreenProps<StudyStackParamList, 'RecapStudio'>;
 
 export function RecapStudioScreen({ navigation, route }: Props) {
+  const colors = useColors();
   const { courseId, courseLabel, noteId, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
@@ -445,7 +452,7 @@ export function RecapStudioScreen({ navigation, route }: Props) {
               onChangeText={setAskDraft}
               placeholder="Ask while listening"
               className="min-h-[44px] rounded-xl border border-lantern-border px-3 text-body text-lantern-text"
-              placeholderTextColor="#5b6a7f"
+              placeholderTextColor={colors.textTertiary}
             />
             <Button disabled={sending || !askDraft.trim()} onPress={() => void sendAsk(askDraft)}>
               {sending ? 'Asking…' : `Ask · ${formatCreditCost(AI_FEATURE_CREDIT_COST)}`}

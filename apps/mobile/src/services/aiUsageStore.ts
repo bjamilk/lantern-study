@@ -9,8 +9,20 @@
  * to be able to publish usage, and importing `services/ai` to do it would close
  * an import cycle around the AI client.
  */
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AIUsageInfo } from '@lantern/shared';
-import { AI_USAGE_UNKNOWN } from '@lantern/shared/utils/aiUsage';
+import { AI_USAGE_UNKNOWN, isAIUsageKnown } from '@lantern/shared/utils/aiUsage';
+
+/**
+ * The last figures the server gave us, kept across launches.
+ *
+ * The counters only ever arrived from a live call, so an OFFLINE cold start
+ * knew nothing and the docked badge vanished entirely — the sparkle lost the
+ * "95" it had been wearing all session, which reads as "you have no credits",
+ * not as "we could not check". The cache restores the last known numbers and
+ * marks them stale; nothing here ever invents an allowance.
+ */
+const CACHE_KEY = 'lantern.aiUsage.last';
 
 /**
  * Before the server has said anything, the app knows NOTHING about this
@@ -29,12 +41,53 @@ import { AI_USAGE_UNKNOWN } from '@lantern/shared/utils/aiUsage';
  */
 let latestUsage: AIUsageInfo = AI_USAGE_UNKNOWN;
 
+/** True while `latestUsage` is the restored cache rather than this session's answer. */
+let usageFromCache = false;
+
 const listeners = new Set<(usage: AIUsageInfo) => void>();
 
 export function publishAIUsage(usage: AIUsageInfo): void {
   latestUsage = usage;
+  usageFromCache = false;
   listeners.forEach((fn) => fn(usage));
+  if (isAIUsageKnown(usage)) {
+    void AsyncStorage.setItem(CACHE_KEY, JSON.stringify(usage)).catch(() => undefined);
+  }
 }
+
+/**
+ * Restore the cached counters, but only while the server has said nothing.
+ * A live figure always outranks the cache, so this can never overwrite one.
+ */
+export async function hydrateAIUsageFromCache(): Promise<boolean> {
+  if (isAIUsageKnown(latestUsage)) return false;
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as AIUsageInfo | null;
+    if (!isAIUsageKnown(parsed)) return false;
+    if (isAIUsageKnown(latestUsage)) return false;
+    latestUsage = parsed as AIUsageInfo;
+    usageFromCache = true;
+    listeners.forEach((fn) => fn(latestUsage));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the count on screen is the remembered one. The render site (the top
+ * bar's docked badge, owned by another lane) can use this to mark it stale.
+ */
+export function isAIUsageFromCache(): boolean {
+  return usageFromCache;
+}
+
+// Cold start: ask the cache immediately, so the badge is restored before any
+// network call is even attempted. Self-contained on purpose — no boot file has
+// to remember to call it.
+void hydrateAIUsageFromCache();
 
 export function getLatestAIUsage(): AIUsageInfo {
   return latestUsage;
@@ -50,5 +103,6 @@ export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () =
 /** Test seam: forget the counters between cases. */
 export function __resetAIUsageForTests(): void {
   latestUsage = AI_USAGE_UNKNOWN;
+  usageFromCache = false;
   listeners.clear();
 }

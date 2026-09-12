@@ -1351,12 +1351,18 @@ export const App: React.FC = () => {
             courseId,
             studySetId: lastSetId,
         })
-            .then(() => {
+            .then((created) => {
                 if (lastSetId) {
                     navigateTo(AppMode.STUDY_SET_WORKSPACE, {
                         studySetId: lastSetId,
                         workspaceActivity: 'lecture',
                     });
+                } else if (created?.id) {
+                    // No set to file it under: the tile still has to land
+                    // somewhere, so open the new note in the standalone editor
+                    // rather than leaving the student on Home with a toast
+                    // about a note they cannot see.
+                    void noteHandlers.openNote(created.id);
                 }
                 showToast('New note ready \u2014 press Record to start.', 'info');
             })
@@ -2224,7 +2230,8 @@ export const App: React.FC = () => {
                         openModal('settings');
                         useUIStore.getState().setSettingsTab('academic');
                     }}
-                    onRecordLecture={handleRecordLecture}
+                    onRecordLecture={() => handleRecordLecture()}
+                    onNavigatePath={(path) => navigateToPath(path)}
                     onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
                     onNavigateToOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
                     onToggleCompanion={toggleCompanion}
@@ -2302,7 +2309,7 @@ export const App: React.FC = () => {
                         onViewRecentTests={() => navigateTo(AppMode.TESTS_HOME)}
                         onOpenFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
                         onOpenTests={() => navigateTo(AppMode.TESTS_HOME)}
-                        onRecordLecture={handleRecordLecture}
+                        onRecordLecture={() => handleRecordLecture()}
                         noteCount={notes.length}
                         onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
                         onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
@@ -3705,6 +3712,7 @@ export const App: React.FC = () => {
             <AICompanionPanel
                 context={companionContext}
                 onAction={handleCompanionAction}
+                onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
                 theme={theme}
             />
             )}

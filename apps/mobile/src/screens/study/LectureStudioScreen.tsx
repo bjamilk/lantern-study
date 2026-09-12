@@ -32,6 +32,7 @@ import {
 } from '@lantern/shared/utils/aiCredits';
 import type { StudyStackParamList } from '../../navigation/types';
 import { Button, ScreenHeader, T } from '../../components/ui';
+import { NoteBody } from '../../components/NoteBody';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { LecturePreflightCard } from '../../components/lecture/LecturePreflightCard';
 import { useNotesStore } from '../../stores/notesStore';
@@ -110,6 +111,12 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const [askDraft, setAskDraft] = useState('');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const [writing, setWriting] = useState(false);
+  /**
+   * Notes read as a hierarchy by default; Edit brings back the text box. A
+   * lecture that starts recording flips to Edit on its own — typing during
+   * class is the whole point of this pane.
+   */
+  const [editingNotes, setEditingNotes] = useState(false);
   const [starting, setStarting] = useState(false);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const titleRef = useRef(title);
@@ -164,6 +171,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const elapsedMs = getSessionElapsedMs({ startedAt, pausedAt, pausedTotalMs });
   void tick;
   const recording = status === 'recording';
+
+  useEffect(() => {
+    if (recording) setEditingNotes(true);
+  }, [recording]);
   const busy = status === 'uploading' || status === 'transcribing' || status === 'naming';
   const paused = recording && Boolean(pausedAt);
   const showConsent = !consented && status === 'idle';
@@ -382,7 +393,18 @@ export function LectureStudioScreen({ navigation, route }: Props) {
             </View>
 
             <View>
-              <T.Label>My notes</T.Label>
+              <View className="flex-row items-center justify-between">
+                <T.Label>My notes</T.Label>
+                <Pressable
+                  onPress={() => setEditingNotes((was) => !was)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: editingNotes }}
+                  accessibilityLabel={editingNotes ? 'Done editing notes' : 'Edit notes'}
+                  className="min-h-[44px] justify-center px-2"
+                >
+                  <T.Caption>{editingNotes ? 'Done' : 'Edit'}</T.Caption>
+                </Pressable>
+              </View>
               <TextInput
                 value={title}
                 onChangeText={(value) => {
@@ -392,14 +414,26 @@ export function LectureStudioScreen({ navigation, route }: Props) {
                 accessibilityLabel="Lecture title"
                 className="mt-2 mb-2 rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-heading text-lantern-text"
               />
-              <TextInput
-                value={notesBody}
-                onChangeText={handleNotesChange}
-                accessibilityLabel="Typed lecture notes"
-                placeholder="Type during class. New paragraphs get a timestamp."
-                multiline
-                className="min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3 text-body text-lantern-text"
-              />
+              {editingNotes ? (
+                <TextInput
+                  value={notesBody}
+                  onChangeText={handleNotesChange}
+                  accessibilityLabel="Typed lecture notes"
+                  placeholder="Type during class. New paragraphs get a timestamp."
+                  multiline
+                  className="min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3 text-body text-lantern-text"
+                />
+              ) : (
+                <View
+                  accessibilityLabel="Typed lecture notes"
+                  className="min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3"
+                >
+                  <NoteBody
+                    body={notesBody}
+                    emptyLine="Type during class. New paragraphs get a timestamp."
+                  />
+                </View>
+              )}
             </View>
 
             <View>

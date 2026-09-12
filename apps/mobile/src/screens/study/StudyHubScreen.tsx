@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { Modal, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
@@ -10,6 +10,7 @@ import {
   materialsForStudySet,
   normalizeStudySetTitle,
   pickOpenStudySetId,
+  STUDY_SET_TILE,
   STUDY_SET_TITLE_MAX,
   studySetLabel,
 } from '@lantern/shared';
@@ -20,7 +21,7 @@ import { useTestStore } from '../../stores/testStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useStudySetStore } from '../../stores/studySetStore';
-import { Button, Card, FeatureRow, ScreenHeader, T } from '../../components/ui';
+import { Button, Card, FeatureRow, ScreenHeader, SheetShell, T } from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { getMyActiveCourses } from '../../services/academic';
 
@@ -145,8 +146,11 @@ export function StudyHubScreen({ navigation }: Props) {
                   className={index > 0 ? 'border-t border-lantern-border' : undefined}
                 >
                   <FeatureRow
-                    feature="notes"
-                    icon="albums"
+                    // A set's own hue and glyph, from the one exported pair.
+                    // It was painted in the notes tint, which is why the hub's
+                    // list of SETS looked like a list of notes.
+                    feature={STUDY_SET_TILE.feature}
+                    icon={STUDY_SET_TILE.icon}
                     title={studySetLabel(set)}
                     subtitle={`${filed ? courseWorkspaceLabel(filed.course) : 'Standalone'} · ${formatCourseMaterialCounts({
                       notes: materialsForStudySet(notes, set.id).filter(
@@ -173,75 +177,64 @@ export function StudyHubScreen({ navigation }: Props) {
         </Card>
       </ScrollView>
 
-      <Modal
-        visible={createOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setCreateOpen(false)}
-      >
-        <Pressable
-          className="flex-1 bg-black/40 justify-end"
-          onPress={() => setCreateOpen(false)}
-        >
+      {/* The one sheet shell (components/ui/SheetShell.tsx): grabber, 23 dp
+          corners, cream ground, serif heading — and a keyboard-safe body, which
+          this sheet had no form of at all. Its title field is `autoFocus`, so
+          the IME is up the moment it opens and "Create set" sat under it on
+          Android, where the window does not resize. */}
+      <SheetShell visible={createOpen} onClose={() => setCreateOpen(false)} title="New study set">
+        <T.Caption tone="secondary" className="mb-3">
+          Name it first. Filing under a course is optional.
+        </T.Caption>
+        <TextInput
+          value={createTitle}
+          onChangeText={setCreateTitle}
+          placeholder="e.g. Midterm review"
+          maxLength={STUDY_SET_TITLE_MAX}
+          autoFocus
+          className="min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-lantern-text mb-3"
+        />
+        <T.Caption tone="secondary" className="mb-2">
+          Course (optional)
+        </T.Caption>
+        <View className="flex-row flex-wrap gap-2 mb-4">
           <Pressable
-            className="bg-lantern-background rounded-t-2xl px-4 pt-4 pb-8"
-            onPress={(event) => event.stopPropagation()}
+            onPress={() => setCreateCourseId(null)}
+            className={`px-3 py-2 rounded-full border ${
+              createCourseId === null
+                ? 'border-lantern-primary bg-lantern-primary-background'
+                : 'border-lantern-border'
+            }`}
           >
-            <T.Heading className="mb-1">New study set</T.Heading>
-            <T.Caption tone="secondary" className="mb-3">
-              Name it first. Filing under a course is optional.
-            </T.Caption>
-            <TextInput
-              value={createTitle}
-              onChangeText={setCreateTitle}
-              placeholder="e.g. Midterm review"
-              maxLength={STUDY_SET_TITLE_MAX}
-              autoFocus
-              className="min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-lantern-text mb-3"
-            />
-            <T.Caption tone="secondary" className="mb-2">
-              Course (optional)
-            </T.Caption>
-            <View className="flex-row flex-wrap gap-2 mb-4">
-              <Pressable
-                onPress={() => setCreateCourseId(null)}
-                className={`px-3 py-2 rounded-full border ${
-                  createCourseId === null
-                    ? 'border-lantern-primary bg-lantern-primary-background'
-                    : 'border-lantern-border'
-                }`}
-              >
-                <T.Caption>Standalone</T.Caption>
-              </Pressable>
-              {courses.map((row) => (
-                <Pressable
-                  key={row.course.id}
-                  onPress={() => setCreateCourseId(row.course.id)}
-                  className={`px-3 py-2 rounded-full border ${
-                    createCourseId === row.course.id
-                      ? 'border-lantern-primary bg-lantern-primary-background'
-                      : 'border-lantern-border'
-                  }`}
-                >
-                  <T.Caption>{courseWorkspaceLabel(row.course)}</T.Caption>
-                </Pressable>
-              ))}
-            </View>
-            <View className="flex-row gap-2">
-              <Button variant="ghost" onPress={() => setCreateOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                onPress={() => void submitCreate()}
-                disabled={!normalizeStudySetTitle(createTitle) || creating}
-                loading={creating}
-              >
-                Create set
-              </Button>
-            </View>
+            <T.Caption>Standalone</T.Caption>
           </Pressable>
-        </Pressable>
-      </Modal>
+          {courses.map((row) => (
+            <Pressable
+              key={row.course.id}
+              onPress={() => setCreateCourseId(row.course.id)}
+              className={`px-3 py-2 rounded-full border ${
+                createCourseId === row.course.id
+                  ? 'border-lantern-primary bg-lantern-primary-background'
+                  : 'border-lantern-border'
+              }`}
+            >
+              <T.Caption>{courseWorkspaceLabel(row.course)}</T.Caption>
+            </Pressable>
+          ))}
+        </View>
+        <View className="flex-row gap-2">
+          <Button variant="ghost" onPress={() => setCreateOpen(false)}>
+            Cancel
+          </Button>
+          <Button
+            onPress={() => void submitCreate()}
+            disabled={!normalizeStudySetTitle(createTitle) || creating}
+            loading={creating}
+          >
+            Create set
+          </Button>
+        </View>
+      </SheetShell>
     </SafeAreaView>
   );
 }

@@ -11,8 +11,17 @@ import SavedSessionsList from './SavedSessionsList';
 import { useUIStore } from '../stores/uiStore';
 import { Card } from './ui';
 import { computeStudyStreak, getDashboardFirstName } from '@lantern/shared/utils';
-import { upcomingExamsFromNotes, type StudyActivityDay } from '@lantern/shared';
+import {
+  buildStudySetPath,
+  primaryHomeAction,
+  studySetLabel,
+  todayDateOnlyLocal,
+  upcomingExamsFromNotes,
+  type StudyActivityDay,
+} from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
+import { useStudyResumeStore } from '../stores/studyResumeStore';
+import { useStudySetStore } from '../stores/studySetStore';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
@@ -118,6 +127,8 @@ interface DashboardScreenProps {
   onOpenNoteById?: (noteId: string) => void;
   onOpenAcademicSettings?: () => void;
   onRecordLecture?: () => void;
+  /** Route navigation for links that carry a path (resume href, set activities). */
+  onNavigatePath?: (path: string) => void;
   serverStreak?: number;
   studyActivityDays?: StudyActivityDay[];
   activeTestSession?: TestSessionData | null;
@@ -159,6 +170,7 @@ export default function DashboardScreen({
   onOpenNoteById,
   onOpenAcademicSettings,
   onRecordLecture,
+  onNavigatePath,
   dueCardsCount = 0,
   onOpenQuickTest,
   serverStreak = 0,
@@ -186,7 +198,43 @@ export default function DashboardScreen({
     setQuickActionPicker(null);
   }, [quickActionPicker, onOpenQuickTest]);
   const notes = useNotesStore((s) => s.notes);
-  const upcomingExams = useMemo(() => upcomingExamsFromNotes(notes), [notes]);
+  const lastActivity = useStudyResumeStore((s) => s.lastActivity);
+  const studySets = useStudySetStore((s) => s.sets);
+  const lastOpenedSetId = useStudySetStore((s) => s.lastOpenedId);
+
+  /**
+   * A study set now carries its own `examDate`, so prefer it over parsing a
+   * calendar note: the set knows its exam first-hand, and naming the set beats
+   * the note title ("Plan — …") a student never wrote.
+   */
+  const upcomingExams = useMemo(() => {
+    const today = todayDateOnlyLocal();
+    const fromSets = studySets
+      .flatMap((set) => {
+        const examDate = (set.examDate || '').trim();
+        if (!examDate || examDate < today) return [];
+        return [{ examDate, title: studySetLabel(set), studySetId: set.id }];
+      })
+      .sort((a, b) => a.examDate.localeCompare(b.examDate));
+    return fromSets.length > 0 ? fromSets : upcomingExamsFromNotes(notes);
+  }, [studySets, notes]);
+
+  /**
+   * The three quick-action doors go three places. Each opens the last set's
+   * own activity; with no set yet there is nothing to open, so they fall back
+   * to the Study hub rather than dead-ending.
+   */
+  const openLastSetActivity = useCallback(
+    (activity: 'quiz' | 'lesson', extras: { createNew?: boolean } = {}) => {
+      if (lastOpenedSetId && onNavigatePath) {
+        onNavigatePath(buildStudySetPath({ studySetId: lastOpenedSetId, activity, ...extras }));
+        return;
+      }
+      if (onNavigateToStudyHub) onNavigateToStudyHub();
+      else if (activity === 'quiz') onNavigateToTests?.();
+    },
+    [lastOpenedSetId, onNavigatePath, onNavigateToStudyHub, onNavigateToTests]
+  );
 
   return (
     <div
@@ -234,8 +282,16 @@ export default function DashboardScreen({
               dueCardsCount={dueCardsCount}
               totalTestsTaken={totalTestsTakenOverall}
               onPrimaryAction={() => {
-                if (dueCardsCount > 0 && onReviewDueCards) onReviewDueCards();
-                else if (onOpenImportAndStudy) onOpenImportAndStudy();
+                const action = primaryHomeAction({ dueCardsCount, lastActivity });
+                if (action.kind === 'review' && onReviewDueCards) {
+                  onReviewDueCards();
+                  return;
+                }
+                if (action.kind === 'continue' && action.href && onNavigatePath) {
+                  onNavigatePath(action.href);
+                  return;
+                }
+                if (onOpenImportAndStudy) onOpenImportAndStudy();
                 else if (onNavigateToAITools) onNavigateToAITools();
               }}
               activeTestSession={activeTestSession}
@@ -260,6 +316,7 @@ export default function DashboardScreen({
             <HomeRecentMaterials
               onOpenNote={onOpenNoteById}
               onOpenStudySet={onOpenStudySet}
+              onNavigatePath={onNavigatePath}
             />
 
             <section>
@@ -297,9 +354,17 @@ export default function DashboardScreen({
 
             <HomeQuickActions
               onImport={onOpenImportAndStudy ?? onNavigateToAITools}
-              onOpenTests={onNavigateToStudyHub ?? onNavigateToTests}
+              onOpenTests={
+                onNavigateToStudyHub || onNavigateToTests || onNavigatePath
+                  ? () => openLastSetActivity('quiz', { createNew: true })
+                  : undefined
+              }
               onToggleCompanion={onToggleCompanion}
-              onOpenTutor={onNavigateToStudyHub}
+              onOpenTutor={
+                onNavigateToStudyHub || onNavigatePath
+                  ? () => openLastSetActivity('lesson')
+                  : undefined
+              }
               onRecordLecture={onRecordLecture}
               onOpenStudyHub={onNavigateToStudyHub}
             />
