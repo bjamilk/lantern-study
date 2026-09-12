@@ -125,6 +125,11 @@ export async function saveGeneratedDeck(input: SaveGeneratedDeckInput): Promise<
     deckId: input.deckId,
     courseId: input.courseId,
     topicId: input.topicId,
+    // The set the generation was opened from. Omitted here, `writeDeck` had
+    // nothing to forward and a deck generated from a note INSIDE a study set
+    // landed in the global library — and, because the retry reads this same
+    // record, "Save to library" could not file it either.
+    ...(input.studySetId !== undefined ? { studySetId: input.studySetId } : {}),
     cards: input.cards,
   };
   // Recorded BEFORE the attempt: if the process dies between here and the
@@ -190,6 +195,11 @@ export async function retrySaveJob(jobId: string): Promise<JobArtifactRef | null
   const payload = jobs.pendingSaveFor(jobId);
   if (!payload) return null;
 
+  // Said out loud before the request leaves: a retry that fails identically
+  // writes the same status and the same message, so without this the sheet was
+  // byte-for-byte unchanged and the button read as dead.
+  jobs.beginSaveAttempt(jobId);
+
   try {
     const saved =
       payload.kind === 'deck' ? await writeDeck(jobId, payload) : await writeTest(jobId, payload);
@@ -247,6 +257,18 @@ const asSaveError = (error: unknown): Error => {
   return new Error(COULD_NOT_SAVE);
 };
 
+/**
+ * A nullable foreign key as the API's validators define it: a UUID, or null.
+ *
+ * The empty string is neither. A screen that passes a route param straight
+ * through sends `courseId: ''` for "no course", and the server's
+ * `optional({ values: 'null' })` rule does NOT skip that — it runs `isUUID` on
+ * it and answers 400. So "no id" is normalised to null on the one path that
+ * builds the request, rather than trusted at every caller.
+ */
+const refId = (id: string | null | undefined): string | null =>
+  typeof id === 'string' && id.trim() ? id.trim() : null;
+
 /** The one request that saves a generated deck, and its local landing. */
 async function writeDeck(
   jobId: string,
@@ -257,12 +279,16 @@ async function writeDeck(
   // sync queue is what put empty decks in the library.
   const response = await createDeckWithCards({
     clientKey: jobId,
-    deckId: payload.deckId,
+    // Only an id the server issued: a `temp_…` draft deck is refused outright
+    // ("deckId must be a saved deck id") and that 400 loses the whole save.
+    ...(isPersistedId(payload.deckId) ? { deckId: payload.deckId } : {}),
     name: payload.deckName.slice(0, 80),
-    description: payload.description,
-    ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
-    ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
-    ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
+    // The server's `optional()` on description skips undefined only; null is a
+    // 400 that reaches the student as the bare words "Validation Error".
+    ...(payload.description ? { description: payload.description } : {}),
+    ...(payload.courseId !== undefined ? { courseId: refId(payload.courseId) } : {}),
+    ...(payload.studySetId !== undefined ? { studySetId: refId(payload.studySetId) } : {}),
+    ...(payload.topicId !== undefined ? { topicId: refId(payload.topicId) } : {}),
     cards: payload.cards,
   }).catch((error: unknown) => {
     throw asSaveError(error);
@@ -281,15 +307,24 @@ async function writeDeck(
   // number the student is shown is of cards that exist.
   const saved = rawCards.filter((card) => isPersistedId((card as { id?: string })?.id)).length;
 
+  // Whichever deck the request actually targeted: the existing one only when
+  // its id was good enough to send, otherwise the one the server just minted.
+  const targetedExisting = isPersistedId(payload.deckId);
+  const resolvedDeckId = targetedExisting
+    ? (payload.deckId as string)
+    : typeof rawDeck?.id === 'string'
+      ? rawDeck.id
+      : '';
+
   const plan = planDeckSave({
     requested: payload.cards.length,
     saved,
     // An existing deck is the student's own and is not judged by this run.
-    deckId: payload.deckId ?? (typeof rawDeck?.id === 'string' ? rawDeck.id : ''),
+    deckId: resolvedDeckId,
   });
   if (plan.action === 'rollback') throw new Error(plan.reason);
 
-  const deckId = payload.deckId ?? (rawDeck?.id as string);
+  const deckId = resolvedDeckId;
   const deck: Deck = {
     id: deckId,
     name: (rawDeck?.name as string) || payload.deckName,

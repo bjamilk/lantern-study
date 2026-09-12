@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_ESSAY_CRITERIA,
   ESSAY_DISCLAIMER,

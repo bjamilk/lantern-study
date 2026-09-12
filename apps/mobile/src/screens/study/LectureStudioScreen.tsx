@@ -16,7 +16,7 @@ import {
   isLectureNote,
   latestLectureTranscript,
   lectureStudioPriceLine,
-  materialsForCourse,
+  studioMaterials,
   newLectureNoteTitle,
   resolveLectureStudioNote,
   studySetNotePayload,
@@ -75,7 +75,10 @@ export function LectureStudioScreen({ navigation, route }: Props) {
   const discardRecording = useLectureRecordingStore((s) => s.discard);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const courseNotes = useMemo(
+    () => studioMaterials(notes, { studySetId, courseId }),
+    [notes, courseId, studySetId]
+  );
   const lectures = useMemo(() => courseNotes.filter(isLectureNote), [courseNotes]);
   const decision = useMemo(
     () =>

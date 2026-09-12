@@ -3,6 +3,8 @@
  *
  * A set can sit under a course later. Creating one does not require a course.
  */
+import { materialsForCourse } from './courseWorkspace';
+
 export const STUDY_SET_TITLE_MAX = 80;
 export const STUDY_SET_TITLE_MIN = 1;
 export const STUDY_SET_DESCRIPTION_MAX = 280;
@@ -32,6 +34,29 @@ export function materialsForStudySet<
   T extends { studySetId?: string | null; study_set_id?: string | null },
 >(items: readonly T[], studySetId: string): T[] {
   return items.filter((item) => filedStudySetId(item) === studySetId);
+}
+
+/**
+ * Scope a studio's materials: a set when we have one, else a course, else nothing.
+ *
+ * Studios reached from a set with no course used to call
+ * `materialsForCourse(items, '')`, which matches nothing because unfiled items
+ * report a null course id — the set's materials vanished.
+ */
+export function studioMaterials<
+  T extends {
+    studySetId?: string | null;
+    study_set_id?: string | null;
+    courseId?: string | null;
+    course_id?: string | null;
+  },
+>(
+  items: readonly T[],
+  scope: { studySetId?: string | null; courseId?: string | null }
+): T[] {
+  if (scope.studySetId) return materialsForStudySet(items, scope.studySetId);
+  if (scope.courseId) return materialsForCourse(items, scope.courseId);
+  return [];
 }
 
 export function testsFiledInStudySet<

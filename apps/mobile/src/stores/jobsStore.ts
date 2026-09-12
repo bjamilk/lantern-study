@@ -280,6 +280,8 @@ interface JobsState {
   recordPendingSave: (id: string, payload: PendingSave) => void;
   /** The generated material this job is still holding, if any. */
   pendingSaveFor: (id: string) => PendingSave | null;
+  /** A save attempt has left the device. Makes the sheet say so. */
+  beginSaveAttempt: (id: string) => void;
   /** A save landed: record it, drop the held material, finish the job. */
   settleSaved: (id: string, ref: JobArtifactRef, count: number) => void;
   /** A save failed: the job fails, and the material is KEPT for a re-save. */
@@ -665,7 +667,15 @@ export const useJobsStore = create<JobsState>((set, get) => {
       settle(id, patch);
     },
 
+    beginSaveAttempt: (id: string) => {
+      update((jobs) => patchJob(jobs, id, { savingNow: true }, Date.now()));
+    },
+
     settleSaveFailed: (id: string, message: string) => {
+      // `savingNow: false` is the only thing that changes when a retry fails
+      // the same way twice, and it is what lets the sheet stop saying "Saving…"
+      // — without it the button looked dead on every tap after the first.
+      update((jobs) => patchJob(jobs, id, { savingNow: false }, Date.now()));
       settle(id, { status: 'failed', error: message });
     },
 

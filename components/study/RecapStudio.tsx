@@ -43,6 +43,8 @@ interface RecapStudioProps {
   notes: StudyNote[];
   selectedNote: StudyNote | null;
   turning?: boolean;
+  /** Targets already made from a note, so the menu can tick them. */
+  turnIntoExisting?: (noteId: string) => Partial<Record<TurnIntoTargetId, boolean>>;
   onTurnInto: (target: TurnIntoTargetId) => void;
   onNoteReady: (noteId: string) => Promise<void>;
 }
@@ -65,6 +67,7 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
   notes,
   selectedNote,
   turning,
+  turnIntoExisting,
   onTurnInto,
   onNoteReady,
 }) => {
@@ -365,7 +368,7 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
           {progress.current} of {progress.total} · {session.length.toUpperCase()}
         </span>
         <div className="ml-auto flex flex-wrap gap-2">
-          <TurnIntoMenu disabled={turning} onSelect={onTurnInto} />
+          <TurnIntoMenu disabled={turning} existing={session.sourceNoteId ? turnIntoExisting?.(session.sourceNoteId) : undefined} onSelect={onTurnInto} />
           <Button
             size="sm"
             variant="secondary"

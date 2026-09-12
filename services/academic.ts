@@ -208,6 +208,8 @@ export const updateStudySet = (
     folderId?: string | null;
     visibility?: 'private' | 'public';
     mode?: 'cram' | 'standard' | 'comprehensive';
+    /** "YYYY-MM-DD", or null to clear it. */
+    examDate?: string | null;
   }
 ) =>
   academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {

@@ -34,6 +34,8 @@ interface NotesStudioProps {
   note: StudyNote;
   theme: 'light' | 'dark';
   turning?: boolean;
+  /** Targets already made from a note, so the menu can tick them. */
+  turnIntoExisting?: (noteId: string) => Partial<Record<TurnIntoTargetId, boolean>>;
   sourceAttachment?: NoteAttachment | null;
   onTurnInto: (target: TurnIntoTargetId) => void;
   onSmartNote: (
@@ -85,6 +87,7 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
   note,
   theme,
   turning,
+  turnIntoExisting,
   sourceAttachment,
   onTurnInto,
   onSmartNote,
@@ -292,7 +295,7 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
         <Button size="sm" onClick={() => void writeNotes()} loading={writing} disabled={writing}>
           Write notes · {writeCost}
         </Button>
-        <TurnIntoMenu disabled={turning} onSelect={onTurnInto} />
+        <TurnIntoMenu disabled={turning} existing={turnIntoExisting?.(note.id)} onSelect={onTurnInto} />
         <button
           type="button"
           onClick={() => printNote(title, body)}

@@ -798,3 +798,59 @@ describe('planServerSettle records the push audit', () => {
     ).toBeNull();
   });
 });
+
+/**
+ * "Save to library" that changes nothing on screen.
+ *
+ * Device run 2026-09-11: the sheet read "Ready to save / Validation Error /
+ * Nothing was lost — saving it again is free", and the green button did nothing
+ * on three taps. It was not unwired. The retry re-sent a payload the server
+ * refuses deterministically, and `settleSaveFailed` then wrote the SAME status
+ * and the SAME message — so the sheet re-rendered byte-for-byte identically and
+ * the tap was invisible. `savingNow` is the state that has to move.
+ */
+describe('a save attempt in flight', () => {
+  const deckPending = {
+    kind: 'deck' as const,
+    deckName: 'From: SDOH',
+    studySetId: 'set-1',
+    cards: [{ front: 'q', back: 'a' }],
+  };
+  const ref = { type: 'deck' as const, id: 'd1', name: 'From: SDOH' };
+
+  it('is distinguishable from the state it was tapped in', () => {
+    const failed = [job({ status: 'failed', error: 'Validation Error', pendingSave: deckPending })];
+    const trying = patchJob(failed, 'j1', { savingNow: true }, NOW + 1_000);
+
+    expect(trying[0].savingNow).toBe(true);
+    // Still the student's only copy until the write lands.
+    expect(trying[0].pendingSave).toBeDefined();
+    expect(hasUnsavedGeneration(trying[0])).toBe(true);
+    expect(planRetry(trying[0])).toBe('save');
+  });
+
+  it('is cleared when the save lands, along with the held material', () => {
+    const trying = [
+      job({ status: 'failed', error: 'Validation Error', pendingSave: deckPending, savingNow: true }),
+    ];
+    const settled = patchJob(trying, 'j1', savedSettlePatch(trying[0], ref, 9), NOW + 2_000);
+
+    expect(settled[0].savingNow).toBe(false);
+    expect(settled[0].pendingSave).toBeUndefined();
+    expect(settled[0].status).toBe('done');
+    // Nothing left to re-save: the button is gone, not merely idle.
+    expect(hasUnsavedGeneration(settled[0])).toBe(false);
+    expect(planRetry(settled[0])).toBe('none');
+  });
+
+  it('does not survive the process that was making it', () => {
+    // A launch that read back "Saving…" would show a spinner with no request
+    // behind it and no way back to the button.
+    const raw = JSON.stringify([job({ status: 'failed', pendingSave: deckPending, savingNow: true })]);
+    const restored = parseJobs(raw);
+
+    expect(restored[0].savingNow).toBe(false);
+    expect(planRetry(restored[0])).toBe('save');
+    expect(jobsAwaitingSave(restored)).toHaveLength(1);
+  });
+});

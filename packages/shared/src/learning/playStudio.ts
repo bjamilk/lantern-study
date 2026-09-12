@@ -6,6 +6,8 @@
  * start Play.
  */
 
+import type { WorkspaceScope } from './courseWorkspace';
+
 export type PlayModeId = 'match' | 'speed' | 'define';
 
 export interface PlayMode {
@@ -40,7 +42,17 @@ export const PLAY_ROUND_CAP = 8;
 export const PLAY_SECONDS = 45;
 export const PLAY_OPTION_CAP = 4;
 
-export const PLAY_EMPTY_COPY = 'File a deck in this course first.';
+/** Scope-aware empty state: a set room must not send a student to "this course". */
+export function playEmptyCopy(scope: WorkspaceScope = 'course'): string {
+  return `File a deck in this ${scope} first.`;
+}
+
+/** The Play hub tagline, with its container named correctly. */
+export function playTaglineCopy(scope: WorkspaceScope = 'course'): string {
+  return `Games from this ${scope}’s cards. Group duels stay in Chat.`;
+}
+
+export const PLAY_EMPTY_COPY = playEmptyCopy('course');
 export const PLAY_THIN_COPY = 'This deck needs at least two term-and-definition cards.';
 export const PLAY_REVIEW_COPY = 'Review missed cards';
 
@@ -93,8 +105,11 @@ export function playModeBlocker(cards: readonly PlayCard[], minCards = 2): PlayB
   return cards.length < minCards ? 'thin_deck' : null;
 }
 
-export function playBlockerCopy(blocker: PlayBlocker | null): string | null {
-  if (blocker === 'no_deck') return PLAY_EMPTY_COPY;
+export function playBlockerCopy(
+  blocker: PlayBlocker | null,
+  scope: WorkspaceScope = 'course'
+): string | null {
+  if (blocker === 'no_deck') return playEmptyCopy(scope);
   if (blocker === 'thin_deck') return PLAY_THIN_COPY;
   return null;
 }

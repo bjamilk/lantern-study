@@ -94,6 +94,18 @@ export const isPersistedId = (id: string | undefined | null): boolean =>
   typeof id === 'string' && id.length > 0 && !id.startsWith('temp_');
 
 /**
+ * A nullable foreign key as the API's validators define it: a UUID, or null.
+ *
+ * The empty string is neither. A screen that passes a route param straight
+ * through sends `courseId: ''` for "no course", and the server's
+ * `optional({ values: 'null' })` rule does NOT skip that — it runs `isUUID` on
+ * it and answers 400 "Validation Error". So "no id" is normalised to null here,
+ * on the one path that builds the request, rather than trusted at every caller.
+ */
+const refId = (id: string | null | undefined): string | null =>
+  typeof id === 'string' && id.trim() ? id.trim() : null;
+
+/**
  * Persist a generation's cards, in one request.
  *
  * @throws when the save did not land. Nothing local has been written by then,
@@ -117,6 +129,12 @@ export async function saveGeneratedDeck(input: SaveGeneratedDeckInput): Promise<
     deckId: input.deckId,
     courseId: input.courseId,
     topicId: input.topicId,
+    // The set the door was opened from. Dropping it here is how a deck
+    // generated from a note INSIDE a study set landed in the global library
+    // instead: `writeDeck` forwards `studySetId` faithfully, but the payload it
+    // reads never carried one, so the set's Cards grid stayed empty after a
+    // reload. A retry reads this same record, so the omission survived it too.
+    ...(input.studySetId !== undefined ? { studySetId: input.studySetId } : {}),
     cards: input.cards,
   };
   // Recorded BEFORE the attempt: if the tab dies between here and the response,
@@ -206,12 +224,15 @@ async function writeDeck(
     // The client job id IS the idempotency key: a retried save replays the
     // first write instead of minting a second deck.
     clientKey: jobId,
-    ...(payload.deckId ? { deckId: payload.deckId } : {}),
+    // Only an id the server issued. A `temp_…` draft deck is refused outright
+    // ("deckId must be a saved deck id"), and sending it loses the whole save.
+    ...(isPersistedId(payload.deckId) ? { deckId: payload.deckId } : {}),
     name: payload.deckName.slice(0, 80),
-    description: payload.description,
-    ...(payload.courseId !== undefined ? { courseId: payload.courseId } : {}),
-    ...(payload.studySetId !== undefined ? { studySetId: payload.studySetId } : {}),
-    ...(payload.topicId !== undefined ? { topicId: payload.topicId } : {}),
+    // `optional()` on the server skips undefined only, so null is a 400.
+    ...(payload.description ? { description: payload.description } : {}),
+    ...(payload.courseId !== undefined ? { courseId: refId(payload.courseId) } : {}),
+    ...(payload.studySetId !== undefined ? { studySetId: refId(payload.studySetId) } : {}),
+    ...(payload.topicId !== undefined ? { topicId: refId(payload.topicId) } : {}),
     cards: payload.cards.map((card) => ({
       type: 'BASIC' as const,
       front: card.front,
@@ -234,7 +255,14 @@ async function writeDeck(
   // number the student is shown is of cards that exist.
   const saved = rawCards.filter((card) => isPersistedId((card as { id?: string })?.id)).length;
 
-  const deckId = payload.deckId || (typeof rawDeck?.id === 'string' ? rawDeck.id : '');
+  // Whichever deck the request actually targeted: the existing one only when
+  // its id was good enough to send, otherwise the one the server just minted.
+  const targetedExisting = isPersistedId(payload.deckId);
+  const deckId = targetedExisting
+    ? (payload.deckId as string)
+    : typeof rawDeck?.id === 'string'
+      ? rawDeck.id
+      : '';
   if (!isPersistedId(deckId)) throw new Error(COULD_NOT_SAVE);
   if (saved <= 0) {
     throw new Error("We couldn't save the cards. Check your connection and try again.");
@@ -245,7 +273,7 @@ async function writeDeck(
   // Only a response is written locally, and only after it landed. The deck and
   // its cards exist server-side, so nothing is optimistic and nothing queues.
   const store = useFlashcardStore.getState();
-  if (rawDeck && !payload.deckId) {
+  if (rawDeck && !targetedExisting) {
     const deck = mapDeckFromApi(rawDeck);
     store.updateDecks((prev) => (prev.some((d) => d.id === deck.id) ? prev : [...prev, deck]));
   }

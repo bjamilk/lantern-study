@@ -146,6 +146,8 @@ export const STUDY_SET_HOME_PRIMARY_TOOL_IDS: readonly StudySetHomeToolId[] = [
   'recap',
   'lecture',
   'play',
+  'plan',
+  'essay',
 ];
 
 export type StudySetRecommendedKind =

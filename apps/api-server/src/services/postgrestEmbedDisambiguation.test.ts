@@ -414,6 +414,9 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/librarySearch.ts::column': 1,
       'services/moderation.ts::columns': 2,
       'services/schemaCapabilities.ts::column': 1,
+      // studySets' writeWithExamColumn: one write run twice, with and without
+      // exam_date, from SET_COLUMNS / SET_COLUMNS_NO_EXAM in the same file.
+      'services/studySets.ts::columns': 4,
       'services/supabase.ts::columns': 7,
       'services/supabase.ts::select': 4,
     });

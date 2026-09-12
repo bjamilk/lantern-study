@@ -4886,6 +4886,8 @@ export function createApiEndpoints(client: ApiClient) {
         folderId?: string | null;
         visibility?: "private" | "public";
         mode?: "cram" | "standard" | "comprehensive";
+        /** "YYYY-MM-DD", or null to clear it. */
+        examDate?: string | null;
       }
     ) =>
       apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {

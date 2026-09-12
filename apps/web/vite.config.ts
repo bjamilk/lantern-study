@@ -83,9 +83,13 @@ export default defineConfig(({ mode }) => {
       // Without an explicit include, vitest walks the whole monorepo and collects
       // the api-server's Jest suites too, which then fail with "describe is not
       // defined" because they rely on Jest globals. Scope it to the files that
-      // actually import from vitest so `npm test -w @lantern/web` is meaningful.
+      // this project owns so `npm test -w @lantern/web` is meaningful.
       // Paths are relative to `root` above, which is the repo root.
       test: {
+        // packages/shared runs jest, so its suites use bare `describe`/`it`
+        // rather than importing them from vitest. Injecting the globals lets
+        // the same files pass under both runners.
+        globals: true,
         include: [
           'apps/web/src/**/*.test.{ts,tsx}',
           'components/**/*.test.{ts,tsx}',

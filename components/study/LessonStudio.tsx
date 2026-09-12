@@ -45,6 +45,8 @@ interface LessonStudioProps {
   notes: StudyNote[];
   selectedNote: StudyNote | null;
   turning?: boolean;
+  /** Targets already made from a note, so the menu can tick them. */
+  turnIntoExisting?: (noteId: string) => Partial<Record<TurnIntoTargetId, boolean>>;
   onTurnInto: (target: TurnIntoTargetId) => void;
   onOpenQuiz: (items: ReturnType<typeof quizItemsFromLesson>) => void;
   onNoteReady: (noteId: string) => Promise<void>;
@@ -92,6 +94,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
   notes,
   selectedNote,
   turning,
+  turnIntoExisting,
   onTurnInto,
   onOpenQuiz,
   onNoteReady,
@@ -399,7 +402,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
               Turn into quiz
             </Button>
           ) : null}
-          <TurnIntoMenu disabled={turning} onSelect={onTurnInto} />
+          <TurnIntoMenu disabled={turning} existing={session.sourceNoteId ? turnIntoExisting?.(session.sourceNoteId) : undefined} onSelect={onTurnInto} />
           <Button
             size="sm"
             variant="secondary"

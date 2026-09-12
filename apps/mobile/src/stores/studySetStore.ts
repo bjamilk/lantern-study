@@ -17,7 +17,10 @@ interface StudySetState {
   picker: boolean;
   loadSets: (options?: { force?: boolean }) => Promise<StudySet[]>;
   createSet: (input: { title: string; courseId?: string | null }) => Promise<StudySet>;
-  updateSet: (setId: string, patch: { title?: string; courseId?: string | null }) => Promise<StudySet>;
+  updateSet: (
+    setId: string,
+    patch: { title?: string; courseId?: string | null; examDate?: string | null }
+  ) => Promise<StudySet>;
   removeSet: (setId: string) => Promise<void>;
   resolveSet: (setId: string | null | undefined) => StudySet | null;
   touchOpened: (setId: string) => void;

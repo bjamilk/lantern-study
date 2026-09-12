@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   LESSON_PAGE_CAP,
   applyLessonCommand,

@@ -1,13 +1,14 @@
-import { describe, expect, it } from 'vitest';
 import {
   isValidStudySetTitle,
   materialsForStudySet,
   normalizeStudySetTitle,
+  studioMaterials,
   pickOpenStudySetId,
   studySetLabel,
   studySetNotePayload,
   testsFiledInStudySet,
 } from './studySets';
+import { materialsForCourse } from './courseWorkspace';
 import {
   DEFAULT_QUIZ_TYPE_COUNTS,
   STUDY_SET_HOME_PRIMARY_TOOL_IDS,
@@ -98,6 +99,8 @@ describe('study sets', () => {
       'recap',
       'lecture',
       'play',
+      'plan',
+      'essay',
     ]);
     expect(STUDY_SET_RECOMMENDED_CARDS.filter((card) => card.primary).map((card) => card.id)).toEqual([
       'ask',
@@ -113,5 +116,34 @@ describe('study sets', () => {
     );
     expect(quizTypeCountTotal(DEFAULT_QUIZ_TYPE_COUNTS)).toBe(20);
     expect(quizTypeCountTotal({ ...DEFAULT_QUIZ_TYPE_COUNTS, true_false: 5 })).toBe(25);
+  });
+  describe('studioMaterials', () => {
+    const unfiled = [
+      { id: 'n1', studySetId: 'set-1', courseId: null },
+      { id: 'n2', studySetId: 'set-2', courseId: null },
+    ];
+    const filed = [
+      { id: 'n3', studySetId: null, courseId: 'course-1' },
+      { id: 'n4', studySetId: null, courseId: 'course-2' },
+    ];
+
+    it('scopes to the set when the course id is empty', () => {
+      expect(studioMaterials(unfiled, { studySetId: 'set-1', courseId: '' }).map((n) => n.id)).toEqual(
+        ['n1']
+      );
+    });
+
+    it('scopes to the course when only a course id is given', () => {
+      expect(studioMaterials(filed, { courseId: 'course-1' }).map((n) => n.id)).toEqual(['n3']);
+    });
+
+    it('documents the trap: a course filter with an empty id drops unfiled items', () => {
+      expect(materialsForCourse(unfiled, '')).toEqual([]);
+    });
+
+    it('returns nothing when neither scope is known', () => {
+      expect(studioMaterials(unfiled, { studySetId: null, courseId: '' })).toEqual([]);
+      expect(studioMaterials(filed, {})).toEqual([]);
+    });
   });
 });

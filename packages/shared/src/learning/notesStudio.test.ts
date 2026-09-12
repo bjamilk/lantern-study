@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   MIN_HIGHLIGHT_CHARS,
   NOTES_STUDIO_DEPTHS,

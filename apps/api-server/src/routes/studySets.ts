@@ -43,6 +43,10 @@ export const validateStudySetPatch = [
   body('visibility').optional().isIn(['private', 'public']),
   body('mode').optional().isIn(['cram', 'standard', 'comprehensive']),
   body('coverPath').optional({ values: 'null' }).isString(),
+  body('examDate')
+    .optional({ values: 'null' })
+    .matches(/^\d{4}-\d{2}-\d{2}$/)
+    .withMessage('examDate must be YYYY-MM-DD or null'),
 ];
 
 export const validateStudySetId = [param('setId').isUUID().withMessage('setId must be a valid UUID')];

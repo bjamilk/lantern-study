@@ -4,6 +4,10 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   CALENDAR_HOURS_CHOICES,
+  EXAM_DATE_UNSUPPORTED_COPY,
+  examDateSaveOutcome,
+  playEmptyCopy,
+  scopeNoun,
   DEFAULT_HOURS_PER_WEEK,
   WEEKDAY_LABELS,
   acceptStudyCalendar,
@@ -16,12 +20,13 @@ import {
   generateStudyCalendar,
   isCalendarNote,
   markCalendarSessionDone,
-  materialsForCourse,
   newCalendarNoteTitle,
   studySetNotePayload,
   parseCalendarNoteBody,
   resolveCalendarStudioNote,
+  resolveExamDate,
   sessionsOnDate,
+  studioMaterials,
   studyCalendarBlocker,
   type StudyCalendarPlan,
   type StudyCalendarSession,
@@ -34,6 +39,7 @@ import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useToastStore } from '../../stores/toastStore';
+import { useStudySetStore } from '../../stores/studySetStore';
 import {
   getCourseTopics,
   getMyActiveCourses,
@@ -65,13 +71,26 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   const decks = useFlashcardStore((s) => s.decks);
   const showToast = useToastStore((s) => s.showToast);
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const studySets = useStudySetStore((s) => s.sets);
+  const updateStudySet = useStudySetStore((s) => s.updateSet);
+  const loadStudySets = useStudySetStore((s) => s.loadSets);
+  const studySet = studySetId ? studySets.find((row) => row.id === studySetId) ?? null : null;
+
+  // Scope by the set first: a course-less set's materials report a null course
+  // id, so `materialsForCourse(notes, undefined)` matched nothing.
+  const courseNotes = useMemo(
+    () => studioMaterials(notes, { studySetId, courseId }),
+    [notes, courseId, studySetId]
+  );
   const calendars = useMemo(() => courseNotes.filter(isCalendarNote), [courseNotes]);
   const studyNotes = useMemo(
     () => courseNotes.filter((note) => !isCalendarNote(note)),
     [courseNotes]
   );
-  const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
+  const courseDecks = useMemo(
+    () => studioMaterials(decks, { studySetId, courseId }),
+    [decks, courseId, studySetId]
+  );
 
   const [enrolment, setEnrolment] = useState<UserCourse | null>(null);
   const [topics, setTopics] = useState<CourseTopic[]>([]);
@@ -89,19 +108,33 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     month: todayMonth.getMonth(),
   });
 
-  const examDate = enrolment?.examDate ?? null;
+  const examDate = resolveExamDate(studySet, enrolment);
   const label = courseLabel || (enrolment ? enrolment.course.code : 'Course');
 
   useEffect(() => {
+    if (!courseId) {
+      setEnrolment(null);
+      setTopics([]);
+      return;
+    }
     void getMyActiveCourses().then((rows) => {
       const row = rows.find((item) => item.course.id === courseId) ?? null;
       setEnrolment(row);
-      setExamDraft(row?.examDate || '');
     });
     void getCourseTopics(courseId)
       .then((rows) => setTopics(Array.isArray(rows) ? rows : []))
       .catch(() => setTopics([]));
   }, [courseId]);
+
+  useEffect(() => {
+    setExamDraft(examDate || '');
+  }, [examDate]);
+
+  // The screen can be entered directly (deep link, contextual bar), so the set
+  // list is not guaranteed to be loaded yet.
+  useEffect(() => {
+    if (studySetId) void loadStudySets().catch(() => undefined);
+  }, [loadStudySets, studySetId]);
 
   useEffect(() => {
     const decision = resolveCalendarStudioNote({
@@ -154,7 +187,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     if (session.kind === 'cards') {
       const deck = courseDecks.find((row) => row.id === session.targetId) || courseDecks[0];
       if (!deck) {
-        showToast('File a deck in this course first.', 'info');
+        showToast(playEmptyCopy(scopeNoun(studySetId, courseId)), 'info');
         return;
       }
       navigation.navigate('CramSession', { deckId: deck.id, deckName: deck.name });
@@ -175,6 +208,24 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     }
     setSavingExam(true);
     try {
+      // The set is the primary container, so a set-scoped plan writes the set's
+      // own date. A course room has no set and writes the enrolment, which is
+      // what exam reminders read.
+      if (studySetId) {
+        const updated = await updateStudySet(studySetId, { examDate: value || null });
+        // A 200 is not evidence: the production API can answer without storing
+        // the date, so the returned row has to echo it back.
+        if (examDateSaveOutcome(value || null, updated) === 'unsupported') {
+          showToast(EXAM_DATE_UNSUPPORTED_COPY, 'info');
+          return;
+        }
+        showToast(value ? 'Exam date saved.' : 'Exam date cleared.', 'success');
+        return;
+      }
+      if (!courseId) {
+        showToast('Open this plan from a study set or a course to save a date.', 'info');
+        return;
+      }
       const row = await setMyCourseExamDate(courseId, value || null, enrolment?.academicYear);
       setEnrolment(row);
       showToast(value ? 'Exam date saved. Reminders still use this date.' : 'Exam date cleared.', 'success');
@@ -451,7 +502,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
 
         {plan && courseDecks.length === 0 ? (
           <T.Caption tone="secondary">
-            File a deck in this course so card sessions can open it. Quiz sessions still run from notes.
+            {`File a deck in this ${scopeNoun(studySetId, courseId)} so card sessions can open it. Quiz sessions still run from notes.`}
           </T.Caption>
         ) : null}
       </ScrollView>

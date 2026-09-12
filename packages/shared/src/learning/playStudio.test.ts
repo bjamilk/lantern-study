@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   PLAY_EMPTY_COPY,
   PLAY_MODES,
@@ -8,6 +7,8 @@ import {
   buildPlayQuestions,
   expirePlaySession,
   playBlockerCopy,
+  playEmptyCopy,
+  playTaglineCopy,
   playModeBlocker,
   playStudioBlocker,
   playableCards,
@@ -79,5 +80,19 @@ describe('play studio', () => {
     expect(playScoreLine({ ...expired, correctCount: 2, questions: session!.questions })).toMatch(
       /2 of /
     );
+  });
+});
+
+describe('play copy scope', () => {
+  it('names the set when the room is a study set', () => {
+    expect(playEmptyCopy('set')).toBe('File a deck in this set first.');
+    expect(playBlockerCopy('no_deck', 'set')).toBe('File a deck in this set first.');
+    expect(playTaglineCopy('set')).toContain('this set\u2019s cards');
+  });
+
+  it('keeps the course wording as the default', () => {
+    expect(playEmptyCopy()).toBe(PLAY_EMPTY_COPY);
+    expect(playBlockerCopy('no_deck')).toBe(PLAY_EMPTY_COPY);
+    expect(playTaglineCopy('course')).toContain('this course\u2019s cards');
   });
 });

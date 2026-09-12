@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   ADAPTIVE_CONFIDENCE_CHOICES,
   ADAPTIVE_PAUSE_AFTER_MISSES,

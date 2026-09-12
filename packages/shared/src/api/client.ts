@@ -210,7 +210,21 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         code?: string;
         suspendedUntil?: string;
       };
-      const genericErrors = new Set(['Error', 'ApiError', 'Request failed']);
+      // `error` is preferred over `message` because it is usually the sentence
+      // written for a student. These are the exceptions: labels that name a
+      // CLASS of failure and say nothing about this one, while `message` holds
+      // the actual reason. 'Validation Error' is what every express-validator
+      // rejection sets, so a save refused for one bad field reached the student
+      // as the bare words "Validation Error" — and the sheet's "Save to
+      // library" then re-failed identically, which is how a fixable 400 looked
+      // like a dead button.
+      const genericErrors = new Set([
+        'Error',
+        'ApiError',
+        'Request failed',
+        'Validation Error',
+        'Bad Request',
+      ]);
       const detail =
         errBody.message && (!errBody.error || genericErrors.has(errBody.error))
           ? errBody.message

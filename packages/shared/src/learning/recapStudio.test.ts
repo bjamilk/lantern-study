@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   RECAP_SEGMENT_CAPS,
   applyRecapCommand,

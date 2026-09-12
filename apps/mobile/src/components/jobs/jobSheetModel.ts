@@ -394,6 +394,23 @@ export const jobSheetState = (
   // one: the cards or questions are on this device, and one button puts them
   // in the library at no further cost.
   if (hasUnsavedGeneration(job) && (job.status === 'failed' || job.status === 'lost')) {
+    // An attempt in flight is shown as one. The button used to look dead
+    // because a retry that failed the same way rendered the identical sheet.
+    if (job.savingNow) {
+      return {
+        headline: 'Saving to your library…',
+        detail: 'Nothing was lost, and this costs no credits.',
+        stages,
+        stageIndex: -1,
+        percent: 0,
+        elapsedLabel,
+        overBudget: false,
+        waiting: true,
+        actions: ['dismiss'],
+        tone: 'running',
+        pushNote: describeJobPush(job.pushAudit),
+      };
+    }
     return {
       headline: 'Ready to save',
       detail: job.error

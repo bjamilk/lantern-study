@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
 import {
   WORKSPACE_ACTIVITIES,
   TURN_INTO_TARGETS,
+  TURN_INTO_COST,
+  formatTurnIntoCost,
   courseWorkspaceLabel,
   isLectureNote,
   isWalkableAttachment,
@@ -9,6 +10,8 @@ import {
   materialsForCourse,
   testsFiledInCourse,
   upsertWorkspaceRecent,
+  scopeNoun,
+  workspaceActivityPromise,
 } from './courseWorkspace';
 
 describe('course workspace helpers', () => {
@@ -42,8 +45,39 @@ describe('course workspace helpers', () => {
     ]);
   });
 
-  it('offers cards and a practice test as Turn into targets', () => {
-    expect(TURN_INTO_TARGETS.map((t) => t.id)).toEqual(['cards', 'test']);
+  it('offers six Turn into targets that all land on a real activity', () => {
+    expect(TURN_INTO_TARGETS.map((t) => t.id)).toEqual([
+      'cards',
+      'test',
+      'lesson',
+      'recap',
+      'essay',
+      'play',
+    ]);
+    const activityIds = new Set(WORKSPACE_ACTIVITIES.map((a) => a.id));
+    for (const target of TURN_INTO_TARGETS) {
+      expect(activityIds.has(target.id)).toBe(true);
+    }
+  });
+
+  it('gives every Turn into target an icon both clients draw', () => {
+    const icons = new Set(WORKSPACE_ACTIVITIES.map((a) => a.icon));
+    for (const target of TURN_INTO_TARGETS) {
+      expect(icons.has(target.icon)).toBe(true);
+    }
+  });
+
+  it('prices every Turn into target, and play for free', () => {
+    for (const target of TURN_INTO_TARGETS) {
+      expect(TURN_INTO_COST[target.id]).toBeGreaterThanOrEqual(0);
+      expect(typeof TURN_INTO_COST[target.id]).toBe('number');
+    }
+    expect(Object.keys(TURN_INTO_COST).sort()).toEqual(
+      TURN_INTO_TARGETS.map((t) => t.id).sort()
+    );
+    expect(TURN_INTO_COST.play).toBe(0);
+    expect(formatTurnIntoCost('play')).toBe('no AI use');
+    expect(formatTurnIntoCost('cards')).toBe('1 AI use');
   });
 
   it('keeps recents newest-first, unique, and capped', () => {
@@ -113,5 +147,22 @@ describe('course workspace helpers', () => {
     expect(isWalkableAttachment({ id: 'a', type: 'pdf' })).toBe(true);
     expect(isWalkableAttachment({ id: 'a', type: 'photos' })).toBe(false);
     expect(isWalkableAttachment({ type: 'pdf' })).toBe(false);
+  });
+});
+
+describe('scopeNoun', () => {
+  it('names a set when one is open, and the course otherwise', () => {
+    expect(scopeNoun('set-1', 'course-1')).toBe('set');
+    expect(scopeNoun(null, 'course-1')).toBe('course');
+    expect(scopeNoun('   ', 'course-1')).toBe('course');
+    expect(scopeNoun(undefined, undefined)).toBe('course');
+  });
+
+  it('rewrites only the promises that name a container', () => {
+    const play = WORKSPACE_ACTIVITIES.find((item) => item.id === 'play');
+    expect(workspaceActivityPromise('play', play?.promise ?? '', 'set')).toContain('this set');
+    expect(workspaceActivityPromise('play', play?.promise ?? '', 'course')).toBe(play?.promise);
+    const quiz = WORKSPACE_ACTIVITIES.find((item) => item.id === 'quiz');
+    expect(workspaceActivityPromise('quiz', quiz?.promise ?? '', 'set')).toBe(quiz?.promise);
   });
 });

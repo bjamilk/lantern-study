@@ -7,6 +7,7 @@ import {
   currentPlayQuestion,
   expirePlaySession,
   playBlockerCopy,
+  playTaglineCopy,
   playModeBlocker,
   playScoreLine,
   playStudioBlocker,
@@ -14,6 +15,7 @@ import {
   startPlaySession,
   type PlayModeId,
   type PlaySession,
+  type WorkspaceScope,
 } from '@lantern/shared';
 import type { Deck, Flashcard } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
@@ -25,9 +27,17 @@ interface PlayStudioProps {
   flashcards: Flashcard[];
   onStartMatch: (deck: Deck) => void;
   onReviewMissed: (deck: Deck, cardIds: string[]) => void;
+  /** Which container the student is standing in, so the copy names it. */
+  scope?: WorkspaceScope;
 }
 
-export function PlayStudio({ decks, flashcards, onStartMatch, onReviewMissed }: PlayStudioProps) {
+export function PlayStudio({
+  decks,
+  flashcards,
+  onStartMatch,
+  onReviewMissed,
+  scope = 'course',
+}: PlayStudioProps) {
   const [deckId, setDeckId] = useState(decks[0]?.id || '');
   const [session, setSession] = useState<PlaySession | null>(null);
   const [remaining, setRemaining] = useState(PLAY_SECONDS);
@@ -128,11 +138,11 @@ export function PlayStudio({ decks, flashcards, onStartMatch, onReviewMissed }: 
       <div>
         <h2 className="text-heading">Play</h2>
         <p className="text-body text-lantern-text-secondary mt-1">
-          Games from this course’s cards. Group duels stay in Chat.
+          {playTaglineCopy(scope)}
         </p>
       </div>
       {hubBlocker ? (
-        <p className="text-body text-lantern-text-secondary">{playBlockerCopy(hubBlocker)}</p>
+        <p className="text-body text-lantern-text-secondary">{playBlockerCopy(hubBlocker, scope)}</p>
       ) : (
         <>
           {decks.length > 1 ? (
@@ -169,7 +179,7 @@ export function PlayStudio({ decks, flashcards, onStartMatch, onReviewMissed }: 
                   <span>
                     <span className="text-body font-semibold block">{mode.label}</span>
                     <span className="text-caption text-lantern-text-secondary">
-                      {blocked ? playBlockerCopy(blocked) : mode.promise}
+                      {blocked ? playBlockerCopy(blocked, scope) : mode.promise}
                     </span>
                   </span>
                 </button>

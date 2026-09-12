@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest';
 import { toDateOnlyLocal } from '../utils/dateOnly';
 import {
   CALENDAR_FENCE,
+  EXAM_DATE_UNSUPPORTED_COPY,
+  examDateSaveOutcome,
   DEFAULT_HOURS_PER_WEEK,
   SESSION_HARD_CAP,
   WEEKDAY_LABELS,
@@ -22,6 +23,7 @@ import {
   newCalendarNoteTitle,
   parseCalendarNoteBody,
   resolveCalendarStudioNote,
+  resolveExamDate,
   sessionMinutesForHours,
   sessionsOnDate,
   studyCalendarBlocker,
@@ -170,5 +172,46 @@ describe('study calendar', () => {
       noteId: 'a',
     });
     expect(resolveCalendarStudioNote({ calendars: [] })).toEqual({ action: 'start' });
+  });
+});
+
+describe('resolveExamDate', () => {
+  it('prefers the set date over the enrolment', () => {
+    expect(resolveExamDate({ examDate: '2026-10-09' }, { examDate: '2026-11-02' })).toBe('2026-10-09');
+  });
+
+  it('falls back to the enrolment when the set has no date', () => {
+    expect(resolveExamDate({ examDate: null }, { examDate: '2026-11-02' })).toBe('2026-11-02');
+    expect(resolveExamDate(null, { examDate: '2026-11-02' })).toBe('2026-11-02');
+    expect(resolveExamDate({ examDate: '   ' }, { examDate: '2026-11-02' })).toBe('2026-11-02');
+  });
+
+  it('returns null when neither has one', () => {
+    expect(resolveExamDate(null, null)).toBeNull();
+    expect(resolveExamDate({ examDate: null }, { examDate: null })).toBeNull();
+    expect(resolveExamDate(undefined, undefined)).toBeNull();
+  });
+});
+
+describe('examDateSaveOutcome', () => {
+  it('only reports saved when the returned set echoes the date', () => {
+    expect(examDateSaveOutcome('2026-11-02', { examDate: '2026-11-02' })).toBe('saved');
+    expect(examDateSaveOutcome(null, { examDate: null })).toBe('saved');
+    expect(examDateSaveOutcome('', { examDate: null })).toBe('saved');
+  });
+
+  it('is unsupported when the server cannot persist the date', () => {
+    expect(examDateSaveOutcome('2026-11-02', { examDate: null, examDateUnsupported: true })).toBe(
+      'unsupported'
+    );
+    expect(examDateSaveOutcome('2026-11-02', { examDate: null })).toBe('unsupported');
+    expect(examDateSaveOutcome('2026-11-02', { examDate: '2026-01-01' })).toBe('unsupported');
+    expect(examDateSaveOutcome('2026-11-02', {})).toBe('unsupported');
+    expect(examDateSaveOutcome('2026-11-02', null)).toBe('unsupported');
+    expect(examDateSaveOutcome(null, {})).toBe('unsupported');
+  });
+
+  it('states the gap in one line', () => {
+    expect(EXAM_DATE_UNSUPPORTED_COPY).toContain('not switched on yet');
   });
 });

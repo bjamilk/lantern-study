@@ -8,12 +8,15 @@ import {
   STUDY_SET_HOME_TOOLS,
   STUDY_SET_RECOMMENDED_CARDS,
   WORKSPACE_ACTIVITIES,
+  scopeNoun,
+  workspaceActivityPromise,
   notePreviewText,
   pickRecommendedTopic,
   topicIndexLabel,
   topicsFromReadingNotes,
   WORKSPACE_LATER_COPY,
   TURN_INTO_TARGETS,
+  formatTurnIntoCost,
   courseWorkspaceLabel,
   formatCourseMaterialCounts,
   hasEnoughNoteStudyContent,
@@ -33,7 +36,6 @@ import {
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
-import { AI_CREDIT_COSTS, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
 import { Button, Card, FeatureDisc, ScreenHeader, T } from '../../components/ui';
@@ -326,6 +328,39 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   };
 
   const turnInto = (target: TurnIntoTargetId, note: StudyNote) => {
+    // Four of the six destinations are screens, not jobs: the studio's own
+    // first request is what bills, so nothing is started here.
+    switch (target) {
+      case 'lesson':
+        navigation.navigate('LessonStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note.id,
+          studySetId,
+        });
+        return;
+      case 'recap':
+        navigation.navigate('RecapStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note.id,
+          studySetId,
+        });
+        return;
+      case 'essay':
+        navigation.navigate('EssayStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note.id,
+          studySetId,
+        });
+        return;
+      case 'play':
+        navigation.navigate('PlayStudio', { courseId, courseLabel: label, studySetId });
+        return;
+      default:
+        break;
+    }
     if (!hasEnoughNoteStudyContent(note)) {
       showToast('Add more study content to this note first.', 'info');
       return;
@@ -513,7 +548,15 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 <View className="flex-1 min-w-0">
                   <T.Body numberOfLines={1}>{item.label}</T.Body>
                   <T.Caption tone="secondary" numberOfLines={1}>
-                    {'promise' in item ? item.promise : ''}
+                    {'promise' in item
+                      ? 'status' in item
+                        ? workspaceActivityPromise(
+                            item.id,
+                            item.promise,
+                            scopeNoun(studySetId, courseId)
+                          )
+                        : item.promise
+                      : ''}
                   </T.Caption>
                 </View>
               </View>
@@ -634,11 +677,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                       variant="secondary"
                       onPress={() => turnInto(target.id, note)}
                     >
-                      {`${target.label} · ${formatCreditCost(
-                        target.id === 'cards'
-                          ? AI_CREDIT_COSTS.generate_flashcards
-                          : AI_CREDIT_COSTS.generate_questions
-                      )}`}
+                      {`${target.label} · ${formatTurnIntoCost(target.id)}`}
                     </Button>
                   ))}
                 </View>

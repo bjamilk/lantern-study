@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   WORKSPACE_ACTIVITIES,
+  scopeNoun,
+  workspaceActivityPromise,
   WORKSPACE_LATER_COPY,
   courseWorkspaceLabel,
   formatCourseMaterialCounts,
@@ -639,6 +641,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     setActivity('quiz');
   };
 
+  // Tick targets already made from a note so nobody pays for a second copy.
+  // Decks carry no source-note link, so only tests can be ticked.
+  const turnIntoExisting = useCallback(
+    (noteId: string): Partial<Record<TurnIntoTargetId, boolean>> => ({
+      test: courseTests.some((row) => row.sourceNoteId === noteId),
+    }),
+    [courseTests]
+  );
+
   const handleTurnInto = async (target: TurnIntoTargetId) => {
     if (!currentUserId) {
       showToast('Sign in to generate study materials.', 'error');
@@ -647,6 +658,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     const note = useNotesStore.getState().selectedNote;
     if (!note || !noteInRoom(note)) {
       showToast(`Select a note in this ${roomNoun} first.`, 'info');
+      return;
+    }
+    // Lesson, recap, essay and play are places, not jobs. Opening the studio
+    // IS the action; whatever that studio asks of a model bills there, which
+    // is why none of these four start a generation run here.
+    if (target === 'lesson' || target === 'recap' || target === 'essay' || target === 'play') {
+      go(target, target === 'play' ? {} : { noteId: note.id });
       return;
     }
     if (!hasEnoughNoteStudyContent(note)) {
@@ -872,7 +890,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 type="button"
                 onClick={() => handleActivity(item.id, item.status)}
                 aria-pressed={active}
-                title={item.promise}
+                title={workspaceActivityPromise(item.id, item.promise, scopeNoun(studySetId, courseId))}
                 className={`inline-flex min-h-[44px] items-center gap-2 rounded-full border px-2.5 text-caption font-medium transition-colors ${
                   active
                     ? `border-transparent ${FEATURE_TINT_BG[item.feature]} ${FEATURE_INK_TEXT[item.feature]}`
@@ -1193,6 +1211,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               sourceAttachment={walkable}
               theme={theme}
               turning={turning}
+              turnIntoExisting={turnIntoExisting}
               onTurnInto={(target) => void handleTurnInto(target)}
               onSmartNote={handleStudioSmartNote}
             />
@@ -1286,6 +1305,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               }
               lectures={lectures}
               turning={turning}
+              turnIntoExisting={turnIntoExisting}
               onTurnInto={(target) => void handleTurnInto(target)}
               onSmartNote={handleStudioSmartNote}
               onNoteReady={async (noteId) => {
@@ -1325,6 +1345,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                   : null
               }
               turning={turning}
+              turnIntoExisting={turnIntoExisting}
               onTurnInto={(target) => void handleTurnInto(target)}
               onOpenQuiz={(items) => {
                 setQuizSeed(items);
@@ -1390,6 +1411,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                   : null
               }
               turning={turning}
+              turnIntoExisting={turnIntoExisting}
               onTurnInto={(target) => void handleTurnInto(target)}
               onNoteReady={async (noteId) => {
                 await openNote(noteId);
@@ -1398,6 +1420,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             />
           ) : activity === 'play' ? (
             <PlayStudio
+              scope={scopeNoun(studySetId, courseId)}
               decks={courseDecks}
               flashcards={flashcards}
               onStartMatch={onStartMatch}

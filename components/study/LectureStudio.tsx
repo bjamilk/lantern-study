@@ -47,6 +47,8 @@ interface LectureStudioProps {
   note: (StudyNote & { attachments?: Array<{ extractedText?: string | null }> }) | null;
   lectures: Array<StudyNote & { attachments?: Array<{ extractedText?: string | null }> }>;
   turning?: boolean;
+  /** Targets already made from a note, so the menu can tick them. */
+  turnIntoExisting?: (noteId: string) => Partial<Record<TurnIntoTargetId, boolean>>;
   onTurnInto: (target: TurnIntoTargetId) => void;
   onSmartNote: (
     editorState: { title?: string; body?: string },
@@ -61,6 +63,7 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
   note,
   lectures,
   turning,
+  turnIntoExisting,
   onTurnInto,
   onSmartNote,
   onNoteReady,
@@ -440,7 +443,11 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
               <Button size="sm" onClick={() => void enhanceNotes()} loading={writing} disabled={writing || busy}>
                 Enhance notes · {writeCost}
               </Button>
-              <TurnIntoMenu disabled={turning || !activeNote} onSelect={onTurnInto} />
+              <TurnIntoMenu
+                disabled={turning || !activeNote}
+                existing={activeNote ? turnIntoExisting?.(activeNote.id) : undefined}
+                onSelect={onTurnInto}
+              />
             </div>
           ) : null}
 

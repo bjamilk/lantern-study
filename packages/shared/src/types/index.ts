@@ -240,6 +240,13 @@ export interface StudySet {
   coverPath?: string | null;
   visibility?: 'private' | 'public';
   mode?: 'cram' | 'standard' | 'comprehensive';
+  /** "YYYY-MM-DD" — the set's own exam date, independent of any enrolment. */
+  examDate?: string | null;
+  /**
+   * The server could not persist `examDate` because the `exam_date` column is
+   * not applied on this database yet. Everything else in the patch did land.
+   */
+  examDateUnsupported?: boolean;
   lastStudiedAt?: string | null;
   createdAt: string;
   updatedAt: string;

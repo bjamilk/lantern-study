@@ -323,3 +323,86 @@ describe('POST /decks/with-cards with an existing deckId', () => {
     expect(res.body).toMatchObject({ code: 'CARD_WRITE_FAILED', rolledBack: true });
   });
 });
+
+/**
+ * The payload both clients actually send.
+ *
+ * Every generated-deck save on web and mobile goes through one request built by
+ * `services/jobArtifacts.ts`. When that request tripped express-validator the
+ * body came back as `{ error: 'Validation Error', message: '<the real reason>' }`
+ * — and the clients render `error`, so the student got the bare words
+ * "Validation Error" over cards that were never filed. These pin the shape that
+ * must be accepted, and the one field that has to reach the write: a deck
+ * generated from a note inside a study set belongs to that set.
+ */
+describe('POST /decks/with-cards — the shape the clients send', () => {
+  const SET_ID = '22222222-3333-4444-8555-666666666666';
+  const COURSE_ID = '33333333-4444-4555-8666-777777777777';
+
+  const ok = () =>
+    jest.fn(async () => ({
+      deck: { id: 'deck-1', name: 'From: Note', study_set_id: SET_ID },
+      flashcards: [{ id: 'c1' }, { id: 'c2' }],
+      atomic: true,
+    }));
+
+  it('accepts the mobile deck save and files it into the study set', async () => {
+    const createDeckWithCards = ok();
+    initWith(createDeckWithCards);
+
+    const res = await runRoute(
+      'post',
+      '/with-cards',
+      request({
+        clientKey: 'job-42',
+        name: 'From: Note',
+        description: 'Generated from note: Note',
+        courseId: COURSE_ID,
+        studySetId: SET_ID,
+        topicId: null,
+        cards,
+      }),
+    );
+
+    expect(res.statusCode).toBe(201);
+    // The set has to reach the write, not just the request.
+    expect(createDeckWithCards).toHaveBeenCalledTimes(1);
+    expect((createDeckWithCards.mock.calls[0] as unknown[])[0]).toMatchObject({
+      studySetId: SET_ID,
+      courseId: COURSE_ID,
+    });
+    expect(res.body.data.deck.study_set_id).toBe(SET_ID);
+  });
+
+  it('accepts a save with no course, set or topic at all', async () => {
+    const createDeckWithCards = ok();
+    initWith(createDeckWithCards);
+
+    const res = await runRoute(
+      'post',
+      '/with-cards',
+      request({ clientKey: 'job-43', name: 'From: Note', description: 'd', cards }),
+    );
+
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('answers a bare "Validation Error" for an empty-string id — which is why the clients must send null', async () => {
+    const createDeckWithCards = ok();
+    initWith(createDeckWithCards);
+
+    const res = await runRoute(
+      'post',
+      '/with-cards',
+      request({ clientKey: 'job-44', name: 'From: Note', studySetId: '', cards }),
+    );
+
+    // Documented, not endorsed: `optional({ values: 'null' })` skips undefined
+    // and null but runs isUUID on ''. The nothing-was-saved failure a student
+    // saw as "Validation Error" was exactly this, so the clients normalise a
+    // missing id to null before it ever leaves the device.
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'Validation Error', field: 'studySetId' });
+    expect(createDeckWithCards).not.toHaveBeenCalled();
+  });
+});

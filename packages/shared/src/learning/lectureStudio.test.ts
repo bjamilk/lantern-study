@@ -1,4 +1,3 @@
-import { describe, expect, it } from 'vitest';
 import {
   LECTURE_CONSENT_LINE,
   applyLectureNoteStamp,

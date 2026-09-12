@@ -14,7 +14,7 @@ import {
   hasEnoughNoteStudyContent,
   isWalkableAttachment,
   itemsFromUnknownQuestions,
-  materialsForCourse,
+  studioMaterials,
   masteryPercent,
   rateAdaptiveConfidence,
   resolveAdaptiveCorrectAnswer,
@@ -55,7 +55,7 @@ function poolFromUnknown(payload: unknown): AdaptiveQuizItem[] {
 }
 
 export function AdaptiveQuizScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel, noteId, seedItems } = route.params;
+  const { courseId, courseLabel, noteId, seedItems, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
   const tests = useTestStore((s) => s.tests);
@@ -70,7 +70,10 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
   const [writing, setWriting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const courseNotes = useMemo(
+    () => studioMaterials(notes, { studySetId, courseId }),
+    [notes, courseId, studySetId]
+  );
   const noteOrder = useMemo(() => {
     const selected = courseNotes.find((note) => note.id === noteId);
     return selected
@@ -112,7 +115,9 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
           sourceDeckId: undefined,
           deckId: test.deckId,
         })),
-        courseId,
+        // Course id is dead for matching here (every mapped row has courseId: null);
+        // these tests are reached through noteIds, which now covers set materials.
+        courseId ?? '',
         noteIds,
         new Set()
       );

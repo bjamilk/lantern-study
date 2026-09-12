@@ -47,7 +47,7 @@ function fakeSelf(outcomes: Outcomes) {
     from(table: string) {
       const ops: Call["ops"] = [];
       const chain: any = {};
-      for (const fn of ["select", "eq", "insert", "update", "delete", "in", "limit"]) {
+      for (const fn of ["select", "eq", "insert", "update", "delete", "in", "limit", "order", "range", "is", "not"]) {
         chain[fn] = (...args: any[]) => {
           ops.push({ fn, args });
           return chain;
@@ -259,5 +259,52 @@ describe("addCardsToExistingDeck", () => {
     self.verifyDeckAccess = jest.fn(async () => true);
 
     await expect(addTo(self)).rejects.toBeInstanceOf(DeckWithCardsError);
+  });
+});
+
+/**
+ * Where a deck is filed has to come back out of the projection.
+ *
+ * The mappers have always read `study_set_id`, but no deck SELECT projected it,
+ * so every deck the API answered with carried `studySetId: null`. A study set's
+ * Cards grid therefore showed 0 decks however correctly they were filed, and
+ * `GET /decks/<id>` reported an unfiled deck. A column the mapper reads and the
+ * query never asks for is a silent data loss, so the projections are asserted.
+ */
+describe("deck projections carry where the deck is filed", () => {
+  const selectsFor = (calls: Call[]): string[] =>
+    calls
+      .filter((c) => c.table === "decks")
+      .flatMap((c) => c.ops.filter((op) => op.fn === "select").map((op) => String(op.args[0])));
+
+  it("getDeck asks for course_id and study_set_id", async () => {
+    const { self, calls } = fakeSelf({});
+
+    await SupabaseService.prototype.getDeck.call(self, "deck-1");
+
+    const select = selectsFor(calls)[0];
+    expect(select).toContain("study_set_id");
+    expect(select).toContain("course_id");
+  });
+
+  it("fetchDeckRecord asks for study_set_id", async () => {
+    const { self, calls } = fakeSelf({});
+
+    await (SupabaseService.prototype as any).fetchDeckRecord.call(self, "deck-1");
+
+    expect(selectsFor(calls)[0]).toContain("study_set_id");
+  });
+
+  it("getDecks asks for study_set_id on both response profiles", async () => {
+    for (const responseProfile of ["compact", "full"] as const) {
+      const { self, calls } = fakeSelf({ deckSelect: { data: [], error: null } });
+      self.getAccessibleDeckIds = jest.fn(async () => ["deck-1"]);
+
+      await SupabaseService.prototype.getDecks.call(self, "user-1", false, { responseProfile });
+
+      const selects = selectsFor(calls);
+      expect(selects.length).toBeGreaterThan(0);
+      expect(selects.some((s) => s.includes("study_set_id"))).toBe(true);
+    }
   });
 });

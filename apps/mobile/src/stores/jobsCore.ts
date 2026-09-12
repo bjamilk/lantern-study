@@ -152,6 +152,17 @@ export interface TrackedJob {
    */
   pendingSave?: PendingSave;
   /**
+   * A save attempt is in flight right now.
+   *
+   * Without it, tapping "Save to library" on a save that fails the same way
+   * twice changes NOTHING the student can see: `settleSaveFailed` writes the
+   * same `failed` + the same message, so the sheet re-renders identically and
+   * the button reads as dead. Tapped three times in the 2026-09-11 device run.
+   * Not persisted as true — a process that died mid-attempt must come back
+   * offering the button, not a spinner that never resolves.
+   */
+  savingNow?: boolean;
+  /**
    * The server's machine stage word (`reading` | `generating` | `saving` …).
    * Kept apart from `stage`, which holds the student-facing wording a client
    * runner reported: mixing the two is what let the sheet's subtitle and its
@@ -204,10 +215,15 @@ export const parseJobs = (raw: string | null | undefined): TrackedJob[] => {
   try {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (j): j is TrackedJob =>
-        Boolean(j) && typeof j.id === 'string' && typeof j.status === 'string'
-    );
+    return parsed
+      .filter(
+        (j): j is TrackedJob =>
+          Boolean(j) && typeof j.id === 'string' && typeof j.status === 'string'
+      )
+      // An in-flight save did not survive the process that was making it. Left
+      // set, the sheet would come back showing "Saving…" with no request behind
+      // it and no way to reach the button again.
+      .map((j) => (j.savingNow ? { ...j, savingNow: false } : j));
   } catch {
     return [];
   }
@@ -409,6 +425,7 @@ export const savedSettlePatch = (
   resultCount: count,
   error: undefined,
   pendingSave: undefined,
+  savingNow: false,
   ...(job && (job.status === 'failed' || job.status === 'lost') ? { notified: false } : {}),
 });
 

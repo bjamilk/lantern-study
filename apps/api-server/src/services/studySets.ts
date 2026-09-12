@@ -15,6 +15,10 @@ export interface StudySet {
   coverPath?: string | null;
   visibility?: 'private' | 'public';
   mode?: 'cram' | 'standard' | 'comprehensive';
+  /** "YYYY-MM-DD" — the set's own exam date, independent of any enrolment. */
+  examDate?: string | null;
+  /** The `exam_date` column is not applied here yet; the rest of the patch landed. */
+  examDateUnsupported?: boolean;
   lastStudiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,6 +54,9 @@ const STUDY_SET_TITLE_MAX = 80;
 const STUDY_SET_DESCRIPTION_MAX = 280;
 
 const SET_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, exam_date, last_studied_at, created_at, updated_at';
+/** Everything but `exam_date` — the 20260911140000 migration is hand-applied. */
+const SET_COLUMNS_NO_EXAM =
   'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, last_studied_at, created_at, updated_at';
 const SET_COLUMNS_MIN = 'id, user_id, title, course_id, created_at, updated_at';
 
@@ -70,6 +77,16 @@ function isMissingColumn(error: { message?: string } | null | undefined, column:
   return Boolean(error?.message && new RegExp(column, 'i').test(error.message));
 }
 
+/**
+ * PostgREST reports an absent column as 42703 on read and PGRST204 on write —
+ * the same test `schemaCapabilities.isMissingColumnError` makes. The
+ * `exam_date` migration (20260911140000) is hand-applied, so every path that
+ * touches the column must degrade instead of 500-ing.
+ */
+function isMissingColumnCode(error: { code?: string } | null | undefined): boolean {
+  return error?.code === '42703' || error?.code === 'PGRST204';
+}
+
 function mapSet(row: Record<string, unknown>): StudySet {
   return {
     id: String(row.id),
@@ -84,6 +101,7 @@ function mapSet(row: Record<string, unknown>): StudySet {
       row.mode === 'cram' || row.mode === 'comprehensive' || row.mode === 'standard'
         ? row.mode
         : 'standard',
+    examDate: typeof row.exam_date === 'string' ? row.exam_date : null,
     lastStudiedAt: typeof row.last_studied_at === 'string' ? row.last_studied_at : null,
     createdAt: String(row.created_at || ''),
     updatedAt: String(row.updated_at || ''),
@@ -99,6 +117,11 @@ function mapFolder(row: Record<string, unknown>): StudySetFolder {
   };
 }
 
+function omitExamDate(patch: Record<string, unknown>): Record<string, unknown> {
+  const { exam_date: _dropped, ...rest } = patch;
+  return rest;
+}
+
 function optionalUuid(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (!isUuid(value)) fail(`${field} must be a valid UUID`);
@@ -112,10 +135,40 @@ export class StudySetsService {
     return this.supabase.getClient();
   }
 
+  /**
+   * Run a write whose RETURNING projection names `exam_date`, retrying once
+   * without that column when this database has not had 20260911140000 applied.
+   * Returns the row plus whether the column was missing.
+   */
+  private async writeWithExamColumn(
+    run: (columns: string) => PromiseLike<{ data: unknown; error: any }>
+  ): Promise<{ row: Record<string, unknown> | null; error: any; examMissing: boolean }> {
+    const first = await run(SET_COLUMNS);
+    if (!first.error) {
+      return { row: first.data as Record<string, unknown>, error: null, examMissing: false };
+    }
+    if (isMissingColumnCode(first.error) || isMissingColumn(first.error, 'exam_date')) {
+      const retry = await run(SET_COLUMNS_NO_EXAM);
+      if (!retry.error) {
+        return { row: retry.data as Record<string, unknown>, error: null, examMissing: true };
+      }
+      return { row: null, error: retry.error, examMissing: true };
+    }
+    return { row: null, error: first.error, examMissing: false };
+  }
+
   private async selectSets(userId: string, extra?: (query: any) => any) {
     let query = this.db.from('study_sets').select(SET_COLUMNS).eq('user_id', userId);
     if (extra) query = extra(query);
     const first = await query.order('updated_at', { ascending: false });
+    if (first.error && (isMissingColumn(first.error, 'exam_date') || isMissingColumnCode(first.error))) {
+      let withoutExam = this.db.from('study_sets').select(SET_COLUMNS_NO_EXAM).eq('user_id', userId);
+      if (extra) withoutExam = extra(withoutExam);
+      const retry = await withoutExam.order('updated_at', { ascending: false });
+      if (!retry.error) {
+        return (retry.data || []).map((row) => mapSet(row as Record<string, unknown>));
+      }
+    }
     if (first.error && isMissingColumn(first.error, 'description')) {
       let fallback = this.db.from('study_sets').select(SET_COLUMNS_MIN).eq('user_id', userId);
       if (extra) fallback = extra(fallback);
@@ -168,7 +221,10 @@ export class StudySetsService {
       ...(description ? { description } : {}),
       ...(folderId ? { folder_id: folderId } : {}),
     };
-    const inserted = await this.db.from('study_sets').insert(payload).select(SET_COLUMNS).single();
+    const inserted = await this.writeWithExamColumn((columns) =>
+      this.db.from('study_sets').insert(payload).select(columns).single()
+    );
+    if (!inserted.error) return mapSet(inserted.row as Record<string, unknown>);
     if (inserted.error && isMissingColumn(inserted.error, 'description')) {
       const retry = await this.db
         .from('study_sets')
@@ -178,8 +234,7 @@ export class StudySetsService {
       if (retry.error) throw retry.error;
       return mapSet(retry.data as Record<string, unknown>);
     }
-    if (inserted.error) throw inserted.error;
-    return mapSet(inserted.data as Record<string, unknown>);
+    throw inserted.error;
   }
 
   async update(
@@ -193,6 +248,7 @@ export class StudySetsService {
       visibility?: unknown;
       mode?: unknown;
       coverPath?: unknown;
+      examDate?: unknown;
     }
   ): Promise<StudySet> {
     await this.get(userId, setId);
@@ -239,16 +295,45 @@ export class StudySetsService {
             ? input.coverPath
             : fail('coverPath must be a string');
     }
+    if (input.examDate !== undefined) {
+      if (input.examDate === null || input.examDate === '') {
+        patch.exam_date = null;
+      } else if (typeof input.examDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(input.examDate)) {
+        patch.exam_date = input.examDate;
+      } else {
+        fail('examDate must be YYYY-MM-DD or null');
+      }
+    }
     if (Object.keys(patch).length === 0) {
       return this.get(userId, setId);
     }
-    const updated = await this.db
-      .from('study_sets')
-      .update(patch)
-      .eq('user_id', userId)
-      .eq('id', setId)
-      .select(SET_COLUMNS)
-      .single();
+    const wantsExamDate = patch.exam_date !== undefined;
+    const writePatch = { ...patch };
+    const updated = await this.writeWithExamColumn((columns) => {
+      const body = columns === SET_COLUMNS_NO_EXAM ? omitExamDate(writePatch) : writePatch;
+      if (Object.keys(body).length === 0) {
+        // Only the exam date was asked for and the column is absent: read the
+        // row back rather than sending PostgREST an empty update body.
+        return this.db
+          .from('study_sets')
+          .select(columns)
+          .eq('user_id', userId)
+          .eq('id', setId)
+          .single();
+      }
+      return this.db
+        .from('study_sets')
+        .update(body)
+        .eq('user_id', userId)
+        .eq('id', setId)
+        .select(columns)
+        .single();
+    });
+    if (!updated.error) {
+      const set = mapSet(updated.row as Record<string, unknown>);
+      // Honest degrade: the rest of the patch landed, the date did not.
+      return wantsExamDate && updated.examMissing ? { ...set, examDateUnsupported: true } : set;
+    }
     if (updated.error && isMissingColumn(updated.error, 'description')) {
       const slim: Record<string, unknown> = {};
       if (patch.title !== undefined) slim.title = patch.title;
@@ -263,25 +348,26 @@ export class StudySetsService {
       if (retry.error) throw retry.error;
       return mapSet(retry.data as Record<string, unknown>);
     }
-    if (updated.error) throw updated.error;
-    return mapSet(updated.data as Record<string, unknown>);
+    throw updated.error;
   }
 
   async touchStudied(userId: string, setId: string): Promise<StudySet> {
     await this.get(userId, setId);
     const now = new Date().toISOString();
-    const updated = await this.db
-      .from('study_sets')
-      .update({ last_studied_at: now })
-      .eq('user_id', userId)
-      .eq('id', setId)
-      .select(SET_COLUMNS)
-      .single();
-    if (updated.error && isMissingColumn(updated.error, 'last_studied_at')) {
+    const updated = await this.writeWithExamColumn((columns) =>
+      this.db
+        .from('study_sets')
+        .update({ last_studied_at: now })
+        .eq('user_id', userId)
+        .eq('id', setId)
+        .select(columns)
+        .single()
+    );
+    if (!updated.error) return mapSet(updated.row as Record<string, unknown>);
+    if (isMissingColumn(updated.error, 'last_studied_at')) {
       return this.get(userId, setId);
     }
-    if (updated.error) throw updated.error;
-    return mapSet(updated.data as Record<string, unknown>);
+    throw updated.error;
   }
 
   async remove(userId: string, setId: string): Promise<void> {

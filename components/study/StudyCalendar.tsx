@@ -20,19 +20,25 @@ import {
   newCalendarNoteTitle,
   parseCalendarNoteBody,
   resolveCalendarStudioNote,
+  resolveExamDate,
   sessionsOnDate,
   studyCalendarBlocker,
   type StudyCalendarPlan,
   type StudyCalendarSession,
   studySetNotePayload,
+  EXAM_DATE_UNSUPPORTED_COPY,
+  examDateSaveOutcome,
+  scopeNoun,
 } from '@lantern/shared';
 import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import type { CourseTopic, Deck, StudyNote } from '../../types';
 import { Button, Input } from '../ui';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
+import { updateStudySet } from '../../services/academic';
 import { useAcademicStore } from '../../stores/academicStore';
 import { useNotesStore } from '../../stores/notesStore';
+import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
 
 interface StudyCalendarProps {
@@ -71,8 +77,12 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
   const saveNote = useNotesStore((s) => s.saveNote);
   const showToast = useToastStore((s) => s.showToast);
 
+  const studySets = useStudySetStore((s) => s.sets);
+  const loadStudySets = useStudySetStore((s) => s.loadSets);
+
   const enrolment = myCourses.find((row) => row.course.id === courseId);
-  const examDate = enrolment?.examDate ?? null;
+  const studySet = studySetId ? studySets.find((row) => row.id === studySetId) ?? null : null;
+  const examDate = resolveExamDate(studySet, enrolment);
 
   const resumed = useMemo(() => {
     const decision = resolveCalendarStudioNote({
@@ -143,9 +153,28 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
     }
     setSavingExam(true);
     try {
+      // The set is the primary container, so its own date is what a set-scoped
+      // Plan tab writes. A course room has no set and still writes the
+      // enrolment, which is what exam reminders read.
+      if (studySetId) {
+        const updated = await updateStudySet(studySetId, { examDate: value || null });
+        await loadStudySets({ force: true });
+        // A 200 is not evidence: the production API can answer without storing
+        // the date, so the returned row has to echo it back.
+        if (examDateSaveOutcome(value || null, updated) === 'unsupported') {
+          showToast(EXAM_DATE_UNSUPPORTED_COPY, 'info');
+          return;
+        }
+        showToast(value ? 'Exam date saved.' : 'Exam date cleared.', 'success');
+        return;
+      }
+      if (!enrolment) {
+        showToast('Open this plan from a study set or a course to save a date.', 'info');
+        return;
+      }
       await updateMyCourse(courseId, {
         examDate: value || null,
-        academicYear: enrolment?.academicYear,
+        academicYear: enrolment.academicYear,
       });
       showToast(value ? 'Exam date saved. Reminders still use this date.' : 'Exam date cleared.', 'success');
     } catch (error) {
@@ -464,7 +493,7 @@ export const StudyCalendar: React.FC<StudyCalendarProps> = ({
 
       {plan && decks.length === 0 ? (
         <p className="text-caption text-lantern-text-secondary">
-          File a deck in this course so card sessions can open it. Quiz sessions still run from notes.
+          {`File a deck in this ${scopeNoun(studySetId, courseId)} so card sessions can open it. Quiz sessions still run from notes.`}
         </p>
       ) : null}
     </div>

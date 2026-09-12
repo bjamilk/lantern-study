@@ -9,8 +9,11 @@ import {
   answerPlayQuestion,
   currentPlayQuestion,
   expirePlaySession,
-  materialsForCourse,
+  studioMaterials,
   playBlockerCopy,
+  playEmptyCopy,
+  playTaglineCopy,
+  scopeNoun,
   playModeBlocker,
   playScoreLine,
   playStudioBlocker,
@@ -28,14 +31,18 @@ import { useToastStore } from '../../stores/toastStore';
 type Props = NativeStackScreenProps<StudyStackParamList, 'PlayStudio'>;
 
 export function PlayStudioScreen({ navigation, route }: Props) {
-  const { courseId, courseLabel } = route.params;
+  const { courseId, courseLabel, studySetId } = route.params;
+  const scope = scopeNoun(studySetId, courseId);
   const tabBarClearance = useTabBarClearance(16);
   const decks = useFlashcardStore((s) => s.decks);
   const flashcards = useFlashcardStore((s) => s.flashcards);
   const fetchFlashcards = useFlashcardStore((s) => s.fetchFlashcards);
   const showToast = useToastStore((s) => s.showToast);
 
-  const courseDecks = useMemo(() => materialsForCourse(decks, courseId), [decks, courseId]);
+  const courseDecks = useMemo(
+    () => studioMaterials(decks, { studySetId, courseId }),
+    [decks, courseId, studySetId]
+  );
   const [deckId, setDeckId] = useState(courseDecks[0]?.id || '');
   const [session, setSession] = useState<PlaySession | null>(null);
   const [remaining, setRemaining] = useState(PLAY_SECONDS);
@@ -76,7 +83,7 @@ export function PlayStudioScreen({ navigation, route }: Props) {
 
   const startMode = (mode: PlayModeId) => {
     if (!deck) {
-      showToast(playBlockerCopy('no_deck') ?? 'File a deck in this course first.', 'info');
+      showToast(playBlockerCopy('no_deck', scope) ?? playEmptyCopy(scope), 'info');
       return;
     }
     if (thinBlocker) {
@@ -148,9 +155,9 @@ export function PlayStudioScreen({ navigation, route }: Props) {
         ) : (
           <View className="gap-3">
             <T.Heading>Play</T.Heading>
-            <T.Body tone="secondary">Games from this course’s cards. Group duels stay in Chat.</T.Body>
+            <T.Body tone="secondary">{playTaglineCopy(scope)}</T.Body>
             {hubBlocker ? (
-              <T.Body tone="secondary">{playBlockerCopy(hubBlocker)}</T.Body>
+              <T.Body tone="secondary">{playBlockerCopy(hubBlocker, scope)}</T.Body>
             ) : (
               <>
                 {courseDecks.length > 1
@@ -180,7 +187,7 @@ export function PlayStudioScreen({ navigation, route }: Props) {
                       <View className="flex-1">
                         <T.Body>{mode.label}</T.Body>
                         <T.Caption tone="secondary">
-                          {blocked ? playBlockerCopy(blocked) : mode.promise}
+                          {blocked ? playBlockerCopy(blocked, scope) : mode.promise}
                         </T.Caption>
                       </View>
                     </Pressable>

@@ -16,7 +16,7 @@ import {
   getNoteStudyContent,
   isEssayGraderMissing,
   isEssayNote,
-  materialsForCourse,
+  studioMaterials,
   newEssayNoteTitle,
   studySetNotePayload,
   parseEssayNoteBody,
@@ -45,7 +45,10 @@ export function EssayStudioScreen({ navigation, route }: Props) {
   const loadNote = useNotesStore((s) => s.loadNote);
   const showToast = useToastStore((s) => s.showToast);
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const courseNotes = useMemo(
+    () => studioMaterials(notes, { studySetId, courseId }),
+    [notes, courseId, studySetId]
+  );
   const essays = useMemo(() => courseNotes.filter(isEssayNote), [courseNotes]);
   const sources = useMemo(() => essaySourceNotes(courseNotes), [courseNotes]);
 

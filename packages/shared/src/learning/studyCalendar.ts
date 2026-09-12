@@ -137,6 +137,24 @@ export function calendarSessionFeature(kind: CalendarSessionKind): FeatureKey {
   return kind === 'cards' ? 'flashcards' : 'tests';
 }
 
+/**
+ * Which exam date the Plan tab shows.
+ *
+ * The set is the primary container, so its own date wins; a course enrolment's
+ * `exam_date` is the fallback (and the only home a course room has). A
+ * course-less set used to have nowhere to keep a date at all.
+ */
+export function resolveExamDate(
+  set: { examDate?: string | null } | null | undefined,
+  enrolment: { examDate?: string | null } | null | undefined
+): string | null {
+  const fromSet = set?.examDate;
+  if (typeof fromSet === 'string' && fromSet.trim()) return fromSet;
+  const fromEnrolment = enrolment?.examDate;
+  if (typeof fromEnrolment === 'string' && fromEnrolment.trim()) return fromEnrolment;
+  return null;
+}
+
 export function studyCalendarBlocker(input: {
   examDate?: string | null;
   today?: string;
@@ -443,3 +461,34 @@ export function resolveCalendarStudioNote(input: {
   if (first) return { action: 'resume', noteId: first.id };
   return { action: 'start' };
 }
+
+export type ExamDateSaveOutcome = 'saved' | 'unsupported';
+
+/**
+ * Did the server actually store the exam date the client sent?
+ *
+ * The production API can answer a set PATCH without persisting `exam_date`
+ * (the column is not there yet), so a client that toasts on a 200 tells the
+ * student their exam date is saved when nothing was written. The only honest
+ * evidence is the returned row echoing the value back: `examDateUnsupported`
+ * when the server says so outright, and otherwise a matching `examDate`. A
+ * response that omits the field is treated as unsupported — including a clear,
+ * where a missing key is indistinguishable from a server that never read it.
+ */
+export function examDateSaveOutcome(
+  sent: string | null | undefined,
+  returnedSet: { examDate?: string | null; examDateUnsupported?: boolean } | null | undefined
+): ExamDateSaveOutcome {
+  if (!returnedSet) return 'unsupported';
+  if (returnedSet.examDateUnsupported === true) return 'unsupported';
+  if (!Object.prototype.hasOwnProperty.call(returnedSet, 'examDate')) return 'unsupported';
+  const wanted = typeof sent === 'string' && sent.trim() ? sent.trim() : null;
+  const got = typeof returnedSet.examDate === 'string' && returnedSet.examDate.trim()
+    ? returnedSet.examDate.trim()
+    : null;
+  return got === wanted ? 'saved' : 'unsupported';
+}
+
+/** The one line a client may show when the server did not store the date. */
+export const EXAM_DATE_UNSUPPORTED_COPY =
+  'Exam dates on study sets are not switched on yet.';

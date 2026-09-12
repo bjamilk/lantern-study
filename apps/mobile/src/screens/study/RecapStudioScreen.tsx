@@ -14,7 +14,7 @@ import {
   getNoteStudyContent,
   isRecapGeneratorMissing,
   isRecapNote,
-  materialsForCourse,
+  studioMaterials,
   newRecapNoteTitle,
   normalizeGeneratedRecap,
   studySetNotePayload,
@@ -49,7 +49,10 @@ export function RecapStudioScreen({ navigation, route }: Props) {
   const loadNote = useNotesStore((s) => s.loadNote);
   const showToast = useToastStore((s) => s.showToast);
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const courseNotes = useMemo(
+    () => studioMaterials(notes, { studySetId, courseId }),
+    [notes, courseId, studySetId]
+  );
   const recaps = useMemo(() => courseNotes.filter(isRecapNote), [courseNotes]);
   const sources = useMemo(() => recapSourceNotes(courseNotes), [courseNotes]);
 

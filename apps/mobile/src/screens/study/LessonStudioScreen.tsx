@@ -19,7 +19,7 @@ import {
   lessonProgress,
   lessonSourceNotes,
   lessonStudioPriceLine,
-  materialsForCourse,
+  studioMaterials,
   newLessonNoteTitle,
   normalizeGeneratedLesson,
   studySetNotePayload,
@@ -52,7 +52,10 @@ export function LessonStudioScreen({ navigation, route }: Props) {
   const loadNote = useNotesStore((s) => s.loadNote);
   const showToast = useToastStore((s) => s.showToast);
 
-  const courseNotes = useMemo(() => materialsForCourse(notes, courseId), [notes, courseId]);
+  const courseNotes = useMemo(
+    () => studioMaterials(notes, { studySetId, courseId }),
+    [notes, courseId, studySetId]
+  );
   const lessons = useMemo(() => courseNotes.filter(isLessonNote), [courseNotes]);
   const sources = useMemo(() => lessonSourceNotes(courseNotes), [courseNotes]);
 

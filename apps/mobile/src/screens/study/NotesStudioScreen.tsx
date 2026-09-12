@@ -5,14 +5,15 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
   NOTES_STUDIO_DEPTHS,
   TURN_INTO_TARGETS,
+  formatTurnIntoCost,
   hasEnoughNoteStudyContent,
   isWalkableAttachment,
   materialsForCourse,
   materialsForStudySet,
+  scopeNoun,
   type TurnIntoTargetId,
 } from '@lantern/shared';
 import {
-  AI_CREDIT_COSTS,
   SMART_NOTES_CREDIT_COST,
   formatCreditCost,
   getSmartNotesCreditCost,
@@ -27,6 +28,8 @@ import { useCompanionStore } from '../../stores/companionStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useJobsStore } from '../../stores/jobsStore';
+import { runningJobs } from '../../stores/jobsCore';
+import { InFlightJobsCard } from '../../components/jobs';
 import { useStudyGoalsStore } from '../../stores/studyGoalsStore';
 import { summarizeNote, generateNoteQuiz } from '../../services/notes';
 import { aiGenerateFlashcards } from '../../services/ai';
@@ -47,6 +50,7 @@ export function NotesStudioScreen({ navigation, route }: Props) {
   const showToast = useToastStore((s) => s.showToast);
   const userId = useAuthStore((s) => s.user?.id);
   const startJob = useJobsStore((s) => s.startJob);
+  const jobs = useJobsStore((s) => s.jobs);
 
   const courseNotes = useMemo(
     () =>
@@ -62,6 +66,23 @@ export function NotesStudioScreen({ navigation, route }: Props) {
     courseNotes.find((row) => row.id === noteId) ||
     null;
   const walkable = note?.attachments?.find(isWalkableAttachment);
+
+  // Turn Into can run for two minutes. The jobs store already knows what is in
+  // flight, so the studio shows the same card Home does and refuses a second
+  // press of the target that is already running — a job is matched to this note
+  // by the source title the runner recorded, which is all a job carries.
+  const runningTargets = useMemo(() => {
+    const title = note?.title || 'Untitled Note';
+    const kinds = new Set(
+      runningJobs(jobs)
+        .filter((job) => job.sourceTitle === title)
+        .map((job) => job.kind)
+    );
+    const busy = new Set<TurnIntoTargetId>();
+    if (kinds.has('flashcards')) busy.add('cards');
+    if (kinds.has('test')) busy.add('test');
+    return busy;
+  }, [jobs, note?.title]);
 
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
   const [writing, setWriting] = useState(false);
@@ -101,6 +122,39 @@ export function NotesStudioScreen({ navigation, route }: Props) {
 
   const turnInto = useCallback(
     (target: TurnIntoTargetId, current: StudyNote) => {
+      // Lesson, recap, essay and play are screens, not jobs: the studio's own
+      // first request is what bills, so nothing is started here.
+      switch (target) {
+        case 'lesson':
+          navigation.navigate('LessonStudio', {
+            courseId,
+            courseLabel,
+            noteId: current.id,
+            studySetId,
+          });
+          return;
+        case 'recap':
+          navigation.navigate('RecapStudio', {
+            courseId,
+            courseLabel,
+            noteId: current.id,
+            studySetId,
+          });
+          return;
+        case 'essay':
+          navigation.navigate('EssayStudio', {
+            courseId,
+            courseLabel,
+            noteId: current.id,
+            studySetId,
+          });
+          return;
+        case 'play':
+          navigation.navigate('PlayStudio', { courseId, courseLabel, studySetId });
+          return;
+        default:
+          break;
+      }
       if (!hasEnoughNoteStudyContent(current)) {
         showToast('Add more study content to this note first.', 'info');
         return;
@@ -141,7 +195,7 @@ export function NotesStudioScreen({ navigation, route }: Props) {
             return { artifact: ref, resultCount: saved };
           },
         });
-        showToast('Building flashcards for this course…', 'info');
+        showToast(`Building flashcards for this ${scopeNoun(studySetId, courseId)}…`, 'info');
         return;
       }
       startJob({
@@ -166,9 +220,9 @@ export function NotesStudioScreen({ navigation, route }: Props) {
           return { artifact: ref, resultCount: saved };
         },
       });
-      showToast('Building a practice test for this course…', 'info');
+      showToast(`Building a practice test for this ${scopeNoun(studySetId, courseId)}…`, 'info');
     },
-    [courseId, studySetId, showToast, startJob, userId]
+    [courseId, courseLabel, navigation, studySetId, showToast, startJob, userId]
   );
 
   return (
@@ -191,6 +245,23 @@ export function NotesStudioScreen({ navigation, route }: Props) {
           <T.Body tone="secondary">{studySetId ? 'Open a note in this set first.' : 'Open a note in this course first.'}</T.Body>
         ) : (
           <>
+            <InFlightJobsCard className="mb-1" />
+            <T.Label tone="secondary">TURN INTO</T.Label>
+            <View className="flex-row flex-wrap gap-2">
+              {TURN_INTO_TARGETS.map((target) => (
+                <Button
+                  key={target.id}
+                  size="sm"
+                  variant="secondary"
+                  disabled={runningTargets.has(target.id)}
+                  onPress={() => turnInto(target.id, note)}
+                >
+                  {runningTargets.has(target.id)
+                    ? `${target.label} · working…`
+                    : `${target.label} · ${formatTurnIntoCost(target.id)}`}
+                </Button>
+              ))}
+            </View>
             <T.Body>{note.body || 'This note is empty. Edit it to add study content.'}</T.Body>
             <View className="flex-row flex-wrap gap-2">
               <Button
@@ -239,23 +310,6 @@ export function NotesStudioScreen({ navigation, route }: Props) {
                 ? 'Enhancing…'
                 : `Enhance notes · ${formatCreditCost(getSmartNotesCreditCost(depth))}`}
             </Button>
-            <T.Label tone="secondary">TURN INTO</T.Label>
-            <View className="flex-row flex-wrap gap-2">
-              {TURN_INTO_TARGETS.map((target) => (
-                <Button
-                  key={target.id}
-                  size="sm"
-                  variant="secondary"
-                  onPress={() => turnInto(target.id, note)}
-                >
-                  {`${target.label} · ${formatCreditCost(
-                    target.id === 'cards'
-                      ? AI_CREDIT_COSTS.generate_flashcards
-                      : AI_CREDIT_COSTS.generate_questions
-                  )}`}
-                </Button>
-              ))}
-            </View>
           </>
         )}
       </ScrollView>

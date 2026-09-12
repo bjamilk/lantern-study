@@ -4355,10 +4355,15 @@ export class SupabaseService {
 
     const selectClause =
       profile === "compact"
-        ? "id, name, user_id, is_shared, course_id, created_at, study_count"
+        ? "id, name, user_id, is_shared, course_id, study_set_id, created_at, study_count"
         // study_count (Phase 3 M) is selected so "studied by N" can render;
         // without it the counter is written but never readable by a client.
-        : "id, name, description, user_id, is_shared, course_id, created_at, study_count";
+        //
+        // study_set_id is projected for the same reason: the mappers already
+        // read it, so omitting it here made EVERY deck arrive as
+        // `studySetId: null` — a study set's Cards grid could never match its
+        // own decks, however correctly they had been filed.
+        : "id, name, description, user_id, is_shared, course_id, study_set_id, created_at, study_count";
 
     let accessibleIds: string[] | null = null;
     if (includeShared) {
@@ -4518,7 +4523,10 @@ export class SupabaseService {
 
     const { data, error } = await this.supabase
       .from("decks")
-      .select("id, name, description, user_id, is_shared, created_at")
+      // course_id/study_set_id: where the deck is filed. Without them a single
+      // deck read answered `courseId: null, studySetId: null` for every deck,
+      // whatever the row said.
+      .select("id, name, description, user_id, is_shared, course_id, study_set_id, created_at")
       .eq("id", deckId)
       .single();
 
@@ -5431,7 +5439,9 @@ export class SupabaseService {
   private async fetchDeckRecord(deckId: string): Promise<any | null> {
     const { data, error } = await this.supabase
       .from("decks")
-      .select("id, name, description, user_id, is_shared, course_id, created_at")
+      // study_set_id: this record is what a deck read is answered from, and a
+      // projection that omits the column reports every deck as unfiled.
+      .select("id, name, description, user_id, is_shared, course_id, study_set_id, created_at")
       .eq("id", deckId)
       .maybeSingle();
 
