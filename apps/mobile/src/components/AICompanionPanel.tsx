@@ -40,54 +40,11 @@ const MOBILE_ACTION_ROUTES: Partial<Record<CompanionAction['type'], (payload?: R
   },
 };
 
-/**
- * Minimal chat-bubble formatting: the model answers with **bold** and "- "
- * bullets, which used to render as literal asterisks and dashes. A full
- * markdown dependency isn't worth the native-lockfile churn for two patterns.
- */
-function FormattedBubbleText({ content, color }: { content: string; color: string }) {
-  const renderInline = (text: string, keyPrefix: string) => {
-    const parts = text.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
-    return parts.map((part, i) =>
-      part.startsWith('**') && part.endsWith('**') ? (
-        <Text key={`${keyPrefix}-${i}`} className="font-semibold">{part.slice(2, -2)}</Text>
-      ) : (
-        <Text key={`${keyPrefix}-${i}`}>{part}</Text>
-      )
-    );
-  };
-  const lines = content.split('\n');
-  return (
-    <View>
-      {lines.map((line, i) => {
-        // Keep the numbering for ordered lists — step order carries meaning.
-        const bullet = line.match(/^\s*([-*]|\d+\.)\s+(.*)$/);
-        if (bullet) {
-          const marker = /^\d+\.$/.test(bullet[1]) ? `${bullet[1]} ` : '• ';
-          return (
-            <View key={i} className="flex-row pl-1">
-              <Text className={color}>{marker}</Text>
-              <Text className={`${color} flex-1`}>{renderInline(bullet[2], `l${i}`)}</Text>
-            </View>
-          );
-        }
-        if (!line.trim()) {
-          // Blank line = paragraph gap (an empty <Text> has no height).
-          return <View key={i} className="h-2" />;
-        }
-        return (
-          <Text key={i} className={color}>
-            {renderInline(line, `l${i}`)}
-          </Text>
-        );
-      })}
-    </View>
-  );
-}
 import { useAuthStore } from '../stores/authStore';
 import { profileDisplayName } from '../hooks/profileIdentity';
-import { useAppTheme } from '../theme';
-import { Button } from './ui';
+import { useAppTheme, useTheme } from '../theme';
+import { Button, T, useFeatureAccent } from './ui';
+import { FormattedBubbleText, BubbleTypingIndicator } from './companion/BubbleText';
 import { transcribeAudioForNote } from '../services/notes';
 import { trackAIAnalyticsEvent } from '../services/ai';
 import { AppIcon } from './ui/AppIcon';
@@ -145,6 +102,10 @@ const COMPOSER_KEYBOARD_BEHAVIOR: 'padding' | undefined =
 
 export function AICompanionPanel({ context }: Props) {
   const theme = useAppTheme();
+  const { colors } = useTheme();
+  // Lantern AI is the `ai` feature identity (indigo ink), not the orange
+  // budget accent every hex in here used to be.
+  const ai = useFeatureAccent('ai');
   const user = useAuthStore(s => s.user);
   const profileName = useAuthStore(s => s.profileName);
   const showToast = useToastStore(s => s.showToast);
@@ -564,19 +525,21 @@ export function AICompanionPanel({ context }: Props) {
       >
         <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
-          <AppIcon name="sparkles" size={22} color="#c45c26" />
-          <Text className="flex-1 ml-2 text-lg font-bold text-lantern-text dark:text-white">Lantern AI</Text>
+          <AppIcon name="sparkles" size={22} color={ai.ink} />
+          {/* flex:1 is correct HERE — the header row is full width. It is only
+              inside the intrinsically sized bubble that flex-1 collapses. */}
+          <T.Heading style={{ flex: 1, marginLeft: 8, fontWeight: '700' }}>Lantern AI</T.Heading>
           <Pressable onPress={handleOpenHistory} className="p-2" accessibilityLabel="Past chats">
-            <AppIcon name="time" size={20} color={showHistoryList ? '#c45c26' : '#94a3b8'} />
+            <AppIcon name="time" size={20} color={showHistoryList ? ai.ink : colors.textTertiary} />
           </Pressable>
           <Pressable onPress={handleNewChat} className="p-2" accessibilityLabel="New chat">
-            <AppIcon name="create" size={20} color="#94a3b8" />
+            <AppIcon name="create" size={20} color={colors.textTertiary} />
           </Pressable>
           <Pressable onPress={handleDeleteChat} className="p-2" accessibilityLabel="Delete this chat">
-            <AppIcon name="trash" size={20} color="#94a3b8" />
+            <AppIcon name="trash" size={20} color={colors.textTertiary} />
           </Pressable>
           <Pressable onPress={close} className="p-2">
-            <AppIcon name="close" size={24} color="#94a3b8" />
+            <AppIcon name="close" size={24} color={colors.textTertiary} />
           </Pressable>
         </View>
         {/*
@@ -590,7 +553,7 @@ export function AICompanionPanel({ context }: Props) {
           them is what lets each one finish.
         */}
         <View className="px-4 pb-2">
-          <AIDisclaimer compact textColor="#64748b" linkColor="#c45c26" />
+          <AIDisclaimer compact textColor={colors.textTertiary} linkColor={ai.ink} />
           {/* Chat spends daily AI credits; the floating badge is hidden while
               the panel is open, so show the countdown here instead. */}
           <View className="mt-1">
@@ -606,18 +569,18 @@ export function AICompanionPanel({ context }: Props) {
             contentContainerStyle={{ paddingVertical: 12, gap: 8, flexGrow: 1 }}
             ListHeaderComponent={
               <View className="flex-row items-center justify-between px-1 mb-2">
-                <Text className="text-xs font-semibold uppercase text-lantern-text-secondary">
+                <T.Label tone="secondary" style={{ textTransform: 'uppercase' }}>
                   Past chats
-                </Text>
+                </T.Label>
                 <Pressable onPress={handleNewChat}>
-                  <Text className="text-xs font-medium text-lantern-primary-text">New chat</Text>
+                  <T.Label style={{ color: ai.ink }}>New chat</T.Label>
                 </Pressable>
               </View>
             }
             ListEmptyComponent={
               isLoadingConversations ? (
                 <View className="py-8 items-center gap-2">
-                  <ActivityIndicator color="#c45c26" />
+                  <ActivityIndicator color={colors.primary} />
                   <Text className="text-lantern-text-secondary text-center">Loading chats…</Text>
                 </View>
               ) : (
@@ -639,31 +602,31 @@ export function AICompanionPanel({ context }: Props) {
                 >
                   <View className="flex-row items-start justify-between gap-2">
                     <Text
-                      className="flex-1 text-sm font-medium text-lantern-text dark:text-white"
+                      className="flex-1 text-body font-medium text-lantern-text dark:text-white"
                       numberOfLines={1}
                     >
                       {item.title}
                     </Text>
-                    <Text className="text-[11px] text-lantern-text-secondary">
+                    <T.Label tone="secondary" style={{ flexShrink: 0 }}>
                       {formatRelativeTime(item.updatedAt)}
-                    </Text>
+                    </T.Label>
                   </View>
                   {item.noteTitle ? (
-                    <Text className="mt-0.5 text-[11px] text-lantern-primary-text" numberOfLines={1}>
+                    <T.Label style={{ marginTop: 2, color: ai.ink }} numberOfLines={1}>
                       {item.noteTitle}
-                    </Text>
+                    </T.Label>
                   ) : null}
                   {item.preview ? (
-                    <Text className="mt-0.5 text-xs text-lantern-text-secondary" numberOfLines={2}>
+                    <T.Caption tone="secondary" style={{ marginTop: 2 }} numberOfLines={2}>
                       {item.preview}
-                    </Text>
+                    </T.Caption>
                   ) : null}
                 </Pressable>
               );
             }}
             ListFooterComponent={
               <Pressable onPress={() => setShowHistoryList(false)} className="py-3">
-                <Text className="text-xs text-center text-lantern-text-secondary">Back to chat</Text>
+                <T.Caption tone="secondary" style={{ textAlign: 'center' }}>Back to chat</T.Caption>
               </Pressable>
             }
           />
@@ -678,7 +641,7 @@ export function AICompanionPanel({ context }: Props) {
           ListEmptyComponent={
             isLoadingHistory ? (
               <View className="py-8 items-center gap-2">
-                <ActivityIndicator color="#c45c26" />
+                <ActivityIndicator color={colors.primary} />
                 <Text className="text-lantern-text-secondary text-center">
                   Loading conversation…
                 </Text>
@@ -693,9 +656,9 @@ export function AICompanionPanel({ context }: Props) {
                   <Pressable
                     key={p}
                     onPress={() => void handleSend(p)}
-                    className="px-3 py-2 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30"
+                    className="min-h-[44px] justify-center px-4 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30"
                   >
-                    <Text className="text-xs text-lantern-primary-text">{p}</Text>
+                    <T.Caption style={{ color: ai.ink }}>{p}</T.Caption>
                   </Pressable>
                 ))}
               </View>
@@ -720,7 +683,14 @@ export function AICompanionPanel({ context }: Props) {
                   {isUser ? (
                     <Text className="text-white">{item.content}</Text>
                   ) : (
-                    <FormattedBubbleText content={item.content} color="text-lantern-text" />
+                    item.content.trim() ? (
+                    <FormattedBubbleText content={item.content} />
+                  ) : (
+                    /* The store appends an EMPTY assistant message the moment a
+                       send starts, so the placeholder belongs in that bubble —
+                       not in a bare spinner under the list. */
+                    <BubbleTypingIndicator />
+                  )
                   )}
                 </View>
                 {/* Action chips — the web panel had these from day one; mobile
@@ -737,7 +707,7 @@ export function AICompanionPanel({ context }: Props) {
                         }}
                         className="px-3 py-1.5 rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20"
                       >
-                        <Text className="text-xs font-medium text-lantern-primary-text">{action.label}</Text>
+                        <T.Label style={{ color: ai.ink }}>{action.label}</T.Label>
                       </Pressable>
                     ))}
                   </View>
@@ -770,7 +740,7 @@ export function AICompanionPanel({ context }: Props) {
                             name={rating === 'up' ? 'thumbs-up' : 'thumbs-down'}
                             filled={active}
                             size={14}
-                            color={active ? '#4f46e5' : '#94a3b8'}
+                            color={active ? ai.ink : colors.textTertiary}
                           />
                         </Pressable>
                       );
@@ -781,9 +751,9 @@ export function AICompanionPanel({ context }: Props) {
             );
           }}
           ListFooterComponent={
-            isBusy || isTranscribing ? (
+            isTranscribing ? (
               <View className="py-2 items-start">
-                <ActivityIndicator color="#c45c26" />
+                <ActivityIndicator color={colors.primary} />
               </View>
             ) : null
           }
@@ -792,7 +762,7 @@ export function AICompanionPanel({ context }: Props) {
 
         {error ? (
           <Pressable onPress={clearError} className="mx-4 mb-2 p-2 bg-red-50 dark:bg-red-900/20 rounded-lg">
-            <Text className="text-red-600 dark:text-red-300 text-sm">{error}</Text>
+            <Text className="text-red-600 dark:text-red-300 text-body">{error}</Text>
           </Pressable>
         ) : null}
 
@@ -800,10 +770,13 @@ export function AICompanionPanel({ context }: Props) {
         <View className="px-4 py-3 border-t border-lantern-border">
           {activeNoteContext ? (
             <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
-              <AppIcon name="document-text" size={14} color="#c45c26" />
-              <Text className="ml-1.5 mr-2 flex-shrink text-xs font-medium text-lantern-primary-text" numberOfLines={1}>
+              <AppIcon name="document-text" size={14} color={ai.ink} />
+              <T.Caption
+                style={{ marginLeft: 6, marginRight: 8, flexShrink: 1, fontWeight: '500', color: ai.ink }}
+                numberOfLines={1}
+              >
                 {activeNoteContext.title}
-              </Text>
+              </T.Caption>
               <Pressable
                 onPress={() => {
                   void setActiveNoteContext(null);
@@ -812,7 +785,7 @@ export function AICompanionPanel({ context }: Props) {
                 hitSlop={8}
                 accessibilityLabel="Remove note context"
               >
-                <AppIcon name="close" size={14} color="#c45c26" />
+                <AppIcon name="close" size={14} color={ai.ink} />
               </Pressable>
             </View>
           ) : null}
@@ -824,8 +797,8 @@ export function AICompanionPanel({ context }: Props) {
                   value={noteSearch}
                   onChangeText={setNoteSearch}
                   placeholder="Search notes…"
-                  placeholderTextColor="#94a3b8"
-                  className="flex-1 text-sm text-lantern-text dark:text-white"
+                  placeholderTextColor={colors.inputPlaceholder}
+                  className="flex-1 text-body text-lantern-text dark:text-white"
                   autoFocus
                 />
                 <Pressable
@@ -835,12 +808,12 @@ export function AICompanionPanel({ context }: Props) {
                   }}
                   className="pl-2"
                 >
-                  <Text className="text-xs text-lantern-text-secondary">Close</Text>
+                  <T.Caption tone="secondary">Close</T.Caption>
                 </Pressable>
               </View>
               {notesLoading && notes.length === 0 ? (
                 <View className="py-4 items-center">
-                  <ActivityIndicator color="#6366f1" />
+                  <ActivityIndicator color={colors.primary} />
                 </View>
               ) : (
                 <FlatList
@@ -849,9 +822,9 @@ export function AICompanionPanel({ context }: Props) {
                   keyboardShouldPersistTaps="handled"
                   style={{ maxHeight: 160 }}
                   ListEmptyComponent={
-                    <Text className="px-3 py-4 text-sm text-center text-lantern-text-secondary">
+                    <T.Body tone="secondary" style={{ paddingHorizontal: 12, paddingVertical: 16, textAlign: 'center' }}>
                       {noteSearch.trim() ? 'No matching notes' : 'No notes yet'}
-                    </Text>
+                    </T.Body>
                   }
                   renderItem={({ item }) => (
                     <Pressable
@@ -860,7 +833,7 @@ export function AICompanionPanel({ context }: Props) {
                         activeNoteContext?.id === item.id ? 'bg-lantern-primary/10' : ''
                       }`}
                     >
-                      <Text className="text-sm text-lantern-text dark:text-white" numberOfLines={1}>
+                      <Text className="text-body text-lantern-text dark:text-white" numberOfLines={1}>
                         {(item.title || '').trim() || 'Untitled note'}
                       </Text>
                     </Pressable>
@@ -882,7 +855,7 @@ export function AICompanionPanel({ context }: Props) {
                   : 'bg-lantern-background-secondary'
               } ${isBusy ? 'opacity-40' : ''}`}
             >
-              <AppIcon name="add" size={22} color="#6366f1" />
+              <AppIcon name="add" size={22} color={ai.ink} />
             </Pressable>
             <Pressable
               onPress={() => {
@@ -900,7 +873,8 @@ export function AICompanionPanel({ context }: Props) {
               <AppIcon
                 name={isRecording ? 'stop' : 'mic'}
                 size={20}
-                color={isRecording ? '#fff' : '#6366f1'}
+                // White on the red recording fill in both themes: the fill is not a token.
+                color={isRecording ? '#ffffff' : ai.ink}
               />
             </Pressable>
             <TextInput
@@ -915,7 +889,7 @@ export function AICompanionPanel({ context }: Props) {
                       ? `Ask about this note…`
                       : 'Ask Lantern AI...'
               }
-              placeholderTextColor="#94a3b8"
+              placeholderTextColor={colors.inputPlaceholder}
               multiline
               editable={!dictationBusy}
               className="flex-1 max-h-24 bg-lantern-background-secondary rounded-2xl px-4 py-3 text-lantern-text dark:text-white"
@@ -929,11 +903,11 @@ export function AICompanionPanel({ context }: Props) {
             </Button>
           </View>
           {(isRecording || isTranscribing) && (
-            <Text className="mt-2 text-xs text-center text-lantern-text-secondary">
+            <T.Caption tone="secondary" style={{ marginTop: 8, textAlign: 'center' }}>
               {isRecording
                 ? `Listening… ${recordingSeconds}s — tap stop when done`
                 : 'Converting speech to text…'}
-            </Text>
+            </T.Caption>
           )}
         </View>
         )}
