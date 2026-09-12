@@ -1,11 +1,17 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { StudySet } from '@lantern/shared/types';
+import type { StudySet, StudySetFolder } from '@lantern/shared/types';
+import type { StudySetTopic, StudySetTopicStatus, StudySetUnit } from '@lantern/shared/learning';
 import {
   createStudySet as apiCreate,
   deleteStudySet as apiDelete,
   fetchMyStudySets,
   updateStudySet as apiUpdate,
+  touchStudySet as apiTouch,
+  fetchStudySetPlan,
+  replaceStudySetPlan,
+  updateStudySetTopicStatus,
+  fetchStudySetFolders,
 } from '../services/academic';
 import { useAuthStore } from './authStore';
 
@@ -60,6 +66,21 @@ export function looksOffline(error: unknown): boolean {
   );
 }
 
+/**
+ * One set's plan as the SERVER holds it.
+ *
+ * The phone used to rebuild this from note titles on every render, which is
+ * why a topic marked covered on a laptop came back unmarked here: there was
+ * nothing to come back from. `loaded` distinguishes "the server said this set
+ * has no plan yet" from "we have not asked" — the first earns the build-a-plan
+ * invitation, the second must fall back to the derived topics in silence.
+ */
+export interface StudySetPlan {
+  units: StudySetUnit[];
+  topics: StudySetTopic[];
+  loaded: boolean;
+}
+
 interface StudySetState {
   sets: StudySet[];
   loaded: boolean;
@@ -73,14 +94,43 @@ interface StudySetState {
   loadSets: (options?: { force?: boolean }) => Promise<StudySet[]>;
   /** Connectivity came back: refetch, but only if we are not already current. */
   notifyReconnected: () => Promise<void>;
+  /** Plans by set id, as the server holds them. */
+  plans: Record<string, StudySetPlan>;
+  folders: StudySetFolder[];
   createSet: (input: { title: string; courseId?: string | null }) => Promise<StudySet>;
   updateSet: (
     setId: string,
-    patch: { title?: string; courseId?: string | null; examDate?: string | null }
+    patch: {
+      title?: string;
+      courseId?: string | null;
+      examDate?: string | null;
+      description?: string | null;
+      folderId?: string | null;
+      visibility?: 'private' | 'public';
+      mode?: 'cram' | 'standard' | 'comprehensive';
+    }
   ) => Promise<StudySet>;
   removeSet: (setId: string) => Promise<void>;
   resolveSet: (setId: string | null | undefined) => StudySet | null;
   touchOpened: (setId: string) => void;
+  /** Tell the server the set was opened, so "last studied" is true on every device. */
+  touchSet: (setId: string) => Promise<void>;
+  loadPlan: (setId: string) => Promise<StudySetPlan>;
+  savePlan: (
+    setId: string,
+    input: {
+      units: Array<{ title: string; position: number }>;
+      topics: Array<{
+        unitIndex: number;
+        title: string;
+        position: number;
+        status: StudySetTopicStatus;
+        sourceNoteIds: string[];
+      }>;
+    }
+  ) => Promise<StudySetPlan>;
+  setTopicStatus: (setId: string, topicId: string, status: StudySetTopicStatus) => Promise<void>;
+  loadFolders: () => Promise<StudySetFolder[]>;
   openPicker: () => void;
   closePicker: () => void;
 }
@@ -126,6 +176,8 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
   syncedAt: null as string | null,
   lastOpenedId: null as string | null,
   picker: false,
+  plans: {} as Record<string, StudySetPlan>,
+  folders: [] as StudySetFolder[],
 
   loadSets: async (options) => {
     if (get().loaded && !options?.force) return get().sets;
@@ -209,7 +261,16 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
   removeSet: async (setId) => {
     await apiDelete(setId);
     const sets = get().sets.filter((row) => row.id !== setId);
-    set({ sets });
+    // Forget the deleted set's plan and, if it was the one being studied, the
+    // pointer to it. A `lastOpenedId` left aimed at a deleted set is what makes
+    // the next cold start open a room for a set that is not there any more.
+    const plans = { ...get().plans };
+    delete plans[setId];
+    const lastOpenedId = get().lastOpenedId === setId ? null : get().lastOpenedId;
+    set({ sets, plans, lastOpenedId });
+    if (lastOpenedId === null) {
+      void AsyncStorage.removeItem(LAST_OPENED_KEY).catch(() => undefined);
+    }
     writeCache(sets, new Date().toISOString());
   },
 
@@ -220,6 +281,120 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
     if (!id) return;
     set({ lastOpenedId: id, picker: false });
     void AsyncStorage.setItem(LAST_OPENED_KEY, id).catch(() => undefined);
+  },
+
+  /**
+   * "I am studying this set now."
+   *
+   * `touchOpened` is the phone's own memory of which set to reopen; this is the
+   * server's. Nothing on mobile ever posted it, so a set studied only on the
+   * phone showed no "last studied" date anywhere — on the phone, on web, or in
+   * the resume feed. Deliberately quiet on failure: a set still opens fine when
+   * the stamp does not land, so a lost network must not become an error the
+   * student has to dismiss on the way into their own room.
+   */
+  touchSet: async (setId) => {
+    const id = setId.trim();
+    if (!id) return;
+
+    // Stamp the local row FIRST, and persist it.
+    //
+    // Home reads "last studied" off the cached list, and the only thing that
+    // ever set it was the server's answer to this call — which arrives after
+    // Home has already rendered, may never arrive at all offline, and is lost
+    // on the next cold start because the cache was written without it. So a
+    // student opened a set, went Home, and saw no study history at all. The
+    // optimistic value is also the true one: they are in the room.
+    const stampedAt = new Date().toISOString();
+    const stamped = get().sets.map((row) =>
+      row.id === id ? { ...row, lastStudiedAt: stampedAt } : row
+    );
+    set({ sets: stamped });
+    writeCache(stamped, get().syncedAt ?? stampedAt);
+
+    try {
+      const updated = await apiTouch(id);
+      const sets = get().sets.map((row) =>
+        row.id === id
+          ? { ...row, ...(updated ?? {}), lastStudiedAt: updated?.lastStudiedAt ?? row.lastStudiedAt }
+          : row
+      );
+      set({ sets });
+      writeCache(sets, get().syncedAt ?? stampedAt);
+    } catch {
+      // Keep the optimistic stamp: they did open the set, and the next
+      // successful list replaces it with the server's own time.
+    }
+  },
+
+  loadPlan: async (setId) => {
+    const empty: StudySetPlan = { units: [], topics: [], loaded: false };
+    if (!setId) return empty;
+    try {
+      const data = (await fetchStudySetPlan(setId)) as {
+        units?: StudySetUnit[];
+        topics?: StudySetTopic[];
+      } | null;
+      const plan: StudySetPlan = {
+        units: Array.isArray(data?.units) ? data!.units : [],
+        topics: Array.isArray(data?.topics) ? data!.topics : [],
+        loaded: true,
+      };
+      set({ plans: { ...get().plans, [setId]: plan } });
+      return plan;
+    } catch {
+      // Unreached, not empty: the room falls back to topics derived from the
+      // set's own notes, and must not be told the plan is genuinely empty.
+      const kept = get().plans[setId] ?? empty;
+      set({ plans: { ...get().plans, [setId]: kept } });
+      return kept;
+    }
+  },
+
+  savePlan: async (setId, input) => {
+    const saved = (await replaceStudySetPlan(setId, input)) as {
+      units?: StudySetUnit[];
+      topics?: StudySetTopic[];
+    } | null;
+    const plan: StudySetPlan = {
+      units: Array.isArray(saved?.units) ? saved!.units : [],
+      topics: Array.isArray(saved?.topics) ? saved!.topics : [],
+      loaded: true,
+    };
+    set({ plans: { ...get().plans, [setId]: plan } });
+    return plan;
+  },
+
+  /**
+   * Tick a topic. Optimistic on purpose — the checkbox must move under the
+   * thumb — but a refused write is rolled back rather than left showing a
+   * state the server never accepted.
+   */
+  setTopicStatus: async (setId, topicId, status) => {
+    const before = get().plans[setId];
+    if (!before) return;
+    const after: StudySetPlan = {
+      ...before,
+      topics: before.topics.map((topic) => (topic.id === topicId ? { ...topic, status } : topic)),
+    };
+    set({ plans: { ...get().plans, [setId]: after } });
+    try {
+      await updateStudySetTopicStatus(setId, topicId, status);
+    } catch (error) {
+      set({ plans: { ...get().plans, [setId]: before } });
+      throw error;
+    }
+  },
+
+  loadFolders: async () => {
+    try {
+      const rows = await fetchStudySetFolders();
+      const folders = Array.isArray(rows) ? (rows as StudySetFolder[]) : [];
+      set({ folders });
+      return folders;
+    } catch {
+      return get().folders;
+    }
   },
 
   openPicker: () => set({ picker: true }),

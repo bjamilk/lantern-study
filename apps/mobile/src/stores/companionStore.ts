@@ -11,6 +11,10 @@ import type {
   CompanionMessage,
   CompanionUserContext,
 } from '@lantern/shared';
+// Subpath, not the bare package: mobile's jest maps '@lantern/shared/*' to the
+// package source but has no mapping for the bare specifier, so a VALUE import
+// from it (unlike the erased type imports above) fails every store test.
+import { normalizeCompanionCitation } from '@lantern/shared/api/companion';
 import {
   companionSendMessage,
   companionSendMessageStream,
@@ -58,20 +62,45 @@ async function persistNoteContext(ctx: CompanionNoteContext | null) {
   }
 }
 
-async function readPersistedConversationId(): Promise<string | null> {
+/**
+ * The persisted thread, and which room it belongs to.
+ *
+ * This used to be a bare conversation id with no scope, so opening Ask from a
+ * different, empty study set restored the previous note's whole conversation.
+ * The scope is stored WITH the id; a different scope starts a fresh thread and
+ * the old one stays reachable from Past chats.
+ *
+ * A bare-string value is a pre-scope record: it is honoured once, with a null
+ * scope, so an in-progress thread is not thrown away by the upgrade.
+ */
+export type PersistedConversation = { scopeId: string | null; conversationId: string };
+
+async function readPersistedConversation(): Promise<PersistedConversation | null> {
   try {
     const raw = await AsyncStorage.getItem(CONVERSATION_STORAGE_KEY);
     if (!raw || !raw.trim()) return null;
-    return raw.trim();
+    const trimmed = raw.trim();
+    if (!trimmed.startsWith('{')) return { scopeId: null, conversationId: trimmed };
+    const parsed = JSON.parse(trimmed) as { scopeId?: unknown; conversationId?: unknown };
+    if (typeof parsed.conversationId !== 'string' || !parsed.conversationId.trim()) return null;
+    return {
+      conversationId: parsed.conversationId.trim(),
+      scopeId:
+        typeof parsed.scopeId === 'string' && parsed.scopeId.trim() ? parsed.scopeId.trim() : null,
+    };
   } catch {
     return null;
   }
 }
 
-async function persistConversationId(id: string | null) {
+async function persistConversationId(id: string | null, scopeId: string | null = null) {
   try {
     if (!id) await AsyncStorage.removeItem(CONVERSATION_STORAGE_KEY);
-    else await AsyncStorage.setItem(CONVERSATION_STORAGE_KEY, id);
+    else
+      await AsyncStorage.setItem(
+        CONVERSATION_STORAGE_KEY,
+        JSON.stringify({ scopeId, conversationId: id })
+      );
   } catch {
     /* ignore */
   }
@@ -94,13 +123,38 @@ interface CompanionState {
   pendingMessageContext: Partial<CompanionUserContext> | null;
 
   activeNoteContext: CompanionNoteContext | null;
-  hydrateNoteContext: () => Promise<void>;
+  hydrateNoteContext: (scopeId?: string | null) => Promise<void>;
   setActiveNoteContext: (ctx: CompanionNoteContext | null) => Promise<void>;
   /**
-   * Drop the attachment when the student moves to a different room. A null
-   * scope means "nowhere in particular" and never clears.
+   * Attach THIS note and open on it, in one synchronous state write.
+   *
+   * Opening the companion from a note used to race: the panel hydrated the
+   * persisted attachment first, so the note you actually opened from lost to
+   * whatever note was attached last — the phone showed "Imported Notes" while
+   * standing inside a different note. Setting the attachment before the sheet
+   * can read it is what makes the first send land on the right material.
+   */
+  openForNote: (note: CompanionNoteContext) => void;
+  /**
+   * Drop the attachment AND the thread when the student moves to a different
+   * room. A null scope means "nowhere in particular" and never clears.
    */
   resetForScope: (scopeId: string | null) => void;
+  /** The room the current thread belongs to. Persisted with the thread id. */
+  activeScopeId: string | null;
+  /**
+   * Open the sheet on a room the CALLER names, rather than one the panel
+   * infers from the live route.
+   *
+   * Route inference is a guess made after the fact; a screen that knows which
+   * room it is (the set room, a deck, a course) should say so, and this is the
+   * one call that does it. The reset happens here, before the sheet can read
+   * anything, so a stale attachment or thread can never survive into the new
+   * room.
+   */
+  openForScope: (scope: { scopeId: string | null; label?: string | null }) => void;
+  /** What the caller said this open is about. Consumed by the panel on open. */
+  requestedScope: { scopeId: string | null; label?: string | null } | null;
 
   activeConversationId: string | null;
   pendingNewConversation: boolean;
@@ -108,6 +162,15 @@ interface CompanionState {
   isLoadingConversations: boolean;
   loadConversations: () => Promise<void>;
   openConversation: (conversationId: string) => Promise<void>;
+  /**
+   * Delete ONE past chat from the history list.
+   *
+   * `clearHistory` only ever deleted the conversation you were looking at, so
+   * a thread you never reopened could not be removed from the phone at all.
+   * Deleting the active thread also has to leave the panel somewhere valid,
+   * which is a fresh chat — not a thread id the server no longer answers for.
+   */
+  deleteConversation: (conversationId: string) => Promise<void>;
   startNewChat: () => void;
 
   messages: CompanionMessage[];
@@ -158,18 +221,21 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   pendingMessageContext: null,
   activeNoteContext: null,
   activeConversationId: null,
+  activeScopeId: null,
+  requestedScope: null,
   pendingNewConversation: false,
   conversations: [],
   isLoadingConversations: false,
 
-  open: () => set({ isOpen: true }),
+  open: () => set({ isOpen: true, requestedScope: null }),
   /**
    * A queued send belongs to the open that queued it. Leaving `pendingMessage`
    * set on close meant the next open auto-fired it the moment history was
    * already loaded — spending an AI credit while the panel was still loading,
    * without the user typing anything.
    */
-  close: () => set({ isOpen: false, pendingMessage: null, pendingMessageContext: null }),
+  close: () =>
+    set({ isOpen: false, pendingMessage: null, pendingMessageContext: null, requestedScope: null }),
   toggle: () =>
     set((s) =>
       s.isOpen
@@ -187,37 +253,111 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   openWithMessage: (msg, context) =>
     set({ isOpen: true, pendingMessage: msg, pendingMessageContext: context ?? null }),
 
-  hydrateNoteContext: async () => {
-    const [ctx, conversationId] = await Promise.all([
+  hydrateNoteContext: async (scopeId = null) => {
+    const [ctx, persisted] = await Promise.all([
       readPersistedNoteContext(),
-      readPersistedConversationId(),
+      readPersistedConversation(),
     ]);
-    if (conversationId && get().activeConversationId !== conversationId) {
-      set({ activeConversationId: conversationId });
+    // A thread restores only into the room it was started in. A null recorded
+    // scope predates this field and is adopted rather than discarded.
+    const threadBelongs =
+      !!persisted &&
+      (scopeId == null || persisted.scopeId == null || persisted.scopeId === scopeId);
+    if (persisted && threadBelongs && get().activeConversationId !== persisted.conversationId) {
+      set({ activeConversationId: persisted.conversationId });
     }
+    if (persisted && !threadBelongs) {
+      void persistConversationId(null);
+      set({ activeConversationId: null, pendingNewConversation: true, messages: [] });
+    }
+    if (scopeId != null && get().activeScopeId !== scopeId) set({ activeScopeId: scopeId });
     if (!ctx) return;
+    // Same rule for the attachment, and a record with NO room is treated the
+    // same as one from another room. An unattributable attachment used to be
+    // adopted into whichever room read it next, which is how a note from one
+    // set arrived attached to a question asked in an empty other set.
+    if (scopeId != null && ctx.scopeId !== scopeId) {
+      void persistNoteContext(null);
+      set({ activeNoteContext: null });
+      return;
+    }
     if (get().activeNoteContext?.id === ctx.id) return;
     set({ activeNoteContext: ctx });
   },
 
+  openForNote: (note) => {
+    const current = get().activeNoteContext;
+    const sameNote = current?.id === note.id;
+    // Synchronous: the sheet must never render, or send, against the previous
+    // note. Persistence and history catch up afterwards.
+    set({
+      isOpen: true,
+      activeNoteContext: note,
+      activeScopeId: note.scopeId ?? note.id,
+      ...(sameNote
+        ? {}
+        : {
+            activeConversationId: null,
+            pendingNewConversation: true,
+            messages: [],
+            historyLoaded: true,
+            error: null,
+          }),
+    });
+    void persistNoteContext(note);
+    if (!sameNote) void persistConversationId(null);
+  },
+
+  openForScope: (scope) => {
+    set({ isOpen: true, requestedScope: scope });
+    get().resetForScope(scope.scopeId);
+  },
+
   resetForScope: (scopeId) => {
     if (!scopeId) return;
+    const previousScope = get().activeScopeId;
+    if (previousScope !== scopeId) set({ activeScopeId: scopeId });
+
     const current = get().activeNoteContext;
-    if (!current) return;
-    // An attachment with no recorded scope predates this field: adopt it into
-    // the room it is first seen in rather than clearing it blind.
-    if (current.scopeId == null) {
-      const adopted = { ...current, scopeId };
+    /**
+     * An attachment with no recorded room is adopted ONLY when no other room
+     * came before it — i.e. we are learning this session's first scope, not
+     * moving between rooms.
+     *
+     * Blind adoption is the empty-set leak. `NoteEditorScreen` attaches
+     * without a scope and its `await` lands AFTER the panel's scoped
+     * `openForNote`, so the attachment ends up scope-less; walking note (set
+     * A) -> Study -> set B then adopted that note into set B and the header
+     * read "On: Imported Notes" inside an empty set.
+     */
+    const unattributable = !!current && current.scopeId == null;
+    if (unattributable && (previousScope == null || previousScope === scopeId)) {
+      const adopted = { ...current!, scopeId };
       void persistNoteContext(adopted);
       set({ activeNoteContext: adopted });
-      return;
     }
-    if (current.scopeId === scopeId) return;
-    void persistNoteContext(null);
+
+    const attachmentIsForeign =
+      !!current &&
+      (current.scopeId != null
+        ? current.scopeId !== scopeId
+        : previousScope != null && previousScope !== scopeId);
+    // The thread leaks on its own: an empty set with no attachment at all
+    // still restored the previous room's conversation, because the old reset
+    // returned early whenever nothing was attached.
+    const threadIsForeign =
+      (!!get().activeConversationId || get().messages.length > 0) &&
+      previousScope != null &&
+      previousScope !== scopeId;
+
+    if (!attachmentIsForeign && !threadIsForeign) return;
+
+    if (attachmentIsForeign) void persistNoteContext(null);
     void persistConversationId(null);
     set({
-      activeNoteContext: null,
+      ...(attachmentIsForeign ? { activeNoteContext: null } : {}),
       activeConversationId: null,
+      activeScopeId: scopeId,
       pendingNewConversation: true,
       messages: [],
       historyLoaded: true,
@@ -225,11 +365,37 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     });
   },
 
-  setActiveNoteContext: async (ctx) => {
+  setActiveNoteContext: async (raw) => {
     const prev = get().activeNoteContext;
+    /**
+     * Stamp the CALLER's room onto every attachment.
+     *
+     * Screens outside this store (the note editor, the notes studio, the
+     * lecture and quiz studios) attach a note without a scope. Those calls
+     * `await` storage, so their `set` lands after the panel's scoped
+     * `openForNote` and quietly replaced a scoped attachment with a
+     * scope-less one — which the next room then adopted. The room the student
+     * is standing in when the attach happens is `activeScopeId`, so record
+     * that rather than leaving the attachment unattributable. Re-attaching
+     * the same note keeps the scope it already had.
+     */
+    const ctx: CompanionNoteContext | null = raw
+      ? {
+          ...raw,
+          scopeId:
+            raw.scopeId ??
+            (prev && prev.id === raw.id ? prev.scopeId ?? null : null) ??
+            get().activeScopeId ??
+            null,
+        }
+      : null;
     const nextId = ctx?.id ?? null;
     const prevId = prev?.id ?? null;
-    if (nextId === prevId && (ctx?.title ?? null) === (prev?.title ?? null)) {
+    if (
+      nextId === prevId &&
+      (ctx?.title ?? null) === (prev?.title ?? null) &&
+      (ctx?.scopeId ?? null) === (prev?.scopeId ?? null)
+    ) {
       return;
     }
     await persistNoteContext(ctx);
@@ -257,19 +423,20 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
 
   openConversation: async (conversationId) => {
     const target = get().conversations.find((c) => c.id === conversationId);
-    await persistConversationId(conversationId);
+    await persistConversationId(conversationId, get().activeScopeId);
     if (target?.noteContextId) {
-      await persistNoteContext({
+      // Scoped to the room the thread is being opened in, so reopening a past
+      // chat cannot leave an unattributable attachment for the next room.
+      const restored: CompanionNoteContext = {
         id: target.noteContextId,
         title: target.noteTitle || 'Untitled note',
-      });
+        scopeId: get().activeScopeId ?? null,
+      };
+      await persistNoteContext(restored);
       set({
         activeConversationId: conversationId,
         pendingNewConversation: false,
-        activeNoteContext: {
-          id: target.noteContextId,
-          title: target.noteTitle || 'Untitled note',
-        },
+        activeNoteContext: restored,
         messages: [],
         historyLoaded: false,
         error: null,
@@ -288,6 +455,35 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       });
     }
     await get().loadHistory();
+  },
+
+  deleteConversation: async (conversationId) => {
+    const wasActive = get().activeConversationId === conversationId;
+    try {
+      await clearCompanionHistory({ conversationId });
+    } catch (err: unknown) {
+      set({
+        error: err instanceof Error ? err.message : 'Failed to delete that chat.',
+      });
+      return;
+    }
+    // Drop it locally rather than re-fetching: the list is already on screen,
+    // and a refetch would make the row linger for a round trip after the
+    // student confirmed the delete.
+    set((s) => ({
+      conversations: s.conversations.filter((c) => c.id !== conversationId),
+    }));
+    if (!wasActive) return;
+    await persistConversationId(null);
+    await persistNoteContext(null);
+    set({
+      activeConversationId: null,
+      activeNoteContext: null,
+      pendingNewConversation: true,
+      messages: [],
+      historyLoaded: true,
+      error: null,
+    });
   },
 
   startNewChat: () => {
@@ -338,7 +534,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         return;
       }
       if (result.conversationId) {
-        await persistConversationId(result.conversationId);
+        await persistConversationId(result.conversationId, get().activeScopeId);
       }
       set({
         messages: result.messages.map((m) => ({
@@ -365,7 +561,16 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }
   },
 
+  /**
+   * One tap, one charge.
+   *
+   * `isStreaming` reaches the composer as a React snapshot, so two taps in the
+   * same frame both saw `false` and both sent — the server charged twice for
+   * one question. The store is the only honest in-flight flag, so the guard
+   * lives here as well as in the button.
+   */
   sendMessage: async (text: string, context?: CompanionUserContext) => {
+    if (get().isLoading || get().isStreaming) return;
     const oneShot = get().pendingMessageContext;
     if (oneShot) set({ pendingMessageContext: null });
     const mergedContext = mergeThreadContext(get, oneShot ? { ...oneShot, ...context } : context);
@@ -386,14 +591,14 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     try {
       const { reply, actions, citations, conversationId } = await companionSendMessage(text, mergedContext);
       if (conversationId) {
-        await persistConversationId(conversationId);
+        await persistConversationId(conversationId, get().activeScopeId);
       }
       const assistantMsg: CompanionMessage = {
         id: `tmp-ai-${Date.now()}`,
         role: 'assistant',
         content: reply,
         actions: actions?.length ? actions : undefined,
-        citations: citations ?? null,
+        citations: normalizeCompanionCitation(citations),
         created_at: new Date().toISOString(),
       };
       set((s) => ({
@@ -413,6 +618,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   },
 
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
+    // Same one-tap-one-charge guard as sendMessage: this is the path all
+    // mobile chat takes, and it is the billable one.
+    if (get().isLoading || get().isStreaming) return;
     const oneShot = get().pendingMessageContext;
     if (oneShot) set({ pendingMessageContext: null });
     const mergedContext = mergeThreadContext(get, oneShot ? { ...oneShot, ...context } : context);
@@ -450,7 +658,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       },
       ({ actions, citations, messageId, userMessageId, conversationId }) => {
         if (conversationId) {
-          void persistConversationId(conversationId);
+          void persistConversationId(conversationId, get().activeScopeId);
         }
         set((s) => ({
           messages: s.messages.map((m) => {
@@ -459,7 +667,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
                 ...m,
                 id: messageId || m.id,
                 actions: actions.length ? actions : undefined,
-                citations: citations ?? null,
+                citations: normalizeCompanionCitation(citations),
               };
             }
             if (userMessageId && m.id === tempUserMsg.id) {

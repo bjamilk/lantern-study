@@ -45,6 +45,7 @@ describe('companion note attachment scope', () => {
     for (const k of Object.keys(store)) delete store[k];
     useCompanionStore.setState({
       activeNoteContext: null,
+      activeScopeId: null,
       activeConversationId: null,
       pendingNewConversation: false,
       messages: [],
@@ -83,8 +84,9 @@ describe('companion note attachment scope', () => {
     expect(useCompanionStore.getState().activeNoteContext?.id).toBe('note-1');
   });
 
-  it('adopts a scopeless attachment left by an older build', async () => {
+  it('adopts a scopeless attachment only when no other room came first', async () => {
     useCompanionStore.setState({
+      activeScopeId: null,
       activeNoteContext: { id: 'note-legacy', title: 'Old note' },
     });
 
@@ -94,6 +96,29 @@ describe('companion note attachment scope', () => {
 
     useCompanionStore.getState().resetForScope('set-b');
     expect(useCompanionStore.getState().activeNoteContext).toBeNull();
+  });
+
+  it('drops a scopeless attachment carried in from another room', async () => {
+    // The empty-set leak: adopting here is what put set A's note on set B.
+    useCompanionStore.setState({
+      activeScopeId: 'set-a',
+      activeNoteContext: { id: 'note-legacy', title: 'Old note' },
+    });
+
+    useCompanionStore.getState().resetForScope('set-b');
+
+    expect(useCompanionStore.getState().activeNoteContext).toBeNull();
+  });
+
+  it('stamps the room the student is in onto an unscoped attach', async () => {
+    useCompanionStore.setState({ activeScopeId: 'set-a' });
+
+    await useCompanionStore.getState().setActiveNoteContext({
+      id: 'note-2',
+      title: 'Nephron',
+    });
+
+    expect(useCompanionStore.getState().activeNoteContext?.scopeId).toBe('set-a');
   });
 
   it('clears the attachment on New chat', async () => {

@@ -9,7 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  AppState,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+// The same engine the recap and lesson studios narrate with, so "Read aloud"
+// uses the voice the student has already heard rather than a second stack.
+import * as Speech from 'expo-speech';
 import { appAlert } from './ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -20,7 +25,7 @@ import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
 import AIUsageBadge from './AIUsageBadge';
 import { AI_FEATURE_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
-import { navigate as navigateFromRef } from '../navigation/navigationRef';
+import { navigate as navigateFromRef, navigationRef } from '../navigation/navigationRef';
 import { toTab } from '../navigation/nestedTab';
 import { submitCompanionFeedback } from '../services/ai';
 import type { CompanionAction } from '@lantern/shared/types';
@@ -45,6 +50,17 @@ import { profileDisplayName } from '../hooks/profileIdentity';
 import { useAppTheme, useTheme } from '../theme';
 import { Button, T, useFeatureAccent } from './ui';
 import { FormattedBubbleText, BubbleTypingIndicator } from './companion/BubbleText';
+import { CompanionEmptyState } from './companion/CompanionEmptyState';
+import { CompanionHistory } from './companion/CompanionHistory';
+import { ScopedPrompts } from './companion/ScopedPrompts';
+import {
+  EXPLAIN_SIMPLY_PROMPT,
+  companionScopeFromRoute,
+  previousUserMessage,
+  scopeAccessibilityLabel,
+  scopeSubtitle,
+  type CompanionRouteScope,
+} from './companion/companionScope';
 import { transcribeAudioForNote } from '../services/notes';
 import { trackAIAnalyticsEvent } from '../services/ai';
 import { AppIcon } from './ui/AppIcon';
@@ -80,14 +96,6 @@ function formatRelativeTime(iso: string): string {
     return '';
   }
 }
-
-const QUICK_PROMPTS = [
-  'What should I study today?',
-  'Generate flashcards for my weak topics',
-  'Quiz me on my weak topics',
-  'Give me a study tip',
-  'Explain spaced repetition',
-];
 
 const MIN_DICTATION_MS = 800;
 const MAX_DICTATION_MS = 60_000;
@@ -143,12 +151,14 @@ export function AICompanionPanel({ context }: Props) {
     activeNoteContext,
     setActiveNoteContext,
     hydrateNoteContext,
+    resetForScope: resetCompanionForScope,
     activeConversationId,
     conversations,
     isLoadingConversations,
     loadConversations,
     openConversation,
     startNewChat,
+    deleteConversation,
     setMessageFeedback,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
@@ -172,10 +182,31 @@ export function AICompanionPanel({ context }: Props) {
   const [showNotePicker, setShowNotePicker] = useState(false);
   const [showHistoryList, setShowHistoryList] = useState(false);
   const [noteSearch, setNoteSearch] = useState('');
+  const [promptsExpanded, setPromptsExpanded] = useState(false);
+  /** Which message is being read aloud, so only one stop button is armed. */
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  /**
+   * What the companion is "on", sampled when the panel opens.
+   *
+   * The web rail is rendered inside the surface it serves and reads its scope
+   * from props; this panel is mounted ONCE in `RootNavigator` with no `context`
+   * prop, so the equivalent truth is the route that was on screen at the moment
+   * the sheet came up. Sampling on open (not every render) is deliberate: the
+   * route underneath cannot change while a modal is over it, and re-reading
+   * would only add renders.
+   */
+  const [routeScope, setRouteScope] = useState<CompanionRouteScope>({
+    screenName: null,
+    scopeName: null,
+    activity: null,
+    scopeId: null,
+  });
   const hasLoaded = useRef(false);
   const didAutoAttachRef = useRef(false);
   const listRef = useRef<FlatList>(null);
   const inputValueRef = useRef('');
+  /** True from the instant a send starts until the server answers or fails. */
+  const sendInFlightRef = useRef(false);
   const recordingRef = useRef<RecordingHandle | null>(null);
   const recordingStartedAtRef = useRef(0);
   const discardRecordingRef = useRef(false);
@@ -213,8 +244,49 @@ export function AICompanionPanel({ context }: Props) {
     if (!isOpen || !user?.id) return;
     if (hasLoaded.current) return;
     hasLoaded.current = true;
+    // Sample the room the sheet came up over BEFORE anything is restored: a
+    // thread and an attachment both belong to a room, and the phone mounts one
+    // panel at the root with no `context` prop, so the live route is the only
+    // truth about which room this open is for. Doing this only on room CHANGE
+    // (CourseRoomScreen's effect) missed the walk note -> Ask in set A, then
+    // Study -> set B -> Ask, which is how the leak was seen on device.
+    const openRoute = navigationRef.isReady() ? navigationRef.getCurrentRoute() : null;
+    const openParams = (openRoute?.params ?? null) as Record<string, unknown> | null;
+    // A caller that named its own room wins over the route: `openForScope`
+    // states the scope BEFORE the sheet mounts, while route inference is a
+    // guess made after the fact.
+    const requested = useCompanionStore.getState().requestedScope;
+    const openScopeId =
+      requested?.scopeId ?? companionScopeFromRoute(openRoute?.name ?? null, openParams).scopeId;
+    /**
+     * Opening from a note attaches THAT note.
+     *
+     * The route's own note id beats both the persisted attachment and the
+     * (always absent, on mobile) `context` prop: the phone showed the chip
+     * "Imported Notes" while the student was standing inside a different note,
+     * because hydration ran first and whatever was attached last won.
+     */
+    const routeNoteId =
+      typeof openParams?.noteId === 'string' && openParams.noteId.trim()
+        ? openParams.noteId.trim()
+        : null;
     void (async () => {
-      await hydrateNoteContext();
+      resetCompanionForScope(openScopeId);
+      if (routeNoteId && !didAutoAttachRef.current) {
+        didAutoAttachRef.current = true;
+        const known = useNotesStore.getState().notes.find((n) => n.id === routeNoteId);
+        // Synchronous state write: the composer and the first send read the
+        // right attachment even before persistence or history come back.
+        useCompanionStore.getState().openForNote({
+          id: routeNoteId,
+          title: (known?.title || '').trim() || context?.noteTitle || 'Untitled note',
+          scopeId: openScopeId,
+        });
+        await loadHistory();
+        void loadConversations();
+        return;
+      }
+      await hydrateNoteContext(openScopeId);
       if (!useCompanionStore.getState().activeNoteContext && context?.noteId && !didAutoAttachRef.current) {
         didAutoAttachRef.current = true;
         await setActiveNoteContext({
@@ -234,6 +306,7 @@ export function AICompanionPanel({ context }: Props) {
     loadHistory,
     loadConversations,
     setActiveNoteContext,
+    resetCompanionForScope,
     context?.noteId,
     context?.noteTitle,
   ]);
@@ -243,8 +316,52 @@ export function AICompanionPanel({ context }: Props) {
       hasLoaded.current = false;
       didAutoAttachRef.current = false;
       setShowHistoryList(false);
+      setPromptsExpanded(false);
+      return;
     }
+    // Sample the scope of whatever the sheet just came up over.
+    const route = navigationRef.isReady() ? navigationRef.getCurrentRoute() : null;
+    const inferred = companionScopeFromRoute(
+      route?.name ?? null,
+      (route?.params ?? null) as Record<string, unknown> | null
+    );
+    const requested = useCompanionStore.getState().requestedScope;
+    setRouteScope(
+      requested
+        ? {
+            ...inferred,
+            scopeId: requested.scopeId ?? inferred.scopeId,
+            scopeName: requested.label?.trim() || inferred.scopeName,
+          }
+        : inferred
+    );
   }, [isOpen]);
+
+  /**
+   * A relaunch must land on Home, not in the companion.
+   *
+   * `isOpen` is not persisted, so a genuine cold start already clears it — but
+   * this app has an in-process remount (`RootNavigator`'s `preservedNavState`,
+   * used so a font-size change can re-key the tree) that rebuilds the
+   * navigator while module-level zustand state, `isOpen` included, survives.
+   * Backgrounding and returning hit the same shape. Nothing anywhere called
+   * `close()` on an AppState change, so the sheet was still up over a restored
+   * nav state and read as "the companion re-opened itself".
+   *
+   * Closing on `background` — never on `inactive`, which fires for the
+   * notification shade, a permission prompt and the app switcher preview — is
+   * what makes leaving the app end the companion session. The composer text is
+   * component state and this component never unmounts, so a draft survives the
+   * close and is still there on reopen.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (next) => {
+      if (next !== 'background') return;
+      if (!useCompanionStore.getState().isOpen) return;
+      useCompanionStore.getState().close();
+    });
+    return () => sub.remove();
+  }, []);
 
   useEffect(() => {
     if (!showNotePicker) return;
@@ -265,6 +382,8 @@ export function AICompanionPanel({ context }: Props) {
       await setActiveNoteContext({
         id: note.id,
         title: (note.title || '').trim() || 'Untitled note',
+        // Picked while standing in this room, so it belongs to this room.
+        scopeId: useCompanionStore.getState().activeScopeId,
       });
       trackAIAnalyticsEvent('companion_note_context_attached', { noteId: note.id });
     },
@@ -476,12 +595,36 @@ export function AICompanionPanel({ context }: Props) {
     async (text?: string) => {
       const msg = (text ?? input).trim();
       if (!msg || isLoading || isStreaming || isRecording || isTranscribing) return;
+      // `isStreaming` is a render snapshot, so two taps inside one frame both
+      // read false and both sent — one question, two credits. The ref flips
+      // synchronously, before React can re-render. (The store carries the same
+      // guard, so a send queued from anywhere else cannot double-charge
+      // either.)
+      if (sendInFlightRef.current) return;
+      sendInFlightRef.current = true;
       setInput('');
       inputValueRef.current = '';
-      await sendMessageStreaming(msg, enrichedContext);
+      try {
+        await sendMessageStreaming(msg, enrichedContext);
+      } finally {
+        sendInFlightRef.current = false;
+      }
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     },
     [input, isLoading, isStreaming, isRecording, isTranscribing, sendMessageStreaming, enrichedContext]
+  );
+
+  /**
+   * The attachment is narrower than the route, so it wins the "On:" line — a
+   * note stapled to the thread is what the answer is actually grounded in.
+   */
+  const companionScope = useMemo(
+    () => ({
+      noteTitle: activeNoteContext?.title ?? null,
+      scopeName: routeScope.scopeName,
+      screenName: routeScope.screenName,
+    }),
+    [activeNoteContext?.title, routeScope.scopeName, routeScope.screenName]
   );
 
   const isBusy = isLoading || isStreaming || isLoadingHistory;
@@ -527,6 +670,86 @@ export function AICompanionPanel({ context }: Props) {
     );
   }, [clearHistory]);
 
+  const handleDeleteConversation = useCallback(
+    (conversationId: string) => {
+      void deleteConversation(conversationId);
+      trackAIAnalyticsEvent('companion_conversation_deleted', { conversationId });
+    },
+    [deleteConversation]
+  );
+
+  const handleCopyMessage = useCallback(
+    (content: string) => {
+      void Clipboard.setStringAsync(content)
+        .then(() => showToast('Copied to clipboard', 'success'))
+        .catch(() => showToast('Could not copy that.', 'error'));
+    },
+    [showToast]
+  );
+
+  /**
+   * Read aloud, as a toggle: the same button stops it. `expo-speech` has no
+   * per-utterance handle, so the id in state is what tells the row whether IT
+   * is the one speaking — without it, every row would show "Stop".
+   */
+  const handleToggleSpeak = useCallback(
+    (messageId: string, content: string) => {
+      if (speakingMessageId === messageId) {
+        void Speech.stop();
+        setSpeakingMessageId(null);
+        return;
+      }
+      void Speech.stop();
+      setSpeakingMessageId(messageId);
+      Speech.speak(content, {
+        onDone: () => setSpeakingMessageId((id) => (id === messageId ? null : id)),
+        onStopped: () => setSpeakingMessageId((id) => (id === messageId ? null : id)),
+        onError: () => {
+          setSpeakingMessageId((id) => (id === messageId ? null : id));
+          showToast('Could not read that aloud.', 'error');
+        },
+      });
+      trackAIAnalyticsEvent('companion_read_aloud');
+    },
+    [speakingMessageId, showToast]
+  );
+
+  // Nothing should keep talking after the sheet is gone.
+  useEffect(() => {
+    if (isOpen) return;
+    void Speech.stop();
+    setSpeakingMessageId(null);
+  }, [isOpen]);
+
+  useEffect(() => () => {
+    void Speech.stop();
+  }, []);
+
+  /**
+   * Ask the SAME question again. The thread is server-backed with no edit or
+   * delete-one-message endpoint, so this appends a fresh turn rather than
+   * replacing the answer in place — which is also the honest reading of the
+   * button: you get another attempt, and the one you did not like stays above
+   * it for comparison.
+   */
+  const handleRegenerate = useCallback(
+    (messageId: string) => {
+      const question = previousUserMessage(messages, messageId);
+      if (!question) {
+        showToast('Nothing to regenerate from.', 'info');
+        return;
+      }
+      trackAIAnalyticsEvent('companion_regenerate');
+      void handleSend(question);
+    },
+    [messages, handleSend, showToast]
+  );
+
+  const handleExplainSimply = useCallback(() => {
+    trackAIAnalyticsEvent('companion_explain_simply');
+    void handleSend(EXPLAIN_SIMPLY_PROMPT);
+  }, [handleSend]);
+
   if (!isOpen) {
     return null;
   }
@@ -542,7 +765,19 @@ export function AICompanionPanel({ context }: Props) {
           <AppIcon name="sparkles" size={22} color={ai.ink} />
           {/* flex:1 is correct HERE — the header row is full width. It is only
               inside the intrinsically sized bubble that flex-1 collapses. */}
-          <T.Heading style={{ flex: 1, marginLeft: 8, fontWeight: '700' }}>Lantern AI</T.Heading>
+          {/* Title over the scope line — the rail's two-line header. Without
+              "On: …" the phone gave no way to tell whether a question was
+              about the note you had open or about nothing in particular. */}
+          <View style={{ flex: 1, marginLeft: 8 }}>
+            <T.Heading style={{ fontWeight: '700' }}>Lantern AI</T.Heading>
+            <T.Caption
+              tone="tertiary"
+              numberOfLines={1}
+              accessibilityLabel={scopeAccessibilityLabel(companionScope) ?? undefined}
+            >
+              {scopeSubtitle(companionScope)}
+            </T.Caption>
+          </View>
           <Pressable onPress={handleOpenHistory} className="p-2" accessibilityLabel="Past chats">
             <AppIcon name="time" size={20} color={showHistoryList ? ai.ink : colors.textTertiary} />
           </Pressable>
@@ -576,73 +811,15 @@ export function AICompanionPanel({ context }: Props) {
         </View>
 
         {showHistoryList ? (
-          <FlatList
-            data={conversations}
-            keyExtractor={(item) => item.id}
-            className="flex-1 px-3"
-            contentContainerStyle={{ paddingVertical: 12, gap: 8, flexGrow: 1 }}
-            ListHeaderComponent={
-              <View className="flex-row items-center justify-between px-1 mb-2">
-                <T.Label tone="secondary" style={{ textTransform: 'uppercase' }}>
-                  Past chats
-                </T.Label>
-                <Pressable onPress={handleNewChat}>
-                  <T.Label style={{ color: ai.ink }}>New chat</T.Label>
-                </Pressable>
-              </View>
-            }
-            ListEmptyComponent={
-              isLoadingConversations ? (
-                <View className="py-8 items-center gap-2">
-                  <ActivityIndicator color={colors.primary} />
-                  <Text className="text-lantern-text-secondary text-center">Loading chats…</Text>
-                </View>
-              ) : (
-                <Text className="text-lantern-text-secondary text-center py-8 px-4">
-                  No past chats yet. Start a conversation and it will show up here.
-                </Text>
-              )
-            }
-            renderItem={({ item }) => {
-              const isActive = item.id === activeConversationId;
-              return (
-                <Pressable
-                  onPress={() => void handleSelectConversation(item)}
-                  className={`rounded-xl px-3 py-3 border ${
-                    isActive
-                      ? 'border-lantern-primary/30 bg-lantern-primary-background'
-                      : 'border-transparent bg-lantern-background-secondary dark:bg-lantern-surface-secondary'
-                  }`}
-                >
-                  <View className="flex-row items-start justify-between gap-2">
-                    <Text
-                      className="flex-1 text-body font-medium text-lantern-text dark:text-white"
-                      numberOfLines={1}
-                    >
-                      {item.title}
-                    </Text>
-                    <T.Label tone="secondary" style={{ flexShrink: 0 }}>
-                      {formatRelativeTime(item.updatedAt)}
-                    </T.Label>
-                  </View>
-                  {item.noteTitle ? (
-                    <T.Label style={{ marginTop: 2, color: ai.ink }} numberOfLines={1}>
-                      {item.noteTitle}
-                    </T.Label>
-                  ) : null}
-                  {item.preview ? (
-                    <T.Caption tone="secondary" style={{ marginTop: 2 }} numberOfLines={2}>
-                      {item.preview}
-                    </T.Caption>
-                  ) : null}
-                </Pressable>
-              );
-            }}
-            ListFooterComponent={
-              <Pressable onPress={() => setShowHistoryList(false)} className="py-3">
-                <T.Caption tone="secondary" style={{ textAlign: 'center' }}>Back to chat</T.Caption>
-              </Pressable>
-            }
+          <CompanionHistory
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            isLoading={isLoadingConversations}
+            onSelect={(c) => void handleSelectConversation(c)}
+            onDelete={handleDeleteConversation}
+            onNewChat={handleNewChat}
+            onBack={() => setShowHistoryList(false)}
+            formatRelativeTime={formatRelativeTime}
           />
         ) : (
         <FlatList
@@ -661,21 +838,16 @@ export function AICompanionPanel({ context }: Props) {
                 </Text>
               </View>
             ) : (
-            <View className="py-8">
-              <Text className="text-lantern-text-secondary text-center mb-4">
-                Ask anything about your study plan, flashcards, or tests.
-              </Text>
-              <View className="flex-row flex-wrap gap-2 justify-center">
-                {QUICK_PROMPTS.map(p => (
-                  <Pressable
-                    key={p}
-                    onPress={() => void handleSend(p)}
-                    className="min-h-[44px] justify-center px-4 rounded-full bg-lantern-primary-background dark:bg-lantern-primary-background border border-lantern-primary/30 dark:border-lantern-primary/30"
-                  >
-                    <T.Caption style={{ color: ai.ink }}>{p}</T.Caption>
-                  </Pressable>
-                ))}
-              </View>
+            <View className="py-6 gap-5">
+              <CompanionEmptyState />
+              <ScopedPrompts
+                activity={routeScope.activity}
+                scopeName={companionScope.noteTitle ?? routeScope.scopeName}
+                expanded={promptsExpanded}
+                onToggleExpanded={() => setPromptsExpanded((v) => !v)}
+                onAsk={(message) => void handleSend(message)}
+                disabled={isBusy || dictationBusy}
+              />
             </View>
             )
           }
@@ -720,8 +892,14 @@ export function AICompanionPanel({ context }: Props) {
                             noteId: item.citations!.noteId,
                           });
                         }}
+                        accessibilityRole="button"
                         accessibilityLabel={`Open ${item.citations!.noteTitle}, ${detail}`}
-                        className="flex-row items-center max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5"
+                        /* The lilac source chip: `ai` tint ground under `ai`
+                           ink, so a citation reads as the companion's own mark
+                           rather than borrowing the primary ramp every other
+                           pill in the app already uses. */
+                        style={{ backgroundColor: ai.tint }}
+                        className="flex-row items-center max-w-full rounded-full px-3 py-1.5"
                       >
                         <AppIcon name="document-text" size={12} color={ai.ink} />
                         <T.Label
@@ -753,6 +931,65 @@ export function AICompanionPanel({ context }: Props) {
                     ))}
                   </View>
                 )}
+                {/* Per-answer actions. Copy / read aloud / regenerate work on
+                    any finished answer — including one the server has not
+                    persisted an id for yet — while the thumbs need a real id
+                    to attach feedback to, which is what `canRate` gates. */}
+                {!isUser && !isStreaming && item.content.trim() ? (
+                  <View className="flex-row flex-wrap items-center gap-1 mt-1 pl-1">
+                    <Pressable
+                      onPress={() => handleCopyMessage(item.content)}
+                      accessibilityRole="button"
+                      accessibilityLabel="Copy answer"
+                      hitSlop={6}
+                      className="p-1.5"
+                    >
+                      <AppIcon name="copy" size={14} color={colors.textTertiary} />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleToggleSpeak(item.id, item.content)}
+                      accessibilityRole="button"
+                      accessibilityLabel={
+                        speakingMessageId === item.id ? 'Stop reading aloud' : 'Read answer aloud'
+                      }
+                      accessibilityState={{ selected: speakingMessageId === item.id }}
+                      hitSlop={6}
+                      className="p-1.5"
+                    >
+                      <AppIcon
+                        name={speakingMessageId === item.id ? 'stop' : 'volume-medium'}
+                        size={14}
+                        color={speakingMessageId === item.id ? ai.ink : colors.textTertiary}
+                      />
+                    </Pressable>
+                    <Pressable
+                      onPress={() => handleRegenerate(item.id)}
+                      disabled={isBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Ask again"
+                      accessibilityState={{ disabled: isBusy }}
+                      hitSlop={6}
+                      className={`p-1.5 ${isBusy ? 'opacity-40' : ''}`}
+                    >
+                      <AppIcon name="refresh" size={14} color={colors.textTertiary} />
+                    </Pressable>
+                    <Pressable
+                      onPress={handleExplainSimply}
+                      disabled={isBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="I don't understand — explain more simply"
+                      accessibilityState={{ disabled: isBusy }}
+                      style={{ minHeight: 32, backgroundColor: ai.tint }}
+                      className={`justify-center px-2.5 rounded-full ml-0.5 ${
+                        isBusy ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <T.Label style={{ color: ai.ink, fontWeight: '500' }}>
+                        I don&apos;t understand
+                      </T.Label>
+                    </Pressable>
+                  </View>
+                ) : null}
                 {canRate && (
                   <View className="flex-row gap-2 mt-1 pl-1">
                     {(['up', 'down'] as const).map((rating) => {

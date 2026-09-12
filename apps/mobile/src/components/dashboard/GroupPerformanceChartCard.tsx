@@ -23,6 +23,9 @@ import { useTheme } from '../../theme';
 // Wave T: the axis labels were the app's smallest strings (9 sp) AND its only
 // hardcoded chart ink. Both come from the scale and the theme now.
 import { typeScale } from '../../design/typeScale';
+// Wave P: the axis used to render `String(p.x).slice(-5)` and let gifted-charts
+// clip it, so every daily label read "0…" and every weekly one "6-W36".
+import { axisLabel, axisLabelBox, axisLabelStride, shouldShowAxisLabel } from './chartAxisLabels';
 
 const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
@@ -248,6 +251,15 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
 
   const chartWidth = Math.max(280, width - 64);
 
+  // The plot area only: gifted-charts draws the y-axis labels outside the width
+  // it is given, and labels are spaced across the plot between the two end gaps.
+  // Both the label stride and `chartGeometry` below derive from these numbers,
+  // so they live here rather than being computed twice.
+  const Y_AXIS_WIDTH = 46;
+  const INITIAL_SPACING = 22;
+  const END_SPACING = 18;
+  const renderWidth = Math.max(140, chartWidth - Y_AXIS_WIDTH);
+  const plotWidth = Math.max(120, renderWidth - INITIAL_SPACING - END_SPACING);
 
   const lineDatasets = useMemo(() => {
     if (selectedSeries.length === 0) return [];
@@ -257,15 +269,14 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
       // A label under every point overlaps once the points are packed to fit the
       // card, so keep roughly six evenly spaced ones plus the last for the
       // end of the range. Every point is still plotted — only labels are thinned.
-      const stride = Math.max(1, Math.ceil(points.length / 6));
+      const stride = axisLabelStride(points.length, plotWidth);
       return [
         {
           data: points.map((p, i) => ({
             value: p.y ?? 0,
-            // Points are labelled "Test 3 - 06/21"; keep just the MM/DD. Taking
-            // 8 characters kept a leading "- " that pushed the date past the
-            // available width, so every label rendered as "- 06/…".
-            label: i % stride === 0 || i === points.length - 1 ? String(p.x).slice(-5) : '',
+            label: shouldShowAxisLabel(i, points.length, stride)
+              ? axisLabel(p.x, useWeekly ? 'weekly' : 'daily')
+              : '',
           })),
           color: SERIES_COLORS[0],
         },
@@ -274,17 +285,18 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     const labels = new Set<string>();
     selectedSeries.forEach((s) => s.weeklyChartData.forEach((p) => labels.add(p.x)));
     const sorted = Array.from(labels).sort();
+    const stride = axisLabelStride(sorted.length, plotWidth);
     return selectedSeries.map((series, index) => {
       const map = new Map(series.weeklyChartData.map((p) => [p.x, p.y]));
       return {
         data: sorted.map((label, i) => ({
           value: map.get(label) ?? 0,
-          label: i % Math.max(1, Math.floor(sorted.length / 4)) === 0 ? label.slice(-5) : '',
+          label: shouldShowAxisLabel(i, sorted.length, stride) ? axisLabel(label, 'weekly') : '',
         })),
         color: SERIES_COLORS[index % SERIES_COLORS.length],
       };
     });
-  }, [selectedSeries, isMulti, useWeekly]);
+  }, [selectedSeries, isMulti, useWeekly, plotWidth]);
 
   /**
    * Fit every point inside the card instead of drawing a chart wider than it.
@@ -298,17 +310,9 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
    * the whole series without scrolling, which is how web already behaves.
    */
   const chartGeometry = useMemo(() => {
-    const Y_AXIS_WIDTH = 46;
     // Labels are centred on their point, so the first one needs room to its left
     // or it is clipped by the axis, and the last needs room to its right or the
-    // plot runs past the card edge.
-    const INITIAL_SPACING = 22;
-    const END_SPACING = 18;
-    // `width` is the plot area only — gifted-charts draws the y-axis labels
-    // outside it, so passing the full card width made the axis rule overrun the
-    // card's right edge by roughly the axis width.
-    const renderWidth = Math.max(140, chartWidth - Y_AXIS_WIDTH);
-    const plotWidth = Math.max(120, renderWidth - INITIAL_SPACING - END_SPACING);
+    // plot runs past the card edge (see INITIAL_SPACING / END_SPACING above).
     const count = lineDatasets[0]?.data.length ?? 0;
     // Below this, points sit on top of each other and the line is unreadable;
     // gifted-charts then scrolls internally rather than silently dropping data.
@@ -317,11 +321,12 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
     return {
       width: renderWidth,
       spacing,
+      labelBox: axisLabelBox(spacing),
       initialSpacing: INITIAL_SPACING,
       endSpacing: END_SPACING,
       count,
     };
-  }, [chartWidth, lineDatasets]);
+  }, [plotWidth, renderWidth, lineDatasets]);
 
   const summary = useMemo(() => {
     const seen = new Set<string>();
@@ -507,7 +512,12 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   thickness={2}
                   hideDataPoints={lineDatasets[0].data.length > 12}
                   yAxisTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
-                  xAxisLabelTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
+                  xAxisLabelTextStyle={{
+                    color: colors.textTertiary,
+                    fontSize: typeScale.label.fontSize,
+                    ...chartGeometry.labelBox,
+                    textAlign: 'center',
+                  }}
                   noOfSections={4}
                   maxValue={100}
                   yAxisOffset={0}
@@ -525,7 +535,12 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
                   thickness={2}
                   hideDataPoints={false}
                   yAxisTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
-                  xAxisLabelTextStyle={{ color: colors.textTertiary, fontSize: typeScale.label.fontSize }}
+                  xAxisLabelTextStyle={{
+                    color: colors.textTertiary,
+                    fontSize: typeScale.label.fontSize,
+                    ...chartGeometry.labelBox,
+                    textAlign: 'center',
+                  }}
                   noOfSections={4}
                   maxValue={100}
                   isAnimated

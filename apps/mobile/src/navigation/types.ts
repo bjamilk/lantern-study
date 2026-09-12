@@ -94,6 +94,26 @@ export type StudyStackParamList = {
    */
   PlayStudio: { courseId?: string; courseLabel?: string; studySetId?: string };
   /**
+   * One set's own settings — name, description, visibility, mode, folder, and
+   * deleting it. Web has had these in a modal since the set room shipped.
+   */
+  StudySetSettings: { studySetId: string };
+  /**
+   * Add materials to one set: files, YouTube, pasted text, an Anki export,
+   * with the set's own recent uploads underneath.
+   */
+  StudySetUpload: { studySetId: string; courseId?: string; courseLabel?: string };
+  /**
+   * What is filed in ONE set. Distinct from `Library`, which is every artefact
+   * the student owns — the room's Cards and Test doors used to open that.
+   */
+  StudySetLibrary: {
+    studySetId: string;
+    courseId?: string;
+    courseLabel?: string;
+    kind?: 'cards' | 'tests' | 'lectures' | 'notes';
+  };
+  /**
    * `manageOutlineCourseId` opens the outline editor on arrival — the deep
    * link behind the readiness card's "Add your topics", which has to land on
    * an editable topic list rather than near one.

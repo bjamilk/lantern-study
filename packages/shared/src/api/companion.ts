@@ -203,7 +203,11 @@ export function createCompanionClient(config: AIClientConfig) {
           if (result.reply) onToken(result.reply);
           onDone({
             actions: result.actions || [],
-            citations: result.citations ?? null,
+            // Normalised exactly like the SSE `done` frame. This is the path
+            // every mobile send takes, and it was trusting the payload shape
+            // the SSE path validates — a half-formed citation reached the
+            // phone as a chip that pointed nowhere.
+            citations: normalizeCompanionCitation(result.citations),
             messageId: result.messageId,
             userMessageId: result.userMessageId,
             conversationId: result.conversationId,

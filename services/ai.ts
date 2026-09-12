@@ -561,15 +561,65 @@ export type CompanionStreamDone = {
  * Stream a companion message via SSE.
  * Calls `onToken` for each text chunk, `onDone` with final actions + persisted IDs, `onError` on failure.
  */
+/**
+ * Where a companion send died, which decides whether the student was billed.
+ *
+ * - `unsent`  — the request never left the client (no auth, connection refused).
+ *               Nothing was charged, so the typed text can safely go back into
+ *               the composer and the optimistic bubbles can be withdrawn.
+ * - `rejected` — the server answered, but with a non-2xx. It processed the
+ *               request far enough to decide; treat the exchange as real.
+ * - `stream`  — the server accepted the request and then the stream failed or
+ *               carried an `error` event. The credit is very likely already
+ *               spent, so the exchange MUST stay in the thread.
+ *
+ * This distinction is the whole fix for "a send that appeared to fail still
+ * billed a credit": the store used to delete both bubbles on every error,
+ * which made a charged-but-failed send indistinguishable from one that never
+ * happened.
+ */
+export type CompanionStreamErrorPhase = 'unsent' | 'rejected' | 'stream';
+
+export class CompanionStreamError extends Error {
+  readonly phase: CompanionStreamErrorPhase;
+  readonly status?: number;
+  /** True when the request reached the server, so a charge may have landed. */
+  readonly reachedServer: boolean;
+
+  constructor(message: string, phase: CompanionStreamErrorPhase, status?: number) {
+    super(message);
+    this.name = 'CompanionStreamError';
+    this.phase = phase;
+    this.status = status;
+    this.reachedServer = phase !== 'unsent';
+  }
+}
+
+/** The server's own sentence, when it sent one, rather than a bare status. */
+async function readErrorSentence(response: Response): Promise<string | null> {
+  try {
+    const text = await response.text();
+    if (!text) return null;
+    try {
+      const body = JSON.parse(text) as { error?: string; message?: string };
+      return body.error || body.message || null;
+    } catch {
+      return text.slice(0, 300);
+    }
+  } catch {
+    return null;
+  }
+}
+
 export async function companionSendMessageStream(
   message: string,
   context: CompanionUserContext | undefined,
   onToken: (token: string) => void,
   onDone: (result: CompanionStreamDone) => void,
-  onError: (err: Error) => void
+  onError: (err: CompanionStreamError) => void
 ): Promise<void> {
   const userId = useAuthStore.getState().currentUser?.id;
-  if (!userId) { onError(new Error('Not authenticated')); return; }
+  if (!userId) { onError(new CompanionStreamError('Not authenticated', 'unsent')); return; }
 
   const authHeaders = await getAuthHeaders();
 
@@ -581,15 +631,28 @@ export async function companionSendMessageStream(
       body: JSON.stringify({ message, context }),
     });
   } catch (e: any) {
-    onError(new Error(e.message || 'Network error'));
+    onError(new CompanionStreamError(e?.message || 'Network error', 'unsent'));
     return;
   }
 
-  // Companion also charges global; parseGlobal reads X-AI-Global-Usage-* for the badge.
+  // Companion also charges global; parseGlobal reads X-AI-Global-Usage-* for the
+  // badge. Read on EVERY response, error ones included — a refusal that still
+  // decremented the balance has to move the counter, or the student watches
+  // credits vanish with no event to attach them to.
   parseGlobalAIUsageFromHeaders(response, updateUsage);
 
   if (!response.ok || !response.body) {
-    onError(new Error(`Stream request failed (${response.status})`));
+    // The body used to be dropped on the floor and replaced by
+    // `Stream request failed (500)`, which hid every real reason — out of
+    // credits, note too large, model refusal.
+    const sentence = response.ok ? null : await readErrorSentence(response);
+    onError(
+      new CompanionStreamError(
+        sentence || `Lantern could not answer (${response.status}).`,
+        'rejected',
+        response.status
+      )
+    );
     return;
   }
 
@@ -608,7 +671,10 @@ export async function companionSendMessageStream(
         if (!part.startsWith('data: ')) continue;
         try {
           const data = JSON.parse(part.slice(6));
-          if (data.error) { onError(new Error(data.error)); return; }
+          // Phase `stream`: the server accepted the request before emitting
+          // this, so whatever it charged is already charged. The caller keeps
+          // the exchange visible rather than withdrawing it.
+          if (data.error) { onError(new CompanionStreamError(String(data.error), 'stream')); return; }
           if (data.token !== undefined) onToken(data.token as string);
           if (data.done) {
             onDone({
@@ -624,7 +690,7 @@ export async function companionSendMessageStream(
       }
     }
   } catch (e: any) {
-    onError(new Error(e.message || 'Stream read error'));
+    onError(new CompanionStreamError(e?.message || 'Stream read error', 'stream'));
   }
 }
 

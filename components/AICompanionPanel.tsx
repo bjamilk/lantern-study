@@ -533,15 +533,33 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const isBusy = isSending || isLoadingHistory;
   const dictationBusy = isRecording || isTranscribing;
 
+  /**
+   * A send is in flight. `isBusy` derives from store state, which only flips
+   * after React re-renders, so two clicks landing inside the same frame both
+   * read the stale `false` and both charge a credit. A ref flips synchronously
+   * and closes that window.
+   */
+  const sendInFlightRef = useRef(false);
+
   const handleSend = useCallback(async (text?: string) => {
     const msg = (text ?? input).trim();
-    if (!msg || isBusy || dictationBusy) return;
+    if (!msg || isBusy || dictationBusy || sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    // Clear on accept, the way mobile does: the question is about to appear in
+    // the thread, so leaving it in the box invites a second send of the same
+    // text. `resizeInput` collapses the grown textarea back to one row — without
+    // it the box keeps the height of the message that just left it.
     setInput('');
     inputValueRef.current = '';
-    await sendMessageStreaming(msg, enrichedContext);
+    requestAnimationFrame(resizeInput);
+    try {
+      await sendMessageStreaming(msg, enrichedContext);
+    } finally {
+      sendInFlightRef.current = false;
+    }
     trackAIAnalyticsEvent('companion_message_sent', { screen: context?.currentScreen });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [input, isBusy, dictationBusy, sendMessageStreaming, enrichedContext]);
+  }, [input, isBusy, dictationBusy, sendMessageStreaming, enrichedContext, resizeInput]);
 
   const handleClear = async () => {
     setShowClearConfirm(false);

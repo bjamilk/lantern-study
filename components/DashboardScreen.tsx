@@ -236,6 +236,26 @@ export default function DashboardScreen({
     [lastOpenedSetId, onNavigatePath, onNavigateToStudyHub, onNavigateToTests]
   );
 
+  /**
+   * The "Open Study" door goes to the HUB.
+   *
+   * `onNavigateToStudyHub` is a misnomer inherited from the shell: App wires it
+   * to `openStudyDestination()`, which resolves the last opened set and lands on
+   * that set's room, only falling through to the hub when there is no set. That
+   * is the right behaviour for the bottom-nav Study tab (resume where you were),
+   * but wrong for a door labelled "Open Study" sitting in a grid of six — the
+   * student asked for the shelf, not the last book. `/study` parses to
+   * `AppMode.STUDY_HUB`, so the path navigator reaches the hub directly; the
+   * shell callback stays as the fallback when no path navigator is wired.
+   */
+  const openStudyHub = useCallback(() => {
+    if (onNavigatePath) {
+      onNavigatePath('/study');
+      return;
+    }
+    onNavigateToStudyHub?.();
+  }, [onNavigatePath, onNavigateToStudyHub]);
+
   return (
     <div
       ref={dashboardScrollRef}
@@ -366,7 +386,7 @@ export default function DashboardScreen({
                   : undefined
               }
               onRecordLecture={onRecordLecture}
-              onOpenStudyHub={onNavigateToStudyHub}
+              onOpenStudyHub={onNavigateToStudyHub || onNavigatePath ? openStudyHub : undefined}
             />
 
             <GettingStartedChecklist

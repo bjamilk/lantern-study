@@ -184,6 +184,21 @@ export function buildMeSections({ darkMode, lowDataMode }: MeState): MeSection[]
   ];
 }
 
+/**
+ * Every block on the Me screen, top to bottom.
+ *
+ * The progress hub (points, achievements, group performance, recent tests)
+ * arrived above the rows, matching web's Me page — so "what is above the
+ * doors" is now a decision worth pinning rather than a detail of one JSX file.
+ * The rows themselves did not move: `profile` and `progress` are added at the
+ * top and every section keeps its order.
+ */
+export type MeBlockId = 'profile' | 'progress' | MeSection['id'];
+
+export function meBlockOrder(sections: readonly MeSection[]): MeBlockId[] {
+  return ['profile', 'progress', ...sections.map((section) => section.id)];
+}
+
 /** Flattened row list, for tests and for anything that wants the ids in order. */
 export function meRowIds(sections: readonly MeSection[]): MeRowId[] {
   return sections.flatMap((section) => section.rows.map((row) => row.id));

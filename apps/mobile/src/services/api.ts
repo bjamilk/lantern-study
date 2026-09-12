@@ -605,6 +605,15 @@ export const {
   fetchStudySet,
   updateStudySet,
   deleteStudySet,
+  // The set's plan, its "last studied" stamp, and folders — on the server and
+  // on web since the set room shipped, never wired up on the phone.
+  touchStudySet,
+  fetchStudySetPlan,
+  replaceStudySetPlan,
+  updateStudySetTopicStatus,
+  fetchStudySetFolders,
+  createStudySetFolder,
+  deleteStudySetFolder,
   // Classes: join-by-code, assigned work, official lecturer materials
   joinClassByCode,
   previewClassByCode,

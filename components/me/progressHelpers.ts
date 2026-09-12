@@ -1,9 +1,27 @@
-import type { Group, OfflineSessionBundle, TestResult } from '../../types';
-import type { GroupPerformanceOption } from '../dashboard/GroupPerformanceMultiSelect';
+import type { TestResult } from '../../types';
+
+/**
+ * The arithmetic behind Me — which exam a result belongs to, which groups the
+ * chart may offer, how a badge's progress reads and how the test pages count —
+ * lives in `@lantern/shared/learning/meProgress` so the phone's Me screen
+ * computes the SAME numbers from the SAME code. What stays in this file is the
+ * part that is web's alone: `localStorage`, and the web `TestResult` shape.
+ */
+export {
+  RECENT_TESTS_PAGE_SIZE,
+  MAX_LEVEL_TEXT,
+  averageSecondsPerQuestion,
+  buildAchievementRows,
+  buildAchievementRowsFromSummaries,
+  buildHierarchicalGroupOptions,
+  getGroupName,
+  recentTestsPageCount,
+  type AchievementRow,
+  type MeGroupOption,
+} from '@lantern/shared/learning';
 
 export const SELECTED_GROUP_CHART_IDS_KEY = 'lantern.dashboard.selectedGroupIds';
 export const GROUP_PERF_PERIOD_KEY = 'lantern.dashboard.groupPerfPeriod';
-export const RECENT_TESTS_PAGE_SIZE = 5;
 
 export function normalizeTestResults(rawTestResults: TestResult[]): TestResult[] {
   return rawTestResults
@@ -25,21 +43,6 @@ export function normalizeTestResults(rawTestResults: TestResult[]): TestResult[]
           : undefined,
       },
     }));
-}
-
-export function getGroupName(
-  groupId: string | undefined,
-  groups: Group[],
-  offlineBundles: OfflineSessionBundle[] = [],
-  storedName?: string
-): string {
-  const group = groups.find((g) => g.id === groupId);
-  if (group) return group.name;
-  if (storedName) return storedName;
-  const bundle = offlineBundles.find((b) => b.config.groupId === groupId);
-  const bundleName = bundle?.displayName || bundle?.config.groupName || bundle?.groupName;
-  if (bundleName) return bundleName;
-  return groupId ? 'Unknown Exam' : 'Unknown Exam';
 }
 
 export function loadSelectedGroupChartIds(): string[] {
@@ -81,50 +84,4 @@ export function saveGroupPerfPeriod(period: string): void {
   } catch {
     // ignore
   }
-}
-
-export function buildHierarchicalGroupOptions(
-  historyGroups: Group[],
-  dataIds: Set<string>
-): GroupPerformanceOption[] {
-  const byParent = new Map<string | null, Group[]>();
-  for (const group of historyGroups) {
-    const parentKey = group.parentId || null;
-    const list = byParent.get(parentKey) || [];
-    list.push(group);
-    byParent.set(parentKey, list);
-  }
-  for (const list of byParent.values()) {
-    list.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  const options: GroupPerformanceOption[] = [];
-  const walk = (parentId: string | null, level: number) => {
-    const children = byParent.get(parentId) || [];
-    for (const child of children) {
-      if (dataIds.has(child.id)) {
-        options.push({ id: child.id, name: child.name, level });
-      }
-      walk(child.id, level + 1);
-    }
-  };
-
-  const historyIds = new Set(historyGroups.map((g) => g.id));
-  const roots = historyGroups
-    .filter((g) => !g.parentId || !historyIds.has(g.parentId))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  for (const root of roots) {
-    if (dataIds.has(root.id)) {
-      options.push({ id: root.id, name: root.name, level: 0 });
-    }
-    walk(root.id, 1);
-  }
-
-  const seen = new Set<string>();
-  return options.filter((opt) => {
-    if (seen.has(opt.id)) return false;
-    seen.add(opt.id);
-    return true;
-  });
 }

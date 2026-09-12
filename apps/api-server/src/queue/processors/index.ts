@@ -143,7 +143,7 @@ function toJobError(err: unknown): JobError {
   return { code, message, retryable: !permanent };
 }
 
-async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
+export async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
   const userId = job.data.userId as string | undefined;
   const name = job.name;
 
@@ -294,7 +294,7 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
       }>;
       const trimmed = String(message).trim();
       await progress.stage("generating");
-      const { reply, actions, provider } = await companionChat(
+      const { reply, actions, provider, citations } = await companionChat(
         trimmed,
         history,
         { ...trustedContext, noteId: effectiveNoteId || undefined },
@@ -326,7 +326,16 @@ async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
       await touchConversation(client, userId, conversation.id);
       await ensureConversationTitle(client, userId, conversation, trimmed);
 
-      return { reply, actions, provider, conversationId: conversation.id };
+      // Must stay identical to the synchronous handler's shape in
+      // routes/aiCompanion.ts: in production BullMQ answers the JSON route, so
+      // anything dropped here never reaches the mobile client.
+      return {
+        reply,
+        actions,
+        provider,
+        citations: citations ?? null,
+        conversationId: conversation.id,
+      };
     }
     case "notes.ai.summarize": {
       const { content, title, noteId, sourceType, guidance, depth } = job.data as {

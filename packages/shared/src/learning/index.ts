@@ -16,3 +16,4 @@ export * from './recapStudio';
 export * from './studyCalendar';
 export * from './essayStudio';
 export * from './playStudio';
+export * from './meProgress';

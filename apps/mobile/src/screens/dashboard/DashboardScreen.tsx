@@ -48,12 +48,20 @@ import { useScreenBottomPadding } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { useTestStore } from '../../stores/testStore';
 
-import { Card, Button, FeatureRow, FeatureTile, T } from '../../components/ui';
+import { Card, Button, FeatureRow, T } from '../../components/ui';
 
 import { DashboardHeroCard } from '../../components/dashboard/DashboardHeroCard';
 import { HomeStudySetsCard } from '../../components/dashboard/HomeStudySetsCard';
+import { HomeQuickActions } from '../../components/dashboard/HomeQuickActions';
+import { HomeRecentMaterials } from '../../components/dashboard/HomeRecentMaterials';
+import { HomeUpcomingExam } from '../../components/dashboard/HomeUpcomingExam';
+import {
+  nearestUpcomingExam,
+  resumeRouteForHref,
+  topDueDeck,
+  type HomeQuickActionId,
+} from '../../components/dashboard/homeSections';
 
-import { DashboardQuickLinks } from '../../components/dashboard/DashboardQuickLinks';
 import { GettingStartedChecklist } from '../../components/dashboard/GettingStartedChecklist';
 import { DashboardInsights } from '../../components/dashboard/DashboardInsights';
 import { GroupPerformanceChartCard } from '../../components/dashboard/GroupPerformanceChartCard';
@@ -111,7 +119,18 @@ import { recorderDoorPrompt, shouldCreateLectureNote } from '../study/recorderDo
 import { confirmSheet } from '../../stores/confirmStore';
 import { tabularNums } from '../../design/typeScale';
 import { readWorkspaceRecents } from '../../utils/workspaceRecents';
-import { getMyActiveCourses } from '../../services/academic';
+import { fetchStudyResume, getMyActiveCourses } from '../../services/academic';
+import {
+  emptyStudyResume,
+  isCalendarNote,
+  isLectureNote,
+  notePreviewText,
+  primaryHomeAction,
+  type StudyResume,
+  type StudyResumeActivity,
+  type StudyResumeMaterial,
+} from '@lantern/shared/learning';
+import { todayDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useOnlineEffect } from '../../hooks';
 import { courseWorkspaceLabel } from '@lantern/shared';
@@ -127,18 +146,6 @@ type Props = CompositeScreenProps<
 >;
 
 
-
-const PERIOD_OPTIONS: { value: TimePeriod; label: string }[] = [
-
-  { value: '7days', label: '7d' },
-
-  { value: '30days', label: '30d' },
-
-  { value: '90days', label: '90d' },
-
-  { value: 'all', label: 'All' },
-
-];
 
 const RECENT_TESTS_PAGE_SIZE = 5;
 
@@ -305,6 +312,17 @@ export function DashboardScreen({ navigation }: Props) {
   const [quizLoading, setQuizLoading] = useState(false);
 
   const [importOpen, setImportOpen] = useState(false);
+  /**
+   * Home's resume feed — the same `GET /users/me/study-resume` web reads.
+   *
+   * Fetched HERE rather than inside each region, because the greeting's one
+   * primary button and the "Recent materials" tiles are the same request: a
+   * fetch in both would re-ask on every focus, and a "Continue" whose href
+   * came from a different round-trip than the tiles could point somewhere the
+   * tiles do not show. It never rejects (see services/academic.ts), so there
+   * is no failure branch to render — an empty feed IS the offline answer.
+   */
+  const [resume, setResume] = useState<StudyResume>(() => emptyStudyResume());
   const [openingRecorder, setOpeningRecorder] = useState(false);
   const [workspaceRecents, setWorkspaceRecents] = useState<WorkspaceRecent[]>([]);
   const [workspaceCourses, setWorkspaceCourses] = useState<UserCourse[]>([]);
@@ -580,6 +598,9 @@ export function DashboardScreen({ navigation }: Props) {
       void refreshUserData(user.id, { only: ['flashcards', 'notifications'] });
       void readWorkspaceRecents().then(setWorkspaceRecents);
       void getMyActiveCourses().then(setWorkspaceCourses).catch(() => undefined);
+      // On focus, not only on mount: the student may have just come back from
+      // the very activity the greeting is about to offer to resume.
+      void fetchStudyResume().then(setResume);
     }, [user?.id, selectedPeriod, fetchStats])
   );
 
@@ -602,6 +623,7 @@ export function DashboardScreen({ navigation }: Props) {
         .getState()
         .loadSets({ force: true })
         .catch(() => undefined),
+      fetchStudyResume().then(setResume),
     ]);
 
     setRefreshing(false);
@@ -728,10 +750,150 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-  const handlePeriodChange = (period: TimePeriod) => {
+  /* ── Home's regions (parity with web's Home rework) ──────────────────── */
 
-    setSelectedPeriod(period);
+  const studySets = useStudySetStore((s) => s.sets);
+  const lastOpenedSetId = useStudySetStore((s) => s.lastOpenedId);
+  const notesForHome = useNotesStore((s) => s.notes);
 
+  /**
+   * ONE button, whose label and destination come out of the same call.
+   * `primaryHomeAction` is the shared rule — due cards beat a resume, a resume
+   * beats an import — so a button that says "Continue" cannot land on the
+   * import sheet.
+   */
+  const primaryAction = useMemo(
+    () => primaryHomeAction({ dueCardsCount: dueCount, lastActivity: resume.lastActivity }),
+    [dueCount, resume.lastActivity]
+  );
+
+  /** A resume href is a web PATH; the phone navigates by screen and params. */
+  const openResumeHref = useCallback(
+    (href: string | null | undefined) => {
+      const route = resumeRouteForHref(href);
+      if (!route) {
+        parent?.navigate('StudyTab', toTab('StudyHub'));
+        return;
+      }
+      parent?.navigate('StudyTab', toTab(route.screen, route.params));
+    },
+    [parent]
+  );
+
+  /**
+   * The deck "Study all N due" reviews: the one with the most cards due.
+   *
+   * There is no cross-deck review screen on the phone — `FlashcardReview`
+   * takes a single `deckId` — so the button opens the biggest pile rather than
+   * the deck LIST, which is what it did on build 189 and is why a button that
+   * said "study 68" handed over 26 decks and a Study button each (Wave P
+   * device pass, defect 4). Counted from the loaded cards, exactly as
+   * `dueCount` is, so the deck it picks and the number on the button can never
+   * come from two different tallies.
+   */
+  const reviewDeck = useMemo(() => {
+    const rows = Object.entries(flashcardsByDeck).map(([deckId, cards]) => ({
+      deckId,
+      deckName: decks.find((deck) => deck.id === deckId)?.name,
+      dueCount: cards.filter((card) => isCardDue(card.srsData)).length,
+    }));
+    return topDueDeck(rows);
+  }, [flashcardsByDeck, decks]);
+
+  const handlePrimaryAction = useCallback(() => {
+    if (primaryAction.kind === 'review') {
+      // Nothing actually due (a stale count, or cards not loaded yet): the
+      // list is the honest fallback, never a review screen with no cards.
+      if (!reviewDeck) {
+        parent?.navigate('StudyTab', toTab('FlashcardsList'));
+        return;
+      }
+      parent?.navigate(
+        'StudyTab',
+        toTab('FlashcardReview', {
+          deckId: reviewDeck.deckId,
+          deckName: reviewDeck.deckName ?? undefined,
+        })
+      );
+      return;
+    }
+    if (primaryAction.kind === 'continue') {
+      openResumeHref(primaryAction.href);
+      return;
+    }
+    setImportOpen(true);
+  }, [primaryAction, parent, openResumeHref, reviewDeck]);
+
+  /**
+   * The set a "last set's …" door opens. The set most recently opened, else
+   * the first one loaded — a door that needs a set and has none falls back to
+   * the hub rather than dead-ending, which is what `undefined` means here.
+   */
+  const doorSetId = lastOpenedSetId ?? studySets[0]?.id ?? null;
+
+  const upcomingExam = useMemo(
+    () => nearestUpcomingExam(studySets, todayDateOnlyLocal()),
+    [studySets]
+  );
+
+  /**
+   * Recent materials: the server's feed when it answered, else the notes we
+   * already have. The fallback is the same rule web uses — filed notes that
+   * are not the generated calendar note — so an offline Home still shows the
+   * things a student was reading.
+   */
+  const recentMaterials = useMemo<StudyResumeMaterial[]>(() => {
+    if (resume.recentMaterials.length > 0) return resume.recentMaterials;
+    return notesForHome
+      .filter((note) => !isCalendarNote(note) && note.studySetId)
+      .slice(0, 4)
+      .map((note) => ({
+        id: note.id,
+        title: note.title || 'Untitled note',
+        studySetId: note.studySetId || lastOpenedSetId || '',
+        kind: isLectureNote(note) ? ('lecture' as const) : ('note' as const),
+        href: note.id,
+        preview: notePreviewText(note.body),
+        updatedAt: note.updatedAt || '',
+      }));
+  }, [resume.recentMaterials, notesForHome, lastOpenedSetId]);
+
+  const openMaterial = useCallback(
+    (material: StudyResumeMaterial) => {
+      parent?.navigate('StudyTab', toTab('NoteEditor', { noteId: material.id }));
+    },
+    [parent]
+  );
+
+  const openActivity = useCallback(
+    (activity: StudyResumeActivity) => {
+      // The tile promises the ACTIVITY, not the set it lives in.
+      openResumeHref(activity.href);
+    },
+    [openResumeHref]
+  );
+
+  /**
+   * The six doors. Each one that needs a set opens THAT set's studio; with no
+   * set yet there is nothing to open, so it falls back to the hub (or, for
+   * Record, to the standalone recorder, which needs no set at all).
+   */
+  const quickActionHandlers: Partial<Record<HomeQuickActionId, () => void>> = {
+    import: () => setImportOpen(true),
+    quiz: () =>
+      doorSetId
+        ? parent?.navigate('StudyTab', toTab('AdaptiveQuiz', { studySetId: doorSetId }))
+        : parent?.navigate('StudyTab', toTab('StudyHub')),
+    companion: () => openCompanion(),
+    tutor: () =>
+      doorSetId
+        ? parent?.navigate('StudyTab', toTab('LessonStudio', { studySetId: doorSetId }))
+        : parent?.navigate('StudyTab', toTab('StudyHub')),
+    record: () =>
+      doorSetId
+        ? parent?.navigate('StudyTab', toTab('LectureStudio', { studySetId: doorSetId }))
+        : void openRecorder(),
+    study: () => parent?.navigate('StudyTab', toTab('StudyHub')),
   };
 
 
@@ -825,9 +987,12 @@ export function DashboardScreen({ navigation }: Props) {
         showsVerticalScrollIndicator={false}
       >
 
-        {/* CARD 1 — the greeting. Neutral, one amber chip, no button of its
-            own: the doors below are the action, and a hero CTA plus a Review
-            tile was the same tap offered twice. */}
+        {/* CARD 1 — the greeting, now with web's ONE primary button. Its
+            label and its destination come from the same `primaryHomeAction`
+            call, so "Study all 12 due" reviews, "Continue" resumes and
+            "Import & study" imports — it is no longer possible for the word
+            and the tap to disagree. The old Review DOOR is gone rather than
+            kept beside it, which is what stops this being the same tap twice. */}
         <DashboardHeroCard
           userName={displayName}
           streak={streak}
@@ -842,6 +1007,8 @@ export function DashboardScreen({ navigation }: Props) {
           progressNote={
             progress.mode === 'stale' ? lastSyncedLabel(progress.syncedAt) : undefined
           }
+          onPrimaryAction={handlePrimaryAction}
+          primaryActionLabel={primaryAction.label}
         />
 
         <HomeStudySetsCard
@@ -849,12 +1016,35 @@ export function DashboardScreen({ navigation }: Props) {
             parent?.navigate('StudyTab', toTab('CourseRoom', { studySetId, courseLabel: title }))
           }
           onOpenHub={() => parent?.navigate('StudyTab', toTab('StudyHub'))}
+          onNewSet={() => parent?.navigate('StudyTab', toTab('StudyHub'))}
         />
 
-        {/* CARD 2 — the screen's ONE tint panel, in the tests family's sky.
-            Spec §5.7: the single coloured thing above the fold answers "am I
-            ready", and it keeps its honest empty and failed states. */}
-        <CourseReadinessCard reloadToken={readinessReloadToken} />
+        <HomeRecentMaterials
+          materials={recentMaterials}
+          activities={resume.recentActivities}
+          onOpenMaterial={openMaterial}
+          onOpenActivity={openActivity}
+        />
+
+        {/* A set knows its own exam date, so that is what Home says. Only when
+            no set names one does the readiness panel take the slot — it
+            answers "am I ready", which is the useful thing to show a student
+            who has not told us when the exam is. */}
+        {upcomingExam ? (
+          <HomeUpcomingExam
+            exam={upcomingExam}
+            onOpenSet={(studySetId) =>
+              parent?.navigate('StudyTab', toTab('CourseRoom', { studySetId }))
+            }
+          />
+        ) : (
+          /* The screen's ONE tint panel, in the tests family's sky. Spec §5.7:
+             the single coloured thing above the fold answers "am I ready", and
+             it keeps its honest empty and failed states. */
+          <CourseReadinessCard reloadToken={readinessReloadToken} />
+        )}
+
+        <HomeQuickActions onAction={quickActionHandlers} />
 
         <JoinClassCard />
         <ClassWorkCard />
@@ -890,53 +1080,10 @@ export function DashboardScreen({ navigation }: Props) {
           </Card>
         ) : null}
 
-        {/* The four doors. Review is lime because it IS flashcards; the three
-            siblings each carry their own feature hue, which is four hues on
-            the screen and none of them repeated. Each also carries its own
-            spot illustration (§5.6) — these are doors, which is the one place
-            the imagery rule allows a picture. */}
-        <View className="flex-row gap-3 mb-3">
-          <FeatureTile
-            feature="flashcards"
-            icon="layers"
-            title={dueCount > 0 ? 'Review' : 'Flashcards'}
-            subtitle={dueCount > 0 ? 'Cards ready now' : 'Nothing due right now'}
-            count={dueCount}
-            countLabel={`${dueCount} due`}
-            onPress={() => parent?.navigate('StudyTab', toTab('FlashcardsList'))}
-            illustration="cards-fan"
-            testID="home-tile-review"
-          />
-          <FeatureTile
-            feature="notes"
-            icon="cloud-upload"
-            title="Import"
-            subtitle="Paste material, get cards"
-            onPress={() => setImportOpen(true)}
-            illustration="import-tray"
-            testID="home-tile-import"
-          />
-        </View>
-        <View className="flex-row gap-3 mb-4">
-          <FeatureTile
-            feature="recording"
-            icon="mic"
-            title="Record"
-            subtitle="Capture a lecture"
-            onPress={() => void openRecorder()}
-            illustration="mic-wave"
-            testID="home-tile-record"
-          />
-          <FeatureTile
-            feature="tests"
-            icon="clipboard"
-            title="Test"
-            subtitle="Practise under time"
-            onPress={() => parent?.navigate('StudyTab', toTab('TestsList'))}
-            illustration="test-sheet"
-            testID="home-tile-test"
-          />
-        </View>
+        {/* The four FeatureTiles that used to sit here are gone: Import,
+            Record and Test are three of the six doors above, and Review is now
+            the greeting's own primary button. Keeping both would have been
+            every one of those taps offered twice on one screen. */}
 
         <GettingStartedChecklist
           hasDecks={decks.length > 0}
@@ -1045,47 +1192,12 @@ export function DashboardScreen({ navigation }: Props) {
 
 
 
-        <View className="flex-row gap-2 mb-3">
-
-          {PERIOD_OPTIONS.map(opt => (
-
-            <Pressable
-
-              key={opt.value}
-
-              onPress={() => handlePeriodChange(opt.value)}
-
-              className={`px-3 py-1.5 rounded-full ${
-
-                selectedPeriod === opt.value
-
-                  ? 'bg-lantern-primary-fill'
-
-                  : 'bg-lantern-surface border border-lantern-border'
-
-              }`}
-
-            >
-
-              <Text
-
-                className={`text-xs font-semibold ${
-
-                  selectedPeriod === opt.value ? 'text-white' : 'text-lantern-text-secondary'
-
-                }`}
-
-              >
-
-                {opt.label}
-
-              </Text>
-
-            </Pressable>
-
-          ))}
-
-        </View>
+        {/* The 7d / 30d / 90d / All chip row is gone (phone walk defect 16).
+            It re-fetched the stats for a window nothing above it named, so a
+            student tapping "7d" watched the figures change with no label
+            saying which figures, or which seven days. `selectedPeriod` keeps
+            its default and still scopes the fetch; nothing on Home claims to
+            be a range any more. */}
 
 
 
@@ -1502,41 +1614,11 @@ export function DashboardScreen({ navigation }: Props) {
         />
         </CollapsibleSection>
 
-        <Text className="text-sm font-semibold text-lantern-text mb-2">Quick actions</Text>
-
-        <DashboardQuickLinks
-          links={[
-            {
-              id: 'flashcards',
-              label: 'Flashcards',
-              icon: 'layers',
-              iconColor: '#059669',
-              badge: dueCount,
-              onPress: () => parent?.navigate('StudyTab', toTab('Library', { tab: 'flashcards' })),
-            },
-            {
-              id: 'notes',
-              label: 'Notes',
-              icon: 'document-text',
-              iconColor: featureAccents.library,
-              onPress: () => parent?.navigate('StudyTab', toTab('Library', { tab: 'notes' })),
-            },
-            {
-              id: 'tests',
-              label: 'Tests',
-              icon: 'help-circle',
-              iconColor: '#d97706',
-              onPress: () => parent?.navigate('StudyTab', toTab('TestsList')),
-            },
-            {
-              id: 'marketplace',
-              label: 'Explore',
-              icon: 'bag',
-              iconColor: featureAccents.marketplace,
-              onPress: () => parent?.navigate('MarketTab'),
-            },
-          ]}
-        />
+        {/* The lone "Quick actions" heading over `DashboardQuickLinks` is
+            gone (phone walk defect 15). Its four flat links were Flashcards,
+            Notes, Tests and Explore — three of which the six doors above now
+            open, and all four of which the tab bar already reaches. A heading
+            earns its line when a region follows it, not a duplicate row. */}
 
       </ScrollView>
 

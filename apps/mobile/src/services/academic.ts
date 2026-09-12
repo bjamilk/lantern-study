@@ -8,6 +8,7 @@
 import type { Course, CourseTopic, StudySet, UserCourse } from '@lantern/shared/types';
 import { currentAcademicYear } from '@lantern/shared/academic';
 import { sortCourseTopics } from '@lantern/shared';
+import { emptyStudyResume, type StudyResume } from '@lantern/shared/learning';
 import {
   archiveSemester,
   createStudySet,
@@ -16,6 +17,13 @@ import {
   fetchMyStudySets,
   fetchStudySet,
   updateStudySet,
+  touchStudySet,
+  fetchStudySetPlan,
+  replaceStudySetPlan,
+  updateStudySetTopicStatus,
+  fetchStudySetFolders,
+  createStudySetFolder,
+  deleteStudySetFolder,
   fetchUserProfile,
   removeMyCourse,
   setMyCourses,
@@ -317,5 +325,55 @@ export async function courseHasTopics(courseId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Home's resume feed — last activity, recent materials, recent activities.
+ *
+ * The same `GET /users/me/study-resume` web reads (`services/academic.ts`
+ * there). Mobile had no client for it at all, which is why Home's "Recent
+ * materials" could only ever show locally cached notes and why the greeting's
+ * Continue had nothing to continue from on a fresh install.
+ *
+ * Resolves to an EMPTY resume rather than throwing: every caller is a Home
+ * region that must still render when the phone is offline, and an empty feed
+ * is the correct thing to draw for "we were not told".
+ */
+export async function fetchStudyResume(): Promise<StudyResume> {
+  try {
+    const headers = await getAuthHeaders();
+    const response = await fetch(`${API_BASE_URL}/api/v1/users/me/study-resume`, { headers });
+    if (!response.ok) return emptyStudyResume();
+    const json = await response.json().catch(() => ({}));
+    const data = (json?.data ?? json) as Partial<StudyResume>;
+    return {
+      lastActivity: data?.lastActivity ?? null,
+      recentMaterials: Array.isArray(data?.recentMaterials) ? data.recentMaterials : [],
+      recentActivities: Array.isArray(data?.recentActivities) ? data.recentActivities : [],
+    };
+  } catch {
+    return emptyStudyResume();
+  }
+}
+
 export { fetchMyStudySets, createStudySet, fetchStudySet, updateStudySet, deleteStudySet };
+
+/**
+ * The rest of the study-set surface the server has always had and the phone
+ * never called: the plan (units + topics), "I opened this set", and folders.
+ *
+ * Web has read these since the set room shipped. Mobile re-derived a plan from
+ * note titles on every render instead, so a topic ticked off on the laptop was
+ * unticked on the phone and back again; and because nothing ever POSTed
+ * `/touch`, a set studied only on the phone never got a "last studied" date at
+ * all. The clients are identical to web's (`services/academic.ts:220-260`) —
+ * they come from the same shared endpoint table.
+ */
+export {
+  touchStudySet,
+  fetchStudySetPlan,
+  replaceStudySetPlan,
+  updateStudySetTopicStatus,
+  fetchStudySetFolders,
+  createStudySetFolder,
+  deleteStudySetFolder,
+};
 export type { StudySet };

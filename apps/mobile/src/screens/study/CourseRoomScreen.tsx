@@ -31,8 +31,14 @@ import {
   newLectureNoteTitle,
   resolveLectureStudioNote,
   studySetLabel,
+  studySetPlanProgress,
   testsFiledInCourse,
   testsFiledInStudySet,
+  topicsInUnit,
+  unitsForTopics,
+  type StudySetTopic,
+  type StudySetTopicStatus,
+  type StudySetUnit,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
@@ -43,6 +49,8 @@ import { type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { DOOR_TILE } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
+import { StudySetTimer } from '../../components/study/StudySetTimer';
+import { confirmAsync } from '../../components/ui/appDialog';
 import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useNotesStore } from '../../stores/notesStore';
@@ -69,7 +77,14 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const loadSets = useStudySetStore((s) => s.loadSets);
   const updateSet = useStudySetStore((s) => s.updateSet);
   const touchOpened = useStudySetStore((s) => s.touchOpened);
+  const touchSet = useStudySetStore((s) => s.touchSet);
+  const removeSet = useStudySetStore((s) => s.removeSet);
+  const loadPlan = useStudySetStore((s) => s.loadPlan);
+  const savePlan = useStudySetStore((s) => s.savePlan);
+  const setTopicStatus = useStudySetStore((s) => s.setTopicStatus);
+  const plan = useStudySetStore((s) => (studySetId ? s.plans[studySetId] : undefined));
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
+  const [overflowOpen, setOverflowOpen] = useState(false);
   const courseId = studySet?.courseId || courseIdParam || '';
   const tabBarClearance = useTabBarClearance(16);
   // The door grid's column width, computed from the screen rather than from a
@@ -101,7 +116,6 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const lectureStatus = useLectureRecordingStore((s) => s.status);
   const [showMoreRecommended, setShowMoreRecommended] = useState(false);
   const [skippedTopicIds, setSkippedTopicIds] = useState<string[]>([]);
-  const openCompanion = useCompanionStore((s) => s.open);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
   const resetCompanionForScope = useCompanionStore((s) => s.resetForScope);
 
@@ -110,8 +124,15 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   }, [loadSets]);
 
   useEffect(() => {
-    if (studySetId) touchOpened(studySetId);
-  }, [studySetId, touchOpened]);
+    if (!studySetId) return;
+    // Two different memories, both needed. `touchOpened` is this phone's "open
+    // this one next time"; `touchSet` is the server's "last studied", which no
+    // mobile screen had ever posted — so a set a student only ever worked on
+    // from their phone showed no study history anywhere.
+    touchOpened(studySetId);
+    void touchSet(studySetId);
+    void loadPlan(studySetId);
+  }, [studySetId, touchOpened, touchSet, loadPlan]);
 
   useEffect(() => {
     const unsub = navigation.addListener('beforeRemove', () => {
@@ -282,12 +303,36 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         });
         return;
       }
+      // Inside a set, both doors open THIS set's shelf. They used to open the
+      // global library and the global tests list — a student in one set tapped
+      // Cards and got every deck they own (phone walk defect 14) — and the
+      // Cards door did not even do that: with no decks it only raised a toast.
       case 'cards':
-        if (courseDecks.length === 0) {
-          showToast(studySetId ? 'No decks in this set yet. Turn a note into cards.' : 'No decks in this course yet. Turn a note into cards.', 'info');
+        if (studySetId) {
+          navigation.navigate('StudySetLibrary', {
+            studySetId,
+            courseId,
+            courseLabel: label,
+            kind: 'cards',
+          });
+          return;
         }
+        if (courseDecks.length === 0) {
+          showToast('No decks in this course yet. Turn a note into cards.', 'info');
+          return;
+        }
+        navigation.navigate('Library', { tab: 'flashcards' });
         return;
       case 'test':
+        if (studySetId) {
+          navigation.navigate('StudySetLibrary', {
+            studySetId,
+            courseId,
+            courseLabel: label,
+            kind: 'tests',
+          });
+          return;
+        }
         navigation.navigate('TestsList', { courseId, courseLabel: label });
         return;
       case 'lecture':
@@ -482,6 +527,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           }
           right={
             <View className="flex-row items-center gap-3">
+              {studySetId ? <StudySetTimer studySetId={studySetId} /> : null}
               {studySetId ? (
                 <Pressable
                   onPress={() => {
@@ -494,23 +540,122 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                   <T.Caption>All sets</T.Caption>
                 </Pressable>
               ) : null}
-              <Pressable onPress={() => openCompanion()} accessibilityRole="button" accessibilityLabel="Ask">
+              <Pressable onPress={() => useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label })} accessibilityRole="button" accessibilityLabel="Ask">
                 <T.Caption>Ask</T.Caption>
               </Pressable>
+              {studySetId ? (
+                <Pressable
+                  onPress={() => setOverflowOpen((value) => !value)}
+                  accessibilityRole="button"
+                  accessibilityLabel="More set actions"
+                  accessibilityState={{ expanded: overflowOpen }}
+                >
+                  <T.Caption>More</T.Caption>
+                </Pressable>
+              ) : null}
             </View>
           }
         />
+
+        {studySetId && overflowOpen ? (
+          <Card className="mb-3">
+            <Pressable
+              onPress={() => {
+                setOverflowOpen(false);
+                navigation.navigate('StudySetSettings', { studySetId });
+              }}
+              accessibilityRole="button"
+              className="py-3"
+            >
+              <T.Body>Set settings</T.Body>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setOverflowOpen(false);
+                navigation.navigate('StudySetUpload', { studySetId, courseId, courseLabel: label });
+              }}
+              accessibilityRole="button"
+              className="py-3 border-t border-lantern-border"
+            >
+              <T.Body>Add materials</T.Body>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setOverflowOpen(false);
+                navigation.navigate('StudySetLibrary', { studySetId, courseId, courseLabel: label });
+              }}
+              accessibilityRole="button"
+              className="py-3 border-t border-lantern-border"
+            >
+              <T.Body>Everything in this set</T.Body>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                setOverflowOpen(false);
+                void (async () => {
+                  const ok = await confirmAsync(
+                    'Delete this set?',
+                    'Your notes, decks and tests stay — they are just no longer filed here.',
+                    { confirmLabel: 'Delete', destructive: true }
+                  );
+                  if (!ok) return;
+                  try {
+                    await removeSet(studySetId);
+                    showToast('Study set deleted.', 'success');
+                    navigation.navigate('StudyHub');
+                  } catch (error) {
+                    showToast(
+                      error instanceof Error ? error.message : 'Could not delete this set.',
+                      'error'
+                    );
+                  }
+                })();
+              }}
+              accessibilityRole="button"
+              className="py-3 border-t border-lantern-border"
+            >
+              <T.Body className="text-lantern-error">Delete set</T.Body>
+            </Pressable>
+          </Card>
+        ) : null}
 
         {studySetId ? (
           <SetHomeRecommended
             studySetId={studySetId}
             notes={studyNotes}
             lectures={lectures}
+            planUnits={plan?.units ?? []}
+            planTopics={plan?.topics ?? []}
+            planLoaded={plan?.loaded ?? false}
+            mode={(studySet?.mode as 'cram' | 'standard' | 'comprehensive') ?? 'standard'}
+            onGeneratePlan={async () => {
+              const built = topicsFromReadingNotes(studySetId, studyNotes);
+              try {
+                await savePlan(studySetId, {
+                  units: [{ title: built.unit.title, position: built.unit.position }],
+                  topics: built.topics.map((topic) => ({
+                    unitIndex: 0,
+                    title: topic.title,
+                    position: topic.position,
+                    status: topic.status,
+                    sourceNoteIds: topic.sourceNoteIds,
+                  })),
+                });
+                showToast('Study plan built from your materials.', 'success');
+              } catch {
+                showToast('Could not save the plan. Showing one built from your notes.', 'info');
+              }
+            }}
+            onToggleTopic={(topicId, next) => {
+              void setTopicStatus(studySetId, topicId, next).catch(() => {
+                showToast('Could not save that topic. It has been put back.', 'error');
+              });
+            }}
             skippedTopicIds={skippedTopicIds}
             showMore={showMoreRecommended}
             onShowMore={() => setShowMoreRecommended((value) => !value)}
             onSkip={(topicId) => setSkippedTopicIds((ids) => [...ids, topicId])}
-            onAsk={() => openCompanion()}
+            onAsk={() => useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label })}
             onRead={(noteId) => {
               selectNote(noteId);
               navigation.navigate('NotesStudio', {
@@ -576,7 +721,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                     return;
                   }
                   if ('activity' in item && item.id === 'ask') {
-                    openCompanion();
+                    useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label });
                     return;
                   }
                   if ('activity' in item && item.activity) {
@@ -744,7 +889,17 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 <Pressable
                   key={test.id}
                   onPress={() =>
-                    navigation.navigate('TestsList', { courseId, courseLabel: label })
+                    // A test listed under THIS set must not drop the student
+                    // into the global Tests screen (Available/History for every
+                    // test they own). Inside a set the shelf is the set's.
+                    studySetId
+                      ? navigation.navigate('StudySetLibrary', {
+                          studySetId,
+                          courseId,
+                          courseLabel: label,
+                          kind: 'tests',
+                        })
+                      : navigation.navigate('TestsList', { courseId, courseLabel: label })
                   }
                   className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
                 >
@@ -849,9 +1004,21 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         </Button>
         <Button
           variant="ghost"
-          onPress={() => navigation.navigate('Library', { tab: 'notes' })}
+          onPress={() =>
+            // "All materials" at the foot of a SET's room means everything in
+            // this set, not the 29-note global library the student just walked
+            // away from.
+            studySetId
+              ? navigation.navigate('StudySetLibrary', {
+                  studySetId,
+                  courseId,
+                  courseLabel: label,
+                  kind: 'notes',
+                })
+              : navigation.navigate('Library', { tab: 'notes' })
+          }
         >
-          All materials
+          {studySetId ? 'Everything in this set' : 'All materials'}
         </Button>
       </ScrollView>
 
@@ -885,6 +1052,12 @@ function SetHomeRecommended({
   studySetId,
   notes,
   lectures,
+  planUnits,
+  planTopics,
+  planLoaded,
+  mode,
+  onGeneratePlan,
+  onToggleTopic,
   skippedTopicIds,
   showMore,
   onShowMore,
@@ -899,6 +1072,13 @@ function SetHomeRecommended({
   studySetId: string;
   notes: StudyNote[];
   lectures: StudyNote[];
+  planUnits: StudySetUnit[];
+  planTopics: StudySetTopic[];
+  /** True only once the server has answered — "no plan" is not "not asked". */
+  planLoaded: boolean;
+  mode: 'cram' | 'standard' | 'comprehensive';
+  onGeneratePlan: () => Promise<void>;
+  onToggleTopic: (topicId: string, next: StudySetTopicStatus) => void;
   skippedTopicIds: string[];
   showMore: boolean;
   onShowMore: () => void;
@@ -918,10 +1098,21 @@ function SetHomeRecommended({
     pageMargin: 16,
     gutter: doorGutter,
   });
+  const [generating, setGenerating] = useState(false);
+  const [openUnitId, setOpenUnitId] = useState<string | null>(null);
+
+  // The plan the SERVER holds is the plan. Topics derived from note titles are
+  // a fallback for a set that has never had one saved — they used to be the
+  // only thing the phone ever showed, which is why a topic ticked off on a
+  // laptop was untickable here and unticked on the next render.
   const derived = topicsFromReadingNotes(studySetId, notes);
-  const topics = derived.topics.filter((topic) => !skippedTopicIds.includes(topic.id));
-  const current = pickRecommendedTopic(topics);
-  const empty = notes.length === 0 && lectures.length === 0 && derived.topics.length === 0;
+  const usingServerPlan = planTopics.length > 0;
+  const allTopics = usingServerPlan ? planTopics : derived.topics;
+  const units = usingServerPlan ? unitsForTopics(planUnits, planTopics) : [derived.unit];
+  const topics = allTopics.filter((topic) => !skippedTopicIds.includes(topic.id));
+  const current = pickRecommendedTopic(topics, mode);
+  const progress = studySetPlanProgress(allTopics);
+  const empty = notes.length === 0 && lectures.length === 0 && allTopics.length === 0;
   const cards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
 
   if (empty) {
@@ -990,6 +1181,98 @@ function SetHomeRecommended({
           <T.Caption>Skip topic</T.Caption>
         </Pressable>
       </View>
+
+      {/* The plan itself: units that open, topics that tick, and the tick
+          goes to the server. Web has had this since the set room shipped. */}
+      <Card className="mt-3">
+        <View className="flex-row items-center justify-between mb-2">
+          <T.Caption tone="secondary">Study plan</T.Caption>
+          <T.Caption tone="tertiary">
+            {progress.topics} topics · {progress.covered} covered · {progress.mastered} mastered
+          </T.Caption>
+        </View>
+
+        {!usingServerPlan ? (
+          <View className="mb-3">
+            <T.Caption tone="secondary">
+              {planLoaded
+                ? 'These topics are read off your notes. Save them as a plan to tick them off on every device.'
+                : 'Showing topics read off your notes — your saved plan has not loaded yet.'}
+            </T.Caption>
+            {planLoaded ? (
+              <Button
+                size="sm"
+                className="mt-2"
+                disabled={generating || notes.length === 0}
+                onPress={() => {
+                  setGenerating(true);
+                  void onGeneratePlan().finally(() => setGenerating(false));
+                }}
+              >
+                {generating ? 'Building…' : 'Save as my study plan'}
+              </Button>
+            ) : null}
+          </View>
+        ) : null}
+
+        {units.map((unit, index) => {
+          const unitTopics = topicsInUnit(allTopics, unit.id);
+          const expanded = openUnitId === null ? index === 0 : openUnitId === unit.id;
+          return (
+            <View key={unit.id} className={index > 0 ? 'border-t border-lantern-border pt-2 mt-2' : ''}>
+              <Pressable
+                onPress={() => setOpenUnitId(expanded ? '' : unit.id)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded }}
+                className="py-2"
+              >
+                <T.Body>{`${String(index + 1).padStart(2, '0')} ${unit.title}`}</T.Body>
+                <T.Caption tone="secondary">
+                  {unitTopics.length} topics · {expanded ? 'Hide' : 'Show'}
+                </T.Caption>
+              </Pressable>
+              {expanded
+                ? unitTopics.map((topic) => (
+                    <Pressable
+                      key={topic.id}
+                      onPress={() => {
+                        if (!usingServerPlan) return;
+                        const next: StudySetTopicStatus =
+                          topic.status === 'unseen'
+                            ? 'covered'
+                            : topic.status === 'covered'
+                              ? 'mastered'
+                              : 'unseen';
+                        onToggleTopic(topic.id, next);
+                      }}
+                      disabled={!usingServerPlan}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${topic.title}. ${topic.status}${
+                        usingServerPlan ? '. Tap to change' : ''
+                      }`}
+                      className="flex-row items-center gap-3 py-2 pl-2"
+                    >
+                      <View
+                        className={`h-5 w-5 rounded-md border items-center justify-center ${
+                          topic.status === 'unseen'
+                            ? 'border-lantern-border'
+                            : 'border-lantern-primary bg-lantern-primary-background'
+                        }`}
+                      >
+                        {topic.status === 'mastered' ? <T.Caption>★</T.Caption> : null}
+                        {topic.status === 'covered' ? <T.Caption>✓</T.Caption> : null}
+                      </View>
+                      <View className="flex-1">
+                        <T.Body numberOfLines={1}>{topic.title}</T.Body>
+                        <T.Caption tone="secondary">{topic.status}</T.Caption>
+                      </View>
+                    </Pressable>
+                  ))
+                : null}
+            </View>
+          );
+        })}
+      </Card>
     </View>
   );
 }

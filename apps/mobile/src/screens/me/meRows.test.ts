@@ -1,4 +1,6 @@
-import { buildMeSections, meRowIds } from './meRows';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { buildMeSections, meBlockOrder, meRowIds } from './meRows';
 import { LOW_DATA_MODE_HINT } from '@lantern/shared/settings';
 
 const sections = (darkMode = false, lowDataMode = false) =>
@@ -116,5 +118,39 @@ describe('the Me tab', () => {
   it('lists no row twice', () => {
     const ids = meRowIds(sections());
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('the Me screen order', () => {
+  it('puts the progress hub under the profile and above every row section', () => {
+    expect(meBlockOrder(sections())).toEqual([
+      'profile',
+      'progress',
+      'account',
+      'mine',
+      'preferences',
+      'app',
+      'session',
+    ]);
+  });
+
+  it('renders the hub above the rows, not below them', () => {
+    // The order is a claim about the screen, so it is checked against the
+    // screen: a hub declared first and drawn last would pass every unit test
+    // above and still be wrong under the reader's thumb.
+    const source = readFileSync(join(__dirname, 'MeScreen.tsx'), 'utf8');
+    const hub = source.indexOf('<MeProgress');
+    const rows = source.indexOf('{sections.map(');
+    expect(hub).toBeGreaterThan(-1);
+    expect(rows).toBeGreaterThan(-1);
+    expect(hub).toBeLessThan(rows);
+  });
+
+  it('keeps every row that was on Me before the hub arrived', () => {
+    // The hub only ADDS. Settings, downloads, credits, the two switches and
+    // sign out are what a student comes to Me for.
+    for (const id of ['settings', 'downloads', 'credits', 'darkMode', 'lowData', 'logout'] as const) {
+      expect(meRowIds(sections())).toContain(id);
+    }
   });
 });

@@ -11,6 +11,7 @@ import { buildMeSections, type MeRow, type MeRowId } from './meRows';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { FeatureDisc } from '../../components/ui';
 import { useAIUsage } from '../../components/AIUsageBadge';
+import { MeProgress } from '../../components/me/MeProgress';
 import { getAIResetLabel } from '@lantern/shared/utils';
 import { typeScale, tabularNums } from '../../design/typeScale';
 
@@ -212,6 +213,11 @@ export function MeScreen({ navigation }: Props) {
         </View>
         <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
       </Pressable>
+
+      {/* The progress hub sits between the profile header and the row list —
+          what the student has earned and sat, above the doors and switches.
+          The rows below are unchanged: this block only adds. */}
+      <MeProgress />
 
       {sections.map((section) => (
         <View

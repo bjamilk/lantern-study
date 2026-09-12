@@ -496,12 +496,54 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         void get().loadConversations();
       },
       (err) => {
+        const sentence = err?.message || 'Failed to reach Lantern. Please try again.';
+        // `reachedServer` is false only when the request never left the client.
+        // A plain Error (older callers, test doubles) is treated as unsent.
+        const reachedServer = (err as { reachedServer?: boolean })?.reachedServer === true;
+
+        if (!reachedServer) {
+          // Nothing was sent, so nothing was charged: withdraw the optimistic
+          // bubbles and hand the typed text back to the composer.
+          set(s => ({
+            messages: s.messages.filter(m => m.id !== tempUserMsg.id && m.id !== tempAiId),
+            isStreaming: false,
+            error: sentence,
+            failedMessage: text,
+          }));
+          return;
+        }
+
+        /**
+         * The server saw this request, so a credit may already be spent.
+         *
+         * The old code ran the filter above unconditionally, which is how "a
+         * send that appeared to fail still billed a credit" happened: the
+         * request went out, the server charged and then the stream died, and
+         * the client deleted BOTH bubbles — so the thread looked untouched, the
+         * typed text reappeared in the composer, and the only evidence left was
+         * the credits counter going down. The student's reasonable read is that
+         * nothing happened and they should send again, which charges twice.
+         *
+         * Now the exchange stays: the question keeps its place, any tokens that
+         * did arrive are kept, and the failure is written into the reply bubble
+         * so it is visible in the thread rather than only in a toast. The draft
+         * is NOT handed back — the text is already on screen, and restoring it
+         * is what invites the duplicate send.
+         */
         set(s => ({
-          messages: s.messages.filter(m => m.id !== tempUserMsg.id && m.id !== tempAiId),
+          messages: s.messages.map(m => {
+            if (m.id !== tempAiId) return m;
+            const partial = m.content.trim();
+            return {
+              ...m,
+              content: partial
+                ? `${m.content}\n\n_${sentence}_`
+                : sentence,
+            };
+          }),
           isStreaming: false,
-          error: err.message || 'Failed to reach Lantern. Please try again.',
-          // Hand the typed text back to the composer instead of destroying it.
-          failedMessage: text,
+          error: sentence,
+          failedMessage: null,
         }));
       }
     );

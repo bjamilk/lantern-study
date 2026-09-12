@@ -160,6 +160,9 @@ import { RecapStudioScreen } from '../screens/study/RecapStudioScreen';
 import { StudyCalendarScreen } from '../screens/study/StudyCalendarScreen';
 import { EssayStudioScreen } from '../screens/study/EssayStudioScreen';
 import { PlayStudioScreen } from '../screens/study/PlayStudioScreen';
+import { StudySetSettingsScreen } from '../screens/study/StudySetSettingsScreen';
+import { StudySetUploadScreen } from '../screens/study/StudySetUploadScreen';
+import { StudySetArtifactLibraryScreen } from '../screens/study/StudySetArtifactLibraryScreen';
 
 import { GroupsScreen, GroupChatScreen, DirectMessageScreen, CreateGroupScreen } from '../screens/groups';
 
@@ -412,6 +415,9 @@ function StudyNavigator() {
       <StudyStack.Screen name="StudyCalendar" component={StudyCalendarScreen} />
       <StudyStack.Screen name="EssayStudio" component={EssayStudioScreen} />
       <StudyStack.Screen name="PlayStudio" component={PlayStudioScreen} />
+      <StudyStack.Screen name="StudySetSettings" component={StudySetSettingsScreen} />
+      <StudyStack.Screen name="StudySetUpload" component={StudySetUploadScreen} />
+      <StudyStack.Screen name="StudySetLibrary" component={StudySetArtifactLibraryScreen} />
 
       <StudyStack.Screen name="Library" component={LibraryScreen} />
 

@@ -33,11 +33,21 @@ describe('HomeQuickActions', () => {
 
   it('gives every tile a tinted mark — no tile falls to a grey disc', () => {
     const html = render();
-    // Two illustrations (import, record) + four feature discs = six marks, and
-    // none of them is the old neutral `bg-lantern-background-secondary` circle.
+    // SIX marks, not four. The illustrated doors (import, record) used to draw
+    // a bare SVG whose only tinted shape is a ground ellipse that disappears on
+    // a surface, so they measured as untinted on the live grid. Every door now
+    // sits in a feature tile.
     const tinted = html.match(/bg-lantern-feature-[a-z]+-tint/g) || [];
-    expect(tinted.length).toBeGreaterThanOrEqual(4);
+    expect(tinted).toHaveLength(LABELS.length);
     expect(html).not.toContain('rounded-full bg-lantern-background-secondary');
+  });
+
+  it('never repeats a hue — six doors, six feature tints', () => {
+    const html = render();
+    // `Tutor` and `Chat with Lantern` both wore the `ai` pink, so two of six
+    // tiles were indistinguishable by colour.
+    const tinted = html.match(/bg-lantern-feature-([a-z]+)-tint/g) || [];
+    expect(new Set(tinted).size).toBe(LABELS.length);
   });
 
   it('never draws the same glyph on two tiles', () => {
@@ -47,6 +57,15 @@ describe('HomeQuickActions', () => {
     // show up here; each must be a different lucide glyph.
     expect(glyphs.length).toBeGreaterThanOrEqual(4);
     expect(new Set(glyphs).size).toBe(glyphs.length);
+  });
+
+  it('keeps the drawing on the two illustrated doors', () => {
+    const html = render();
+    // Moving the mark into the tile must not quietly downgrade those two doors
+    // to a line glyph: the illustrations are stroked paths, never <path> from
+    // lucide, and they are repainted to the panel ink.
+    expect(html).toContain('!text-lantern-ink');
+    expect((html.match(/<svg/g) || []).length).toBeGreaterThanOrEqual(LABELS.length);
   });
 
   it('renders nothing when no door is wired', () => {

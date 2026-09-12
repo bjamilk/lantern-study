@@ -324,13 +324,27 @@ svg[data-slot="icon"].w-24 {
   color: #0f172a;
 }
 
+/* ===== Font modes scale the type; they do not swap the display face =====
+   `.font-full` is the DEFAULT mode every account starts in, and it used to
+   redefine `--font-display: var(--font-sans)`. Because the mode class sits on
+   `<html>` it outranks `:root`, so the serif set two hundred lines above was
+   overridden on every screen: `text-display` / `text-title` / `font-display`
+   all computed `system-ui`, the Bitter `@font-face` rules were never matched,
+   and the browser never fetched the font files that ship in `public/fonts`.
+   The display voice is part of the brand, not a preference, so `.font-full`
+   now leaves `--font-display` alone and inherits the Bitter stack.
+
+   `.font-low-data` is the ONE deliberate exception and it is an accessibility
+   / bandwidth affordance: it drops to system faces so that no font bytes are
+   fetched at all. Any future mode must scale sizes, not reassign the family. */
 .font-full {
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  --font-display: var(--font-sans);
 }
 
 .font-low-data {
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* Deliberate: low-data ships zero font bytes, so the serif is dropped here
+     and only here. */
   --font-display: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
