@@ -39,6 +39,7 @@ import {
   topicsFromReadingNotes,
   type StudySetPath,
   type StudySetPathActivity,
+  type MessageNoteDraft,
   type TurnIntoTargetId,
   type WorkspaceActivityId,
 } from '@lantern/shared';
@@ -72,6 +73,7 @@ import { createDeckWithCards } from '../../services/apiEndpoints';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
 import { StudySetGuidedPrompts } from './StudySetGuidedPrompts';
+import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
 import { useStudyResumeStore } from '../../stores/studyResumeStore';
 import type { StudySetTopic } from '@lantern/shared';
@@ -541,6 +543,39 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     if (tool.activity) handleActivity(tool.activity, 'ready');
   };
 
+  /**
+   * File one chat answer as a note in THIS room, then run the ordinary
+   * turn-into on it.
+   *
+   * Saving first is not a detour: the four studios open on a note, the
+   * generation jobs read a note, and a student who paid for a deck should be
+   * able to find the text it came from. `handleTurnInto` then does the rest —
+   * credits, the delivery UI, the ticks — so a message and a note never drift
+   * into two different prices or two different destinations.
+   */
+  const handleTurnIntoMessage = async (target: TurnIntoTargetId, draft: MessageNoteDraft) => {
+    if (!currentUserId) {
+      showToast('Sign in to save this answer.', 'error');
+      return;
+    }
+    let created: StudyNote;
+    try {
+      created = await useNotesStore.getState().createNote({
+        ...draft,
+        ...studySetNotePayload({ courseId, studySetId }),
+      });
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : 'Could not save that answer as a note.',
+        'error'
+      );
+      return;
+    }
+    void reloadNotes().catch(() => undefined);
+    showToast(`Answer saved as a note in this ${roomNoun}.`, 'success');
+    await handleTurnInto(target, created.id);
+  };
+
   const handleNewNote = async () => {
     const created = await useNotesStore.getState().createNote({
       title: 'Untitled note',
@@ -858,6 +893,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
+      <StudyWorkspaceBar
+        active="study"
+        onSelect={(section) => {
+          if (section === 'library') onOpenLibrary();
+        }}
+      />
       <div className="px-4 md:px-6 pt-4 shrink-0">
         <ScreenHeader
           title={label}
@@ -1672,6 +1713,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 // attached — the same handler, credits and ticks the studios
                 // use, so nothing here is a second implementation.
                 onTurnInto={(target, noteId) => void handleTurnInto(target, noteId)}
+                // The same six targets again, but scoped to ONE answer: the
+                // answer is filed here first, then run through the identical
+                // path above.
+                onTurnIntoMessage={(target, draft) => void handleTurnIntoMessage(target, draft)}
                 turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
               />
             </div>
@@ -1684,6 +1729,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             onAction={onCompanionAction}
             theme={theme}
             onTurnInto={(target, noteId) => void handleTurnInto(target, noteId)}
+            onTurnIntoMessage={(target, draft) => void handleTurnIntoMessage(target, draft)}
             turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
           />
         )}

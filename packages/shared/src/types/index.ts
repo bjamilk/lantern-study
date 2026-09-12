@@ -880,6 +880,16 @@ export interface TestConfig {
    */
   topicId?: string | null;
   /**
+   * Study set this session belongs to (mirrors test_sessions.study_set_id).
+   *
+   * It lives on the config for the same reason `courseId` does: the config is
+   * what every create path already sends, so a set stamped here reaches the
+   * column whichever door the session came through. Without it, all 77 of a
+   * live account's sessions carried no set, and every set room's Test tab was
+   * permanently empty — the list is filtered on exactly this.
+   */
+  studySetId?: string | null;
+  /**
    * Provenance of a personal test, written once at creation. Read it through
    * `TestSessionProvenance` (the server resolves and returns that) rather than
    * off the config, so the reading code does not have to know these key names.

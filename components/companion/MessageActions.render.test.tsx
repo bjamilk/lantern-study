@@ -1,5 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { TURN_INTO_TARGETS, messageTurnIntoActionLabel } from '@lantern/shared';
 import { MessageActions } from './MessageActions';
 
 /** Server rendering keeps this suite off a DOM it does not need. */
@@ -62,5 +63,43 @@ describe('per-answer actions', () => {
 
   it('marks the rating that is set', () => {
     expect(render({ feedback: 'down' })).toContain('Remove rating');
+  });
+
+  it('adds no turn-into control on a host that cannot file a note', () => {
+    // The row is six buttons wide by default: a "Turn into…" pill that saved
+    // an answer to nowhere would be worse than no pill.
+    expect(render()).not.toContain('Turn into');
+  });
+
+  it('offers a turn-into control when the host can file the answer', () => {
+    const html = render({ onTurnInto: () => undefined });
+    expect(html).toContain('aria-label="Turn this answer into study material"');
+    expect(html).toContain('aria-expanded="false"');
+    // Closed by default — six pills under every answer would bury the thread.
+    expect(html).not.toContain('Turn this answer into<');
+  });
+
+  it('opens a menu of all six targets, each with its price', () => {
+    const html = render({ onTurnInto: () => undefined, turnIntoOpen: true });
+    expect(html).toContain('aria-expanded="true"');
+    for (const target of TURN_INTO_TARGETS) {
+      expect(html).toContain(`</span>${target.label}<span`);
+    }
+    // One pill per target, plus the six row buttons and the toggle.
+    expect(html.match(/min-h-\[44px\]/g) || []).toHaveLength(TURN_INTO_TARGETS.length);
+  });
+
+  it('says the studio targets file a note first, and the two jobs do not', () => {
+    const html = render({ onTurnInto: () => undefined, turnIntoOpen: true });
+    for (const id of ['lesson', 'recap', 'essay', 'play'] as const) {
+      expect(html).toContain(`aria-label="${messageTurnIntoActionLabel(id)} — `);
+    }
+    expect(html).toContain('aria-label="Flashcards — ');
+    expect(html).toContain('aria-label="Practice test — ');
+  });
+
+  it('holds the turn-into control while a send is in flight', () => {
+    const html = render({ onTurnInto: () => undefined, busy: true });
+    expect((html.match(/disabled=""/g) || []).length).toBe(3);
   });
 });

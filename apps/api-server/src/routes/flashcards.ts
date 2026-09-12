@@ -13,6 +13,7 @@ import { surfaceFromRequest } from '../services/learningEvents';
 
 const router = Router();
 const DEFAULT_FLASHCARD_PAGE_SIZE = 50;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const MAX_FLASHCARD_PAGE_SIZE = 100;
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 const resolveResponseProfile = (profile: unknown): 'compact' | 'full' =>
@@ -27,6 +28,34 @@ export const initializeFlashcardRoutes = (supabase: SupabaseService, cache: Cach
   supabaseService = supabase;
   cacheService = cache;
 };
+
+/**
+ * A flashcard id is a UUID, so anything else is a path that does not exist.
+ *
+ * Live, `GET /api/v1/flashcards/due-summary` returned **500**: there is no
+ * such endpoint, so Express matched `GET /:flashcardId`, the handler asked
+ * Postgres for the flashcard whose id is the literal string `due-summary`,
+ * and `id = 'due-summary'` on a uuid column raises 22P02
+ * (`invalid input syntax for type uuid`). The service rethrows, the error
+ * handler masks it as "Something went wrong", and a plain wrong-URL became a
+ * server fault in the logs and on the client.
+ *
+ * Rejecting the shape here fixes every route under `:flashcardId` at once —
+ * a mistyped or retired path now 404s, and no unparsable id ever reaches the
+ * database. It is deliberately a 404 and not a new `due-summary` endpoint:
+ * the due total a student is shown is computed client-side by one shared rule
+ * (`dueReviewPlan`), and a second server-side tally is exactly how Home came
+ * to promise 68 cards and deal 78.
+ */
+router.param('flashcardId', (req: any, res: any, next: any, value: string) => {
+  if (!UUID_RE.test(String(value || ''))) {
+    return res.status(404).json({
+      success: false,
+      error: 'Flashcard not found',
+    });
+  }
+  next();
+});
 
 // GET /api/v1/flashcards - Get flashcards (optionally filtered by deck)
 router.get(

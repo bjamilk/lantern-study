@@ -56,8 +56,8 @@ export interface FeatureTipCopy {
 export const FEATURE_TIP_CATALOG: Record<FeatureTipId, FeatureTipCopy> = {
   'nav.library': {
     id: 'nav.library',
-    title: 'Your Library',
-    body: 'Notes and flashcards live here. Open Library anytime to capture class material or review decks.',
+    title: 'Study and Library',
+    body: 'Study holds your sets. Library is your notes and flashcards. Switch between them with the tabs at the top of Study.',
   },
   'library.tabs': {
     id: 'library.tabs',

@@ -580,6 +580,10 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
               body.remaining_time_seconds ?? body.remainingTime ?? null,
             is_offline: body.is_offline || body.isOffline || false,
             client_id: body.client_id || body.clientId,
+            // The room the session was started in. Read off the body OR the
+            // config by the service, so a client that carries the set either
+            // way files the draft in the same place.
+            studySetId: body.studySetId ?? body.study_set_id ?? null,
           },
           userId,
         );

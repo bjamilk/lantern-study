@@ -36,6 +36,15 @@ export function initializeAICompanionRoutes(svc: SupabaseService) {
 
 const router = Router();
 
+/**
+ * What a stored companion message is worth reading back. `citations` is the
+ * new one: without it a reloaded rail showed the answer as prose with
+ * "(Excerpt 1)" left in the sentence and no chip to tap.
+ */
+const HISTORY_COLUMNS_WITHOUT_CITATIONS =
+  'id, role, content, actions, feedback, created_at, note_context_id, conversation_id';
+const HISTORY_COLUMNS = `${HISTORY_COLUMNS_WITHOUT_CITATIONS}, citations`;
+
 router.use(authMiddleware as any);
 router.use(requirePermission('ai'));
 
@@ -129,13 +138,21 @@ router.get('/history', async (req: Request, res: Response) => {
       return;
     }
 
-    const { data, error } = await client
-      .from('ai_companion_messages')
-      .select('id, role, content, actions, feedback, created_at, note_context_id, conversation_id')
-      .eq('user_id', userId)
-      .eq('conversation_id', resolvedConversationId)
-      .order('created_at', { ascending: true })
-      .limit(50);
+    const readHistory = (columns: string) =>
+      client
+        .from('ai_companion_messages')
+        .select(columns)
+        .eq('user_id', userId)
+        .eq('conversation_id', resolvedConversationId)
+        .order('created_at', { ascending: true })
+        .limit(50);
+
+    let { data, error } = await readHistory(HISTORY_COLUMNS);
+    // Before the citations migration is applied the column is simply absent;
+    // the thread is still worth returning, just without its chips.
+    if (error && isMissingCitationsColumn(error)) {
+      ({ data, error } = await readHistory(HISTORY_COLUMNS_WITHOUT_CITATIONS));
+    }
 
     if (error) throw error;
     res.json({
@@ -306,11 +323,26 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
 router.use(aiPostBurstRateLimit);
 router.use(aiRateLimitForFeature('companion'));
 
+/**
+ * True when PostgREST is telling us the `citations` column is not there yet.
+ *
+ * `20260912090000_companion_message_citations.sql` is applied by hand like
+ * every other migration here, so the API has to run correctly on both sides of
+ * it: before it lands, the exchange is still saved — without its chips —
+ * rather than the whole answer failing to persist.
+ */
+function isMissingCitationsColumn(error: any): boolean {
+  const code = String(error?.code || '');
+  const text = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+  return (code === 'PGRST204' || code === '42703') && text.includes('citations');
+}
+
 async function persistCompanionExchange(params: {
   userId: string;
   message: string;
   reply: string;
   actions: unknown[];
+  citations?: unknown;
   conversationId: string;
   noteContextId: string | null;
   selectIds?: boolean;
@@ -320,6 +352,7 @@ async function persistCompanionExchange(params: {
     message,
     reply,
     actions,
+    citations = null,
     conversationId,
     noteContextId,
     selectIds = false,
@@ -340,23 +373,46 @@ async function persistCompanionExchange(params: {
       role: 'assistant' as const,
       content: reply,
       actions: actions.length ? actions : null,
+      // Which excerpts of which note this answer was read out of. Without this
+      // the chips were live-only: reload the rail and the same answer came
+      // back as prose with "(Excerpt 1)" stranded in the sentence and nothing
+      // to tap, which is how it looked in production every time.
+      citations: citations ?? null,
       created_at: new Date(Date.now() + 1).toISOString(),
       note_context_id: noteContextId,
       conversation_id: conversationId,
     },
   ];
 
+  /** The same rows with `citations` stripped, for a database without it. */
+  const rowsWithoutCitations = rows.map(({ citations: _drop, ...rest }) => rest);
+
   if (selectIds) {
-    const { data, error } = await client
+    let { data, error } = await client
       .from('ai_companion_messages')
       .insert(rows)
       .select('id, role');
+    if (error && isMissingCitationsColumn(error)) {
+      console.warn(
+        'ai_companion_messages.citations missing — saved without chips (apply 20260912090000_companion_message_citations.sql)'
+      );
+      ({ data, error } = await client
+        .from('ai_companion_messages')
+        .insert(rowsWithoutCitations)
+        .select('id, role'));
+    }
     if (error) throw error;
     await touchConversation(client, userId, conversationId);
     return (data || []) as Array<{ id: string; role: string }>;
   }
 
-  const { error } = await client.from('ai_companion_messages').insert(rows);
+  let { error } = await client.from('ai_companion_messages').insert(rows);
+  if (error && isMissingCitationsColumn(error)) {
+    console.warn(
+      'ai_companion_messages.citations missing — saved without chips (apply 20260912090000_companion_message_citations.sql)'
+    );
+    ({ error } = await client.from('ai_companion_messages').insert(rowsWithoutCitations));
+  }
   if (error) throw error;
   await touchConversation(client, userId, conversationId);
   return [];
@@ -432,6 +488,7 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           message: message.trim(),
           reply,
           actions,
+          citations: citations ?? null,
           conversationId: conversation.id,
           noteContextId: effectiveNoteId,
         });
@@ -446,9 +503,9 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           reply,
           actions,
           provider,
-          // Which excerpts of which note this reply was read out of. Live only:
-          // ai_companion_messages has no column for it, so a reloaded thread
-          // shows the answer without chips rather than with invented ones.
+          // Which excerpts of which note this reply was read out of. Persisted
+          // alongside the message now, so a reloaded thread keeps its chips
+          // instead of stranding "(Excerpt 1)" in the prose.
           citations: citations ?? null,
           conversationId: conversation.id,
         };
@@ -544,6 +601,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       message: message.trim(),
       reply,
       actions,
+      citations: citations ?? null,
       conversationId: conversation.id,
       noteContextId: effectiveNoteId,
       selectIds: true,

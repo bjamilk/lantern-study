@@ -60,11 +60,12 @@ import { useToastStore } from '../../stores/toastStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useJobsStore } from '../../stores/jobsStore';
 import { useStudyGoalsStore } from '../../stores/studyGoalsStore';
-import { saveGeneratedDeck, saveGeneratedTest } from '../../services/jobArtifacts';
+import { startFlashcardsFromNote, startTestFromNote } from './turnIntoJobs';
 import { aiGenerateFlashcards } from '../../services/ai';
 import { generateNoteQuiz } from '../../services/notes';
 import { getMyActiveCourses } from '../../services/academic';
 import { useStudySetStore } from '../../stores/studySetStore';
+import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { useCompanionStore } from '../../stores/companionStore';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
@@ -439,66 +440,13 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       showToast('Sign in to generate study materials.', 'error');
       return;
     }
-    const noteTitle = note.title || 'Untitled Note';
-    const content = (note.body || note.summary || '').slice(0, 8000);
-
+    const scope = { userId, courseId: courseId || undefined, studySetId };
     if (target === 'cards') {
-      const count = normalizeFlashcardCount();
-      startJob({
-        kind: 'flashcards',
-        sourceTitle: noteTitle,
-        requestedCount: count,
-        run: async ({ jobId, onServerJob, onStage }) => {
-          const { flashcards } = await aiGenerateFlashcards(content, {
-            count,
-            style: 'concise',
-            onJobUpdate: (p) => {
-              if (p.jobId) onServerJob(p.jobId);
-            },
-          });
-          if (!flashcards.length) {
-            throw new Error('Could not generate flashcards from this note.');
-          }
-          onStage('Saving to your deck');
-          const { ref, saved } = await saveGeneratedDeck({
-            jobId,
-            userId,
-            cards: flashcards,
-            deckName: `From: ${noteTitle}`,
-            description: `Generated from note: ${noteTitle}`,
-            courseId: courseId || undefined,
-            studySetId,
-          });
-          return { artifact: ref, resultCount: saved };
-        },
-      });
+      startFlashcardsFromNote(note, scope, startJob);
       showToast(scopedCopy('buildingCards', scopeNoun(studySetId, courseIdParam)), 'info');
       return;
     }
-
-    startJob({
-      kind: 'test',
-      sourceTitle: noteTitle,
-      requestedCount: 10,
-      requestedCountIsMax: true,
-      run: async ({ jobId, onServerJob, onStage }) => {
-        const { studyGoal } = useStudyGoalsStore.getState();
-        const session = await generateNoteQuiz(note.id, studyGoal, 10, onServerJob);
-        if (!session.questions.length) {
-          throw new Error('Could not generate a test from this note.');
-        }
-        onStage('Saving your test');
-        const { ref, saved } = await saveGeneratedTest({
-          jobId,
-          title: `Test · ${noteTitle}`,
-          sourceNoteId: note.id,
-          questions: session.questions,
-          courseId: courseId || undefined,
-          studySetId,
-        });
-        return { artifact: ref, resultCount: saved };
-      },
-    });
+    startTestFromNote(note, scope, startJob);
     showToast(scopedCopy('buildingTest', scopeNoun(studySetId, courseIdParam)), 'info');
   };
 
@@ -511,6 +459,12 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      <StudyWorkspaceBar
+        active="study"
+        onSelect={(section) => {
+          if (section === 'library') navigation.navigate('Library', { tab: 'notes' });
+        }}
+      />
       <ScrollView
         className="flex-1"
         contentContainerStyle={{ paddingBottom: tabBarClearance, paddingHorizontal: 16, paddingTop: 8 }}

@@ -122,7 +122,10 @@ export async function runTestGenerator(
 
   onStage('reading');
   let content = '';
-  let studySetId: string | undefined;
+  // The room the builder was standing in wins over the source's own filing: a
+  // test built inside a set belongs to that set even when the deck it was
+  // built from is unfiled.
+  let studySetId: string | undefined = plan.studySetId || undefined;
   if (plan.source === 'deck') {
     const cards = useFlashcardStore
       .getState()
@@ -132,11 +135,12 @@ export async function runTestGenerator(
       throw new Error('That deck has no cards to build questions from yet.');
     }
     studySetId =
+      studySetId ||
       useFlashcardStore.getState().decks.find((row) => row.id === plan.sourceId)?.studySetId ||
       undefined;
   } else {
     const note = await notesApi.fetchNote(plan.sourceId);
-    studySetId = note.studySetId || undefined;
+    studySetId = studySetId || note.studySetId || undefined;
     const studyInput = {
       sourceType: note.sourceType,
       body: note.body,

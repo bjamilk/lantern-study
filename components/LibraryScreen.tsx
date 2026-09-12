@@ -21,6 +21,7 @@ import { LibraryPanelSearchProvider } from './library/libraryPanelSearch';
 import { LibrarySearchBox, LibrarySearchResults } from './library/LibrarySearch';
 import { ClassOfficialMaterials } from './classes/ClassOfficialMaterials';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
+import { StudyWorkspaceBar } from './study/StudyWorkspaceBar';
 
 export type LibraryTab = 'notes' | 'flashcards';
 
@@ -46,6 +47,8 @@ interface LibraryScreenProps {
    */
   onCreateStudyPackFromCourse?: (courseId: string, courseLabel?: string) => void;
   onTurnSemesterIntoProducts?: () => void;
+  /** Opens the Study set picker — Library's peer under the Study destination. */
+  onOpenStudy: () => void;
 }
 
 const tabs: { id: LibraryTab; label: string; icon: AppIconName }[] = [
@@ -72,6 +75,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   onOpenTests,
   onCreateStudyPackFromCourse,
   onTurnSemesterIntoProducts,
+  onOpenStudy,
 }) => {
   const courseFilterId = useLibraryStore((s) => s.courseFilterId);
   const setCourseFilter = useLibraryStore((s) => s.setCourseFilter);
@@ -202,6 +206,12 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden bg-lantern-background">
+      <StudyWorkspaceBar
+        active="library"
+        onSelect={(section) => {
+          if (section === 'study') onOpenStudy();
+        }}
+      />
       <Tabs
         value={tab}
         onValueChange={(value) => {

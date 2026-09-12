@@ -1,5 +1,7 @@
 import React from 'react';
+import { messageTurnIntoActionLabel, type TurnIntoTargetId } from '@lantern/shared';
 import { AppIcon } from '../ui/AppIcon';
+import { TurnIntoMenu } from '../study/TurnIntoMenu';
 
 export interface MessageActionsProps {
   /** Copy the answer to the clipboard. */
@@ -23,6 +25,26 @@ export interface MessageActionsProps {
   canRate: boolean;
   /** A send is in flight: the two that spend a credit are held. */
   busy?: boolean;
+  /**
+   * Turn THIS answer into study material — flashcards, a practice test, or one
+   * of the four studios.
+   *
+   * Optional, and the control is only drawn when a host supplies it, because
+   * turning a message into anything means FILING it as a note first, and only
+   * a host that knows the scope (which set, which course) can file it in the
+   * right place. A pill that saved every answer to "unfiled" would be worse
+   * than no pill.
+   */
+  onTurnInto?: (target: TurnIntoTargetId) => void;
+  /**
+   * True while this answer's six-target menu is the open one. Controlled by
+   * the thread rather than held here, so opening a second answer's menu closes
+   * the first instead of leaving two identical rows on screen.
+   */
+  turnIntoOpen?: boolean;
+  onToggleTurnInto?: () => void;
+  /** Targets already made from this answer, ticked so nobody pays twice. */
+  turnIntoExisting?: Partial<Record<TurnIntoTargetId, boolean>>;
 }
 
 const ICON_BUTTON =
@@ -53,8 +75,13 @@ export function MessageActions({
   feedback,
   canRate,
   busy,
+  onTurnInto,
+  turnIntoOpen,
+  onToggleTurnInto,
+  turnIntoExisting,
 }: MessageActionsProps) {
   return (
+    <div className="w-full">
     <div
       className="mt-1 flex flex-wrap items-center gap-0.5"
       role="group"
@@ -118,6 +145,40 @@ export function MessageActions({
       >
         I don&apos;t understand
       </button>
+      {/* Turn-into acts on the ANSWER, which is the whole point: the thing a
+          student wants cards from is usually the explanation they just read,
+          not the note that happened to be attached to the conversation. */}
+      {onTurnInto && (
+        <button
+          type="button"
+          onClick={onToggleTurnInto}
+          disabled={busy}
+          aria-expanded={Boolean(turnIntoOpen)}
+          aria-label="Turn this answer into study material"
+          title="Turn this answer into flashcards, a test, or a studio"
+          className="ml-0.5 inline-flex min-h-[32px] items-center gap-1 rounded-full bg-lantern-feature-flashcards-tint px-2.5 text-body font-medium text-lantern-feature-flashcards-ink transition-opacity disabled:opacity-40"
+        >
+          <AppIcon name="sparkles" size={13} />
+          Turn into…
+        </button>
+      )}
+    </div>
+    {onTurnInto && turnIntoOpen && (
+      <div className="mt-2 rounded-xl border border-lantern-border bg-lantern-surface p-2.5 dark:bg-lantern-surface-secondary">
+        <TurnIntoMenu
+          disabled={busy}
+          existing={turnIntoExisting}
+          heading="Turn this answer into"
+          describeTarget={messageTurnIntoActionLabel}
+          onSelect={onTurnInto}
+        />
+        {/* Said once, plainly, rather than repeated on all six pills: the four
+            studios open ON a note, so the answer gets saved either way. */}
+        <p className="mt-1.5 text-caption text-lantern-text-tertiary">
+          This answer is saved as a note first, so you can find it again.
+        </p>
+      </div>
+    )}
     </div>
   );
 }

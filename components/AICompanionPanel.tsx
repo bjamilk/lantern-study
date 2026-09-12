@@ -24,7 +24,8 @@ import ReactMarkdown from 'react-markdown';
 // bubble showed the same answer's table as a row of raw pipes.
 import remarkGfm from 'remark-gfm';
 import type { MdProps } from './ui/markdownProps';
-import type { TurnIntoTargetId } from '@lantern/shared';
+import type { MessageNoteDraft, TurnIntoTargetId } from '@lantern/shared';
+import { messageToNoteDraft } from '@lantern/shared';
 import { TurnIntoMenu } from './study/TurnIntoMenu';
 import { CompanionHistory } from './companion/CompanionHistory';
 import { CompanionPrompts } from './companion/CompanionPrompts';
@@ -132,6 +133,23 @@ interface AICompanionPanelProps {
   onTurnInto?: (target: TurnIntoTargetId, noteId: string) => void;
   /** Targets already made from the attached note, so nobody pays twice. */
   turnIntoExisting?: Partial<Record<TurnIntoTargetId, boolean>>;
+  /**
+   * Turn ONE answer into study material.
+   *
+   * The panel does the part only it can do — deciding which answer, and
+   * building the note draft from it — and hands the host a finished draft. The
+   * host files the note in its own scope (this set, this course) and runs the
+   * existing turn-into path on it, so a message and a note spend credits and
+   * navigate by exactly the same code.
+   *
+   * Absent on hosts that have nowhere to file a note; the control is then not
+   * drawn at all rather than drawn and failing.
+   */
+  onTurnIntoMessage?: (
+    target: TurnIntoTargetId,
+    draft: MessageNoteDraft,
+    message: CompanionMessage
+  ) => void | Promise<void>;
 }
 
 const MIN_DICTATION_MS = 800;
@@ -196,6 +214,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   variant = 'drawer',
   onTurnInto,
   turnIntoExisting,
+  onTurnIntoMessage,
 }) => {
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
@@ -219,6 +238,21 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const [showHistoryList, setShowHistoryList] = useState(false);
   const [showNotePicker, setShowNotePicker] = useState(false);
   const [showTurnInto, setShowTurnInto] = useState(false);
+  /**
+   * Which answer has its six-target menu open. One id rather than a per-bubble
+   * boolean: opening a second answer's menu closes the first, so the thread
+   * never carries two identical six-pill rows.
+   */
+  const [turnIntoMessageId, setTurnIntoMessageId] = useState<string | null>(null);
+  /**
+   * The saved conversation's title, used to name a note when the answer opens
+   * with prose rather than a heading. Empty on a thread that has not been
+   * saved yet — `messageToNoteDraft` falls back again from there.
+   */
+  const activeConversationTitle = useMemo(
+    () => conversations.find((row) => row.id === activeConversationId)?.title ?? '',
+    [conversations, activeConversationId]
+  );
   const [promptsExpanded, setPromptsExpanded] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
@@ -906,6 +940,22 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               theme={theme}
               onAction={handleAction}
               onOpenNote={onOpenNote}
+              onTurnInto={
+                onTurnIntoMessage
+                  ? (target) => {
+                      setTurnIntoMessageId(null);
+                      void onTurnIntoMessage(
+                        target,
+                        messageToNoteDraft(msg, activeConversationTitle),
+                        msg
+                      );
+                    }
+                  : undefined
+              }
+              turnIntoOpen={turnIntoMessageId === msg.id}
+              onToggleTurnInto={() =>
+                setTurnIntoMessageId((current) => (current === msg.id ? null : msg.id))
+              }
               isStreaming={isStreaming && msg.role === 'assistant' && msg.id === messages[messages.length - 1]?.id}
               busy={isBusy}
               isSpeaking={speakingMessageId === msg.id}
@@ -1167,6 +1217,10 @@ interface MessageBubbleProps {
   onToggleSpeak?: (messageId: string, content: string) => void;
   onRegenerate?: (messageId: string) => void;
   onExplainSimply?: () => void;
+  /** Turn this one answer into study material; absent where nothing can file a note. */
+  onTurnInto?: (target: TurnIntoTargetId) => void;
+  turnIntoOpen?: boolean;
+  onToggleTurnInto?: () => void;
 }
 
 /**
@@ -1209,6 +1263,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   onToggleSpeak,
   onRegenerate,
   onExplainSimply,
+  onTurnInto,
+  turnIntoOpen,
+  onToggleTurnInto,
 }) => {
   const isUser = message.role === 'user';
   const setMessageFeedback = useCompanionStore((s) => s.setMessageFeedback);
@@ -1336,6 +1393,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
             feedback={feedback}
             canRate={canRate}
             busy={busy}
+            onTurnInto={onTurnInto}
+            turnIntoOpen={turnIntoOpen}
+            onToggleTurnInto={onToggleTurnInto}
           />
         )}
       </div>

@@ -757,30 +757,6 @@ export function DashboardScreen({ navigation }: Props) {
   const notesForHome = useNotesStore((s) => s.notes);
 
   /**
-   * ONE button, whose label and destination come out of the same call.
-   * `primaryHomeAction` is the shared rule — due cards beat a resume, a resume
-   * beats an import — so a button that says "Continue" cannot land on the
-   * import sheet.
-   */
-  const primaryAction = useMemo(
-    () => primaryHomeAction({ dueCardsCount: dueCount, lastActivity: resume.lastActivity }),
-    [dueCount, resume.lastActivity]
-  );
-
-  /** A resume href is a web PATH; the phone navigates by screen and params. */
-  const openResumeHref = useCallback(
-    (href: string | null | undefined) => {
-      const route = resumeRouteForHref(href);
-      if (!route) {
-        parent?.navigate('StudyTab', toTab('StudyHub'));
-        return;
-      }
-      parent?.navigate('StudyTab', toTab(route.screen, route.params));
-    },
-    [parent]
-  );
-
-  /**
    * What "Study all N due" plans to review, by the one shared rule.
    *
    * `dueReviewPlan` is the same planner web runs, so the phone and the browser
@@ -806,6 +782,37 @@ export function DashboardScreen({ navigation }: Props) {
       ),
     [flashcardsByDeck, decks]
   );
+  /**
+   * ONE button, whose label and destination come out of the same call.
+   * `primaryHomeAction` is the shared rule — due cards beat a resume, a resume
+   * beats an import — so a button that says "Continue" cannot land on the
+   * import sheet.
+   */
+  const primaryAction = useMemo(
+    () =>
+      primaryHomeAction({
+        dueCardsCount: dueCount,
+        // The button counts what the session will deal, never a separate
+        // tally — the same rule web now follows.
+        reviewPlan,
+        lastActivity: resume.lastActivity,
+      }),
+    [dueCount, reviewPlan, resume.lastActivity]
+  );
+
+  /** A resume href is a web PATH; the phone navigates by screen and params. */
+  const openResumeHref = useCallback(
+    (href: string | null | undefined) => {
+      const route = resumeRouteForHref(href);
+      if (!route) {
+        parent?.navigate('StudyTab', toTab('StudyHub'));
+        return;
+      }
+      parent?.navigate('StudyTab', toTab(route.screen, route.params));
+    },
+    [parent]
+  );
+
   const reviewDeck = reviewPlan.first;
 
   const handlePrimaryAction = useCallback(() => {
@@ -1008,7 +1015,9 @@ export function DashboardScreen({ navigation }: Props) {
           userName={displayName}
           streak={streak}
           points={shownStats?.totalPoints ?? 0}
-          dueCount={dueCount}
+          // The hero's figure is the button's figure: the plan total, so the
+          // card cannot print one number and open a session of another.
+          dueCount={reviewPlan.totalDue}
           totalTests={shownStats?.totalTestsTaken ?? 0}
           level={level}
           // Offline with nothing real cached: the card drops the figures and

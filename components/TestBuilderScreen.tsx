@@ -39,6 +39,12 @@ export interface TestBuilderScreenProps {
   onStart: (plan: TestPlanDraft) => void;
   /** "With your group" leaves this page for the chat, and says so first. */
   onOpenGroupChat: () => void;
+  /**
+   * The set room this builder is standing in, when it is in one. It rides out
+   * on the plan so the test it builds is filed where it was made — the set
+   * room's Test tab lists by set and nothing else.
+   */
+  studySetId?: string | null;
 }
 
 const SOURCE_ICON: Record<TestSourceKind, React.ReactNode> = {
@@ -71,6 +77,7 @@ export const TestBuilderScreen: React.FC<TestBuilderScreenProps> = ({
   onBack,
   onStart,
   onOpenGroupChat,
+  studySetId = null,
 }) => {
   const [plan, setPlan] = useState<TestPlanDraft>(defaultTestPlan);
 
@@ -129,7 +136,7 @@ export const TestBuilderScreen: React.FC<TestBuilderScreenProps> = ({
       return;
     }
     if (!validity.canStart) return;
-    onStart(plan);
+    onStart(studySetId ? { ...plan, studySetId } : plan);
   };
 
   return (

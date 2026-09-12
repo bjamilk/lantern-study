@@ -115,6 +115,15 @@ interface DashboardScreenProps {
   hasExploredMarketplace?: boolean;
   hasTriedOffline?: boolean;
   dueCardsCount?: number;
+  /**
+   * The total the "Study all N due" session will actually deal, from
+   * `dueReviewPlan`. Home must label itself from this and not from the store's
+   * `dueCardsCount` aggregate: the store counts cards due by date, the plan
+   * also deals each deck's new-card allowance, and live the two disagreed
+   * ("Study all 68 due" opened "1 / 78 across 8 decks"). Optional so a caller
+   * with no plan yet still renders; when present it is authoritative.
+   */
+  reviewPlanTotalDue?: number | null;
   onOpenQuickTest?: (groupId: string) => void;
   onNavigateToNotes?: () => void;
   onOpenImportAndStudy?: () => void;
@@ -172,6 +181,7 @@ export default function DashboardScreen({
   onRecordLecture,
   onNavigatePath,
   dueCardsCount = 0,
+  reviewPlanTotalDue,
   onOpenQuickTest,
   serverStreak = 0,
   studyActivityDays = [],
@@ -190,6 +200,19 @@ export default function DashboardScreen({
     [studyActivityDays]
   );
   const displayStreak = Math.max(serverStreak, studyActivityStreak);
+  /**
+   * One tally for the button, its sentence and its session. `null` only when
+   * the caller passed no plan at all, in which case the store aggregate is the
+   * best available number.
+   */
+  const homeReviewPlan = useMemo(
+    () =>
+      typeof reviewPlanTotalDue === 'number' && Number.isFinite(reviewPlanTotalDue)
+        ? { totalDue: Math.max(0, Math.trunc(reviewPlanTotalDue)) }
+        : null,
+    [reviewPlanTotalDue]
+  );
+  const homeDueTotal = homeReviewPlan ? homeReviewPlan.totalDue : dueCardsCount;
   const totalTestsTakenOverall = rawTestResults.filter((result) => result?.session?.startTime).length;
   const dashboardScrollRef = useRef<HTMLDivElement>(null);
 
@@ -299,10 +322,14 @@ export default function DashboardScreen({
                 name: currentUser.name,
                 username: currentUser.username,
               })}
-              dueCardsCount={dueCardsCount}
+              dueCardsCount={homeDueTotal}
               totalTestsTaken={totalTestsTakenOverall}
               onPrimaryAction={() => {
-                const action = primaryHomeAction({ dueCardsCount, lastActivity });
+                const action = primaryHomeAction({
+                  dueCardsCount,
+                  reviewPlan: homeReviewPlan,
+                  lastActivity,
+                });
                 if (action.kind === 'review' && onReviewDueCards) {
                   onReviewDueCards();
                   return;

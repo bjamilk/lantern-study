@@ -101,12 +101,24 @@ export interface PrimaryHomeAction {
  *
  * Due cards win — a review that is already owed is more urgent than resuming
  * where you left off.
+ *
+ * `reviewPlan` is the number the button must count. Home used to label itself
+ * from a store aggregate (`getCardsDue` over every loaded card) while the
+ * button opened a session built by `dueReviewPlan`, which applies each deck's
+ * new-card allowance — so live, a button reading "Study all 68 due" opened
+ * "1 / 78 across 8 decks". Passing the plan makes the label and the session
+ * one number by construction. `dueCardsCount` is the fallback for a caller
+ * that has no plan yet (cards still loading); when a plan is given it wins,
+ * including when its total is 0.
  */
 export function primaryHomeAction(input: {
   dueCardsCount: number;
   lastActivity: StudyResumeActivity | null;
+  reviewPlan?: { totalDue: number } | null;
 }): PrimaryHomeAction {
-  const due = Number.isFinite(input.dueCardsCount) ? Math.max(0, Math.trunc(input.dueCardsCount)) : 0;
+  const planTotal = input.reviewPlan ? input.reviewPlan.totalDue : null;
+  const counted = planTotal ?? input.dueCardsCount;
+  const due = Number.isFinite(counted) ? Math.max(0, Math.trunc(counted)) : 0;
   if (due > 0) {
     return { kind: 'review', label: getStudyAllDueLabel(due) };
   }

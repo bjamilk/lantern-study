@@ -3,6 +3,7 @@
  */
 import type { PausedSessionSummary, TestSessionData, TestSessionKind } from '../types';
 import { getApiRoot, getAuthHeaders } from './supabase';
+import { withStudySetId } from './testSessionPayload';
 
 function toIso(value: Date | string | undefined): string | undefined {
   if (!value) return undefined;
@@ -22,7 +23,7 @@ export function getSessionRemainingSeconds(session: TestSessionData): number | n
 }
 
 export function sessionToDraftPayload(session: TestSessionData, kind: TestSessionKind) {
-  return {
+  return withStudySetId({
     config: session.config,
     questions: session.questions,
     user_answers: session.userAnswers || {},
@@ -36,7 +37,7 @@ export function sessionToDraftPayload(session: TestSessionData, kind: TestSessio
     // Persist countdown from endTime when remainingTime was never snapshotted (fresh start).
     remaining_time_seconds: getSessionRemainingSeconds(session),
     is_offline: !!session.isOffline,
-  };
+  }, { config: session.config });
 }
 
 export function mapDraftToSession(data: any): TestSessionData {

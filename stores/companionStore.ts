@@ -5,6 +5,7 @@
  * note_context_id so history can list general + note-linked chats.
  */
 import { create } from 'zustand';
+import { normalizeCompanionCitation } from '@lantern/shared/api';
 import { CompanionConversation, CompanionMessage, CompanionUserContext } from '../types';
 import {
   companionSendMessage,
@@ -368,6 +369,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           role: m.role,
           content: m.content,
           actions: m.actions,
+          // Chips survive a reload now that the server persists them; anything
+          // malformed normalises to null rather than rendering a dead chip.
+          citations: normalizeCompanionCitation(m.citations),
           feedback: m.feedback ?? previousFeedback.get(m.id) ?? null,
           created_at: m.created_at,
         })),

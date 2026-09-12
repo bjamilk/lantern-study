@@ -149,6 +149,13 @@ export function createCompanionClient(config: AIClientConfig) {
           role: 'user' | 'assistant';
           content: string;
           actions?: CompanionAction[];
+          /**
+           * Which excerpts of which note the answer was read out of. Reloaded
+           * threads used to lose this — the column did not exist — so a rail
+           * that had shown source chips came back as chip-less prose with
+           * "(Excerpt 1)" left stranded inside the sentence.
+           */
+          citations?: unknown;
           feedback?: 'up' | 'down' | null;
           created_at: string;
         }>;

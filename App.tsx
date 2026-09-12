@@ -18,7 +18,8 @@ import {
     ONBOARDING_COMPLETE_VALUE,
     isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isQuizzableNote, parseStudySetPath, pickOpenStudySetId } from '@lantern/shared';
+import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isQuizzableNote, parseStudySetPath, pickOpenStudySetId, TURN_INTO_TARGETS } from '@lantern/shared';
+import type { MessageNoteDraft, TurnIntoTargetId } from '@lantern/shared';
 import { buildFlashcardReviewQueue, getTodayStudyCounts, isNewFlashcard, normalizeUserSettings } from '@lantern/shared/settings';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
 import { useUIStore } from './stores/uiStore';
@@ -1320,6 +1321,89 @@ export const App: React.FC = () => {
     }, [currentUser, studyGoal, navigateToPath]);
 
     /**
+     * Turn one chat answer from the GLOBAL companion into study material.
+     *
+     * Outside a room there is no workspace to file into, so the answer lands
+     * in the set the student last opened (the same rule the Record door uses)
+     * and, failing that, unfiled in the Library. A lesson, recap, essay or
+     * play only exists inside a set, so those four navigate into the set's own
+     * studio; with no set to navigate to, the answer is still saved and the
+     * toast says what to do next rather than opening nothing.
+     */
+    const [pendingMessageTurnInto, setPendingMessageTurnInto] = useState<
+        { target: TurnIntoTargetId; noteId: string } | null
+    >(null);
+
+    const handleCompanionMessageTurnInto = async (
+        target: TurnIntoTargetId,
+        draft: MessageNoteDraft
+    ) => {
+        const setId = useStudySetStore.getState().lastOpenedId || undefined;
+        let created;
+        try {
+            created = await useNotesStore.getState().createNote({
+                ...draft,
+                ...(setId ? { studySetId: setId } : {}),
+            });
+        } catch (error: any) {
+            showToast(error?.message || 'Could not save that answer as a note.', 'error');
+            return;
+        }
+        await noteHandlers.openNote(created.id);
+        if (useNotesStore.getState().selectedNote?.id !== created.id) {
+            showToast('Saved the answer, but could not open it.', 'error');
+            return;
+        }
+        showToast('Answer saved as a note.', 'success');
+        if (target === 'cards' || target === 'test') {
+            // Deferred, not immediate: the note handlers close over the note
+            // selected at RENDER time, so running in this tick would generate
+            // from whatever note was open before this one.
+            setPendingMessageTurnInto({ target, noteId: created.id });
+            return;
+        }
+        if (setId) {
+            navigateToPath(
+                buildStudySetPath({ studySetId: setId, activity: target, noteId: created.id })
+            );
+            return;
+        }
+        const label = TURN_INTO_TARGETS.find((row) => row.id === target)?.label ?? target;
+        showToast(`Saved as a note. Add it to a study set to open ${label}.`, 'info');
+    };
+
+    useEffect(() => {
+        if (!pendingMessageTurnInto || selectedNote?.id !== pendingMessageTurnInto.noteId) return;
+        const { target } = pendingMessageTurnInto;
+        setPendingMessageTurnInto(null);
+        void (async () => {
+            try {
+                if (target === 'cards') {
+                    const result = await noteHandlers.handleCreateFlashcardDeckFromNote(10);
+                    if (result?.deck) {
+                        setSelectedDeck(result.deck as any);
+                        setAppMode(AppMode.DECK_DETAIL);
+                        showToast(
+                            `Created ${result.savedCount} flashcards in "${result.deck.name}"`,
+                            'success'
+                        );
+                    }
+                } else {
+                    const session = await noteHandlers.handleStartNoteQuiz();
+                    if (session?.questions?.length) {
+                        showToast(`Quiz ready — ${session.questions.length} questions below`, 'success');
+                    }
+                }
+            } catch (error: any) {
+                showToast(error?.message || 'Could not generate that.', 'error');
+            }
+        })();
+        // noteHandlers is re-created every render; keying on its identity would
+        // fire the job twice.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [pendingMessageTurnInto, selectedNote?.id]);
+
+    /**
      * The Record door (Home tile and Study hub tile). Parity with mobile
      * (`apps/mobile/src/screens/study/recorderDoor.ts`): the note is named for
      * the lecture it is about to hold, not "Untitled Note", so it is findable
@@ -1389,14 +1473,10 @@ export const App: React.FC = () => {
      * per deck: it is a daily budget, and giving every deck a fresh one would
      * introduce many times the student's configured limit in a single sitting.
      */
-    const handleFlashcardStudy = () => {
-        if (decks.length === 0) {
-            showToast('No flashcard decks available. Create a deck first.', 'error');
-            return;
-        }
+    const buildHomeReviewPlan = React.useCallback(() => {
         const settings = normalizeUserSettings(currentUser?.settings);
         let newIntroducedToday = getTodayStudyCounts(useTestStore.getState().studyActivityDays).newFlashcards;
-        const plan = dueReviewPlan(decks, (deckId) => {
+        return dueReviewPlan(decks, (deckId) => {
             const queue = buildFlashcardReviewQueue(
                 flashcards.filter(fc => fc.deckId === deckId),
                 {
@@ -1407,6 +1487,23 @@ export const App: React.FC = () => {
             newIntroducedToday += queue.filter(isNewFlashcard).length;
             return queue;
         });
+    }, [decks, flashcards, currentUser?.settings]);
+
+    /**
+     * The number Home's button is allowed to say. It is the plan's own total,
+     * not the store's `dueCardsCount` aggregate: the store counts cards that
+     * are due by date, the plan also deals each deck's new-card allowance, and
+     * live the two disagreed by ten ("Study all 68 due" → "1 / 78 across 8
+     * decks"). One tally, one promise.
+     */
+    const homeReviewPlan = React.useMemo(() => buildHomeReviewPlan(), [buildHomeReviewPlan]);
+
+    const handleFlashcardStudy = () => {
+        if (decks.length === 0) {
+            showToast('No flashcard decks available. Create a deck first.', 'error');
+            return;
+        }
+        const plan = buildHomeReviewPlan();
 
         const topDeck = plan.first ? decks.find(d => d.id === plan.first!.deckId) : undefined;
         if (!plan.first || !topDeck) {
@@ -2287,6 +2384,7 @@ export const App: React.FC = () => {
                     onReviewDueCards={handleFlashcardStudy}
                     serverStreak={serverStreak}
                     dueCardsCount={dueCardsCount}
+                    reviewPlanTotalDue={homeReviewPlan.totalDue}
                     onOpenQuickTest={handleOpenQuickTest}
                     activeTestSession={activeTestSession}
                     activeStudySession={activeStudySession}
@@ -2319,6 +2417,10 @@ export const App: React.FC = () => {
                             setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
                         }}
                         onTurnSemesterIntoProducts={() => setAppMode(AppMode.SEMESTER_PRODUCTS)}
+                        onOpenStudy={() => {
+                            useStudySetStore.getState().openPicker();
+                            navigateTo(AppMode.STUDY_HUB);
+                        }}
                     />
                 );
             case AppMode.STUDY_HUB:
@@ -2436,6 +2538,11 @@ export const App: React.FC = () => {
                                 onBack={() => backToSet('test')}
                                 onStart={(plan) => { void handleStartBuiltTest(plan); }}
                                 onOpenGroupChat={handleBuildTestWithGroup}
+                                // Built here, filed here: without this a test
+                                // built inside a set from an unfiled deck or
+                                // note belonged to no set, and the room's Test
+                                // tab could never list it.
+                                studySetId={workspaceSetId}
                             />
                         );
                     }
@@ -3750,6 +3857,7 @@ export const App: React.FC = () => {
                 context={companionContext}
                 onAction={handleCompanionAction}
                 onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
+                onTurnIntoMessage={(target, draft) => handleCompanionMessageTurnInto(target, draft)}
                 theme={theme}
             />
             )}

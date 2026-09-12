@@ -424,6 +424,26 @@ const topicFilterApplies = (filter: CourseFilter | undefined): boolean =>
  * reach here is a clear, and clearing a column that does not exist is a no-op.
  * A missing topic must never fail the note/deck/test/listing it rode in on.
  */
+/**
+ * Pull a study set id off a create payload, wherever the client put it.
+ *
+ * Mirrors `resolveCourseIdFromConfigLike`: a set may arrive top-level
+ * (`studySetId` / `study_set_id`) or on the nested `config`, and a session must
+ * be filed the same way whichever door it came through.
+ */
+export function resolveStudySetIdFromConfigLike(payload: any): string | null {
+  const candidates = [
+    payload?.studySetId,
+    payload?.study_set_id,
+    payload?.config?.studySetId,
+    payload?.config?.study_set_id,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
 async function writeWithTopicFallback(
   run: (payload: Record<string, any>) => PromiseLike<any>,
   payload: Record<string, any>,
@@ -7408,10 +7428,24 @@ export class SupabaseService {
       courseId,
     });
 
+    /**
+     * The set this session was taken in.
+     *
+     * Read from the top-level field OR from the config, because the config is
+     * what every client create path already sends and the two doors must file
+     * a session the same way. Without this, `POST /tests` wrote no
+     * `study_set_id` at all: live, all 77 of an account's sessions had none,
+     * so every set room's Test tab — which lists by set — was permanently
+     * empty. `writeWithTopicFallback` drops the column if the study-sets
+     * migration has not been applied yet.
+     */
+    const studySetId = resolveStudySetIdFromConfigLike(testConfig);
+
     const insertData: any = {
       user_id: userId,
       course_id: courseId,
       ...(topicId !== undefined ? { topic_id: topicId } : {}),
+      ...(studySetId ? { study_set_id: studySetId } : {}),
     };
 
     if (isCompletedSession) {
@@ -7749,11 +7783,16 @@ export class SupabaseService {
       remaining_time_seconds?: number | null;
       is_offline?: boolean;
       client_id?: string;
+      /** Set room the session was started in; also read off `config`. */
+      studySetId?: string | null;
     },
     userId: string,
   ): Promise<any> {
     const now = new Date().toISOString();
     const courseId = resolveCourseIdFromConfigLike(payload);
+    // A paused session belongs to the room it was started in, exactly as a
+    // finished one does — otherwise resuming it would move it out of the set.
+    const studySetId = resolveStudySetIdFromConfigLike(payload);
     const topicId = await this.resolveArtefactTopic({
       topicId: resolveTopicIdFromConfigLike(payload),
       courseId,
@@ -7763,6 +7802,7 @@ export class SupabaseService {
       config: payload.config || {},
       course_id: courseId,
       ...(topicId !== undefined ? { topic_id: topicId } : {}),
+      ...(studySetId ? { study_set_id: studySetId } : {}),
       questions: Array.isArray(payload.questions) ? payload.questions : [],
       user_answers: payload.user_answers || {},
       start_time: payload.start_time || now,

@@ -261,3 +261,99 @@ describe('companion streaming reducer', () => {
     expect(state.activeConversationId).toBe('conv-9');
   });
 });
+
+/**
+ * Source chips, the whole way through.
+ *
+ * Live, an answer in the rail rendered "(Excerpt 1)" as ordinary prose and the
+ * DOM held no chip element at all. The streaming reducer was never the break —
+ * it is pinned here — the break was the server, which had nowhere to store the
+ * citation, so every thread came back from `/history` without one. Both halves
+ * are covered: the done frame writes citations onto the stored message, and a
+ * reloaded thread keeps them.
+ */
+describe('companion citations', () => {
+  const CITATION = {
+    noteId: '99999999-8888-4777-8666-555555555555',
+    noteTitle: 'Pancreatitis PPT Student',
+    excerpts: [1, 3],
+  };
+
+  const streamDone = async (frame: Record<string, unknown>) => {
+    const { companionSendMessageStream } = await import('../services/ai');
+    (companionSendMessageStream as unknown as ReturnType<typeof vi.fn>).mockImplementation(
+      async (
+        _text: string,
+        _ctx: unknown,
+        onToken: (t: string) => void,
+        onDone: (r: any) => void
+      ) => {
+        onToken('Pancreatitis is pancreatic inflammation. (Excerpt 1)');
+        onDone(frame);
+      }
+    );
+    await useCompanionStore.getState().sendMessageStreaming('Summarise this material');
+  };
+
+  it('writes the done frame citations onto the stored answer', async () => {
+    await streamDone({
+      actions: [],
+      citations: CITATION,
+      messageId: '11111111-2222-4333-8444-555555555555',
+    });
+
+    const answer = useCompanionStore.getState().messages.at(-1)!;
+    expect(answer.citations).toEqual(CITATION);
+    // The panel gates the chips on exactly this, so a truthy object is the
+    // whole contract: `{!isStreaming && message.citations && …}`.
+    expect(useCompanionStore.getState().isStreaming).toBe(false);
+  });
+
+  it('leaves an ungrounded answer with no citations rather than an empty chip', async () => {
+    await streamDone({ actions: [], citations: null });
+    expect(useCompanionStore.getState().messages.at(-1)!.citations).toBeNull();
+  });
+
+  it('restores citations when the thread is reloaded from the server', async () => {
+    const { fetchCompanionHistory } = await import('../services/ai');
+    (fetchCompanionHistory as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      messages: [
+        { id: 'm1', role: 'user', content: 'Summarise this material', created_at: 'a' },
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'Pancreatitis is pancreatic inflammation. (Excerpt 1)',
+          citations: CITATION,
+          created_at: 'b',
+        },
+      ],
+      conversationId: null,
+      noteContextId: null,
+    });
+
+    await useCompanionStore.getState().loadHistory();
+
+    expect(useCompanionStore.getState().messages[1].citations).toEqual(CITATION);
+  });
+
+  it('drops a malformed stored citation instead of rendering a chip that goes nowhere', async () => {
+    const { fetchCompanionHistory } = await import('../services/ai');
+    (fetchCompanionHistory as unknown as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      messages: [
+        {
+          id: 'm2',
+          role: 'assistant',
+          content: 'An answer',
+          citations: { noteId: '', noteTitle: 'x', excerpts: [] },
+          created_at: 'b',
+        },
+      ],
+      conversationId: null,
+      noteContextId: null,
+    });
+
+    await useCompanionStore.getState().loadHistory();
+
+    expect(useCompanionStore.getState().messages[0].citations).toBeNull();
+  });
+});

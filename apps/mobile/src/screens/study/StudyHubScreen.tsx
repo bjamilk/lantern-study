@@ -22,6 +22,7 @@ import { useAuthStore } from '../../stores/authStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { Button, Card, FeatureRow, ScreenHeader, SheetShell, T } from '../../components/ui';
+import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { getMyActiveCourses } from '../../services/academic';
 
@@ -108,8 +109,16 @@ export function StudyHubScreen({ navigation }: Props) {
     }
   };
 
+  const openLibrary = () => navigation.navigate('Library', { tab: 'notes' });
+
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      <StudyWorkspaceBar
+        active="study"
+        onSelect={(section) => {
+          if (section === 'library') openLibrary();
+        }}
+      />
       <ScrollView
         className="flex-1 w-full"
         contentContainerStyle={{
@@ -164,16 +173,6 @@ export function StudyHubScreen({ navigation }: Props) {
               );
             })
           )}
-        </Card>
-
-        <Card>
-          <FeatureRow
-            feature="notes"
-            icon="albums"
-            title="All materials"
-            subtitle="Unfiled notes and decks stay in Library"
-            onPress={() => navigation.navigate('Library', { tab: 'notes' })}
-          />
         </Card>
       </ScrollView>
 

@@ -65,6 +65,16 @@ export interface TestPlanDraft {
   attemptKind: TestAttemptKind;
   /** Minutes; 0 means untimed. Only meaningful for an exam attempt. */
   timerMinutes: number;
+  /**
+   * The set room the builder was opened from, when it was opened from one.
+   *
+   * The generator used to take the set off the SOURCE (the deck's or note's own
+   * `studySetId`), so building a test inside a set from an unfiled deck made a
+   * test belonging to no set — which the room's Test tab then could not list.
+   * The room knows where the student is standing; the source only knows where
+   * it is filed.
+   */
+  studySetId?: string | null;
 }
 
 export function defaultTestPlan(): TestPlanDraft {
@@ -181,19 +191,31 @@ export type GeneratedTestConfig = {
    * by luck.
    */
   timerDuration?: number;
+  /**
+   * The set the test was built in. Stored on the config so it survives into
+   * every session started from this test: a retake builds its session from the
+   * saved config, and the create call files the session by what the config
+   * says. Absent when the test belongs to no set.
+   */
+  studySetId?: string;
 };
 
 export function testConfigForPlan(plan: TestPlanDraft): GeneratedTestConfig {
+  const room =
+    typeof plan.studySetId === 'string' && plan.studySetId.trim()
+      ? { studySetId: plan.studySetId.trim() }
+      : {};
   // Practice is untimed by definition: the screen stops after every question to
   // show the answer, so a clock would be measuring the explanations.
   if (plan.attemptKind === 'practice') {
-    return { attemptKind: 'practice', mode: 'study' };
+    return { attemptKind: 'practice', mode: 'study', ...room };
   }
   const minutes = Number.isFinite(plan.timerMinutes) ? Math.floor(plan.timerMinutes) : 0;
   return {
     attemptKind: 'exam',
     mode: 'test',
     ...(minutes > 0 ? { timerDuration: minutes * 60 } : {}),
+    ...room,
   };
 }
 

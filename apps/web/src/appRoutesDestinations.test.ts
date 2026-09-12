@@ -267,6 +267,7 @@ describe('no legacy path lands on the dashboard', () => {
     ['/downloads', '/offline'],
     ['/campus-pocket', '/budget'],
     ['/pocket', '/budget'],
+    ['/study/materials', '/library/notes'],
   ];
 
   it.each(redirects)('%s redirects to %s', (from, to) => {
@@ -374,8 +375,9 @@ describe('the Shop sub-states are places with urls', () => {
       })
     ).toBe('/study/sets/set-a/test/new');
     expect(parseAppRoute('/study/materials')).toEqual({
-      mode: AppMode.STUDY_HUB,
-      params: { studyMaterials: true },
+      mode: AppMode.LIBRARY,
+      params: { libraryTab: 'notes' },
+      redirect: '/library/notes',
     });
     expect(resolveActiveDestination(AppMode.STUDY_SET_WORKSPACE, '/study/sets/set-a/quiz')).toBe(
       'study'

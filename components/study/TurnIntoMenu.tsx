@@ -12,11 +12,29 @@ interface TurnIntoMenuProps {
   /** Targets already made from this note — ticked so nobody pays twice. */
   existing?: Partial<Record<TurnIntoTargetId, boolean>>;
   onSelect: (target: TurnIntoTargetId) => void;
+  /**
+   * The row label. A chat answer says "Turn this answer into" so the student
+   * knows the six pills act on the message under them, not on the note the
+   * conversation happens to be holding.
+   */
+  heading?: string;
+  /**
+   * The spoken name of one pill, when it differs from its short label. A
+   * message-scoped studio pill has to say it files a note first; the pill text
+   * stays short, the accessible name carries the whole promise.
+   */
+  describeTarget?: (target: TurnIntoTargetId) => string;
 }
 
-export const TurnIntoMenu: React.FC<TurnIntoMenuProps> = ({ disabled, existing, onSelect }) => (
+export const TurnIntoMenu: React.FC<TurnIntoMenuProps> = ({
+  disabled,
+  existing,
+  onSelect,
+  heading = 'Turn into',
+  describeTarget,
+}) => (
   <div className="flex flex-wrap items-center gap-2">
-    <span className="text-label uppercase text-lantern-text-secondary">Turn into</span>
+    <span className="text-label uppercase text-lantern-text-secondary">{heading}</span>
     {TURN_INTO_TARGETS.map((target) => {
       const made = Boolean(existing?.[target.id]);
       const cost = formatTurnIntoCost(target.id);
@@ -26,7 +44,7 @@ export const TurnIntoMenu: React.FC<TurnIntoMenuProps> = ({ disabled, existing, 
           type="button"
           disabled={disabled}
           onClick={() => onSelect(target.id)}
-          aria-label={`${target.label} — ${cost}${made ? ' — already made' : ''}`}
+          aria-label={`${describeTarget?.(target.id) ?? target.label} — ${cost}${made ? ' — already made' : ''}`}
           className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text transition-colors hover:border-lantern-text-tertiary disabled:opacity-50"
         >
           <span className={FEATURE_INK_TEXT[target.feature]} aria-hidden="true">

@@ -61,6 +61,24 @@ import {
   scopeSubtitle,
   type CompanionRouteScope,
 } from './companion/companionScope';
+import {
+  TURN_INTO_TARGETS,
+  formatTurnIntoCost,
+  type TurnIntoTargetId,
+} from '@lantern/shared/learning/courseWorkspace';
+import {
+  messageToNoteDraft,
+  messageTurnIntoActionLabel,
+} from '@lantern/shared/learning/messageTurnInto';
+import { hasEnoughNoteStudyContent } from '@lantern/shared/utils/noteStudyContent';
+import {
+  messageNotePayload,
+  messageTurnIntoStudioRoute,
+  roomScopeFromRouteParams,
+  type CompanionRoomScope,
+} from './companion/messageTurnInto';
+import { startFlashcardsFromNote, startTestFromNote } from '../screens/study/turnIntoJobs';
+import { useJobsStore } from '../stores/jobsStore';
 import { transcribeAudioForNote } from '../services/notes';
 import { trackAIAnalyticsEvent } from '../services/ai';
 import { AppIcon } from './ui/AppIcon';
@@ -128,6 +146,8 @@ export function AICompanionPanel({ context }: Props) {
   // Lantern AI is the `ai` feature identity (indigo ink), not the orange
   // budget accent every hex in here used to be.
   const ai = useFeatureAccent('ai');
+  /** Turn-into makes study material, so its pill wears the flashcards accent. */
+  const flashcardsAccent = useFeatureAccent('flashcards');
   const user = useAuthStore(s => s.user);
   const profileName = useAuthStore(s => s.profileName);
   const showToast = useToastStore(s => s.showToast);
@@ -185,6 +205,15 @@ export function AICompanionPanel({ context }: Props) {
   const [promptsExpanded, setPromptsExpanded] = useState(false);
   /** Which message is being read aloud, so only one stop button is armed. */
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  /**
+   * Which answer has its six-target row open. One id, not a per-bubble flag:
+   * opening a second answer's row closes the first, so a scrolled thread never
+   * carries two identical six-pill blocks.
+   */
+  const [turnIntoMessageId, setTurnIntoMessageId] = useState<string | null>(null);
+  /** The room the sheet came up over — where a saved answer gets filed. */
+  const [roomScope, setRoomScope] = useState<CompanionRoomScope>({});
+  const startJob = useJobsStore((s) => s.startJob);
   /**
    * What the companion is "on", sampled when the panel opens.
    *
@@ -325,6 +354,7 @@ export function AICompanionPanel({ context }: Props) {
       route?.name ?? null,
       (route?.params ?? null) as Record<string, unknown> | null
     );
+    setRoomScope(roomScopeFromRouteParams((route?.params ?? null) as Record<string, unknown> | null));
     const requested = useCompanionStore.getState().requestedScope;
     setRouteScope(
       requested
@@ -750,6 +780,71 @@ export function AICompanionPanel({ context }: Props) {
     void handleSend(EXPLAIN_SIMPLY_PROMPT);
   }, [handleSend]);
 
+  /**
+   * Turn one answer into study material.
+   *
+   * The answer is FILED first, every time. Cards and a test are generated from
+   * a note, the three note studios open on one, and a student who spent a
+   * credit on an answer should be able to find the text it came from — so the
+   * note is not a side effect, it is the first half of the action.
+   */
+  const handleTurnIntoMessage = useCallback(
+    async (target: TurnIntoTargetId, message: { id: string; content: string; createdAt?: string }) => {
+      const userId = useAuthStore.getState().user?.id;
+      if (!userId) {
+        showToast('Sign in to turn this answer into study material.', 'error');
+        return;
+      }
+      const draft = messageToNoteDraft(
+        message,
+        conversations.find((row) => row.id === activeConversationId)?.title ?? null
+      );
+      let note;
+      try {
+        note = await useNotesStore.getState().createNote(messageNotePayload(draft, roomScope));
+      } catch (e: any) {
+        showToast(e?.message || 'Could not save that answer as a note.', 'error');
+        return;
+      }
+      showToast('Answer saved as a note.', 'success');
+      const studio = messageTurnIntoStudioRoute(target, roomScope, note.id);
+      if (studio) {
+        close();
+        // Nested navigate, so the Study tab is entered rather than reset:
+        // `toTab` carries `initial: false`, which is what keeps the back
+        // button going to the room instead of out of the tab.
+        navigateFromRef('Main', {
+          screen: 'StudyTab',
+          params: toTab(studio.screen, studio.params),
+        });
+        return;
+      }
+      if (target !== 'cards' && target !== 'test') {
+        // A studio with no room behind it. The answer is saved either way; the
+        // toast says what is missing rather than opening an empty shell.
+        showToast('Saved as a note. Open a study set to use that studio.', 'info');
+        return;
+      }
+      if (!hasEnoughNoteStudyContent(note)) {
+        showToast('That answer is too short to generate from.', 'info');
+        return;
+      }
+      const scope = {
+        userId,
+        courseId: roomScope.courseId,
+        studySetId: roomScope.studySetId,
+      };
+      if (target === 'cards') {
+        startFlashcardsFromNote(note, scope, startJob);
+        showToast('Building your flashcards…', 'info');
+      } else {
+        startTestFromNote(note, scope, startJob);
+        showToast('Building your practice test…', 'info');
+      }
+    },
+    [activeConversationId, close, conversations, roomScope, showToast, startJob]
+  );
+
   if (!isOpen) {
     return null;
   }
@@ -988,6 +1083,68 @@ export function AICompanionPanel({ context }: Props) {
                         I don&apos;t understand
                       </T.Label>
                     </Pressable>
+                    {/* Turn-into acts on the ANSWER: the thing a student wants
+                        cards from is usually the explanation they just read,
+                        not whichever note the thread has attached. */}
+                    <Pressable
+                      onPress={() =>
+                        setTurnIntoMessageId((current) => (current === item.id ? null : item.id))
+                      }
+                      disabled={isBusy}
+                      accessibilityRole="button"
+                      accessibilityLabel="Turn this answer into study material"
+                      accessibilityState={{
+                        disabled: isBusy,
+                        expanded: turnIntoMessageId === item.id,
+                      }}
+                      style={{ minHeight: 32, backgroundColor: flashcardsAccent.tint }}
+                      className={`flex-row items-center justify-center px-2.5 rounded-full ml-0.5 ${
+                        isBusy ? 'opacity-40' : ''
+                      }`}
+                    >
+                      <AppIcon name="sparkles" size={13} color={flashcardsAccent.ink} />
+                      <T.Label
+                        style={{ color: flashcardsAccent.ink, fontWeight: '500', marginLeft: 4 }}
+                      >
+                        Turn into…
+                      </T.Label>
+                    </Pressable>
+                  </View>
+                ) : null}
+                {!isUser && !isStreaming && turnIntoMessageId === item.id ? (
+                  <View className="mt-1.5 ml-1 rounded-xl border border-lantern-border p-2.5">
+                    <T.Label style={{ color: colors.textSecondary, marginBottom: 6 }}>
+                      TURN THIS ANSWER INTO
+                    </T.Label>
+                    <View className="flex-row flex-wrap gap-2">
+                      {TURN_INTO_TARGETS.map((target) => (
+                        <Pressable
+                          key={`${item.id}-turn-${target.id}`}
+                          onPress={() => {
+                            setTurnIntoMessageId(null);
+                            void handleTurnIntoMessage(target.id, item);
+                          }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${messageTurnIntoActionLabel(target.id)} — ${formatTurnIntoCost(
+                            target.id
+                          )}`}
+                          style={{ minHeight: 44 }}
+                          className="flex-row items-center rounded-full border border-lantern-border px-3"
+                        >
+                          <AppIcon name={target.icon} size={15} color={colors.text} />
+                          <T.Label style={{ color: colors.text, marginLeft: 6, fontWeight: '500' }}>
+                            {target.label}
+                          </T.Label>
+                          <T.Label style={{ color: colors.textTertiary, marginLeft: 4 }}>
+                            {`· ${formatTurnIntoCost(target.id)}`}
+                          </T.Label>
+                        </Pressable>
+                      ))}
+                    </View>
+                    {/* Said once, plainly, rather than on all six pills. */}
+                    <T.Label style={{ color: colors.textTertiary, marginTop: 6 }}>
+                      This answer is saved as a note first, so you can find it again.
+                    </T.Label>
                   </View>
                 ) : null}
                 {canRate && (

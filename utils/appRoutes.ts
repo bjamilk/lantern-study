@@ -220,8 +220,6 @@ export interface AppRouteParams {
   cardSession?: StudySetCardSession;
   playSession?: StudySetPlaySession;
   quizId?: string;
-  /** Cross-set materials index: `/study/materials`. */
-  studyMaterials?: boolean;
   /** One personal test: `/study/tests/:testId`. */
   testId?: string;
   /** Join-class code on `/join/:code`. */
@@ -409,7 +407,7 @@ export function buildAppPath(mode: AppMode, params: AppRouteParams = {}): string
       // and so older links keep working — hydration rewrites it to the tab.
       return params.libraryTab ? `/library/${params.libraryTab}` : '/library';
     case AppMode.STUDY_HUB:
-      return params.studyMaterials ? '/study/materials' : '/study';
+      return '/study';
     case AppMode.COURSE_WORKSPACE:
       return params.courseId
         ? `/study/courses/${encodeURIComponent(params.courseId)}`
@@ -654,8 +652,10 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
     return { mode: AppMode.LIBRARY, params: {} };
   }
   if (path === '/study') return { mode: AppMode.STUDY_HUB, params: {} };
+  // The archive used to hide under Study as `/study/materials`. It is now
+  // Library, the peer tab next to Study.
   if (path === '/study/materials') {
-    return { mode: AppMode.STUDY_HUB, params: { studyMaterials: true } };
+    return { mode: AppMode.LIBRARY, params: { libraryTab: 'notes' }, redirect: '/library/notes' };
   }
   const nestedSet = parseStudySetPath(path);
   if (nestedSet) {

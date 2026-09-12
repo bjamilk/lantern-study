@@ -20,6 +20,8 @@ import { useLibrarySearch } from '../../hooks/useLibrarySearch';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { Screen } from '../../components/layout';
+import { StudyWorkspaceBar } from '../study/StudyWorkspaceBar';
+import { useStudySetStore } from '../../stores/studySetStore';
 import {
   buildLibraryTree,
   courseNodeLabel,
@@ -299,8 +301,19 @@ export function LibraryScreen({ navigation, route }: Props) {
   const heroNotes = tree ? tree.totals.notes : notes.length;
   const heroDecks = tree ? tree.totals.decks : decks.length;
 
+  const openStudy = () => {
+    useStudySetStore.getState().openPicker();
+    navigation.navigate('StudyHub');
+  };
+
   return (
     <Screen bottom="none">
+      <StudyWorkspaceBar
+        active="library"
+        onSelect={(section) => {
+          if (section === 'study') openStudy();
+        }}
+      />
       <View className="px-4 pt-2 bg-lantern-background">
         {/* The screen title shares the search row: the bottom tab bar already
             names this screen and carries its icon and due-card badge, so a hero

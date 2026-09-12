@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { markIntentionalSignOut } from './sentry';
+import { withStudySetId } from './testSessionPayload';
 import { Deck, Group, UserQuestionStats } from '../types'
 import {
   getSupabaseUrl,
@@ -2398,16 +2399,22 @@ export const createTestSession = async (sessionData: {
   start_time: string;
   end_time?: string;
   is_offline: boolean;
+  /**
+   * The set this session was taken in. Optional here because it is usually
+   * already on `config`; `withStudySetId` reads either, so no call site has to
+   * remember which. Without it the set room's Test tab lists nothing.
+   */
+  studySetId?: string | null;
 }, userId: string) => {
   console.log('Creating test session for user:', userId);
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/tests`, {
       method: 'POST',
       headers: await getAuthHeaders(),
-      body: JSON.stringify({
+      body: JSON.stringify(withStudySetId({
         ...sessionData,
         userId
-      }),
+      }, sessionData)),
     });
 
     if (!response.ok) {

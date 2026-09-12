@@ -21,6 +21,7 @@ import { useStudySetStore } from '../stores/studySetStore';
 import { useToastStore } from '../stores/toastStore';
 import CreateStudySetModal from './study/CreateStudySetModal';
 import { StudySetSettingsModal } from './study/StudySetSettingsModal';
+import { StudyWorkspaceBar } from './study/StudyWorkspaceBar';
 import type { StudySet } from '../types';
 
 interface StudyHubScreenProps {
@@ -59,6 +60,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   onResumePausedSession,
   onAbandonPausedSession,
   onOpenStudySet,
+  onOpenLibrary,
 }) => {
   const loadMyCourses = useAcademicStore((s) => s.loadMyCourses);
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
@@ -97,8 +99,15 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   }, [folderId, lastOpenedId, query, sets, sort]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-y-auto bg-lantern-background text-lantern-text">
-      <div className="px-4 md:px-6 lg:px-8 py-6 w-full space-y-6">
+    <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
+      <StudyWorkspaceBar
+        active="study"
+        onSelect={(section) => {
+          if (section === 'library') onOpenLibrary();
+        }}
+      />
+      <div className="flex-1 overflow-y-auto">
+        <div className="px-4 md:px-6 lg:px-8 py-6 w-full space-y-6">
         <ScreenHeader
           title="Which study set are you working on today?"
           subtitle="Search, sort, or start a new set. Every tool you open stays inside it."
@@ -310,6 +319,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
             </div>
           )}
         </Card>
+        </div>
       </div>
       <CreateStudySetModal
         isOpen={createOpen}
