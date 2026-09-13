@@ -158,12 +158,15 @@ export function parseNotificationLink(
     const boardPost = link?.match(
       /^\/discover\/c\/([^/?#]+)\/ch\/([^/?#]+)\/p\/([^/?#]+)/,
     );
-    if (boardPost) {
+    const slug = boardPost?.[1];
+    const groupId = boardPost?.[2];
+    const postId = boardPost?.[3];
+    if (slug && groupId && postId) {
       return {
         type: "community_post",
-        slug: decodeURIComponent(boardPost[1]),
-        groupId: decodeURIComponent(boardPost[2]),
-        id: decodeURIComponent(boardPost[3]),
+        slug: decodeURIComponent(slug),
+        groupId: decodeURIComponent(groupId),
+        id: decodeURIComponent(postId),
       };
     }
   }
