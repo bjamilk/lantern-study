@@ -11,6 +11,7 @@ import {
   materialsForCourse,
   materialsForStudySet,
   scopeNoun,
+  studySetNotePayload,
   type TurnIntoTargetId,
 } from '@lantern/shared';
 import {
@@ -21,7 +22,14 @@ import {
 import { SMART_NOTES_GUIDANCE_MAX_CHARS, type SmartNotesDepth } from '@lantern/shared/utils/smartNotes';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, ScreenHeader, T } from '../../components/ui';
+import {
+  Button,
+  ScreenHeader,
+  StudioGate,
+  studioGate,
+  T,
+  type StudioGateAction,
+} from '../../components/ui';
 import { NoteBody } from '../../components/NoteBody';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
@@ -45,6 +53,7 @@ export function NotesStudioScreen({ navigation, route }: Props) {
   const notes = useNotesStore((s) => s.notes);
   const selectedNote = useNotesStore((s) => s.selectedNote);
   const loadNote = useNotesStore((s) => s.loadNote);
+  const createNote = useNotesStore((s) => s.createNote);
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const openCompanion = useCompanionStore((s) => s.open);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
@@ -122,6 +131,34 @@ export function NotesStudioScreen({ navigation, route }: Props) {
       showToast(error instanceof Error ? error.message : 'Could not enhance notes.', 'error');
     } finally {
       setWriting(false);
+    }
+  };
+
+  /**
+   * Where a gate button lands. Every target stays INSIDE the container the
+   * studio was opened on, so the student returns to a studio that now works
+   * rather than to the global library they walked away from.
+   */
+  const runGateAction = (action: StudioGateAction) => {
+    if (action.id === 'create_note') {
+      void (async () => {
+        try {
+          const created = await createNote({
+            title: 'Untitled note',
+            body: '',
+            ...studySetNotePayload({ courseId, studySetId }),
+          });
+          navigation.navigate('NoteEditor', { noteId: created.id });
+        } catch {
+          showToast('Could not create a note. Check your connection and try again.', 'error');
+        }
+      })();
+      return;
+    }
+    if (studySetId) {
+      navigation.navigate('StudySetLibrary', { studySetId, courseId, courseLabel, kind: 'notes' });
+    } else {
+      navigation.navigate('Library', { tab: 'notes' });
     }
   };
 
@@ -260,7 +297,20 @@ export function NotesStudioScreen({ navigation, route }: Props) {
         }}
       >
         {!note ? (
-          <T.Body tone="secondary">{studySetId ? 'Open a note in this set first.' : 'Open a note in this course first.'}</T.Body>
+          // Was one grey sentence on bare ground (SF2 evidence §4.2). The
+          // sentence is unchanged — including the scope noun, which is the
+          // difference between "this set" and "this course" — and now sits in
+          // a card that offers the two ways to have a note open.
+          <StudioGate
+            feature="notes"
+            icon="document-text"
+            content={studioGate({
+              studio: 'notes',
+              reason: 'no_open_note',
+              body: `Open a note in this ${scopeNoun(studySetId, courseId)} first. Everything here is built from the note you pick.`,
+            })}
+            onAction={runGateAction}
+          />
         ) : (
           <>
             <InFlightJobsCard className="mb-1" />

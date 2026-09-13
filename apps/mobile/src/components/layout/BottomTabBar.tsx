@@ -31,12 +31,11 @@ interface Props {
    * The contextual row (spec v3 §7.2), drawn INSIDE this bar's own
    * absolutely-positioned container, directly ABOVE the five tabs.
    *
-   * There is one placement and no mode. The row used to be able to REPLACE the
-   * five (Study, Shop, the 2026-09-08 decision); build 185's device pass found
-   * the five labelled tabs missing throughout those two sections and that mode
-   * is reverted, along with the leading Back/Home control that stood in for the
-   * bar and the prop that chose between the two placements. Both rows are
-   * always on screen together, the global one always fully labelled.
+   * Above them on every row but one. The exception is the SET row, which stands
+   * in their place (`hideTabs` below) and carries its own `Home` door back out —
+   * one bar at a time, StudyFetch's model. That is not the sectionwide `replace`
+   * mode build 185 reverted: this one is scoped to the routes INSIDE one set,
+   * and everywhere else in Study the five labelled tabs are on screen, alone.
    *
    * A slot rather than an import so the composition stays with the one caller
    * that mounts the bar (RootNavigator's CustomTabBar, which also owns the
@@ -46,6 +45,20 @@ interface Props {
    * one of them changed.
    */
   above?: React.ReactNode;
+  /**
+   * Stand the five tabs down: the contextual row in `above` is standing in
+   * their place (a `replace` row — today only the set row).
+   *
+   * The caller decides, and it must be the caller: whether the row is REALLY on
+   * screen depends on the soft keyboard, which the row itself tracks and reports
+   * back (ContextualBar's `onPresence`). If this were derived from the registry
+   * here, a student typing inside a set would get neither bar — the row hides
+   * under the IME and the tabs would already be gone.
+   *
+   * One bar at a time, never zero: the row is the only thing that may hide the
+   * tabs, and only while it is drawn.
+   */
+  hideTabs?: boolean;
 }
 
 /**
@@ -185,6 +198,11 @@ export function useTabBarClearance(extra = 16): number {
     base: tabBarClearance(insets.bottom, extra),
     contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
     present: contextual !== null,
+    // …with ONE exception, and it is the reverse of the old bug: the set row
+    // stands IN the bar's slot, so the bar's 56 dp is not on screen and a
+    // screen that padded for both would leave a dead band above the row.
+    replace: contextual?.mode === 'replace',
+    tabBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
   });
 }
 
@@ -211,6 +229,7 @@ export function BottomTabBar({
   dueCardsCount = 0,
   unreadChatCount = 0,
   above,
+  hideTabs = false,
 }: Props) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
@@ -252,6 +271,9 @@ export function BottomTabBar({
           It grows this bar upward rather than floating over the screen, so
           there is one height to clear and the five destinations never move. */}
       {above}
+      {/* Hidden only while a `replace` row is drawn in their place, so there is
+          always exactly one row of doors down here — never none. */}
+      {hideTabs ? null : (
       <View className="flex-row pt-2">
         {tabs.map(tab => (
           <TabButton
@@ -273,6 +295,7 @@ export function BottomTabBar({
           />
         ))}
       </View>
+      )}
     </View>
   );
 }

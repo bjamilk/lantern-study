@@ -137,10 +137,14 @@ export function useScreenBottomPadding({
   // The contextual row (spec v3 §7.2) is 44 dp of chrome above the tab bar.
   // It only exists where the tab bar does, so it is added on exactly the modes
   // that already pay for the bar — a `safe` or `none` screen has neither.
+  // …and where that row REPLACES the bar (the set row), the bar's own height
+  // comes back out: the five tabs are not drawn under it.
   return contextualBarClearance({
     base,
     contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
     present: contextual !== null && (bottom === 'tabBar' || (bottom === 'auto' && tabBarPresent)),
+    replace: contextual?.mode === 'replace',
+    tabBarContentHeight: TAB_BAR_CONTENT_HEIGHT,
   });
 }
 

@@ -782,6 +782,17 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
   const { setTabState, contextual } = useChrome();
 
+  /**
+   * Which bottom row is actually drawn — reported by the contextual row itself.
+   *
+   * `replace` means the row is standing in the five tabs' slot (the set row), so
+   * the tabs are not drawn. It cannot be read off the registry here: the row
+   * also disappears while the soft keyboard is up, and hiding the tabs from the
+   * registry alone would leave a student typing inside a set with no bottom
+   * navigation at all.
+   */
+  const [contextualMode, setContextualMode] = useState<'above' | 'replace' | null>(null);
+
   const insets = useSafeAreaInsets();
 
   const openCompanion = useCompanionStore(s => s.open);
@@ -975,14 +986,23 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
     }
 
-    if (plan.alreadyFocused) {
+    if (plan.alreadyFocused || plan.resetToRoot) {
 
       // Dispatched synchronously; native-stack runs its popToTop a frame
       // later, by which time this stack is already a single root route and
       // the pop is a no-op. Order between them does not matter.
+      //
+      // The stack this aims at is the PRESSED tab's, not the focused one's:
+      // `Study` pressed from Home must land on the Study hub rather than the
+      // studio it was left in (SF2 §6 #10), and native-stack's own listener
+      // will not pop a stack it is not focused in. `always` is what widens the
+      // repair from "the root is missing" to "the root is not the only thing
+      // here" — see ALWAYS_ROOT_ON_TAB_PRESS.
+      const pressed = state.routes.find((r: { name: string }) => r.name === routeName);
       const repair = planTabRootReset({
-        childState: state.routes[state.index]?.state,
+        childState: pressed?.state,
         initialRouteName: TAB_STACK_ROOT_ROUTE[routeName as keyof typeof TAB_STACK_ROOT_ROUTE],
+        always: plan.resetToRoot,
       });
 
       if (repair.resetTo && repair.target) {
@@ -1017,7 +1037,13 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
           unreadChatCount={unreadChatCount}
 
-          above={<ContextualBar onNavigate={navigateWithinFocusedStack} />}
+          above={
+            <ContextualBar
+              onNavigate={navigateWithinFocusedStack}
+              onPresence={setContextualMode}
+            />
+          }
+          hideTabs={contextualMode === 'replace'}
 
         />
 

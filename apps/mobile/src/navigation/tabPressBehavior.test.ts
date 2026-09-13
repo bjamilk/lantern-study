@@ -43,7 +43,12 @@ describe('planTabPress', () => {
 
   it('has nothing to emit on for a route this navigator does not hold, and just navigates', () => {
     const plan = planTabPress({ routes, index: 1, routeName: 'NotesTab' });
-    expect(plan).toEqual({ emitTarget: null, navigateTo: 'NotesTab', alreadyFocused: false });
+    expect(plan).toEqual({
+      emitTarget: null,
+      navigateTo: 'NotesTab',
+      alreadyFocused: false,
+      resetToRoot: false,
+    });
   });
 
   it('treats an out-of-range index as no tab focused', () => {
@@ -60,6 +65,57 @@ describe('planTabPress', () => {
     expect(planTabPress({ routes: remounted, index: 0, routeName: 'StudyTab' }).emitTarget).toBe(
       'StudyTab-7'
     );
+  });
+});
+
+describe('the Study tab always opens on its hub (SF2 §6 #10)', () => {
+  it('asks for a root reset on Study, whichever tab the press came from', () => {
+    const fromHome = planTabPress({ routes, index: 0, routeName: 'StudyTab' });
+    const reTap = planTabPress({ routes, index: 1, routeName: 'StudyTab' });
+    expect(fromHome.resetToRoot).toBe(true);
+    expect(reTap.resetToRoot).toBe(true);
+    // Still an ordinary tab switch otherwise: the remembered stack is reset,
+    // not the navigate skipped.
+    expect(fromHome.navigateTo).toBe('StudyTab');
+  });
+
+  it('leaves every other tab remembering where it was', () => {
+    for (const routeName of ['HomeTab', 'ChatTab', 'CampusTab', 'MeTab']) {
+      expect(planTabPress({ routes, index: 1, routeName }).resetToRoot).toBe(false);
+    }
+  });
+
+  it('resets a Study stack that is sitting ON its root but two deep', () => {
+    // The §6 #10 shape exactly: StudyHub → CourseRoom → LectureStudio, with the
+    // press arriving from another tab, where native-stack pops nothing.
+    const plan = planTabRootReset({
+      childState: {
+        key: 'study-1',
+        routes: [{ name: 'StudyHub' }, { name: 'CourseRoom' }, { name: 'LectureStudio' }],
+      },
+      initialRouteName: 'StudyHub',
+      always: true,
+    });
+    expect(plan).toEqual({ resetTo: 'StudyHub', target: 'study-1' });
+  });
+
+  it('does nothing when the stack is already the hub alone', () => {
+    expect(
+      planTabRootReset({
+        childState: { key: 'study-1', routes: [{ name: 'StudyHub' }] },
+        initialRouteName: 'StudyHub',
+        always: true,
+      })
+    ).toEqual({ resetTo: null, target: null });
+  });
+
+  it('without `always`, a rooted stack is still left to popToTop', () => {
+    expect(
+      planTabRootReset({
+        childState: { key: 'study-1', routes: [{ name: 'StudyHub' }, { name: 'CourseRoom' }] },
+        initialRouteName: 'StudyHub',
+      })
+    ).toEqual({ resetTo: null, target: null });
   });
 });
 

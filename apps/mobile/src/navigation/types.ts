@@ -46,7 +46,21 @@ export type StudyStackParamList = {
   /**
    * One enrolled course as a room — notes, decks, tests and lectures together.
    */
-  CourseRoom: { courseId?: string; studySetId?: string; courseLabel?: string };
+  CourseRoom: {
+    courseId?: string;
+    studySetId?: string;
+    courseLabel?: string;
+    /**
+     * Which part of the room to open on — the room's own segment row, and the
+     * param the set contextual row's `Materials` door navigates with
+     * (navigation/contextualBars.ts). One name shared by both, so a door and a
+     * segment row cannot drift into two vocabularies for the same place.
+     *
+     * Absent means the room's overview, which is what every existing caller
+     * passes and must keep getting.
+     */
+    segment?: 'overview' | 'materials' | 'practice' | 'lectures' | 'plan';
+  };
   /**
    * Notes studio for one course — enhance, turn into, ask, walk through.
    * Distinct from NoteEditor; the room stays a dashboard.

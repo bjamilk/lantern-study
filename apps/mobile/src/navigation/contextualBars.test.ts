@@ -74,13 +74,16 @@ function itemById(spec: ContextualBarSpec, id: string): ContextualBarItem {
   return item;
 }
 
-const barFor = (route: string): ContextualBarSpec => {
-  const spec = specForRoute(route);
+const barFor = (route: string, params?: Record<string, unknown>): ContextualBarSpec => {
+  const spec = specForRoute(route, params);
   if (!spec) throw new Error(`no contextual row on '${route}'`);
   return spec;
 };
 
-const studyBar = (): ContextualBarSpec => barFor('StudyHub');
+/** The params a real set room carries. The set row needs one to exist at all. */
+const SET = { studySetId: 'set-1', courseLabel: 'Pharmacology' };
+
+const setBar = (): ContextualBarSpec => barFor('CourseRoom', SET);
 const deckBar = (): ContextualBarSpec => barFor('DeckDetail');
 const noteBar = (): ContextualBarSpec => barFor('NoteEditor');
 const shopBar = (): ContextualBarSpec => barFor('ShopBrowse');
@@ -150,14 +153,38 @@ describe('the registry reads its own navigator', () => {
     expect(offenders.join('\n')).toBe('');
   });
 
-  it('never targets the stack root, which a row must not stack under itself', () => {
-    // Invariant 1: the root is reached by the GLOBAL bar's re-tap, never by a
-    // contextual item — `planTabRootReset` owns that path.
+  it('targets the stack root from ONE door only: a replace row\u2019s way out', () => {
+    // Invariant 1 said no item may target the stack root, because on an `above`
+    // row the global bar's re-tap already goes there and a second path would
+    // stack the root under itself. The set row is the exception the rule was
+    // never written for: it stands IN the global bar's place, so the bar's
+    // re-tap is not on screen to be the way out, and its first door — `Home` —
+    // IS that way out. Narrow, not loosened: only a `replace` row may do it,
+    // and only through the door whose id is `home`.
     for (const [, spec] of entries()) {
       const root = TAB_STACK_ROOT_ROUTE[spec.stack as keyof typeof TAB_STACK_ROOT_ROUTE];
       for (const item of spec.items) {
-        if (item.target.kind === 'route') expect(item.target.route).not.toBe(root);
+        if (item.target.kind !== 'route') continue;
+        if (item.target.route !== root) continue;
+        expect(spec.mode).toBe('replace');
+        expect(item.id).toBe('home');
       }
+    }
+  });
+
+  it('gives the one replace row a door back to the global tabs', () => {
+    // A row that takes the five tabs off screen and offers no way back is a
+    // trap. Every `replace` row must carry a door to its stack's root.
+    for (const [, spec] of entries()) {
+      if (spec.mode !== 'replace') continue;
+      const root = TAB_STACK_ROOT_ROUTE[spec.stack as keyof typeof TAB_STACK_ROOT_ROUTE];
+      const exits = spec.items.filter(
+        item => item.target.kind === 'route' && item.target.route === root,
+      );
+      expect(exits).toHaveLength(1);
+      // First, as StudyFetch puts `Home` first: the way out is where a thumb
+      // already looks for it.
+      expect(spec.items[0]).toBe(exits[0]);
     }
   });
 });
@@ -237,24 +264,58 @@ describe('every key is a route the chrome can actually observe', () => {
 });
 
 describe('which routes carry a row', () => {
-  it('carries the Study row on all five Study surfaces', () => {
-    for (const route of ['StudyHub', 'Library', 'NotesList', 'FlashcardsList', 'TestsList']) {
-      expect(specForRoute(route)).not.toBeNull();
-      expect(specForRoute(route)!.stack).toBe('StudyTab');
+  it('carries the set row on the room and its studios', () => {
+    for (const route of [
+      'CourseRoom',
+      'NotesStudio',
+      'LectureStudio',
+      'LessonStudio',
+      'RecapStudio',
+      'EssayStudio',
+      'PlayStudio',
+      'AdaptiveQuiz',
+      'StudySetLibrary',
+      'StudySetUpload',
+    ]) {
+      expect(specForRoute(route, SET)).not.toBeNull();
+      expect(specForRoute(route, SET)!.stack).toBe('StudyTab');
+      expect(specForRoute(route, SET)!.mode).toBe('replace');
     }
   });
 
-  it('gives the five Study surfaces the SAME row, so it never twitches', () => {
-    const rows = ['StudyHub', 'Library', 'NotesList', 'FlashcardsList', 'TestsList'].map(route =>
-      specForRoute(route),
+  it('gives every set surface the SAME row, so it never twitches', () => {
+    const rows = ['CourseRoom', 'NotesStudio', 'LectureStudio', 'StudySetLibrary'].map(route =>
+      specForRoute(route, SET),
     );
     for (const row of rows) expect(row).toBe(rows[0]);
   });
 
-  it('carries the same row into the test builder', () => {
-    // "+ New test" pushes TestBuilder, which had no row at all: the student
-    // lost both the row and the accent the moment they opened the door.
-    expect(specForRoute('TestBuilder')).toBe(specForRoute('TestsList'));
+  it('leaves the hub and the app-wide lists with the global bar alone', () => {
+    // SF2 §6 #3: the old row stacked five doors on top of the five tabs here,
+    // and every one of them opened a screen the student was already looking at
+    // or could reach from the tab bar. Outside a set there is no row at all.
+    for (const route of [
+      'StudyHub',
+      'Library',
+      'NotesList',
+      'FlashcardsList',
+      'TestsList',
+      'TestBuilder',
+      'StudyCalendar',
+    ]) {
+      expect(specForRoute(route)).toBeNull();
+      // …and not merely for want of params: these screens are not inside a set.
+      expect(specForRoute(route, SET)).toBeNull();
+    }
+  });
+
+  it('stands the row down when the route names no set', () => {
+    // A `replace` row with nothing to be about would take the five tabs away
+    // in exchange for doors that cannot say where they lead.
+    expect(specForRoute('CourseRoom')).toBeNull();
+    expect(specForRoute('CourseRoom', {})).toBeNull();
+    expect(specForRoute('CourseRoom', { studySetId: '  ' })).toBeNull();
+    expect(specForRoute('CourseRoom', { courseId: 'course-9' })).not.toBeNull();
   });
 
   it('has no row on the Home, Me, Chat or Campus roots', () => {
@@ -282,9 +343,9 @@ describe('which routes carry a row', () => {
     // The registry is data; `shouldHideTabBar` is the rule. Prove the rule wins
     // rather than trusting today's registry to stay clean.
     const registry = CONTEXTUAL_BARS as Record<string, ContextualBarSpec>;
-    registry.TestTaking = studyBar();
+    registry.TestTaking = setBar();
     try {
-      expect(specForRoute('TestTaking')).toBeNull();
+      expect(specForRoute('TestTaking', SET)).toBeNull();
     } finally {
       delete registry.TestTaking;
     }
@@ -296,22 +357,55 @@ describe('which routes carry a row', () => {
   });
 });
 
-describe('the Study row itself', () => {
-  it('is Library · Flashcards · Tests · Record · AI, in that order', () => {
-    expect(studyBar().items.map(item => item.id)).toEqual([
-      'library',
+describe('the set row itself', () => {
+  it('is Home · Materials · Flashcards · Tests · Record · Ask, in that order', () => {
+    expect(setBar().items.map(item => item.id)).toEqual([
+      'home',
+      'materials',
       'flashcards',
       'tests',
       'record',
       'ai',
     ]);
-    expect(studyBar().items.map(item => item.label)).toEqual([
-      'Library',
+    expect(setBar().items.map(item => item.label)).toEqual([
+      'Home',
+      'Materials',
       'Flashcards',
       'Tests',
       'Record',
       'Ask',
     ]);
+  });
+
+  it('labels every door — the thing StudyFetch does not do', () => {
+    for (const item of setBar().items) expect(item.label.trim().length).toBeGreaterThan(0);
+  });
+
+  it('acts INSIDE the set, never on the app-wide lists (SF2 §6 #2)', () => {
+    // The old row's Library/Flashcards/Tests opened `Library`, `FlashcardsList`
+    // and `TestsList` — the pile of everything the student owns — which is an
+    // EXIT from the set dressed as a sub-navigation.
+    const routes = setBar()
+      .items.map(item => item.target)
+      .filter(target => target.kind === 'route')
+      .map(target => (target as { route: string }).route);
+    for (const global of ['Library', 'FlashcardsList', 'TestsList', 'NotesList']) {
+      expect(routes).not.toContain(global);
+    }
+  });
+
+  it('carries the set id into every door that opens a screen', () => {
+    for (const item of setBar().items) {
+      if (item.target.kind !== 'route' || item.id === 'home') continue;
+      expect(item.target.paramsFrom).toContain('studySetId');
+    }
+    // …and into the two doors that are not screens.
+    expect(itemById(setBar(), 'record').target).toMatchObject({
+      paramsFrom: expect.arrayContaining(['studySetId']),
+    });
+    expect(itemById(setBar(), 'ai').target).toMatchObject({
+      scopeIdFrom: expect.arrayContaining(['studySetId']),
+    });
   });
 
   it('gives every item an icon, a label and a feature accent', () => {
@@ -332,8 +426,8 @@ describe('the Study row itself', () => {
   });
 
   it('keeps the two non-screen doors as doors, not routes', () => {
-    expect(itemById(studyBar(), 'record').target.kind).toBe('record');
-    expect(itemById(studyBar(), 'ai').target.kind).toBe('ai');
+    expect(itemById(setBar(), 'record').target.kind).toBe('record');
+    expect(itemById(setBar(), 'ai').target.kind).toBe('ai');
   });
 });
 

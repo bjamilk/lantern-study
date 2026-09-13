@@ -23,7 +23,15 @@ import {
   type PlaySession,
 } from '@lantern/shared';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, FeatureDisc, ScreenHeader, T } from '../../components/ui';
+import {
+  Button,
+  FeatureDisc,
+  ScreenHeader,
+  StudioGate,
+  studioGate,
+  T,
+  type StudioGateAction,
+} from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -99,6 +107,23 @@ export function PlayStudioScreen({ navigation, route }: Props) {
     setSession(next);
   };
 
+  /**
+   * Where a gate button lands. Both targets stay INSIDE the container Play was
+   * opened on — a set's gate opens that set's notes, not the global library —
+   * because a deck is made by turning one of THIS set's notes into cards.
+   */
+  const runGateAction = (action: StudioGateAction) => {
+    if (action.id === 'import_materials' && studySetId) {
+      navigation.navigate('StudySetUpload', { studySetId, courseId, courseLabel });
+      return;
+    }
+    if (studySetId) {
+      navigation.navigate('StudySetLibrary', { studySetId, courseId, courseLabel, kind: 'notes' });
+      return;
+    }
+    navigation.navigate('Library', { tab: 'notes' });
+  };
+
   const question = session && session.status === 'playing' ? currentPlayQuestion(session) : null;
 
   return (
@@ -157,7 +182,20 @@ export function PlayStudioScreen({ navigation, route }: Props) {
             <T.Heading>Play</T.Heading>
             <T.Body tone="secondary">{playTaglineCopy(scope)}</T.Body>
             {hubBlocker ? (
-              <T.Body tone="secondary">{playBlockerCopy(hubBlocker, scope)}</T.Body>
+              // Was one grey sentence on bare ground (SF2 evidence §4.2).
+              // `playBlockerCopy` still writes it, scope noun and all — it is
+              // the only string that knows whether this is a set or a course —
+              // and the card supplies the way out the sentence never had.
+              <StudioGate
+                feature="flashcards"
+                icon="game-controller"
+                content={studioGate({
+                  studio: 'play',
+                  reason: 'no_deck',
+                  body: `${playBlockerCopy(hubBlocker, scope) ?? playEmptyCopy(scope)} Cards are made from a note, in the note’s studio.`,
+                })}
+                onAction={runGateAction}
+              />
             ) : (
               <>
                 {courseDecks.length > 1

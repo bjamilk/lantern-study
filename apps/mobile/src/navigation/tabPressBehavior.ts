@@ -55,15 +55,38 @@ export interface TabPressPlan {
   navigateTo: string | null;
   /** The press landed on the tab that is already focused (a re-tap). */
   alreadyFocused: boolean;
+  /**
+   * This tab must open on its ROOT, whether or not it was already focused —
+   * {@link ALWAYS_ROOT_ON_TAB_PRESS}.
+   */
+  resetToRoot: boolean;
 }
 
+/**
+ * The tabs that always open on their root, even when the press arrives from
+ * ANOTHER tab.
+ *
+ * SF2 §6 #10: after a walk through one set, tapping `Study` from Home landed
+ * straight in a Lecture studio two levels deep — the tab's remembered stack —
+ * with the sets list reachable only by Back. Remembered state is the right
+ * default for Chat (the thread you were reading) and for Campus; it is the
+ * wrong one for Study, whose root is the LIST of sets and whose children are
+ * rooms you enter on purpose. A student pressing `Study` is asking "what am I
+ * studying", not "put me back where I stopped".
+ *
+ * This does NOT touch Back: the reset happens on a tab PRESS only, so once the
+ * student is inside a set, hardware Back keeps walking the stack it built.
+ */
+export const ALWAYS_ROOT_ON_TAB_PRESS: readonly string[] = ['StudyTab'];
+
 export function planTabPress({ routes, index, routeName }: TabPressInput): TabPressPlan {
+  const resetToRoot = ALWAYS_ROOT_ON_TAB_PRESS.includes(routeName);
   const target = routes.find(route => route.name === routeName);
   if (!target) {
     // Nothing to emit on, but still try the navigate: this is what the bar
     // did before the event existed, and the router ignores what it cannot
     // resolve.
-    return { emitTarget: null, navigateTo: routeName, alreadyFocused: false };
+    return { emitTarget: null, navigateTo: routeName, alreadyFocused: false, resetToRoot };
   }
   const focused = routes[index];
   const alreadyFocused = focused?.key === target.key;
@@ -71,6 +94,7 @@ export function planTabPress({ routes, index, routeName }: TabPressInput): TabPr
     emitTarget: target.key,
     navigateTo: alreadyFocused ? null : target.name,
     alreadyFocused,
+    resetToRoot,
   };
 }
 
@@ -102,6 +126,18 @@ export interface TabRootResetInput {
   childState?: NestedStackStateLike | null;
   /** That tab's declared `initialRouteName` (see TAB_STACK_ROOT_ROUTE). */
   initialRouteName?: string;
+  /**
+   * Reset whenever the stack is not ALREADY sitting on its root alone, instead
+   * of only when the root is missing from the bottom of the stack.
+   *
+   * For a re-tap of a properly rooted stack, native-stack's own `tabPress`
+   * listener pops to top and this can stay out of the way. It cannot for a tab
+   * pressed from ANOTHER tab: that listener only acts on the stack it is
+   * focused in, so `Study` pressed from Home reopened its remembered child and
+   * nothing popped it (SF2 §6 #10). {@link ALWAYS_ROOT_ON_TAB_PRESS} is what
+   * sets this.
+   */
+  always?: boolean;
 }
 
 export interface TabRootResetPlan {
@@ -138,6 +174,7 @@ export interface TabRootResetPlan {
 export function planTabRootReset({
   childState,
   initialRouteName,
+  always = false,
 }: TabRootResetInput): TabRootResetPlan {
   const nothing: TabRootResetPlan = { resetTo: null, target: null };
 
@@ -154,8 +191,13 @@ export function planTabRootReset({
   const target = childState?.key;
   if (!target) return nothing;
 
-  // The root is already at the bottom — popToTop reaches it.
-  if (routes[0]?.name === initialRouteName) return nothing;
+  // The root is already at the bottom — popToTop reaches it…
+  if (routes[0]?.name === initialRouteName) {
+    // …except when the press comes from another tab, where nothing will pop it:
+    // reset unless the stack is already the root and only the root.
+    if (always && routes.length > 1) return { resetTo: initialRouteName, target };
+    return nothing;
+  }
 
   return { resetTo: initialRouteName, target };
 }

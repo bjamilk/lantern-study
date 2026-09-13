@@ -1,18 +1,20 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   courseWorkspaceLabel,
-  formatCourseMaterialCounts,
   isCalendarNote,
+  isLectureNote,
   isValidStudySetTitle,
   materialsForStudySet,
   normalizeStudySetTitle,
-  pickOpenStudySetId,
-  STUDY_SET_TILE,
-  STUDY_SET_TITLE_MAX,
+  sortStudySets,
   studySetLabel,
+  studySetPlanProgress,
+  STUDY_SET_SORTS,
+  STUDY_SET_TITLE_MAX,
+  type StudySetSortId,
 } from '@lantern/shared';
 import type { UserCourse } from '@lantern/shared/types';
 import { useFlashcardStore } from '../../stores/flashcardStore';
@@ -21,9 +23,22 @@ import { useTestStore } from '../../stores/testStore';
 import { useAuthStore } from '../../stores/authStore';
 import { useToastStore } from '../../stores/toastStore';
 import { useStudySetStore } from '../../stores/studySetStore';
-import { Button, Card, FeatureRow, ScreenHeader, SheetShell, T } from '../../components/ui';
+import {
+  ActionSheet,
+  AppIcon,
+  Button,
+  ScreenHeader,
+  SheetShell,
+  T,
+  type ActionSheetItem,
+} from '../../components/ui';
+import { confirmAsync } from '../../components/ui/appDialog';
+import { StudySetCard } from '../../components/study/StudySetCard';
+import { relativeStudiedLabel } from '../../components/study/setPresentation';
+import { studySetProgress } from '../../components/dashboard/homeSections';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { useTheme } from '../../theme';
 import { getMyActiveCourses } from '../../services/academic';
 
 interface Props {
@@ -33,25 +48,51 @@ interface Props {
 }
 
 /**
- * The Study hub lists personal study sets first. A course is optional filing.
- * Import from here stays unfiled unless the student opens a set and imports there.
+ * The Study hub: the LIST of study sets, and nothing that jumps off it.
+ *
+ * Two things changed here in the StudyFetch pass (SF2 §3, §6).
+ *
+ * 1. THE HUB NO LONGER OPENS A SET FOR YOU. On focus it used to resolve
+ *    `pickOpenStudySetId` and navigate straight into the last room, so tapping
+ *    "Study" landed in a lecture studio for a set you had finished with and the
+ *    list of sets was a screen you could not actually reach. The tab is named
+ *    after the list; it shows the list.
+ *
+ * 2. A SET ROW SAYS WHAT HOME SAYS. It was a `FeatureRow` — one mint disc
+ *    repeated down the screen, one grey meta line — while Home drew tile art, a
+ *    progress bar, counts and "last studied" for the same object. That card now
+ *    lives in `components/study/StudySetCard.tsx` and this screen feeds it.
+ *
+ * The toolbar (search, sort, create) is the other half: four rows over 900px of
+ * dead cream was the measured state, and a list you cannot search or order is
+ * one a student with a dozen sets scrolls rather than uses.
  */
 export function StudyHubScreen({ navigation }: Props) {
   const { decks } = useFlashcardStore();
   const notes = useNotesStore((s) => s.notes);
+  const tests = useTestStore((s) => s.tests);
   const userId = useAuthStore((s) => s.user?.id);
   const fetchTests = useTestStore((s) => s.fetchTests);
   const fetchAttempts = useTestStore((s) => s.fetchAttempts);
   const showToast = useToastStore((s) => s.showToast);
   const loadSets = useStudySetStore((s) => s.loadSets);
   const createSet = useStudySetStore((s) => s.createSet);
+  const removeSet = useStudySetStore((s) => s.removeSet);
   const sets = useStudySetStore((s) => s.sets);
+  const plans = useStudySetStore((s) => s.plans);
+  const lastOpenedId = useStudySetStore((s) => s.lastOpenedId);
+  const status = useStudySetStore((s) => s.status);
   const tabBarClearance = useTabBarClearance(16);
+  const { colors } = useTheme();
   const [createOpen, setCreateOpen] = useState(false);
   const [createTitle, setCreateTitle] = useState('');
   const [createCourseId, setCreateCourseId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [courses, setCourses] = useState<UserCourse[]>([]);
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<StudySetSortId>('lastAccessed');
+  const [sortOpen, setSortOpen] = useState(false);
+  const [menuSetId, setMenuSetId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -63,14 +104,9 @@ export function StudyHubScreen({ navigation }: Props) {
           void useFlashcardStore.getState().fetchDecks(userId).catch(() => undefined);
         }
         void useNotesStore.getState().loadNotes().catch(() => undefined);
-        const loaded = await loadSets({ force: true }).catch(() => [] as typeof sets);
-        if (!cancelled && !useStudySetStore.getState().picker) {
-          const openId = pickOpenStudySetId(loaded, useStudySetStore.getState().lastOpenedId);
-          if (openId) {
-            const title = loaded.find((row) => row.id === openId)?.title;
-            openSet(openId, title);
-          }
-        }
+        // Load the list and STOP. No `pickOpenStudySetId`, no navigate: see
+        // the note at the top of the file.
+        await loadSets({ force: true }).catch(() => undefined);
         const rows = await getMyActiveCourses().catch(() => [] as UserCourse[]);
         if (!cancelled) setCourses(rows);
       })();
@@ -87,6 +123,113 @@ export function StudyHubScreen({ navigation }: Props) {
       courseLabel: title,
     });
   };
+
+  /**
+   * What each set holds, and how far along it is.
+   *
+   * Computed here rather than in the card so the card stays a view: this screen
+   * is the only thing that knows a "material" is a non-calendar note, that a
+   * lecture is a note flagged as one, and that a personal test belongs to a set
+   * by way of the note it was generated from (tests carry no set id).
+   */
+  const rows = useMemo(() => {
+    const now = Date.now();
+    return sets.map((set) => {
+      const setNotes = materialsForStudySet(notes, set.id).filter((note) => !isCalendarNote(note));
+      const noteIds = new Set(setNotes.map((note) => note.id));
+      const setDecks = materialsForStudySet(decks, set.id);
+      const counts = {
+        materials: setNotes.length,
+        lectures: setNotes.filter(isLectureNote).length,
+        decks: setDecks.length,
+        tests: tests.filter((test) => test.sourceNoteId && noteIds.has(test.sourceNoteId)).length,
+      };
+      const plan = plans[set.id];
+      const progress = studySetProgress({
+        plan: plan?.loaded && plan.topics.length > 0 ? studySetPlanProgress(plan.topics) : null,
+        counts: { materials: counts.materials, decks: counts.decks, lectures: counts.lectures },
+        hasExamDate: Boolean((set.examDate || '').trim()),
+        studied: Boolean(set.lastStudiedAt),
+      });
+      // Only a loaded plan can name a topic. Deriving one from note titles is
+      // what made a topic ticked on a laptop come back unticked here, so an
+      // unloaded plan simply draws no resume pill.
+      const resumeTopic =
+        plan?.loaded && set.lastStudiedAt
+          ? plan.topics.find((topic) => topic.status !== 'mastered')?.title ?? null
+          : null;
+      return {
+        set,
+        counts,
+        progress,
+        resumeTopic,
+        studiedLabel: relativeStudiedLabel(set.lastStudiedAt, new Date(now)),
+      };
+    });
+  }, [sets, notes, decks, tests, plans]);
+
+  const visible = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    const filtered = needle
+      ? rows.filter((row) => studySetLabel(row.set).toLowerCase().includes(needle))
+      : rows;
+    // The shared comparator, so a set's place in the list is the same on the
+    // phone and in the browser.
+    const ordered = sortStudySets(
+      filtered.map((row) => row.set),
+      sort,
+      sort === 'lastAccessed' ? lastOpenedId : null
+    );
+    const byId = new Map(filtered.map((row) => [row.set.id, row]));
+    return ordered.map((set) => byId.get(set.id)!).filter(Boolean);
+  }, [rows, query, sort, lastOpenedId]);
+
+  const sortLabel =
+    STUDY_SET_SORTS.find((option) => option.id === sort)?.label ?? 'Last accessed';
+
+  const menuSet = menuSetId ? sets.find((row) => row.id === menuSetId) ?? null : null;
+  const menuItems: ActionSheetItem[] = menuSet
+    ? [
+        {
+          label: 'Edit',
+          icon: 'pencil',
+          onPress: () => {
+            setMenuSetId(null);
+            // Rename lives in the set's own settings screen — the one place
+            // that validates a title — rather than in a second inline form.
+            navigation.navigate('StudySetSettings', { studySetId: menuSet.id });
+          },
+        },
+        {
+          label: 'Delete',
+          icon: 'trash',
+          destructive: true,
+          onPress: () => {
+            const target = menuSet;
+            setMenuSetId(null);
+            void (async () => {
+              // Never one tap. The set is the box every note, deck, test and
+              // lecture in it is filed in.
+              const ok = await confirmAsync(
+                `Delete ${studySetLabel(target)}?`,
+                'The set and its filing go. Your notes and decks stay in your library.',
+                { confirmLabel: 'Delete', destructive: true }
+              );
+              if (!ok) return;
+              try {
+                await removeSet(target.id);
+                showToast('Study set deleted.', 'success');
+              } catch (error) {
+                showToast(
+                  error instanceof Error ? error.message : 'Could not delete that study set.',
+                  'error'
+                );
+              }
+            })();
+          },
+        },
+      ]
+    : [];
 
   const submitCreate = async () => {
     const title = normalizeStudySetTitle(createTitle);
@@ -121,6 +264,7 @@ export function StudyHubScreen({ navigation }: Props) {
       />
       <ScrollView
         className="flex-1 w-full"
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           flexGrow: 1,
           paddingHorizontal: 16,
@@ -133,48 +277,126 @@ export function StudyHubScreen({ navigation }: Props) {
           subtitle="A study set houses every activity you start — notes, quizzes, cards, lectures and games."
         />
 
-        <Card className="mb-3">
-          <View className="flex-row items-center justify-between mb-1">
-            <T.Caption tone="secondary">Your study sets</T.Caption>
-            <Button size="sm" onPress={() => setCreateOpen(true)}>
-              New study set
-            </Button>
-          </View>
-          {sets.length === 0 ? (
-            <T.Body tone="secondary">
-              Name a set to start. You can file it under a course later if you want.
+        {/* The toolbar: find one, order them, make one. */}
+        <View
+          style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+          className="flex-row items-center gap-2 rounded-full border px-3 mb-2 min-h-[44px]"
+        >
+          <AppIcon name="search" size={16} color={colors.textSecondary} importantForAccessibility="no" />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search study sets"
+            placeholderTextColor={colors.textSecondary}
+            accessibilityLabel="Search study sets"
+            returnKeyType="search"
+            className="flex-1 text-body text-lantern-text py-2"
+            style={{ color: colors.text }}
+          />
+          {query.length > 0 ? (
+            <Pressable
+              onPress={() => setQuery('')}
+              accessibilityRole="button"
+              accessibilityLabel="Clear search"
+              hitSlop={8}
+              className="active:opacity-60"
+            >
+              <AppIcon name="close-circle" size={16} color={colors.textSecondary} importantForAccessibility="no" />
+            </Pressable>
+          ) : null}
+        </View>
+
+        <View className="flex-row items-center justify-between gap-2 mb-3">
+          <Pressable
+            onPress={() => setSortOpen(true)}
+            accessibilityRole="button"
+            accessibilityLabel={`Sort study sets. Currently ${sortLabel}`}
+            testID="study-hub-sort"
+            style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+            className="flex-row items-center gap-1 rounded-full border px-3 min-h-[44px] active:opacity-80"
+          >
+            <T.Caption numberOfLines={1}>{sortLabel}</T.Caption>
+            <AppIcon name="chevron-down" size={14} color={colors.textSecondary} importantForAccessibility="no" />
+          </Pressable>
+          <Button size="sm" onPress={() => setCreateOpen(true)} testID="study-hub-new-set">
+            New study set
+          </Button>
+        </View>
+
+        {visible.length === 0 ? (
+          query.trim() ? (
+            <T.Body tone="secondary" className="mt-2">
+              {`No study set matches "${query.trim()}".`}
             </T.Body>
+          ) : status === 'ready' ? (
+            // The empty state is the create control, not a sentence about one.
+            <Pressable
+              onPress={() => setCreateOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Create study set"
+              testID="study-hub-empty-create"
+              style={{ borderColor: colors.border, borderStyle: 'dashed' }}
+              className="rounded-lantern-xl border-2 items-center justify-center py-8 px-4 active:opacity-80"
+            >
+              <AppIcon name="create" size={22} color={colors.textSecondary} importantForAccessibility="no" />
+              <T.Body style={{ fontWeight: '600' }} className="mt-2">
+                Create study set
+              </T.Body>
+              <T.Caption tone="secondary" className="mt-1 text-center">
+                A set keeps a subject's notes, decks, tests and lectures in one place.
+              </T.Caption>
+            </Pressable>
           ) : (
-            sets.map((set, index) => {
-              const filed = set.courseId
-                ? courses.find((row) => row.course.id === set.courseId)
-                : null;
-              return (
-                <View
-                  key={set.id}
-                  className={index > 0 ? 'border-t border-lantern-border' : undefined}
-                >
-                  <FeatureRow
-                    // A set's own hue and glyph, from the one exported pair.
-                    // It was painted in the notes tint, which is why the hub's
-                    // list of SETS looked like a list of notes.
-                    feature={STUDY_SET_TILE.feature}
-                    icon={STUDY_SET_TILE.icon}
-                    title={studySetLabel(set)}
-                    subtitle={`${filed ? courseWorkspaceLabel(filed.course) : 'Standalone'} · ${formatCourseMaterialCounts({
-                      notes: materialsForStudySet(notes, set.id).filter(
-                        (note) => !isCalendarNote(note)
-                      ).length,
-                      decks: materialsForStudySet(decks, set.id).length,
-                    })}`}
-                    onPress={() => openSet(set.id, set.title)}
-                  />
-                </View>
-              );
-            })
-          )}
-        </Card>
+            // Not "you have no sets" — "we have not been told yet". An offline
+            // cold start must never invite a student with four sets to start
+            // their library.
+            <T.Body tone="secondary" className="mt-2">
+              {status === 'loading'
+                ? 'Loading your study sets…'
+                : status === 'offline'
+                ? "You're offline — your sets will appear when you reconnect."
+                : "Couldn't load your study sets. Pull down to try again."}
+            </T.Body>
+          )
+        ) : (
+          visible.map((row) => (
+            <StudySetCard
+              key={row.set.id}
+              setId={row.set.id}
+              title={studySetLabel(row.set)}
+              counts={row.counts}
+              percent={row.progress.percent}
+              progressBasis={row.progress.basis}
+              studiedLabel={row.studiedLabel}
+              resumeTopic={row.resumeTopic}
+              onPress={() => openSet(row.set.id, row.set.title)}
+              onMenu={() => setMenuSetId(row.set.id)}
+              testID={`study-set-${row.set.id}`}
+            />
+          ))
+        )}
       </ScrollView>
+
+      <ActionSheet
+        visible={sortOpen}
+        title="Sort study sets"
+        onClose={() => setSortOpen(false)}
+        items={STUDY_SET_SORTS.map((option) => ({
+          label: option.label,
+          icon: option.id === sort ? ('checkmark' as const) : undefined,
+          onPress: () => {
+            setSort(option.id);
+            setSortOpen(false);
+          },
+        }))}
+      />
+
+      <ActionSheet
+        visible={Boolean(menuSet)}
+        title={menuSet ? studySetLabel(menuSet) : undefined}
+        onClose={() => setMenuSetId(null)}
+        items={menuItems}
+      />
 
       {/* The one sheet shell (components/ui/SheetShell.tsx): grabber, 23 dp
           corners, cream ground, serif heading — and a keyboard-safe body, which

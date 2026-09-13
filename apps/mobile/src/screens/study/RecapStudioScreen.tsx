@@ -17,6 +17,7 @@ import {
   studioMaterials,
   newRecapNoteTitle,
   normalizeGeneratedRecap,
+  scopeNoun,
   studySetNotePayload,
   parseRecapNoteBody,
   recapFromMaterial,
@@ -31,7 +32,14 @@ import {
 } from '@lantern/shared';
 import { AI_FEATURE_CREDIT_COST, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, ScreenHeader, T } from '../../components/ui';
+import {
+  Button,
+  ScreenHeader,
+  StudioGate,
+  studioGate,
+  T,
+  type StudioGateAction,
+} from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
 import { useToastStore } from '../../stores/toastStore';
@@ -244,6 +252,42 @@ export function RecapStudioScreen({ navigation, route }: Props) {
   const segment = session ? currentRecapSegment(session) : null;
   const progress = session ? recapProgress(session) : { current: 0, total: 0, percent: 0 };
 
+  /**
+   * Where a gate button lands. Every target stays INSIDE the container the
+   * studio was opened on, so the student comes back to a studio that now
+   * works rather than to the global library they walked away from.
+   */
+  const runGateAction = (action: StudioGateAction) => {
+    if (action.id === 'import_materials') {
+      if (studySetId) {
+        navigation.navigate('StudySetUpload', { studySetId, courseId, courseLabel });
+      } else {
+        navigation.navigate('Library', { tab: 'notes' });
+      }
+      return;
+    }
+    if (action.id === 'create_note') {
+      void (async () => {
+        try {
+          const created = await createNote({
+            title: 'Untitled note',
+            body: '',
+            ...studySetNotePayload({ courseId, studySetId }),
+          });
+          navigation.navigate('NoteEditor', { noteId: created.id });
+        } catch {
+          showToast('Could not create a note. Check your connection and try again.', 'error');
+        }
+      })();
+      return;
+    }
+    if (studySetId) {
+      navigation.navigate('StudySetLibrary', { studySetId, courseId, courseLabel, kind: 'notes' });
+    } else {
+      navigation.navigate('Library', { tab: 'notes' });
+    }
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       <ScreenHeader title={courseLabel || 'Recap'} onBack={() => navigation.goBack()} />
@@ -281,9 +325,22 @@ export function RecapStudioScreen({ navigation, route }: Props) {
               </View>
             ) : null}
             {sources.length === 0 ? (
-              <T.Body tone="secondary">
-                Import or write a note in this course first. The recap is built from that material.
-              </T.Body>
+              // Was one grey sentence on bare ground (SF2 evidence §4.2): the
+              // studio named its blocker and offered nothing to press. Same
+              // sentence, now with the two ways out of it and an honest price
+              // for the step it leads to.
+              <StudioGate
+                feature="ai"
+                icon="headphones"
+                content={studioGate({
+                  studio: 'recap',
+                  reason: 'no_material',
+                  body: `Import or write a note in this ${scopeNoun(studySetId, courseId)} first. The recap is built from that material.`,
+                  cost: formatCreditCost(AI_FEATURE_CREDIT_COST),
+                  costVerb: 'Building a recap',
+                })}
+                onAction={runGateAction}
+              />
             ) : (
               <View className="gap-2">
                 <T.Label tone="secondary">NEW RECAP</T.Label>

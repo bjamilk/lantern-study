@@ -36,6 +36,7 @@ import {
   type StudySetHomeTool,
   type StudySetRecommendedKind,
   type StudySetUnit,
+  studySetPlanProgress,
   topicsFromReadingNotes,
   type StudySetPath,
   type StudySetPathActivity,
@@ -71,6 +72,8 @@ import { StudySetUpload } from './StudySetUpload';
 import { CreateFromSource, parseCardExport } from './CreateFromSource';
 import { createDeckWithCards } from '../../services/apiEndpoints';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
+import { StudySetSwitcher } from './StudySetSwitcher';
+import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
 import { StudySetGuidedPrompts } from './StudySetGuidedPrompts';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
@@ -386,6 +389,18 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     [lectures, readingNotes]
   );
   const exams = useMemo(() => upcomingExamsFromNotes(calendars), [calendars]);
+  /**
+   * The header's chip strip. Counted from the stored plan where there is one,
+   * and from the topics a set's own notes imply where there is not, so a set
+   * with materials and no server plan still reads as something with a shape
+   * rather than as a bare title.
+   */
+  const roomProgress = useMemo(() => {
+    if (!studySetId) return null;
+    const rows =
+      planTopics.length > 0 ? planTopics : topicsFromReadingNotes(studySetId, readingNotes).topics;
+    return rows.length > 0 ? studySetPlanProgress(rows) : null;
+  }, [planTopics, readingNotes, studySetId]);
   const steeredToLecture = useRef(false);
   useEffect(() => {
     steeredToLecture.current = false;
@@ -891,6 +906,38 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       }
     : null;
 
+  /** The fallback line for a set with materials but no topics yet. */
+  const roomCounts = formatCourseMaterialCounts({
+    notes: homeMaterials.length,
+    decks: courseDecks.length,
+    tests: courseTests.length,
+  });
+
+  /**
+   * The kebab. It holds the room's NAVIGATION — the things that take you out of
+   * where you are — while the controls beside the title hold the things you do
+   * while you stay. `Set home` was a button in the header that only existed
+   * while you were not on it, which is a control that appears and disappears
+   * depending on where you are; in a menu that is simply a row.
+   */
+  const roomMenu: SetRoomHeaderMenuItem[] = studySetId
+    ? [
+        ...(activity !== 'home'
+          ? [{ id: 'home', label: 'Set home', onSelect: () => go('home') }]
+          : []),
+        { id: 'plan', label: 'Full study plan', onSelect: () => go('plan') },
+        { id: 'materials', label: 'All materials', onSelect: () => onOpenLibrary() },
+        {
+          id: 'all-sets',
+          label: 'All study sets',
+          onSelect: () => {
+            openPicker();
+            navigateTo(AppMode.STUDY_HUB);
+          },
+        },
+      ]
+    : [];
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
       <StudyWorkspaceBar
@@ -900,72 +947,64 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         }}
       />
       <div className="px-4 md:px-6 pt-4 shrink-0">
-        <ScreenHeader
-          title={label}
-          subtitle={
-            studySetId ? undefined : 'Notes, cards, tests and lectures in one room'
-          }
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              {studySetId ? <StudySetTimer setId={studySetId} /> : null}
-              {!companionRail ? (
-                <Button
-                  variant="secondary"
-                  onClick={() => openSetChat()}
-                  aria-label="Chat"
-                >
-                  <AppIcon name="chatbubbles" size={16} />
-                  <span className="ml-1.5">Chat</span>
-                </Button>
-              ) : null}
-              {studySetId && activity !== 'home' ? (
-                <Button variant="secondary" onClick={() => go('home')}>
-                  Set home
-                </Button>
-              ) : null}
-              {studySetId ? (
-                <Button variant="secondary" onClick={() => setSettingsOpen(true)} aria-label="Study set settings">
-                  <AppIcon name="settings" size={16} />
-                </Button>
-              ) : null}
-              {studySetId && sets.length > 1 ? (
-                <label className="sr-only" htmlFor="study-set-switcher">
-                  Switch study set
-                </label>
-              ) : null}
-              {studySetId && sets.length > 0 ? (
-                <select
-                  id="study-set-switcher"
-                  value={studySetId}
-                  onChange={(event) => {
-                    if (event.target.value === '__new') {
-                      setCreateOpen(true);
-                      return;
+        {studySetId ? (
+          // The set room's header is the SET AS AN OBJECT — identity tile,
+          // serif name, gear, and a bordered chip strip carrying the plan's
+          // counts and its progress. `ScreenHeader` (below, for a course room)
+          // can only draw a title and a button row, which is why a set used to
+          // read as a page rather than as a thing the student owns.
+          <SetRoomHeader
+            setId={studySetId}
+            title={label}
+            progress={roomProgress}
+            counts={roomCounts}
+            onOpenSettings={() => setSettingsOpen(true)}
+            menu={roomMenu}
+            controls={
+              <>
+                <StudySetTimer setId={studySetId} />
+                {!companionRail ? (
+                  <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
+                    <AppIcon name="chatbubbles" size={16} />
+                    <span className="ml-1.5">Chat</span>
+                  </Button>
+                ) : null}
+                {sets.length > 0 ? (
+                  <StudySetSwitcher
+                    sets={sets}
+                    currentId={studySetId}
+                    onSelect={(nextId) =>
+                      navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId: nextId })
                     }
-                    navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId: event.target.value });
-                  }}
-                  className="min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-caption text-lantern-text"
-                >
-                  {sets.map((set) => (
-                    <option key={set.id} value={set.id}>
-                      {studySetLabel(set)}
-                    </option>
-                  ))}
-                  <option value="__new">New study set…</option>
-                </select>
-              ) : null}
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  if (studySetId) openPicker();
-                  navigateTo(AppMode.STUDY_HUB);
-                }}
-              >
-                {studySetId ? 'All study sets' : 'All courses'}
-              </Button>
-            </div>
-          }
-        />
+                    onViewAll={() => {
+                      openPicker();
+                      navigateTo(AppMode.STUDY_HUB);
+                    }}
+                    onCreate={() => setCreateOpen(true)}
+                  />
+                ) : null}
+              </>
+            }
+          />
+        ) : (
+          <ScreenHeader
+            title={label}
+            subtitle="Notes, cards, tests and lectures in one room"
+            actions={
+              <div className="flex flex-wrap items-center gap-2">
+                {!companionRail ? (
+                  <Button variant="secondary" onClick={() => openSetChat()} aria-label="Chat">
+                    <AppIcon name="chatbubbles" size={16} />
+                    <span className="ml-1.5">Chat</span>
+                  </Button>
+                ) : null}
+                <Button variant="secondary" onClick={() => navigateTo(AppMode.STUDY_HUB)}>
+                  All courses
+                </Button>
+              </div>
+            }
+          />
+        )}
         {!(studySetId && activity === 'home') ? (
         <div className="flex flex-wrap gap-1.5 pb-4">
           {WORKSPACE_ACTIVITIES.map((item) => {
@@ -1221,6 +1260,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             <StudySetHome
               setLabel={label}
               notes={homeMaterials}
+              decks={courseDecks}
               deckCount={courseDecks.length}
               testCount={courseTests.length}
               recommended={readingNotes[0] ?? notes[0] ?? null}
@@ -1283,8 +1323,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 });
                 void updateStudySetTopicStatus(studySetId, topicId, 'covered').catch(() => undefined);
               }}
+              onOpenDeck={(deckId) => {
+                const deck = courseDecks.find((row) => row.id === deckId);
+                if (deck) onSelectDeck(deck);
+              }}
               onOpenPlan={() => go('plan')}
               onOpenCalendar={() => go('calendar')}
+              onOpenLibrary={onOpenLibrary}
               onAddSyllabus={() => {
                 go('add');
                 setImportSource(null);

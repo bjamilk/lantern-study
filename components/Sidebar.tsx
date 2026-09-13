@@ -23,6 +23,8 @@ import { resolveShellSideColumn, isSideColumnPinned } from './layout/shellSideCo
 import { DESTINATION_LABELS, resolveActiveDestination, type DestinationId } from './layout/destinations';
 import { useAiCredits } from './layout/useAiCredits';
 import CommunityColumn, { type CommunityNavigate } from './community/CommunityColumn';
+import SetRail from './study/SetRail';
+import { studySetIdForRoute } from '@lantern/shared/study';
 
 interface SidebarProps {
   currentUser: User;
@@ -59,6 +61,11 @@ interface SidebarProps {
   onCommunityNavigate?: CommunityNavigate;
   onOpenLounge?: (lounge: ChatHomeLounge) => void;
   onOpenInquiries?: () => void;
+  /**
+   * Navigate to a raw path. The set section's rows are paths inside one set,
+   * not AppModes, so the rail needs the same door `/me` already uses.
+   */
+  onNavigateToPath?: (path: string) => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -93,6 +100,7 @@ const Sidebar: React.FC<SidebarProps> = ({
   onCommunityNavigate,
   onOpenLounge,
   onOpenInquiries,
+  onNavigateToPath,
 }) => {
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
@@ -393,6 +401,14 @@ const Sidebar: React.FC<SidebarProps> = ({
 
   const destinationActive = (id: DestinationId) => activeDestination === id;
 
+  /**
+   * "Inside a set" is the PATH, not a remembered click: every studio and every
+   * activity opened from a set is a route under `/study/sets/:id`, so one
+   * parse of the pathname answers it for the set room and all eleven studios
+   * alike. Outside a set this is null and the rail is unchanged.
+   */
+  const railStudySetId = studySetIdForRoute(currentPath);
+
 
   return (
     <>
@@ -516,6 +532,21 @@ const Sidebar: React.FC<SidebarProps> = ({
               badgeCount={unreadNotificationCount > 0 ? unreadNotificationCount : undefined}
             />
           </div>
+
+          {/* While the student is inside a set, the rail BECOMES the set: the
+              switcher, its doors, Upload and its own materials. Outside one,
+              nothing below the two follow-you rows changes. */}
+          {railStudySetId && onNavigateToPath ? (
+            <SetRail
+              key={railStudySetId}
+              studySetId={railStudySetId}
+              expanded={showText}
+              currentPath={currentPath}
+              onNavigate={onNavigateToPath}
+              onToggleCompanion={onToggleCompanion}
+              isCompanionOpen={isCompanionOpen}
+            />
+          ) : null}
         </nav>
       </div>
 

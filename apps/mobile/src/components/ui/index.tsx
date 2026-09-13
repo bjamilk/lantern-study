@@ -594,6 +594,20 @@ export { ActionSheet, SheetGrabber, type ActionSheetItem } from './ActionSheet';
 // heading, keyboard-safe body. See SheetShell.tsx for why it is one component.
 export { SheetShell, type SheetShellProps } from './SheetShell';
 export { LoadingState, ErrorState, InlineErrorBanner, EmptyState } from './AsyncStates';
+// The blocked-studio card, and the pure model behind its copy and its way out.
+// `EmptyState` above is for a collection with no rows; this is for a STUDIO
+// that cannot start, where the point is the button that unblocks it.
+export { StudioGate, type StudioGateProps } from './StudioGate';
+export {
+  studioGate,
+  studioGateCostLine,
+  type StudioGateAction,
+  type StudioGateActionId,
+  type StudioGateContent,
+  type StudioGateInput,
+  type StudioGateReason,
+  type StudioGateStudio,
+} from './studioGateModel';
 export { IconButton } from './IconButton';
 export { BackButton } from './BackButton';
 export {

@@ -51,6 +51,7 @@
     "src/analytics/**/*.ts",
     "src/moderation/**/*.ts",
     "src/notes/**/*.ts",
+    "src/study/**/*.ts",
     "src/cookieConsent.ts",
     "src/accountLifecycle.ts",
     "src/contactForm.ts"

@@ -7,27 +7,30 @@
  * you are already in, so a student can move from Library to Tests without
  * climbing out to the hub and back down.
  *
- * WHERE THE ROW SITS — ALWAYS ABOVE THE GLOBAL BAR, on every registry, with no
- * per-registry mode to declare (device pass on build 185, which reverts the
- * `replace` mode of 2026-09-08).
+ * WHERE THE ROW SITS. Above the global bar on every registry EXCEPT one: the
+ * set row (`SET_BAR`), which stands IN the global bar's slot — one bar at a
+ * time, the StudyFetch model (SF2 evidence §2, §4, §6 items 2 and 3).
  *
- * The 2026-09-08 decision let Study and Shop declare `mode: 'replace'`: their
- * row stood IN the global bar's slot, the five destinations came off screen for
- * the whole section, and a single leading Back/Home control stood in for them.
- * The device pass rejected exactly that: on the Study hub, Library, Tests and
- * every Shop root the five labelled tabs were simply GONE, which is the
- * StudyFetch behaviour §7.2 was written against (`inv #169`) and the opposite of
- * the target — five labelled tabs, always. So the mode, the exit control and the
- * clearance arithmetic that took the bar's height back out are all removed
- * rather than left switched off: a row that can never replace the bar cannot
- * regress into replacing it.
+ * That is not a re-run of the 2026-09-08 `replace` mode the build-185 device
+ * pass rejected, and the difference is the whole reason it is safe now. The old
+ * mode took the five labelled tabs away across ALL of Study and ALL of Shop —
+ * on the Study hub, on Library, on Tests, on every Shop root — so the product's
+ * map vanished from surfaces that are not inside anything. `replace` is now
+ * declared by exactly one row, on exactly the routes that are INSIDE ONE SET
+ * (the room and its studios), it carries a leading `Home` door back out to the
+ * global tabs, and it is suppressed entirely unless the focused route actually
+ * names a set (`requiresAnyParam`). Outside a set, the global bar stands alone
+ * with no row above it at all — which is the other half of SF2 §6 #3: the Study
+ * row used to STACK on the tab bar for 290 px of chrome on surfaces where it
+ * duplicated the destinations underneath it.
  *
- * The rule is now unconditional and needs no field: the contextual row is drawn
- * directly ABOVE the global bar, inside the same chrome view, and the global bar
- * stays fully labelled underneath it. That holds for a SECTION of co-equal doors
- * (Study, Shop) and for a SINGLE screen you pass through (one deck, one note,
- * one document, one community) alike — the global bar is every row's way out, so
- * no row needs one of its own.
+ * So the default is still `above`, and every row that is not the set row keeps
+ * it: a row for a SINGLE screen you pass through (one deck, one note, one
+ * document, one community) and the Shop section's row alike are drawn directly
+ * ABOVE a global bar that stays fully labelled underneath them. The global bar
+ * is those rows' way out, so none of them needs one of its own. The set row is
+ * the one place where the global bar is not on screen, which is exactly why it
+ * is the one row that carries `Home`.
  *
  * Three things this file is deliberately NOT:
  *
@@ -112,8 +115,34 @@ export type ContextualBarTarget =
        */
       requires?: readonly string[];
     }
-  | { kind: 'record' }
-  | { kind: 'ai' }
+  | {
+      kind: 'record';
+      /**
+       * Params carried from the FOCUSED route into the note the door creates.
+       *
+       * The set row is why this exists: "Record" inside a set must file the
+       * lecture note INTO that set (`studySetId`), not into the loose pile the
+       * global Study row's Record door made. Same copy-by-name rule as a route
+       * target's `paramsFrom`; the keys land on `createNote`.
+       */
+      paramsFrom?: readonly string[];
+    }
+  | {
+      kind: 'ai';
+      /**
+       * Keys of the focused route that identify the ROOM this door's companion
+       * is about, narrowest first; the first one present wins.
+       *
+       * SF2 §6 #14: Ask pressed inside a set room opened a companion scoped to
+       * the last NOTE the student had open ("On: Lecture — 12 Sep"), because
+       * the panel restored whatever attachment was persisted. A door that knows
+       * which set it is standing in can say so before the sheet mounts, which
+       * is what `openForScope` is for.
+       */
+      scopeIdFrom?: readonly string[];
+      /** Keys carrying a human NAME for that room ("On: Pharmacology"). */
+      scopeLabelFrom?: readonly string[];
+    }
   | { kind: 'screenAction'; action: ContextualScreenAction };
 
 /**
@@ -166,10 +195,37 @@ export interface ContextualBarItem {
   activeFor?: readonly RouteName[];
 }
 
+/**
+ * Where the row is drawn.
+ *
+ * - `above` (the default, and every row but one): directly above a global bar
+ *   that is still on screen and still fully labelled.
+ * - `replace`: IN the global bar's slot — the five tabs come off screen while
+ *   the row is up. One bar at a time, StudyFetch's model. Only ever declared by
+ *   a row that (a) is about ONE THING the student is inside, (b) carries its own
+ *   way back out to the global tabs, and (c) is suppressed when that thing is
+ *   not known. `SET_BAR` is the only such row; see this file's header for why
+ *   the sectionwide version of this was reverted in build 185.
+ */
+export type ContextualBarMode = 'above' | 'replace';
+
 export interface ContextualBarSpec {
   /** The tab whose stack every `route` target below belongs to. */
   stack: ContextualBarStack;
   items: readonly ContextualBarItem[];
+  /** Where the row sits. Omitted means `above` — see {@link ContextualBarMode}. */
+  mode?: ContextualBarMode;
+  /**
+   * Param keys the row is MEANINGLESS without: unless the focused route carries
+   * at least one of them, this spec resolves to null and the route has no row.
+   *
+   * The set row needs a set. A `replace` row with nothing to be about would take
+   * the five tabs off screen in exchange for five doors that cannot say which
+   * set they lead into — so the honest answer there is no row at all, and the
+   * global bar alone. `requires` on a single ITEM makes that one press
+   * `unavailable`; this makes the whole ROW stand down.
+   */
+  requiresAnyParam?: readonly string[];
   /**
    * The row's accent when NO item is the current screen.
    *
@@ -184,55 +240,119 @@ export interface ContextualBarSpec {
 }
 
 /**
- * The Study row: the same five doors the hub shows as tiles, carried down into
- * every screen of the Study stack that is not a session.
+ * The SET row: the doors of the set you are standing IN — SF2 §6 items 2 and 3.
  *
- * Every focused route listed here maps to the SAME spec object on purpose —
- * the row must not twitch as you move between Library, Notes, Flashcards and
- * Tests; only which item is active changes.
+ * WHAT IT REPLACES. The old `STUDY_BAR` carried `Library · Flashcards · Tests ·
+ * Record · Ask` on every Study screen, stacked on top of the global bar, and
+ * every one of those five opened a GLOBAL list. Pressed from inside a set that
+ * is not a sub-navigation, it is an exit: the student is thrown out of the set
+ * they were working in and into the app-wide pile of everything they own, with
+ * the room they left reachable only by Back. StudyFetch's five tabs are
+ * set-scoped by construction — the bottom bar IS the set — so this row is too:
+ * every door below acts INSIDE the set named by the focused route's params.
+ *
+ * WHY IT REPLACES THE TAB BAR. On the surfaces it is keyed to, the student is
+ * inside one thing, and the five global destinations are not the question being
+ * asked; two stacked bars spent 290 px (12% of the window) on nav and drew
+ * `Ask`/`Flashcards`/`Tests` twice within a thumb's reach of each other. So the
+ * global bar stands down and `Home` — the first door, mirroring StudyFetch's
+ * first tab — is the way back to it. Everywhere else in Study the global bar is
+ * alone with no row above it.
+ *
+ * THE LABELS STAY. StudyFetch labels only its selected tab; this row labels all
+ * six, which is Lantern's own win and the reason `Materials` reads as a word
+ * rather than a tray glyph.
  */
-const STUDY_BAR: ContextualBarSpec = {
+const SET_BAR: ContextualBarSpec = {
   stack: 'StudyTab',
+  mode: 'replace',
+  // No set in the focused route's params, no row: see `requiresAnyParam`. A
+  // studio opened without one keeps the global bar, which is the only honest
+  // answer when the row could not say which set its doors lead into.
+  requiresAnyParam: ['studySetId', 'courseId'],
   items: [
     {
-      id: 'library',
-      label: 'Library',
-      icon: 'library',
-      feature: 'notes',
-      target: { kind: 'route', route: 'Library' },
+      // The way back to the global five, in the slot StudyFetch puts `Home` in.
+      // It targets the Study HUB rather than the Home tab: the hub is where the
+      // sets live, it is in this same stack (so no nested navigate), and it
+      // carries no row of its own — so pressing it is also what puts the five
+      // labelled tabs back on screen.
+      id: 'home',
+      label: 'Home',
+      icon: 'home',
+      feature: 'sets',
+      target: { kind: 'route', route: 'StudyHub' },
     },
     {
+      // Was "Library", and that is the rename that matters: the old door opened
+      // the app-wide library. This one opens the MATERIALS segment of the room
+      // for this set. `segment` is the param name agreed with the room's own
+      // segment row (screens/study/CourseRoomScreen.tsx); it is declared on
+      // `CourseRoom` in navigation/types.ts.
+      id: 'materials',
+      label: 'Materials',
+      icon: 'library',
+      feature: 'notes',
+      target: {
+        kind: 'route',
+        route: 'CourseRoom',
+        params: { segment: 'materials' },
+        paramsFrom: ['studySetId', 'courseId', 'courseLabel'],
+      },
+    },
+    {
+      // This set's decks, not every deck. `StudySetLibrary` is the screen for
+      // "what is filed in ONE set"; `kind` picks the shelf.
       id: 'flashcards',
       label: 'Flashcards',
       icon: 'layers',
       feature: 'flashcards',
-      target: { kind: 'route', route: 'FlashcardsList' },
+      target: {
+        kind: 'route',
+        route: 'StudySetLibrary',
+        params: { kind: 'cards' },
+        paramsFrom: ['studySetId', 'courseId', 'courseLabel'],
+        // The screen's own contract: it is the library OF a set and cannot
+        // open without one. The row is suppressed without a set anyway; this
+        // is the second lock, on the door rather than the row.
+        requires: ['studySetId'],
+      },
     },
     {
       id: 'tests',
       label: 'Tests',
       icon: 'clipboard',
       feature: 'tests',
-      target: { kind: 'route', route: 'TestsList' },
-      // The builder is a room inside Tests, not a sixth door.
-      activeFor: ['TestBuilder'],
+      target: {
+        kind: 'route',
+        route: 'StudySetLibrary',
+        params: { kind: 'tests' },
+        paramsFrom: ['studySetId', 'courseId', 'courseLabel'],
+        requires: ['studySetId'],
+      },
     },
     {
+      // Record INTO this set: the note the door creates is filed here rather
+      // than in the loose pile, which is what `paramsFrom` carries.
       id: 'record',
       label: 'Record',
       icon: 'mic',
       feature: 'recording',
-      target: { kind: 'record' },
+      target: { kind: 'record', paramsFrom: ['studySetId', 'courseId'] },
     },
     {
+      // Ask about the SET. `scopeIdFrom` is the §6 #14 fix: the door states the
+      // room before the sheet mounts, so the panel cannot fall back to whatever
+      // note was attached last.
       id: 'ai',
-      // The companion door is "Ask Lantern" everywhere a door is named. This
-      // row has five items and no room for two words, so it wears the short
-      // form "Ask" — never "AI", which named nothing the student could see.
       label: 'Ask',
       icon: 'sparkles',
       feature: 'ai',
-      target: { kind: 'ai' },
+      target: {
+        kind: 'ai',
+        scopeIdFrom: ['studySetId', 'courseId'],
+        scopeLabelFrom: ['courseLabel'],
+      },
     },
   ],
 };
@@ -557,24 +677,30 @@ const SHOP_BAR: ContextualBarSpec = {
  * shell, which is how this ships safely.
  */
 export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
-  StudyHub: STUDY_BAR,
-  CourseRoom: STUDY_BAR,
-  NotesStudio: STUDY_BAR,
-  AdaptiveQuiz: STUDY_BAR,
-  LectureStudio: STUDY_BAR,
-  LessonStudio: STUDY_BAR,
-  RecapStudio: STUDY_BAR,
-  StudyCalendar: STUDY_BAR,
-  EssayStudio: STUDY_BAR,
-  PlayStudio: STUDY_BAR,
-  Library: STUDY_BAR,
-  NotesList: STUDY_BAR,
-  FlashcardsList: STUDY_BAR,
-  TestsList: STUDY_BAR,
-  // The SAME spec object as every other Study route, so the row does not
-  // twitch when "+ New test" pushes this screen — only which item is active
-  // changes, and `activeFor` keeps that on Tests.
-  TestBuilder: STUDY_BAR,
+  // INSIDE A SET, and nowhere else in Study.
+  //
+  // The room, its studios, the set's own library and its import screen all map
+  // to the SAME spec object on purpose — the row must not twitch as the student
+  // moves between them; only which door is active changes. Every one of these
+  // routes declares `studySetId`/`courseId` in navigation/types.ts, which is
+  // what `requiresAnyParam` reads; one opened without either keeps the global
+  // tab bar instead.
+  //
+  // NOT KEYED, deliberately: `StudyHub`, `Library`, `NotesList`,
+  // `FlashcardsList`, `TestsList`, `TestBuilder` and `StudyCalendar`. Those are
+  // the app-wide lists and the hub — you are not inside anything there, so the
+  // global bar stands alone (SF2 §6 #3). The row they used to carry was five
+  // doors to the very screens they already are.
+  CourseRoom: SET_BAR,
+  NotesStudio: SET_BAR,
+  AdaptiveQuiz: SET_BAR,
+  LectureStudio: SET_BAR,
+  LessonStudio: SET_BAR,
+  RecapStudio: SET_BAR,
+  EssayStudio: SET_BAR,
+  PlayStudio: SET_BAR,
+  StudySetLibrary: SET_BAR,
+  StudySetUpload: SET_BAR,
 
   // One deck, four modes. The sessions themselves are immersive and carry no
   // row at all, which is why only the deck screen is keyed.
@@ -648,9 +774,43 @@ export function specForRoute(
   if (segmented) {
     const value = focusedParams?.[segmented.param];
     if (typeof value !== 'string') return null;
-    return segmented.values[value] ?? null;
+    return withRequiredParams(segmented.values[value] ?? null, focusedParams);
   }
-  return CONTEXTUAL_BARS[focusedRoute as RouteName] ?? null;
+  return withRequiredParams(CONTEXTUAL_BARS[focusedRoute as RouteName] ?? null, focusedParams);
+}
+
+/**
+ * A spec stands down entirely when the focused route names none of the things
+ * it is about ({@link ContextualBarSpec.requiresAnyParam}).
+ *
+ * The set row is the caller that needs this: a `replace` row takes the five
+ * global tabs off screen, and it may only do that in exchange for doors that
+ * genuinely lead somewhere. With no set id in the route's params, "Flashcards"
+ * cannot name a deck list and "Materials" cannot name a room, so the row is not
+ * drawn at all and the global bar keeps its place.
+ */
+function withRequiredParams(
+  spec: ContextualBarSpec | null,
+  focusedParams: Record<string, unknown> | undefined,
+): ContextualBarSpec | null {
+  if (!spec?.requiresAnyParam) return spec;
+  const satisfied = spec.requiresAnyParam.some((key) => {
+    const value = focusedParams?.[key];
+    return typeof value === 'string' ? value.trim().length > 0 : value !== undefined;
+  });
+  return satisfied ? spec : null;
+}
+
+/**
+ * Where the focused route's row is drawn, and therefore whether the global bar
+ * is on screen under it. `above` when there is no row at all — nothing is
+ * standing in the bar's place.
+ */
+export function contextualBarMode(
+  focusedRoute: string | undefined,
+  focusedParams?: Record<string, unknown> | undefined,
+): ContextualBarMode {
+  return specForRoute(focusedRoute, focusedParams)?.mode ?? 'above';
 }
 
 /**
@@ -670,10 +830,34 @@ export function activeItem(
   return (
     spec.items.find(
       item =>
-        (item.target.kind === 'route' && item.target.route === focusedRoute) ||
+        (item.target.kind === 'route' &&
+          item.target.route === focusedRoute &&
+          fixedParamsMatch(item.target.params, focusedParams)) ||
         item.activeFor?.includes(focusedRoute as RouteName),
     ) ?? null
   );
+}
+
+/**
+ * Do the item's FIXED params describe the screen actually on screen?
+ *
+ * Two doors on the set row point at the same route and differ only by a fixed
+ * param — Flashcards is `StudySetLibrary { kind: 'cards' }` and Tests is the
+ * same screen with `kind: 'tests'`, exactly as the room's Materials door is
+ * `CourseRoom { segment: 'materials' }`. Route-name matching alone lit whichever
+ * of them was declared FIRST on every one of those screens, which is a row that
+ * tells the student they are somewhere they are not.
+ *
+ * Only the fixed `params` are compared, never `paramsFrom`: those carry the set
+ * id across and are the same for every door on the row, so they say nothing
+ * about which door you are standing in.
+ */
+function fixedParamsMatch(
+  params: Record<string, unknown> | undefined,
+  focusedParams: Record<string, unknown> | undefined,
+): boolean {
+  if (!params) return true;
+  return Object.entries(params).every(([key, value]) => focusedParams?.[key] === value);
 }
 
 /**
@@ -709,8 +893,14 @@ export interface ContextualPressInput {
 export type ContextualPressPlan =
   | { kind: 'navigate'; route: RouteName; params?: Record<string, unknown> }
   | { kind: 'scrollToTop' }
-  | { kind: 'openAi' }
-  | { kind: 'record' }
+  /**
+   * Open the companion. `scopeId` names the ROOM it is about when the door knew
+   * one (the set row's Ask); with no scope the panel infers one from the route
+   * as it always has.
+   */
+  | { kind: 'openAi'; scopeId?: string; scopeLabel?: string }
+  /** Start the recorder. `params` file the note the door creates (a set id). */
+  | { kind: 'record'; params?: Record<string, unknown> }
   /** The focused SCREEN runs this one; see `ContextualScreenAction`. */
   | { kind: 'screenAction'; action: ContextualScreenAction }
   /**
@@ -746,6 +936,38 @@ function resolveParams(
 }
 
 /**
+ * The named keys the focused route actually has, or undefined when it has none.
+ *
+ * The non-route half of `paramsFrom`: the recorder door needs the set id the
+ * same way a route target does, and for the same reason — the registry is a
+ * constant and cannot know which set the student is inside.
+ */
+function carried(
+  keys: readonly string[] | undefined,
+  focusedParams: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!keys?.length) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key of keys) {
+    const value = focusedParams?.[key];
+    if (value !== undefined) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/** The first of `keys` the focused route carries as a non-empty string. */
+function firstString(
+  keys: readonly string[] | undefined,
+  focusedParams: Record<string, unknown> | undefined,
+): string | undefined {
+  for (const key of keys ?? []) {
+    const value = focusedParams?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return undefined;
+}
+
+/**
  * What a press on a contextual item means.
  *
  * The only branch worth arguing about is the first: pressing the item you are
@@ -762,10 +984,30 @@ export function planContextualPress({
   focusedParams,
 }: ContextualPressInput): ContextualPressPlan {
   const { target } = item;
-  if (target.kind === 'record') return { kind: 'record' };
-  if (target.kind === 'ai') return { kind: 'openAi' };
+  if (target.kind === 'record') {
+    const params = carried(target.paramsFrom, focusedParams);
+    return { kind: 'record', ...(params !== undefined ? { params } : {}) };
+  }
+  if (target.kind === 'ai') {
+    const scopeId = firstString(target.scopeIdFrom, focusedParams);
+    const scopeLabel = firstString(target.scopeLabelFrom, focusedParams);
+    return {
+      kind: 'openAi',
+      ...(scopeId !== undefined ? { scopeId } : {}),
+      ...(scopeLabel !== undefined ? { scopeLabel } : {}),
+    };
+  }
   if (target.kind === 'screenAction') return { kind: 'screenAction', action: target.action };
-  if (focusedRoute && target.route === focusedRoute) return { kind: 'scrollToTop' };
+  // "The route you are already on" is the route AND the fixed params that say
+  // which of its segments this door is: pressing Materials from the room's
+  // OVERVIEW must navigate to the materials segment, not scroll the overview.
+  if (
+    focusedRoute &&
+    target.route === focusedRoute &&
+    fixedParamsMatch(target.params, focusedParams)
+  ) {
+    return { kind: 'scrollToTop' };
+  }
   const params = resolveParams(target, focusedParams);
   if (params === null) return { kind: 'unavailable' };
   return {

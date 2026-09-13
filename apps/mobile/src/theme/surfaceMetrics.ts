@@ -70,9 +70,22 @@ export const BUTTON = {
 /**
  * A door — the hub tile. 493x503 px, so very nearly square, with a pastel
  * panel over the TOP 66% of its height, 27 px of padding above the
- * illustration, and a hard black shadow offset 14 px with NO blur. The footer
- * strip below the panel is white and carries the title beside a small glyph
- * tinted to the panel's hue.
+ * illustration, and a hairline border. The footer strip below the panel is
+ * white and carries the title beside a small glyph tinted to the panel's hue.
+ *
+ * THE HARD BLACK SHADOW IS GONE (2026-09-13, founder direction). It was a
+ * 5 dp `#000000` offset with no blur, and it was the single biggest remaining
+ * visual divergence from the app this one is being cut to match: every hue and
+ * every ink token is now identical to StudyFetch's, and then each tile was
+ * given a neo-brutalist drop shadow that no StudyFetch surface has, which is
+ * what made a side-by-side read as two different products (SF2 mobile evidence
+ * §5.2, §6 item 8). Flat is the whole app, not the set room — the token is
+ * shared and that is intended.
+ *
+ * It is kept as `0` rather than deleted because `DoorTile` and
+ * `doorTileLayout` both reserve room for it in real layout, and a flat tile is
+ * exactly that reservation at zero; removing the field would churn three files
+ * and a test to express the same thing.
  */
 export const DOOR_TILE = {
   /** 503/493: height as a multiple of width. A door is slightly portrait. */
@@ -81,8 +94,8 @@ export const DOOR_TILE = {
   panelHeightFraction: 0.66,
   /** 27 px above the illustration inside the panel. */
   panelPaddingTop: 10,
-  /** Hard shadow: offset 14 px down AND right, radius 0. Not a soft drop. */
-  shadowOffset: 5,
+  /** Flat: no shadow at all. See the note above for why the field survives. */
+  shadowOffset: 0,
   radius: 16,
   /** 28 px between two doors in a row. */
   gridGutter: 11,

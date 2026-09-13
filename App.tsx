@@ -3725,6 +3725,11 @@ export const App: React.FC = () => {
         onCommunityNavigate: handleCommunityNavigate,
         onOpenLounge: (lounge: { slug: string }) => navigateTo(AppMode.COMMUNITY_DETAIL, { slug: lounge.slug }),
         onOpenInquiries: () => navigateTo(AppMode.MARKETPLACE_INQUIRIES),
+        // The rail's set section navigates by path, because a set activity is
+        // a route under `/study/sets/:id` and not an AppMode of its own. The
+        // Sidebar derives WHICH set from `currentPath` above — one parse, so
+        // the lit row can never drift from the address bar.
+        onNavigateToPath: (path: string) => navigateToPath(path),
     };
     return (
         <ErrorBoundary>

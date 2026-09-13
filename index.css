@@ -171,10 +171,31 @@ svg[data-slot="icon"].w-24 {
   --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.05);
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.05);
   --shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.12), 0 4px 8px rgba(15, 23, 42, 0.06);
-  /* The StudyFetch hub-tile shadow: a hard offset in the ink, no blur and no
-     alpha. It is drawn in `--color-ink`, which inverts with the theme, so the
-     tile keeps an edge on the black page instead of casting black on black. */
-  --shadow-hard: 4px 4px 0 0 rgb(var(--color-ink));
+  /* 2026-09-13 (SF2 lane S5): THE WHOLE WEB GOES FLAT.
+     This used to be `4px 4px 0 0 rgb(var(--color-ink))` — a hard black offset
+     under every hub tile, door and recommendation card. Re-reading StudyFetch
+     side by side, the reference product has no such shadow anywhere: its cards
+     are a hairline border on white with a 12-16px radius and nothing under
+     them. Ten of those offsets stacked on one screen read as a wall of stickers
+     rather than a page of cards, and they are the single loudest deviation
+     between the two set rooms.
+
+     Killed at the TOKEN rather than at each of the ~dozen call sites, so a
+     `shadow-lantern-hard` left anywhere in the tree is silently flat and no
+     call site has to be hunted down (or fought over across parallel lanes).
+     `--color-border` is already the hairline these cards need. */
+  --shadow-hard: none;
+  /* THE PLAN RING AND THE TIMER PILL ARE NOT NEW TOKENS.
+     StudyFetch draws study progress in a lilac-over-violet ring and its timer
+     as a butter-yellow pill, and this palette already holds both pairs exactly:
+     `--color-feature-ai-tint` IS #f5d5ff, and `--color-feature-recording-tint`
+     is the butter. Minting `--color-plan-ring` / `--color-timer-pill` beside
+     them would have put two un-gated near-duplicates in the palette —
+     scripts/design/contrast.mjs treats every `--color-*` as an ink unless it is
+     named a ground, and the honest fix was to stop inventing grounds rather
+     than to widen that list. The ring and the pill therefore consume
+     `--color-feature-ai-*` and `--color-feature-recording-*`, which are already
+     AA-paired ink-on-tint in both themes. */
   --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   /* The display voice is now a SERIF, which is the single biggest thing that
      makes the StudyFetch reference read as a study product rather than a SaaS

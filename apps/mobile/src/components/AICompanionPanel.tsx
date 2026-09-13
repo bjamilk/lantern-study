@@ -62,6 +62,7 @@ import { CompanionHistory } from './companion/CompanionHistory';
 import { ScopedPrompts } from './companion/ScopedPrompts';
 import {
   EXPLAIN_SIMPLY_PROMPT,
+  companionOpenAttachment,
   companionScopeFromRoute,
   previousUserMessage,
   scopeAccessibilityLabel,
@@ -455,6 +456,16 @@ export function AICompanionPanel({ context }: Props) {
           title: (known?.title || '').trim() || context?.noteTitle || 'Untitled note',
           scopeId: openScopeId,
         });
+        await loadHistory();
+        void loadConversations();
+        return;
+      }
+      // Standing IN the set: nothing is attached, so the sheet is honestly
+      // about the set rather than about whichever note this scope had open
+      // last (SF2 §6 #14). The rule is in companionScope.ts, keyed on the
+      // route, so every door into the panel gets the same answer.
+      if (companionOpenAttachment(openRoute?.name ?? null, openParams) === 'set') {
+        await setActiveNoteContext(null);
         await loadHistory();
         void loadConversations();
         return;

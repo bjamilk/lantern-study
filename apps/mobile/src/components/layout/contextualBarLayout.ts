@@ -117,6 +117,25 @@ export function contextualBarHeight(present: boolean, contentHeight: number): nu
 
 export interface ContextualClearanceInput {
   /**
+   * True when the row stands IN the global bar's slot rather than above it (the
+   * set row; navigation/contextualBars.ts). The five tabs are then not drawn, so
+   * their content height comes back OUT of the clearance — a screen that still
+   * padded for both would leave a 56 dp band of dead ground above the row.
+   *
+   * This is the arithmetic the 2026-09-08 replace mode had and the build-185
+   * revert deleted. It is back because one row replaces the bar again, and it is
+   * written so it can only ever subtract a bar that is genuinely not there:
+   * `replace` is false for every other row, and the result is floored at the
+   * row's own height so no input can produce a clearance that clears nothing.
+   */
+  replace?: boolean;
+  /**
+   * The GLOBAL bar's content height (screenInsets.TAB_BAR_CONTENT_HEIGHT) — the
+   * part that is not drawn under `replace`. The safe-area inset and the gap
+   * inside `base` stay: the window still ends where it ended.
+   */
+  tabBarContentHeight?: number;
+  /**
    * The tab-bar clearance the screen would use with the GLOBAL bar present
    * (screenInsets.tabBarClearance) — i.e. the global bar's content height plus
    * the floored safe-area inset and gap. Both modes start from this so the
@@ -153,10 +172,16 @@ export function contextualBarClearance({
   base,
   contentHeight,
   present,
+  replace = false,
+  tabBarContentHeight = 0,
 }: ContextualClearanceInput): number {
   const row = contextualBarHeight(present, contentHeight);
   if (!present) return px(base);
-  return px(base) + row;
+  if (!replace) return px(base) + row;
+  // The row stands in the bar's place: pay for the row, not for both. Floored
+  // at the row itself so a caller that passes a nonsense bar height can only
+  // ever clear too much, never too little — the offline-box rule.
+  return Math.max(row, px(base) + row - px(tabBarContentHeight));
 }
 
 /**

@@ -94,8 +94,9 @@ describe('the wiring the founder decision depends on', () => {
   });
 
   it('keeps no exit control anywhere in the chrome', () => {
-    // The exit existed only to replace the bar it stood in for. With the five
-    // always on screen a sixth control is a dead one.
+    // The set row DOES replace the bar, and it still has no exit CONTROL: its
+    // way out is `Home`, an ordinary labelled item in the row like every other
+    // door, not a special affordance bolted to the side of it.
     for (const src of [bar, nav, row]) {
       expect(src).not.toContain('ExitControl');
       expect(src).not.toContain('exitControl');
@@ -115,18 +116,30 @@ describe('the wiring the founder decision depends on', () => {
   });
 
   it('still mounts the row from the one caller that owns the navigation', () => {
-    expect(nav).toContain('above={<ContextualBar onNavigate={navigateWithinFocusedStack} />}');
+    expect(nav).toContain('<ContextualBar');
+    expect(nav).toContain('onNavigate={navigateWithinFocusedStack}');
   });
 
-  it('gives both clearance callers the additive, un-subtracted arithmetic', () => {
+  it('hides the five tabs only on what the ROW says is on screen', () => {
+    // Presence is not the registry's alone — the keyboard takes the row away —
+    // so the bar must stand its tabs down on the row's own report, never on a
+    // spec lookup. Getting this wrong leaves a student typing inside a set with
+    // no bottom navigation at all.
+    expect(nav).toContain('onPresence={setContextualMode}');
+    expect(nav).toContain("hideTabs={contextualMode === 'replace'}");
+    expect(bar).toContain('hideTabs');
+  });
+
+  it('gives both clearance callers the same arithmetic, including the swap', () => {
     // If a screen padded for a bar that is not there (or not for the row that
     // is), the last row of a list lands under the chrome — the offline-box bug.
-    // Both strips are on screen now, so both callers add the row to the bar's
-    // own clearance and NEITHER takes the bar back out.
+    // An `above` row adds to the bar's clearance; the set row stands IN the
+    // bar's place, so its own height replaces the bar's. Both callers must say
+    // both halves, and say them identically.
     for (const src of [bar, screen]) {
       expect(src).toContain('contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT');
-      expect(src).not.toContain('replaceMode:');
-      expect(src).not.toContain('globalBarContentHeight:');
+      expect(src).toContain("replace: contextual?.mode === 'replace'");
+      expect(src).toContain('tabBarContentHeight: TAB_BAR_CONTENT_HEIGHT');
     }
   });
 });

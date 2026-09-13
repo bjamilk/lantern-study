@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useFocusEffect } from '@react-navigation/native';
 import {
-  STUDY_SET_HOME_PRIMARY_TOOL_IDS,
   STUDY_SET_HOME_TOOLS,
   STUDY_SET_RECOMMENDED_CARDS,
   WORKSPACE_ACTIVITIES,
@@ -45,12 +44,24 @@ import {
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, Card, DoorTile, doorTileColumnWidth, FeatureDisc, ScreenHeader, T } from '../../components/ui';
+import { Button, Card, DoorTile, doorTileColumnWidth, FeatureDisc, T } from '../../components/ui';
 import { type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { DOOR_TILE } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { StudySetTimer } from '../../components/study/StudySetTimer';
+import { SetRoomHeader } from '../../components/study/SetRoomHeader';
+import { SetRoomSegments } from '../../components/study/SetRoomSegments';
+import { SetRoomTile } from '../../components/study/SetRoomTile';
+import {
+  SET_ROOM_TILE_LABELS,
+  SET_ROOM_TILE_ORDER,
+  sectionHasBlock,
+  tileCounts,
+  type SetRoomBlockId,
+  type SetRoomSectionId,
+} from '../../components/study/setRoomSections';
+import { useSetRoomUiStore } from '../../stores/setRoomUiStore';
 import { confirmAsync } from '../../components/ui/appDialog';
 import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
 import { useFlashcardStore } from '../../stores/flashcardStore';
@@ -117,6 +128,28 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
   const [showMoreRecommended, setShowMoreRecommended] = useState(false);
+  // Which segment this set was last left on. A segment row that forgets sends
+  // the student back to Overview every time they open a lecture and return,
+  // which is the scroll it was built to remove.
+  const [section, setSection] = useState<SetRoomSectionId>(() =>
+    useSetRoomUiStore.getState().sectionFor(studySetId)
+  );
+  useEffect(() => {
+    setSection(useSetRoomUiStore.getState().sectionFor(studySetId));
+  }, [studySetId]);
+  const onSelectSection = useCallback(
+    (next: SetRoomSectionId) => {
+      setSection(next);
+      useSetRoomUiStore.getState().setSection(studySetId, next);
+    },
+    [studySetId]
+  );
+  // A COURSE room has no set and no segment row, so it still draws the whole
+  // scroll: `show` is only a filter where there is something to filter by.
+  const show = useCallback(
+    (block: SetRoomBlockId) => (studySetId ? sectionHasBlock(section, block) : true),
+    [studySetId, section]
+  );
   const [skippedTopicIds, setSkippedTopicIds] = useState<string[]>([]);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
   const resetCompanionForScope = useCompanionStore((s) => s.resetForScope);
@@ -227,6 +260,22 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       ? testsFiledInStudySet(rows, studySetId, noteIds, deckIds)
       : testsFiledInCourse(rows, courseId, noteIds, deckIds);
   }, [tests, courseId, studySetId, noteIds, deckIds]);
+
+  // Every count on a tile comes from what this room has already loaded — no
+  // new fetch, and nothing claimed that is not on screen somewhere below.
+  const setTileCounts = useMemo(
+    () =>
+      tileCounts({
+        materials: studyNotes.length,
+        decks: courseDecks.length,
+        lectures: lectures.length,
+        tests: courseTests.length,
+        lessons: lessons.length,
+        recaps: recaps.length,
+        essays: essays.length,
+      }),
+    [studyNotes.length, courseDecks.length, lectures.length, courseTests.length, lessons.length, recaps.length, essays.length]
+  );
 
   const openLectureStudio = (existingNoteId?: string) => {
     const decision = resolveLectureStudioNote({
@@ -469,7 +518,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         className="flex-1"
         contentContainerStyle={{ paddingBottom: tabBarClearance, paddingHorizontal: 16, paddingTop: 8 }}
       >
-        <ScreenHeader
+        {/* Title on its own line, actions on the next. `Ask Lantern` has left
+            the header: the shell's bar carries the Ask door and the room keeps
+            its own Ask tile, so this was the third of three doors to one
+            place. See SetRoomHeader.tsx. */}
+        <SetRoomHeader
           title={label}
           subtitle={
             studySetId
@@ -480,37 +533,20 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                   tests: courseTests.length,
                 })
           }
-          right={
-            <View className="flex-row items-center gap-3">
-              {studySetId ? <StudySetTimer studySetId={studySetId} /> : null}
-              {studySetId ? (
-                <Pressable
-                  onPress={() => {
-                    useStudySetStore.getState().openPicker();
-                    navigation.navigate('StudyHub');
-                  }}
-                  accessibilityRole="button"
-                  accessibilityLabel="All study sets"
-                >
-                  <T.Caption>All sets</T.Caption>
-                </Pressable>
-              ) : null}
-              <Pressable onPress={() => useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label })} accessibilityRole="button" accessibilityLabel="Ask Lantern">
-                <T.Caption>Ask Lantern</T.Caption>
-              </Pressable>
-              {studySetId ? (
-                <Pressable
-                  onPress={() => setOverflowOpen((value) => !value)}
-                  accessibilityRole="button"
-                  accessibilityLabel="More set actions"
-                  accessibilityState={{ expanded: overflowOpen }}
-                >
-                  <T.Caption>More</T.Caption>
-                </Pressable>
-              ) : null}
-            </View>
+          timer={studySetId ? <StudySetTimer studySetId={studySetId} /> : undefined}
+          onAllSets={
+            studySetId
+              ? () => {
+                  useStudySetStore.getState().openPicker();
+                  navigation.navigate('StudyHub');
+                }
+              : undefined
           }
+          onMore={studySetId ? () => setOverflowOpen((value) => !value) : undefined}
+          moreExpanded={overflowOpen}
         />
+
+        {studySetId ? <SetRoomSegments value={section} onChange={onSelectSection} /> : null}
 
         {studySetId && overflowOpen ? (
           <Card className="mb-3">
@@ -574,8 +610,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
-        {studySetId ? (
+        {studySetId && (show('recommendedTiles') || show('planBand') || show('setupCards')) ? (
           <SetHomeRecommended
+            showOverview={show('recommendedTiles')}
+            showPlan={show('planBand')}
+            showSetup={show('setupCards')}
             studySetId={studySetId}
             notes={studyNotes}
             lectures={lectures}
@@ -641,27 +680,66 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           />
         ) : null}
 
-        {/* The set room's tools, as DOORS (founder direction 2026-09-11): a
-            pastel panel with a black drawing over a white caption strip, two
-            up, rather than the old white boxes with a 32 dp mark in the
-            corner. The promise line each tool carries is not drawn — a door's
-            picture is its promise — but it is not lost either: it goes into
-            the accessible name, so a screen reader still hears what the tool
-            will do before it is opened. */}
+        {/* The set room's tools, in StudyFetch's own anatomy: a pastel panel
+            with a black drawing over a white caption strip, two up, the label
+            a NOUN, and a count pill on the footer so the set can be read at a
+            glance (`Flashcards 2`, `Lectures 3`). Order and labels are
+            setRoomSections.ts; the shared tool supplies the hue, the glyph and
+            the destination. */}
+        {studySetId && show('actionTiles') ? (
+          <View className="flex-row flex-wrap mb-4" style={{ gap: doorGutter }}>
+            {SET_ROOM_TILE_ORDER.map((tileId) => {
+              const tool = STUDY_SET_HOME_TOOLS.find((row) => row.id === tileId);
+              if (!tool) return null;
+              const tileLabel = SET_ROOM_TILE_LABELS[tileId];
+              return (
+                <SetRoomTile
+                  key={tileId}
+                  feature={tool.feature}
+                  icon={tool.icon as AppIconName}
+                  title={tileLabel}
+                  count={setTileCounts[tileId]}
+                  width={doorWidth}
+                  // The promise line is not drawn — a tile is a place, and its
+                  // noun plus its count is what a place says. It is not lost:
+                  // a screen reader still hears it before the tile opens.
+                  accessibilityLabel={[
+                    tileLabel,
+                    typeof setTileCounts[tileId] === 'number' ? `${setTileCounts[tileId]}` : '',
+                    tool.promise,
+                  ]
+                    .filter(Boolean)
+                    .join('. ')}
+                  onPress={() => {
+                    if (tileId === 'import') {
+                      setImportOpen(true);
+                      return;
+                    }
+                    if (tileId === 'ask') {
+                      useCompanionStore
+                        .getState()
+                        .openForScope({ scopeId: studySetId ?? courseId ?? null, label });
+                      return;
+                    }
+                    if (tool.activity) handleActivity(tool.activity, 'ready');
+                  }}
+                />
+              );
+            })}
+          </View>
+        ) : null}
+
+        {!studySetId ? (
         <View
           className="flex-row flex-wrap mb-4"
           style={{ gap: doorGutter }}
         >
-          {(studySetId
-            ? STUDY_SET_HOME_TOOLS.filter((tool) => STUDY_SET_HOME_PRIMARY_TOOL_IDS.includes(tool.id))
-            : WORKSPACE_ACTIVITIES
-          ).map((item) => {
-            const promise =
-              'promise' in item
-                ? 'status' in item
-                  ? workspaceActivityPromise(item.id, item.promise, scopeNoun(studySetId, courseId))
-                  : item.promise
-                : '';
+          {WORKSPACE_ACTIVITIES.map((item) => {
+            const promise = workspaceActivityPromise(
+              item.id,
+              item.promise,
+              scopeNoun(studySetId, courseId)
+            );
             return (
               <DoorTile
                 key={item.id}
@@ -670,27 +748,14 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 title={item.label}
                 width={doorWidth}
                 accessibilityLabel={[item.label, promise].filter(Boolean).join('. ')}
-                onPress={() => {
-                  if ('activity' in item && item.id === 'import') {
-                    setImportOpen(true);
-                    return;
-                  }
-                  if ('activity' in item && item.id === 'ask') {
-                    useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label });
-                    return;
-                  }
-                  if ('activity' in item && item.activity) {
-                    handleActivity(item.activity, 'ready');
-                    return;
-                  }
-                  if ('status' in item) handleActivity(item.id, item.status);
-                }}
+                onPress={() => handleActivity(item.id, item.status)}
               />
             );
           })}
         </View>
+        ) : null}
 
-        {studySetId ? (
+        {studySetId && show('courseChips') ? (
           <Card className="mb-3">
             <T.Caption tone="secondary" className="mb-2">
               Course (optional)
@@ -731,7 +796,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
-        {courseId ? (
+        {courseId && show('classMaterials') ? (
         <ClassOfficialMaterials
           courseId={courseId}
           embedded
@@ -748,6 +813,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         />
         ) : null}
 
+        {show('recentMaterials') ? (
         <Card className="mb-3">
           <T.Caption tone="secondary" className="mb-2">
             {studySetId ? 'Recent materials' : `Notes${studyNotes.length ? ` · ${studyNotes.length}` : ''}`}
@@ -811,7 +877,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             ))
           )}
         </Card>
+        ) : null}
 
+        {show('decks') ? (
         <Card className="mb-3">
           <T.Caption tone="secondary" className="mb-2">
             Decks{courseDecks.length ? ` · ${courseDecks.length}` : ''}
@@ -832,8 +900,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             ))
           )}
         </Card>
+        ) : null}
 
-        {courseTests.length > 0 ? (
+        {courseTests.length > 0 && show('tests') ? (
           <Card className="mb-3">
             <T.Caption tone="secondary" className="mb-2">
               Tests · {courseTests.length}
@@ -865,7 +934,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
-        {lectures.length > 0 ? (
+        {lectures.length > 0 && show('lectureList') ? (
           <Card className="mb-3">
             <T.Caption tone="secondary" className="mb-2">
               Lectures · {lectures.length}
@@ -882,7 +951,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
-        {lessons.length > 0 ? (
+        {lessons.length > 0 && show('lessons') ? (
           <Card className="mb-3">
             <T.Caption tone="secondary" className="mb-2">
               Lessons · {lessons.length}
@@ -906,7 +975,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
-        {recaps.length > 0 ? (
+        {recaps.length > 0 && show('recaps') ? (
           <Card className="mb-3">
             <T.Caption tone="secondary" className="mb-2">
               Recaps · {recaps.length}
@@ -930,7 +999,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
-        {essays.length > 0 ? (
+        {essays.length > 0 && show('essays') ? (
           <Card className="mb-3">
             <T.Caption tone="secondary" className="mb-2">
               Essays · {essays.length}
@@ -954,9 +1023,21 @@ export function CourseRoomScreen({ navigation, route }: Props) {
           </Card>
         ) : null}
 
+        {/* The Lectures segment's own door: a list of recordings with no way
+            to start one is a dead end, and `Start recording` otherwise lives
+            only on the Practice segment's tile grid. */}
+        {studySetId && show('record') ? (
+          <Button className="mb-3" variant="secondary" onPress={() => openLectureStudio()}>
+            Record a lecture
+          </Button>
+        ) : null}
+
+        {show('import') ? (
         <Button className="mb-3" onPress={() => setImportOpen(true)}>
           {scopedCopy('importAction', scopeNoun(studySetId, courseIdParam))}
         </Button>
+        ) : null}
+        {show('everything') ? (
         <Button
           variant="ghost"
           onPress={() =>
@@ -975,6 +1056,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         >
           {studySetId ? 'Everything in this set' : 'All materials'}
         </Button>
+        ) : null}
       </ScrollView>
 
       <ImportAndStudyModal
@@ -1004,6 +1086,9 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 }
 
 function SetHomeRecommended({
+  showOverview,
+  showPlan,
+  showSetup,
   studySetId,
   notes,
   lectures,
@@ -1024,6 +1109,12 @@ function SetHomeRecommended({
   onAddSyllabus,
   onAddExam,
 }: {
+  /** Draw the topic band, the recommendation tiles and Show more. */
+  showOverview: boolean;
+  /** Draw the study-plan band — units, topics and the tick. */
+  showPlan: boolean;
+  /** Draw the syllabus/exam starter pair an empty set has instead. */
+  showSetup: boolean;
   studySetId: string;
   notes: StudyNote[];
   lectures: StudyNote[];
@@ -1071,6 +1162,7 @@ function SetHomeRecommended({
   const cards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
 
   if (empty) {
+    if (!showSetup) return null;
     return (
       <View className="mb-4 gap-3">
         <Card>
@@ -1099,6 +1191,8 @@ function SetHomeRecommended({
 
   return (
     <View className="mb-4">
+      {showOverview ? (
+      <>
       <T.Caption tone="secondary">{topicIndexLabel(topics, current)}</T.Caption>
       <T.Title className="mt-1 mb-3">{current.title}</T.Title>
       {/* The recommended next steps, as DOORS two up rather than as a
@@ -1136,9 +1230,12 @@ function SetHomeRecommended({
           <T.Caption>Skip topic</T.Caption>
         </Pressable>
       </View>
+      </>
+      ) : null}
 
       {/* The plan itself: units that open, topics that tick, and the tick
           goes to the server. Web has had this since the set room shipped. */}
+      {showPlan ? (
       <Card className="mt-3">
         <View className="flex-row items-center justify-between mb-2">
           <T.Caption tone="secondary">Study plan</T.Caption>
@@ -1228,6 +1325,7 @@ function SetHomeRecommended({
           );
         })}
       </Card>
+      ) : null}
     </View>
   );
 }

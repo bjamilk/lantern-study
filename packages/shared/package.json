@@ -191,6 +191,18 @@
       "require": "./dist/notes/*.js",
       "default": "./src/notes/*.ts"
     },
+    "./study": {
+      "types": "./src/study/index.ts",
+      "import": "./src/study/index.ts",
+      "require": "./dist/study/index.js",
+      "default": "./src/study/index.ts"
+    },
+    "./study/*": {
+      "types": "./src/study/*.ts",
+      "import": "./src/study/*.ts",
+      "require": "./dist/study/*.js",
+      "default": "./src/study/*.ts"
+    },
     "./moderation": {
       "types": "./src/moderation/index.ts",
       "import": "./src/moderation/index.ts",

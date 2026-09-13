@@ -173,9 +173,20 @@ function browserStorage(): Storage {
   } as Storage;
 }
 
+/** The lengths the timer popover offers, in minutes. StudyFetch's three. */
+export const STUDY_TIMER_PRESET_MINUTES: readonly number[] = [10, 25, 50];
+
 interface StudySetTimerStore {
   timers: Record<string, StudyTimerState>;
   toggle: (setId: string) => void;
+  /**
+   * Start a run of exactly `seconds`, discarding whatever was left.
+   *
+   * `toggle` can only ever resume what is already there, which is right for a
+   * pause button and wrong for "50 min": a student who picks a different length
+   * is asking for that length, not for the remainder of the last one.
+   */
+  start: (setId: string, seconds: number) => void;
   reset: (setId: string) => void;
 }
 
@@ -191,6 +202,19 @@ export const useStudySetTimerStore = create<StudySetTimerStore>()(
           timers: pruneStudyTimers({
             ...get().timers,
             [key]: toggleStudyTimer(current, Date.now()),
+          }),
+        });
+      },
+
+      start: (setId, seconds) => {
+        const key = setId || DEFAULT_STUDY_TIMER_KEY;
+        set({
+          timers: pruneStudyTimers({
+            ...get().timers,
+            [key]: {
+              baseSeconds: Math.max(1, Math.floor(seconds)),
+              startedAtMs: Date.now(),
+            },
           }),
         });
       },

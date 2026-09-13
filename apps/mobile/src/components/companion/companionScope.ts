@@ -166,6 +166,56 @@ export function companionScopeFromRoute(
   };
 }
 
+/**
+ * The routes where the companion is about the SET, not about a note in it.
+ *
+ * A study set room and the screens that are the set as a whole. Every one of
+ * them is a place a student stands in the set rather than in one document.
+ */
+const SET_SCOPED_ROUTES: readonly string[] = [
+  'CourseRoom',
+  'StudySetLibrary',
+  'StudySetUpload',
+  'StudySetSettings',
+  'PlayStudio',
+];
+
+/** Params that name the set a route belongs to. */
+const SET_ID_PARAMS = ['studySetId', 'courseId'] as const;
+
+/**
+ * What the panel should be attached to the moment it opens.
+ *
+ * - `route-note` — the route names a note; attach THAT note.
+ * - `set` — the route is the set itself; attach NOTHING, so the "On:" line is
+ *   the set.
+ * - `restore` — anywhere else; whatever was attached in this scope comes back,
+ *   which is the long-standing behaviour and the right one inside a note.
+ *
+ * SF2 §6 #14 is the middle case. Ask pressed in the `Client Centre Care` room
+ * read `On: Lecture — 12 Sep`: the panel restored the last attachment persisted
+ * for that scope, so a question about the set was silently grounded in one
+ * lecture note inside it. The narrowest-wins rule in {@link scopeLabel} is
+ * right — an attached note SHOULD beat its set — so the fix is not there: it is
+ * that standing in the room means nothing is attached.
+ *
+ * Pure, and keyed on the route rather than on what happens to be in the store,
+ * so "which set am I asking about" has one answer per screen.
+ */
+export function companionOpenAttachment(
+  routeName: string | null | undefined,
+  params?: Record<string, unknown> | null
+): 'route-note' | 'set' | 'restore' {
+  const noteId = params?.noteId;
+  if (typeof noteId === 'string' && noteId.trim()) return 'route-note';
+  if (!routeName || !SET_SCOPED_ROUTES.includes(routeName)) return 'restore';
+  const inSet = SET_ID_PARAMS.some((key) => {
+    const value = params?.[key];
+    return typeof value === 'string' && value.trim().length > 0;
+  });
+  return inSet ? 'set' : 'restore';
+}
+
 export interface CompanionConversationLike {
   id: string;
   title?: string | null;

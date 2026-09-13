@@ -33,6 +33,9 @@ export * from './academic';
 // and course topics (syllabus outline copy + the one outline comparator)
 export * from './learning';
 
+// Study-set card presentation (tile art, count chips, relative last-studied)
+export * from './study';
+
 // Jobs board (campus employment — sibling of marketplace goods)
 export * from './jobs';
 

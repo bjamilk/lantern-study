@@ -32,13 +32,13 @@ import {
 /**
  * The contextual row (spec v3 §7.2, as amended by the founder 2026-09-08).
  *
- * A 44 dp strip carrying a few doors *within* the destination you are in — so a
- * student can go Library → Tests without climbing out to the hub. WHERE it sits
- * is no longer a question: ALWAYS directly above the global five-tab bar, inside
- * the same chrome view, on every registry. The `replace` mode that let Study and
- * Shop stand in the global bar's slot was reverted after build 185's device pass
- * (navigation/contextualBars.ts), and with it the leading exit control that made
- * taking the bar away survivable.
+ * A 44 dp strip carrying a few doors *within* the thing you are in. WHERE it
+ * sits is the registry's to declare: directly above the global five-tab bar on
+ * every row but one, and IN the bar's slot for the SET row, which is the only
+ * row about one thing the student is inside and the only row carrying its own
+ * `Home` door back out to the five (navigation/contextualBars.ts). This
+ * component reports which of the two is on screen through `onPresence`; the bar
+ * itself stands its tabs down.
  *
  * HOW an item is drawn — founder decision 4, amended by "label every door on a
  * no-selection surface" (build 176). One of two surfaces, chosen by
@@ -67,10 +67,12 @@ import {
  * (tested); this file is the untestable shell over them, because mobile jest is
  * node-env and cannot render a native component.
  *
- * The row carries NO exit control of its own. It never needed one except while
- * it could take the global bar away, and it cannot: the five destinations are
- * always on screen below it, which is every row's way out — including while the
- * keyboard is up and this row has stood itself down.
+ * The row carries no separate exit control: an `above` row's way out is the
+ * global bar underneath it, and the set row's way out is `Home`, its own first
+ * ITEM, which is drawn and labelled like every other door rather than being a
+ * special chrome affordance beside them. While the keyboard is up the row stands
+ * down entirely and the five tabs come back, so there is never a moment with no
+ * bottom navigation at all.
  *
  * What its CONTENTS are a function of: THE FOCUSED ROUTE (and, for a route that
  * hosts more than one destination, the segment its params name). Not scroll, not
@@ -227,8 +229,20 @@ function Segment({ item, plan, onPress, colors }: SegmentProps) {
  */
 export function ContextualBar({
   onNavigate,
+  onPresence,
 }: {
   onNavigate: (route: RouteName, params?: Record<string, unknown>) => void;
+  /**
+   * Report whether a row is DRAWN right now and, if so, where it sits.
+   *
+   * The caller (RootNavigator's CustomTabBar) needs this to know whether to
+   * stand the five global tabs down: a `replace` row is in their slot. It has to
+   * come from here rather than from the registry, because presence is not the
+   * registry's alone — the soft keyboard takes the row off screen, and a bar
+   * that hid its tabs from the registry would leave a student typing inside a
+   * set with no bottom navigation at all.
+   */
+  onPresence?: (mode: 'above' | 'replace' | null) => void;
 }) {
   const {
     contextual,
@@ -241,6 +255,8 @@ export function ContextualBar({
   } = useChrome();
   const { colors, isDark, reduceMotion } = useTheme();
   const openCompanion = useCompanionStore((s) => s.open);
+  // Ask INSIDE a set says which set before the sheet mounts — SF2 §6 #14.
+  const openCompanionForScope = useCompanionStore((s) => s.openForScope);
   const createNote = useNotesStore((s) => s.createNote);
   const showToast = useToastStore((s) => s.showToast);
   const [openingRecorder, setOpeningRecorder] = useState(false);
@@ -265,6 +281,13 @@ export function ContextualBar({
   }, []);
 
   const spec = resolveContextualSpec({ spec: contextual, immersive, withinChrome, keyboardVisible });
+
+  // Tell the bar what is actually down here. `mode` and nothing else: the
+  // caller only ever asks "are the five tabs mine to draw?".
+  const presentMode = spec ? spec.mode ?? 'above' : null;
+  useEffect(() => {
+    onPresence?.(presentMode);
+  }, [presentMode, onPresence]);
   // Which segment is the screen you are looking at. The registry owns the
   // answer — including `activeFor`, the rooms a door owns that are not the
   // door itself (Tests → TestBuilder), and the params that say which SEGMENT
@@ -310,7 +333,7 @@ export function ContextualBar({
    * drift; only the plumbing is repeated, because the store hooks cannot live
    * in a pure module.
    */
-  const openRecorder = useCallback(async () => {
+  const openRecorder = useCallback(async (into?: Record<string, unknown>) => {
     if (openingRecorder) return;
     setOpeningRecorder(true);
     try {
@@ -342,7 +365,10 @@ export function ContextualBar({
         onNavigate('NoteEditor', { noteId: decision.noteId, startRecording: true });
         return;
       }
-      const note = await createNote({ title: prompt.noteTitle, body: '' });
+      // `into` files the note INSIDE the set the row is standing in (the set
+      // row's Record door carries `studySetId`). Undefined everywhere else, so
+      // the loose-note behaviour is unchanged.
+      const note = await createNote({ title: prompt.noteTitle, body: '', ...(into ?? {}) });
       onNavigate('NoteEditor', { noteId: note.id, startRecording: true });
     } catch {
       showToast('Could not start a lecture note. Check your connection and try again.', 'error');
@@ -375,10 +401,16 @@ export function ContextualBar({
           requestScrollToTop();
           return;
         case 'openAi':
+          // A door that knows its room states it; one that does not opens the
+          // panel exactly as before and lets it infer the scope from the route.
+          if (plan.scopeId) {
+            openCompanionForScope({ scopeId: plan.scopeId, label: plan.scopeLabel ?? null });
+            return;
+          }
           openCompanion();
           return;
         case 'record':
-          void openRecorder();
+          void openRecorder(plan.params);
           return;
         case 'screenAction':
           // Addressed to the focused route, and silent when that screen has
@@ -400,6 +432,7 @@ export function ContextualBar({
       onNavigate,
       requestScrollToTop,
       openCompanion,
+      openCompanionForScope,
       openRecorder,
       runScreenAction,
     ]

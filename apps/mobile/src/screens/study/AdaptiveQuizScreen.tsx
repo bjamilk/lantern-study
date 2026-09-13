@@ -15,6 +15,7 @@ import {
   isWalkableAttachment,
   itemsFromUnknownQuestions,
   studioMaterials,
+  studySetNotePayload,
   masteryPercent,
   rateAdaptiveConfidence,
   resolveAdaptiveCorrectAnswer,
@@ -28,7 +29,14 @@ import {
 } from '@lantern/shared';
 import { AI_CREDIT_COSTS, formatCreditCost } from '@lantern/shared/utils/aiCredits';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, ScreenHeader, T } from '../../components/ui';
+import {
+  Button,
+  ScreenHeader,
+  StudioGate,
+  studioGate,
+  T,
+  type StudioGateAction,
+} from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useNotesStore } from '../../stores/notesStore';
 import { useTestStore } from '../../stores/testStore';
@@ -58,6 +66,7 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
   const { courseId, courseLabel, noteId, seedItems, studySetId } = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const notes = useNotesStore((s) => s.notes);
+  const createNote = useNotesStore((s) => s.createNote);
   const tests = useTestStore((s) => s.tests);
   const openWithMessage = useCompanionStore((s) => s.openWithMessage);
   const setActiveNoteContext = useCompanionStore((s) => s.setActiveNoteContext);
@@ -143,6 +152,50 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
   useEffect(() => {
     void loadExisting();
   }, [loadExisting]);
+
+  /**
+   * Where a gate button lands. Every target stays INSIDE the container the
+   * studio was opened on: a set's gate imports into that set and creates a
+   * note filed in it, so the student comes back to a studio that now works,
+   * rather than to the 29-note global library they walked away from. Only a
+   * studio opened on a bare course (no set) falls back to Library.
+   */
+  const runGateAction = (action: StudioGateAction) => {
+    switch (action.id) {
+      case 'import_materials':
+        if (studySetId) {
+          navigation.navigate('StudySetUpload', { studySetId, courseId, courseLabel });
+        } else {
+          navigation.navigate('Library', { tab: 'notes' });
+        }
+        return;
+      case 'create_note':
+        void (async () => {
+          try {
+            const created = await createNote({
+              title: 'Untitled note',
+              body: '',
+              ...studySetNotePayload({ courseId, studySetId }),
+            });
+            navigation.navigate('NoteEditor', { noteId: created.id });
+          } catch {
+            setError('Could not create a note. Check your connection and try again.');
+          }
+        })();
+        return;
+      default:
+        if (studySetId) {
+          navigation.navigate('StudySetLibrary', {
+            studySetId,
+            courseId,
+            courseLabel,
+            kind: 'notes',
+          });
+        } else {
+          navigation.navigate('Library', { tab: 'notes' });
+        }
+    }
+  };
 
   const writeFromNote = async (id: string) => {
     const note = courseNotes.find((row) => row.id === id);
@@ -256,22 +309,39 @@ export function AdaptiveQuizScreen({ navigation, route }: Props) {
 
         {!loading && !session ? (
           <View className="gap-3">
-            <T.Body tone="secondary">
-              Start from a note. Writing new questions uses{' '}
-              {formatCreditCost(AI_CREDIT_COSTS.generate_questions)}.
-            </T.Body>
             {noteOrder.length === 0 ? (
-              <T.Body tone="secondary">Import or create a note first.</T.Body>
+              // Was two grey sentences on bare ground with nothing to tap
+              // (SF2 evidence §4.2, `ln-19-quiz-empty.png`). Both sentences
+              // survive — the blocker and the price — inside a card that now
+              // carries the way through them.
+              <StudioGate
+                feature="tests"
+                icon="help-circle"
+                content={studioGate({
+                  studio: 'quiz',
+                  reason: 'no_material',
+                  cost: formatCreditCost(AI_CREDIT_COSTS.generate_questions),
+                })}
+                onAction={runGateAction}
+              />
             ) : (
-              noteOrder.map((note) => (
-                <Button
-                  key={note.id}
-                  disabled={writing}
-                  onPress={() => void writeFromNote(note.id)}
-                >
-                  {`Write questions · ${note.title || 'Untitled note'}`}
-                </Button>
-              ))
+              <>
+                {/* The list has its own sources to choose from, so the price
+                    still leads it — unchanged from build 203. */}
+                <T.Body tone="secondary">
+                  Start from a note. Writing new questions uses{' '}
+                  {formatCreditCost(AI_CREDIT_COSTS.generate_questions)}.
+                </T.Body>
+                {noteOrder.map((note) => (
+                  <Button
+                    key={note.id}
+                    disabled={writing}
+                    onPress={() => void writeFromNote(note.id)}
+                  >
+                    {`Write questions · ${note.title || 'Untitled note'}`}
+                  </Button>
+                ))}
+              </>
             )}
           </View>
         ) : null}
