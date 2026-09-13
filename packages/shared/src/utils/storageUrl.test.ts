@@ -1,4 +1,9 @@
-import { normalizeStorageUrl, parseStorageObjectUrl } from './storageUrl';
+import {
+  normalizeStorageUrl,
+  parseStorageObjectUrl,
+  parseStoredStorageRef,
+  toPersistedMarketplaceImageUrl,
+} from './storageUrl';
 
 describe('normalizeStorageUrl', () => {
   it('rewrites legacy localhost:54321 storage URLs', () => {
@@ -45,5 +50,55 @@ describe('normalizeStorageUrl', () => {
       bucket: 'note-files',
       path: 'owner/chat/group1/voice-1.webm',
     });
+  });
+});
+
+describe('parseStoredStorageRef', () => {
+  it('parses a bare marketplace shop-cover path', () => {
+    const path =
+      '1e547f81-77c8-437a-8154-c84e8cf2045e/temp/1789298321752-cover.webp';
+    expect(parseStoredStorageRef(path)).toEqual({
+      bucket: 'marketplace-images',
+      path,
+    });
+  });
+
+  it('parses bucket/path for a known private bucket', () => {
+    expect(
+      parseStoredStorageRef('marketplace-images/u1/shop/cover.webp'),
+    ).toEqual({
+      bucket: 'marketplace-images',
+      path: 'u1/shop/cover.webp',
+    });
+  });
+
+  it('ignores unrelated relative strings', () => {
+    expect(parseStoredStorageRef('just-a-filename.webp')).toBeNull();
+    expect(parseStoredStorageRef('docs/readme.md')).toBeNull();
+  });
+});
+
+describe('toPersistedMarketplaceImageUrl', () => {
+  const ownerId = '1e547f81-77c8-437a-8154-c84e8cf2045e';
+  const supabaseUrl = 'https://example.supabase.co';
+
+  it('rewrites a bare path into an unsigned object URL', () => {
+    expect(
+      toPersistedMarketplaceImageUrl(`${ownerId}/temp/cover.webp`, {
+        ownerId,
+        supabaseUrl,
+      }),
+    ).toBe(
+      `${supabaseUrl}/storage/v1/object/marketplace-images/${ownerId}/temp/cover.webp`,
+    );
+  });
+
+  it('rejects a path owned by someone else', () => {
+    expect(
+      toPersistedMarketplaceImageUrl('other-user/shop/cover.webp', {
+        ownerId,
+        supabaseUrl,
+      }),
+    ).toBeNull();
   });
 });

@@ -14,6 +14,7 @@ const EditShopModal: React.FC<EditShopModalProps> = ({ isOpen, onClose, initial,
   const [shopName, setShopName] = useState(initial.shopName);
   const [bio, setBio] = useState(initial.bio || '');
   const [coverImageUrl, setCoverImageUrl] = useState(initial.coverImageUrl);
+  const [coverPreviewUrl, setCoverPreviewUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
@@ -23,6 +24,7 @@ const EditShopModal: React.FC<EditShopModalProps> = ({ isOpen, onClose, initial,
     setShopName(initial.shopName);
     setBio(initial.bio || '');
     setCoverImageUrl(initial.coverImageUrl);
+    setCoverPreviewUrl(null);
     setError('');
   }, [isOpen, initial.shopName, initial.bio, initial.coverImageUrl]);
 
@@ -33,8 +35,9 @@ const EditShopModal: React.FC<EditShopModalProps> = ({ isOpen, onClose, initial,
     setUploading(true);
     setError('');
     try {
-      const uploaded = await uploadMarketplaceImage(file);
-      setCoverImageUrl(uploaded.path || uploaded.url);
+      const uploaded = await uploadMarketplaceImage(file, undefined, { purpose: 'shop' });
+      setCoverImageUrl(uploaded.storageUrl || uploaded.path || uploaded.url);
+      setCoverPreviewUrl(uploaded.url);
     } catch (e: any) {
       setError(e?.message || 'Failed to upload cover');
     } finally {
@@ -65,7 +68,7 @@ const EditShopModal: React.FC<EditShopModalProps> = ({ isOpen, onClose, initial,
     }
   };
 
-  const coverSrc = coverImageUrl ? normalizeStorageUrl(coverImageUrl) : null;
+  const coverSrc = coverPreviewUrl || (coverImageUrl ? normalizeStorageUrl(coverImageUrl) : null);
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center bg-black/50 p-0 sm:p-4">
@@ -105,7 +108,10 @@ const EditShopModal: React.FC<EditShopModalProps> = ({ isOpen, onClose, initial,
             {coverImageUrl ? (
               <button
                 type="button"
-                onClick={() => setCoverImageUrl(null)}
+                onClick={() => {
+                  setCoverImageUrl(null);
+                  setCoverPreviewUrl(null);
+                }}
                 className="mt-1 text-xs text-rose-600 font-medium"
               >
                 Remove cover

@@ -84,6 +84,51 @@ describe('canAccessStorageObject profile-avatars', () => {
   });
 });
 
+describe('canAccessStorageObject marketplace shop covers', () => {
+  let service: SupabaseService;
+
+  beforeEach(() => {
+    service = new SupabaseService({
+      url: 'https://test.supabase.co',
+      serviceRoleKey: 'test-service-role-key',
+    });
+  });
+
+  it('allows anyone to read a published shop cover', async () => {
+    await expect(
+      service.canAccessStorageObject(
+        null,
+        'marketplace-images',
+        'seller-1/shop/cover.webp',
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      service.canAccessStorageObject(
+        'buyer-2',
+        'marketplace-images',
+        'seller-1/shop/cover.webp',
+      ),
+    ).resolves.toBe(true);
+  });
+
+  it('keeps legacy temp/ covers owner-only', async () => {
+    await expect(
+      service.canAccessStorageObject(
+        'seller-1',
+        'marketplace-images',
+        'seller-1/temp/cover.webp',
+      ),
+    ).resolves.toBe(true);
+    await expect(
+      service.canAccessStorageObject(
+        'buyer-2',
+        'marketplace-images',
+        'seller-1/temp/cover.webp',
+      ),
+    ).resolves.toBe(false);
+  });
+});
+
 describe('storageUrlMatchesObject (exact path ACL)', () => {
   let service: SupabaseService;
 

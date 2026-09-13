@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   isPrivateStorageBucket,
   normalizeStorageUrl,
-  parseStorageObjectUrl,
+  parseStoredStorageRef,
 } from '@lantern/shared/utils/storageUrl';
 import { fetchSignedStorageUrl } from '../services/supabase';
 
@@ -33,7 +33,7 @@ export function useResolvedStorageUrl(
       return;
     }
 
-    const parsed = parseStorageObjectUrl(src);
+    const parsed = parseStoredStorageRef(src);
     if (parsed && isPrivateStorageBucket(parsed.bucket)) {
       let cancelled = false;
       setResolved(undefined);

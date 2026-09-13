@@ -4376,6 +4376,7 @@ export function createApiEndpoints(client: ApiClient) {
       base64Data: string;
       contentType?: string;
       listingId?: string;
+      purpose?: "shop" | "listing";
     }) =>
       apiRequest<{ url: string; path: string; storageUrl?: string }>(
         "/marketplace/upload-image",

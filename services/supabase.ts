@@ -6150,7 +6150,11 @@ export const uploadQuestionImage = async (file: File) => {
 };
 
 /** Upload a marketplace listing image via API (SEC-07 magic-byte validation). */
-export const uploadMarketplaceImage = async (file: File, listingId?: string) => {
+export const uploadMarketplaceImage = async (
+  file: File,
+  listingId?: string,
+  options?: { purpose?: 'shop' | 'listing' },
+) => {
   const headers = await getAuthHeaders();
   if (!headers.Authorization) throw new Error('Must be signed in to upload images');
   const type = (file.type || '').toLowerCase();
@@ -6169,7 +6173,11 @@ export const uploadMarketplaceImage = async (file: File, listingId?: string) => 
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/upload-image`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...payload, listingId }),
+    body: JSON.stringify({
+      ...payload,
+      listingId,
+      purpose: options?.purpose,
+    }),
   });
   const json = await response.json().catch(() => ({}));
   if (!response.ok || !json?.success) {

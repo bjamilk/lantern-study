@@ -1,7 +1,7 @@
 import {
   isPrivateStorageBucket,
   normalizeStorageUrl,
-  parseStorageObjectUrl,
+  parseStoredStorageRef,
 } from '@lantern/shared/utils/storageUrl';
 import {
   createSignedUrlBatcher,
@@ -87,7 +87,7 @@ export async function resolveStorageDisplayUrl(
   // EXPIRED signed URL still yields {bucket, path} and gets re-authorised
   // through the same canAccessStorageObject. That is the whole fix: the stored
   // string is a reference, never the thing we hand to <Image>.
-  const parsed = parseStorageObjectUrl(src);
+  const parsed = parseStoredStorageRef(src);
   if (parsed && isPrivateStorageBucket(parsed.bucket)) {
     return fetchSignedStorageUrl(
       parsed.bucket,

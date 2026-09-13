@@ -180,20 +180,19 @@ export function SellerProfileScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
-      {profile?.coverImageUrl ? (
-        <View className="h-28 bg-lantern-ink">
-          <ListingImage uri={profile.coverImageUrl} className="w-full h-full" />
-          <LinearGradient
-            colors={['transparent', 'rgba(0,0,0,0.45)']}
-            className="absolute inset-0"
-          />
-        </View>
-      ) : (
-        <LinearGradient colors={[brand.ink, brand.text, '#059669']} className="h-28" />
-      )}
-
-      <View className="px-4 -mt-10">
-        <View className="flex-row items-center justify-between mb-2">
+      <View>
+        {profile?.coverImageUrl ? (
+          <View className="h-28 bg-lantern-ink">
+            <ListingImage uri={profile.coverImageUrl} className="w-full h-full" />
+            <LinearGradient
+              colors={['transparent', 'rgba(0,0,0,0.45)']}
+              className="absolute inset-0"
+            />
+          </View>
+        ) : (
+          <LinearGradient colors={[brand.ink, brand.text, '#059669']} className="h-28" />
+        )}
+        <View className="absolute top-0 left-0 right-0 px-4 py-3 flex-row items-center justify-between">
           <Pressable hitSlop={10}
             onPress={() => navigation.goBack()}
             className="flex-row items-center gap-1 px-2 py-1.5 rounded-lg bg-black/30"
@@ -223,7 +222,9 @@ export function SellerProfileScreen({ navigation, route }: Props) {
             ) : null}
           </View>
         </View>
-        {/* Report user (Phase 1 · E) — target is the seller's profile, not a listing. */}
+      </View>
+
+      <View className="px-4">
         <ReportContentSheet
           visible={showReport}
           targetType="user"
@@ -233,8 +234,10 @@ export function SellerProfileScreen({ navigation, route }: Props) {
         />
 
         <View className="flex-row items-end gap-3">
-          <Avatar name={displayName} size={64} />
-          <View className="flex-1 pb-1">
+          <View className="-mt-8">
+            <Avatar name={displayName} size={64} />
+          </View>
+          <View className="flex-1 pb-0.5">
             <Text className="text-xl font-bold text-lantern-text" numberOfLines={1}>
               {displayName}
             </Text>

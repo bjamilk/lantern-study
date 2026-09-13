@@ -142,6 +142,30 @@ describe('resolveStorageDisplayUrl', () => {
     await expect(resolveStorageDisplayUrl(EXPIRED)).rejects.toThrow('access_denied');
   });
 
+  it('re-signs a bare marketplace object path from older shop-cover saves', async () => {
+    const { calls } = mockBatch((body) => ({
+      payload: {
+        success: true,
+        data: {
+          items: body.items.map((item) => ({
+            ...item,
+            signedUrl: `https://xyz.supabase.co/storage/v1/object/sign/${item.bucket}/${item.path}?token=fresh`,
+          })),
+        },
+      },
+    }));
+
+    const path = '1e547f81-77c8-437a-8154-c84e8cf2045e/temp/cover.webp';
+    const resolved = await resolveStorageDisplayUrl(path);
+
+    expect(resolved).toContain('token=fresh');
+    expect(calls[0]?.items[0]).toEqual({
+      bucket: 'marketplace-images',
+      path,
+      variant: 'original',
+    });
+  });
+
   it('leaves public and inline sources alone', async () => {
     mockBatch(() => ({ payload: { success: true, data: { items: [] } } }));
 

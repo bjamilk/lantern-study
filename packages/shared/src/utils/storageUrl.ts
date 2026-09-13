@@ -58,6 +58,63 @@ export function parseStorageObjectUrl(
   }
 }
 
+/**
+ * Parse a stored private-object reference for display or persist.
+ * Accepts signed/unsigned storage URLs, `bucket/path`, and bare marketplace
+ * object paths (`{userId}/temp|shop|listings/...`) written by older clients.
+ */
+export function parseStoredStorageRef(
+  value: string,
+): { bucket: string; path: string } | null {
+  if (!value || value.startsWith("data:") || value.startsWith("blob:")) {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (/^https?:\/\//i.test(trimmed) || trimmed.startsWith("//")) {
+    return parseStorageObjectUrl(trimmed);
+  }
+
+  const slash = trimmed.indexOf("/");
+  if (slash <= 0) return null;
+  const first = trimmed.slice(0, slash);
+  const rest = trimmed.slice(slash + 1);
+  if (!rest || rest.includes("..") || rest.startsWith("/")) return null;
+
+  if (isPrivateStorageBucket(first)) {
+    return { bucket: first, path: rest };
+  }
+
+  const kind = rest.split("/")[0];
+  if (kind === "listings" || kind === "temp" || kind === "shop") {
+    return { bucket: "marketplace-images", path: trimmed };
+  }
+
+  return null;
+}
+
+/** Stable unsigned marketplace object URL to persist (never a signed URL or bare path). */
+export function toPersistedMarketplaceImageUrl(
+  raw: string,
+  opts: { ownerId: string; supabaseUrl: string },
+): string | null {
+  const parsed = parseStoredStorageRef(raw);
+  if (!parsed || parsed.bucket !== "marketplace-images") return null;
+  const owner = opts.ownerId.replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!owner || !parsed.path.startsWith(`${owner}/`)) return null;
+  if (
+    parsed.path.includes("..") ||
+    parsed.path.startsWith("/") ||
+    parsed.path.includes("\\")
+  ) {
+    return null;
+  }
+  const base = opts.supabaseUrl.replace(/\/$/, "");
+  if (!base) return null;
+  return `${base}/storage/v1/object/${parsed.bucket}/${parsed.path}`;
+}
+
 export function buildStorageObjectPath(bucket: string, path: string): string {
   return `${bucket}/${path}`;
 }

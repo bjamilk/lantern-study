@@ -447,7 +447,7 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    const { fileName, base64Data, contentType, listingId } = req.body || {};
+    const { fileName, base64Data, contentType, listingId, purpose } = req.body || {};
     if (!fileName || !base64Data) {
       return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
     }
@@ -486,6 +486,7 @@ router.post(
         contentType: normalizedType || 'image/jpeg',
         userId,
         listingId: typeof listingId === 'string' ? listingId : undefined,
+        purpose: purpose === 'shop' ? 'shop' : undefined,
       });
       res.json({ success: true, data: result });
     } catch (error: any) {
@@ -3185,10 +3186,15 @@ router.get(
     const isOwner = req.user?.id === userId;
     const profileScope = isOwner ? 'owner' : 'public';
 
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const sellerTools = getMarketplaceSellerToolsService(supabaseService);
     const cacheKey = CacheKeys.sellerProfile(userId, profileScope);
     const cached = await cacheService.get<any>(cacheKey);
     if (cached) {
-      return res.json({ success: true, data: cached });
+      return res.json({
+        success: true,
+        data: await sellerTools.signSellerProfileMedia(cached),
+      });
     }
 
     // Get profile
@@ -3252,8 +3258,6 @@ router.get(
         : []),
     ];
 
-    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
-    const sellerTools = getMarketplaceSellerToolsService(supabaseService);
     const prefs = await sellerTools.getPreferences(userId);
     const shop = sellerTools.toShopPublic(prefs, profile.name || 'Shop');
 
@@ -3312,7 +3316,7 @@ router.get(
 
     res.json({
       success: true,
-      data: responseData,
+      data: await sellerTools.signSellerProfileMedia(responseData),
     });
   })
 );
@@ -3336,7 +3340,7 @@ router.patch(
       res.json({ success: true, data: shop });
     } catch (err: any) {
       const msg = err instanceof Error ? err.message : 'Failed to update shop';
-      if (/required|characters or fewer/i.test(msg)) {
+      if (/required|characters or fewer|valid marketplace photo/i.test(msg)) {
         return res.status(400).json({ success: false, error: msg });
       }
       throw err;

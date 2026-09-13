@@ -128,6 +128,7 @@ import { stripListingModerationFields } from "./moderation";
 import {
   isPrivateStorageBucket,
   parseStorageObjectUrl,
+  parseStoredStorageRef,
   storageThumbPath,
 } from "@lantern/shared/utils/storageUrl";
 import {
@@ -876,8 +877,10 @@ export class SupabaseService {
   ): { bucket: string; path: string } | null {
     if (bucket && path) return { bucket, path };
     if (!url) return null;
-    const parsed = parseStorageObjectUrl(this.normalizeStorageUrl(url));
-    return parsed;
+    return (
+      parseStoredStorageRef(this.normalizeStorageUrl(url)) ||
+      parseStoredStorageRef(url)
+    );
   }
 
   async createSignedStorageUrl(
@@ -1013,7 +1016,9 @@ export class SupabaseService {
     variant: "thumb" | "original" = "original",
   ): Promise<string> {
     if (!url || url.startsWith("data:")) return url;
-    const parsed = parseStorageObjectUrl(this.normalizeStorageUrl(url));
+    const parsed =
+      parseStoredStorageRef(this.normalizeStorageUrl(url)) ||
+      parseStoredStorageRef(url);
     // Unknown / non-private buckets: never mint service-role signed URLs for them.
     if (!parsed || !isPrivateStorageBucket(parsed.bucket)) {
       return this.normalizeStorageUrl(url);
@@ -1048,6 +1053,10 @@ export class SupabaseService {
     if (userId && ownerId === userId) return true;
 
     if (bucket === "marketplace-images") {
+      // Published shop covers live under {owner}/shop/. Anyone who can see the
+      // shop card may re-sign them. Legacy covers under {owner}/temp/ stay
+      // owner-only here; list/profile responses sign those with the service role.
+      if (parts[1] === "shop") return true;
       if (parts[1] === "listings" && parts[2]) {
         const listingId = parts[2];
         const { data } = await this.supabase
@@ -4984,6 +4993,7 @@ export class SupabaseService {
     contentType: string;
     userId: string;
     listingId?: string;
+    purpose?: "shop" | "listing";
   }): Promise<{ url: string; path: string; storageUrl: string }> {
     const bucket = "marketplace-images";
     const timestamp = Date.now();
@@ -5011,7 +5021,9 @@ export class SupabaseService {
     const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
     const listingSegment = params.listingId
       ? `listings/${params.listingId.replace(/[^a-zA-Z0-9_-]/g, "")}/`
-      : "temp/";
+      : params.purpose === "shop"
+        ? "shop/"
+        : "temp/";
     const filePath = `${ownerPrefix}${listingSegment}${timestamp}-${safeName}`;
 
     const { error } = await this.supabase.storage
@@ -12559,7 +12571,7 @@ export class SupabaseService {
         images.length > 0 ? this.normalizeStorageUrl(images[0]) : null;
       let parsed: { bucket: string; path: string } | null = null;
       if (first && !first.startsWith("data:")) {
-        const candidate = parseStorageObjectUrl(first);
+        const candidate = parseStoredStorageRef(first);
         if (candidate && isPrivateStorageBucket(candidate.bucket))
           parsed = candidate;
       }

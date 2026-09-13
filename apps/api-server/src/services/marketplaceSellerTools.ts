@@ -1,3 +1,8 @@
+import {
+  isPrivateStorageBucket,
+  parseStoredStorageRef,
+  toPersistedMarketplaceImageUrl,
+} from '@lantern/shared/utils/storageUrl';
 import type { SupabaseService } from './supabase';
 import { logger } from '../utils/logger';
 
@@ -227,6 +232,38 @@ export class MarketplaceSellerToolsService {
     };
   }
 
+  async signShopPublic(shop: SellerShopPublic): Promise<SellerShopPublic> {
+    if (!shop.coverImageUrl) return shop;
+    return {
+      ...shop,
+      coverImageUrl: await this.supabaseService.signStorageDisplayUrl(
+        shop.coverImageUrl,
+        60 * 60 * 24,
+        'original',
+      ),
+    };
+  }
+
+  async signSellerProfileMedia<T extends { shop?: SellerShopPublic | null; recentListings?: any[] }>(
+    data: T,
+  ): Promise<T> {
+    const shop = data.shop ? await this.signShopPublic(data.shop) : data.shop;
+    const listings = await Promise.all(
+      (data.recentListings || []).map(async (listing) => {
+        const images = Array.isArray(listing?.images) ? listing.images : [];
+        return {
+          ...listing,
+          images: await Promise.all(
+            images.map((image: string) =>
+              this.supabaseService.signStorageDisplayUrl(image, 60 * 60 * 24, 'thumb'),
+            ),
+          ),
+        };
+      }),
+    );
+    return { ...data, shop, recentListings: listings };
+  }
+
   /** Ensure a prefs row exists with shop_name defaulted from profile name. */
   async ensureSellerShop(sellerId: string): Promise<SellerPreferencesRow> {
     const current = await this.getPreferences(sellerId);
@@ -285,7 +322,19 @@ export class MarketplaceSellerToolsService {
 
     let cover = current.cover_image_url;
     if (patch.coverImageUrl !== undefined) {
-      cover = patch.coverImageUrl?.trim() ? patch.coverImageUrl.trim() : null;
+      const raw = patch.coverImageUrl?.trim() || '';
+      if (!raw) {
+        cover = null;
+      } else {
+        const persisted = toPersistedMarketplaceImageUrl(raw, {
+          ownerId: sellerId,
+          supabaseUrl: process.env.SUPABASE_URL || '',
+        });
+        if (!persisted) {
+          throw new Error('Cover image is not a valid marketplace photo');
+        }
+        cover = persisted;
+      }
     }
 
     const next = this.prefsUpsertPayload(current, {
@@ -302,7 +351,7 @@ export class MarketplaceSellerToolsService {
       .single();
 
     if (error) throw error;
-    return this.toShopPublic(data as SellerPreferencesRow, profileName);
+    return this.signShopPublic(this.toShopPublic(data as SellerPreferencesRow, profileName));
   }
 
   async listShops(input: {
@@ -427,6 +476,24 @@ export class MarketplaceSellerToolsService {
 
     const total = cards.length;
     const shops = cards.slice(from, from + limit);
+    const coverRefs = shops
+      .map((shop, index) => {
+        if (!shop.coverImageUrl) return null;
+        const parsed = parseStoredStorageRef(shop.coverImageUrl);
+        if (!parsed || !isPrivateStorageBucket(parsed.bucket)) return null;
+        return { bucket: parsed.bucket, path: parsed.path, index };
+      })
+      .filter(Boolean) as Array<{ bucket: string; path: string; index: number }>;
+    if (coverRefs.length > 0) {
+      const signedByIndex = await this.supabaseService.signStorageDisplayUrls(coverRefs, {
+        expiresInSeconds: 60 * 60 * 24,
+        variant: 'original',
+      });
+      for (const [index, signed] of signedByIndex) {
+        const shop = shops[index];
+        if (shop && signed) shop.coverImageUrl = signed;
+      }
+    }
     return { shops, total, page, limit };
   }
 

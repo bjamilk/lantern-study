@@ -165,16 +165,16 @@ const SellerProfileScreen: React.FC<SellerProfileScreenProps> = ({
         </div>
       </div>
 
-      <div className="px-4 -mt-8 relative z-[1]">
+      <div className="px-4 relative z-[1]">
         <div className="flex items-end gap-3">
-          <div className="w-16 h-16 rounded-2xl bg-lantern-surface flex items-center justify-center text-lantern-primary text-2xl font-bold ring-2 ring-white dark:ring-lantern-border overflow-hidden flex-shrink-0 shadow-md">
+          <div className="w-16 h-16 -mt-8 rounded-2xl bg-lantern-surface flex items-center justify-center text-lantern-primary text-2xl font-bold ring-2 ring-white dark:ring-lantern-border overflow-hidden flex-shrink-0 shadow-md">
             {profile.user.avatar_url ? (
               <img src={profile.user.avatar_url} alt={shopName} className="w-full h-full object-cover" />
             ) : (
               shopName?.charAt(0)?.toUpperCase() || '?'
             )}
           </div>
-          <div className="min-w-0 pb-1 flex-1">
+          <div className="min-w-0 pb-0.5 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl font-bold text-lantern-text truncate">{shopName}</h1>
               {(profile as any).stats?.isVerified && (
