@@ -16,6 +16,8 @@ import {
   contentLengthBytes,
   describePdfOpenFailure,
   formatFileSize,
+  openPdfWithFallback,
+  pdfOpenerOrder,
   planPdfPreview,
   type PdfPreviewPlan,
 } from './notePdfPreview';
@@ -140,10 +142,11 @@ export function NotePdfViewer({
    *
    * The signed URL is downloaded HERE, by the app, rather than handed to a
    * remote renderer: the link is short-lived and scoped to this session, so
-   * anything else fetching it fails. The cached copy then goes to the system
-   * viewer through the share sheet (every Android phone has a PDF handler;
-   * iOS previews it inline). A browser tab on the signed URL is the fallback,
-   * and if even that refuses, the student reads OUR reason, with the status.
+   * anything else fetching it fails. The cached copy then goes straight to the
+   * student's PDF reader via ACTION_VIEW on Android, with the share sheet
+   * behind it (and the sheet alone on iOS, where it previews inline). A
+   * browser tab on the signed URL is the last resort, and if even that
+   * refuses, the student reads OUR reason, with the status.
    */
   const openExternally = useCallback(async () => {
     if (!signedUrl) return;
@@ -159,18 +162,41 @@ export function NotePdfViewer({
           status: result.status,
         });
       }
-      // Lazy, like shareFile.ts: expo-sharing is a native module and a
-      // top-level import crashes any binary built before it existed.
-      const Sharing = await import('expo-sharing');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(result.uri, {
-          mimeType: 'application/pdf',
-          UTI: 'com.adobe.pdf',
-          dialogTitle: attachment.fileName || 'Document',
-        });
-        return;
-      }
-      throw new Error('No app on this device can open a PDF.');
+      // "Open PDF" should land in a PDF reader, not in a share sheet asking
+      // the student where to send the file. On Android that is ACTION_VIEW on
+      // a content:// URI; the sheet stays as the fallback for phones with no
+      // activity registered for it (ActivityNotFoundException).
+      //
+      // Both modules are imported lazily, like shareFile.ts: they are native
+      // modules and a top-level import crashes any binary built before they
+      // existed — and jest then needs no native mock.
+      const { via } = await openPdfWithFallback(pdfOpenerOrder(Platform.OS), {
+        view: async () => {
+          const IntentLauncher = await import('expo-intent-launcher');
+          // A file:// URI in an intent is a FileUriExposedException on
+          // Android 7+, so the cached copy is handed over as content://
+          // with FLAG_GRANT_READ_URI_PERMISSION (1).
+          const contentUri = await FileSystem.getContentUriAsync(result.uri);
+          await IntentLauncher.startActivityAsync('android.intent.action.VIEW', {
+            data: contentUri,
+            flags: 1,
+            type: 'application/pdf',
+          });
+        },
+        share: async () => {
+          const Sharing = await import('expo-sharing');
+          if (!(await Sharing.isAvailableAsync())) {
+            throw new Error('No app on this device can open a PDF.');
+          }
+          await Sharing.shareAsync(result.uri, {
+            mimeType: 'application/pdf',
+            UTI: 'com.adobe.pdf',
+            dialogTitle: attachment.fileName || 'Document',
+          });
+        },
+      });
+      logLectureMedia('pdf:open', { noteId, attachmentId: attachment.id, via });
+      return;
     } catch (err: unknown) {
       const status = (err as { status?: number } | null)?.status;
       const message = err instanceof Error ? err.message : String(err);

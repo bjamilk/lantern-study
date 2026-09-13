@@ -9,9 +9,9 @@ import {
   COMMUNITY_NAME_MAX,
   COMMUNITY_PURPOSES,
   CREATE_COMMUNITY_MODERATION_NOTE,
-  CREATE_COMMUNITY_VISIBILITY_NOTE,
   buildCreateCommunityRequest,
   communityPurpose,
+  createCommunityVisibilityNote,
   validateCreateCommunity,
   type CreateCommunityDraft,
   type CreateCommunityErrors,
@@ -23,8 +23,8 @@ import {
  * Everything the form offers is something the server keeps: a name, a purpose
  * (stored as a tag, so Find can filter by it), a description, extra tags, and
  * — for an event — a when/where composed into the description in plain words.
- * The visibility line is not a control because there is no visibility flag to
- * control yet, and a disabled "Private" radio would read as a promise.
+ * Visibility is a real Public / Private control. Private rooms stay off Find;
+ * join is invite-link or code from Manage.
  */
 export interface CreateCommunityModalProps {
   isOpen: boolean;
@@ -38,6 +38,7 @@ const EMPTY: CreateCommunityDraft = {
   purposeId: null,
   description: '',
   tags: '',
+  visibility: 'public',
   eventWhen: '',
   eventWhere: '',
 };
@@ -195,8 +196,8 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
               </label>
               <Input
                 id="create-community-when"
+                type="datetime-local"
                 value={draft.eventWhen ?? ''}
-                placeholder="Fri 12 Sep, 4pm"
                 onChange={(event) => patch({ eventWhen: event.target.value })}
               />
             </div>
@@ -212,7 +213,7 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
               />
             </div>
             <p className="text-caption text-lantern-text-tertiary sm:col-span-2">
-              These go into the description, where every member can read them.
+              Date and place are saved on the event so it lists soonest-first.
             </p>
           </div>
         ) : null}
@@ -252,10 +253,34 @@ export const CreateCommunityModal: React.FC<CreateCommunityModalProps> = ({
           </p>
         </div>
 
+        <fieldset className={fieldClass}>
+          <legend className={labelClass}>Who can see it</legend>
+          <div className="flex flex-wrap gap-2">
+            {(['public', 'private'] as const).map((visibility) => {
+              const active = draft.visibility === visibility;
+              return (
+                <button
+                  key={visibility}
+                  type="button"
+                  onClick={() => patch({ visibility })}
+                  aria-pressed={active}
+                  className={`min-h-[36px] rounded-full border px-3 text-caption ${
+                    active
+                      ? 'border-lantern-ink bg-lantern-ink text-lantern-surface'
+                      : 'border-lantern-border bg-transparent text-lantern-text-secondary hover:text-lantern-text'
+                  }`}
+                >
+                  {visibility === 'public' ? 'Public' : 'Private'}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+
         <div className="space-y-1.5 rounded-lantern bg-lantern-background-secondary p-3">
           <p className="flex items-start gap-2 text-caption text-lantern-text-secondary">
             <AppIcon name="people" size={16} className="mt-0.5 shrink-0 text-lantern-text-tertiary" />
-            {CREATE_COMMUNITY_VISIBILITY_NOTE}
+            {createCommunityVisibilityNote(draft.visibility)}
           </p>
           <p className="flex items-start gap-2 text-caption text-lantern-text-secondary">
             <AppIcon name="shield" size={16} className="mt-0.5 shrink-0 text-lantern-text-tertiary" />

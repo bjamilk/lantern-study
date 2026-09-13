@@ -89,6 +89,8 @@ export const mapUserFromApi = (data: any): User => {
       data.expectedGraduationYear !== undefined
         ? data.expectedGraduationYear
         : data.expected_graduation_year,
+    lastSeenAt: data.lastSeenAt ?? data.last_seen_at ?? null,
+    onlineStatus: data.onlineStatus,
   } as User;
 };
 

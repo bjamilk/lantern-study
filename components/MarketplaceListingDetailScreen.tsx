@@ -18,6 +18,7 @@ import {
   fetchMarketplacePaymentsConfig,
   validateMarketplaceCoupon,
   fetchPickupNudge,
+  fetchSellerFulfillment,
   downloadQuestionBank,
   fetchQuestionBankPreview,
   fetchQuestionBankLeaderboard,
@@ -44,6 +45,7 @@ import {
   listingBreadcrumb,
   listingSpecRows,
   listingTypeLabel,
+  fulfillmentChipLabels,
   computeMarketplaceReviewSummary,
   reviewHistogramPercentages,
   sortMarketplaceReviews,
@@ -67,6 +69,7 @@ import { SampleFlashcardPreview } from './marketplace/SampleFlashcardPreview';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '../types';
+import type { MarketplaceSellerFulfillment } from '@lantern/shared/types';
 import MakeOfferModal from './MakeOfferModal';
 import Modal from './ui/Modal';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
@@ -124,6 +127,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [boostingListing, setBoostingListing] = useState(false);
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
+  const [sellerFulfillment, setSellerFulfillment] = useState<MarketplaceSellerFulfillment | null>(null);
   const [canReview, setCanReview] = useState(false);
   const [questionBank, setQuestionBank] = useState<MarketplaceQuestionBankMeta | null>(null);
   const [studyPack, setStudyPack] = useState<MarketplaceStudyPackMeta | null>(null);
@@ -338,8 +342,10 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
       const sellerId = data.listing.user_id || data.listing.seller_id;
       if (sellerId && currentUser?.id && sellerId !== currentUser.id) {
         setPickupNudge(await fetchPickupNudge(sellerId));
+        setSellerFulfillment(await fetchSellerFulfillment(sellerId));
       } else {
         setPickupNudge(null);
+        setSellerFulfillment(null);
       }
     } catch (error) {
       console.error('Error loading listing:', error);
@@ -1272,10 +1278,25 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   chat is the fallback, not the headline. */}
               {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
                 <>
+                  {(() => {
+                    const chips = fulfillmentChipLabels(listing, sellerFulfillment ? {
+                      hall_dropoff_enabled: sellerFulfillment.hallDropoffEnabled,
+                      shipping_enabled: sellerFulfillment.shippingEnabled,
+                    } : { shipping_enabled: false });
+                    return (
+                      <div className="flex flex-wrap gap-1.5 mb-2">
+                        {chips.map((label) => (
+                          <span key={label} className="px-2 py-0.5 rounded-full bg-lantern-feature-groups-tint text-lantern-feature-groups-ink text-label">
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   <button
                     onClick={handleBuyNow}
                     disabled={buyingNow}
-                    className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-primary/50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-xs sm:text-sm"
+                    className="w-full flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 sm:py-3 bg-lantern-feature-groups-ink hover:opacity-90 disabled:opacity-50 text-white rounded-xl font-semibold transition-colors duration-150 shadow-sm text-caption"
                   >
                     <AppIcon name="badge-check" size={16} />
                     {buyingNow

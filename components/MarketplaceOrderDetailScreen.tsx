@@ -28,7 +28,8 @@ interface MarketplaceOrderDetailScreenProps {
 const TIMELINE_STEPS = [
   { key: 'accepted', label: 'Accepted' },
   { key: 'paid', label: 'Paid' },
-  { key: 'ready_for_pickup', label: 'Ready for pickup' },
+  { key: 'ready_for_pickup', label: 'Packed / ready' },
+  { key: 'shipped', label: 'Shipped or meetup' },
   { key: 'completed', label: 'Completed' },
 ] as const;
 
@@ -37,6 +38,7 @@ const STATUS_LABELS: Record<string, string> = {
   pending_payment: 'Sale in progress — awaiting payment',
   paid: 'Sale in progress — arrange fulfillment',
   ready_for_pickup: 'Sale in progress — ready for pickup',
+  shipped: 'On the way',
   buyer_confirmed: 'Sale in progress — buyer confirmed',
   completed: 'Completed — receipt available',
   cancelled: 'Cancelled',
@@ -47,8 +49,9 @@ function timelineIndexForStatus(status: string): number {
   if (status === 'cancelled' || status === 'disputed') return -1;
   if (status === 'pending_payment' || status === 'awaiting_payment') return 0;
   if (status === 'paid') return 1;
-  if (status === 'ready_for_pickup' || status === 'buyer_confirmed') return 2;
-  if (status === 'completed') return 3;
+  if (status === 'ready_for_pickup') return 2;
+  if (status === 'shipped' || status === 'buyer_confirmed') return 3;
+  if (status === 'completed') return 4;
   return 0;
 }
 
@@ -161,7 +164,7 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
     try {
       const updated = await updateMarketplaceOrder(orderId, { action, ...extra });
       setOrder(updated);
-      if (['confirm_received', 'mark_ready', 'mark_paid', 'cancel'].includes(action)) {
+      if (['confirm_received', 'mark_ready', 'mark_shipped', 'mark_paid', 'cancel'].includes(action)) {
         onOrderUpdated?.();
       }
     } catch (err: any) {
@@ -296,7 +299,19 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
                 return order.payment_id ? <>Paid via Paystack ✓</> : <>Payment confirmed by seller ✓</>;
               })()}
             </li>
-            <li>Ready for pickup {order.seller_confirmed_at || order.status === 'ready_for_pickup' || order.status === 'completed' ? '✓' : '—'}</li>
+            <li>Ready for pickup {order.seller_confirmed_at || order.status === 'ready_for_pickup' || order.status === 'shipped' || order.status === 'completed' ? '✓' : '—'}</li>
+            <li>
+              Shipped {order.status === 'shipped' || order.shipped_at || order.status === 'completed' ? '✓' : '—'}
+              {order.tracking_number ? ` · ${order.tracking_number}` : ''}
+              {order.tracking_url ? (
+                <>
+                  {' '}
+                  <a href={order.tracking_url} className="underline" target="_blank" rel="noreferrer">
+                    Track
+                  </a>
+                </>
+              ) : null}
+            </li>
             <li>Completed {order.completed_at ? '✓' : '—'}</li>
           </ul>
           {order.status !== 'completed' && order.status !== 'cancelled' ? (
@@ -509,7 +524,23 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
                 </Button>
               </>
             )}
-            {isBuyer && ['paid', 'ready_for_pickup'].includes(order.status) && (
+            {isSeller && order.fulfillment_mode === 'shipping' && ['paid', 'ready_for_pickup'].includes(order.status) && (
+              <Button
+                size="sm"
+                disabled={acting}
+                onClick={() => {
+                  const trackingNumber = window.prompt('Tracking number (optional)') || undefined;
+                  const trackingUrl = window.prompt('Tracking link (optional)') || undefined;
+                  void runAction('mark_shipped', {
+                    ...(trackingNumber ? { trackingNumber } : {}),
+                    ...(trackingUrl ? { trackingUrl } : {}),
+                  });
+                }}
+              >
+                Mark shipped
+              </Button>
+            )}
+            {isBuyer && ['paid', 'ready_for_pickup', 'shipped'].includes(order.status) && (
               <Button size="sm" disabled={acting} onClick={() => runAction('confirm_received')}>
                 Confirm received
               </Button>

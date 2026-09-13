@@ -1,25 +1,30 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   describeFeedItem,
+  feedItemNavTarget,
+  isCommunityBoard,
   learningConnectionLabel,
+  remapFeedTargetForBoard,
   type FeedItem,
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../services/supabase';
+import { useCommunityStore } from '../stores/communityStore';
+import { useGroupStore } from '../stores/groupStore';
 import { AppIcon } from './ui/AppIcon';
 
 /**
- * The Academic Feed panel (Phase 3 · M).
+ * Campus activity — pull-based network feed.
  *
- * PULL-BASED. Web already holds ~8 realtime channels per user, so this
- * deliberately fetches on mount and on an explicit refresh rather than opening
- * a ninth subscription. Direct-to-me events stay in the notification inbox;
- * this panel is the live network feed, shown in the Notifications UI.
+ * Lives on Campus, not in the notification inbox. Direct-to-me events stay
+ * in notifications; this is what people around you posted or listed.
  */
 export interface AcademicFeedPanelProps {
   onNavigate?: (screen: string, params?: Record<string, unknown>) => void;
   limit?: number;
   className?: string;
+  heading?: string;
+  hideWhenEmpty?: boolean;
 }
 
 function relativeTime(iso: string): string {
@@ -35,32 +40,49 @@ function relativeTime(iso: string): string {
   return days < 7 ? `${days}d ago` : new Date(then).toLocaleDateString();
 }
 
-/** Where a feed row should take you, or null when the object is not routable. */
-function targetFor(item: FeedItem): { screen: string; params: Record<string, unknown> } | null {
-  if (!item.objectId) return null;
-  switch (item.objectType) {
-    case 'listing':
-      return { screen: 'MarketplaceListingDetail', params: { listingId: item.objectId } };
-    case 'group':
-      return { screen: 'GroupChat', params: { groupId: item.objectId } };
-    case 'profile':
-      return { screen: 'CreatorProfile', params: { userId: item.objectId } };
-    case 'note':
-      return { screen: 'NoteEditor', params: { noteId: item.objectId } };
-    default:
-      return null;
+function toNavigateTarget(
+  item: FeedItem,
+  lookup: {
+    isBoardGroup: (groupId: string) => boolean;
+    communitySlugForGroup: (groupId: string) => string | null;
+  },
+): { screen: string; params: Record<string, unknown> } | null {
+  const raw = feedItemNavTarget(item);
+  if (!raw) return null;
+  const target = remapFeedTargetForBoard(raw, lookup);
+  if (target.screen === 'CommunityPost') {
+    return {
+      screen: 'CommunityPost',
+      params: { slug: target.params.slug, groupId: target.params.groupId, id: target.params.id },
+    };
   }
+  return target;
 }
 
 export const AcademicFeedPanel: React.FC<AcademicFeedPanelProps> = ({
   onNavigate,
   limit = 8,
   className = '',
+  heading = 'Happening now',
+  hideWhenEmpty = false,
 }) => {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [connections, setConnections] = useState<LearningConnectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const groups = useGroupStore((s) => s.groups);
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const feedLookup = {
+    isBoardGroup: (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      return !!group && isCommunityBoard(group);
+    },
+    communitySlugForGroup: (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group?.communityId) return null;
+      return myCommunities.find((c) => c.id === group.communityId)?.slug ?? null;
+    },
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,33 +99,37 @@ export const AcademicFeedPanel: React.FC<AcademicFeedPanelProps> = ({
 
   useEffect(() => {
     void load();
-    // The connections line is independent — its failure must not blank the feed.
     void fetchLearningConnections()
       .then(setConnections)
       .catch(() => setConnections(null));
   }, [load]);
 
   const connectionLine = learningConnectionLabel(connections);
+  const visible = items
+    .map((item) => ({ item, text: describeFeedItem(item) }))
+    .filter((row) => row.text);
+
+  if (hideWhenEmpty && !loading && !error && visible.length === 0 && !connectionLine) {
+    return null;
+  }
 
   return (
-    <section
-      className={
-        className ||
-        'rounded-xl border border-lantern-border bg-lantern-background p-4'
-      }
-      aria-label="Academic feed"
-    >
-      <header className="mb-3 flex items-center justify-between gap-2">
+    <section className={className} aria-label={heading}>
+      <header className="mb-4 flex items-end justify-between gap-3">
         <div>
-          <h2 className="text-sm font-semibold text-lantern-text">From your network</h2>
-          {connectionLine && (
-            <p className="text-xs text-lantern-primary">{connectionLine}</p>
+          <h2 className="text-title font-semibold text-lantern-text">{heading}</h2>
+          {connectionLine ? (
+            <p className="mt-1 text-caption text-lantern-text-secondary">{connectionLine}</p>
+          ) : (
+            <p className="mt-1 text-caption text-lantern-text-secondary">
+              Posts and listings from rooms you belong to.
+            </p>
           )}
         </div>
         <button
           type="button"
           onClick={() => void load()}
-          className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
+          className="inline-flex min-h-[36px] min-w-[36px] items-center justify-center rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
           aria-label="Refresh feed"
         >
           <AppIcon name="refresh" size={16} aria-hidden="true" />
@@ -111,54 +137,55 @@ export const AcademicFeedPanel: React.FC<AcademicFeedPanelProps> = ({
       </header>
 
       {loading && (
-        <p className="text-xs text-lantern-text-secondary" role="status">
+        <p className="text-caption text-lantern-text-secondary" role="status">
           Loading…
         </p>
       )}
 
       {!loading && error && (
-        <p className="text-xs text-red-600 dark:text-red-400" role="alert">
+        <p className="text-caption text-lantern-error" role="alert">
           {error}
         </p>
       )}
 
-      {!loading && !error && items.length === 0 && (
-        <p className="text-xs text-lantern-text-secondary">
+      {!loading && !error && visible.length === 0 && (
+        <p className="text-caption text-lantern-text-secondary">
           Follow a creator or join a community and their activity shows up here.
         </p>
       )}
 
-      <ul className="space-y-2">
-        {items.map((item) => {
-          const text = describeFeedItem(item);
-          // A verb we have no copy for renders nothing rather than a blank card.
-          if (!text) return null;
-          const target = onNavigate ? targetFor(item) : null;
-          const body = (
-            <>
-              <span className="text-xs text-lantern-text">{text}</span>
-              <span className="ml-2 text-label tracking-normal text-lantern-text-secondary">
-                {relativeTime(item.createdAt)}
-              </span>
-            </>
-          );
-          return (
-            <li key={item.id}>
-              {target ? (
-                <button
-                  type="button"
-                  onClick={() => onNavigate?.(target.screen, target.params)}
-                  className="w-full rounded-lg px-2 py-1.5 text-left hover:bg-lantern-background-secondary"
-                >
-                  {body}
-                </button>
-              ) : (
-                <div className="px-2 py-1.5">{body}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+      {visible.length > 0 ? (
+        <ul className="space-y-3">
+          {visible.map(({ item, text }) => {
+            const target = onNavigate ? toNavigateTarget(item, feedLookup) : null;
+            const body = (
+              <>
+                <span className="block text-body font-semibold text-lantern-text">{text}</span>
+                <span className="mt-1 block text-caption text-lantern-text-secondary">
+                  {relativeTime(item.createdAt)}
+                </span>
+              </>
+            );
+            return (
+              <li key={item.id}>
+                {target ? (
+                  <button
+                    type="button"
+                    onClick={() => onNavigate?.(target.screen, target.params)}
+                    className="w-full rounded-2xl border border-lantern-border bg-lantern-surface p-4 text-left hover:bg-lantern-background-secondary/70"
+                  >
+                    {body}
+                  </button>
+                ) : (
+                  <div className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
+                    {body}
+                  </div>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : null}
     </section>
   );
 };

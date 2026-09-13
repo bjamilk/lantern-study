@@ -14,6 +14,11 @@ export type SellerPreferencesRow = {
   seller_id: string;
   hall_dropoff_enabled: boolean;
   hall_dropoff_min_amount?: number | null;
+  shipping_enabled?: boolean;
+  shipping_fee_naira?: number | null;
+  shipping_free_over_naira?: number | null;
+  ships_from_campus_id?: string | null;
+  ships_from_city?: string | null;
   onboarding_completed_at?: string | null;
   boost_credits: number;
   require_payment_confirmation: boolean;
@@ -65,6 +70,11 @@ export class MarketplaceSellerToolsService {
       seller_id: sellerId,
       hall_dropoff_enabled: false,
       hall_dropoff_min_amount: null,
+      shipping_enabled: false,
+      shipping_fee_naira: null,
+      shipping_free_over_naira: null,
+      ships_from_campus_id: null,
+      ships_from_city: null,
       onboarding_completed_at: null,
       boost_credits: 1,
       require_payment_confirmation: false,
@@ -75,6 +85,26 @@ export class MarketplaceSellerToolsService {
       shop_updated_at: null,
       updated_at: new Date().toISOString(),
     };
+  }
+
+  publicFulfillment(prefs: SellerPreferencesRow, sellerId: string) {
+    const fee = Number(prefs.shipping_fee_naira);
+    const freeOver = Number(prefs.shipping_free_over_naira);
+    return {
+      sellerId,
+      campusMeetup: true as const,
+      hallDropoffEnabled: Boolean(prefs.hall_dropoff_enabled),
+      hallDropoffMinAmount: prefs.hall_dropoff_min_amount ?? null,
+      shippingEnabled: Boolean(prefs.shipping_enabled),
+      shippingFeeNaira: Number.isFinite(fee) && fee > 0 ? fee : 0,
+      shippingFreeOverNaira: Number.isFinite(freeOver) && freeOver > 0 ? freeOver : null,
+      shipsFromCampusId: prefs.ships_from_campus_id ?? null,
+      shipsFromCity: prefs.ships_from_city ?? null,
+    };
+  }
+
+  async getPublicFulfillment(sellerId: string) {
+    return this.publicFulfillment(await this.getPreferences(sellerId), sellerId);
   }
 
   async getPreferences(sellerId: string): Promise<SellerPreferencesRow> {
@@ -95,6 +125,19 @@ export class MarketplaceSellerToolsService {
         overrides.hall_dropoff_min_amount !== undefined
           ? overrides.hall_dropoff_min_amount
           : current.hall_dropoff_min_amount,
+      shipping_enabled: overrides.shipping_enabled ?? current.shipping_enabled ?? false,
+      shipping_fee_naira:
+        overrides.shipping_fee_naira !== undefined ? overrides.shipping_fee_naira : current.shipping_fee_naira,
+      shipping_free_over_naira:
+        overrides.shipping_free_over_naira !== undefined
+          ? overrides.shipping_free_over_naira
+          : current.shipping_free_over_naira,
+      ships_from_campus_id:
+        overrides.ships_from_campus_id !== undefined
+          ? overrides.ships_from_campus_id
+          : current.ships_from_campus_id,
+      ships_from_city:
+        overrides.ships_from_city !== undefined ? overrides.ships_from_city : current.ships_from_city,
       onboarding_completed_at:
         overrides.onboarding_completed_at !== undefined
           ? overrides.onboarding_completed_at
@@ -123,6 +166,11 @@ export class MarketplaceSellerToolsService {
     patch: {
       hallDropoffEnabled?: boolean;
       hallDropoffMinAmount?: number | null;
+      shippingEnabled?: boolean;
+      shippingFeeNaira?: number | null;
+      shippingFreeOverNaira?: number | null;
+      shipsFromCampusId?: string | null;
+      shipsFromCity?: string | null;
       requirePaymentConfirmation?: boolean;
       favoriteAlertThreshold?: number;
     }
@@ -134,6 +182,16 @@ export class MarketplaceSellerToolsService {
         patch.hallDropoffMinAmount !== undefined
           ? patch.hallDropoffMinAmount
           : current.hall_dropoff_min_amount,
+      shipping_enabled: patch.shippingEnabled ?? current.shipping_enabled,
+      shipping_fee_naira:
+        patch.shippingFeeNaira !== undefined ? patch.shippingFeeNaira : current.shipping_fee_naira,
+      shipping_free_over_naira:
+        patch.shippingFreeOverNaira !== undefined
+          ? patch.shippingFreeOverNaira
+          : current.shipping_free_over_naira,
+      ships_from_campus_id:
+        patch.shipsFromCampusId !== undefined ? patch.shipsFromCampusId : current.ships_from_campus_id,
+      ships_from_city: patch.shipsFromCity !== undefined ? patch.shipsFromCity : current.ships_from_city,
       require_payment_confirmation:
         patch.requirePaymentConfirmation ?? current.require_payment_confirmation,
       favorite_alert_threshold:

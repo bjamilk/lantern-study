@@ -192,6 +192,18 @@ export interface CommunityEventFields {
 
 export const COMMUNITY_EVENT_LOCATION_MAX = 120;
 
+/**
+ * A datetime the event create field typed. `datetime-local` and ISO strings
+ * parse; "Fri 12 Sep, 4pm" does not, and those stay in the description.
+ */
+export function parseCommunityEventStart(raw: string | null | undefined): string | null {
+  if (typeof raw !== 'string') return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  const ts = Date.parse(trimmed);
+  return Number.isFinite(ts) ? new Date(ts).toISOString() : null;
+}
+
 // ---------------------------------------------------------------------------
 // 3. Board post kinds
 // ---------------------------------------------------------------------------

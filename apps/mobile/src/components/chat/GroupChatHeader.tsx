@@ -63,9 +63,8 @@ interface GroupChatHeaderProps {
   onTitlePress?: () => void;
   menuActions: GroupChatHeaderAction[];
   /**
-   * Community channel context (spec §4.5): when set, the subtitle slot shows
-   * `${contextLabel} ›` as a link instead of the member count (which stays in
-   * Group Info). Low-data mode keeps precedence as before.
+   * Community channel context (spec §4.5): when set, the subtitle shows
+   * `{n} members · ${contextLabel} ›`. Low-data mode keeps precedence.
    */
   contextLabel?: string;
   onContextPress?: () => void;
@@ -263,6 +262,7 @@ export function GroupChatHeader({
                 className="self-start min-h-[24px] justify-center"
               >
                 <Text className="text-xs text-lantern-primary-text" style={{ color: colors.primaryText }} numberOfLines={1}>
+                  {memberCount ? `${memberCountLabel(memberCount)} · ` : ''}
                   {contextLabel} ›
                 </Text>
               </Pressable>

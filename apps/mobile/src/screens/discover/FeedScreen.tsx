@@ -2,10 +2,15 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import {
   describeFeedItem,
+  feedItemNavTarget,
+  isCommunityBoard,
   learningConnectionLabel,
+  remapFeedTargetForBoard,
   type FeedItem,
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
+import { useCommunityStore } from '../../stores/communityStore';
+import { useGroupStore } from '../../stores/groupStore';
 import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import { fetchFeed, fetchLearningConnections } from '../../services/api';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
@@ -35,19 +40,46 @@ function relativeTime(iso: string): string {
   return days < 7 ? `${days}d ago` : formatDisplayDate(then);
 }
 
-function targetFor(item: FeedItem): { screen: string; params: Record<string, unknown> } | null {
-  if (!item.objectId) return null;
-  switch (item.objectType) {
-    case 'listing':
-      return { screen: 'ListingDetail', params: { listingId: item.objectId } };
-    case 'profile':
-      return { screen: 'CreatorProfile', params: { userId: item.objectId } };
-    default:
-      return null;
+function targetFor(
+  item: FeedItem,
+  lookup: {
+    isBoardGroup: (groupId: string) => boolean;
+    communitySlugForGroup: (groupId: string) => string | null;
+  },
+): { screen: string; params: Record<string, unknown> } | null {
+  const raw = feedItemNavTarget(item);
+  if (!raw) return null;
+  const target = remapFeedTargetForBoard(raw, lookup);
+  if (target.screen === 'CommunityPost') {
+    return {
+      screen: 'CommunityPost',
+      params: {
+        groupId: target.params.groupId,
+        rootId: target.params.id,
+        communitySlug: target.params.slug,
+      },
+    };
   }
+  if (target.screen === 'MarketplaceListingDetail') {
+    return { screen: 'ListingDetail', params: { listingId: target.params.listingId } };
+  }
+  return target;
 }
 
 export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
+  const groups = useGroupStore((s) => s.groups);
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const feedLookup = {
+    isBoardGroup: (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      return !!group && isCommunityBoard(group);
+    },
+    communitySlugForGroup: (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group?.communityId) return null;
+      return myCommunities.find((c) => c.id === group.communityId)?.slug ?? null;
+    },
+  };
   // `Feed` is not immersive, so the absolutely-positioned bottom tab bar draws
   // over the list; the old hard-coded 32 buried the last row and the paging
   // spinner under it.
@@ -106,7 +138,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
     const text = describeFeedItem(item);
     // A verb with no copy renders nothing rather than a blank row.
     if (!text) return null;
-    const target = targetFor(item);
+    const target = targetFor(item, feedLookup);
     const body = (
       <View className="mx-4 mb-2 rounded-xl border border-lantern-border bg-lantern-surface px-4 py-3">
         <Text className="text-sm text-lantern-text">{text}</Text>

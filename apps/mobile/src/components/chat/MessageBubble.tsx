@@ -14,6 +14,7 @@ import { withEmailSafeName } from '../../utils/senderIdentity';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { getQuestionTypeLabel } from './chatDateHelpers';
 import { ChatImageThumbnail, ChatTextBody } from './ChatMessageBody';
+import { LinkPreviewChip } from './LinkPreviewChip';
 import { resolveMetaTextColor } from './resolveBodyTextStyle';
 import { QuestionVoteBar } from './QuestionVoteBar';
 import { ReceiptTicks } from './ReceiptTicks';
@@ -416,11 +417,14 @@ function MessageBubbleComponent({
             <VoiceNotePlayer url={audioUrl} isOwn={isOwn} />
           ) : (
             // Only reached when !isQuestion, so the bubble is always a chatBubble* surface.
-            <ChatTextBody
-              text={message.text}
-              textColor={colors.chatBubbleText}
-              mentionColor={isOwn ? colors.chatBubbleText : colors.primary}
-            />
+            <>
+              <ChatTextBody
+                text={message.text}
+                textColor={colors.chatBubbleText}
+                mentionColor={isOwn ? colors.chatBubbleText : colors.primary}
+              />
+              <LinkPreviewChip text={message.text} />
+            </>
           )}
 
           {/* Time / edited / delivery are spoken once as part of the row label;

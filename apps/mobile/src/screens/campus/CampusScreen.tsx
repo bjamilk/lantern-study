@@ -49,6 +49,7 @@ import {
 import { JoinByCodeSheet } from '../discover/JoinByCodeSheet';
 import { JOIN_BY_CODE_TITLE } from '../discover/joinByCodeModel';
 import { planCommunityDiscovery } from './communityDiscoveryPlan';
+import { AcademicFeedPanel } from '../../components/AcademicFeedPanel';
 
 interface NavigationProp {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -103,9 +104,9 @@ function SegmentBar({
           >
             <Text
               numberOfLines={1}
-              className={`text-body ${
+              className={`text-caption ${
                 selected
-                  ? 'font-bold text-lantern-primary-text'
+                  ? 'font-medium text-lantern-primary-text'
                   : 'font-medium text-lantern-text-secondary'
               }`}
             >
@@ -300,7 +301,7 @@ function CommunitiesPanel({
           community.member_count
         )}. ${joined ? 'Open' : 'Join'}`}
         style={{ minHeight: 56 }}
-        className="flex-row items-center gap-3 px-4 py-3 border-b border-lantern-border"
+        className="flex-row items-start gap-3 mx-4 mb-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
       >
         {/* The GLYPH and its ink say which kind of room this is — a course, a
             hostel, a fellowship — and both come from the shared kind meta, so
@@ -312,7 +313,7 @@ function CommunitiesPanel({
                 "PHARM 212 — PHARM 212" whenever the title IS the code. */}
             {communityDisplayName(community.name)}
           </Text>
-          <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
+          <Text className="mt-1 text-caption text-lantern-text-secondary" numberOfLines={1}>
             {meta.label} · {memberCountLabel(community.member_count)}
           </Text>
         </View>
@@ -333,38 +334,42 @@ function CommunitiesPanel({
 
   /** The two doors: start a room, or join a private one with a link. */
   const doors = (
-    <View className="flex-row gap-3 px-4 pt-3">
+    <View className="flex-row gap-3 px-4 pt-4">
       {canCreate ? (
         <Pressable
           onPress={() => navigation.navigate('CreateCommunity')}
           accessibilityRole="button"
           accessibilityLabel="Start a community"
-          style={{ minHeight: 56 }}
-          className="flex-1 flex-row items-center gap-3 rounded-2xl border border-lantern-border px-3 py-2"
+          className="flex-1 flex-row items-start gap-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
         >
           <FeatureDisc feature="campus" icon="add" size={32} />
-          <Text className="flex-1 text-body font-semibold text-lantern-text" numberOfLines={2}>
-            Start a community
-          </Text>
+          <View className="flex-1 min-w-0">
+            <Text className="text-body font-semibold text-lantern-text">Start a community</Text>
+            <Text className="mt-1 text-caption text-lantern-text-secondary">
+              Name a room for a class, club, or hall.
+            </Text>
+          </View>
         </Pressable>
       ) : null}
       <Pressable
         onPress={() => setJoinSheetOpen(true)}
         accessibilityRole="button"
         accessibilityLabel={JOIN_BY_CODE_TITLE}
-        style={{ minHeight: 56 }}
-        className="flex-1 flex-row items-center gap-3 rounded-2xl border border-lantern-border px-3 py-2"
+        className="flex-1 flex-row items-start gap-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
       >
         <FeatureDisc feature="groups" icon="link" size={32} />
-        <Text className="flex-1 text-body font-semibold text-lantern-text" numberOfLines={2}>
-          {JOIN_BY_CODE_TITLE}
-        </Text>
+        <View className="flex-1 min-w-0">
+          <Text className="text-body font-semibold text-lantern-text">{JOIN_BY_CODE_TITLE}</Text>
+          <Text className="mt-1 text-caption text-lantern-text-secondary">
+            Use an invite code for a private room.
+          </Text>
+        </View>
       </Pressable>
     </View>
   );
 
   const chips = (
-    <View className="flex-row flex-wrap gap-2 px-4 pt-3">
+    <View className="flex-row flex-wrap gap-2 px-4 pt-4">
       {COMMUNITY_CHIPS.map((value) => {
         const selected = value === chip;
         return (
@@ -384,15 +389,15 @@ function CommunitiesPanel({
             // stays where it answers a real question — the hero panel below
             // and the room discs.
             style={{
-              minHeight: 32,
+              minHeight: 36,
               backgroundColor: selected ? colors.primaryFill : 'transparent',
               borderColor: selected ? colors.primaryFill : colors.border,
             }}
-            className="rounded-full border px-3 py-1.5"
+            className="rounded-full border px-3 justify-center"
           >
             <Text
               style={{ color: selected ? colors.textInverse : colors.textSecondary }}
-              className="text-caption font-semibold"
+              className="text-caption"
             >
               {communityChipLabel(value)}
             </Text>
@@ -404,7 +409,7 @@ function CommunitiesPanel({
 
   return (
     <Screen bottom="none" keyboard>
-      <View className="mx-4 mt-2 mb-1 flex-row items-center rounded-lg bg-lantern-background-secondary px-3">
+      <View className="mx-4 mt-4 mb-1 flex-row items-center rounded-xl border border-lantern-border bg-lantern-surface px-3">
         <AppIcon name="search" size={16} color={colors.textSecondary} />
         <TextInput
           value={query}
@@ -414,7 +419,8 @@ function CommunitiesPanel({
           placeholder="Search communities"
           placeholderTextColor={colors.inputPlaceholder}
           accessibilityLabel="Search communities"
-          className="flex-1 ml-2 py-2 text-body text-lantern-text"
+          style={{ minHeight: 44 }}
+          className="flex-1 ml-2 text-body text-lantern-text"
         />
       </View>
 
@@ -462,6 +468,13 @@ function CommunitiesPanel({
               ) : null}
               {doors}
               {chips}
+              <AcademicFeedPanel
+                limit={6}
+                heading="Happening now"
+                hideWhenEmpty
+                className="mx-4 mt-6 mb-2"
+                onNavigate={(screen, params) => navigation.navigate(screen, params)}
+              />
               {/* Nothing joined yet and nothing filtered away: ONE violet
                   coaching card (spec v3 §5.7) that says what a room is FOR
                   rather than that the list is empty. `showEmptyIllustration`
@@ -499,16 +512,22 @@ function CommunitiesPanel({
 
               {hub.mine.length > 0 ? (
                 <>
-                  <Text className="px-4 pt-3 pb-1 text-caption font-semibold uppercase text-lantern-text-tertiary">
-                    Your communities
-                  </Text>
+                  <View className="px-4 pt-6 pb-3">
+                    <Text className="text-title font-semibold text-lantern-text">Your communities</Text>
+                    <Text className="mt-1 text-caption text-lantern-text-secondary">
+                      Campus room first, then the ones you joined.
+                    </Text>
+                  </View>
                   {hub.mine.map((community) => renderRow(community, true))}
                 </>
               ) : null}
               {hub.find.length > 0 ? (
-                <Text className="px-4 pt-4 pb-1 text-caption font-semibold uppercase text-lantern-text-tertiary">
-                  Find a community
-                </Text>
+                <View className="px-4 pt-6 pb-3">
+                  <Text className="text-title font-semibold text-lantern-text">Find a community</Text>
+                  <Text className="mt-1 text-caption text-lantern-text-secondary">
+                    Open rooms you can join from here.
+                  </Text>
+                </View>
               ) : null}
             </View>
           }

@@ -1,4 +1,9 @@
-import type { CommunityKind } from '@lantern/shared/network';
+import {
+  COMMUNITY_EVENT_LOCATION_MAX,
+  effectiveCommunityKind,
+  parseCommunityEventStart,
+  type CommunityKind,
+} from '@lantern/shared/network';
 import type { AppIconName } from '../ui/appIconMap';
 
 /**
@@ -12,9 +17,10 @@ import type { AppIconName } from '../ui/appIconMap';
  * API files the room as `topic`) AND as a tag, which is what every surface
  * reads back to give the room its chip either way (`communityBadgeLabel`).
  *
- * Private rooms, invite codes and event columns are not offered here yet —
- * for an event the when/where is composed into the description in plain
- * words, and the modal says out loud that the room will be public.
+ * Visibility is a real control: public (default) or private. Private rooms
+ * stay off Find; join is invite-link or code from Manage. Event date/place
+ * write `startsAt` / `location` when the when-field parses; otherwise they
+ * stay in the description.
  */
 
 export const COMMUNITY_NAME_MIN = 3;
@@ -108,12 +114,15 @@ export function createdCommunityKind(purposeId: string | null | undefined): Comm
   return communityPurpose(purposeId)?.kind ?? 'topic';
 }
 
+export type CommunityVisibility = 'public' | 'private';
+
 export interface CreateCommunityDraft {
   name: string;
   purposeId: string | null;
   description: string;
   /** Free-text, comma or space separated. */
   tags: string;
+  visibility: CommunityVisibility;
   /** Event purpose only — plain text, e.g. "Fri 12 Sep, 4pm". */
   eventWhen?: string;
   eventWhere?: string;
@@ -201,6 +210,9 @@ export interface CreateCommunityRequest {
   kind: CommunityKind;
   description?: string;
   tags?: string[];
+  visibility: CommunityVisibility;
+  startsAt?: string | null;
+  location?: string | null;
 }
 
 /** The exact body POST /communities accepts — nothing the server would drop. */
@@ -209,8 +221,14 @@ export function buildCreateCommunityRequest(
 ): CreateCommunityRequest | null {
   if (!isCreateCommunityValid(draft)) return null;
   const purpose = communityPurpose(draft.purposeId);
+  const startsAt =
+    purpose?.id === 'event' ? parseCommunityEventStart(draft.eventWhen ?? '') : null;
+  const location =
+    purpose?.id === 'event' && (draft.eventWhere ?? '').trim()
+      ? (draft.eventWhere ?? '').trim().slice(0, COMMUNITY_EVENT_LOCATION_MAX)
+      : null;
   const description =
-    purpose?.id === 'event'
+    purpose?.id === 'event' && !startsAt
       ? composeEventDescription({
           description: draft.description,
           when: draft.eventWhen,
@@ -221,8 +239,11 @@ export function buildCreateCommunityRequest(
   return {
     name: draft.name.trim(),
     kind: createdCommunityKind(purpose?.id),
+    visibility: draft.visibility === 'private' ? 'private' : 'public',
     ...(description ? { description: description.slice(0, COMMUNITY_DESCRIPTION_MAX) } : {}),
     ...(tags.length ? { tags } : {}),
+    ...(startsAt ? { startsAt } : {}),
+    ...(location ? { location } : {}),
   };
 }
 
@@ -231,8 +252,13 @@ export function buildCreateCommunityRequest(
  * It is a promise about behaviour, so it lives beside the request builder that
  * makes the promise true.
  */
-export const CREATE_COMMUNITY_VISIBILITY_NOTE =
-  'Anyone signed in can find and join this community. Private communities and invite codes are not available yet — do not start one for anything you need kept in.';
+export function createCommunityVisibilityNote(visibility: CommunityVisibility): string {
+  return visibility === 'private'
+    ? 'Only people with an invite link or code can find this community. Copy a code from Manage after you create it.'
+    : 'Anyone signed in can find and join this community.';
+}
+
+export const CREATE_COMMUNITY_VISIBILITY_NOTE = createCommunityVisibilityNote('public');
 
 export const CREATE_COMMUNITY_MODERATION_NOTE =
   'You start as its admin. Anything posted here can be reported, and the same rules apply as everywhere else on Lantern.';
@@ -251,11 +277,5 @@ export function communityBadgeLabel(
   tags: readonly string[] | null | undefined,
   kindLabel: (kind: string) => string
 ): string {
-  if (kind === 'topic' && Array.isArray(tags)) {
-    for (const tag of tags) {
-      const match = COMMUNITY_PURPOSES.find((purpose) => purpose.tag === tag);
-      if (match) return match.label;
-    }
-  }
-  return kindLabel(kind);
+  return kindLabel(effectiveCommunityKind({ kind, tags }));
 }

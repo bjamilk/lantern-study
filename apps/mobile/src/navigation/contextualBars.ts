@@ -594,6 +594,8 @@ export const CONTEXTUAL_BARS: Partial<Record<RouteName, ContextualBarSpec>> = {
   CourseBrowse: SHOP_BAR,
   CourseListings: SHOP_BAR,
   Cart: SHOP_BAR,
+  Checkout: SHOP_BAR,
+  Addresses: SHOP_BAR,
   ShopAccount: SHOP_BAR,
 
   // The community page. Only this key — see COMMUNITY_BAR's header for why the

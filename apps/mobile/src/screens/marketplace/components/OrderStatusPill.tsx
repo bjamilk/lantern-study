@@ -68,6 +68,8 @@ function describe(
       return buyer ? { label: 'Paid · being prepared', tone } : { label: 'Hand over', tone };
     case 'ready_for_pickup':
       return buyer ? { label: 'Ready · confirm pickup', tone } : { label: 'Waiting for buyer', tone };
+    case 'shipped':
+      return buyer ? { label: 'Shipped · confirm received', tone } : { label: 'In transit', tone: 'wait' };
     case 'buyer_confirmed':
       return { label: 'Collected', tone: 'done' };
     case 'completed':
@@ -101,6 +103,8 @@ export function orderNextStep(
       return buyer ? 'The seller is preparing your item' : 'Mark it ready for pickup or delivery';
     case 'ready_for_pickup':
       return buyer ? 'Collect it, then confirm you received it' : 'Waiting for the buyer to confirm they received it';
+    case 'shipped':
+      return buyer ? 'Confirm when the parcel arrives' : 'Waiting for the buyer to confirm they received it';
     case 'buyer_confirmed':
     case 'completed':
       return 'Done — your receipt is below';

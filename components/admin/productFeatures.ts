@@ -156,7 +156,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     surfaces: ['web', 'mobile', 'api', 'database'],
     adminNotes: [
       'Requires migration 20260901090000_backfill_taxonomy_node_ids.sql. It rewrites the 41 legacy node ids whose replacement is a leaf and REMOVES the rest rather than writing them to a group — a group id would hide the listing twice over, since leaf browse matches only leaves and the unfiled rule matches only NULL. Also adds the partial index the browse filter reads on every drill-down.',
-      'Groups and People are HIDDEN, not deleted: flip DISCOVER_SECTION_ENABLED in packages/shared/src/marketplace/discoverSections.ts to restore them. Community was switched back on 2026-09-02 and is reached from the mobile profile drawer. Web and mobile both read it.',
+      'Groups, People and the leftover Rooms tab are HIDDEN, not deleted: flip DISCOVER_SECTION_ENABLED in packages/shared/src/marketplace/discoverSections.ts to restore them. Rooms still live on each community page. Web and mobile both read it.',
       'The marketplace stays a private pilot; the allowlist is unchanged (founder id only, in middleware/marketplaceAccess.ts). MARKETPLACE_PUBLIC=true opens it to everyone with no code change.',
     ],
     commits: ['2e28859', 'cafbded', '215ea50', '7b3e045'],

@@ -146,10 +146,10 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
                 className="shrink-0 text-lantern-text-tertiary"
               />
               <span className="min-w-0 flex-1">
-                <span className={`block truncate text-sm ${row.unread > 0 ? 'font-bold text-lantern-text' : 'font-medium text-lantern-text'}`}>
+                <span className={`block truncate text-body ${row.unread > 0 ? 'font-semibold text-lantern-text' : 'font-medium text-lantern-text'}`}>
                   {name}
                 </span>
-                <span className="block truncate text-[11px] text-lantern-text-tertiary">
+                <span className="mt-1 block truncate text-caption text-lantern-text-secondary">
                   {busy ? 'Opening…' : COMMUNITY_COPY.loungeSubtitle}
                 </span>
               </span>
@@ -162,7 +162,7 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
         const action = row.action ? sectionAction(row.action) : null;
         return (
           <li key={`section-${row.title}`} className="flex items-center justify-between px-3 pt-4 pb-1">
-            <span className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+            <span className="text-heading text-lantern-text">
               {row.title}
             </span>
             {action ? (
@@ -199,12 +199,12 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
               <AppIcon name="hashtag" size={16} className="shrink-0 text-lantern-text-tertiary" />
               <span className="min-w-0 flex-1">
                 <span className="flex items-center gap-1.5">
-                  <span className={`truncate text-sm ${row.unread > 0 ? 'font-bold text-lantern-text' : 'font-medium text-lantern-text'}`}>
+                  <span className={`truncate text-body ${row.unread > 0 ? 'font-semibold text-lantern-text' : 'font-medium text-lantern-text'}`}>
                     {plainName(name)}
                   </span>
                   <VisibilityGlyph visibility={board.visibility} />
                 </span>
-                <span className="block truncate text-[11px] text-lantern-text-tertiary">{subtitle}</span>
+                <span className="mt-1 block truncate text-caption text-lantern-text-secondary">{subtitle}</span>
               </span>
               <UnreadPill count={row.unread} />
             </button>
@@ -227,8 +227,8 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
             >
               <AppIcon name="school" size={16} className="shrink-0 text-lantern-text-tertiary" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-lantern-text">{group.name}</span>
-                <span className="block truncate text-[11px] text-lantern-text-tertiary">{subtitle}</span>
+                <span className="block truncate text-body font-medium text-lantern-text">{group.name}</span>
+                <span className="mt-1 block truncate text-caption text-lantern-text-secondary">{subtitle}</span>
               </span>
               <AppIcon
                 name="arrow-forward"
@@ -252,10 +252,10 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
             >
               <AppIcon name="volume-medium" size={16} className="shrink-0 text-lantern-text-tertiary" />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-lantern-text">{room.title}</span>
-                <span className="block truncate text-[11px] text-lantern-text-tertiary">{subtitle}</span>
+                <span className="block truncate text-body font-medium text-lantern-text">{room.title}</span>
+                <span className="mt-1 block truncate text-caption text-lantern-text-secondary">{subtitle}</span>
               </span>
-              <span className={`shrink-0 text-xs font-semibold ${room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'}`}>
+              <span className={`shrink-0 text-caption font-semibold ${room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'}`}>
                 {room.joined ? 'Open' : 'Join'}
               </span>
             </button>
@@ -264,21 +264,21 @@ export const CommunityChannelList: React.FC<CommunityChannelListProps> = ({
       }
       case 'empty':
         return (
-          <li key={`empty-${index}`} className="px-3 py-2 text-xs text-lantern-text-tertiary">
+          <li key={`empty-${index}`} className="px-3 py-2 text-caption text-lantern-text-tertiary">
             {row.text}
           </li>
         );
       case 'members': {
-        const label = `${COMMUNITY_COPY.sectionMembers} · ${row.count.toLocaleString()}`;
+        const label = `Members · ${row.count.toLocaleString()}`;
         return (
           <li key="members" className="pt-3">
             {onOpenMembers ? (
               <button type="button" onClick={onOpenMembers} className={ROW}>
-                <span className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">{label}</span>
+                <span className="text-heading text-lantern-text">{label}</span>
                 <AppIcon name="chevron-forward" size={16} className="ml-auto shrink-0 text-lantern-text-tertiary" />
               </button>
             ) : (
-              <span className="block px-3 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+              <span className="block px-3 text-heading text-lantern-text">
                 {label}
               </span>
             )}

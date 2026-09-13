@@ -13,10 +13,12 @@ import {
 import { appAlert } from '../../components/ui/appDialog';
 import {
   COMMUNITY_COPY,
+  COMMUNITY_HOME_COPY,
   COMMUNITY_LOUNGE_CHANNEL_NAME,
   boardDisplayName,
   boardSubtitle,
   buildCommunityChannelRows,
+  buildCommunityHomeActivity,
   communityMembershipAction,
   communityOnlineCount,
   presenceLabel,
@@ -212,6 +214,10 @@ function CommunityServer({
   const rows = useMemo<CommunityChannelRow[]>(
     () => (payload ? buildCommunityChannelRows(payload, overlayGroups, now) : []),
     [payload, overlayGroups, now]
+  );
+  const activity = useMemo(
+    () => (payload ? buildCommunityHomeActivity(payload, now) : []),
+    [payload, now]
   );
 
   const refresh = useCallback(async () => {
@@ -526,7 +532,7 @@ function CommunityServer({
               onPress={() => void openLounge()}
             />
             {loungeError ? (
-              <Text className="px-4 pb-2 text-xs text-red-500">{loungeError}</Text>
+              <Text className="px-4 pb-2 text-caption text-lantern-error">{loungeError}</Text>
             ) : null}
           </View>
         );
@@ -534,7 +540,7 @@ function CommunityServer({
       case 'section':
         return (
           <View className="flex-row items-center px-4 pt-4 pb-1">
-            <Text className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
+            <Text className="flex-1 text-heading text-lantern-text">
               {item.title}
             </Text>
             {item.action ? (
@@ -600,7 +606,7 @@ function CommunityServer({
           />
         );
       case 'empty':
-        return <Text className="px-4 py-3 text-sm text-lantern-text-tertiary">{item.text}</Text>;
+        return <Text className="px-4 py-3 text-body text-lantern-text-tertiary">{item.text}</Text>;
       case 'members':
         return (
           <Pressable
@@ -609,8 +615,8 @@ function CommunityServer({
             accessibilityLabel={`${COMMUNITY_COPY.sectionMembers}, ${item.count}`}
             className="flex-row items-center px-4 pt-4 pb-3 min-h-[44px] active:bg-lantern-background-secondary"
           >
-            <Text className="flex-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-              {COMMUNITY_COPY.sectionMembers} · {item.count.toLocaleString()}
+            <Text className="flex-1 text-heading text-lantern-text">
+              Members · {item.count.toLocaleString()}
             </Text>
             <AppIcon name="chevron-forward" size={16} color="#94a3b8" />
           </Pressable>
@@ -696,7 +702,7 @@ function CommunityServer({
             tag-derived hostel room shows the house here too. */}
         <FeatureDisc feature={headerMeta.ink} icon={headerMeta.icon} size={40} />
         <View className="flex-1 min-w-0 ml-2 flex-row items-center">
-          <Text className="text-lg font-semibold text-lantern-text shrink" numberOfLines={1}>
+          <Text className="text-title text-lantern-text shrink" numberOfLines={1}>
             {community?.name ?? 'Community'}
           </Text>
           {community?.is_official ? (
@@ -720,7 +726,7 @@ function CommunityServer({
             >
               <AppIcon name="people" size={22} color="#64748b" />
               {onlineCount > 0 ? (
-                <Text className="ml-1 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                <Text className="ml-1 text-label font-semibold text-emerald-600 dark:text-emerald-400">
                   {onlineCount.toLocaleString()}
                 </Text>
               ) : null}
@@ -780,7 +786,7 @@ function CommunityServer({
           contentContainerStyle={{ paddingBottom: listBottomPadding }}
           ListHeaderComponent={
             <View className="px-4 pt-4 pb-1 border-b border-lantern-border">
-              <Text className="text-xs text-lantern-text-tertiary">
+              <Text className="text-caption text-lantern-text-secondary">
                 {headerMeta.line}
               </Text>
               {community.description ? (
@@ -792,7 +798,7 @@ function CommunityServer({
                   }
                 >
                   <Text
-                    className="text-sm text-lantern-text-secondary mt-2"
+                    className="text-body text-lantern-text-secondary mt-2"
                     numberOfLines={descriptionExpanded ? undefined : 2}
                   >
                     {community.description}
@@ -800,7 +806,18 @@ function CommunityServer({
                 </Pressable>
               ) : null}
               {presenceLine ? (
-                <Text className="mt-2 text-[11px] text-lantern-primary-text">{presenceLine}</Text>
+                <Text className="mt-2 text-caption text-lantern-primary-text">{presenceLine}</Text>
+              ) : null}
+
+              {community.starts_at || community.location ? (
+                <Text className="mt-2 text-caption text-lantern-text-secondary">
+                  {[
+                    community.starts_at ? new Date(community.starts_at).toLocaleString() : null,
+                    community.location,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
               ) : null}
 
               <View className="flex-row items-center mt-3 mb-3">
@@ -816,7 +833,7 @@ function CommunityServer({
                   accessibilityState={{ disabled: pending, busy: pending }}
                 >
                   <Text
-                    className={`text-xs font-semibold ${
+                    className={`text-body font-semibold ${
                       community.isMember ? 'text-lantern-text-secondary' : 'text-white'
                     }`}
                   >
@@ -824,11 +841,53 @@ function CommunityServer({
                   </Text>
                 </Pressable>
                 {!community.isMember ? (
-                  <Text className="ml-3 flex-1 text-xs text-lantern-text-tertiary">
+                  <Text className="ml-3 flex-1 text-caption text-lantern-text-tertiary">
                     {COMMUNITY_COPY.joinToSeeMembers}
                   </Text>
                 ) : null}
               </View>
+              {activity.length > 0 ? (
+                <View className="mt-2 mb-1">
+                  <Text className="text-title font-semibold text-lantern-text mb-3">
+                    {COMMUNITY_HOME_COPY.sectionActivity}
+                  </Text>
+                  {activity.map((item) => (
+                    <Pressable
+                      key={`${item.kind}-${item.id}`}
+                      onPress={() => {
+                        if (item.kind === 'lounge') void openLounge();
+                        if (item.kind === 'board') {
+                          const board = payload?.boards.find((row) => row.id === item.id);
+                          if (board) onChannelPress(board);
+                        }
+                        if (item.kind === 'room') {
+                          navigation.navigate('StudyRoom', {
+                            roomId: item.id,
+                            communityName: community.name,
+                          });
+                        }
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel={`${item.title}. ${item.subtitle}`}
+                      className="flex-row items-center py-2 min-h-[44px]"
+                    >
+                      <View className="flex-1 min-w-0">
+                        <Text className="text-body font-semibold text-lantern-text" numberOfLines={1}>
+                          {item.title}
+                        </Text>
+                        <Text className="text-caption text-lantern-text-tertiary" numberOfLines={1}>
+                          {item.subtitle}
+                        </Text>
+                      </View>
+                      {item.unread > 0 ? (
+                        <Text className="ml-2 text-caption font-bold text-lantern-error">
+                          {item.unread > 99 ? '99+' : item.unread}
+                        </Text>
+                      ) : null}
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
             </View>
           }
           ListEmptyComponent={

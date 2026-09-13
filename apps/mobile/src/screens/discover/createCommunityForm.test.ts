@@ -39,7 +39,14 @@ describe('validation', () => {
 describe('what survives the round trip', () => {
   it('sends only the keys the endpoint accepts, kind included', () => {
     const body = buildCreateCommunityRequest(draft({ description: 'Every Friday' }));
-    expect(Object.keys(body ?? {}).sort()).toEqual(['description', 'kind', 'name', 'tags']);
+    expect(Object.keys(body ?? {}).sort()).toEqual([
+      'description',
+      'kind',
+      'name',
+      'tags',
+      'visibility',
+    ]);
+    expect(body?.visibility).toBe('public');
     expect(body?.kind).toBe('club');
   });
 
@@ -60,12 +67,31 @@ describe('what survives the round trip', () => {
     expect(communityChipOf({ kind: 'topic', tags: hostel?.tags ?? [] })).toBe('hostel');
   });
 
-  it('never invents a visibility or an event column the server would drop', () => {
+  it('sends private when asked, and keeps prose when/where in the description', () => {
     const body = buildCreateCommunityRequest(
-      draft({ purposeId: 'event', eventWhen: 'Fri 12 Sep, 4pm', eventWhere: 'Main hall' })
+      draft({
+        purposeId: 'event',
+        visibility: 'private',
+        eventWhen: 'Fri 12 Sep, 4pm',
+        eventWhere: 'Main hall',
+      })
     );
-    expect(body).not.toHaveProperty('visibility');
-    expect(body).not.toHaveProperty('starts_at');
+    expect(body?.visibility).toBe('private');
+    expect(body).not.toHaveProperty('startsAt');
+  });
+
+  it('writes a parseable event time onto startsAt', () => {
+    const body = buildCreateCommunityRequest(
+      draft({
+        purposeId: 'event',
+        description: 'Rag week',
+        eventWhen: '2026-09-15T10:00',
+        eventWhere: 'Main hall',
+      })
+    );
+    expect(body?.startsAt).toBe(new Date('2026-09-15T10:00').toISOString());
+    expect(body?.location).toBe('Main hall');
+    expect(body?.description).toBe('Rag week');
   });
 
   it('keeps an event’s when and where by writing them into the description', () => {

@@ -86,6 +86,10 @@ export function MyListingsScreen({
   const [requirePaymentConfirmation, setRequirePaymentConfirmation] = useState(false);
   const [hallDropoffEnabled, setHallDropoffEnabled] = useState(false);
   const [hallDropoffMin, setHallDropoffMin] = useState('');
+  const [shippingEnabled, setShippingEnabled] = useState(false);
+  const [shippingFee, setShippingFee] = useState('');
+  const [shippingFreeOver, setShippingFreeOver] = useState('');
+  const [shipsFromCity, setShipsFromCity] = useState('');
 
   const load = useCallback(async () => {
     if (!user?.id) return;
@@ -104,6 +108,10 @@ export function MyListingsScreen({
         setRequirePaymentConfirmation(!!prefs.require_payment_confirmation);
         setHallDropoffEnabled(!!prefs.hall_dropoff_enabled);
         setHallDropoffMin(prefs.hall_dropoff_min_amount != null ? String(prefs.hall_dropoff_min_amount) : '');
+        setShippingEnabled(!!prefs.shipping_enabled);
+        setShippingFee(prefs.shipping_fee_naira != null ? String(prefs.shipping_fee_naira) : '');
+        setShippingFreeOver(prefs.shipping_free_over_naira != null ? String(prefs.shipping_free_over_naira) : '');
+        setShipsFromCity(prefs.ships_from_city || '');
         if (prefs.boost_credits != null) setBoostCredits(prefs.boost_credits);
       }
     } catch {
@@ -478,9 +486,17 @@ export function MyListingsScreen({
         requirePaymentConfirmation={requirePaymentConfirmation}
         hallDropoffEnabled={hallDropoffEnabled}
         hallDropoffMin={hallDropoffMin}
+        shippingEnabled={shippingEnabled}
+        shippingFee={shippingFee}
+        shippingFreeOver={shippingFreeOver}
+        shipsFromCity={shipsFromCity}
         onRequirePaymentConfirmationChange={setRequirePaymentConfirmation}
         onHallDropoffEnabledChange={setHallDropoffEnabled}
         onHallDropoffMinChange={setHallDropoffMin}
+        onShippingEnabledChange={setShippingEnabled}
+        onShippingFeeChange={setShippingFee}
+        onShippingFreeOverChange={setShippingFreeOver}
+        onShipsFromCityChange={setShipsFromCity}
       />
     </SafeAreaView>
   );

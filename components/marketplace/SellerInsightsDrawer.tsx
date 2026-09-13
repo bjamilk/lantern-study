@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { AppIcon } from '../ui/AppIcon';
 import type { SellerAnalytics } from '../../types';
 import { Drawer } from '../ui';
-import { updateSellerPreferences, fetchSellerPayments, type SellerPaymentRow } from '../../services/supabase';
+import { updateSellerPreferences, fetchSellerPayments, fetchSellerPreferences, type SellerPaymentRow } from '../../services/supabase';
 import { SellerPayoutSetup } from './SellerPayoutSetup';
 import { useToastStore } from '../../stores/toastStore';
 
@@ -34,6 +34,10 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
   onHallDropoffMinChange,
 }) => {
   const [savingPrefs, setSavingPrefs] = useState(false);
+  const [shippingEnabled, setShippingEnabled] = useState(false);
+  const [shippingFee, setShippingFee] = useState('');
+  const [shippingFreeOver, setShippingFreeOver] = useState('');
+  const [shipsFromCity, setShipsFromCity] = useState('');
   // Earnings ledger (Phase 2 · I): what each sale paid out after the Lantern fee.
   const [payments, setPayments] = useState<SellerPaymentRow[] | null>(null);
 
@@ -42,6 +46,16 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
     void fetchSellerPayments(1)
       .then(setPayments)
       .catch(() => setPayments([]));
+    void fetchSellerPreferences()
+      .then((prefs) => {
+        setShippingEnabled(Boolean(prefs?.shipping_enabled));
+        setShippingFee(prefs?.shipping_fee_naira != null ? String(prefs.shipping_fee_naira) : '');
+        setShippingFreeOver(
+          prefs?.shipping_free_over_naira != null ? String(prefs.shipping_free_over_naira) : '',
+        );
+        setShipsFromCity(prefs?.ships_from_city || '');
+      })
+      .catch(() => {});
   }, [isOpen]);
 
   return (
@@ -285,8 +299,37 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
               checked={hallDropoffEnabled}
               onChange={e => onHallDropoffEnabledChange(e.target.checked)}
             />
-            Offer delivery on eligible combined orders
+            Offer hall dropoff on eligible combined orders
           </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={shippingEnabled}
+              onChange={(e) => setShippingEnabled(e.target.checked)}
+            />
+            Ship to a saved address (seller-quoted fee — you find the rider)
+          </label>
+          <input
+            type="number"
+            value={shippingFee}
+            onChange={(e) => setShippingFee(e.target.value)}
+            placeholder="Shipping fee ₦"
+            className="lantern-field w-full text-sm"
+          />
+          <input
+            type="number"
+            value={shippingFreeOver}
+            onChange={(e) => setShippingFreeOver(e.target.value)}
+            placeholder="Free over ₦ (optional)"
+            className="lantern-field w-full text-sm"
+          />
+          <input
+            type="text"
+            value={shipsFromCity}
+            onChange={(e) => setShipsFromCity(e.target.value)}
+            placeholder="Ships from city"
+            className="lantern-field w-full text-sm"
+          />
           <div className="flex gap-2">
             <input
               type="number"
@@ -304,6 +347,10 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
                   await updateSellerPreferences({
                     hallDropoffEnabled,
                     hallDropoffMinAmount: hallDropoffMin ? Number(hallDropoffMin) : null,
+                    shippingEnabled,
+                    shippingFeeNaira: shippingFee ? Number(shippingFee) : null,
+                    shippingFreeOverNaira: shippingFreeOver ? Number(shippingFreeOver) : null,
+                    shipsFromCity: shipsFromCity.trim() || null,
                     requirePaymentConfirmation,
                   });
                 } finally {

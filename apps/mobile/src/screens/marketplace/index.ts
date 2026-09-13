@@ -20,6 +20,8 @@ export { FavoritesScreen } from './FavoritesScreen';
 
 export { OrdersScreen } from './OrdersScreen';
 export { CartScreen } from './CartScreen';
+export { CheckoutScreen } from './CheckoutScreen';
+export { AddressesScreen } from './AddressesScreen';
 export { PurchasesScreen } from './PurchasesScreen';
 export { StudyProductDraftsScreen } from './StudyProductDraftsScreen';
 export { SemesterProductsScreen } from './SemesterProductsScreen';

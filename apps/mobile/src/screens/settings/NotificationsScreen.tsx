@@ -32,7 +32,15 @@ import {
   markAllNotificationsAsRead,
   acceptGroupInvite,
   declineGroupInvite,
+  fetchMyInquiries,
 } from "../../services/api";
+import {
+  findInquiryRecord,
+  inquiryBuyerId,
+  inquirySellerId,
+  inquiryThreadId,
+  resolveInquiryDmTarget,
+} from "@lantern/shared/chat";
 import { useTheme } from "../../theme";
 import type {
   MainTabParamList,
@@ -43,12 +51,9 @@ import {
   navigateToGameResult,
 } from "../../navigation/navigationRef";
 import { NotificationRow } from "../../components/ui";
-import { AcademicFeedPanel } from "../../components/AcademicFeedPanel";
 import { useChrome } from '../../components/layout/ChromeContext';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { NotificationDeliveryPanel } from '../../components/settings/NotificationDeliveryPanel';
-
-import { toTab } from '../../navigation/nestedTab';
 
 interface AppNotification {
   id: string;
@@ -193,11 +198,74 @@ export default function NotificationsScreen() {
         navigateToMarket("Offers", { tab });
         return;
       }
+      if (parsed.type === "community_post" && parsed.slug && parsed.groupId && parsed.id) {
+        navigation.dispatch(
+          CommonActions.navigate({
+            name: "Main",
+            params: {
+              screen: "CampusTab",
+              params: {
+                screen: "CommunityPost",
+                params: {
+                  communitySlug: parsed.slug,
+                  groupId: parsed.groupId,
+                  rootId: parsed.id,
+                },
+                initial: false,
+              },
+            },
+          }),
+        );
+        return;
+      }
       if (parsed.type === "inquiry") {
-        // Same rule as offers: a question on YOUR listing is the seller tab; a
-        // reply to a question you asked is the buyer tab.
-        const buyerId = (item.data?.buyerId ?? item.data?.buyer_id) as string | undefined;
         const meId = useAuthStore.getState().user?.id;
+        const buyerId = (item.data?.buyerId ?? item.data?.buyer_id) as string | undefined;
+        const openInquiryDm = (threadId?: string, otherUserId?: string) => {
+          if (otherUserId && threadId) {
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: "Main",
+                params: {
+                  screen: "ChatTab",
+                  params: {
+                    screen: "DirectMessage",
+                    params: { recipientId: otherUserId, threadId },
+                    initial: false,
+                  },
+                },
+              }),
+            );
+            return true;
+          }
+          return false;
+        };
+        if (parsed.threadId && buyerId && meId) {
+          const otherUserId = meId === buyerId ? undefined : buyerId;
+          if (otherUserId && openInquiryDm(parsed.threadId, otherUserId)) return;
+        }
+        try {
+          const [buyer, seller] = await Promise.all([
+            fetchMyInquiries("buyer"),
+            fetchMyInquiries("seller"),
+          ]);
+          const row = findInquiryRecord([...(buyer || []), ...(seller || [])], {
+            inquiryId: parsed.id,
+            threadId: parsed.threadId,
+          });
+          const resolved = resolveInquiryDmTarget({
+            viewerId: meId,
+            inquiryId: row?.id || parsed.id,
+            threadId: inquiryThreadId(row) || parsed.threadId,
+            buyerId: inquiryBuyerId(row) || buyerId,
+            sellerId: inquirySellerId(row),
+          });
+          if (resolved.threadId && resolved.otherUserId && openInquiryDm(resolved.threadId, resolved.otherUserId)) {
+            return;
+          }
+        } catch {
+          /* fall through to the seller queue */
+        }
         navigateToMarket("Inquiries", { tab: buyerId && meId && buyerId === meId ? "buyer" : "seller" });
         return;
       }
@@ -387,21 +455,6 @@ export default function NotificationsScreen() {
           ListHeaderComponent={
             <>
             <NotificationDeliveryPanel />
-            <AcademicFeedPanel
-              limit={6}
-              className="mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
-              onOpenFeed={() =>
-                navigation.dispatch(
-                  CommonActions.navigate({
-                    name: "Main",
-                    params: {
-                      screen: "MarketTab",
-                      params: toTab('Feed'),
-                    },
-                  }),
-                )
-              }
-            />
             </>
           }
           ListEmptyComponent={

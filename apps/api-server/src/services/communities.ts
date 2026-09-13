@@ -34,6 +34,7 @@ import {
   canAccessDiscoverHub,
   communityKindMeta,
   communityPageGroupVisibilities,
+  discoverKindOrFilter,
   isCreatableCommunityKind,
   normalizeCommunitySearch,
   rankDiscoverCommunities,
@@ -682,7 +683,10 @@ export class CommunitiesService {
         q = q.or(`institution_id.eq.${institutionId},institution_id.is.null`);
       }
       if (opts.kind && (COMMUNITY_KINDS as readonly string[]).includes(opts.kind)) {
-        q = q.eq('kind', opts.kind);
+        // Real kind OR a pre-migration `topic` row that still carries the
+        // purpose as a tag — so Hostel does not answer empty while hostels
+        // exist as topic+tag.
+        q = q.or(discoverKindOrFilter(opts.kind as CommunityKind));
       }
       if (opts.courseId && UUID_RE.test(opts.courseId)) q = q.eq('course_id', opts.courseId);
       if (search) {

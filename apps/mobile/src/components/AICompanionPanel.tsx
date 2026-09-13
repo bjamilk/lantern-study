@@ -1100,14 +1100,17 @@ export function AICompanionPanel({ context }: Props) {
             return (
               <View className={`max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}>
                 <View
+                  // The user bubble is the theme's inverted PAIR, not a white
+                  // literal: dark mode's fill is near-white ink, so hard-coded
+                  // white text on it was white-on-white. Ground and ink move
+                  // together, in both modes, exactly like the action chips.
+                  style={isUser ? { backgroundColor: inkFill } : undefined}
                   className={`px-4 py-3 rounded-2xl ${
-                    isUser
-                      ? 'bg-lantern-primary-fill rounded-br-sm'
-                      : 'bg-lantern-background-secondary rounded-bl-sm'
+                    isUser ? 'rounded-br-sm' : 'bg-lantern-background-secondary rounded-bl-sm'
                   }`}
                 >
                   {isUser ? (
-                    <Text className="text-white">{item.content}</Text>
+                    <Text style={{ color: inkGlyph }}>{item.content}</Text>
                   ) : (
                     item.content.trim() ? (
                     <FormattedBubbleText content={item.content} />

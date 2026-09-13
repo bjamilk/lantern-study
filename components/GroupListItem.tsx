@@ -4,6 +4,7 @@ import { Avatar } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
 import { chatMessagePreview } from '@lantern/shared/utils';
+import { chatRowSubtitle } from '@lantern/shared/chat';
 import { formatUnreadBadgeCount } from '../utils/chatUnread';
 import { AppIcon } from './ui/AppIcon';
 
@@ -32,6 +33,10 @@ interface GroupListItemProps {
   isExpanded?: boolean;
   onToggleExpand?: () => void;
   showText?: boolean;
+  muted?: boolean;
+  pinned?: boolean;
+  communityName?: string | null;
+  listingTitle?: string | null;
 }
 
 const GroupListItem: React.FC<GroupListItemProps> = ({ 
@@ -46,6 +51,10 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
   isExpanded = false,
   onToggleExpand,
   showText = true,
+  muted = false,
+  pinned = false,
+  communityName,
+  listingTitle,
 }) => {
   const { lowDataMode } = useUIStore();
   const isGroup = chat.chatType === 'group';
@@ -178,10 +187,19 @@ const GroupListItem: React.FC<GroupListItemProps> = ({
                 </div>
                 {isMessageRequest ? (
                   <p className="text-xs text-amber-700 dark:text-amber-300 truncate">Message request</p>
-                ) : preview ? (
-                  <p className="text-xs text-lantern-text-secondary truncate">{preview}</p>
-                ) : null}
+                ) : (
+                  <p className="text-xs text-lantern-text-secondary truncate">
+                    {chatRowSubtitle({
+                      kind: listingTitle ? 'listing' : communityName ? 'lounge' : isGroup ? 'study_group' : 'dm',
+                      preview,
+                      communityName,
+                      listingTitle,
+                    })}
+                  </p>
+                )}
             </div>
+            {pinned && <AppIcon name="pin" size={14} className="text-lantern-text-tertiary ml-1 flex-shrink-0" title="Pinned" />}
+            {muted && <AppIcon name="notifications-off" size={14} className="text-lantern-text-tertiary ml-1 flex-shrink-0" title="Muted" />}
             {isArchived && <AppIcon name="archive" size={16} className="text-lantern-text-tertiary ml-2 flex-shrink-0" title="Archived" />}
             {unreadCount > 0 && !isArchived && (
                 <span className="ml-2 bg-lantern-error-strong text-white text-xs font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full flex-shrink-0">

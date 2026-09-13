@@ -4069,8 +4069,19 @@ export function createApiEndpoints(client: ApiClient) {
         method: "DELETE",
       }),
 
-    checkoutMarketplaceCart: (idempotencyKey?: string) =>
+    checkoutMarketplaceCart: (
+      input?: {
+        groups?: Array<{
+          sellerId: string;
+          fulfillmentMode: string;
+          meetingLocation?: string;
+        }>;
+        addressId?: string | null;
+      },
+      idempotencyKey?: string,
+    ) =>
       apiRequest<{
+        checkout?: import("../types").MarketplaceCheckout;
         orders: import("../types").MarketplaceOrder[];
         failures: Array<{ listingId: string; error: string }>;
         sessions?: Array<{
@@ -4089,8 +4100,42 @@ export function createApiEndpoints(client: ApiClient) {
           "Idempotency-Key":
             idempotencyKey || createIdempotencyKey("cart-checkout"),
         },
-        body: JSON.stringify({}),
+        body: JSON.stringify(input || {}),
       }),
+
+    fetchMarketplaceAddresses: () =>
+      apiRequest<import("../types").MarketplaceAddress[]>(
+        "/marketplace/addresses",
+        {},
+        5000,
+      ),
+
+    createMarketplaceAddress: (data: Partial<import("../types").MarketplaceAddress>) =>
+      apiRequest<import("../types").MarketplaceAddress>("/marketplace/addresses", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+
+    updateMarketplaceAddress: (
+      addressId: string,
+      data: Partial<import("../types").MarketplaceAddress>,
+    ) =>
+      apiRequest<import("../types").MarketplaceAddress>(
+        `/marketplace/addresses/${addressId}`,
+        { method: "PATCH", body: JSON.stringify(data) },
+      ),
+
+    deleteMarketplaceAddress: (addressId: string) =>
+      apiRequest<{ removed: boolean }>(`/marketplace/addresses/${addressId}`, {
+        method: "DELETE",
+      }),
+
+    fetchSellerFulfillment: (sellerId: string) =>
+      apiRequest<import("../types").MarketplaceSellerFulfillment>(
+        `/marketplace/sellers/${sellerId}/fulfillment`,
+        {},
+        5000,
+      ),
 
     resumeMarketplaceOrderCheckout: (orderId: string) =>
       apiRequest<{
@@ -4143,6 +4188,8 @@ export function createApiEndpoints(client: ApiClient) {
         /** Phase 3 N — carried by `open_dispute` only; ignored otherwise. */
         disputeReason?: string;
         disputeCategory?: string;
+        trackingNumber?: string;
+        trackingUrl?: string;
       },
     ) =>
       apiRequest<import("../types").MarketplaceOrder>(
@@ -4215,6 +4262,11 @@ export function createApiEndpoints(client: ApiClient) {
     updateSellerPreferences: (data: {
       hallDropoffEnabled?: boolean;
       hallDropoffMinAmount?: number | null;
+      shippingEnabled?: boolean;
+      shippingFeeNaira?: number | null;
+      shippingFreeOverNaira?: number | null;
+      shipsFromCampusId?: string | null;
+      shipsFromCity?: string | null;
       requirePaymentConfirmation?: boolean;
       favoriteAlertThreshold?: number;
     }) =>

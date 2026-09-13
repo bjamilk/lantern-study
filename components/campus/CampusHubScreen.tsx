@@ -83,8 +83,8 @@ const CampusHubScreen: React.FC<CampusHubScreenProps> = ({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
-      <div className="shrink-0 border-b border-lantern-border bg-lantern-surface px-3 sm:px-4 md:px-6">
-        <h1 className="pt-3 text-lg font-semibold tracking-tight text-lantern-text">Campus</h1>
+      <div className="shrink-0 border-b border-lantern-border bg-lantern-surface px-4 md:px-6 lg:px-8">
+        <h1 className="pt-6 text-title text-lantern-text">Campus</h1>
         {segments.length > 1 ? (
           <div role="tablist" aria-label="Campus sections" className="flex gap-1 pt-2">
             {segments.map((id) => {
@@ -97,7 +97,7 @@ const CampusHubScreen: React.FC<CampusHubScreenProps> = ({
                   role="tab"
                   aria-selected={selected}
                   onClick={() => onSelectSegment(id)}
-                  className={`relative flex min-h-[44px] items-center gap-1.5 px-3 text-sm font-medium transition-colors ${
+                  className={`relative flex min-h-[44px] items-center gap-1.5 px-3 text-caption font-medium transition-colors ${
                     selected
                       ? 'text-lantern-primary'
                       : 'text-lantern-text-secondary hover:text-lantern-text'
@@ -117,7 +117,7 @@ const CampusHubScreen: React.FC<CampusHubScreenProps> = ({
           </div>
         ) : (
           // One surviving segment is a heading, not a choice.
-          <p className="pb-2 pt-0.5 text-xs text-lantern-text-secondary">
+          <p className="pb-4 pt-0.5 text-caption text-lantern-text-secondary">
             {SEGMENT_LABELS[active]}
           </p>
         )}

@@ -9,6 +9,8 @@ interface ConnectionBadgeProps {
   isSyncing?: boolean;
   lastSyncedAt?: Date | string | null;
   compact?: boolean;
+  /** Hide the word and keep the glyph — used when the nav rail is collapsed. */
+  iconOnly?: boolean;
   className?: string;
 }
 
@@ -35,6 +37,7 @@ export const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({
   isSyncing = false,
   lastSyncedAt,
   compact = false,
+  iconOnly = false,
   className = '',
 }) => {
   const input: ConnectionStatusInput = {
@@ -51,14 +54,17 @@ export const ConnectionBadge: React.FC<ConnectionBadgeProps> = ({
     <div
       role="status"
       aria-live="polite"
-      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border ${stateStyles[status.state]} ${className}`}
+      aria-label={status.label}
+      title={status.label}
+      className={`inline-flex items-center ${iconOnly ? 'justify-center gap-0 px-1.5 py-1.5' : 'gap-1.5 px-2.5 py-1'} rounded-full text-xs font-medium border ${stateStyles[status.state]} ${className}`}
     >
       <AppIcon
         name={iconName}
         size={14}
         className={`shrink-0 ${status.state === 'syncing' ? 'animate-spin' : ''}`}
+        aria-hidden="true"
       />
-      <span>{compact ? status.shortLabel : status.label}</span>
+      {iconOnly ? null : <span>{compact ? status.shortLabel : status.label}</span>}
     </div>
   );
 };

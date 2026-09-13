@@ -115,3 +115,51 @@ export function cachedPdfFileName(fileName: string | undefined, attachmentId: st
   const stem = base.replace(/\.pdf$/i, '').slice(0, 60) || `document-${attachmentId.slice(0, 8)}`;
   return `${stem}.pdf`;
 }
+
+/**
+ * How the downloaded copy gets handed to a PDF app.
+ *
+ * - `view`: an Android `ACTION_VIEW` intent on a `content://` URI, which lands
+ *   the student straight in their PDF reader. This is what "Open PDF" should
+ *   do, and what the share sheet never did.
+ * - `share`: the share sheet. It works, but it asks the student to pick an
+ *   app and to understand that "share" means "open" — so it is the fallback,
+ *   for phones where no activity answers `ACTION_VIEW`
+ *   (`ActivityNotFoundException`) and for iOS, where the sheet previews inline.
+ */
+export type PdfOpenerKind = 'view' | 'share';
+
+/** Viewer first on Android; everywhere else there is only the sheet. */
+export function pdfOpenerOrder(platform: string): PdfOpenerKind[] {
+  return platform === 'android' ? ['view', 'share'] : ['share'];
+}
+
+/**
+ * Try each opener in turn and report which one took the file.
+ *
+ * Kept separate from the component so the fallback is testable without a
+ * native module: the attempts are just functions that resolve or throw.
+ * If every opener throws, the LAST failure is rethrown — the share sheet's
+ * reason is the one worth showing, because it is the hop that was supposed
+ * to work after the viewer declined.
+ */
+export async function openPdfWithFallback(
+  order: PdfOpenerKind[],
+  attempts: Record<PdfOpenerKind, () => Promise<void>>,
+): Promise<{ via: PdfOpenerKind }> {
+  let lastError: unknown;
+  let attempted = false;
+  for (const kind of order) {
+    const attempt = attempts[kind];
+    if (!attempt) continue;
+    attempted = true;
+    try {
+      await attempt();
+      return { via: kind };
+    } catch (err: unknown) {
+      lastError = err;
+    }
+  }
+  if (attempted && lastError !== undefined) throw lastError;
+  throw new Error('No app on this device can open a PDF.');
+}

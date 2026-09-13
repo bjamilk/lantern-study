@@ -4259,6 +4259,8 @@ export const updateMarketplaceOrder = async (
     /** Phase 3 N — carried by `open_dispute` only; ignored for other actions. */
     disputeReason?: string;
     disputeCategory?: string;
+    trackingNumber?: string;
+    trackingUrl?: string;
   }
 ) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/orders/${orderId}`, {
@@ -4369,6 +4371,11 @@ export const fetchSellerPreferences = async () => {
 export const updateSellerPreferences = async (data: {
   hallDropoffEnabled?: boolean;
   hallDropoffMinAmount?: number | null;
+  shippingEnabled?: boolean;
+  shippingFeeNaira?: number | null;
+  shippingFreeOverNaira?: number | null;
+  shipsFromCampusId?: string | null;
+  shipsFromCity?: string | null;
   requirePaymentConfirmation?: boolean;
   favoriteAlertThreshold?: number;
 }) => {
@@ -4714,16 +4721,81 @@ export const clearMarketplaceCart = async () => {
   return result.data;
 };
 
-export const checkoutMarketplaceCart = async () => {
+export const checkoutMarketplaceCart = async (input?: {
+  groups?: Array<{ sellerId: string; fulfillmentMode: string; meetingLocation?: string }>;
+  addressId?: string | null;
+}) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/checkout`, {
     method: 'POST',
     headers: await getAuthHeaders(),
-    body: JSON.stringify({}),
+    body: JSON.stringify(input || {}),
   });
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error || 'Checkout failed');
   }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchMarketplaceAddresses = async () => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/addresses`, {
+    method: 'GET',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) throw new Error('Failed to load addresses');
+  const result = await response.json();
+  return result.data;
+};
+
+export const createMarketplaceAddress = async (data: Record<string, unknown>) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/addresses`, {
+    method: 'POST',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to save address');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const updateMarketplaceAddress = async (addressId: string, data: Record<string, unknown>) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/addresses/${addressId}`, {
+    method: 'PATCH',
+    headers: await getAuthHeaders(),
+    body: JSON.stringify(data),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to update address');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const deleteMarketplaceAddress = async (addressId: string) => {
+  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/addresses/${addressId}`, {
+    method: 'DELETE',
+    headers: await getAuthHeaders(),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error || 'Failed to delete address');
+  }
+  const result = await response.json();
+  return result.data;
+};
+
+export const fetchSellerFulfillment = async (sellerId: string) => {
+  const response = await fetchWithTimeout(
+    `${getApiRoot()}/api/v1/marketplace/sellers/${sellerId}/fulfillment`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    5000,
+  );
+  if (!response.ok) return null;
   const result = await response.json();
   return result.data;
 };
@@ -5520,7 +5592,16 @@ export const leaveCommunity = (communityId: string) =>
     'Could not leave this community'
   );
 
-export const createCommunity = (body: { name: string; description?: string; tags?: string[]; kind?: string }) =>
+export const createCommunity = (body: {
+  name: string;
+  description?: string;
+  tags?: string[];
+  kind?: string;
+  visibility?: 'public' | 'private';
+  startsAt?: string | null;
+  endsAt?: string | null;
+  location?: string | null;
+}) =>
   networkWrite<Community>(
     '/communities',
     'POST',

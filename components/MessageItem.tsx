@@ -24,6 +24,8 @@ import {
   canRemoveChatMessage,
 } from '@lantern/shared/utils';
 import { AppIcon } from './ui/AppIcon';
+import { CHAT_REACTION_EMOJI } from '@lantern/shared/chat';
+import { LinkPreviewChip } from './chat/LinkPreviewChip';
 
 function formatChatAudioTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
@@ -77,6 +79,12 @@ interface MessageItemProps {
   myReactions?: string[];
   /** Toggle a reaction; omitted in read-only contexts (e.g. thread previews). */
   onToggleReaction?: (messageId: string, emoji: string, added: boolean) => void;
+  onForward?: (message: Message) => void;
+  onCopy?: (message: Message) => void;
+  onStar?: (message: Message) => void;
+  onPin?: (message: Message) => void;
+  starred?: boolean;
+  pinned?: boolean;
 }
 
 function ReceiptTicks({
@@ -291,7 +299,7 @@ function ChatAudioPlayer({ url, onPrimary }: { url: string; onPrimary?: boolean 
   );
 }
 
-const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, onReportMessage, isGroupChat = false, myReactions, onToggleReaction }) => {
+const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessage, currentUserVote, onVoteQuestion, onFlagAsSimilar, currentUserFlagged, group, currentUser, isGroupedWithPrevious = false, onReply, onMentionUser, onScrollToMessage, onOpenThread, onEditMessage, onRemoveMessage, onReportMessage, isGroupChat = false, myReactions, onToggleReaction, onForward, onCopy, onStar, onPin, starred = false, pinned = false }) => {
   const { lowDataMode } = useUIStore();
   const isOfferNotice = message.type === MessageType.TEXT && message.text?.startsWith('[Offer]');
   const audioUrl = message.type === MessageType.TEXT ? parseChatAudioUrl(message.text) : null;
@@ -304,6 +312,9 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
   const canRemove = !!onRemoveMessage && canRemoveChatMessage(message, currentUser.id);
   // Anyone can report someone else's message; your own messages are never reportable.
   const canReport = !!onReportMessage && !isCurrentUserMessage;
+  const [menuOpen, setMenuOpen] = useState(false);
+  const copyText = (message.questionStem || (!audioUrl && !chatImageUrl ? message.text : '') || '').trim();
+  const showActions = !!(onReply || onForward || onCopy || onStar || onPin || canEdit || canRemove || canReport || onToggleReaction);
 
   if (isRemoved) {
     return (
@@ -440,9 +451,9 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
       {/* Bubble */}
       <div className={`max-w-xs md:max-w-md lg:max-w-lg px-3.5 py-2.5 relative ${bubbleClasses}`}>
-        {(onReply || canEdit || canRemove || canReport) && (
+        {showActions && (
           <div
-            className={`absolute -top-3 ${isCurrentUserMessage ? 'left-2' : 'right-2'} opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100 focus-within:opacity-100 flex items-center rounded-lg bg-lantern-surface border border-lantern-border shadow-sm transition-opacity overflow-hidden`}
+            className={`absolute -top-3 ${isCurrentUserMessage ? 'left-2' : 'right-2'} z-10 flex items-center rounded-lg bg-lantern-surface border border-lantern-border shadow-sm`}
           >
             {onReply && (
               <button
@@ -455,39 +466,82 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                 <AppIcon name="arrow-undo" size={14} />
               </button>
             )}
-            {canEdit && (
+            <div className="relative">
               <button
                 type="button"
-                onClick={() => onEditMessage?.(message)}
+                onClick={() => setMenuOpen((open) => !open)}
                 className="p-1.5 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background"
-                aria-label="Edit message"
-                title="Edit message"
+                aria-label="Message actions"
+                aria-expanded={menuOpen}
+                title="More"
               >
-                <AppIcon name="pencil" size={14} />
+                <AppIcon name="ellipsis-horizontal" size={14} />
               </button>
-            )}
-            {canRemove && (
-              <button
-                type="button"
-                onClick={() => onRemoveMessage?.(message)}
-                className="p-1.5 text-lantern-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                aria-label="Remove message"
-                title="Remove message"
-              >
-                <AppIcon name="trash" size={14} />
-              </button>
-            )}
-            {canReport && (
-              <button
-                type="button"
-                onClick={() => onReportMessage?.(message)}
-                className="p-1.5 text-lantern-text-secondary hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/30"
-                aria-label="Report message"
-                title="Report message"
-              >
-                <AppIcon name="flag" size={14} />
-              </button>
-            )}
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} aria-hidden />
+                  <div
+                    role="menu"
+                    className={`absolute top-full mt-1 z-30 min-w-[11rem] rounded-xl border border-lantern-border bg-lantern-surface shadow-lg overflow-hidden ${
+                      isCurrentUserMessage ? 'left-0' : 'right-0'
+                    }`}
+                  >
+                    {onToggleReaction && (
+                      <div className="flex flex-wrap gap-1 px-2 py-2 border-b border-lantern-border">
+                        {CHAT_REACTION_EMOJI.map((emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            className="h-8 w-8 rounded-md hover:bg-lantern-background-secondary"
+                            onClick={() => {
+                              onToggleReaction(message.id, emoji, !(myReactions || []).includes(emoji));
+                              setMenuOpen(false);
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    {onForward && copyText && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onForward(message); }}>
+                        Forward
+                      </button>
+                    )}
+                    {onCopy && copyText && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onCopy(message); }}>
+                        Copy
+                      </button>
+                    )}
+                    {onStar && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onStar(message); }}>
+                        {starred ? 'Unstar' : 'Star'}
+                      </button>
+                    )}
+                    {onPin && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onPin(message); }}>
+                        {pinned ? 'Unpin' : 'Pin'}
+                      </button>
+                    )}
+                    {canEdit && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onEditMessage?.(message); }}>
+                        Edit
+                      </button>
+                    )}
+                    {canRemove && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onRemoveMessage?.(message); }}>
+                        Remove
+                      </button>
+                    )}
+                    {canReport && (
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onReportMessage?.(message); }}>
+                        Report
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
         {/* Sender name for other users — tap inserts @username in the composer */}
@@ -552,7 +606,10 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
               style={{ maxHeight: '260px' }}
             />
           ) : (
-            <MentionedText text={message.text} onPrimary={onPrimaryChrome} />
+            <>
+              <MentionedText text={message.text} onPrimary={onPrimaryChrome} />
+              <LinkPreviewChip text={message.text} onPrimary={onPrimaryChrome} />
+            </>
           )
         )}
 
@@ -772,6 +829,7 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
 
         {/* Timestamp + receipts */}
         <p className={`text-[11px] mt-1.5 ${onPrimaryChrome ? 'text-white/80' : 'text-lantern-text-tertiary'} text-right flex items-center justify-end gap-0.5`}>
+          {starred && <AppIcon name="star" size={10} className="text-amber-400" />}
           <span>
             {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </span>

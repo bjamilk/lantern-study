@@ -121,6 +121,45 @@ export type PendingCompanionImage = CompanionImageAttachment & {
   previewUri?: string;
 };
 
+/**
+ * The photo read that is still in the air, if any.
+ *
+ * Reading a page is the slow, billable half of an attachment: the picker hands
+ * control back immediately, so a student types the question and sends while
+ * the upload is still going. `pendingImages` is empty at that moment, the
+ * request goes out with no ids, and the answer is "I can't view the image" —
+ * with the chip appearing under the composer a second later, which is exactly
+ * how the bug reads on a phone. Every send waits on this first, so the photo
+ * the student is looking at is the photo the question is asked about.
+ *
+ * Module-level rather than store state: nothing renders it, and a promise in
+ * a zustand snapshot would re-render the panel for no reason.
+ */
+let pendingImageRead: Promise<unknown> | null = null;
+
+/**
+ * One tap, one charge — across the photo wait too.
+ *
+ * `isLoading`/`isStreaming` flip synchronously and are the guard for every
+ * other send, but a send that stops to let a photo finish reading has not set
+ * them yet, so a second tap inside that window would have been a second
+ * charge. This closes exactly that window.
+ */
+let awaitingImageRead = false;
+
+/** Let an in-flight photo read finish. A failed read is not a failed send. */
+async function settlePendingImageRead(): Promise<void> {
+  while (pendingImageRead) {
+    const current = pendingImageRead;
+    try {
+      await current;
+    } catch {
+      /* the composer already carries the reason */
+    }
+    if (pendingImageRead === current) pendingImageRead = null;
+  }
+}
+
 interface CompanionState {
   isOpen: boolean;
   open: () => void;
@@ -285,7 +324,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
    * called this is never closed by it — a failed read leaves the sheet up with
    * the sentence under the chip row.
    */
-  attachImage: async (input) => {
+  attachImage: (input) => {
+    const read = (async (): Promise<PendingCompanionImage | null> => {
     set({ isUploadingImage: true, imageError: null, imageErrorDetail: null });
     try {
       const uploaded = await uploadCompanionImage({
@@ -315,6 +355,13 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       });
       return null;
     }
+    })();
+    // A send that lands mid-read waits on this instead of asking blind.
+    pendingImageRead = read;
+    void read.finally(() => {
+      if (pendingImageRead === read) pendingImageRead = null;
+    });
+    return read;
   },
   removeImage: (attachmentId: string) =>
     set((s) => ({
@@ -668,7 +715,19 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
    * lives here as well as in the button.
    */
   sendMessage: async (text: string, context?: CompanionUserContext) => {
-    if (get().isLoading || get().isStreaming) return;
+    if (get().isLoading || get().isStreaming || awaitingImageRead) return;
+    // A photo half-read is still this question's photo — see pendingImageRead.
+    // Only awaited when one is actually in flight: the ordinary send must stay
+    // synchronous up to the in-flight flags, or the double-tap guard is gone.
+    if (pendingImageRead) {
+      awaitingImageRead = true;
+      try {
+        await settlePendingImageRead();
+      } finally {
+        awaitingImageRead = false;
+      }
+      if (get().isLoading || get().isStreaming) return;
+    }
     const oneShot = get().pendingMessageContext;
     if (oneShot) set({ pendingMessageContext: null });
     const mergedContext = mergeThreadContext(get, oneShot ? { ...oneShot, ...context } : context);
@@ -721,7 +780,18 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
     // Same one-tap-one-charge guard as sendMessage: this is the path all
     // mobile chat takes, and it is the billable one.
-    if (get().isLoading || get().isStreaming) return;
+    if (get().isLoading || get().isStreaming || awaitingImageRead) return;
+    // Same wait as sendMessage: the ids must be in hand before the context is
+    // built, or the attachment never leaves the phone.
+    if (pendingImageRead) {
+      awaitingImageRead = true;
+      try {
+        await settlePendingImageRead();
+      } finally {
+        awaitingImageRead = false;
+      }
+      if (get().isLoading || get().isStreaming) return;
+    }
     const oneShot = get().pendingMessageContext;
     if (oneShot) set({ pendingMessageContext: null });
     const mergedContext = mergeThreadContext(get, oneShot ? { ...oneShot, ...context } : context);

@@ -148,10 +148,18 @@ export const CreatorProfileScreen: React.FC<Props> = ({ userId, onBack, onNaviga
                   )}
                 </div>
                 {!isSelf && (
-                  <button
+                  <div className="flex shrink-0 flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={() => onNavigate('DirectMessages', { userId })}
+                      className="px-4 py-2 rounded-lg text-sm font-semibold bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border"
+                    >
+                      Message
+                    </button>
+                    <button
                     onClick={() => void toggleFollow()}
                     disabled={busy}
-                    className={`shrink-0 px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 ${
+                    className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50 ${
                       profile.isFollowing
                         ? 'bg-lantern-background-secondary text-lantern-text hover:bg-lantern-border'
                         : 'bg-lantern-primary hover:bg-lantern-primary-dark text-white'
@@ -159,6 +167,7 @@ export const CreatorProfileScreen: React.FC<Props> = ({ userId, onBack, onNaviga
                   >
                     {profile.isFollowing ? 'Following' : 'Follow'}
                   </button>
+                  </div>
                 )}
               </div>
 

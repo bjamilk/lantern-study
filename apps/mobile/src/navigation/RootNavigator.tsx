@@ -7,7 +7,7 @@ import {
   ONBOARDING_COMPLETE_STORAGE_KEY,
   isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { isCommunityBoardGroupIn } from '@lantern/shared/network';
+import { isHiddenFromChatInbox } from '@lantern/shared/network';
 
 import { CommonActions, StackActions, NavigationContainer, DefaultTheme, DarkTheme, getFocusedRouteNameFromRoute, useFocusEffect, type NavigationState } from '@react-navigation/native';
 import { navigationRef, navigate as navigateFromRoot } from './navigationRef';
@@ -196,6 +196,8 @@ import {
   OrdersScreen,
 
   CartScreen,
+  CheckoutScreen,
+  AddressesScreen,
 
   PurchasesScreen,
 
@@ -261,6 +263,8 @@ const GatedOffers = withMarketplaceGate(OffersScreen);
 const GatedMarketFavorites = withMarketplaceGate(FavoritesScreen);
 const GatedOrders = withMarketplaceGate(OrdersScreen);
 const GatedCart = withMarketplaceGate(CartScreen);
+const GatedCheckout = withMarketplaceGate(CheckoutScreen);
+const GatedAddresses = withMarketplaceGate(AddressesScreen);
 const GatedPurchases = withMarketplaceGate(PurchasesScreen);
 const GatedStudyProductDrafts = withMarketplaceGate(StudyProductDraftsScreen);
 const GatedSemesterProducts = withMarketplaceGate(SemesterProductsScreen);
@@ -545,6 +549,8 @@ function CampusNavigator() {
       <CampusStack.Screen name="Orders" component={GatedOrders} />
 
       <CampusStack.Screen name="Cart" component={GatedCart} />
+      <CampusStack.Screen name="Checkout" component={GatedCheckout} />
+      <CampusStack.Screen name="Addresses" component={GatedAddresses} />
 
       <CampusStack.Screen name="Purchases" component={GatedPurchases} />
 
@@ -866,7 +872,7 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
 
       groups.reduce(
 
-        (s, g) => (isCommunityBoardGroupIn(g, knownLounges) ? s : s + (g.unreadCount || 0)),
+        (s, g) => (isHiddenFromChatInbox(g, knownLounges) ? s : s + (g.unreadCount || 0)),
 
         0
 

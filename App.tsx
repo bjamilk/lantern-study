@@ -12,7 +12,7 @@ import { ConfirmDialog } from './components/ui/ConfirmDialog';
 import FeatureTipsHost from './components/featureTips/FeatureTipsHost';
 import { useFeatureTipStore } from './stores/featureTipStore';
 import { setSessionExpiredHandler } from './services/sessionHandler';
-import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle, fetchGroups } from './services/supabase';
+import { supabase as supabaseClient, apiLogoutSession, fetchAccountLifecycle, fetchGroups, fetchMyInquiries } from './services/supabase';
 import {
     ONBOARDING_COMPLETE_STORAGE_KEY,
     ONBOARDING_COMPLETE_VALUE,
@@ -43,7 +43,7 @@ import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
 import { fetchTestSessionById, fetchNotifications, fetchDecks, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
 import { saveGeneratedDeck } from './services/jobArtifacts';
 import { useCommunityStore } from './stores/communityStore';
-import { COMMUNITY_COPY, studyGroupAnnouncement } from '@lantern/shared/network';
+import { COMMUNITY_COPY, isHiddenFromChatInbox, studyGroupAnnouncement } from '@lantern/shared/network';
 import { canOpenCommunities } from './components/community/communityAccess';
 import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
@@ -119,6 +119,9 @@ const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/Mark
 const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
 const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
 const MarketplaceCartScreen = lazyWithRetry(() => import('./components/MarketplaceCartScreen'));
+const MarketplaceCheckoutScreen = lazyWithRetry(() => import('./components/MarketplaceCheckoutScreen'));
+const ShopAccountScreen = lazyWithRetry(() => import('./components/ShopAccountScreen'));
+const MarketplaceAddressesScreen = lazyWithRetry(() => import('./components/MarketplaceAddressesScreen'));
 const MarketplaceOrderDetailScreen = lazyWithRetry(() => import('./components/MarketplaceOrderDetailScreen'));
 const SellerCustomersScreen = lazyWithRetry(() => import('./components/SellerCustomersScreen'));
 const SellerProfileScreen = lazyWithRetry(() => import('./components/SellerProfileScreen'));
@@ -421,7 +424,10 @@ export const App: React.FC = () => {
         void useCommunityStore.getState().loadMine().catch(() => {});
     }, [currentUser?.id]);
     const chatListGroups = React.useMemo(
-        () => (Array.isArray(groups) ? groups.filter((g) => !isBoardGroup(g, knownLounges)) : []),
+        () =>
+            (Array.isArray(groups)
+                ? groups.filter((g) => !isHiddenFromChatInbox(g, knownLounges))
+                : []),
         [groups, knownLounges]
     );
     const selectedChatIsBoard =
@@ -439,7 +445,12 @@ export const App: React.FC = () => {
             void useCommunityStore.getState().loadMine().catch(() => {});
             return;
         }
-        navigateTo(AppMode.COMMUNITY_DETAIL, { slug, groupId: selectedChat.id });
+        const postId = parseAppRoute(window.location.pathname).params.postId;
+        navigateTo(AppMode.COMMUNITY_DETAIL, {
+            slug,
+            groupId: selectedChat.id,
+            ...(postId ? { postId } : {}),
+        });
     }, [selectedChatIsBoard, selectedChat, myCommunities, navigateTo]);
     // A community channel opened from the plain chats list shows `in <Community>`
     // in its header; memberships resolve the id to a name + slug.
@@ -2032,6 +2043,9 @@ export const App: React.FC = () => {
                 }
                 scrollToCommunityMembers();
                 return;
+            case 'DirectMessages':
+                if (params?.userId) handleInitiateDm(String(params.userId));
+                return;
             case 'GroupChat':
                 openCommunityChannel(params);
                 return;
@@ -2229,7 +2243,9 @@ export const App: React.FC = () => {
         onLoadMoreDirectMessages={handleLoadMoreDirectMessages}
         unreadAnchorAt={unreadAnchorAt}
         onPeerChatRead={onPeerChatRead}
-        communityContext={opts?.communityContext} />
+        communityContext={opts?.communityContext}
+        onOpenLounge={(lounge) => navigateTo(AppMode.COMMUNITY_DETAIL, { slug: lounge.slug })}
+        onOpenInquiries={() => navigateTo(AppMode.MARKETPLACE_INQUIRIES)} />
         </div>
     );
 
@@ -3045,6 +3061,12 @@ export const App: React.FC = () => {
                         setAppMode(AppMode.MARKETPLACE_ORDERS);
                     } else if (screen === 'MarketplaceCart') {
                         setAppMode(AppMode.MARKETPLACE_CART);
+                    } else if (screen === 'MarketplaceCheckout') {
+                        setAppMode(AppMode.MARKETPLACE_CHECKOUT);
+                    } else if (screen === 'MarketplaceYou') {
+                        setAppMode(AppMode.MARKETPLACE_YOU);
+                    } else if (screen === 'MarketplaceAddresses') {
+                        setAppMode(AppMode.MARKETPLACE_ADDRESSES);
                     } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
                         setSellerProfileReturnMode(AppMode.MARKETPLACE);
                         setSelectedSellerId(params.userId || params.sellerId);
@@ -3266,6 +3288,8 @@ export const App: React.FC = () => {
                             setSelectedMarketplaceListingId(params.listingId);
                             setSelectedMarketplaceListingInitialQuantity(null);
                             setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
+                        } else if (screen === 'DirectMessages' && params?.userId) {
+                            handleInitiateDm(String(params.userId));
                         }
                     }} />;
             case AppMode.STUDY_PRODUCT_DRAFTS:
@@ -3360,6 +3384,8 @@ export const App: React.FC = () => {
                     onNavigate={(screen, params) => {
                         if (screen === 'Marketplace') {
                             setAppMode(AppMode.MARKETPLACE);
+                        } else if (screen === 'MarketplaceCheckout') {
+                            setAppMode(AppMode.MARKETPLACE_CHECKOUT);
                         } else if (screen === 'MarketplaceOrders') {
                             setAppMode(AppMode.MARKETPLACE_ORDERS);
                         } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
@@ -3372,6 +3398,35 @@ export const App: React.FC = () => {
                         }
                     }}
                 />;
+            case AppMode.MARKETPLACE_CHECKOUT:
+                return <MarketplaceCheckoutScreen
+                    onBack={() => setAppMode(AppMode.MARKETPLACE_CART)}
+                    onNavigate={(screen, params) => {
+                        if (screen === 'MarketplaceOrders') {
+                            setAppMode(AppMode.MARKETPLACE_ORDERS);
+                        } else if (screen === 'MarketplaceAddresses') {
+                            setAppMode(AppMode.MARKETPLACE_ADDRESSES);
+                        } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
+                            setSelectedMarketplaceOrderId(String(params.orderId));
+                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
+                        }
+                    }}
+                />;
+            case AppMode.MARKETPLACE_YOU:
+                return <ShopAccountScreen
+                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
+                    onNavigate={(screen) => {
+                        if (screen === 'MarketplaceCart') setAppMode(AppMode.MARKETPLACE_CART);
+                        else if (screen === 'MarketplaceOrders') setAppMode(AppMode.MARKETPLACE_ORDERS);
+                        else if (screen === 'MarketplaceAddresses') setAppMode(AppMode.MARKETPLACE_ADDRESSES);
+                        else if (screen === 'MarketplaceFavorites') setAppMode(AppMode.MARKETPLACE_FAVORITES);
+                        else if (screen === 'MarketplacePurchases') setAppMode(AppMode.MARKETPLACE_PURCHASES);
+                        else if (screen === 'MarketplaceInquiries') setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                        else if (screen === 'MyListings') setAppMode(AppMode.MY_LISTINGS);
+                    }}
+                />;
+            case AppMode.MARKETPLACE_ADDRESSES:
+                return <MarketplaceAddressesScreen onBack={() => setAppMode(AppMode.MARKETPLACE_YOU)} />;
             case AppMode.MARKETPLACE_ORDER_DETAIL:
                 if (!selectedMarketplaceOrderId) return null;
                 return <MarketplaceOrderDetailScreen
@@ -3668,6 +3723,8 @@ export const App: React.FC = () => {
         onToggleCompanion: toggleCompanion,
         isCompanionOpen,
         onCommunityNavigate: handleCommunityNavigate,
+        onOpenLounge: (lounge: { slug: string }) => navigateTo(AppMode.COMMUNITY_DETAIL, { slug: lounge.slug }),
+        onOpenInquiries: () => navigateTo(AppMode.MARKETPLACE_INQUIRIES),
     };
     return (
         <ErrorBoundary>
@@ -3827,6 +3884,51 @@ export const App: React.FC = () => {
                         navigateTo(AppMode.MY_JOB_APPLICATIONS);
                     } else if (screen === 'JobEmployerPipeline' && params?.jobId) {
                         navigateTo(AppMode.JOB_EMPLOYER_PIPELINE, { jobId: String(params.jobId) });
+                    } else if (screen === 'CommunityPost' && params?.slug && params?.groupId && params?.id) {
+                        navigateTo(AppMode.COMMUNITY_DETAIL, {
+                            slug: String(params.slug),
+                            groupId: String(params.groupId),
+                            postId: String(params.id),
+                        });
+                    } else if (screen === 'InquiryChat') {
+                        const threadId = params?.threadId ? String(params.threadId) : '';
+                        const otherUserId = params?.userId ? String(params.userId) : '';
+                        if (otherUserId) {
+                            handleInitiateDm(otherUserId);
+                        } else if (threadId) {
+                            handleSelectChat({ id: threadId, chatType: 'dm' } as any);
+                            navigateTo(AppMode.CHAT, { threadId });
+                        } else if (params?.inquiryId) {
+                            void (async () => {
+                                try {
+                                    const [buyer, seller] = await Promise.all([
+                                        fetchMyInquiries('buyer'),
+                                        fetchMyInquiries('seller'),
+                                    ]);
+                                    const { findInquiryRecord, inquiryThreadId, resolveInquiryDmTarget, inquiryBuyerId, inquirySellerId } = await import('@lantern/shared/chat');
+                                    const row = findInquiryRecord([...(buyer || []), ...(seller || [])], {
+                                        inquiryId: String(params.inquiryId),
+                                    });
+                                    const resolved = resolveInquiryDmTarget({
+                                        viewerId: currentUser?.id,
+                                        inquiryId: row?.id,
+                                        threadId: inquiryThreadId(row),
+                                        buyerId: inquiryBuyerId(row),
+                                        sellerId: inquirySellerId(row),
+                                    });
+                                    if (resolved.otherUserId) handleInitiateDm(resolved.otherUserId);
+                                    else if (resolved.threadId) {
+                                        handleSelectChat({ id: resolved.threadId, chatType: 'dm' } as any);
+                                        navigateTo(AppMode.CHAT, { threadId: resolved.threadId });
+                                    }
+                                    else setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                                } catch {
+                                    setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                                }
+                            })();
+                        } else {
+                            setAppMode(AppMode.MARKETPLACE_INQUIRIES);
+                        }
                     }
                 }} />
             <ChallengesInboxModal

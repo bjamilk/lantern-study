@@ -333,6 +333,7 @@ function mapProfileRowToUser(
     // and the profile can render it; verification_level drives the Verified badge.
     bio: (row.bio as string | null | undefined) ?? null,
     verificationLevel: toNullableInt(row.verification_level) ?? 0,
+    lastSeenAt: typeof row.last_seen_at === "string" ? row.last_seen_at : null,
   };
   return mapped as User;
 }
@@ -15365,11 +15366,17 @@ export class SupabaseService {
     buyerName: string,
     listingTitle: string,
     inquiryId: string,
+    extras?: { threadId?: string; buyerId?: string },
   ): Promise<void> {
     await this.createNotification(sellerId, {
       type: "marketplace_inquiry",
       message: `${buyerName} is interested in your listing "${listingTitle}"`,
       link: `/marketplace/inquiries/${inquiryId}`,
+      data: {
+        inquiryId,
+        threadId: extras?.threadId,
+        buyerId: extras?.buyerId,
+      },
     });
   }
 

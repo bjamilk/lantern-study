@@ -2,8 +2,9 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppIcon } from './ui/AppIcon';
 import {
   COMMUNITY_COPY,
-  communityHeaderLine,
-  communityKindLabel,
+  COMMUNITY_HOME_COPY,
+  buildCommunityHomeActivity,
+  communityHeaderMeta,
   communityMembershipAction,
   communityOnlineCount,
   presenceLabel,
@@ -23,12 +24,16 @@ import ManageCommunityPanel from './community/ManageCommunityPanel';
 import CommunityMembersPanel from './community/CommunityMembersPanel';
 import CommunityTile from './community/CommunityTile';
 import { canOpenCommunities } from './community/communityAccess';
-import { communityBadgeLabel } from './community/createCommunityPlan';
 import {
   copyCommunityInvite,
   useCommunityListActions,
   type CommunityNavigate,
 } from './community/communityNavigation';
+import {
+  communityManageCapabilities,
+  hasCommunityManagePowers,
+} from './community/manageCommunity';
+import { Menu, MenuContent, MenuItem, MenuTrigger } from './ui';
 
 /**
  * The community home (spec §5.5; `AppMode.COMMUNITY_DETAIL` without a
@@ -70,7 +75,9 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   );
   const [pending, setPending] = useState(false);
   const [descriptionOpen, setDescriptionOpen] = useState(false);
+  const [manageOpen, setManageOpen] = useState(false);
   const [studyPresence, setStudyPresence] = useState<PresenceSnapshot | null>(null);
+  const isPlatformAdmin = usePlatformAdmin();
 
   // Bumped on unmount and on every new run, so a slow response from a
   // community the user has already left writes nothing.
@@ -149,7 +156,25 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   }, [courseId, lowDataMode]);
 
   const { actions, pendingId } = useCommunityListActions(detail, navigate);
-
+  const activity = useMemo(
+    () => (payload ? buildCommunityHomeActivity(payload) : []),
+    [payload],
+  );
+  const canManage = !!(
+    detail &&
+    currentUserId &&
+    hasCommunityManagePowers(
+      communityManageCapabilities({
+        viewer: {
+          userId: currentUserId,
+          role: detail.viewerRole,
+          isPlatformAdmin,
+        },
+        isMember: detail.isMember,
+        visibility: detail.visibility,
+      }),
+    )
+  );
   const toggleMembership = async () => {
     if (!detail || pending) return;
     setPending(true);
@@ -185,10 +210,17 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
     ? communityOnlineCount(payload?.onlineCount ?? detail.onlineCount ?? 0, onlineIds, connected)
     : 0;
   const studyLine = presenceLabel(studyPresence);
+  const headerMeta = communityHeaderMeta(
+    detail ?? { kind: 'general', tags: [] },
+    memberCount,
+    onlineShown,
+  );
+  const eventWhen = detail?.starts_at ? new Date(detail.starts_at).toLocaleString() : null;
+  const eventWhere = detail?.location?.trim() || null;
 
   if (loading && !detail) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-10 text-sm text-lantern-text-secondary" role="status">
+      <div className="mx-auto max-w-3xl px-4 md:px-6 py-10 text-caption text-lantern-text-secondary" role="status">
         Loading…
       </div>
     );
@@ -198,13 +230,13 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
   const clampable = description.length > DESCRIPTION_CLAMP_CHARS;
 
   return (
-    <div className="mx-auto w-full max-w-3xl px-4 py-6 space-y-5 overflow-y-auto">
+    <div className="mx-auto w-full max-w-3xl px-4 md:px-6 lg:px-8 py-6 space-y-6 overflow-y-auto">
       <button
         type="button"
         onClick={onBack}
-        className="min-h-[44px] text-sm text-lantern-text-secondary hover:text-lantern-text sm:min-h-0"
+        className="min-h-[44px] text-caption text-lantern-text-secondary hover:text-lantern-text sm:min-h-0"
       >
-        ← Discover
+        ← Campus
       </button>
 
       {/* Nothing arrived: say so once, in the shared vocabulary, with a real
@@ -233,7 +265,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
             <CommunityTile name={detail.name} size="lg" />
             <div className="min-w-0 flex-1 space-y-2">
               <div className="flex items-start gap-2">
-                <h1 className="text-2xl font-semibold text-lantern-text" style={{ textWrap: 'balance' }}>
+                <h1 className="text-title text-lantern-text" style={{ textWrap: 'balance' }}>
                   {detail.name}
                 </h1>
                 {detail.is_official && (
@@ -249,16 +281,36 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                 {/* The kind badge: a hostel, a fellowship and a rag week all
                     say "Topic" without it. */}
                 <span className="rounded-full bg-lantern-feature-campus-tint px-2 py-0.5 text-label font-semibold text-lantern-feature-campus-ink">
-                  {communityBadgeLabel(detail.kind, detail.tags, communityKindLabel)}
+                  {headerMeta.label}
                 </span>
-                <p className="text-xs text-lantern-text-tertiary">
-                  {communityHeaderLine(detail.kind, memberCount, onlineShown)}
-                </p>
+                <p className="text-caption text-lantern-text-tertiary">{headerMeta.line}</p>
+                {detail.isMember && (canManage || detail.visibility === 'public') ? (
+                  <Menu>
+                    <MenuTrigger
+                      aria-label="More actions"
+                      className="inline-flex h-9 min-h-[44px] items-center rounded-lg px-2 text-lantern-text-secondary hover:bg-lantern-background-secondary sm:min-h-[36px]"
+                    >
+                      <AppIcon name="ellipsis-horizontal" size={18} />
+                    </MenuTrigger>
+                    <MenuContent>
+                      {detail.visibility === 'public' ? (
+                        <MenuItem onSelect={() => void copyInvite()}>
+                          {COMMUNITY_COPY.invite}
+                        </MenuItem>
+                      ) : null}
+                      {canManage ? (
+                        <MenuItem onSelect={() => setManageOpen((open) => !open)}>
+                          {manageOpen ? 'Hide manage' : 'Manage'}
+                        </MenuItem>
+                      ) : null}
+                    </MenuContent>
+                  </Menu>
+                ) : null}
               </div>
               {description ? (
                 <div>
                   <p
-                    className={`max-w-[60ch] text-sm text-lantern-text-secondary ${
+                    className={`max-w-[60ch] text-body text-lantern-text-secondary ${
                       clampable && !descriptionOpen ? 'line-clamp-2' : ''
                     }`}
                   >
@@ -269,16 +321,21 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                       type="button"
                       onClick={() => setDescriptionOpen((open) => !open)}
                       aria-expanded={descriptionOpen}
-                      className="mt-0.5 min-h-[44px] text-xs font-semibold text-lantern-primary hover:underline sm:min-h-0"
+                      className="mt-1 min-h-[44px] text-caption font-semibold text-lantern-primary-text hover:underline sm:min-h-0"
                     >
                       {descriptionOpen ? 'Less' : 'More'}
                     </button>
                   ) : null}
                 </div>
               ) : null}
+              {eventWhen || eventWhere ? (
+                <p className="text-caption text-lantern-text-secondary">
+                  {[eventWhen, eventWhere].filter(Boolean).join(' · ')}
+                </p>
+              ) : null}
               {studyLine ? (
-                <p className="inline-flex items-center gap-1.5 text-xs text-lantern-text-secondary">
-                  <AppIcon name="sparkles" size={16} className="text-lantern-primary" />
+                <p className="inline-flex items-center gap-1.5 text-caption text-lantern-text-secondary">
+                  <AppIcon name="sparkles" size={16} className="text-lantern-ink" />
                   {studyLine}
                 </p>
               ) : null}
@@ -287,7 +344,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                   type="button"
                   onClick={() => void toggleMembership()}
                   disabled={pending}
-                  className={`h-9 min-h-[44px] rounded-lg px-4 text-sm font-medium sm:min-h-[36px] ${
+                  className={`h-9 min-h-[44px] rounded-lg px-4 text-body font-medium sm:min-h-[36px] ${
                     detail.isMember
                       ? 'bg-lantern-background-secondary text-lantern-text-secondary'
                       : 'bg-lantern-primary text-white'
@@ -299,7 +356,7 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                   <button
                     type="button"
                     onClick={() => void copyInvite()}
-                    className="inline-flex h-9 min-h-[44px] items-center gap-1.5 rounded-lg bg-lantern-primary/10 px-4 text-sm font-semibold text-lantern-primary hover:bg-lantern-primary/20 sm:min-h-[36px]"
+                    className="inline-flex h-9 min-h-[44px] items-center gap-1.5 rounded-lg bg-lantern-primary/10 px-4 text-body font-semibold text-lantern-primary-text hover:bg-lantern-primary/20 sm:min-h-[36px]"
                   >
                     <AppIcon name="link" size={16} />
                     {COMMUNITY_COPY.invite}
@@ -307,10 +364,55 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                 ) : null}
               </div>
               {!detail.isMember ? (
-                <p className="text-xs text-lantern-text-secondary">{COMMUNITY_COPY.joinToSeeMembers}</p>
+                <p className="text-caption text-lantern-text-secondary">{COMMUNITY_COPY.joinToSeeMembers}</p>
               ) : null}
             </div>
           </header>
+
+          {activity.length > 0 && actions ? (
+            <section aria-label={COMMUNITY_HOME_COPY.sectionActivity} className="space-y-3">
+              <h2 className="text-title font-semibold text-lantern-text">
+                {COMMUNITY_HOME_COPY.sectionActivity}
+              </h2>
+              {activity.map((item) => (
+                <button
+                  key={`${item.kind}-${item.id}`}
+                  type="button"
+                  onClick={() => {
+                    if (item.kind === 'lounge') actions.onOpenLounge();
+                    if (item.kind === 'board') {
+                      const board = payload?.boards.find((row) => row.id === item.id);
+                      if (board) actions.onOpenBoard(board);
+                    }
+                    if (item.kind === 'room') {
+                      const room = payload?.rooms.find((row) => row.id === item.id);
+                      if (room) actions.onOpenRoom(room);
+                    }
+                  }}
+                  className="flex w-full min-h-[44px] items-center gap-3 rounded-lantern px-3 py-2 text-left hover:bg-lantern-background-secondary"
+                >
+                  <AppIcon
+                    name={item.kind === 'room' ? 'time' : item.kind === 'lounge' ? 'chatbubbles' : 'list'}
+                    size={16}
+                    className="shrink-0 text-lantern-text-tertiary"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-body font-semibold text-lantern-text">
+                      {item.title}
+                    </span>
+                    <span className="mt-1 block truncate text-caption text-lantern-text-secondary">
+                      {item.subtitle}
+                    </span>
+                  </span>
+                  {item.unread > 0 ? (
+                    <span className="bg-lantern-error-strong text-white text-label font-bold min-w-[1.25rem] h-5 px-1 flex items-center justify-center rounded-full">
+                      {item.unread > 99 ? '99+' : item.unread}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
+            </section>
+          ) : null}
 
           {/* Below md there is no column: the channel list lives on the page. */}
           <section className="md:hidden" aria-label="Boards">
@@ -330,24 +432,28 @@ const CommunityDetailHub: React.FC<CommunityDetailScreenProps> = ({ slug, onBack
                 onOpenMembers={actions.onOpenMembers}
               />
             ) : (
-              <p className="text-xs text-lantern-text-secondary" role="status">
+              <p className="text-caption text-lantern-text-secondary" role="status">
                 Loading…
               </p>
             )}
           </section>
 
-          {/* Roles, mutes and invite links — mounted only for somebody the
-              shared rules say can use one of them. */}
-          <ManageCommunityPanel detail={detail} onChanged={() => invalidate(detail.id)} />
+          {manageOpen ? (
+            <ManageCommunityPanel detail={detail} onChanged={() => invalidate(detail.id)} />
+          ) : null}
 
-          <section id="community-members" aria-label="Members" className="scroll-mt-4 space-y-2">
-            <h2 className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-              {COMMUNITY_COPY.sectionMembers} · {memberCount.toLocaleString()}
+          <section id="community-members" aria-label="Members" className="scroll-mt-4 space-y-4">
+            <h2 className="text-title font-semibold text-lantern-text">
+              Members · {memberCount.toLocaleString()}
             </h2>
             {detail.isMember ? (
-              <CommunityMembersPanel communityId={detail.id} viewerId={currentUserId} />
+              <CommunityMembersPanel
+                communityId={detail.id}
+                viewerId={currentUserId}
+                onMessageMember={(member) => void navigate('DirectMessages', { userId: member.id })}
+              />
             ) : (
-              <p className="text-xs text-lantern-text-secondary">{COMMUNITY_COPY.joinToSeeMembers}</p>
+              <p className="text-caption text-lantern-text-secondary">{COMMUNITY_COPY.joinToSeeMembers}</p>
             )}
           </section>
         </>

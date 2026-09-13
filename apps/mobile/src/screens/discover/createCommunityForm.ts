@@ -5,23 +5,28 @@
  * `{ name, kind?, description?, tags? }` and mints a PUBLIC community. The
  * kinds migration (20260908120000) is hand-applied: before it the API files
  * the room as `topic` and keeps the tag; after it the real kind is written.
- * Invite codes and event columns ride on the same migration and are not
- * offered here yet. So this planner sends what survives either round trip:
+ * Visibility is a real control. Private rooms stay off Find; join is
+ * invite-link or code from Manage. Event columns ride on the same
+ * migration. So this planner sends:
  *
  *  - the PURPOSE travels as `kind` AND as a tag, which is what
  *    `effectiveCommunityKind` in the Campus hub reads back to give the room
  *    its real label, glyph and chip on either side of the migration;
  *  - an event's when/where is composed into the description in plain words,
  *    because the alternative is dropping what the student typed;
- *  - visibility is not offered at all, and the screen says out loud that the
- *    room will be public.
+ *  - visibility is public unless the student picks private.
  *
  * The tags and the copy are deliberately the SAME words web's
  * `components/community/createCommunityPlan.ts` writes: a room started on a
  * phone and one started in a browser must come back identical, or the two
  * clients would file them under different chips.
  */
-import { communityKindMeta, type CommunityKind } from '@lantern/shared/network';
+import {
+  COMMUNITY_EVENT_LOCATION_MAX,
+  communityKindMeta,
+  parseCommunityEventStart,
+  type CommunityKind,
+} from '@lantern/shared/network';
 import type { AppIconName } from '../../components/ui/appIconMap';
 
 export const COMMUNITY_NAME_MIN = 3;
@@ -110,10 +115,13 @@ export function purposeIcon(purpose: CommunityPurpose): AppIconName {
   return communityKindMeta(purpose.kind).icon as AppIconName;
 }
 
+export type CommunityVisibility = 'public' | 'private';
+
 export interface CreateCommunityDraft {
   name: string;
   purposeId: string | null;
   description: string;
+  visibility: CommunityVisibility;
   /** Event purpose only — plain text, e.g. "Fri 12 Sep, 4pm". */
   eventWhen: string;
   eventWhere: string;
@@ -123,6 +131,7 @@ export const EMPTY_CREATE_COMMUNITY_DRAFT: CreateCommunityDraft = {
   name: '',
   purposeId: null,
   description: '',
+  visibility: 'public',
   eventWhen: '',
   eventWhere: '',
 };
@@ -193,6 +202,9 @@ export interface CreateCommunityRequest {
   kind: CommunityKind;
   description?: string;
   tags?: string[];
+  visibility: CommunityVisibility;
+  startsAt?: string | null;
+  location?: string | null;
 }
 
 /** The exact body `POST /communities` accepts — nothing the server would drop. */
@@ -202,8 +214,13 @@ export function buildCreateCommunityRequest(
   if (!isCreateCommunityValid(draft)) return null;
   const purpose = communityPurpose(draft.purposeId);
   if (!purpose) return null;
+  const startsAt = purpose.id === 'event' ? parseCommunityEventStart(draft.eventWhen) : null;
+  const location =
+    purpose.id === 'event' && draft.eventWhere.trim()
+      ? draft.eventWhere.trim().slice(0, COMMUNITY_EVENT_LOCATION_MAX)
+      : null;
   const description =
-    purpose.id === 'event'
+    purpose.id === 'event' && !startsAt
       ? composeEventDescription({
           description: draft.description,
           when: draft.eventWhen,
@@ -213,8 +230,11 @@ export function buildCreateCommunityRequest(
   return {
     name: draft.name.trim().replace(/\s+/g, ' '),
     kind: purpose.kind,
+    visibility: draft.visibility === 'private' ? 'private' : 'public',
     ...(description ? { description: description.slice(0, COMMUNITY_DESCRIPTION_MAX) } : {}),
     tags: [purpose.tag],
+    ...(startsAt ? { startsAt } : {}),
+    ...(location ? { location } : {}),
   };
 }
 
@@ -223,14 +243,19 @@ export function buildCreateCommunityRequest(
  * promise about behaviour, so it lives beside the request builder that makes
  * the promise true.
  */
-export const CREATE_COMMUNITY_VISIBILITY_NOTE =
-  'Anyone signed in can find and join this community. Private communities and invite codes are not available yet — do not start one for anything you need kept in.';
+export function createCommunityVisibilityNote(visibility: CommunityVisibility): string {
+  return visibility === 'private'
+    ? 'Only people with an invite link or code can find this community. Copy a code from Manage after you create it.'
+    : 'Anyone signed in can find and join this community.';
+}
+
+export const CREATE_COMMUNITY_VISIBILITY_NOTE = createCommunityVisibilityNote('public');
 
 export const CREATE_COMMUNITY_MODERATION_NOTE =
   'You start as its admin. Anything posted here can be reported, and the same rules apply as everywhere else on Lantern.';
 
 export const CREATE_COMMUNITY_EVENT_NOTE =
-  'When and where go into the description, so everyone who opens the community sees them.';
+  'Use a date and time like 2026-09-15 16:00 so the event lists soonest-first. A written date still goes into the description.';
 
 export const CREATE_COMMUNITY_TITLE = 'Start a community';
 export const CREATE_COMMUNITY_SUBMIT = 'Create community';

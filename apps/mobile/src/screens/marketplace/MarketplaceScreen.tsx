@@ -56,10 +56,12 @@ import { RequestError } from '../../components/RequestError';
 import {
   CONDITION_ATTRIBUTE,
   COURSE_ANCHOR_COPY,
+  SHOP_HOME_COPY,
   getTaxonomyPath,
   listingTypeLabel,
   suggestMarketplaceSearch,
 } from '@lantern/shared/marketplace';
+import { ShopDepartmentRow } from './components/ShopDepartmentRow';
 import { useChrome } from '../../components/layout/ChromeContext';
 import { brand, useTheme } from '../../theme';
 import { getFontScaleValue } from '../../theme/installFontScale';
@@ -383,6 +385,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       await fetchSavedSearches();
       await fetchListings({ page: 1 });
       await loadRecent();
+      await fetchShops({ campus: savedCampusId || campusIdFilter || undefined });
     })();
   }, [activeTab, selectedCategory]);
 
@@ -697,6 +700,18 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
     );
   };
 
+  const campusRail = useMemo(
+    () =>
+      displayListings
+        .filter((item) => (item.campus_id ?? item.campus?.id) && (item.campus_id ?? item.campus?.id) === (campusIdFilter || savedCampusId))
+        .slice(0, 8),
+    [displayListings, campusIdFilter, savedCampusId],
+  );
+  const courseRail = useMemo(
+    () => displayListings.filter((item) => item.courseId).slice(0, 8),
+    [displayListings],
+  );
+
   const listHeader = (
     <View>
       {!showFavoritesOnly && !searchQuery.trim() ? (
@@ -707,8 +722,8 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       ) : null}
       {recentListings.length > 0 && !showFavoritesOnly ? (
         <View className="px-2 pt-3">
-          <Text className="text-sm font-semibold text-lantern-text mb-2 px-1">
-            Recently viewed
+          <Text className="text-heading text-lantern-text mb-2 px-1">
+            {SHOP_HOME_COPY.continueShopping}
           </Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {recentListings.map(item => (
@@ -728,7 +743,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       ) : null}
       {dealListings.length > 0 && !showFavoritesOnly && !searchQuery.trim() ? (
         <View className="px-2 pt-3">
-          <Text className="text-sm font-semibold text-lantern-text mb-2 px-1">On sale now</Text>
+          <Text className="text-heading text-lantern-text mb-2 px-1">{SHOP_HOME_COPY.onSale}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}>
             {dealListings.map(item => (
               <Pressable
@@ -745,6 +760,72 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           </ScrollView>
         </View>
       ) : null}
+      {campusRail.length > 0 && !showFavoritesOnly && !searchQuery.trim() ? (
+        <View className="px-2 pt-3">
+          <Text className="text-heading text-lantern-text mb-2 px-1">{SHOP_HOME_COPY.yourCampus}</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {campusRail.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => openListing(item.id)}
+                className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
+              >
+                <ListingImage uri={item.images?.[0]} className="w-full h-20" />
+                <Text numberOfLines={2} className="text-label p-1.5 text-lantern-text">
+                  {item.title}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+      {courseRail.length > 0 && !showFavoritesOnly && !searchQuery.trim() ? (
+        <View className="px-2 pt-3">
+          <Pressable onPress={() => navigation.navigate('CourseBrowse')} className="mb-2 px-1">
+            <Text className="text-heading text-lantern-text">{SHOP_HOME_COPY.forYourCourses}</Text>
+          </Pressable>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {courseRail.map(item => (
+              <Pressable
+                key={item.id}
+                onPress={() => openListing(item.id)}
+                className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border"
+              >
+                <ListingImage uri={item.images?.[0]} className="w-full h-20" />
+                <Text numberOfLines={2} className="text-label p-1.5 text-lantern-text">
+                  {item.title}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+      {shops.length > 0 && !showFavoritesOnly && !searchQuery.trim() && activeTab !== 'shops' ? (
+        <View className="px-2 pt-3">
+          <Pressable onPress={() => setActiveTab('shops')} className="mb-2 px-1">
+            <Text className="text-heading text-lantern-text">{SHOP_HOME_COPY.shops}</Text>
+          </Pressable>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {shops.slice(0, 8).map(shop => (
+              <Pressable
+                key={shop.sellerId}
+                onPress={() => navigation.navigate('SellerProfile', { sellerId: shop.sellerId })}
+                className="w-28 mr-2 rounded-xl overflow-hidden bg-lantern-surface border border-lantern-border p-2"
+              >
+                <Text numberOfLines={2} className="text-label text-lantern-text">
+                  {shop.shopName}
+                </Text>
+                <Text className="text-caption text-lantern-text-secondary mt-1">
+                  {shop.activeListingCount} live
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+      ) : null}
+      {!showFavoritesOnly ? (
+        <Text className="text-heading text-lantern-text px-3 pt-4 pb-1">{SHOP_HOME_COPY.allListings}</Text>
+      ) : null}
     </View>
   );
 
@@ -756,12 +837,19 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             admins; Community has its own entry in the profile drawer and the
             Shop icon in the top bar comes straight here. */}
 
+        {!searchExpanded && !showFavoritesOnly ? (
+          <View className="px-4">
+            <Text className="text-title text-lantern-text">{SHOP_HOME_COPY.title}</Text>
+            <Text className="text-caption text-lantern-text-secondary mt-0.5">{SHOP_HOME_COPY.subtitle}</Text>
+          </View>
+        ) : null}
+
         {/* 36dp row in both states so Cart never jumps. gap-2 (8px) means
             hitSlop={4} on adjacent 36px buttons yields exact 44px targets that
             touch without overlapping. */}
         <View className="px-4 flex-row items-center gap-2">
           {searchExpanded ? (
-            <View className="flex-1 min-h-[36px] flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern pl-0.5 pr-1">
+            <View className="flex-1 min-h-[44px] flex-row items-center bg-lantern-surface border border-lantern-border rounded-lantern pl-0.5 pr-1">
               {/* Material SearchView leading action: the box has exactly one
                   X-shaped glyph (Clear), so Close and Clear cannot be confused. */}
               <Pressable
@@ -787,10 +875,10 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 autoCapitalize="none"
                 autoCorrect={false}
                 returnKeyType="search"
-                placeholder="Search listings…"
+                placeholder={SHOP_HOME_COPY.emptySearch}
                 placeholderTextColor={colors.inputPlaceholder}
                 accessibilityLabel="Search listings"
-                className="flex-1 ml-1 py-0 text-sm text-lantern-text"
+                className="flex-1 ml-1 py-0 text-body text-lantern-text"
               />
               {searchQuery.length > 0 ? (
                 <Pressable
@@ -968,6 +1056,15 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       </View>
 
       <View className="bg-lantern-surface border-b border-lantern-border">
+        {!showFavoritesOnly && !searchQuery.trim() ? (
+          <ShopDepartmentRow
+            selected={taxonomyNodeId?.split('.')[0] || undefined}
+            onSelect={(department) => {
+              setTaxonomyNode(department);
+              setOpenPanel(null);
+            }}
+          />
+        ) : null}
         {/* Departments scroll horizontally, Amazon-style: nine of them cannot
             share a row of equal thirds, and squeezing them would truncate every
             label. Shops sits last because it browses sellers, not products. */}

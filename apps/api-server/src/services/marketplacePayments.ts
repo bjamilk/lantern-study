@@ -40,6 +40,10 @@ function allowlistedCallback(orderId: string): string {
   return `${callbackBaseUrl()}/marketplace/orders/${orderId}?payment=return`;
 }
 
+function allowlistedCheckoutCallback(checkoutId: string): string {
+  return `${callbackBaseUrl()}/marketplace/orders?payment=return&checkout=${checkoutId}`;
+}
+
 export class MarketplacePaymentsService {
   private orders: MarketplaceOrdersService;
 
@@ -218,6 +222,105 @@ export class MarketplacePaymentsService {
       authorizationUrl: init.authorizationUrl,
       accessCode: init.accessCode,
       publicKey: getPaystackPublicKey(),
+    };
+  }
+
+  async createAwaitingPaymentOrderForCheckout(input: {
+    listingId: string;
+    buyerId: string;
+    quantity?: number;
+  }) {
+    return this.createAwaitingPaymentBuyNowOrder(input);
+  }
+
+  async createCheckoutCharge(input: {
+    checkoutId: string;
+    buyerId: string;
+    buyerEmail: string;
+    orders: Array<{ id: string; seller_id: string; listing_id: string; amount: number; quantity?: number }>;
+    itemAmountKobo: number;
+    shippingAmountKobo: number;
+    totalChargeKobo: number;
+  }) {
+    if (!marketplacePaystackEnabled()) {
+      throw new Error('Paystack marketplace checkout is not enabled');
+    }
+    const first = input.orders[0];
+    if (!first) throw new Error('Checkout has no orders');
+    for (const order of input.orders) {
+      await this.assertSellerCanReceivePayout(order.seller_id);
+    }
+
+    const reference = createPaystackReference('ls_cart');
+    const { data: payment, error: payErr } = await this.db
+      .from('marketplace_payments')
+      .insert({
+        order_id: first.id,
+        checkout_id: input.checkoutId,
+        buyer_id: input.buyerId,
+        seller_id: first.seller_id,
+        item_amount_kobo: input.itemAmountKobo,
+        shipping_amount_kobo: input.shippingAmountKobo,
+        service_fee_kobo: 0,
+        total_charged_kobo: input.totalChargeKobo,
+        platform_fee_kobo: 0,
+        seller_payout_kobo: 0,
+        currency: 'NGN',
+        paystack_reference: reference,
+        status: 'initialized',
+        metadata: {
+          checkoutId: input.checkoutId,
+          orderIds: input.orders.map((order) => order.id),
+          source: 'unified_checkout',
+        },
+      })
+      .select('*')
+      .single();
+    if (payErr || !payment) throw payErr || new Error('Failed to create checkout payment');
+
+    await this.db
+      .from('marketplace_checkouts')
+      .update({ payment_id: payment.id, updated_at: new Date().toISOString() })
+      .eq('id', input.checkoutId);
+
+    await this.db
+      .from('marketplace_orders')
+      .update({ payment_id: payment.id, status: 'awaiting_payment' })
+      .in(
+        'id',
+        input.orders.map((order) => order.id),
+      );
+
+    const init = await initializePaystackTransaction({
+      email: input.buyerEmail,
+      amountKobo: input.totalChargeKobo,
+      reference,
+      callbackUrl: allowlistedCheckoutCallback(input.checkoutId),
+      metadata: {
+        checkoutId: input.checkoutId,
+        paymentId: payment.id,
+        buyerId: input.buyerId,
+      },
+    });
+
+    await this.db
+      .from('marketplace_payments')
+      .update({
+        paystack_access_code: init.accessCode,
+        updated_at: new Date().toISOString(),
+        metadata: {
+          checkoutId: input.checkoutId,
+          orderIds: input.orders.map((order) => order.id),
+          source: 'unified_checkout',
+          authorizationUrl: init.authorizationUrl,
+        },
+      })
+      .eq('id', payment.id);
+
+    return {
+      paymentId: payment.id,
+      reference: init.reference,
+      authorizationUrl: init.authorizationUrl,
     };
   }
 
@@ -580,7 +683,55 @@ export class MarketplacePaymentsService {
     if (updErr) throw updErr;
     if (!updated) return; // raced
 
-    if (payment.order_id) {
+    if (payment.checkout_id) {
+      await this.db
+        .from('marketplace_checkouts')
+        .update({ status: 'paid', updated_at: now })
+        .eq('id', payment.checkout_id);
+      const { data: checkoutOrders } = await this.db
+        .from('marketplace_orders')
+        .select('id, listing_id, buyer_id, seller_id')
+        .eq('checkout_id', payment.checkout_id);
+      const rows = (checkoutOrders || []) as Array<{
+        id: string;
+        listing_id: string;
+        buyer_id: string;
+        seller_id: string;
+      }>;
+      if (rows.length > 0) {
+        await this.db
+          .from('marketplace_cart_items')
+          .delete()
+          .eq('buyer_id', payment.buyer_id)
+          .in(
+            'listing_id',
+            rows.map((row) => row.listing_id),
+          );
+      }
+      for (const order of rows) {
+        await this.db
+          .from('marketplace_orders')
+          .update({ status: 'paid', payment_id: payment.id })
+          .eq('id', order.id)
+          .in('status', ['awaiting_payment', 'pending_payment']);
+        await this.orders.stampOrderPaidAt(order.id, now);
+        const digital = await this.fulfillDigitalOrderAfterPayment(order.id, updated);
+        if (!digital) {
+          await this.orders.notifyOrderParty(order.seller_id, {
+            type: 'marketplace_order_update',
+            message: 'Payment received via Paystack. Mark the order ready when the item is prepared.',
+            link: `marketplace:order:${order.id}`,
+            data: { orderId: order.id, paid: true, checkoutId: payment.checkout_id },
+          });
+          await this.orders.notifyOrderParty(order.buyer_id, {
+            type: 'marketplace_order_update',
+            message: 'Payment confirmed. Arrange campus pickup or watch for shipping.',
+            link: `marketplace:order:${order.id}`,
+            data: { orderId: order.id, paid: true, checkoutId: payment.checkout_id },
+          });
+        }
+      }
+    } else if (payment.order_id) {
       await this.db
         .from('marketplace_orders')
         .update({ status: 'paid' })
@@ -709,12 +860,61 @@ export class MarketplacePaymentsService {
     sellerId: string,
     payment: Record<string, any>
   ): Promise<'legacy' | 'already_paid_out' | 'transferred' | 'in_flight'> {
-    if (payment.status === 'paid_out') return 'already_paid_out';
     if (payment.status === 'refunded' || payment.status === 'failed') {
       throw new Error('Payment cannot be paid out in its current state');
     }
-    if (payment.status !== 'paid' && payment.status !== 'payout_pending') {
+    if (payment.status === 'paid_out' && !payment.checkout_id) return 'already_paid_out';
+    if (payment.status !== 'paid' && payment.status !== 'payout_pending' && payment.status !== 'paid_out') {
       throw new Error('Order payment is not settled yet');
+    }
+
+    if (payment.checkout_id) {
+      const { data: orderRow } = await this.db
+        .from('marketplace_orders')
+        .select('id, seller_payout_kobo, payout_status, amount, shipping_amount')
+        .eq('id', orderId)
+        .maybeSingle();
+      if (orderRow?.payout_status === 'paid_out') return 'already_paid_out';
+      const { data: profile } = await this.db
+        .from('marketplace_seller_payout_profiles')
+        .select('paystack_recipient_code, status')
+        .eq('user_id', sellerId)
+        .maybeSingle();
+      if (!profile?.paystack_recipient_code || profile.status !== 'active') {
+        throw new Error('Seller payout profile is missing or inactive');
+      }
+      const amountKobo = Number(
+        orderRow?.seller_payout_kobo ??
+          nairaToKobo(Number(orderRow?.amount || 0) + Number(orderRow?.shipping_amount || 0)),
+      );
+      const transferRef = createPaystackReference('ls_po');
+      const transfer = await initiatePaystackTransfer({
+        amountKobo,
+        recipientCode: profile.paystack_recipient_code,
+        reference: transferRef,
+        reason: `Lantern marketplace order ${orderId}`,
+      });
+      await this.db
+        .from('marketplace_orders')
+        .update({ payout_status: 'paid_out' })
+        .eq('id', orderId);
+      const { data: siblings } = await this.db
+        .from('marketplace_orders')
+        .select('id, status, payout_status')
+        .eq('checkout_id', payment.checkout_id);
+      const remaining = (siblings || []).filter(
+        (row: { status: string; payout_status: string }) =>
+          !['cancelled', 'completed'].includes(row.status) || row.payout_status !== 'paid_out',
+      );
+      const unfinished = (siblings || []).filter(
+        (row: { status: string; payout_status: string }) =>
+          row.status !== 'cancelled' && row.payout_status !== 'paid_out',
+      );
+      if (unfinished.length === 0 || remaining.length === 0) {
+        await this.markPaymentPaidOut(payment.id);
+      }
+      void transfer;
+      return 'transferred';
     }
 
     const { data: profile } = await this.db
@@ -878,18 +1078,34 @@ export class MarketplacePaymentsService {
 
     if (payment.status === 'paid' || payment.status === 'payout_pending') {
       const txRef = payment.paystack_transaction_id || payment.paystack_reference;
+      const orderShareKobo = nairaToKobo(
+        Number(order.amount || 0) + Number((order as { shipping_amount?: number }).shipping_amount || 0),
+      );
+      const amountKobo = payment.checkout_id ? orderShareKobo : Number(payment.total_charged_kobo);
       const refund = await refundPaystackTransaction({
         transactionIdOrReference: txRef,
-        amountKobo: Number(payment.total_charged_kobo),
+        amountKobo,
       });
-      await this.db
-        .from('marketplace_payments')
-        .update({
-          status: 'refunded',
-          refund_reference: String(refund.id),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', payment.id);
+      const { data: siblings } = payment.checkout_id
+        ? await this.db
+            .from('marketplace_orders')
+            .select('id, status')
+            .eq('checkout_id', payment.checkout_id)
+        : { data: [] };
+      const othersOpen = (siblings || []).some(
+        (row: { id: string; status: string }) =>
+          row.id !== orderId && !['cancelled', 'completed'].includes(row.status),
+      );
+      if (!payment.checkout_id || !othersOpen) {
+        await this.db
+          .from('marketplace_payments')
+          .update({
+            status: 'refunded',
+            refund_reference: String(refund.id),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', payment.id);
+      }
     } else {
       await this.db
         .from('marketplace_payments')

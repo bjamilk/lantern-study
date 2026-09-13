@@ -4,6 +4,7 @@ import { chatMessagePreview, parseChatAudioUrl } from '@lantern/shared/utils';
 import { ResolvedAvatar } from '../ResolvedAvatar';
 import { useTheme } from '../../theme';
 import { ChatTextBody } from './ChatMessageBody';
+import { LinkPreviewChip } from './LinkPreviewChip';
 import { ReceiptTicks } from './ReceiptTicks';
 import { SwipeToReply } from './SwipeToReply';
 import { VoiceNotePlayer } from './VoiceNotePlayer';
@@ -196,11 +197,14 @@ function DmBubbleComponent({
           {audioUrl ? (
             <VoiceNotePlayer url={audioUrl} isOwn={isOwn} />
           ) : (
-            <ChatTextBody
-              text={message.text}
-              textColor={colors.chatBubbleText}
-              mentionColor={isOwn ? colors.chatBubbleText : colors.primary}
-            />
+            <>
+              <ChatTextBody
+                text={message.text}
+                textColor={colors.chatBubbleText}
+                mentionColor={isOwn ? colors.chatBubbleText : colors.primary}
+              />
+              <LinkPreviewChip text={message.text} />
+            </>
           )}
           {/* Time / edited / delivery are spoken once as part of the row label;
               only the Retry action stays as its own stop. */}

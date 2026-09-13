@@ -110,21 +110,21 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
   };
 
   const rowClass =
-    'w-full flex items-center gap-2 rounded-lantern px-3 min-h-[44px] md:min-h-[40px] text-left text-sm font-medium text-lantern-text transition-colors hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary';
+    'w-full flex items-center gap-2 rounded-lantern px-3 min-h-[44px] md:min-h-[40px] text-left text-body font-medium text-lantern-text transition-colors hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary';
 
   return (
     <div className="w-80 h-full flex flex-col">
       <div className="flex items-center gap-2 h-16 px-3 border-b border-lantern-border flex-shrink-0">
         <CommunityTile name={name} size="sm" />
         <div className="min-w-0 flex-1">
-          <h2 className="flex items-center gap-1 text-sm font-bold text-lantern-text">
+          <h2 className="flex items-center gap-1 text-heading text-lantern-text">
             <span className="truncate">{name}</span>
             {detail?.is_official ? (
               <AppIcon name="badge-check" size={16} className="shrink-0 text-lantern-primary" aria-label="Official community" />
             ) : null}
           </h2>
           {headerLine ? (
-            <p className="truncate text-[11px] text-lantern-text-tertiary">{headerLine}</p>
+            <p className="mt-0.5 truncate text-caption text-lantern-text-secondary">{headerLine}</p>
           ) : null}
         </div>
         <div className="flex shrink-0 items-center">
@@ -192,7 +192,7 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
           </button>
         </div>
         {error ? (
-          <p className="px-3 py-2 text-xs text-lantern-error" role="alert">
+          <p className="px-3 py-2 text-caption text-lantern-error" role="alert">
             {error}{' '}
             <button type="button" className="font-semibold underline" onClick={() => setError(null)}>
               Retry
@@ -214,7 +214,7 @@ export const CommunityColumn: React.FC<{ onNavigate: CommunityNavigate }> = ({ o
             onStartRoom={actions.onStartRoom}
           />
         ) : (
-          <p className="px-3 py-2 text-xs text-lantern-text-secondary" role="status">
+          <p className="px-3 py-2 text-caption text-lantern-text-secondary" role="status">
             Loading…
           </p>
         )}

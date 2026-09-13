@@ -88,7 +88,7 @@ describe('CreateCommunityModal', () => {
     ).toBe('');
   });
 
-  it('offers campus life, not only study, and says the room will be public', () => {
+  it('offers campus life, not only study, and a Public / Private choice', () => {
     const html = renderToStaticMarkup(
       <CreateCommunityModal isOpen onClose={() => undefined} onCreated={() => undefined} />
     );
@@ -96,6 +96,7 @@ describe('CreateCommunityModal', () => {
     expect(html).toContain('Hostel or hall');
     expect(html).toContain('Club or society');
     expect(html).toContain('Faith');
+    expect(html).toContain('Private');
     expect(html).toContain(CREATE_COMMUNITY_VISIBILITY_NOTE.slice(0, 40));
   });
 

@@ -20,10 +20,9 @@ export const DISCOVER_SECTION_ENABLED: Record<DiscoverSectionId, boolean> = {
   communities: true,
   groups: false,
   people: false,
-  // Temporary study rooms (24h). Added 2026-09-02 as the mobile hub's second
-  // tab, taking the slot Market used to hold there; the web bar does not list
-  // it yet, so on web this flag is inert.
-  rooms: true,
+  // Rooms live on each community page, not as a second Campus / Discover tab.
+  // Flip back to restore the leftover web Communities / Rooms row.
+  rooms: false,
   marketplace: true,
 };
 

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { communityKindLabel } from '@lantern/shared/network';
 import {
   COMMUNITY_DESCRIPTION_MAX,
   COMMUNITY_PURPOSES,
@@ -17,6 +18,7 @@ const draft = (over: Partial<CreateCommunityDraft> = {}): CreateCommunityDraft =
   purposeId: 'hostel',
   description: '',
   tags: '',
+  visibility: 'public',
   ...over,
 });
 
@@ -79,9 +81,24 @@ describe('buildCreateCommunityRequest', () => {
       kind: 'hostel',
       description: 'Ground floor.',
       tags: ['hostel', 'hall'],
+      visibility: 'public',
     });
-    // No visibility, no code, no event columns — none of them is offered yet.
-    expect(Object.keys(body ?? {}).sort()).toEqual(['description', 'kind', 'name', 'tags']);
+    expect(Object.keys(body ?? {}).sort()).toEqual(['description', 'kind', 'name', 'tags', 'visibility']);
+  });
+
+  it('writes a parseable event time onto startsAt instead of into the description', () => {
+    const body = buildCreateCommunityRequest(
+      draft({
+        name: 'Faculty Week 2026',
+        purposeId: 'event',
+        description: 'Everyone welcome.',
+        eventWhen: '2026-09-15T10:00',
+        eventWhere: 'Faculty quad',
+      })
+    );
+    expect(body?.startsAt).toBe(new Date('2026-09-15T10:00').toISOString());
+    expect(body?.location).toBe('Faculty quad');
+    expect(body?.description).toBe('Everyone welcome.');
   });
 
   it('folds an event when/where into the description it can actually store', () => {
@@ -108,7 +125,12 @@ describe('buildCreateCommunityRequest', () => {
     const body = buildCreateCommunityRequest(draft({ purposeId: null, name: 'Chess Club' }));
     expect(body).toBeNull();
     const ok = buildCreateCommunityRequest(draft({ name: 'Chess Club', purposeId: 'club' }));
-    expect(ok).toEqual({ name: 'Chess Club', kind: 'club', tags: ['club'] });
+    expect(ok).toEqual({ name: 'Chess Club', kind: 'club', tags: ['club'], visibility: 'public' });
+  });
+
+  it('sends private when the student asks to keep the room in', () => {
+    const body = buildCreateCommunityRequest(draft({ visibility: 'private' }));
+    expect(body?.visibility).toBe('private');
   });
 });
 
@@ -131,18 +153,16 @@ describe('the surface the server actually supports', () => {
 });
 
 describe('communityBadgeLabel', () => {
-  const kindLabel = (kind: string) => (kind === 'topic' ? 'Topic' : 'Course');
-
   it('names the purpose rather than saying "Topic" about every student room', () => {
-    expect(communityBadgeLabel('topic', ['hostel', 'hall'], kindLabel)).toBe('Hostel or hall');
+    expect(communityBadgeLabel('topic', ['hostel', 'hall'], communityKindLabel)).toBe('Hostel');
   });
 
   it('falls back to the kind for academic rooms', () => {
-    expect(communityBadgeLabel('course', ['study'], kindLabel)).toBe('Course');
+    expect(communityBadgeLabel('course', ['study'], communityKindLabel)).toBe('Course');
   });
 
-  it('falls back to the kind for a room made before purposes existed', () => {
-    expect(communityBadgeLabel('topic', [], kindLabel)).toBe('Topic');
-    expect(communityBadgeLabel('topic', null, kindLabel)).toBe('Topic');
+  it('falls back to Interest for a room made before purposes existed', () => {
+    expect(communityBadgeLabel('topic', [], communityKindLabel)).toBe('Interest');
+    expect(communityBadgeLabel('topic', null, communityKindLabel)).toBe('Interest');
   });
 });

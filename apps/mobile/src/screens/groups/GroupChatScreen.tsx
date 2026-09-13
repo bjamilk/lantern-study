@@ -69,7 +69,13 @@ import {
 } from '../../components/chat/chatLoadState';
 import { useNetworkStatus } from '../../hooks/useSync';
 import { planReconnectRetry } from './reconnectRetry';
-import { applyReactionLocally } from '@lantern/shared/chat';
+import {
+  applyReactionLocally,
+  chatDraftIsEmpty,
+  chatDraftStorageKey,
+  collectChatGalleryItems,
+} from '@lantern/shared/chat';
+import { ChatGallerySheet } from '../../components/chat/ChatGallerySheet';
 import { MessageReactions } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { selectGroupQuestions, extractTagsFromQuestions, countMatchingQuestions } from '../../utils/questionHelpers';
@@ -483,6 +489,7 @@ export function GroupChatView({
   const applyPeerChatRead = useGroupStore(s => s.applyPeerChatRead);
 
   const [text, setText] = useState('');
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [sending, setSending] = useState(false);
   /**
    * THIS chat's own message-load outcome.
@@ -699,6 +706,10 @@ export function GroupChatView({
     // (reply, jump to thread, unstar) instead of a read-only side panel.
     return starredOnly ? visible.filter((msg) => starredIds.has(msg.id)) : visible;
   }, [groupMessages, questionVisibilityMode, starredOnly, starredIds]);
+  const galleryItems = useMemo(
+    () => collectChatGalleryItems(groupMessages || []),
+    [groupMessages],
+  );
 
   /**
    * What the thread renders right now, decided by the SAME shared rule the
@@ -1210,6 +1221,21 @@ export function GroupChatView({
       ]
     );
   }, [editingMessage?.id, groupId, reloadThread, removeGroupMessage, threadRootId]);
+
+  useEffect(() => {
+    const key = chatDraftStorageKey('group', groupId);
+    void AsyncStorage.getItem(key).then((saved) => {
+      if (saved) setText(saved);
+    });
+  }, [groupId]);
+
+  useEffect(() => {
+    const key = chatDraftStorageKey('group', groupId);
+    const t = setTimeout(() => {
+      void (chatDraftIsEmpty(text) ? AsyncStorage.removeItem(key) : AsyncStorage.setItem(key, text));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [text, groupId]);
 
   // Stars and the pinned message are device-local (no backend fields yet).
   useEffect(() => {
@@ -1792,6 +1818,13 @@ export function GroupChatView({
         onPress: () => setChatSearchOpen(true),
       },
       {
+        id: 'chat-gallery',
+        label: 'Photos and voice',
+        icon: 'images',
+        section: 'View',
+        onPress: () => setTimeout(() => setGalleryOpen(true), Platform.OS === 'ios' ? 320 : 0),
+      },
+      {
         // Stars were write-only before this: you could star a message and had
         // no way to get back to it short of scrolling the whole history.
         id: 'starred-messages',
@@ -2332,6 +2365,15 @@ export function GroupChatView({
         visible={!!forwardMessage}
         onClose={() => setForwardMessage(null)}
         messageText={(forwardMessage?.questionStem || forwardMessage?.text || '').trim()}
+      />
+      <ChatGallerySheet
+        visible={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        items={galleryItems}
+        onOpenItem={(id) => {
+          const index = displayMessages.findIndex((m) => m.id === id);
+          if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+        }}
       />
       <ReportContentSheet
         visible={!!reportTarget}

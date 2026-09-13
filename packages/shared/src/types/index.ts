@@ -190,6 +190,10 @@ export interface User {
   bio?: string | null;
   /** Verified v1: 0 none, 1 confirmed email, 2 + active payout profile. Server-owned. */
   verificationLevel?: number | null;
+  /** Privacy-safe last heartbeat. Omitted when the peer hides online status. */
+  lastSeenAt?: string | null;
+  /** Privacy-safe online / offline / hidden from last_seen_at. */
+  onlineStatus?: 'online' | 'offline' | 'hidden';
 }
 
 /** Institution as surfaced on a user: a promoted marketplace_campuses row. */
@@ -644,6 +648,9 @@ export enum AppMode {
   MARKETPLACE_INQUIRIES = 'MARKETPLACE_INQUIRIES',
   MARKETPLACE_ORDERS = 'MARKETPLACE_ORDERS',
   MARKETPLACE_CART = 'MARKETPLACE_CART',
+  MARKETPLACE_CHECKOUT = 'MARKETPLACE_CHECKOUT',
+  MARKETPLACE_YOU = 'MARKETPLACE_YOU',
+  MARKETPLACE_ADDRESSES = 'MARKETPLACE_ADDRESSES',
   MARKETPLACE_ORDER_DETAIL = 'MARKETPLACE_ORDER_DETAIL',
   SELLER_CUSTOMERS = 'SELLER_CUSTOMERS',
   SELLER_PROFILE = 'SELLER_PROFILE',
@@ -1535,10 +1542,17 @@ export type MarketplaceOrderStatus =
   | 'awaiting_payment'
   | 'paid'
   | 'ready_for_pickup'
+  | 'shipped'
   | 'buyer_confirmed'
   | 'completed'
   | 'cancelled'
   | 'disputed';
+
+export type MarketplaceFulfillmentMode =
+  | 'campus_meetup'
+  | 'hall_dropoff'
+  | 'shipping'
+  | 'digital';
 
 export type MarketplaceOrderSource = 'buy_now' | 'offer_accept' | 'manual';
 
@@ -1561,7 +1575,14 @@ export interface MarketplaceOrder {
   payment_proof_submitted_at?: string;
   source: MarketplaceOrderSource;
   status: MarketplaceOrderStatus;
-  fulfillment_mode: 'campus_meetup' | 'hall_dropoff';
+  checkout_id?: string | null;
+  shipping_amount?: number;
+  shipping_address?: Record<string, unknown> | null;
+  tracking_number?: string | null;
+  tracking_url?: string | null;
+  shipped_at?: string | null;
+  seller_payout_kobo?: number | null;
+  fulfillment_mode: MarketplaceFulfillmentMode;
   meeting_location?: string;
   seller_note?: string;
   seller_confirmed_at?: string;
@@ -1679,6 +1700,11 @@ export interface MarketplaceSellerPreferences {
   seller_id: string;
   hall_dropoff_enabled: boolean;
   hall_dropoff_min_amount?: number | null;
+  shipping_enabled?: boolean;
+  shipping_fee_naira?: number | null;
+  shipping_free_over_naira?: number | null;
+  ships_from_campus_id?: string | null;
+  ships_from_city?: string | null;
   onboarding_completed_at?: string | null;
   boost_credits?: number;
   require_payment_confirmation?: boolean;
@@ -1687,6 +1713,57 @@ export interface MarketplaceSellerPreferences {
   shop_bio?: string | null;
   cover_image_url?: string | null;
   shop_updated_at?: string | null;
+  updated_at: string;
+}
+
+export interface MarketplaceSellerFulfillment {
+  sellerId: string;
+  campusMeetup: true;
+  hallDropoffEnabled: boolean;
+  hallDropoffMinAmount: number | null;
+  shippingEnabled: boolean;
+  shippingFeeNaira: number;
+  shippingFreeOverNaira: number | null;
+  shipsFromCampusId: string | null;
+  shipsFromCity: string | null;
+}
+
+export interface MarketplaceAddress {
+  id: string;
+  user_id: string;
+  label?: string | null;
+  recipient_name: string;
+  phone: string;
+  campus_id?: string | null;
+  city: string;
+  line1: string;
+  line2?: string | null;
+  landmark?: string | null;
+  hall?: string | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MarketplaceCheckoutStatus =
+  | 'draft'
+  | 'awaiting_payment'
+  | 'paid'
+  | 'failed'
+  | 'cancelled';
+
+export interface MarketplaceCheckout {
+  id: string;
+  buyer_id: string;
+  status: MarketplaceCheckoutStatus;
+  item_amount_kobo: number;
+  shipping_amount_kobo: number;
+  total_charged_kobo: number;
+  payment_id?: string | null;
+  shipping_address?: Record<string, unknown> | null;
+  authorizationUrl?: string | null;
+  orders?: MarketplaceOrder[];
+  created_at: string;
   updated_at: string;
 }
 

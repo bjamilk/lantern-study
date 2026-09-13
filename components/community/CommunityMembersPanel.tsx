@@ -41,9 +41,10 @@ const MemberRow: React.FC<{
   online: boolean;
   lowDataMode: boolean;
   onReport: (member: CommunityMember) => void;
+  onMessage?: (member: CommunityMember) => void;
   /** The viewer — you cannot report yourself, and the API refuses it anyway. */
   isSelf: boolean;
-}> = ({ member, online, lowDataMode, onReport, isSelf }) => (
+}> = ({ member, online, lowDataMode, onReport, onMessage, isSelf }) => (
   <li className="flex min-h-[44px] items-center gap-3 px-3 py-1.5">
     <span className="relative shrink-0">
       <Avatar
@@ -86,6 +87,14 @@ const MemberRow: React.FC<{
           <AppIcon name="ellipsis-horizontal" size={16} />
         </MenuTrigger>
         <MenuContent>
+          {onMessage ? (
+            <MenuItem
+              onSelect={() => onMessage(member)}
+              icon={<AppIcon name="chatbubbles" size={16} className="text-lantern-text-tertiary" />}
+            >
+              Message {member.name}
+            </MenuItem>
+          ) : null}
           <MenuItem
             onSelect={() => onReport(member)}
             icon={<AppIcon name="flag" size={16} className="text-lantern-text-tertiary" />}
@@ -104,9 +113,14 @@ const MemberRow: React.FC<{
  * live presence set only ever raises someone into Online; hidden members
  * never get a dot).
  */
-export const CommunityMembersPanel: React.FC<{ communityId: string; viewerId?: string | null }> = ({
+export const CommunityMembersPanel: React.FC<{
+  communityId: string;
+  viewerId?: string | null;
+  onMessageMember?: (member: CommunityMember) => void;
+}> = ({
   communityId,
   viewerId,
+  onMessageMember,
 }) => {
   const lowDataMode = useUIStore((s) => s.lowDataMode);
   const presence = useUIStore((s) => s.communityPresence);
@@ -208,6 +222,7 @@ export const CommunityMembersPanel: React.FC<{ communityId: string; viewerId?: s
                 lowDataMode={lowDataMode}
                 isSelf={!!viewerId && m.id === viewerId}
                 onReport={setReportTarget}
+                onMessage={onMessageMember}
               />
             ))}
           </ul>
@@ -229,6 +244,7 @@ export const CommunityMembersPanel: React.FC<{ communityId: string; viewerId?: s
                   lowDataMode={lowDataMode}
                   isSelf={!!viewerId && m.id === viewerId}
                   onReport={setReportTarget}
+                  onMessage={onMessageMember}
                 />
               ))}
             </ul>

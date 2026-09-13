@@ -16,6 +16,8 @@ import { MarketplaceListing, MarketplaceShopCard, SavedSearch } from '../types';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { usePageSeo } from '../hooks/usePageSeo';
 import { ListingCard } from './marketplace/ListingCard';
+import { ShopDepartmentRow } from './marketplace/ShopDepartmentRow';
+import { SHOP_HOME_COPY } from '@lantern/shared/marketplace';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
 import MarketplaceSearchSuggest from './marketplace/MarketplaceSearchSuggest';
@@ -759,7 +761,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
       {recentlyViewed.length > 0 && !searchTerm && !selectedCategory && !browseNodeId && !minPrice && !maxPrice && !locationFilter && !campusIdFilter && (
         <MarketplaceListingRail
-          title="Recently viewed"
+          title={SHOP_HOME_COPY.continueShopping}
           icon={<AppIcon name="time" size={16} />}
           listings={recentlyViewed}
           onPress={handleListingClick}
@@ -768,7 +770,7 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
 
       {dealListings.length > 0 && !searchTerm && !selectedCategory && !browseNodeId && (
         <MarketplaceListingRail
-          title="On sale now"
+          title={SHOP_HOME_COPY.onSale}
           icon={<AppIcon name="sparkles" size={16} />}
           listings={dealListings}
           onPress={handleListingClick}
@@ -804,12 +806,14 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
           the count never sits above a failed/throttled load either. */}
       {loading || (!loadError && !rateLimitMessage) ? (
         <div className="mb-3">
-          <h2 className="text-lg font-semibold text-lantern-text">
+          <h2 className="text-heading text-lantern-text">
             {loading || !primaryListingsLoaded
               ? 'Finding listings…'
-              : `${totalListingsCount.toLocaleString()} ${totalListingsCount === 1 ? 'listing' : 'listings'} found`}
+              : searchTerm || selectedCategory || browseNodeId
+                ? `${totalListingsCount.toLocaleString()} ${totalListingsCount === 1 ? 'listing' : 'listings'} found`
+                : SHOP_HOME_COPY.allListings}
           </h2>
-          <p className="mt-0.5 text-xs text-lantern-text-tertiary">
+          <p className="mt-0.5 text-caption text-lantern-text-tertiary">
             Check the seller and the item details before you pay or meet up.
           </p>
         </div>
@@ -931,7 +935,19 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
       <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-1 space-y-2">
-        <h1 className="sr-only">Marketplace</h1>
+        <div className="flex items-end justify-between gap-3">
+          <div>
+            <h1 className="text-title text-lantern-text">{SHOP_HOME_COPY.title}</h1>
+            <p className="text-caption text-lantern-text-secondary mt-0.5">{SHOP_HOME_COPY.subtitle}</p>
+          </div>
+        </div>
+        <ShopDepartmentRow
+          selected={browseNodeId.split('.')[0] || undefined}
+          onSelect={(department) => {
+            selectBrowseNode(department);
+            setShowBrowseTree(true);
+          }}
+        />
 
         <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full items-center">
           <MarketplaceSearchSuggest

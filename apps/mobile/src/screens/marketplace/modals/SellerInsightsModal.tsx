@@ -24,9 +24,17 @@ interface Props {
   requirePaymentConfirmation: boolean;
   hallDropoffEnabled: boolean;
   hallDropoffMin: string;
+  shippingEnabled: boolean;
+  shippingFee: string;
+  shippingFreeOver: string;
+  shipsFromCity: string;
   onRequirePaymentConfirmationChange: (value: boolean) => void;
   onHallDropoffEnabledChange: (value: boolean) => void;
   onHallDropoffMinChange: (value: string) => void;
+  onShippingEnabledChange: (value: boolean) => void;
+  onShippingFeeChange: (value: string) => void;
+  onShippingFreeOverChange: (value: string) => void;
+  onShipsFromCityChange: (value: string) => void;
 }
 
 export function SellerInsightsModal({
@@ -36,9 +44,17 @@ export function SellerInsightsModal({
   requirePaymentConfirmation,
   hallDropoffEnabled,
   hallDropoffMin,
+  shippingEnabled,
+  shippingFee,
+  shippingFreeOver,
+  shipsFromCity,
   onRequirePaymentConfirmationChange,
   onHallDropoffEnabledChange,
   onHallDropoffMinChange,
+  onShippingEnabledChange,
+  onShippingFeeChange,
+  onShippingFreeOverChange,
+  onShipsFromCityChange,
 }: Props) {
   const insets = useScreenInsets();
   const [savingPrefs, setSavingPrefs] = useState(false);
@@ -63,6 +79,10 @@ export function SellerInsightsModal({
         requirePaymentConfirmation,
         hallDropoffEnabled,
         hallDropoffMinAmount: hallDropoffMin.trim() ? Number(hallDropoffMin) : undefined,
+        shippingEnabled,
+        shippingFeeNaira: shippingFee.trim() ? Number(shippingFee) : null,
+        shippingFreeOverNaira: shippingFreeOver.trim() ? Number(shippingFreeOver) : null,
+        shipsFromCity: shipsFromCity.trim() || null,
       });
     } finally {
       setSavingPrefs(false);
@@ -247,7 +267,36 @@ export function SellerInsightsModal({
                 placeholder="Hall dropoff min amount (₦)"
                 keyboardType="numeric"
                 placeholderTextColor="#94a3b8"
-                className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-lantern-text"
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-body text-lantern-text min-h-[44px]"
+              />
+              <View className="flex-row items-center justify-between mb-2">
+                <Text className="text-body text-lantern-text flex-1 mr-2">
+                  Ship to a saved address (you find the rider)
+                </Text>
+                <Switch value={shippingEnabled} onValueChange={onShippingEnabledChange} />
+              </View>
+              <TextInput
+                value={shippingFee}
+                onChangeText={onShippingFeeChange}
+                placeholder="Shipping fee ₦"
+                keyboardType="numeric"
+                placeholderTextColor="#94a3b8"
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-body text-lantern-text min-h-[44px]"
+              />
+              <TextInput
+                value={shippingFreeOver}
+                onChangeText={onShippingFreeOverChange}
+                placeholder="Free over ₦ (optional)"
+                keyboardType="numeric"
+                placeholderTextColor="#94a3b8"
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-body text-lantern-text min-h-[44px]"
+              />
+              <TextInput
+                value={shipsFromCity}
+                onChangeText={onShipsFromCityChange}
+                placeholder="Ships from city"
+                placeholderTextColor="#94a3b8"
+                className="border border-lantern-border rounded-xl px-3 py-2 mb-2 text-body text-lantern-text min-h-[44px]"
               />
               <Button loading={savingPrefs} onPress={() => void savePreferences()}>
                 Save preferences

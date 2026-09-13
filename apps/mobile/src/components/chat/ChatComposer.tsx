@@ -7,6 +7,7 @@ import {
   View,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
 import { buildChatAudioMarkdown, chatMessagePreview } from '@lantern/shared/utils';
 import { Button } from '../ui';
 import { appAlert } from '../ui/appDialog';
@@ -69,6 +70,7 @@ export function ChatComposer({
 }: ChatComposerProps) {
   const { colors } = useTheme();
   const [attaching, setAttaching] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
@@ -148,6 +150,47 @@ export function ChatComposer({
     setMentionQuery(null);
   };
 
+  const attachAsset = async (uri: string, mimeType?: string | null) => {
+    if (!onAttachImage) return;
+    setAttaching(true);
+    try {
+      await onAttachImage(uri, mimeType);
+    } finally {
+      setAttaching(false);
+    }
+  };
+
+  const pickCamera = async () => {
+    if (!onAttachImage || attaching) return;
+    const { status } = await ImagePicker.requestCameraPermissionsAsync();
+    if (status !== 'granted') {
+      appAlert('Camera', 'Camera permission is required to take a photo.');
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 1,
+      exif: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    await attachAsset(result.assets[0].uri, result.assets[0].mimeType);
+  };
+
+  const pickDocument = async () => {
+    if (!onAttachImage || attaching) return;
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['image/*', 'application/pdf'],
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    if ((asset.mimeType || '').startsWith('image/')) {
+      await attachAsset(asset.uri, asset.mimeType);
+      return;
+    }
+    appAlert('Document', 'Photos send as images. PDF files in chat are coming next — photograph the page for now.');
+  };
+
   const pickImage = async () => {
     if (!onAttachImage || attaching) return;
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -175,13 +218,7 @@ export function ChatComposer({
       exif: false,
     });
     if (result.canceled || !result.assets?.[0]) return;
-    const asset = result.assets[0];
-    setAttaching(true);
-    try {
-      await onAttachImage(asset.uri, asset.mimeType);
-    } finally {
-      setAttaching(false);
-    }
+    await attachAsset(result.assets[0].uri, result.assets[0].mimeType);
   };
 
   const stopRecording = async () => {
@@ -261,12 +298,42 @@ export function ChatComposer({
   // is the only attachment type, so it is a direct action, not a menu.
   const showAttachTray = !!onAttachImage && !editingMessage;
 
-  const handleTrayPickImage = () => {
-    void pickImage();
-  };
-
   return (
     <View>
+      {trayOpen && showAttachTray ? (
+        <View className="flex-row gap-2 px-3 pt-2">
+          <Pressable
+            onPress={() => {
+              setTrayOpen(false);
+              void pickCamera();
+            }}
+            className="flex-1 min-h-[44px] items-center justify-center rounded-xl bg-lantern-background-secondary"
+            accessibilityLabel="Camera"
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.text }}>Camera</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setTrayOpen(false);
+              void pickImage();
+            }}
+            className="flex-1 min-h-[44px] items-center justify-center rounded-xl bg-lantern-background-secondary"
+            accessibilityLabel="Photo library"
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.text }}>Photos</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              setTrayOpen(false);
+              void pickDocument();
+            }}
+            className="flex-1 min-h-[44px] items-center justify-center rounded-xl bg-lantern-background-secondary"
+            accessibilityLabel="Document"
+          >
+            <Text className="text-xs font-semibold" style={{ color: colors.text }}>Document</Text>
+          </Pressable>
+        </View>
+      ) : null}
       {replyTo ? (
         <View
           className="flex-row items-start gap-2 px-3 pt-2"
@@ -330,34 +397,33 @@ export function ChatComposer({
         style={{ borderTopColor: colors.border }}
       >
         {showAttachTray ? (
-          // Photo is the only attachment type today, so the "+" opens the
-          // picker directly rather than a one-item disclosure menu. If a second
-          // type is ever added, restore a tray here.
           <Pressable
-            onPress={handleTrayPickImage}
+            onPress={() => setTrayOpen((open) => !open)}
             disabled={busy || isRecording}
             className="p-2 mb-0.5 min-w-[48px] min-h-[48px] items-center justify-center"
             accessibilityRole="button"
-            accessibilityLabel="Attach photo"
+            accessibilityLabel="Attachments"
           >
             {attaching ? (
               <ActivityIndicator size="small" color={colors.primaryText} />
             ) : (
-              <AppIcon name="image" size={24} color={featureAccents.groups} />
+              <AppIcon name="add" size={24} color={featureAccents.groups} />
             )}
           </Pressable>
         ) : null}
 
         {showMic || isRecording ? (
           <Pressable
-            onPress={() => {
+            onPressIn={() => {
+              if (!isRecording) void startRecording();
+            }}
+            onPressOut={() => {
               if (isRecording) void stopRecording();
-              else void startRecording();
             }}
             disabled={uploadingAudio}
             className="p-2 mb-0.5 min-w-[48px] min-h-[48px] items-center justify-center rounded-xl"
             style={{ backgroundColor: isRecording ? '#ef4444' : colors.backgroundSecondary }}
-            accessibilityLabel={isRecording ? 'Stop recording' : 'Record voice note'}
+            accessibilityLabel={isRecording ? 'Release to send voice note' : 'Hold to record voice note'}
           >
             {uploadingAudio ? (
               <ActivityIndicator size="small" color={colors.primaryText} />
@@ -376,7 +442,7 @@ export function ChatComposer({
           }}
           placeholder={
             isRecording
-              ? 'Recording… tap mic to stop'
+              ? 'Recording… release to send'
               : uploadingAudio
                 ? 'Uploading voice note…'
                 : editingMessage

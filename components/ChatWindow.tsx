@@ -1,6 +1,19 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { applyReactionLocally } from '@lantern/shared/chat';
+import {
+  applyReactionLocally,
+  buildChatHome,
+  chatPinnedMessageStorageKey,
+  chatStarredStorageKey,
+  collectChatGalleryItems,
+  formatChatPresenceLine,
+  parseStoredIdSet,
+  serializeIdSet,
+  type ChatHomeLounge,
+} from '@lantern/shared/chat';
+import { ChatGalleryModal } from './chat/ChatGalleryModal';
+import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
+import { ChatHomePane } from './chat/ChatHomePane';
 import {
   addMessageReaction,
   removeMessageReaction,
@@ -8,6 +21,8 @@ import {
   fetchUserReactionsForThread,
 } from '../services/supabase';
 import { useGroupStore } from '../stores/groupStore';
+import { useCommunityStore } from '../stores/communityStore';
+import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
 import { confirmDialog } from '../stores/confirmStore';
 import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder, MessageReplyPreview } from '../types';
@@ -117,6 +132,11 @@ interface ChatWindowProps {
    * screen back button reads "Back to community". Nothing else changes.
    */
   communityContext?: { name: string; onOpen: () => void };
+  chatHomeCommunities?: Array<{ id: string; slug: string; name: string; lounge_group_id?: string | null }>;
+  chatHomeInquiries?: Array<{ id: string; dm_thread_id?: string | null; status?: string | null; listing?: { title?: string | null } | null }>;
+  onOpenLounge?: (lounge: ChatHomeLounge) => void;
+  onOpenInquiries?: () => void;
+  peerPresence?: { settings?: unknown; lastSeenAt?: string | null } | null;
 }
 
 const NEAR_BOTTOM_PX = 120;
@@ -143,9 +163,68 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   onLoadMoreMessages,
   onLoadMoreDirectMessages,
   onPeerChatRead,
+  chatHomeCommunities,
+  chatHomeInquiries,
+  onOpenLounge,
+  onOpenInquiries,
+  peerPresence,
 }) => {
   const messages = Array.isArray(messagesProp) ? messagesProp : [];
   const { lowDataMode } = useUIStore();
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const [resolvedPeerPresence, setResolvedPeerPresence] = useState<{
+    settings?: unknown;
+    lastSeenAt?: string | null;
+  } | null>(peerPresence || null);
+  const [buyerInquiries, setBuyerInquiries] = useState<
+    Array<{ id: string; dm_thread_id?: string | null; status?: string | null; listing?: { title?: string | null } | null }>
+  >(chatHomeInquiries || []);
+  useEffect(() => {
+    if (chatHomeInquiries) {
+      setBuyerInquiries(chatHomeInquiries);
+      return;
+    }
+    let cancelled = false;
+    void fetchMyInquiries('buyer')
+      .then((rows) => {
+        if (!cancelled && Array.isArray(rows)) setBuyerInquiries(rows);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [chatHomeInquiries]);
+  useEffect(() => {
+    if (peerPresence) {
+      setResolvedPeerPresence(peerPresence);
+      return;
+    }
+    if (!chat || chat.chatType === 'group') {
+      setResolvedPeerPresence(null);
+      return;
+    }
+    const otherId = chat.participantIds?.find((id) => id !== currentUser.id);
+    if (!otherId) {
+      setResolvedPeerPresence(null);
+      return;
+    }
+    let cancelled = false;
+    void fetchUserProfile(otherId)
+      .then((user) => {
+        if (cancelled || !user) return;
+        if (user.onlineStatus === 'hidden') {
+          setResolvedPeerPresence({ settings: { privacy: { showOnlineStatus: false } }, lastSeenAt: null });
+          return;
+        }
+        setResolvedPeerPresence({ settings: user.settings, lastSeenAt: user.lastSeenAt ?? null });
+      })
+      .catch(() => {
+        if (!cancelled) setResolvedPeerPresence(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chat, currentUser.id, peerPresence]);
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -252,6 +331,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   // Separate mention seed for the thread composer so tapping an author's name
   // seeds only the visible composer (main vs thread), not both at once.
   const [threadSeedMentionUsername, setThreadSeedMentionUsername] = useState<string | null>(null);
+  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
+  const [starredOnly, setStarredOnly] = useState(false);
+  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
+  const [threadSearchOpen, setThreadSearchOpen] = useState(false);
+  const [threadSearch, setThreadSearch] = useState('');
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // Thread panel scroll: its own node map (so a reply-quote click scrolls within
   // the thread, not to the hidden main-list copy) plus a container + bottom sentinel.
@@ -755,9 +841,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         if (isGroupChat && !messagePassesQuestionVisibility(msg, questionVisibilityMode)) {
           return false;
         }
+        if (starredOnly && !starredIds.has(msg.id)) return false;
+        const query = threadSearch.trim().toLowerCase();
+        if (query.length >= 2) {
+          const hay = `${msg.text || ''} ${msg.questionStem || ''}`.toLowerCase();
+          if (!hay.includes(query)) return false;
+        }
         return true;
       }),
-    [messages, isGroupChat, questionVisibilityMode]
+    [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
   );
   const visibleThreadMessages = useMemo(
     () =>
@@ -970,6 +1062,77 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     };
   }, [chat?.id, isGroup]);
 
+  useEffect(() => {
+    if (!chat) {
+      setStarredIds(new Set());
+      setPinnedMessageId(null);
+      setStarredOnly(false);
+      setThreadSearch('');
+      setThreadSearchOpen(false);
+      return;
+    }
+    const scope = isGroup ? 'group' : 'dm';
+    try {
+      setStarredIds(parseStoredIdSet(localStorage.getItem(chatStarredStorageKey(currentUser.id, scope, chat.id))));
+      setPinnedMessageId(localStorage.getItem(chatPinnedMessageStorageKey(currentUser.id, scope, chat.id)));
+    } catch {
+      setStarredIds(new Set());
+      setPinnedMessageId(null);
+    }
+  }, [chat?.id, currentUser.id, isGroup]);
+
+  const persistStarredIds = (next: Set<string>) => {
+    if (!chat) return;
+    const scope = isGroup ? 'group' : 'dm';
+    try {
+      localStorage.setItem(chatStarredStorageKey(currentUser.id, scope, chat.id), serializeIdSet(next));
+    } catch {
+      // Device-local marks are best-effort.
+    }
+  };
+
+  const handleToggleStar = (message: Message) => {
+    setStarredIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(message.id)) next.delete(message.id);
+      else next.add(message.id);
+      persistStarredIds(next);
+      return next;
+    });
+  };
+
+  const handleTogglePin = (message: Message) => {
+    if (!chat) return;
+    const scope = isGroup ? 'group' : 'dm';
+    const key = chatPinnedMessageStorageKey(currentUser.id, scope, chat.id);
+    const next = pinnedMessageId === message.id ? null : message.id;
+    setPinnedMessageId(next);
+    try {
+      if (next) localStorage.setItem(key, next);
+      else localStorage.removeItem(key);
+    } catch {
+      // Device-local marks are best-effort.
+    }
+  };
+
+  const handleCopyMessage = async (message: Message) => {
+    const text = (message.questionStem || message.text || '').trim();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('Copied', 'success');
+    } catch {
+      showToast('Could not copy', 'error');
+    }
+  };
+
+  const scrollToMessageId = (messageId: string) => {
+    messageNodeRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  const galleryItems = useMemo(() => collectChatGalleryItems(messages), [messages]);
+  const pinnedMessage = pinnedMessageId ? messages.find((m) => m.id === pinnedMessageId) : undefined;
+
   const handleMuteFor = async (duration: ChatMuteDurationId) => {
     if (!chat || muteBusy) return;
     setMuteBusy(true);
@@ -1035,18 +1198,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     );
     const archivedDmThreads = dmThreads.filter(t => t.isArchived);
     const totalArchived = archivedTopLevelGroups.length + archivedDmThreads.length;
+    const chatHome = buildChatHome({
+      currentUserId: currentUser.id,
+      groups,
+      dmThreads,
+      communities: chatHomeCommunities || myCommunities,
+      inquiries: buyerInquiries,
+    });
 
     return (
       <div className="flex-1 flex flex-col bg-lantern-background">
-        {/* Desktop placeholder */}
-        <div className="hidden md:flex flex-1 flex-col items-center justify-center p-8 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-6">
-            <AppIcon name="chatbubbles" size={40} className="text-lantern-primary" />
-          </div>
-          <h2 className="text-xl font-bold text-lantern-text mb-2">Welcome to Lantern Study!</h2>
-          <p className="text-lantern-text-secondary max-w-sm">
-            Select a conversation from the sidebar to start collaborating, or create a new group.
-          </p>
+        <div className="hidden md:flex flex-1">
+          <ChatHomePane
+            model={chatHome}
+            onMessageSomeone={onOpenNewDmModal}
+            onNewGroup={onCreateGroup}
+            onSelectRecent={(recent) => {
+              if (recent.chatType === 'dm') {
+                const thread = dmThreads.find((t) => t.id === recent.id);
+                if (thread) onSelectChat?.({ ...thread, chatType: 'dm' });
+                return;
+              }
+              const group = groups.find((g) => g.id === recent.id);
+              if (group) onSelectChat?.({ ...group, chatType: 'group' });
+            }}
+            onOpenLounge={onOpenLounge}
+            onOpenInquiries={onOpenInquiries}
+          />
         </div>
 
         {/* Mobile group list */}
@@ -1073,18 +1251,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             {activeTopLevelGroups.length === 0 &&
             activeDmThreads.length === 0 &&
             inboundRequestThreads.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-lantern-primary-background flex items-center justify-center mb-4">
-                  <AppIcon name="people" size={32} className="text-lantern-primary" />
-                </div>
-                <h3 className="text-base font-semibold text-lantern-text mb-1">No conversations yet</h3>
-                <p className="text-sm text-lantern-text-secondary mb-4">Create a group or start a direct message to begin.</p>
-                {onCreateGroup && (
-                  <button onClick={onCreateGroup} className="px-4 py-2 min-h-[44px] bg-lantern-primary text-white rounded-lantern text-sm font-medium hover:bg-lantern-primary-dark transition-colors">
-                    Create Group
-                  </button>
-                )}
-              </div>
+              <ChatHomePane
+                compact
+                model={chatHome}
+                onMessageSomeone={onOpenNewDmModal}
+                onNewGroup={onCreateGroup}
+                onOpenLounge={onOpenLounge}
+                onOpenInquiries={onOpenInquiries}
+              />
             ) : (
               <div className="divide-y divide-lantern-border">
                 {inboundRequestThreads.length > 0 && (
@@ -1190,8 +1364,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const memberList = Array.isArray(group?.members) ? group!.members : [];
   const memberEmailList = Array.isArray(group?.memberEmails) ? group!.memberEmails : [];
-  const memberCountText = memberList.length
-    ? `${memberList.length} member${memberList.length === 1 ? '' : 's'}` +
+  const rosterCount = memberList.length || Number(group?.memberCount) || 0;
+  const memberCountText = rosterCount
+    ? `${rosterCount} member${rosterCount === 1 ? '' : 's'}` +
       (memberEmailList.length > memberList.length
         ? ` (+${memberEmailList.length - memberList.length} invited)`
         : '')
@@ -1200,13 +1375,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const isArchived = isGroup ? group.isArchived : (chat as any).isArchived;
   const dmThread = dmThreadForHooks;
 
+  const dmPresenceLabel = !isGroup && resolvedPeerPresence
+    ? formatChatPresenceLine(resolvedPeerPresence.settings, resolvedPeerPresence.lastSeenAt).label
+    : null;
   const description = isGroup
-    ? group.description || memberCountText
+    ? memberCountText || group.description || ''
     : dmRequestStatus === 'pending'
       ? 'Message request'
       : dmRequestStatus === 'declined'
         ? 'Declined request'
-        : 'Direct Message';
+        : dmPresenceLabel || '';
 
   const isDmRequestRecipient =
     !!dmThread &&
@@ -1330,6 +1508,53 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const chatPanelContent = (
     <>
+      {threadSearchOpen && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-lantern-border bg-lantern-surface">
+          <AppIcon name="search" size={16} className="text-lantern-text-tertiary" />
+          <input
+            type="search"
+            value={threadSearch}
+            onChange={(e) => setThreadSearch(e.target.value)}
+            placeholder="Search this chat"
+            aria-label="Search this chat"
+            className="flex-1 bg-transparent text-sm text-lantern-text outline-none"
+            autoFocus
+          />
+          <button
+            type="button"
+            onClick={() => {
+              setThreadSearch('');
+              setThreadSearchOpen(false);
+            }}
+            className="text-xs font-semibold text-lantern-primary"
+          >
+            Close
+          </button>
+        </div>
+      )}
+      {starredOnly && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
+          <AppIcon name="star" size={14} className="text-amber-500" />
+          <p className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+            Starred messages ({visibleMessages.length})
+          </p>
+          <button type="button" onClick={() => setStarredOnly(false)} className="text-xs font-semibold text-amber-800">
+            Show all
+          </button>
+        </div>
+      )}
+      {pinnedMessage && (
+        <button
+          type="button"
+          onClick={() => scrollToMessageId(pinnedMessage.id)}
+          className="flex items-center gap-2 w-full px-4 py-2 text-left border-b border-lantern-border bg-lantern-background-secondary"
+        >
+          <AppIcon name="pin" size={14} className="text-lantern-text-tertiary" />
+          <span className="flex-1 text-xs truncate text-lantern-text">
+            {pinnedMessage.questionStem || pinnedMessage.text || 'Pinned message'}
+          </span>
+        </button>
+      )}
       <div className="relative flex-1 min-h-0 flex flex-col">
       <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         {isLoadingMore && (
@@ -1431,6 +1656,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       questionStem: m.questionStem,
                     });
                   }}
+                  onForward={(m) => setForwardMessage(m)}
+                  onCopy={(m) => void handleCopyMessage(m)}
+                  onStar={handleToggleStar}
+                  onPin={handleTogglePin}
+                  starred={starredIds.has(msg.id)}
+                  pinned={pinnedMessageId === msg.id}
                   onMentionUser={(username) => setSeedMentionUsername(username)}
                   onScrollToMessage={(messageId) => {
                     messageNodeRefs.current[messageId]?.scrollIntoView({
@@ -1457,12 +1688,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <AppIcon name="chatbubbles" size={32} className="text-lantern-text-tertiary" />
                 </div>
                 <h3 className="text-base font-semibold text-lantern-text mb-1">
-                  {isArchived ? 'This group is archived' : 'No messages yet'}
+                  {isArchived
+                    ? 'This group is archived'
+                    : starredOnly
+                      ? 'No starred messages yet'
+                      : threadSearch.trim().length >= 2
+                        ? 'No matches'
+                        : 'No messages yet'}
                 </h3>
                 <p className="text-sm text-lantern-text-secondary max-w-xs">
                   {isArchived
                     ? 'Unarchive the group to resume the conversation.'
-                    : `Be the first to send a message in ${name}!`}
+                    : starredOnly
+                      ? 'Long-press or open a message menu and tap Star to keep it here.'
+                      : threadSearch.trim().length >= 2
+                        ? 'Try a different search.'
+                        : isGroup
+                          ? `Be the first to write in ${name}.`
+                          : `Say hi to ${name}.`}
                 </p>
               </>
             )}
@@ -1656,6 +1899,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                       questionStem: m.questionStem,
                     });
                   }}
+                  onForward={(m) => setForwardMessage(m)}
+                  onCopy={(m) => void handleCopyMessage(m)}
+                  onStar={handleToggleStar}
+                  onPin={handleTogglePin}
+                  starred={starredIds.has(msg.id)}
+                  pinned={pinnedMessageId === msg.id}
                   onMentionUser={(username) => setThreadSeedMentionUsername(username)}
                   onScrollToMessage={(messageId) => {
                     threadMessageNodeRefs.current[messageId]?.scrollIntoView({
@@ -1729,8 +1978,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                 localOnly={lowDataMode}
                 className="ring-2 ring-white dark:ring-lantern-border"
               />
-              {isGroup && !isArchived && !communityContext && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-lantern-border rounded-full" aria-label="Active group" />
+              {!isGroup && !isArchived && resolvedPeerPresence && formatChatPresenceLine(resolvedPeerPresence.settings, resolvedPeerPresence.lastSeenAt).status === 'online' && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-lantern-border rounded-full" aria-label="Online" />
               )}
             </div>
             <div className="min-w-0">
@@ -1740,6 +1989,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                   <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span>
                 ) : communityContext ? (
                   <>
+                    {memberCountText ? `${memberCountText} · ` : ''}
                     <button
                       type="button"
                       onClick={communityContext.onOpen}
@@ -1756,6 +2006,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </div>
 
           <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setThreadSearchOpen((open) => !open)}
+              className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern"
+              aria-label="Search in chat"
+              title="Search in chat"
+            >
+              <AppIcon name="search" size={18} />
+            </button>
             {/* Quick-action toolbar for groups. Only the primary action (Question)
                 stays exposed on small screens; Test/Study fan out at lg+, and
                 everything else (visibility, mute) lives in the overflow menu
@@ -1807,6 +2066,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               </MenuTrigger>
               {isGroup && group && (
                 <MenuContent align="end" className="w-56">
+                  <MenuItem onSelect={() => handleDropdownAction(() => setThreadSearchOpen(true))} icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}>
+                    Search messages
+                  </MenuItem>
+                  <MenuItem
+                    onSelect={() => handleDropdownAction(() => setStarredOnly((on) => !on))}
+                    icon={<AppIcon name="star" size={16} className="text-lantern-text-tertiary" />}
+                    disabled={!starredOnly && starredIds.size === 0}
+                  >
+                    {starredOnly ? 'Show all messages' : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`}
+                  </MenuItem>
+                  <MenuItem onSelect={() => handleDropdownAction(() => setGalleryOpen(true))} icon={<AppIcon name="image" size={16} className="text-lantern-text-tertiary" />}>
+                    Photos and voice
+                  </MenuItem>
+                  <MenuSeparator />
                   <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<AppIcon name="people" size={16} className="text-lantern-text-tertiary" />}>
                     Group Info & Members
                   </MenuItem>
@@ -1898,6 +2171,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               )}
               {!isGroup && chat && (
                 <MenuContent align="end" className="w-56">
+                  <MenuItem onSelect={() => handleDropdownAction(() => setThreadSearchOpen(true))} icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}>
+                    Search messages
+                  </MenuItem>
+                  <MenuItem
+                    onSelect={() => handleDropdownAction(() => setStarredOnly((on) => !on))}
+                    icon={<AppIcon name="star" size={16} className="text-lantern-text-tertiary" />}
+                    disabled={!starredOnly && starredIds.size === 0}
+                  >
+                    {starredOnly ? 'Show all messages' : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`}
+                  </MenuItem>
+                  <MenuItem onSelect={() => handleDropdownAction(() => setGalleryOpen(true))} icon={<AppIcon name="image" size={16} className="text-lantern-text-tertiary" />}>
+                    Photos and voice
+                  </MenuItem>
+                  <MenuSeparator />
                   <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
                     Notifications
                   </div>
@@ -2475,6 +2762,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           }}
         />
       )}
+
+      <ForwardChatModal
+        isOpen={!!forwardMessage}
+        onClose={() => setForwardMessage(null)}
+        messageText={(forwardMessage?.questionStem || forwardMessage?.text || '').trim()}
+        currentUser={currentUser}
+        groups={groups}
+        dmThreads={dmThreads}
+      />
+      <ChatGalleryModal
+        isOpen={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        items={galleryItems}
+        onOpenItem={scrollToMessageId}
+      />
 
       {reportTarget ? (
         <ReportContentModal

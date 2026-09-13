@@ -1,22 +1,25 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { defaultDiscoverSection, isDiscoverSectionEnabled } from '@lantern/shared/marketplace';
 import {
+  COMMUNITY_CHIPS,
   DISCOVER_SECTION_INTRO,
-  SOCIAL_COMMUNITY_KINDS,
-  communityKindLabel,
-  communityKindMeta,
-  normalizeCommunitySearch,
+  buildCommunityHub,
+  communityCardMeta,
+  communityChipLabel,
+  communityDisplayName,
   communityMembershipAction,
   communityUnreadTotal,
   formatCommunityUnread,
   memberCountLabel,
+  normalizeCommunitySearch,
+  planCommunityDiscovery,
   presenceLabel,
   resolveListState,
   shouldShowTrustChip,
   studyRoomTimeLeftLabel,
   trustLabel,
   type Community,
-  type CommunityKind,
+  type CommunityChip,
   type DiscoverGroup,
   type DiscoverPerson,
   type MyCommunity,
@@ -36,16 +39,16 @@ import {
 } from '../services/supabase';
 import { usePlatformAdmin } from '../hooks/usePlatformAdmin';
 import { useAuthStore } from '../stores/authStore';
-import { Illustration } from './ui';
+import { FeatureDisc, Illustration } from './ui';
+import AcademicFeedPanel from './AcademicFeedPanel';
 import { useGroupStore } from '../stores/groupStore';
 import DiscoverWorkspaceBar, { type DiscoverSection } from './discover/DiscoverWorkspaceBar';
 import DiscoverComingSoon from './discover/DiscoverComingSoon';
 import RequestError from './RequestError';
-import { AppIcon } from './ui/AppIcon';
+import { AppIcon, type AppIconName } from './ui/AppIcon';
 import CreateCommunityModal from './community/CreateCommunityModal';
 import JoinByCodeModal from './community/JoinByCodeModal';
 import { canOpenCommunities } from './community/communityAccess';
-import { communityBadgeLabel } from './community/createCommunityPlan';
 
 /**
  * The Discover hub (Phase 3 · L).
@@ -73,16 +76,19 @@ export interface DiscoverScreenProps {
 type Status = 'idle' | 'loading' | 'error';
 
 const card =
-  'rounded-xl border border-lantern-border bg-lantern-background p-3 flex flex-col gap-1.5 transition-colors hover:border-lantern-primary/40';
+  'rounded-2xl border border-lantern-border bg-lantern-surface p-4 flex flex-col gap-1 transition-colors hover:border-lantern-ink/20';
+
+const LIST_ROW =
+  'flex w-full items-start gap-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4 text-left';
 
 const EmptyState: React.FC<{
   title: string;
   hint: string;
   actions?: Array<{ label: string; onClick: () => void; primary?: boolean }>;
 }> = ({ title, hint, actions }) => (
-  <div className="rounded-xl border border-dashed border-lantern-border p-8 text-center">
-    <p className="text-sm font-medium text-lantern-text">{title}</p>
-    <p className="mt-1 text-xs text-lantern-text-secondary">{hint}</p>
+  <div className="rounded-2xl border border-dashed border-lantern-border px-6 py-8 text-center">
+    <p className="text-heading text-lantern-text">{title}</p>
+    <p className="mt-1 text-body text-lantern-text-secondary">{hint}</p>
     {actions && actions.length > 0 ? (
       <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
         {actions.map((action) => (
@@ -92,8 +98,8 @@ const EmptyState: React.FC<{
             onClick={action.onClick}
             className={
               action.primary
-                ? 'rounded-md bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-lantern-primary-dark'
-                : 'rounded-md px-3 py-1.5 text-xs font-semibold text-lantern-primary hover:bg-lantern-primary/10'
+                ? 'min-h-[36px] rounded-full bg-lantern-primary px-3 text-caption font-semibold text-white hover:bg-lantern-primary-dark'
+                : 'min-h-[36px] rounded-full px-3 text-caption font-semibold text-lantern-primary-text hover:bg-lantern-primary/10'
             }
           >
             {action.label}
@@ -104,7 +110,7 @@ const EmptyState: React.FC<{
   </div>
 );
 
-/** One kind filter. A pressed chip is the current filter; tapping it clears. */
+/** One chip in the shared Campus row. Selected is theme ink, like Chat All/Unread. */
 const KindChip: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({
   active,
   onClick,
@@ -114,10 +120,10 @@ const KindChip: React.FC<{ active: boolean; onClick: () => void; children: React
     type="button"
     onClick={onClick}
     aria-pressed={active}
-    className={`min-h-[36px] rounded-full px-3 text-xs font-semibold ${
+    className={`min-h-[36px] rounded-full border px-3 text-caption ${
       active
-        ? 'bg-lantern-feature-campus-ink text-white'
-        : 'bg-lantern-background-secondary text-lantern-text-secondary hover:text-lantern-text'
+        ? 'border-lantern-ink bg-lantern-ink text-lantern-surface'
+        : 'border-lantern-border bg-transparent text-lantern-text-secondary hover:text-lantern-text'
     }`}
   >
     {children}
@@ -143,7 +149,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
    * we happened to be handed would quietly hide rooms that exist, and the
    * ranking the server applies is per-query.
    */
-  const [kind, setKind] = useState<CommunityKind | null>(null);
+  const [chip, setChip] = useState<CommunityChip>('all');
   const [status, setStatus] = useState<Status>('idle');
   // Two different things used to share one `error` string: a list that did not
   // arrive and an action that did not happen. They are separated — only the
@@ -168,29 +174,34 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   // slam the modal shut the moment the path normalised back to /campus.
   const [creatingCommunity, setCreatingCommunity] = useState(initialAction === 'create');
   const [joiningByCode, setJoiningByCode] = useState(initialAction === 'join');
+  const [loadedQuery, setLoadedQuery] = useState('');
 
   const myById = useMemo(() => new Map(mine.map((c) => [c.id, c])), [mine]);
-  const myIds = useMemo(() => new Set(mine.map((c) => c.id)), [mine]);
+  const institutionId = useAuthStore((s) => s.currentUser?.institutionId ?? null);
 
   const load = useCallback(
-    async (target: DiscoverSection, q: string, communityKind: CommunityKind | null = null) => {
+    async (target: DiscoverSection, q: string, forChip: CommunityChip = 'all') => {
       // The marketplace tab is a navigation, not a fetch.
       if (target === 'marketplace') return;
       setStatus('loading');
       setLoadError(null);
       try {
         if (target === 'communities') {
-          const [discovered, own] = await Promise.all([
-            // `%` and `_` are PostgREST wildcards and `,` terminates a filter,
-            // so the term goes through the shared cleaner before it is a query.
-            discoverCommunities({
-              q: normalizeCommunitySearch(q) ?? undefined,
-              kind: communityKind ?? undefined,
-            }),
+          const plan = planCommunityDiscovery({
+            chip: forChip,
+            query: normalizeCommunitySearch(q) ?? q,
+          });
+          const [first, own] = await Promise.all([
+            discoverCommunities(plan.params),
             fetchMyCommunities(),
           ]);
+          const discovered =
+            first.length === 0 && plan.fallback
+              ? await discoverCommunities(plan.fallback)
+              : first;
           setCommunities(discovered);
           setMine(own);
+          setLoadedQuery(q);
         } else if (target === 'groups') {
           setGroups(await discoverGroups({ q: q || undefined }));
         } else if (target === 'rooms') {
@@ -212,12 +223,12 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   );
 
   useEffect(() => {
-    void load(section, query, kind);
+    void load(section, query, chip);
     // `query` is applied through the explicit search submit below, not on every
     // keystroke — re-running this on each character would hammer the API. The
     // kind chips DO refetch on click: one tap is the whole interaction.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [section, kind, load]);
+  }, [section, chip, load]);
 
   // The Room tab is "what is open right now": refetch when the tab regains
   // visibility (coming back from a room) and tick the countdown once a minute.
@@ -245,6 +256,21 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     );
   }, [rooms, query]);
 
+  const listUnknown = status === 'error';
+  const hub = useMemo(
+    () =>
+      buildCommunityHub({
+        mine,
+        discovered: communities,
+        chip,
+        loadedQuery,
+        institutionId,
+        unknown: listUnknown,
+        now,
+      }),
+    [mine, communities, chip, loadedQuery, institutionId, listUnknown, now],
+  );
+
   // The shared rule, applied once for the whole hub: a failed load is
   // 'failed', never 'empty' and never 'noMatch'. Searching over a list that
   // never arrived says "we couldn't load it" — "no groups match that search"
@@ -254,21 +280,15 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
     error: loadError,
     itemCount:
       section === 'communities'
-        // Under a kind filter only the filtered list counts: "you belong to
-        // three rooms" says nothing about whether any CLUB was found, and
-        // counting them here is what turns an empty filter into a page that
-        // silently claims everything is fine.
-        ? kind
-          ? communities.length
-          : communities.length + mine.length
+        ? hub.mine.length + hub.find.length
         : section === 'groups'
           ? groups.length
           : section === 'rooms'
             ? visibleRooms.length
             : people.length,
-    // A kind filter is a search by another name: with no rooms of that kind
-    // the honest answer is "nothing matches", never "there is nothing here".
-    query: query || (section === 'communities' && kind ? communityKindMeta(kind).label : ''),
+    query:
+      loadedQuery ||
+      (section === 'communities' && hub.filtered ? communityChipLabel(chip) : ''),
   });
 
   useEffect(() => {
@@ -362,36 +382,44 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
   };
 
   const presenceLine = presenceLabel(presence);
-  // "Yours" comes from the MEMBERSHIP list itself — discover only returns
-  // public, top-by-members rows, so filtering it hid real memberships and
-  // (for a brand-new account) presented other campuses' communities as the
-  // whole tab. `more` stays discover-sourced, deduped against memberships.
-  const yours = mine;
-  const more = communities.filter((c) => !myIds.has(c.id));
-
-  // The lounge lives INSIDE the community now (founder rule §0a): the card
-  // carries the unread rollup of its joined channels instead of a chat chip.
   const myGroups = useGroupStore((s) => s.groups);
 
-  const renderCommunityCard = (community: Community) => {
-    const isMember = myIds.has(community.id);
+  const renderCommunityRow = (community: Community | MyCommunity, joined: boolean) => {
     const membership = myById.get(community.id);
-    const action = communityMembershipAction(isMember, membership?.source);
+    const action = communityMembershipAction(joined, membership?.source ?? (community as MyCommunity).source);
     const unread = communityUnreadTotal(myGroups, community.id);
+    const meta = communityCardMeta(community);
+    const busy = pendingId === community.id;
     return (
-      <article key={community.id} className={card}>
-        <div className="flex items-start gap-2">
-          <button
-            type="button"
-            onClick={() => onNavigate('CommunityDetail', { slug: community.slug })}
-            className="min-w-0 flex-1 text-left"
-            aria-label={unread > 0 ? `${community.name}, ${unread} unread` : undefined}
-          >
-            <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
-              <span className="truncate">{community.name}</span>
+      <article key={community.id} className={LIST_ROW}>
+        <button
+          type="button"
+          onClick={() =>
+            joined
+              ? onNavigate('CommunityDetail', { slug: community.slug })
+              : void toggleMembership(community, false)
+          }
+          disabled={busy}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+          aria-label={`${communityDisplayName(community.name)}, ${meta.label}, ${memberCountLabel(
+            community.member_count,
+          )}. ${joined ? 'Open' : action}`}
+        >
+          <FeatureDisc
+            feature={meta.ink}
+            icon={<AppIcon name={meta.icon as AppIconName} size={20} />}
+            size={40}
+          />
+          <span className="min-w-0 flex-1">
+            <span className="flex items-center gap-1.5 text-body font-semibold text-lantern-text">
+              <span className="truncate">{communityDisplayName(community.name)}</span>
               {community.is_official ? (
-                <AppIcon name="badge-check" size={16} className="shrink-0 text-lantern-primary"
-                  aria-label="Official community" />
+                <AppIcon
+                  name="badge-check"
+                  size={16}
+                  className="shrink-0 text-lantern-ink"
+                  aria-label="Official community"
+                />
               ) : null}
               {unread > 0 ? (
                 <span
@@ -401,43 +429,43 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                   {formatCommunityUnread(unread)}
                 </span>
               ) : null}
-            </h2>
-            <p className="text-xs text-lantern-text-secondary">
-              {/* The purpose, not "Topic" for every student-made room. */}
-              {communityBadgeLabel(community.kind, community.tags, communityKindLabel)} ·{' '}
-              {memberCountLabel(community.member_count)}
-              {isMember ? ' · Yours' : ''}
-            </p>
-            {community.description ? (
-              <p className="mt-1 text-xs text-lantern-text-secondary line-clamp-2">
-                {community.description}
-              </p>
-            ) : null}
-          </button>
-          <button
-            type="button"
-            disabled={pendingId === community.id}
-            onClick={() => void toggleMembership(community, isMember)}
-            className={`shrink-0 self-start rounded-md px-2 py-1.5 text-xs font-semibold disabled:opacity-60 ${
-              isMember
-                ? 'text-lantern-text-secondary hover:text-lantern-text'
-                : 'text-lantern-primary hover:bg-lantern-primary/10'
-            }`}
-          >
-            {pendingId === community.id ? '…' : action}
-          </button>
-        </div>
+            </span>
+            <span className="mt-1 block truncate text-caption text-lantern-text-secondary">
+              {meta.label} · {memberCountLabel(community.member_count)}
+            </span>
+          </span>
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() =>
+            joined
+              ? onNavigate('CommunityDetail', { slug: community.slug })
+              : void toggleMembership(community, false)
+          }
+          className={`shrink-0 rounded-md px-2 py-1.5 text-caption font-semibold disabled:opacity-60 ${
+            joined ? 'text-lantern-text-secondary hover:text-lantern-text' : 'text-lantern-ink'
+          }`}
+        >
+          {busy ? '…' : joined ? 'Open' : action}
+        </button>
       </article>
     );
   };
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-4 py-3 space-y-3">
-      <header className="space-y-2">
-        <h1 className="sr-only">Discover</h1>
+    <div className="mx-auto w-full max-w-5xl px-4 md:px-6 lg:px-8 py-6 space-y-6">
+      <header className="space-y-4">
+        <h1 className="sr-only">Communities</h1>
         <DiscoverWorkspaceBar active={section} onSelect={handleSection} />
-        {section === 'communities' || section === 'groups' || section === 'people' || section === 'rooms' ? (
-          <p className="text-[11px] text-lantern-text-tertiary">{DISCOVER_SECTION_INTRO[section]}</p>
+        {section === 'communities' ? (
+          <p className="text-caption text-lantern-text-secondary">
+            Search, join, or start a room for your campus.
+          </p>
+        ) : null}
+        {section !== 'communities' &&
+        (section === 'groups' || section === 'people' || section === 'rooms') ? (
+          <p className="text-caption text-lantern-text-secondary">{DISCOVER_SECTION_INTRO[section]}</p>
         ) : null}
 
         {/* "Start a room" and the who-is-studying line belong to the Room tab,
@@ -454,7 +482,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 })
               }
               disabled={!presence?.joinCourseId}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-lantern-background-secondary px-3 py-1.5 text-xs text-lantern-text-secondary disabled:opacity-60"
+              className="inline-flex min-h-[36px] items-center gap-1.5 rounded-full bg-lantern-background-secondary px-3 text-caption text-lantern-text-secondary disabled:opacity-60"
             >
               <AppIcon name="sparkles" size={16} className="text-lantern-primary" aria-hidden="true" />
               {presenceLine}
@@ -464,7 +492,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           <button
             type="button"
             onClick={() => onNavigate('CreateLab')}
-            className="inline-flex items-center rounded-lg bg-lantern-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-lantern-primary-dark"
+            className="inline-flex min-h-[36px] items-center rounded-full bg-lantern-primary px-3 text-caption font-semibold text-white hover:bg-lantern-primary-dark"
           >
             Start a room
           </button>
@@ -475,7 +503,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
           onSubmit={(event) => {
             event.preventDefault();
             // Rooms filter locally as you type; a submit there has nothing to fetch.
-            if (section !== 'rooms') void load(section, query, kind);
+            if (section !== 'rooms') void load(section, query, chip);
           }}
           className="relative"
           role="search"
@@ -504,22 +532,15 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                     ? 'Search open rooms'
                     : 'Search communities'
             }
-            className="w-full rounded-lg border border-lantern-border bg-lantern-background py-2 pl-9 pr-3 text-sm text-lantern-text placeholder:text-lantern-text-secondary focus:border-lantern-primary focus:outline-none"
+            className="w-full min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 pl-9 text-body text-lantern-text placeholder:text-lantern-text-tertiary focus:border-lantern-ink focus:outline-none"
           />
         </form>
 
-        {/* Communities go beyond study: a club, a hostel, an event, a faith
-            group. The chips are the only way a student finds those without
-            already knowing the name. Academic kinds are NOT offered — they are
-            derived from a profile and everyone is already in their own. */}
         {section === 'communities' ? (
-          <div role="group" aria-label="Filter communities by kind" className="flex flex-wrap gap-1.5">
-            <KindChip active={kind === null} onClick={() => setKind(null)}>
-              All
-            </KindChip>
-            {SOCIAL_COMMUNITY_KINDS.filter((k) => k !== 'topic').map((k) => (
-              <KindChip key={k} active={kind === k} onClick={() => setKind(kind === k ? null : k)}>
-                {communityKindMeta(k).label}
+          <div role="group" aria-label="Filter communities by kind" className="flex flex-wrap gap-2">
+            {COMMUNITY_CHIPS.map((value) => (
+              <KindChip key={value} active={value === chip} onClick={() => setChip(value)}>
+                {communityChipLabel(value)}
               </KindChip>
             ))}
           </div>
@@ -541,12 +562,12 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         <RequestError
           variant="banner"
           error={loadError}
-          onRetry={() => void load(section, query, kind)}
+          onRetry={() => void load(section, query, chip)}
         />
       )}
 
       {listState === 'loading' && (
-        <p className="text-sm text-lantern-text-secondary" role="status">
+        <p className="text-caption text-lantern-text-secondary" role="status">
           Loading…
         </p>
       )}
@@ -557,99 +578,116 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
         <RequestError
           variant="full"
           error={loadError}
-          onRetry={() => void load(section, query, kind)}
+          onRetry={() => void load(section, query, chip)}
         />
       )}
 
       {listState !== 'loading' && listState !== 'failed' && section === 'communities' && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setJoiningByCode(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-lantern-text-secondary hover:text-lantern-text"
-            >
-              <AppIcon name="link" size={16} aria-hidden="true" />
-              Join with a link
-            </button>
+        <div className="space-y-8">
+          <div className="grid gap-3 sm:grid-cols-2">
             <button
               type="button"
               onClick={() => setCreatingCommunity(true)}
-              className="inline-flex items-center gap-1.5 text-xs font-semibold text-lantern-primary hover:underline"
+              className="flex items-start gap-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4 text-left hover:bg-lantern-background-secondary/70"
             >
-              <AppIcon name="add" size={16} aria-hidden="true" />
-              Start a community
+              <FeatureDisc feature="campus" icon={<AppIcon name="add" size={16} />} size={32} />
+              <span className="min-w-0">
+                <span className="block text-body font-semibold text-lantern-text">Start a community</span>
+                <span className="mt-1 block text-caption text-lantern-text-secondary">
+                  Name a room for a class, club, or hall.
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setJoiningByCode(true)}
+              className="flex items-start gap-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4 text-left hover:bg-lantern-background-secondary/70"
+            >
+              <FeatureDisc feature="groups" icon={<AppIcon name="link" size={16} />} size={32} />
+              <span className="min-w-0">
+                <span className="block text-body font-semibold text-lantern-text">Join with a link</span>
+                <span className="mt-1 block text-caption text-lantern-text-secondary">
+                  Use an invite code for a private room.
+                </span>
+              </span>
             </button>
           </div>
 
-          {/* Campus coaching card (§5.7 Campus): one violet panel, shown only
-              while the student has joined nothing. It is not an empty state —
-              the list below it may be full — so it says what a course room is
-              FOR rather than that something is missing, and it disappears the
-              moment they join one. */}
-          {yours.length === 0 && listState !== 'noMatch' ? (
-            <div className="flex items-center gap-4 rounded-xl bg-lantern-feature-campus-tint p-4">
+          <AcademicFeedPanel limit={6} heading="Happening now" hideWhenEmpty onNavigate={onNavigate} />
+
+          {hub.showEmptyIllustration ? (
+            <div className="flex items-center gap-4 rounded-2xl bg-lantern-feature-campus-tint p-4">
               <Illustration name="campus-hall" feature="campus" size={64} />
               <div className="min-w-0">
                 <p className="text-body font-semibold text-lantern-feature-campus-ink">
                   Your course room is where past questions get verified
                 </p>
                 <p className="mt-0.5 text-caption text-lantern-text">
-                  Join the room for a course you take: the questions other students have sat, marked
-                  up by the people who sat them.
+                  Join the room for a course you take: members mark which past questions are real,
+                  and what they verify is what shows up in your tests.
                 </p>
               </div>
             </div>
           ) : null}
 
-          <section className="grid gap-2 sm:grid-cols-2" aria-label="Communities">
-            {communities.length === 0 && (
-              <div className="sm:col-span-2">
-                {listState === 'noMatch' ? (
-                  <EmptyState
-                    title="No communities match that search"
-                    hint="Try another name, or start a community — a course, a club, a hostel, a week of events."
-                    actions={[
-                      {
-                        label: 'Start a community',
-                        onClick: () => setCreatingCommunity(true),
-                        primary: true,
-                      },
-                    ]}
-                  />
-                ) : (
-                  <EmptyState
-                    title="No communities yet"
-                    hint="Add your university and courses so campus rooms can appear — or start one yourself: a course, a club, a hostel, a week of events."
-                    actions={[
-                      {
-                        label: 'Set university & courses',
-                        onClick: () => onNavigate('AcademicSetup'),
-                        primary: true,
-                      },
-                      {
-                        label: 'Start a community',
-                        onClick: () => setCreatingCommunity(true),
-                      },
-                    ]}
-                  />
-                )}
-              </div>
-            )}
-            {yours.length > 0 ? (
+          <section aria-label="Communities" className="space-y-8">
+            {hub.empty === 'noMatch' ? (
+              <EmptyState
+                title={
+                  loadedQuery.trim()
+                    ? `No communities match “${loadedQuery.trim()}” under ${communityChipLabel(chip)}`
+                    : `No ${communityChipLabel(chip)} communities yet`
+                }
+                hint="Try a different word, tap All, or start one."
+                actions={[
+                  {
+                    label: 'Start a community',
+                    onClick: () => setCreatingCommunity(true),
+                    primary: true,
+                  },
+                ]}
+              />
+            ) : hub.empty === 'empty' ? (
+              <EmptyState
+                title="No other communities to join yet"
+                hint="Yours are made from your university, programme and courses — add them in Profile → Academic details."
+                actions={[
+                  {
+                    label: 'Set university & courses',
+                    onClick: () => onNavigate('AcademicSetup'),
+                    primary: true,
+                  },
+                  {
+                    label: 'Start a community',
+                    onClick: () => setCreatingCommunity(true),
+                  },
+                ]}
+              />
+            ) : null}
+            {hub.mine.length > 0 ? (
               <>
-                <h2 className="sm:col-span-2 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
-                  Yours
-                </h2>
-                {yours.map(renderCommunityCard)}
+                <div className="mb-4">
+                  <h2 className="text-title font-semibold text-lantern-text">Your communities</h2>
+                  <p className="mt-1 text-caption text-lantern-text-secondary">
+                    Campus room first, then the ones you joined.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                {hub.mine.map((row) => renderCommunityRow(row, true))}
+                </div>
               </>
             ) : null}
-            {more.length > 0 ? (
+            {hub.find.length > 0 ? (
               <>
-                <h2 className="sm:col-span-2 text-label font-semibold uppercase tracking-wide text-lantern-text-secondary">
-                  {yours.length > 0 ? 'More to join' : 'On Discover'}
-                </h2>
-                {more.map(renderCommunityCard)}
+                <div className="mb-4">
+                  <h2 className="text-title font-semibold text-lantern-text">Find a community</h2>
+                  <p className="mt-1 text-caption text-lantern-text-secondary">
+                    Open rooms you can join from here.
+                  </p>
+                </div>
+                <div className="space-y-3">
+                {hub.find.map((row) => renderCommunityRow(row, false))}
+                </div>
               </>
             ) : null}
           </section>
@@ -657,7 +695,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       )}
 
       {listState !== 'loading' && listState !== 'failed' && section === 'groups' && (
-        <section className="grid gap-2 sm:grid-cols-2" aria-label="Groups">
+        <section className="grid gap-3 sm:grid-cols-2" aria-label="Groups">
           {groups.length === 0 && (
             <div className="sm:col-span-2">
               {listState === 'noMatch' ? (
@@ -695,21 +733,21 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                   onClick={() => void openOrJoinGroup(group)}
                   className="min-w-0 flex-1 text-left"
                 >
-                  <h2 className="text-sm font-semibold text-lantern-text">{group.name}</h2>
-                  <p className="text-xs text-lantern-text-secondary">
+                  <h2 className="text-body font-semibold text-lantern-text">{group.name}</h2>
+                  <p className="mt-1 text-caption text-lantern-text-secondary">
                     {memberCountLabel(group.memberCount)}
                     {group.questionCount > 0 ? ` · ${group.questionCount} questions` : ''}
                     {group.isMember ? ' · Member' : ''}
                   </p>
                   {group.description ? (
-                    <p className="text-xs text-lantern-text-secondary line-clamp-2">{group.description}</p>
+                    <p className="mt-1 text-caption text-lantern-text-secondary line-clamp-2">{group.description}</p>
                   ) : null}
                 </button>
                 <button
                   type="button"
                   disabled={pendingId === group.id}
                   onClick={() => void openOrJoinGroup(group)}
-                  className={`shrink-0 self-start rounded-md px-2 py-1.5 text-xs font-semibold disabled:opacity-60 ${
+                  className={`shrink-0 self-start rounded-md px-2 py-1.5 text-caption font-semibold disabled:opacity-60 ${
                     group.isMember
                       ? 'text-lantern-text-secondary hover:text-lantern-text'
                       : 'text-lantern-primary hover:bg-lantern-primary/10'
@@ -724,7 +762,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       )}
 
       {listState !== 'loading' && listState !== 'failed' && section === 'people' && (
-        <section className="grid gap-2 sm:grid-cols-2" aria-label="People">
+        <section className="grid gap-3 sm:grid-cols-2" aria-label="People">
           {people.length === 0 && (
             <div className="sm:col-span-2">
               {listState === 'noMatch' ? (
@@ -767,7 +805,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 onClick={() => onNavigate('CreatorProfile', { userId: person.id })}
                 className={`${card} w-full text-left`}
               >
-                <h2 className="flex items-center gap-1.5 text-sm font-semibold text-lantern-text">
+                <h2 className="flex items-center gap-1.5 text-body font-semibold text-lantern-text">
                   {person.name}
                   {chip ? (
                     <span className="rounded-full bg-lantern-primary/10 px-2 py-0.5 text-label tracking-normal font-medium text-lantern-primary">
@@ -775,7 +813,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                     </span>
                   ) : null}
                 </h2>
-                <p className="text-xs text-lantern-text-secondary">
+                <p className="mt-1 text-caption text-lantern-text-secondary">
                   {person.programme ? `${person.programme} · ` : ''}
                   {person.activePacks} {person.activePacks === 1 ? 'pack' : 'packs'} ·{' '}
                   {person.learnersHelped} helped
@@ -787,7 +825,7 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
       )}
 
       {listState !== 'loading' && listState !== 'failed' && section === 'rooms' && (
-        <section className="grid gap-2 sm:grid-cols-2" aria-label="Rooms">
+        <section className="grid gap-3 sm:grid-cols-2" aria-label="Rooms">
           {/* A failed fetch never reaches here — resolveListState routes it to
               RequestError above, because "no rooms are open" would be a guess. */}
           {visibleRooms.length === 0 && (
@@ -812,19 +850,19 @@ const DiscoverHub: React.FC<DiscoverScreenProps> = ({
                 className={`${card} w-full text-left`}
                 aria-label={`${room.joined ? 'Open' : 'Join'} ${room.title}, ${room.participantCount} joined, ${timeLeft}`}
               >
-                <h2 className="flex items-center justify-between gap-2 text-sm font-semibold text-lantern-text">
+                <h2 className="flex items-center justify-between gap-2 text-body font-semibold text-lantern-text">
                   <span className="truncate">{room.title}</span>
-                  <span className={`text-xs font-semibold ${room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'}`}>
+                  <span className={`text-caption font-semibold ${room.joined ? 'text-lantern-text-secondary' : 'text-lantern-primary'}`}>
                     {room.joined ? 'Open' : 'Join'}
                   </span>
                 </h2>
-                <p className="text-xs text-lantern-text-secondary">
+                <p className="mt-1 text-caption text-lantern-text-secondary">
                   {/* Joined = on the roster (has not left); live presence is only
                       known inside the room, so this never claims "here". */}
                   {room.participantCount} joined · {timeLeft}
                   {room.joined ? ' · You are in' : ''}
                 </p>
-                {room.topic ? <p className="text-xs text-lantern-text-tertiary">{room.topic}</p> : null}
+                {room.topic ? <p className="mt-1 text-caption text-lantern-text-tertiary">{room.topic}</p> : null}
               </button>
             );
           })}

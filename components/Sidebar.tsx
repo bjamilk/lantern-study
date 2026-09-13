@@ -1,6 +1,17 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Group, AppMode, User, Badge, DMThread, TestSessionData, StudySessionData, ChatItem, GameSession } from '../types';
+import {
+  buildChatHome,
+  chatMatchesInboxFilter,
+  parseStoredIdSet,
+  PINNED_CHATS_STORAGE_KEY,
+  type ChatHomeLounge,
+  type ChatInboxFilter,
+} from '@lantern/shared/chat';
+import { fetchMyInquiries } from '../services/supabase';
+import { useCommunityStore } from '../stores/communityStore';
 import GroupListItem from './GroupListItem';
+import { ChatHomePane } from './chat/ChatHomePane';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
@@ -46,6 +57,8 @@ interface SidebarProps {
   isCompanionOpen?: boolean;
   /** Community server view: the column's rows all go through App's one handler. */
   onCommunityNavigate?: CommunityNavigate;
+  onOpenLounge?: (lounge: ChatHomeLounge) => void;
+  onOpenInquiries?: () => void;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ 
@@ -78,9 +91,53 @@ const Sidebar: React.FC<SidebarProps> = ({
   onToggleCompanion,
   isCompanionOpen,
   onCommunityNavigate,
+  onOpenLounge,
+  onOpenInquiries,
 }) => {
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
+  const [inboxQuery, setInboxQuery] = useState('');
+  const [inboxFilter, setInboxFilter] = useState<ChatInboxFilter>('all');
+  const [pinnedChatIds, setPinnedChatIds] = useState<Set<string>>(() => {
+    try {
+      return parseStoredIdSet(localStorage.getItem(PINNED_CHATS_STORAGE_KEY));
+    } catch {
+      return new Set();
+    }
+  });
+  const [listingTitlesByThread, setListingTitlesByThread] = useState<Record<string, string>>({});
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const communityNameById = useMemo(
+    () => Object.fromEntries(myCommunities.map((community) => [community.id, community.name])),
+    [myCommunities],
+  );
+
+  useEffect(() => {
+    try {
+      setPinnedChatIds(parseStoredIdSet(localStorage.getItem(PINNED_CHATS_STORAGE_KEY)));
+    } catch {
+      setPinnedChatIds(new Set());
+    }
+  }, [selectedChatId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all([fetchMyInquiries('buyer'), fetchMyInquiries('seller')])
+      .then(([buyer, seller]) => {
+        if (cancelled) return;
+        const next: Record<string, string> = {};
+        for (const row of [...(buyer || []), ...(seller || [])]) {
+          const threadId = row?.dm_thread_id;
+          const title = row?.listing?.title;
+          if (threadId && title) next[threadId] = title;
+        }
+        setListingTitlesByThread(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const { lowDataMode } = useLowDataModeToggle();
   const { isChatsSectionExpanded, toggleChatsSection, activeCommunity } = useUIStore();
   const aiCredits = useAiCredits();
@@ -150,13 +207,23 @@ const Sidebar: React.FC<SidebarProps> = ({
         subMap[parentId].sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    return {
-      topLevelChats: topLevel,
-      messageRequestChats: messageRequests,
-      subGroupsMap: subMap,
-      archivedGroups: archived,
+    const q = inboxQuery.trim().toLowerCase();
+    const matchesQuery = (chat: ChatItem) => {
+      if (!q) return true;
+      if (chat.chatType === 'group') return chat.name.toLowerCase().includes(q);
+      const otherId = chat.participantIds?.find((id) => id !== currentUser.id);
+      const name = (otherId && chat.participants?.[otherId]?.name) || '';
+      return name.toLowerCase().includes(q);
     };
-  }, [groups, dmThreads, currentUser.id]);
+    const matchesFilter = (chat: ChatItem) => chatMatchesInboxFilter(chat.unreadCount, inboxFilter);
+
+    return {
+      topLevelChats: topLevel.filter((c) => matchesQuery(c) && matchesFilter(c)),
+      messageRequestChats: messageRequests.filter(matchesQuery),
+      subGroupsMap: subMap,
+      archivedGroups: archived.filter(matchesQuery),
+    };
+  }, [groups, dmThreads, currentUser.id, inboxQuery, inboxFilter]);
 
   const totalUnreadChatCount = useMemo(
     () => getTotalActiveUnreadChatCount(groups, dmThreads),
@@ -188,6 +255,8 @@ const Sidebar: React.FC<SidebarProps> = ({
           isSubGroup={nestingLevel > 0}
           nestingLevel={nestingLevel}
           showText={true}
+          pinned={pinnedChatIds.has(group.id)}
+          communityName={group.communityId ? communityNameById[group.communityId] : undefined}
         />
         {isGroupExpanded && subGroups.map(subGroup =>
           renderGroupWithSubgroups(subGroup, nestingLevel + 1)
@@ -460,6 +529,7 @@ const Sidebar: React.FC<SidebarProps> = ({
           lowDataMode={lowDataMode}
           pendingSyncCount={pendingSyncCount}
           compact
+          iconOnly={!showText}
           className={showText ? 'w-full justify-center' : 'w-full justify-center px-1'}
         />
       </div>
@@ -518,6 +588,32 @@ const Sidebar: React.FC<SidebarProps> = ({
               )}
             </div>
           </div>
+          <div className="px-3 pt-2 pb-1 flex-shrink-0 space-y-2">
+            <label className="sr-only" htmlFor="chats-inbox-search">Search chats</label>
+            <input
+              id="chats-inbox-search"
+              value={inboxQuery}
+              onChange={(e) => setInboxQuery(e.target.value)}
+              placeholder="Search chats"
+              className="w-full rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text placeholder:text-lantern-text-tertiary"
+            />
+            <div className="flex gap-1">
+              {(['all', 'unread'] as const).map((id) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setInboxFilter(id)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-semibold min-h-[32px] ${
+                    inboxFilter === id
+                      ? 'bg-lantern-ink text-lantern-surface'
+                      : 'bg-lantern-background-secondary text-lantern-text-secondary'
+                  }`}
+                >
+                  {id === 'all' ? 'All' : 'Unread'}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="flex-1 min-h-0 overflow-y-auto py-1">
             {messageRequestChats.length > 0 && (
               <div className="mb-1">
@@ -529,12 +625,11 @@ const Sidebar: React.FC<SidebarProps> = ({
                     key={chat.id}
                     chat={chat}
                     currentUser={currentUser}
-                    // The flyout never renders on the chat screen, so no row
-                    // is ever the "current" conversation here.
-                    isSelected={false}
+                    isSelected={selectedChatId === chat.id}
                     onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
                     isDisabled={!canInteractWithChats}
                     showText={true}
+                    listingTitle={listingTitlesByThread[chat.id]}
                   />
                 ))}
               </div>
@@ -548,15 +643,35 @@ const Sidebar: React.FC<SidebarProps> = ({
                   key={chat.id}
                   chat={chat}
                   currentUser={currentUser}
-                  isSelected={false}
+                  isSelected={selectedChatId === chat.id}
                   onClick={canInteractWithChats ? () => onSelectChat(chat) : () => {}}
                   isDisabled={!canInteractWithChats}
                   showText={true}
+                  pinned={pinnedChatIds.has(chat.id)}
+                  listingTitle={listingTitlesByThread[chat.id]}
                 />
               );
             })}
             {topLevelChats.length === 0 && messageRequestChats.length === 0 && (
-              <p className="px-3 py-2 text-body text-lantern-text-secondary">No active chats.</p>
+              inboxQuery.trim() || inboxFilter === 'unread' ? (
+                <p className="px-3 py-2 text-body text-lantern-text-secondary">
+                  {inboxFilter === 'unread' && !inboxQuery.trim() ? 'No unread chats.' : 'No chats match that search.'}
+                </p>
+              ) : (
+                <ChatHomePane
+                  compact
+                  model={buildChatHome({
+                    currentUserId: currentUser.id,
+                    groups,
+                    dmThreads,
+                    communities: myCommunities,
+                  })}
+                  onMessageSomeone={onOpenNewDmModal}
+                  onNewGroup={onNavigateToCreateGroup}
+                  onOpenLounge={onOpenLounge}
+                  onOpenInquiries={onOpenInquiries}
+                />
+              )
             )}
             {archivedGroups.length > 0 && (
               <div className="mt-2 pt-2 border-t border-lantern-border">

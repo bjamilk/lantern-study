@@ -19,7 +19,7 @@ export const MarketplaceListingRail: React.FC<MarketplaceListingRailProps> = ({
   if (listings.length === 0) return null;
   return (
     <div className="mb-4">
-      <h3 className="text-xs sm:text-sm font-semibold text-lantern-text mb-2 flex items-center gap-1.5">
+      <h3 className="text-heading text-lantern-text mb-2 flex items-center gap-1.5">
         {icon}
         {title}
       </h3>
@@ -56,10 +56,10 @@ export const MarketplaceListingRail: React.FC<MarketplaceListingRailProps> = ({
                   ) : null}
                 </div>
                 <div className="p-2">
-                  <p className="text-xs font-semibold text-lantern-text line-clamp-1 group-hover:text-lantern-primary transition-colors">
+                  <p className="text-caption font-semibold text-lantern-text line-clamp-1 group-hover:text-lantern-primary transition-colors">
                     {item.title}
                   </p>
-                  <p className="text-sm font-bold text-lantern-primary">
+                  <p className="text-body font-bold text-lantern-primary">
                     {price.effective != null ? `₦${price.effective.toLocaleString()}` : 'Free'}
                   </p>
                 </div>

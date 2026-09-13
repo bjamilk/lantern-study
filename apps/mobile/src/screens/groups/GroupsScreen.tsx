@@ -14,7 +14,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DMThread } from '@lantern/shared/types';
 import { chatMessagePreview, resolveAvatarSrc } from '@lantern/shared/utils';
-import { isCommunityBoardGroupIn, resolveListState } from '@lantern/shared/network';
+import { isHiddenFromChatInbox, resolveListState } from '@lantern/shared/network';
+import { buildChatHome, chatMatchesInboxFilter, CHAT_HOME_COPY, type ChatInboxFilter } from '@lantern/shared/chat';
+import { Swipeable } from 'react-native-gesture-handler';
 import { collectKnownLounges, useCommunityStore } from '../../stores/communityStore';
 import { useAuthStore } from '../../stores';
 import { useGroupStore, type Group } from '../../stores/groupStore';
@@ -120,6 +122,8 @@ function ChatRow({
   onLongPress,
   selected = false,
   pinned = false,
+  muted = false,
+  communityName,
 }: {
   name: string;
   avatarUrl?: string | null;
@@ -137,6 +141,8 @@ function ChatRow({
   onLongPress?: () => void;
   selected?: boolean;
   pinned?: boolean;
+  muted?: boolean;
+  communityName?: string | null;
 }) {
   const { colors } = useTheme();
   return (
@@ -195,6 +201,9 @@ function ChatRow({
           {pinned ? (
             <AppIcon name="pin" size={13} color={colors.textTertiary} />
           ) : null}
+          {muted ? (
+            <AppIcon name="notifications-off" size={13} color={colors.textTertiary} />
+          ) : null}
           {isArchived ? (
             <AppIcon name="archive" size={14} color={colors.textTertiary} />
           ) : null}
@@ -208,6 +217,10 @@ function ChatRow({
         {preview ? (
           <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
             {preview}
+          </Text>
+        ) : communityName ? (
+          <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
+            in {communityName}
           </Text>
         ) : null}
       </View>
@@ -305,6 +318,8 @@ export function GroupsScreen({ navigation }: Props) {
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [archivedExpanded, setArchivedExpanded] = useState(false);
   const [chatQuery, setChatQuery] = useState('');
+  const [inboxFilter, setInboxFilter] = useState<ChatInboxFilter>('all');
+  const [mutedKeys, setMutedKeys] = useState<Set<string>>(new Set());
   /** Multi-select: keys are `g:<groupId>` / `d:<threadId>`. Long-press starts
       a selection, taps toggle more; the action bar lives while non-empty. */
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
@@ -350,7 +365,7 @@ export function GroupsScreen({ navigation }: Props) {
     [detailBySlug, channelsById, myCommunities]
   );
   const isBoardGroup = useCallback(
-    (group: Group) => isCommunityBoardGroupIn(group, knownLounges),
+    (group: Group) => isHiddenFromChatInbox(group, knownLounges),
     [knownLounges]
   );
 
@@ -564,7 +579,17 @@ export function GroupsScreen({ navigation }: Props) {
       });
       rebuilt.push(...inboundRequests.map(toDmItem));
     }
-    rebuilt.push(...openItems);
+    rebuilt.push(
+      ...openItems.filter((item) => {
+        const unread =
+          item.kind === 'dm'
+            ? item.thread.unreadCount
+            : item.kind === 'group'
+              ? item.group.unreadCount
+              : 0;
+        return chatMatchesInboxFilter(unread, inboxFilter);
+      }),
+    );
 
     // Universal search: chat-name matches, latest-message matches (only the
     // previews already on device — full history search needs a server
@@ -641,6 +666,7 @@ export function GroupsScreen({ navigation }: Props) {
     expandedParentGroups,
     archivedExpanded,
     chatQuery,
+    inboxFilter,
     pinnedKeys,
     userResults,
     messageResults,
@@ -816,6 +842,29 @@ export function GroupsScreen({ navigation }: Props) {
     clearSelection();
   };
 
+  const muteOne = async (key: string) => {
+    try {
+      if (key.startsWith('d:')) await muteDmThread(key.slice(2), '8h');
+      else await muteGroupChat(key.slice(2), '8h');
+      setMutedKeys((prev) => new Set(prev).add(key));
+      useToastStore.getState().showToast('Muted for 8 hours', 'success');
+    } catch {
+      useToastStore.getState().showToast('Could not mute this chat', 'error');
+    }
+  };
+
+  const archiveOne = async (item: ListItem) => {
+    if (!user?.id) return;
+    try {
+      const store = useGroupStore.getState();
+      if (item.kind === 'dm') await store.archiveDmThread(item.thread.id, user.id);
+      else if (item.kind === 'group' && !item.group.isArchived) await store.archiveGroup(item.group.id);
+      useToastStore.getState().showToast('Archived', 'success');
+    } catch {
+      useToastStore.getState().showToast('Could not archive this chat', 'error');
+    }
+  };
+
   const handleMuteSelected = async () => {
     const targets = [...selectedKeys];
     clearSelection();
@@ -825,6 +874,13 @@ export function GroupsScreen({ navigation }: Props) {
       )
     );
     const ok = results.filter((r) => r.status === 'fulfilled').length;
+    setMutedKeys((prev) => {
+      const next = new Set(prev);
+      targets.forEach((k, i) => {
+        if (results[i]?.status === 'fulfilled') next.add(k);
+      });
+      return next;
+    });
     const failed = results.length - ok;
     useToastStore
       .getState()
@@ -1137,6 +1193,25 @@ export function GroupsScreen({ navigation }: Props) {
         </Pressable>
       </View>
       )}
+      {!selectionActive ? (
+        <View className="flex-row gap-2 px-4 pb-2">
+          {(['all', 'unread'] as const).map((id) => (
+            <Pressable
+              key={id}
+              onPress={() => setInboxFilter(id)}
+              className={`px-3 py-1.5 rounded-full min-h-[32px] ${
+                inboxFilter === id ? 'bg-lantern-ink' : 'bg-lantern-background-secondary'
+              }`}
+              accessibilityRole="button"
+              accessibilityState={{ selected: inboxFilter === id }}
+            >
+              <Text className={`text-xs font-semibold ${inboxFilter === id ? 'text-lantern-surface' : 'text-lantern-text-secondary'}`}>
+                {id === 'all' ? 'All' : 'Unread'}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {/* One decision, made by the shared rule (packages/shared/network):
           failed > stale > loading > ready > noMatch > empty. A load that failed
@@ -1200,10 +1275,32 @@ export function GroupsScreen({ navigation }: Props) {
             ) : (
               <EmptyState
                 icon="people"
-                title="No conversations yet"
-                description="Join or create a group to start collaborating."
+                feature="groups"
+                title={CHAT_HOME_COPY.firstRunTitle}
+                description={CHAT_HOME_COPY.firstRunBody}
                 action={
-                  <Button onPress={() => navigation.navigate('CreateGroup')}>Create Group</Button>
+                  <View className="gap-2 w-full items-center">
+                    <Button onPress={() => setDmModalOpen(true)}>{CHAT_HOME_COPY.messageSomeone}</Button>
+                    <Button variant="secondary" onPress={() => navigation.navigate('CreateGroup')}>
+                      {CHAT_HOME_COPY.newGroup}
+                    </Button>
+                    {myCommunities[0] ? (
+                      <Button
+                        variant="secondary"
+                        onPress={() =>
+                          navigation.getParent()?.navigate(
+                            'CampusTab',
+                            {
+                              screen: 'CommunityDetail',
+                              params: { slug: myCommunities[0].slug },
+                            } as never,
+                          )
+                        }
+                      >
+                        {CHAT_HOME_COPY.openLounge}
+                      </Button>
+                    ) : null}
+                  </View>
                 }
               />
             )
@@ -1316,7 +1413,7 @@ export function GroupsScreen({ navigation }: Props) {
                 item.thread.status === 'pending' &&
                 typeof item.thread.requestedBy === 'string' &&
                 item.thread.requestedBy !== user?.id;
-              return (
+              const row = (
                 <ChatRow
                   name={item.name}
                   avatarUrl={item.avatarUrl}
@@ -1329,6 +1426,7 @@ export function GroupsScreen({ navigation }: Props) {
                   unread={item.thread.unreadCount}
                   isMessageRequest={isMessageRequest}
                   isArchived={item.thread.isArchived}
+                  muted={mutedKeys.has(`d:${item.thread.id}`)}
                   lowDataMode={lowDataMode}
                   selected={selectedKeys.has(`d:${item.thread.id}`)}
                   pinned={pinnedKeys.has(`d:${item.thread.id}`)}
@@ -1336,9 +1434,29 @@ export function GroupsScreen({ navigation }: Props) {
                   onPress={() => (selectionActive ? toggleSelect(item) : handlePress(item))}
                 />
               );
+              if (selectionActive) return row;
+              return (
+                <Swipeable
+                  renderRightActions={() => (
+                    <View className="flex-row h-full">
+                      <Pressable onPress={() => void muteOne(`d:${item.thread.id}`)} className="w-[72px] bg-amber-500 items-center justify-center">
+                        <Text className="text-white text-xs font-semibold">Mute</Text>
+                      </Pressable>
+                      <Pressable onPress={() => void archiveOne(item)} className="w-[72px] bg-slate-500 items-center justify-center">
+                        <Text className="text-white text-xs font-semibold">Archive</Text>
+                      </Pressable>
+                    </View>
+                  )}
+                >
+                  {row}
+                </Swipeable>
+              );
             }
             const g = item.group;
-            return (
+            const communityName = g.communityId
+              ? myCommunities.find((c) => c.id === g.communityId)?.name
+              : undefined;
+            const groupRow = (
               <ChatRow
                 name={g.name}
                 avatarUrl={g.avatarUrl}
@@ -1353,9 +1471,28 @@ export function GroupsScreen({ navigation }: Props) {
                 onToggleExpand={() => toggleGroupExpand(g.id)}
                 selected={selectedKeys.has(`g:${g.id}`)}
                 pinned={pinnedKeys.has(`g:${g.id}`)}
+                muted={mutedKeys.has(`g:${g.id}`)}
+                communityName={communityName}
                 onLongPress={() => toggleSelect(item)}
                 onPress={() => (selectionActive ? toggleSelect(item) : handlePress(item))}
               />
+            );
+            if (selectionActive) return groupRow;
+            return (
+              <Swipeable
+                renderRightActions={() => (
+                  <View className="flex-row h-full">
+                    <Pressable onPress={() => void muteOne(`g:${g.id}`)} className="w-[72px] bg-amber-500 items-center justify-center">
+                      <Text className="text-white text-xs font-semibold">Mute</Text>
+                    </Pressable>
+                    <Pressable onPress={() => void archiveOne(item)} className="w-[72px] bg-slate-500 items-center justify-center">
+                      <Text className="text-white text-xs font-semibold">Archive</Text>
+                    </Pressable>
+                  </View>
+                )}
+              >
+                {groupRow}
+              </Swipeable>
             );
           }}
         />

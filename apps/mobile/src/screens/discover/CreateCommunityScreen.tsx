@@ -3,8 +3,7 @@
  *
  * A purpose picker with one plain line each, a name, an optional description,
  * and — for an event — a when and a where. What the server can actually keep
- * is decided in `createCommunityForm.ts`; this screen only draws it and says,
- * out loud, that the room will be public.
+ * is decided in `createCommunityForm.ts`. Visibility is Public or Private.
  *
  * It lives on the CAMPUS stack: community screens never move to the Chat tab
  * (founder rule), so Back returns to the Communities segment and the Campus
@@ -27,8 +26,8 @@ import {
   CREATE_COMMUNITY_MODERATION_NOTE,
   CREATE_COMMUNITY_SUBMIT,
   CREATE_COMMUNITY_TITLE,
-  CREATE_COMMUNITY_VISIBILITY_NOTE,
   EMPTY_CREATE_COMMUNITY_DRAFT,
+  createCommunityVisibilityNote,
   buildCreateCommunityRequest,
   purposeIcon,
   validateCreateCommunity,
@@ -187,7 +186,7 @@ export function CreateCommunityScreen({ navigation }: { navigation: NavigationPr
               <TextInput
                 value={draft.eventWhen}
                 onChangeText={(eventWhen) => set({ eventWhen })}
-                placeholder="Fri 12 Sep, 4pm"
+                placeholder="2026-09-15 16:00"
                 placeholderTextColor={colors.inputPlaceholder}
                 accessibilityLabel="When the event happens"
                 style={{ minHeight: 48 }}
@@ -213,14 +212,40 @@ export function CreateCommunityScreen({ navigation }: { navigation: NavigationPr
 
         {/* Said before the room exists, not after: a student who needs a room
             kept in must find that out here. */}
-        <View className="mx-4 mt-5 rounded-2xl border border-lantern-border p-3">
-          <View className="flex-row items-center gap-2 mb-1">
-            <AppIcon name="globe" size={16} color={colors.textSecondary} />
-            <Text className="text-caption font-semibold uppercase text-lantern-text-tertiary">
-              Who can see it
-            </Text>
+        <View className="mx-4 mt-5 rounded-2xl border border-lantern-border p-4">
+          <Text className="text-caption font-semibold uppercase text-lantern-text-tertiary mb-3">
+            Who can see it
+          </Text>
+          <View className="flex-row flex-wrap gap-2 mb-3">
+            {(['public', 'private'] as const).map((visibility) => {
+              const selected = draft.visibility === visibility;
+              return (
+                <Pressable
+                  key={visibility}
+                  onPress={() => set({ visibility })}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={visibility === 'public' ? 'Public' : 'Private'}
+                  style={{
+                    minHeight: 36,
+                    backgroundColor: selected ? colors.primaryFill : 'transparent',
+                    borderColor: selected ? colors.primaryFill : colors.border,
+                  }}
+                  className="rounded-full border px-3 justify-center"
+                >
+                  <Text
+                    style={{ color: selected ? colors.textInverse : colors.textSecondary }}
+                    className="text-caption"
+                  >
+                    {visibility === 'public' ? 'Public' : 'Private'}
+                  </Text>
+                </Pressable>
+              );
+            })}
           </View>
-          <Text className="text-caption text-lantern-text">{CREATE_COMMUNITY_VISIBILITY_NOTE}</Text>
+          <Text className="text-caption text-lantern-text">
+            {createCommunityVisibilityNote(draft.visibility)}
+          </Text>
           <Text className="mt-2 text-caption text-lantern-text-secondary">
             {CREATE_COMMUNITY_MODERATION_NOTE}
           </Text>

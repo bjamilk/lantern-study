@@ -1571,7 +1571,65 @@ router.delete(
   })
 );
 
-// POST /api/v1/marketplace/cart/checkout - One order per cart line (Paystack sessions when enabled)
+router.get(
+  '/addresses',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceAddressesService } = await import('../services/marketplaceAddresses');
+    const rows = await getMarketplaceAddressesService(supabaseService).list(req.user.id);
+    res.json({ success: true, data: rows });
+  })
+);
+
+router.post(
+  '/addresses',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceAddressesService } = await import('../services/marketplaceAddresses');
+    const row = await getMarketplaceAddressesService(supabaseService).create(req.user.id, req.body || {});
+    res.json({ success: true, data: row });
+  })
+);
+
+router.patch(
+  '/addresses/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceAddressesService } = await import('../services/marketplaceAddresses');
+    const row = await getMarketplaceAddressesService(supabaseService).update(
+      req.user.id,
+      req.params.id,
+      req.body || {},
+    );
+    res.json({ success: true, data: row });
+  })
+);
+
+router.delete(
+  '/addresses/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceAddressesService } = await import('../services/marketplaceAddresses');
+    const row = await getMarketplaceAddressesService(supabaseService).remove(req.user.id, req.params.id);
+    res.json({ success: true, data: row });
+  })
+);
+
+router.get(
+  '/checkouts/:id',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceCheckoutService } = await import('../services/marketplaceCheckout');
+    const checkout = await getMarketplaceCheckoutService(supabaseService).getCheckout(
+      req.params.id,
+      req.user.id,
+    );
+    if (!checkout) return res.status(404).json({ success: false, error: 'Checkout not found' });
+    res.json({ success: true, data: checkout });
+  })
+);
+
+// POST /api/v1/marketplace/cart/checkout — one Paystack charge; cart stays until paid
 router.post(
   '/cart/checkout',
   authMiddleware,
@@ -1585,10 +1643,6 @@ router.post(
       normalizeIdempotencyKey(req.headers['idempotency-key']) ||
       `${buyerId}:cart_checkout:${Math.floor(Date.now() / 300_000)}`;
 
-    const { marketplacePaystackEnabled, getMarketplacePaymentsService } = await import(
-      '../services/marketplacePayments'
-    );
-
     try {
     const result = await withIdempotency(
       supabaseService.getClient(),
@@ -1596,63 +1650,48 @@ router.post(
       'marketplace_cart_checkout',
       idempotencyKey,
       async () => {
-        if (!marketplacePaystackEnabled()) {
-          return getMarketplaceCartService(supabaseService).checkout(buyerId);
-        }
+        const { getMarketplaceCheckoutService } = await import('../services/marketplaceCheckout');
+        const cart = await getMarketplaceCartService(supabaseService).listCart(buyerId);
+        if (cart.length === 0) throw new Error('Cart is empty');
 
         const email =
           (typeof req.user?.email === 'string' && req.user.email) ||
           (await supabaseService.getClient().auth.admin.getUserById(buyerId)).data.user?.email ||
           '';
-        if (!email) {
-          throw new Error('A verified email is required for Paystack checkout');
-        }
 
-        const cart = await getMarketplaceCartService(supabaseService).listCart(buyerId);
-        if (cart.length === 0) throw new Error('Cart is empty');
-
-        const payments = getMarketplacePaymentsService(supabaseService);
-        const sessions: unknown[] = [];
-        const failures: Array<{ listingId: string; error: string }> = [];
-        const succeededListingIds: string[] = [];
-
-        for (const item of cart) {
-          try {
-            const session = await payments.createBuyNowCheckoutSession({
-              listingId: item.listing_id,
-              buyerId,
-              buyerEmail: email,
-              quantity: item.quantity,
-            });
-            sessions.push(session);
-            succeededListingIds.push(item.listing_id);
-          } catch (err: any) {
-            failures.push({
-              listingId: item.listing_id,
-              error: err?.message || 'Checkout failed',
+        const requestedGroups = Array.isArray(req.body?.groups) ? req.body.groups : [];
+        const modeBySeller = new Map<
+          string,
+          { sellerId: string; fulfillmentMode: string; meetingLocation?: string }
+        >();
+        for (const group of requestedGroups) {
+          if (group?.sellerId && group?.fulfillmentMode) {
+            modeBySeller.set(String(group.sellerId), {
+              sellerId: String(group.sellerId),
+              fulfillmentMode: String(group.fulfillmentMode),
+              meetingLocation:
+                typeof group.meetingLocation === 'string' ? group.meetingLocation : undefined,
             });
           }
         }
-
-        if (succeededListingIds.length > 0) {
-          await supabaseService
-            .getClient()
-            .from('marketplace_cart_items')
-            .delete()
-            .eq('buyer_id', buyerId)
-            .in('listing_id', succeededListingIds);
+        for (const item of cart) {
+          const sellerId = String(item.listing?.user_id || '');
+          if (sellerId && !modeBySeller.has(sellerId)) {
+            modeBySeller.set(sellerId, { sellerId, fulfillmentMode: 'campus_meetup' });
+          }
         }
 
-        if (sessions.length === 0) {
-          throw new Error(failures[0]?.error || 'Checkout failed for all items');
-        }
+        const unified = await getMarketplaceCheckoutService(supabaseService).createFromCart(buyerId, {
+          groups: [...modeBySeller.values()] as any,
+          addressId: typeof req.body?.addressId === 'string' ? req.body.addressId : null,
+          buyerEmail: email,
+        });
 
         return {
-          sessions,
-          failures,
-          // Convenience: first Paystack URL for single-item carts
-          authorizationUrl: (sessions[0] as { authorizationUrl?: string })?.authorizationUrl,
-          orders: sessions.map((s: any) => s.order).filter(Boolean),
+          checkout: unified.checkout,
+          orders: unified.orders,
+          failures: [],
+          authorizationUrl: unified.authorizationUrl,
         };
       }
     );
@@ -2110,7 +2149,8 @@ router.post(
         listing.user_id,
         buyerProfile?.name || 'Someone',
         listing.title,
-        inquiry.id
+        inquiry.id,
+        { threadId, buyerId },
       );
     } catch (notifyErr) {
       logger.warn('Inquiry created but seller notification failed', {
@@ -3404,6 +3444,8 @@ router.patch(
           disputeReason: typeof req.body?.disputeReason === 'string' ? req.body.disputeReason : undefined,
           disputeCategory:
             typeof req.body?.disputeCategory === 'string' ? req.body.disputeCategory : undefined,
+          trackingNumber: typeof req.body?.trackingNumber === 'string' ? req.body.trackingNumber : undefined,
+          trackingUrl: typeof req.body?.trackingUrl === 'string' ? req.body.trackingUrl : undefined,
         }
       );
       await invalidateSellerAnalyticsCache(order.seller_id);
@@ -3728,11 +3770,28 @@ router.put(
       {
         hallDropoffEnabled: req.body?.hallDropoffEnabled,
         hallDropoffMinAmount: req.body?.hallDropoffMinAmount,
+        shippingEnabled: req.body?.shippingEnabled,
+        shippingFeeNaira: req.body?.shippingFeeNaira,
+        shippingFreeOverNaira: req.body?.shippingFreeOverNaira,
+        shipsFromCampusId: req.body?.shipsFromCampusId,
+        shipsFromCity: req.body?.shipsFromCity,
         requirePaymentConfirmation: req.body?.requirePaymentConfirmation,
         favoriteAlertThreshold: req.body?.favoriteAlertThreshold,
       }
     );
     res.json({ success: true, data: prefs });
+  })
+);
+
+router.get(
+  '/sellers/:userId/fulfillment',
+  authMiddleware,
+  asyncHandler(async (req: any, res: any) => {
+    const { getMarketplaceSellerToolsService } = await import('../services/marketplaceSellerTools');
+    const data = await getMarketplaceSellerToolsService(supabaseService).getPublicFulfillment(
+      req.params.userId,
+    );
+    res.json({ success: true, data });
   })
 );
 

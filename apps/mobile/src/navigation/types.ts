@@ -296,6 +296,8 @@ export type MarketStackParamList = {
    */
   Orders: { role?: 'buyer' | 'seller'; view?: 'buy_again' } | undefined;
   Cart: undefined;
+  Checkout: undefined;
+  Addresses: undefined;
   Purchases: undefined;
   StudyProductDrafts:
     | { source?: { noteIds?: string[]; folderId?: string | null; courseId?: string | null; title?: string } }

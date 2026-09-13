@@ -18,6 +18,8 @@
  * existing caller imports from `@lantern/shared/network`.
  */
 export * from './communityGovernance';
+export * from './communityHub';
+export * from './feedNav';
 import type { CommunityKind } from './communityGovernance';
 export type { CommunityKind };
 

@@ -137,6 +137,13 @@ export function ShopAccountScreen({ navigation }: { navigation: NavigationProp }
       onPress: go('Cart'),
     },
     {
+      key: 'addresses',
+      label: 'Addresses',
+      detail: 'Saved delivery addresses for shipping',
+      icon: 'location',
+      onPress: go('Addresses'),
+    },
+    {
       key: 'purchases',
       label: 'Your Purchases',
       detail: 'Study packs and question banks you own',

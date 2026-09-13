@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { CommonActions } from '@react-navigation/native';
 import {
   ActivityIndicator,
   Pressable,
@@ -35,6 +36,7 @@ import { brand } from '../../theme';
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  dispatch: (action: unknown) => void;
 };
 
 type Params = { slug: string; communityId?: string; name?: string };
@@ -267,6 +269,33 @@ function CommunityMembersList({
         visible={!!menuTarget}
         title={menuTarget?.name}
         items={[
+          {
+            label: 'Message',
+            icon: 'chatbubbles' as const,
+            onPress: () => {
+              const member = menuTarget;
+              setMenuTarget(null);
+              if (!member || !viewerId) return;
+              const threadId = [viewerId, member.id].sort().join('-');
+              navigation.dispatch(
+                CommonActions.navigate({
+                  name: 'Main',
+                  params: {
+                    screen: 'ChatTab',
+                    params: {
+                      screen: 'DirectMessage',
+                      params: {
+                        recipientId: member.id,
+                        recipientName: member.name,
+                        threadId,
+                      },
+                      initial: false,
+                    },
+                  },
+                }),
+              );
+            },
+          },
           {
             label: 'Report member',
             icon: 'flag' as const,

@@ -79,6 +79,7 @@ import {
   addMessageReaction,
   removeMessageReaction,
   fetchUserReactionsForThread,
+  fetchUserProfile,
 } from '../../services/api';
 import {
   CHAT_MUTE_DURATIONS,
@@ -86,7 +87,14 @@ import {
   type ChatMuteDurationId,
 } from '@lantern/shared';
 import { brand, useTheme, withAlpha } from '../../theme';
-import { applyReactionLocally } from '@lantern/shared/chat';
+import {
+  applyReactionLocally,
+  chatDraftIsEmpty,
+  chatDraftStorageKey,
+  collectChatGalleryItems,
+  formatChatPresenceFromStatus,
+} from '@lantern/shared/chat';
+import { ChatGallerySheet } from '../../components/chat/ChatGallerySheet';
 import { MessageReactions } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -320,6 +328,8 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     : undefined;
 
   const [text, setText] = useState('');
+  const [peerPresenceLabel, setPeerPresenceLabel] = useState<string | null>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
@@ -382,6 +392,42 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     [applyPeerChatRead, threadId]
   );
   useChatReadReceipts(threadId, user?.id, onPeerRead);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!recipientId) {
+      setPeerPresenceLabel(null);
+      return;
+    }
+    void fetchUserProfile(recipientId)
+      .then((profile) => {
+        if (cancelled) return;
+        setPeerPresenceLabel(
+          formatChatPresenceFromStatus(profile?.onlineStatus, profile?.lastSeenAt ?? null),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setPeerPresenceLabel(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recipientId]);
+
+  useEffect(() => {
+    const key = chatDraftStorageKey('dm', threadId);
+    void AsyncStorage.getItem(key).then((saved) => {
+      if (saved) setText(saved);
+    });
+  }, [threadId]);
+
+  useEffect(() => {
+    const key = chatDraftStorageKey('dm', threadId);
+    const t = setTimeout(() => {
+      void (chatDraftIsEmpty(text) ? AsyncStorage.removeItem(key) : AsyncStorage.setItem(key, text));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [text, threadId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -578,6 +624,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
     () => (starredOnly ? messages.filter((m) => starredIds.has(m.id)) : messages),
     [messages, starredOnly, starredIds]
   );
+  const galleryItems = useMemo(() => collectChatGalleryItems(messages), [messages]);
   // Day separators, planned once over the list, so a thread never reads
   // 3:56 PM → 2:17 PM → 5:01 AM as if it ran backwards when those times sat on
   // different days. Parallel to `visibleMessages`; index i is the label above
@@ -618,6 +665,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           setStarredOnly((on) => !on);
           setChatSearchOpen(false);
         }),
+    },
+    {
+      label: 'Photos and voice',
+      icon: 'images',
+      onPress: () => afterSheet(() => setGalleryOpen(true)),
     },
     {
       label: 'Chat background',
@@ -1200,9 +1252,16 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           uri={resolveAvatarSrc(peerAvatarUrl)}
           size={36}
         />
-        <Text className="flex-1 text-base font-semibold text-lantern-text" numberOfLines={1}>
-          {displayName}
-        </Text>
+        <View className="flex-1 min-w-0">
+          <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
+            {displayName}
+          </Text>
+          {peerPresenceLabel ? (
+            <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>
+              {peerPresenceLabel}
+            </Text>
+          ) : null}
+        </View>
         <Pressable
           onPress={openChatMenu}
           disabled={chatActionBusy}
@@ -1855,6 +1914,15 @@ export function DirectMessageScreen({ navigation, route }: Props) {
         visible={!!forwardMessage}
         onClose={() => setForwardMessage(null)}
         messageText={(forwardMessage?.text || '').trim()}
+      />
+      <ChatGallerySheet
+        visible={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        items={galleryItems}
+        onOpenItem={(id) => {
+          const index = visibleMessages.findIndex((m) => m.id === id);
+          if (index >= 0) listRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.4 });
+        }}
       />
       <ActionSheet
         visible={chatMenuOpen}

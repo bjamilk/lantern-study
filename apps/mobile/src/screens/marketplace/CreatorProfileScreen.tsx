@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { CommonActions } from '@react-navigation/native';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
@@ -11,6 +12,7 @@ import { brand } from '../../theme';
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
+  dispatch: (action: unknown) => void;
 };
 type RouteProp = { params: { userId: string } };
 
@@ -142,6 +144,34 @@ export function CreatorProfileScreen({
             ) : null}
 
             {!isSelf ? (
+              <>
+              <Pressable
+                onPress={() => {
+                  const me = currentUserId;
+                  if (!me) return;
+                  const threadId = [me, userId].sort().join('-');
+                  navigation.dispatch(
+                    CommonActions.navigate({
+                      name: 'Main',
+                      params: {
+                        screen: 'ChatTab',
+                        params: {
+                          screen: 'DirectMessage',
+                          params: {
+                            recipientId: userId,
+                            recipientName: creator.name,
+                            threadId,
+                          },
+                          initial: false,
+                        },
+                      },
+                    }),
+                  );
+                }}
+                className="mt-3 items-center rounded-lg py-2.5 bg-lantern-background-secondary"
+              >
+                <Text className="text-sm font-semibold text-lantern-text">Message</Text>
+              </Pressable>
               <Pressable
                 onPress={() => void toggleFollow()}
                 disabled={busy}
@@ -158,6 +188,7 @@ export function CreatorProfileScreen({
                   {creator.isFollowing ? 'Following' : 'Follow'}
                 </Text>
               </Pressable>
+              </>
             ) : null}
 
             <View className="mt-4 flex-row" style={{ gap: 8 }}>

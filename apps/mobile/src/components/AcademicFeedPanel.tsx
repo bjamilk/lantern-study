@@ -2,28 +2,31 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import {
   describeFeedItem,
+  feedItemNavTarget,
+  isCommunityBoard,
   learningConnectionLabel,
+  remapFeedTargetForBoard,
   type FeedItem,
   type LearningConnectionSummary,
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../services/api';
+import { useCommunityStore } from '../stores/communityStore';
+import { useGroupStore } from '../stores/groupStore';
 import { AppIcon } from './ui/AppIcon';
-import { brand } from '../theme';
+import { useTheme } from '../theme';
 
 /**
- * The academic feed panel on the mobile dashboard (Phase 3 · M).
+ * Campus activity — pull-based network feed.
  *
- * The plan asked for a feed panel on BOTH dashboards; only web got one, so
- * mobile users had no way to see network activity without navigating to the
- * dedicated Feed screen they had no reason to know existed.
- *
- * Compact by design — a handful of rows with a link through to the full screen.
- * Pull-based like web; this must never become a realtime channel.
+ * Lives on Campus, not in the notification inbox. Direct-to-me events stay
+ * in notifications; this is what people around you posted or listed.
  */
 export interface AcademicFeedPanelProps {
-  onOpenFeed?: () => void;
+  onNavigate?: (screen: string, params?: Record<string, unknown>) => void;
   limit?: number;
   className?: string;
+  heading?: string;
+  hideWhenEmpty?: boolean;
 }
 
 function relativeTime(iso: string): string {
@@ -37,10 +40,49 @@ function relativeTime(iso: string): string {
   return `${Math.floor(hours / 24)}d`;
 }
 
-export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: AcademicFeedPanelProps) {
+function toNavigateTarget(
+  item: FeedItem,
+  lookup: {
+    isBoardGroup: (groupId: string) => boolean;
+    communitySlugForGroup: (groupId: string) => string | null;
+  },
+): { screen: string; params: Record<string, unknown> } | null {
+  const raw = feedItemNavTarget(item);
+  if (!raw) return null;
+  const target = remapFeedTargetForBoard(raw, lookup);
+  if (target.screen === 'CommunityPost') {
+    return {
+      screen: 'CommunityPost',
+      params: { slug: target.params.slug, groupId: target.params.groupId, id: target.params.id },
+    };
+  }
+  return target;
+}
+
+export function AcademicFeedPanel({
+  onNavigate,
+  limit = 4,
+  className,
+  heading = 'Happening now',
+  hideWhenEmpty = false,
+}: AcademicFeedPanelProps) {
+  const { colors } = useTheme();
   const [items, setItems] = useState<FeedItem[]>([]);
   const [connections, setConnections] = useState<LearningConnectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const groups = useGroupStore((s) => s.groups);
+  const myCommunities = useCommunityStore((s) => s.myCommunities);
+  const feedLookup = {
+    isBoardGroup: (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      return !!group && isCommunityBoard(group);
+    },
+    communitySlugForGroup: (groupId: string) => {
+      const group = groups.find((g) => g.id === groupId);
+      if (!group?.communityId) return null;
+      return myCommunities.find((c) => c.id === group.communityId)?.slug ?? null;
+    },
+  };
 
   const load = useCallback(async () => {
     try {
@@ -55,7 +97,6 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: Academic
 
   useEffect(() => {
     void load();
-    // Independent of the feed — a failure here must not blank the panel.
     void fetchLearningConnections()
       .then(setConnections)
       .catch(() => setConnections(null));
@@ -64,45 +105,51 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: Academic
   const connectionLine = learningConnectionLabel(connections);
   const rendered = items.map((i) => ({ item: i, text: describeFeedItem(i) })).filter((x) => x.text);
 
-  // Nothing to show and nothing to say — render nothing rather than an empty box.
-  if (!loading && rendered.length === 0 && !connectionLine) return null;
+  if (hideWhenEmpty && !loading && rendered.length === 0 && !connectionLine) return null;
 
   return (
-    <View className={className ?? 'mx-4 mb-4 rounded-2xl border border-lantern-border bg-lantern-surface p-4'}>
-      <View className="flex-row items-center justify-between mb-2">
+    <View className={className ?? 'mx-4 mb-4'}>
+      <View className="flex-row items-end justify-between gap-3 mb-4">
         <View className="flex-1">
-          <Text className="text-sm font-semibold text-lantern-text">From your network</Text>
-          {connectionLine ? (
-            <Text className="text-xs text-lantern-primary-text">{connectionLine}</Text>
-          ) : null}
+          <Text className="text-title font-semibold text-lantern-text">{heading}</Text>
+          <Text className="mt-1 text-caption text-lantern-text-secondary">
+            {connectionLine || 'Posts and listings from rooms you belong to.'}
+          </Text>
         </View>
-        {onOpenFeed ? (
-          <Pressable
-            onPress={onOpenFeed}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Open the full feed"
-          >
-            <AppIcon name="chevron-forward" size={18} color="#64748b" />
-          </Pressable>
-        ) : null}
+        <Pressable
+          onPress={() => void load()}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Refresh feed"
+          className="min-h-[36px] min-w-[36px] items-center justify-center"
+        >
+          <AppIcon name="refresh" size={16} color={colors.textSecondary} />
+        </Pressable>
       </View>
 
       {loading ? (
-        <ActivityIndicator color={brand.text} />
+        <ActivityIndicator color={colors.primaryText} />
       ) : rendered.length === 0 ? (
-        <Text className="text-xs text-lantern-text-tertiary">
+        <Text className="text-caption text-lantern-text-tertiary">
           Follow a creator or join a community and their activity shows up here.
         </Text>
       ) : (
-        rendered.map(({ item, text }) => (
-          <View key={item.id} className="py-1.5">
-            <Text className="text-xs text-lantern-text">{text}</Text>
-            <Text className="text-label text-lantern-text-tertiary">
-              {relativeTime(item.createdAt)}
-            </Text>
-          </View>
-        ))
+        rendered.map(({ item, text }) => {
+          const target = onNavigate ? toNavigateTarget(item, feedLookup) : null;
+          return (
+            <Pressable
+              key={item.id}
+              disabled={!target}
+              onPress={() => target && onNavigate?.(target.screen, target.params)}
+              className="mb-3 rounded-2xl border border-lantern-border bg-lantern-surface p-4"
+            >
+              <Text className="text-body font-semibold text-lantern-text">{text}</Text>
+              <Text className="mt-1 text-caption text-lantern-text-secondary">
+                {relativeTime(item.createdAt)}
+              </Text>
+            </Pressable>
+          );
+        })
       )}
     </View>
   );

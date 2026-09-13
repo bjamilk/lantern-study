@@ -9,6 +9,7 @@ export type NotificationLinkType =
   | "dm"
   | "group"
   | "group_invite"
+  | "community_post"
   | "note"
   | "note_share"
   | "job"
@@ -20,6 +21,8 @@ export interface ParsedNotificationLink {
   type: NotificationLinkType;
   id?: string;
   threadId?: string;
+  slug?: string;
+  groupId?: string;
 }
 
 export type NotificationIconKey =
@@ -151,6 +154,19 @@ export function parseNotificationLink(
     const groupId = link.replace("/chat/", "").split(/[?#]/)[0];
     if (groupId) return { type: "group", id: groupId };
   }
+  {
+    const boardPost = link?.match(
+      /^\/discover\/c\/([^/?#]+)\/ch\/([^/?#]+)\/p\/([^/?#]+)/,
+    );
+    if (boardPost) {
+      return {
+        type: "community_post",
+        slug: decodeURIComponent(boardPost[1]),
+        groupId: decodeURIComponent(boardPost[2]),
+        id: decodeURIComponent(boardPost[3]),
+      };
+    }
+  }
   // Jobs board links are plain app paths rather than `marketplace:` tuples.
   if (n?.type === "job_alert" || link?.startsWith("/marketplace/jobs/")) {
     const postingId =
@@ -194,7 +210,14 @@ export function parseNotificationLink(
   // and a tap on "new question about your listing" did nothing at all.
   {
     const inquiryId = link.match(/^\/marketplace\/inquiries\/([^/?#]+)/)?.[1];
-    if (inquiryId) return { type: "inquiry", id: inquiryId };
+    if (inquiryId) {
+      const threadId =
+        (typeof n?.data?.threadId === "string" && n.data.threadId) ||
+        (typeof n?.data?.dmThreadId === "string" && n.data.dmThreadId) ||
+        (typeof n?.data?.dm_thread_id === "string" && n.data.dm_thread_id) ||
+        undefined;
+      return { type: "inquiry", id: inquiryId, threadId };
+    }
   }
   const parts = link.split(":");
   if (parts[0] !== "marketplace" || parts.length < 3) return null;

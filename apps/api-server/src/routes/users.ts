@@ -3,7 +3,7 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, requirePlatformAdmin } from '../middleware/auth';
 import { mergeUserSettings, isPushEnabledInSettings } from '../utils/sanitizeSettings';
 import { parseUserSettings } from '../utils/userSettingsPolicy';
-import { canViewStudyActivity, resolvePublicOnlineStatus } from '@lantern/shared/settings';
+import { canViewStudyActivity, getPrivacySafeProfileFields, resolvePublicOnlineStatus } from '@lantern/shared/settings';
 import { handleValidationErrors, validateUserId, validateCreateUser, validateUpdateUser, validatePagination, validateAccountPasswordBody, validateAccountImportBody } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
@@ -105,7 +105,16 @@ export const toPublicUser = (
   programme: user.programme ?? null,
   studyLevel: user.studyLevel ?? user.study_level ?? null,
   currentSemester: user.currentSemester ?? user.current_semester ?? null,
+  ...presenceFields(user),
 });
+
+function presenceFields(user: { settings?: unknown; lastSeenAt?: string | null }) {
+  const privacy = getPrivacySafeProfileFields(user.settings, user.lastSeenAt ?? null);
+  return {
+    onlineStatus: privacy.onlineStatus,
+    lastSeenAt: privacy.onlineStatus === 'hidden' ? null : user.lastSeenAt ?? null,
+  };
+}
 
 /**
  * Attach `institution: {id,name,slug} | null` resolved from marketplace_campuses
@@ -381,7 +390,9 @@ router.get(
     }
 
     const userWithInstitution = await withInstitution(user);
-    const responseUser = isOwner || isAdmin ? userWithInstitution : toPublicUser(userWithInstitution);
+    const responseUser = isOwner || isAdmin
+      ? { ...userWithInstitution, ...presenceFields(userWithInstitution) }
+      : toPublicUser(userWithInstitution);
 
     res.json({
       success: true,

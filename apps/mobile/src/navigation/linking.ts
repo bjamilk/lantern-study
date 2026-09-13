@@ -67,6 +67,8 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
               CreateListing: 'marketplace/create',
               ShopBrowse: 'marketplace/browse',
               Cart: 'marketplace/cart',
+              Checkout: 'marketplace/checkout',
+              Addresses: 'marketplace/addresses',
               ShopAccount: 'marketplace/you',
               StudyProductDrafts: 'marketplace/products',
               SellerPayout: 'marketplace/payouts',

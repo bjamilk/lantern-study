@@ -45,6 +45,7 @@ import {
   sortMarketplaceReviews,
   filterReviewsByStar,
   REVIEW_SORT_LABELS,
+  fulfillmentChipLabels,
   type ReviewSortOption,
 } from '@lantern/shared/marketplace';
 import {
@@ -56,8 +57,9 @@ import {
   downloadStudyPack,
   fetchStudyPackPreview,
   fetchMarketplaceListingReviewEligibility,
+  fetchSellerFulfillment,
 } from '../../services/api';
-import type { MarketplacePickupNudge } from '@lantern/shared/types';
+import type { MarketplacePickupNudge, MarketplaceSellerFulfillment } from '@lantern/shared/types';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
 import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
@@ -151,6 +153,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
   const [sending, setSending] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [pickupNudge, setPickupNudge] = useState<MarketplacePickupNudge | null>(null);
+  const [sellerFulfillment, setSellerFulfillment] = useState<MarketplaceSellerFulfillment | null>(null);
   const [couponCode, setCouponCode] = useState('');
   const [couponPreview, setCouponPreview] = useState<{ discountAmount: number; finalAmount: number } | null>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
@@ -192,8 +195,14 @@ export function ListingDetailScreen({ navigation, route }: Props) {
         } catch {
           setPickupNudge(null);
         }
+        try {
+          setSellerFulfillment(await fetchSellerFulfillment(sellerId));
+        } catch {
+          setSellerFulfillment(null);
+        }
       } else {
         setPickupNudge(null);
+        setSellerFulfillment(null);
       }
       // Real review eligibility (verified purchase) gates the "Write review"
       // button; the server rejects non-buyers, so don't show it to them.
@@ -667,6 +676,26 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               </View>
             ) : null}
           </View>
+          {!isDigitalListingKind(listing.listing_kind) ? (
+            <View className="flex-row flex-wrap gap-1.5 mt-2">
+              {fulfillmentChipLabels(listing, sellerFulfillment ? {
+                hall_dropoff_enabled: sellerFulfillment.hallDropoffEnabled,
+                shipping_enabled: sellerFulfillment.shippingEnabled,
+                shipping_fee_naira: sellerFulfillment.shippingFeeNaira,
+              } : { shipping_enabled: false }).map((label) => (
+                <View key={label} className="px-2 py-0.5 rounded-full bg-lantern-feature-groups-tint">
+                  <Text className="text-label text-lantern-feature-groups-ink">{label}</Text>
+                </View>
+              ))}
+              {sellerFulfillment?.shippingEnabled ? (
+                <Text className="text-caption text-lantern-text-secondary self-center">
+                  {sellerFulfillment.shippingFeeNaira > 0
+                    ? `Ships from ${sellerFulfillment.shipsFromCity || 'campus'} · ₦${sellerFulfillment.shippingFeeNaira.toLocaleString()}`
+                    : 'Ships from campus'}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
           {listing.sale_ends_at && pricing?.onSale ? (
             <View className="mt-2">
               <SaleCountdown saleEndsAt={listing.sale_ends_at} />
@@ -1204,9 +1233,15 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                   ? 'Pay in the app and your study pack is delivered instantly to your Library.'
                   : 'Pay in the app and your question bank is delivered instantly to Offline Mode.'}
               </Text>
-              <Button loading={actionLoading} onPress={handleBuyNow}>
-                Buy Now
-              </Button>
+              <Pressable
+                onPress={handleBuyNow}
+                disabled={actionLoading}
+                className="min-h-[44px] rounded-xl items-center justify-center bg-lantern-feature-groups-ink"
+              >
+                <Text className="text-body font-semibold text-white">
+                  {actionLoading ? 'Starting…' : 'Buy now'}
+                </Text>
+              </Pressable>
             </>
           ) : (
             <Button loading={downloadingBank} onPress={() => void handleDownloadBank()}>
@@ -1261,9 +1296,15 @@ export function ListingDetailScreen({ navigation, route }: Props) {
               >
                 Cart
               </Button>
-              <Button className="flex-1" loading={actionLoading} onPress={handleBuyNow}>
-                Buy Now
-              </Button>
+              <Pressable
+                onPress={handleBuyNow}
+                disabled={actionLoading}
+                className="flex-1 min-h-[44px] rounded-xl items-center justify-center bg-lantern-feature-groups-ink"
+              >
+                <Text className="text-body font-semibold text-white">
+                  {actionLoading ? 'Starting…' : 'Buy now'}
+                </Text>
+              </Pressable>
             </View>
           ) : null}
         </StickyActionBar>

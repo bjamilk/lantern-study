@@ -60,7 +60,9 @@ type OverflowDest = {
 const OVERFLOW_DESTINATIONS: OverflowDest[] = [
   { id: 'jobs', label: 'Jobs', screen: 'MarketplaceJobs', icon: 'briefcase' },
   { id: 'orders', label: 'Orders', screen: 'MarketplaceOrders', icon: 'receipt' },
+  { id: 'you', label: 'You', screen: 'MarketplaceYou', icon: 'person' },
   { id: 'cart', label: 'Cart', screen: 'MarketplaceCart', icon: 'cart' },
+  { id: 'addresses', label: 'Addresses', screen: 'MarketplaceAddresses', icon: 'location' },
   { id: 'purchases', label: 'Purchases', screen: 'MarketplacePurchases', icon: 'albums' },
   { id: 'studyProducts', label: 'Study Products', screen: 'StudyProductDrafts', icon: 'sparkles' },
   { id: 'selling', label: 'Selling', screen: 'MyListings', icon: 'bag' },

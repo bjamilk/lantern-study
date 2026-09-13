@@ -13,7 +13,9 @@ import {
   canPinOnBoard,
   isCommunityBoard,
   isCommunityBoardGroup,
+  isCampusLoungeGroupIn,
   isCommunityBoardGroupIn,
+  isHiddenFromChatInbox,
   pinnedPostAccessibilityLabel,
   reactionAccessibilityLabel,
   studyGroupAnnouncement,
@@ -166,6 +168,30 @@ describe('isCommunityBoardGroupIn', () => {
       )
     ).toBe(false);
     expect(isCommunityBoardGroupIn({ id: 'g', communityId: null }, known([], ['x']))).toBe(false);
+  });
+});
+
+describe('isHiddenFromChatInbox', () => {
+  const known = (lounges: string[], communities: string[]) => ({
+    loungeGroupIds: new Set(lounges),
+    resolvedCommunityIds: new Set(communities),
+  });
+
+  it('hides boards and known lounges, keeps study groups', () => {
+    const resolved = known(['lounge'], ['x']);
+    expect(isCampusLoungeGroupIn({ id: 'lounge' }, resolved)).toBe(true);
+    expect(isHiddenFromChatInbox({ id: 'lounge', communityId: 'x' }, resolved)).toBe(true);
+    expect(isHiddenFromChatInbox({ id: 'board', communityId: 'x' }, resolved)).toBe(true);
+    expect(
+      isHiddenFromChatInbox(
+        { id: 'sg', communityId: 'x', communitySurface: 'study_group' },
+        resolved,
+      ),
+    ).toBe(false);
+  });
+
+  it('does not hide a lounge it has not resolved — fail toward chat', () => {
+    expect(isHiddenFromChatInbox({ id: 'lounge', communityId: 'x' }, known([], []))).toBe(false);
   });
 });
 

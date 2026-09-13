@@ -368,6 +368,25 @@ export function isCommunityBoardGroupIn(
   return known.resolvedCommunityIds.has(group.communityId as string);
 }
 
+/** The community General chat — Campus is the door; Chat home keeps the card. */
+export function isCampusLoungeGroupIn(
+  group: Pick<Group, 'id'>,
+  known: KnownCommunityLounges,
+): boolean {
+  return known.loungeGroupIds.has(group.id);
+}
+
+/**
+ * Rows the Chat inbox must not list: boards (never chats) and lounges
+ * (Campus is the door). Study groups stay.
+ */
+export function isHiddenFromChatInbox(
+  group: Pick<Group, 'id' | 'communityId' | 'communitySurface'>,
+  known: KnownCommunityLounges,
+): boolean {
+  return isCommunityBoardGroupIn(group, known) || isCampusLoungeGroupIn(group, known);
+}
+
 /**
  * `General` for the lounge (a chat, not a board — founder decision 4), else
  * `# name`: the hash is what tells a board apart from the one chat room at a

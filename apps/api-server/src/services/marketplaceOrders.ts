@@ -20,6 +20,7 @@ export const OPEN_ORDER_STATUSES = [
   'pending_payment',
   'paid',
   'ready_for_pickup',
+  'shipped',
   'buyer_confirmed',
   'disputed',
 ];
@@ -524,12 +525,18 @@ export class MarketplaceOrdersService {
     action:
       | 'mark_paid'
       | 'mark_ready'
+      | 'mark_shipped'
       | 'confirm_received'
       | 'cancel'
       | 'open_dispute',
     // Phase 3 N: `open_dispute` has existed since Phase 1 with no client able
     // to send a reason. The dispute UI now supplies one.
-    options: { disputeReason?: string; disputeCategory?: string } = {}
+    options: {
+      disputeReason?: string;
+      disputeCategory?: string;
+      trackingNumber?: string;
+      trackingUrl?: string;
+    } = {}
   ): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderById(orderId, userId);
     if (!order) throw new PublicError('Order not found');
@@ -565,9 +572,28 @@ export class MarketplaceOrdersService {
         nextStatus = 'ready_for_pickup';
         patch.seller_confirmed_at = now;
         break;
+      case 'mark_shipped': {
+        if (!isSeller) throw new PublicError('Only the seller can mark an order shipped');
+        if (order.fulfillment_mode !== 'shipping') {
+          throw new PublicError('Only shipped orders use this step');
+        }
+        if (!['paid', 'ready_for_pickup'].includes(order.status)) {
+          throw new PublicError('Order cannot be marked shipped in current status');
+        }
+        nextStatus = 'shipped';
+        patch.shipped_at = now;
+        patch.seller_confirmed_at = order.seller_confirmed_at || now;
+        if (typeof options.trackingNumber === 'string' && options.trackingNumber.trim()) {
+          patch.tracking_number = options.trackingNumber.trim().slice(0, 80);
+        }
+        if (typeof options.trackingUrl === 'string' && options.trackingUrl.trim()) {
+          patch.tracking_url = options.trackingUrl.trim().slice(0, 500);
+        }
+        break;
+      }
       case 'confirm_received': {
         if (!isBuyer) throw new PublicError('Only the buyer can confirm receipt');
-        if (!['ready_for_pickup', 'paid', 'buyer_confirmed'].includes(order.status)) {
+        if (!['ready_for_pickup', 'shipped', 'paid', 'buyer_confirmed'].includes(order.status)) {
           throw new PublicError('Order is not ready for buyer confirmation');
         }
         patch.buyer_confirmed_at = now;
@@ -654,6 +680,9 @@ export class MarketplaceOrdersService {
       },
       mark_ready: {
         other: `"${listingTitle}" is ready for campus pickup (${amountStr}). Tap to view meetup details.`,
+      },
+      mark_shipped: {
+        other: `"${listingTitle}" is on its way (${amountStr}). Open the order for tracking.`,
       },
       confirm_received: {
         other: `Buyer confirmed receipt for "${listingTitle}".`,

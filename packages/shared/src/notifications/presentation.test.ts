@@ -221,6 +221,32 @@ describe("marketplace links that used to be dead taps", () => {
       type: "inquiry",
       id: "inq-9",
     });
+    expect(
+      parseNotificationLink("/marketplace/inquiries/inq-9", {
+        type: "marketplace_inquiry",
+        link: "/marketplace/inquiries/inq-9",
+        data: { threadId: "buyer-seller", buyerId: "buyer" },
+      }),
+    ).toEqual({
+      type: "inquiry",
+      id: "inq-9",
+      threadId: "buyer-seller",
+    });
+  });
+
+  it("opens a board mention on the post, not the group chat", () => {
+    expect(
+      parseNotificationLink("/discover/c/eng/ch/board-1/p/post-9", {
+        type: "mention",
+        data: { groupId: "board-1" },
+        link: "/discover/c/eng/ch/board-1/p/post-9",
+      }),
+    ).toEqual({
+      type: "community_post",
+      slug: "eng",
+      groupId: "board-1",
+      id: "post-9",
+    });
   });
 
   it("still routes an offer tuple to offer", () => {

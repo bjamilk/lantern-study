@@ -517,7 +517,7 @@ export const EMPTY_SHOP_SUMMARY: ShopSummary = {
  * Exported so the OrderStatusPill's "action" tone and the badge count share
  * one definition — a row marked as needing you must also be counted.
  */
-export const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup']);
+export const BUYER_ACTION_ORDER_STATUSES = new Set(['pending_payment', 'awaiting_payment', 'ready_for_pickup', 'shipped']);
 /**
  * Orders that need the seller. `paid` is the online-payment case: money is in,
  * item still to hand over. A cash or transfer order never reaches `paid` on its

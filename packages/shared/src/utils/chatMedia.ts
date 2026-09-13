@@ -3,6 +3,7 @@ import { MessageType } from '../types';
 
 const AUDIO_MARKDOWN_RE = /\[audio\]\((https?:\/\/[^)\s]+)\)/i;
 const IMAGE_MARKDOWN_RE = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/i;
+const FILE_MARKDOWN_RE = /\[file:([^\]]+)\]\((https?:\/\/[^)\s]+)\)/i;
 const MENTION_RE = /@([a-zA-Z0-9_]{2,32})\b/g;
 export const CHAT_MESSAGE_MUTATION_WINDOW_MS = 30 * 60 * 1000;
 
@@ -45,6 +46,18 @@ export function isChatImageMessage(text?: string | null): boolean {
   return !!parseChatImageUrl(text);
 }
 
+export function parseChatFileAttachment(text?: string | null): { name: string; url: string } | null {
+  if (!text) return null;
+  const match = text.trim().match(FILE_MARKDOWN_RE);
+  if (!match?.[1] || !match[2]) return null;
+  return { name: match[1], url: match[2] };
+}
+
+export function buildChatFileMarkdown(name: string, url: string): string {
+  const safeName = name.replace(/[\[\]]/g, '').trim() || 'Document';
+  return `[file:${safeName}](${url})`;
+}
+
 /**
  * One-line label for a message shown outside its own bubble — reply quotes,
  * composer previews, conversation lists. Media is stored as markdown in the
@@ -56,6 +69,8 @@ export function chatMessagePreview(text?: string | null, fallback = 'Message'): 
   if (!trimmed) return fallback;
   if (isChatAudioMessage(trimmed)) return 'Voice note';
   if (isChatImageMessage(trimmed)) return 'Photo';
+  const file = parseChatFileAttachment(trimmed);
+  if (file) return file.name;
   return trimmed;
 }
 

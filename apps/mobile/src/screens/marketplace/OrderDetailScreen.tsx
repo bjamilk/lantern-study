@@ -38,14 +38,15 @@ import {
   orderDetailView,
 } from './orderDetailState';
 
-const TIMELINE_STEPS = ['accepted', 'paid', 'ready_for_pickup', 'completed'] as const;
+const TIMELINE_STEPS = ['paid', 'packed', 'shipped', 'received'] as const;
 
 function timelineIndexForStatus(status: string): number {
   if (status === 'cancelled' || status === 'disputed') return -1;
   if (status === 'pending_payment' || status === 'awaiting_payment') return 0;
   if (status === 'paid') return 1;
-  if (status === 'ready_for_pickup' || status === 'buyer_confirmed') return 2;
-  if (status === 'completed') return 3;
+  if (status === 'ready_for_pickup') return 2;
+  if (status === 'shipped') return 2;
+  if (status === 'buyer_confirmed' || status === 'completed') return 3;
   return 0;
 }
 
@@ -170,7 +171,12 @@ export function OrderDetailScreen({
     // `rethrow` is for callers that render their OWN error state (the dispute
     // modal): without it this swallows the failure into an Alert and the modal
     // closes as though the dispute had been filed.
-    extra: { disputeReason?: string; disputeCategory?: string } = {},
+    extra: {
+      disputeReason?: string;
+      disputeCategory?: string;
+      trackingNumber?: string;
+      trackingUrl?: string;
+    } = {},
     options: { rethrow?: boolean } = {}
   ) => {
     setActing(true);
@@ -179,7 +185,7 @@ export function OrderDetailScreen({
       // Every action moves this order between the "needs you" buckets the You
       // badge counts; stale-mark the summary so the next Shop focus refetches.
       useMarketplaceStore.getState().invalidateShopSummary();
-      if (['confirm_received', 'mark_ready', 'mark_paid', 'cancel'].includes(action)) {
+      if (['confirm_received', 'mark_ready', 'mark_shipped', 'mark_paid', 'cancel'].includes(action)) {
         await refreshSellerData();
       }
     } catch (err: unknown) {
@@ -194,6 +200,9 @@ export function OrderDetailScreen({
   // Android is the only platform currently shipping a build, so the old flow
   // meant no shipped user could type a dispute reason.
   const [disputeOpen, setDisputeOpen] = useState(false);
+  const [shipOpen, setShipOpen] = useState(false);
+  const [trackingNumber, setTrackingNumber] = useState('');
+  const [trackingUrl, setTrackingUrl] = useState('');
 
   const continuePaystack = async () => {
     setActing(true);
@@ -400,15 +409,30 @@ export function OrderDetailScreen({
                 : 'Paid —'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
-              Ready for pickup{' '}
+              Packed / ready{' '}
               {order.seller_confirmed_at ||
               order.status === 'ready_for_pickup' ||
+              order.status === 'shipped' ||
               order.status === 'completed'
                 ? '✓'
                 : '—'}
             </Text>
             <Text className="text-sm text-lantern-text-secondary">
-              Completed {order.completed_at ? '✓' : '—'}
+              Shipped / ready for pickup{' '}
+              {order.status === 'shipped' ||
+              order.status === 'ready_for_pickup' ||
+              order.status === 'completed'
+                ? '✓'
+                : '—'}
+            </Text>
+            {order.tracking_number || order.tracking_url ? (
+              <Text className="text-caption text-lantern-text-secondary mt-1">
+                {order.tracking_number ? `Tracking ${order.tracking_number}` : 'Tracking'}
+                {order.tracking_url ? ` · ${order.tracking_url}` : ''}
+              </Text>
+            ) : null}
+            <Text className="text-sm text-lantern-text-secondary">
+              Received {order.completed_at || order.buyer_confirmed_at ? '✓' : '—'}
             </Text>
             {order.status !== 'completed' ? (
               <Text className="text-xs text-lantern-text-tertiary mt-2">
@@ -482,11 +506,16 @@ export function OrderDetailScreen({
           order.status !== 'pending_payment' &&
           order.status !== 'awaiting_payment' && (
           <View className="gap-2">
-            {isSeller && ['paid', 'pending_payment'].includes(order.status) && (
+            {isSeller && ['paid', 'pending_payment', 'ready_for_pickup'].includes(order.status) && (
               <>
                 <Button loading={acting} onPress={() => runAction('mark_ready')}>
                   Mark ready for pickup or delivery
                 </Button>
+                {order.fulfillment_mode === 'shipping' || order.status === 'paid' ? (
+                  <Button variant="secondary" loading={acting} onPress={() => setShipOpen(true)}>
+                    Mark shipped
+                  </Button>
+                ) : null}
                 <Button
                   variant="secondary"
                   loading={acting}
@@ -506,7 +535,7 @@ export function OrderDetailScreen({
                 </Button>
               </>
             )}
-            {isBuyer && ['paid', 'ready_for_pickup'].includes(order.status) && (
+            {isBuyer && ['paid', 'ready_for_pickup', 'shipped'].includes(order.status) && (
               <Button loading={acting} onPress={() => runAction('confirm_received')}>
                 Confirm received
               </Button>
@@ -517,7 +546,7 @@ export function OrderDetailScreen({
               has moved — on an unpaid order the honest action is Cancel.
             */}
             {(isBuyer || isSeller) &&
-              ['paid', 'ready_for_pickup', 'buyer_confirmed'].includes(order.status) && (
+              ['paid', 'ready_for_pickup', 'shipped', 'buyer_confirmed'].includes(order.status) && (
                 <Button variant="secondary" loading={acting} onPress={() => setDisputeOpen(true)}>
                   Report a problem
                 </Button>
@@ -540,6 +569,49 @@ export function OrderDetailScreen({
           </Button>
         )}
       </ScrollView>
+
+      <Modal visible={shipOpen} transparent animationType="slide" onRequestClose={() => setShipOpen(false)}>
+        <KeyboardAvoidingView
+          behavior={SCREEN_KEYBOARD_BEHAVIOR}
+          className="flex-1 justify-end bg-black/40"
+        >
+          <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
+            <Text className="text-heading text-lantern-text mb-2">Mark shipped</Text>
+            <Text className="text-caption text-lantern-text-secondary mb-3">
+              Optional tracking. You find the rider — Lantern is not the courier.
+            </Text>
+            <TextInput
+              value={trackingNumber}
+              onChangeText={setTrackingNumber}
+              placeholder="Tracking number (optional)"
+              placeholderTextColor="#94a3b8"
+              className="min-h-[44px] px-3 rounded-xl border border-lantern-border text-body text-lantern-text mb-2"
+            />
+            <TextInput
+              value={trackingUrl}
+              onChangeText={setTrackingUrl}
+              placeholder="Tracking link (optional)"
+              placeholderTextColor="#94a3b8"
+              autoCapitalize="none"
+              className="min-h-[44px] px-3 rounded-xl border border-lantern-border text-body text-lantern-text mb-4"
+            />
+            <Button
+              loading={acting}
+              onPress={() => {
+                void runAction('mark_shipped', {
+                  ...(trackingNumber.trim() ? { trackingNumber: trackingNumber.trim() } : {}),
+                  ...(trackingUrl.trim() ? { trackingUrl: trackingUrl.trim() } : {}),
+                }).then(() => setShipOpen(false));
+              }}
+            >
+              Mark shipped
+            </Button>
+            <Button variant="secondary" className="mt-2" onPress={() => setShipOpen(false)}>
+              Cancel
+            </Button>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal visible={showReview} transparent animationType="slide" onRequestClose={() => setShowReview(false)}>
         {/* A bottom-anchored sheet sits exactly where the keyboard lands, so the

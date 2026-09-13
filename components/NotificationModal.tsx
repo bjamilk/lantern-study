@@ -9,8 +9,6 @@ import {
   isNotificationRead,
   getNotificationDate,
 } from "@lantern/shared";
-import AcademicFeedPanel from "./AcademicFeedPanel";
-
 interface NotificationModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -45,11 +43,23 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
         n.type === "group_invite" ||
         n.type === "group_message" ||
         n.type === "mention" ||
-        n.type === "reply")
+        n.type === "reply" ||
+        n.type === "inquiry")
     ) {
       const parsed = parseNotificationLink(n.link, n);
       if (parsed) {
-        if (parsed.type === "offer" || parsed.type === "inquiry") {
+        if (parsed.type === "community_post" && parsed.slug && parsed.groupId && parsed.id) {
+          onNavigate("CommunityPost", {
+            slug: parsed.slug,
+            groupId: parsed.groupId,
+            id: parsed.id,
+          });
+        } else if (parsed.type === "inquiry") {
+          onNavigate("InquiryChat", {
+            inquiryId: parsed.id,
+            threadId: parsed.threadId,
+          });
+        } else if (parsed.type === "offer") {
           onNavigate("MarketplaceInquiries");
         } else if (parsed.type === "listing" && parsed.id) {
           onNavigate("MarketplaceListingDetail", { listingId: parsed.id });
@@ -116,16 +126,6 @@ const NotificationModal: React.FC<NotificationModalProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto pb-safe bg-lantern-surface">
-        {isOpen && (
-          <AcademicFeedPanel
-            limit={6}
-            className="rounded-none border-0 border-b border-lantern-border bg-lantern-surface p-4"
-            onNavigate={(screen, params) => {
-              onNavigate?.(screen, params);
-              onClose();
-            }}
-          />
-        )}
         {sortedNotifications.length > 0 ? (
           <ul className="divide-y divide-lantern-border">
             {sortedNotifications.map((n) => (

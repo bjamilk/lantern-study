@@ -5,6 +5,8 @@ import {
   describePdfOpenFailure,
   formatFileSize,
   isThirdPartyViewerUrl,
+  openPdfWithFallback,
+  pdfOpenerOrder,
   planPdfPreview,
 } from './notePdfPreview';
 
@@ -104,5 +106,53 @@ describe('contentLengthBytes', () => {
 
   it('feeds the same formatter the card uses, so a probe reads "1.2 MB"', () => {
     expect(formatFileSize(contentLengthBytes({ 'content-length': '1258291' }))).toBe('1.2 MB');
+  });
+});
+
+
+describe('pdfOpenerOrder / openPdfWithFallback', () => {
+  it('tries the PDF viewer before the share sheet on Android', () => {
+    // "Open PDF" used to raise the share sheet, which asks the student to pick
+    // an app and to read "share" as "open". ACTION_VIEW goes to the reader.
+    expect(pdfOpenerOrder('android')).toEqual(['view', 'share']);
+  });
+
+  it('has only the sheet off Android, where it previews inline', () => {
+    expect(pdfOpenerOrder('ios')).toEqual(['share']);
+    expect(pdfOpenerOrder('web')).toEqual(['share']);
+  });
+
+  it('reports the viewer when the intent is accepted, and never opens the sheet', async () => {
+    const share = jest.fn(async () => {});
+    const view = jest.fn(async () => {});
+    await expect(openPdfWithFallback(pdfOpenerOrder('android'), { view, share })).resolves.toEqual({
+      via: 'view',
+    });
+    expect(view).toHaveBeenCalledTimes(1);
+    expect(share).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the sheet when no activity answers ACTION_VIEW', async () => {
+    // The real throw on a phone with no PDF app registered for the intent.
+    const view = jest.fn(async () => {
+      throw new Error('ActivityNotFoundException: No Activity found to handle Intent');
+    });
+    const share = jest.fn(async () => {});
+    await expect(openPdfWithFallback(pdfOpenerOrder('android'), { view, share })).resolves.toEqual({
+      via: 'share',
+    });
+    expect(share).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows the last failure, so the student reads the hop that mattered', async () => {
+    const view = jest.fn(async () => {
+      throw new Error('ActivityNotFoundException');
+    });
+    const share = jest.fn(async () => {
+      throw new Error('No app on this device can open a PDF.');
+    });
+    await expect(
+      openPdfWithFallback(pdfOpenerOrder('android'), { view, share })
+    ).rejects.toThrow('No app on this device can open a PDF.');
   });
 });

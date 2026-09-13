@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import {
-  checkoutMarketplaceCart,
   fetchMarketplaceCart,
   fetchMarketplacePaymentsConfig,
   removeMarketplaceCartItem,
@@ -9,6 +8,7 @@ import {
 import type { MarketplaceCartItem } from '@lantern/shared/types';
 import {
   computeMarketplaceCheckoutFees,
+  groupCartItems,
   MARKETPLACE_DEFAULT_SERVICE_FEE_BPS,
   nairaToKobo,
   koboToNaira,
@@ -26,7 +26,7 @@ interface MarketplaceCartScreenProps {
 const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, onNavigate }) => {
   const [items, setItems] = useState<MarketplaceCartItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [checkingOut, setCheckingOut] = useState(false);
+  const sellerGroups = groupCartItems(items);
   // Payment mode drives the fee quote and CTA label. When Paystack is off the
   // server charges no service fee, so the client must not show one either.
   const [paymentConfig, setPaymentConfig] = useState<{
@@ -107,54 +107,9 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
     }
   };
 
-  const handleCheckout = async () => {
+  const handleCheckout = () => {
     if (items.length === 0) return;
-    setCheckingOut(true);
-    try {
-      const result = await checkoutMarketplaceCart();
-      const orderCount = result?.orders?.length || 0;
-      const failCount = result?.failures?.length || 0;
-      const payUrl =
-        result?.authorizationUrl ||
-        result?.sessions?.find((s) => s?.authorizationUrl)?.authorizationUrl;
-
-      if (payUrl) {
-        if (failCount > 0) {
-          showToast(
-            `${orderCount} checkout(s) started; ${failCount} item(s) failed. Redirecting to Paystack…`,
-            'info'
-          );
-        } else {
-          showToast('Redirecting to Paystack…', 'info');
-        }
-        // Per-line sessions: pay the first unpaid session now; remaining open from Orders.
-        window.location.assign(payUrl);
-        return;
-      }
-
-      if (failCount > 0) {
-        showToast(
-          `${orderCount} order${orderCount === 1 ? '' : 's'} created; ${failCount} item${failCount === 1 ? '' : 's'} failed.`,
-          orderCount > 0 ? 'info' : 'error'
-        );
-      } else {
-        showToast(
-          orderCount === 1
-            ? 'Order placed. Arrange pickup with the seller.'
-            : `${orderCount} orders placed. Arrange pickup with each seller.`
-        );
-      }
-      if (orderCount === 1 && result.orders[0]?.id) {
-        onNavigate('MarketplaceOrderDetail', { orderId: result.orders[0].id });
-      } else {
-        onNavigate('MarketplaceOrders');
-      }
-    } catch (error: any) {
-      showToast(error?.message || 'Checkout failed', 'error');
-      await load();
-    } finally {
-      setCheckingOut(false);
-    }
+    onNavigate('MarketplaceCheckout');
   };
 
   return (
@@ -167,7 +122,7 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
         >
           <AppIcon name="arrow-back" size={20} />
         </button>
-        <h1 className="text-lg font-semibold flex-1">Cart</h1>
+        <h1 className="text-title text-lantern-text flex-1">Cart</h1>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
@@ -181,7 +136,12 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
             </Button>
           </div>
         )}
-        {items.map((item) => {
+        {sellerGroups.map((group) => (
+          <div key={group.sellerId} className="space-y-2">
+            <p className="text-caption font-medium text-lantern-text-secondary px-1">
+              Seller · ₦{group.itemTotalNaira.toLocaleString()}
+            </p>
+        {group.lines.map(({ source: item }) => {
           const stock = item.listing?.quantity;
           const maxQty = stock == null ? 1 : Math.max(1, Number(stock));
           const title = item.listing?.title || 'Listing';
@@ -258,6 +218,8 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
             </div>
           );
         })}
+          </div>
+        ))}
       </div>
 
       {items.length > 0 && (
@@ -280,18 +242,16 @@ const MarketplaceCartScreen: React.FC<MarketplaceCartScreenProps> = ({ onBack, o
               </span>
             </div>
           </div>
-          <p className="text-xs text-lantern-text-tertiary">
-            {paystackEnabled
-              ? "Checkout creates one Paystack charge per listing (and one order per seller). Multi-item carts open the first payment now — after paying, you'll be prompted to pay the rest, and every unpaid order also has a Pay now button in Orders."
-              : 'Checkout creates one order per seller. Arrange payment and pickup or delivery directly with each seller — no service charge is added.'}
+          <p className="text-caption text-lantern-text-tertiary">
+            Next: pick meetup, hall dropoff, or shipping, then one payment. The cart stays until Paystack confirms.
           </p>
-          <Button
-            className="w-full"
-            onClick={() => void handleCheckout()}
-            disabled={checkingOut}
+          <button
+            type="button"
+            onClick={handleCheckout}
+            className="w-full min-h-[44px] rounded-xl font-semibold text-white text-caption bg-lantern-feature-groups-ink hover:opacity-90"
           >
-            {checkingOut ? 'Checking out…' : paystackEnabled ? 'Pay with Paystack' : 'Place order'}
-          </Button>
+            Continue to checkout
+          </button>
         </div>
       )}
     </div>
