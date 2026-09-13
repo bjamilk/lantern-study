@@ -9,6 +9,7 @@ import { collectKnownLounges, useCommunityStore } from '../../stores/communitySt
 import { GroupChatView, type GroupChatNavigation } from '../groups/GroupChatScreen';
 import { CommunityBoardScreen } from './CommunityBoardScreen';
 import { BackButton } from '../../components/ui';
+import { brand } from '../../theme';
 
 type Params = {
   groupId: string;
@@ -120,7 +121,7 @@ export function CommunityChannelScreen({
           <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
         </View>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" accessibilityLabel="Opening this room" />
+          <ActivityIndicator color={brand.text} accessibilityLabel="Opening this room" />
         </View>
       </SafeAreaView>
     );

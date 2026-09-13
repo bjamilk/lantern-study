@@ -462,12 +462,14 @@ export type CampusStackParamList = {
   JobsStackParamList;
 
 /**
- * Me — profile, academic details, Budget, Downloads, the two modes, Settings
- * and Log out. Budget lives on THIS stack rather than in a tab of its own so
- * Back returns to Me and the Me tab stays lit while a student is in it.
+ * Profile — identity, academic details, Budget, Downloads, the two modes,
+ * Settings and Log out. Progress is a peer screen on this stack. Budget lives
+ * here rather than in a tab of its own so Back returns to Profile and the
+ * Profile tab stays lit while a student is in it.
  */
 export type MeStackParamList = {
   Me: undefined;
+  MeProgress: undefined;
 } & BudgetStackParamList;
 
 /** What a nested `navigate('<Tab>', …)` hands a tab screen. */

@@ -12,7 +12,7 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, TextInput, View } from 'react-native';
 import type { CompanionConversation } from '@lantern/shared';
 import { appAlert } from '../ui/appDialog';
-import { T, useFeatureAccent } from '../ui';
+import { T } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { useTheme } from '../../theme';
 import { filterConversations } from './companionScope';
@@ -39,7 +39,6 @@ export function CompanionHistory({
   formatRelativeTime,
 }: Props) {
   const { colors } = useTheme();
-  const ai = useFeatureAccent('ai');
   const [query, setQuery] = useState('');
 
   const rows = useMemo(() => filterConversations(conversations, query), [conversations, query]);
@@ -73,7 +72,7 @@ export function CompanionHistory({
               Past chats
             </T.Label>
             <Pressable onPress={onNewChat} accessibilityRole="button" accessibilityLabel="New chat">
-              <T.Label style={{ color: ai.ink }}>New chat</T.Label>
+              <T.Label style={{ color: colors.text, fontWeight: '600' }}>New chat</T.Label>
             </Pressable>
           </View>
           <View className="flex-row items-center rounded-xl border border-lantern-border px-3">
@@ -140,7 +139,7 @@ export function CompanionHistory({
                 </T.Label>
               </View>
               {item.noteTitle ? (
-                <T.Label style={{ marginTop: 2, color: ai.ink }} numberOfLines={1}>
+                <T.Label style={{ marginTop: 2, color: colors.text }} numberOfLines={1}>
                   {item.noteTitle}
                 </T.Label>
               ) : null}

@@ -6,6 +6,7 @@ import { useNotesStore } from '../../stores/notesStore';
 import { Button, Card } from '../../components/ui';
 import { Screen } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -75,7 +76,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
       </View>
       <View className="flex-1 justify-center px-5">
         {loading ? (
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
         ) : error ? (
           <Card className="items-center border-red-200">
             <AppIcon name="link" size={36} color="#ef4444" />
@@ -86,7 +87,7 @@ export function NoteShareAcceptScreen({ navigation, route }: Props) {
           </Card>
         ) : preview ? (
           <Card className="border-lantern-primary/30">
-            <AppIcon name="document-text" size={36} color="#6366f1" />
+            <AppIcon name="document-text" size={36} color={brand.text} />
             <Text className="mt-3 text-lg font-semibold text-lantern-text">{preview.title}</Text>
             <Text className="mt-2 text-sm text-lantern-text-secondary">
               {preview.owner?.name || preview.owner?.username || 'A Lantern Study member'} invited you as an{' '}

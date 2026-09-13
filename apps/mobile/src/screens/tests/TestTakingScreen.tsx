@@ -22,7 +22,7 @@ import { appAlert } from '../../components/ui/appDialog';
 import { Screen, useScreenInsets, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp, useIsFocused } from '@react-navigation/native';
 import { useTestStore, TestQuestion, QuestionType, MatchingPair, TestMode, DiagramLabel } from '../../stores/testStore';
-import { useTheme, type ThemeColors } from '../../theme';
+import { BRAND_INK, BRAND_TINT, type ThemeColors, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { useStudySettings } from '../../stores/settingsStore';
 import { shuffleArray, nearestPreviousUnlockedIndex } from '@lantern/shared/utils';
@@ -1675,7 +1675,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     borderRadius: 3,
   },
   progressText: {
@@ -1705,7 +1705,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     marginBottom: 16,
   },
   questionTypeBadge: {
-    backgroundColor: '#6366f120',
+    backgroundColor: BRAND_TINT,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 8,
@@ -1713,7 +1713,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   questionTypeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6366f1',
+    color: BRAND_INK,
   },
   pointsText: {
     fontSize: 14,
@@ -1771,8 +1771,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderColor: 'transparent',
   },
   optionSelected: {
-    borderColor: '#6366f1',
-    backgroundColor: '#6366f110',
+    borderColor: BRAND_INK,
+    backgroundColor: BRAND_TINT,
   },
   optionRadio: {
     width: 24,
@@ -1785,13 +1785,13 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
   },
   optionRadioSelected: {
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
   },
   optionRadioInner: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
   },
   optionText: {
     flex: 1,
@@ -1821,8 +1821,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     alignItems: 'center',
   },
   optionCheckboxSelected: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
+    backgroundColor: BRAND_INK,
+    borderColor: BRAND_INK,
   },
   
   // True/False styles
@@ -1902,7 +1902,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   matchingColumnTitle: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#6366f1',
+    color: BRAND_INK,
     textAlign: 'center',
     marginBottom: 4,
   },
@@ -1917,8 +1917,8 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     justifyContent: 'space-between',
   },
   matchingItemSelected: {
-    borderColor: '#6366f1',
-    backgroundColor: '#6366f120',
+    borderColor: BRAND_INK,
+    backgroundColor: BRAND_TINT,
   },
   matchingItemMatched: {
     borderColor: c.success,
@@ -2040,7 +2040,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     borderColor: c.border,
   },
   labelPickerSelected: {
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
   },
   labelPickerText: {
     flex: 1,
@@ -2116,7 +2116,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   keywordsHint: {
     fontSize: 11,
-    color: '#6366f1',
+    color: BRAND_INK,
     fontStyle: 'italic',
     flex: 1,
     textAlign: 'right',
@@ -2170,7 +2170,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     backgroundColor: c.success,
   },
   dotCurrent: {
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     width: 12,
   },
   dotRevealed: {
@@ -2290,7 +2290,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
     flex: 1,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     alignItems: 'center',
   },
   reviewSubmitText: {
@@ -2452,7 +2452,7 @@ const createStyles = (c: ThemeColors) => StyleSheet.create({
   },
   errorLink: {
     fontSize: 16,
-    color: '#6366f1',
+    color: BRAND_INK,
     fontWeight: '600',
   },
 });

@@ -85,7 +85,7 @@ import {
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
-import { useTheme, withAlpha } from '../../theme';
+import { brand, useTheme, withAlpha } from '../../theme';
 import { applyReactionLocally } from '@lantern/shared/chat';
 import { MessageReactions } from '../../components/chat/MessageReactions';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
@@ -1274,7 +1274,7 @@ export function DirectMessageScreen({ navigation, route }: Props) {
               />
             ) : (
               <View className="w-9 h-9 rounded-lg bg-lantern-background-secondary items-center justify-center">
-                <AppIcon name="pricetag" size={16} color="#6366f1" />
+                <AppIcon name="pricetag" size={16} color={brand.text} />
               </View>
             )}
             <View className="flex-1 min-w-0">

@@ -21,7 +21,7 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { aiGenerateFlashcards } from '../../services/ai';
 import { getMyActiveCourses, loadAcademicProfile } from '../../services/academic';
 import { navigateToDeckDetail } from '../../navigation/navigationRef';
-import { useAppTheme } from '../../theme';
+import { brand, useAppTheme } from '../../theme';
 import { formatCourseLabel } from '../../utils/courseSelection';
 import type { AcademicProfile } from '../../utils/academicProfile';
 
@@ -218,7 +218,7 @@ export function OnboardingScreen({ onComplete }: Props) {
             </Text>
             {firstCourse ? (
               <View className="flex-row items-center gap-2 mb-3">
-                <AppIcon name="school" size={16} color="#6366f1" />
+                <AppIcon name="school" size={16} color={brand.text} />
                 <Text className="text-xs font-semibold text-lantern-primary-text">
                   Filed under {formatCourseLabel(firstCourse)}
                 </Text>
@@ -227,7 +227,7 @@ export function OnboardingScreen({ onComplete }: Props) {
             <View className="rounded-2xl border border-lantern-border bg-lantern-surface p-3 mb-3">
               {seeding && !notes ? (
                 <View className="flex-row items-center gap-2 py-2">
-                  <ActivityIndicator size="small" color="#6366f1" />
+                  <ActivityIndicator size="small" color={brand.text} />
                   <Text className={`text-sm ${subtleText}`}>Looking up your programme…</Text>
                 </View>
               ) : null}

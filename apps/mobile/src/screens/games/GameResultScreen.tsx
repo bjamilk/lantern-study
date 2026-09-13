@@ -16,7 +16,7 @@ import {
 } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
-import { useTheme } from '../../theme';
+import { BRAND_INK, useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
 import { useAuthStore } from '../../stores/authStore';
 import Confetti from '../../components/Confetti';
@@ -398,13 +398,13 @@ const styles = StyleSheet.create({
   },
   avatar: {
     borderWidth: 2,
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
   },
   avatarPlaceholder: {
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
   },
   avatarText: {
     fontWeight: 'bold',

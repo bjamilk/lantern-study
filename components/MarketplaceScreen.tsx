@@ -15,7 +15,6 @@ import { useAuthStore } from '../stores/authStore';
 import { MarketplaceListing, MarketplaceShopCard, SavedSearch } from '../types';
 import { normalizeStorageUrl } from '../utils/storageUrl';
 import { usePageSeo } from '../hooks/usePageSeo';
-import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import { ListingCard } from './marketplace/ListingCard';
 import { MarketplaceFilterPanel } from './marketplace/MarketplaceFilterPanel';
 import { MarketplaceWorkspaceBar } from './marketplace/MarketplaceWorkspaceBar';
@@ -932,7 +931,6 @@ const MarketplaceScreen: React.FC<MarketplaceScreenProps> = ({
   return (
     <div className="flex-1 flex flex-col min-h-0 min-w-0 w-full max-w-full overflow-hidden bg-lantern-background">
       <div className="shrink-0 px-3 sm:px-4 md:px-6 pt-1 space-y-2">
-        <MarketplaceComplianceBanner />
         <h1 className="sr-only">Marketplace</h1>
 
         <div className="flex gap-1.5 sm:gap-2 min-w-0 max-w-full items-center">

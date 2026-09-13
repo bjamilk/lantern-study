@@ -558,6 +558,32 @@ export function useNoteHandlers(currentUserId?: string) {
     [saveNote, loadNotes],
   );
 
+  const handleMoveNotesToCourse = useCallback(
+    async (noteIds: string[], courseId: string | null, topicId: string | null = null) => {
+      if (noteIds.length === 0) return;
+      if (noteIds.length === 1) {
+        await handleMoveNoteToCourse(noteIds[0], courseId, topicId);
+        return;
+      }
+      const results = await Promise.allSettled(
+        noteIds.map((noteId) => saveNote(noteId, { courseId, topicId: courseId ? topicId : null })),
+      );
+      useLibraryStore.getState().invalidateOverview();
+      if (useNotesStore.getState().courseFilterId) {
+        await loadNotes();
+      }
+      const failed = results.filter((result) => result.status === 'rejected').length;
+      if (failed > 0) {
+        throw new Error(
+          failed === noteIds.length
+            ? 'Could not move notes to this course.'
+            : `${failed} of ${noteIds.length} notes could not be moved.`,
+        );
+      }
+    },
+    [handleMoveNoteToCourse, saveNote, loadNotes],
+  );
+
   return {
     navigateToNotes,
     openNote,
@@ -569,6 +595,7 @@ export function useNoteHandlers(currentUserId?: string) {
     handleArchiveNote,
     handleMoveNotesToFolder,
     handleMoveNoteToCourse,
+    handleMoveNotesToCourse,
     handleAutoSave,
     cancelAutoSave,
     handleSmartNote,

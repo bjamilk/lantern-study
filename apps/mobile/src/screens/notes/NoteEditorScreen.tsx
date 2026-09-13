@@ -39,7 +39,7 @@ import { useCompanionStore } from '../../stores/companionStore';
 import { confirmSheet } from '../../stores/confirmStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useStudyGoalsStore } from '../../stores/studyGoalsStore';
-import { useTheme } from '../../theme';
+import { brand, useTheme } from '../../theme';
 
 
 import {
@@ -1263,7 +1263,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
         <View className="flex-1 items-center justify-center">
 
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
 
         </View>
 
@@ -1344,7 +1344,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Turn into a Study Product"
         >
-          <AppIcon name="storefront" size={20} color="#6366f1" />
+          <AppIcon name="storefront" size={20} color={brand.text} />
         </Pressable>
         ) : null}
 
@@ -1354,7 +1354,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
           className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
           accessibilityLabel="Manage collaborators"
         >
-          <AppIcon name="people" size={20} color="#6366f1" />
+          <AppIcon name="people" size={20} color={brand.text} />
         </Pressable>
         ) : null}
 
@@ -1750,6 +1750,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               <LectureTabs
                 noteId={noteId}
                 source={{ body, attachments: selectedNote?.attachments ?? [] }}
+                noteTitle={title || selectedNote?.title}
                 renderNotes={({ typed }) => (
                   <Pressable
                     onPress={canEdit ? () => setMode('edit') : undefined}

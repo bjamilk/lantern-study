@@ -16,6 +16,41 @@ export interface AppearanceEffectFlags {
   accentColor: string;
 }
 
+/**
+ * The shipped default accent, and the one it replaced.
+ *
+ * Both values are SENTINELS, not colours the pivot can retint: choosing either
+ * means "no override", so the palette's own primaryFill/primaryText/tabBarActive
+ * win and the brand fill is the theme's INK everywhere (the 2026-09-12 pivot,
+ * build 154). The ink reaches the UI through `lanternColors.primary`, never
+ * through these constants.
+ *
+ * `LEGACY_DEFAULT_ACCENT_COLOR` is the retired indigo. It is still persisted in
+ * `appearance.accentColor` for every account created before the pivot, and
+ * migrating those rows is neither needed nor wanted — `isDefaultAccentColor`
+ * treats it as "default" forever. Drop it and every one of those accounts would
+ * read as a deliberate indigo override and repaint the app in the retired hue,
+ * the exact opposite of the pivot.
+ *
+ * `DEFAULT_ACCENT_COLOR` is the ink. It is what a fresh account persists
+ * (`DEFAULT_USER_SETTINGS.appearance.accentColor`) and what the first,
+ * "Default"-labelled swatch of the accent palette stores (`ACCENT_PRESETS[0]`);
+ * those three must stay byte-identical. Never compare an accent to either
+ * constant directly — call `isDefaultAccentColor`, so both keep working.
+ */
+export const LEGACY_DEFAULT_ACCENT_COLOR = '#6366f1';
+export const DEFAULT_ACCENT_COLOR = '#191919';
+
+/**
+ * True when the stored accent means "leave the palette alone" — the ink default,
+ * the legacy indigo default, or nothing stored at all.
+ */
+export function isDefaultAccentColor(accentColor: string | null | undefined): boolean {
+  if (!accentColor) return true;
+  const hex = accentColor.toLowerCase();
+  return hex === DEFAULT_ACCENT_COLOR || hex === LEGACY_DEFAULT_ACCENT_COLOR;
+}
+
 export function getFontScale(fontSize: AppearanceSettings['fontSize']): number {
   switch (fontSize) {
     case 'small':
@@ -39,7 +74,7 @@ export function getAppearanceEffectFlags(settings: UserSettings): AppearanceEffe
     compactMode: settings.appearance.compactMode,
     showAnimations: settings.appearance.showAnimations,
     fontScale: getFontScale(settings.appearance.fontSize),
-    accentColor: settings.appearance.accentColor || '#6366f1',
+    accentColor: settings.appearance.accentColor || DEFAULT_ACCENT_COLOR,
   };
 }
 
@@ -52,23 +87,19 @@ export function applyHighContrastToColors<T extends Record<string, string>>(colo
   } as T;
 }
 
-/** The shipped default accent. Choosing it means "no override": the palette's own
- * primaryFill/primaryText/tabBarActive win, so the brand fill is one value
- * (#4f46e5) everywhere instead of the accent-derived #5e61e5 beside it (build 154). */
-export const DEFAULT_ACCENT_COLOR = '#6366f1';
 
 export function applyAccentToColors<T extends Record<string, string>>(
   colors: T,
   accentColor: string
 ): T {
-  if (!accentColor || accentColor.toLowerCase() === DEFAULT_ACCENT_COLOR) {
+  if (isDefaultAccentColor(accentColor)) {
     return colors;
   }
   // ONE accent, TWO derived roles — the build-153 split.
   //
   //   primaryFill  the accent darkened just enough that a WHITE label on it
-  //                reaches AA. The default accent #6366f1 is 4.47:1 under
-  //                white, so even the default needed one step.
+  //                reaches AA. A mid-tone preset is ~4.5:1 under white, so
+  //                even a default-weight accent needs one step.
   //   primaryText  the accent adjusted until it clears AA on the surface AND
   //                on the `primaryBackground` tint composited over it. Only
   //                the surface used to be checked, which is why dark's

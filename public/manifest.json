@@ -6,8 +6,8 @@
   "scope": "/",
   "start_url": "https://lanternstudy.com/",
   "display": "standalone",
-  "background_color": "#6569EE",
-  "theme_color": "#6569EE",
+  "background_color": "#191919",
+  "theme_color": "#191919",
   "categories": [
     "education",
     "productivity"

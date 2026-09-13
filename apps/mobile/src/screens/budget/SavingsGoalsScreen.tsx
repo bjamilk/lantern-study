@@ -9,6 +9,7 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
 import { formatBudgetDate } from './budgetFormat';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 const GOAL_ICONS = ['🎯', '📱', '💻', '📚', '✈️', '🏠', '🚗', '👕', '🎓', '💰', '🎁', '⚽'];
 
@@ -179,7 +180,7 @@ export default function SavingsGoalsScreen() {
         <BudgetDatePicker
           visible={showDatePicker}
           date={deadline || new Date()}
-          accentColor="#6366f1"
+          accentColor={brand.text}
           onSelect={setDeadline}
           onClose={() => setShowDatePicker(false)}
         />

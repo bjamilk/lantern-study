@@ -6,13 +6,19 @@
  */
 import { create } from 'zustand';
 import { normalizeCompanionCitation } from '@lantern/shared/api';
-import { CompanionConversation, CompanionMessage, CompanionUserContext } from '../types';
+import {
+  CompanionConversation,
+  CompanionImageAttachment,
+  CompanionMessage,
+  CompanionUserContext,
+} from '../types';
 import {
   companionSendMessage,
   companionSendMessageStream,
   fetchCompanionHistory,
   clearCompanionHistory,
   fetchCompanionConversations,
+  uploadCompanionImage,
 } from '../services/ai';
 
 export type CompanionNoteContext = {
@@ -124,6 +130,25 @@ interface CompanionState {
   failedMessage: string | null;
   consumeFailedMessage: () => string | null;
 
+  /**
+   * Photos already read and waiting to ground the next question.
+   *
+   * They are uploaded (and charged) the moment the student picks them, not on
+   * send: the read is what costs credits, and a chip that says "240 words"
+   * before they type is the only way the cost is honest.
+   */
+  pendingImages: CompanionImageAttachment[];
+  isUploadingImage: boolean;
+  /** Upload/read failure, shown next to the composer and cleared on retry. */
+  imageError: string | null;
+  attachImage: (input: {
+    base64Data: string;
+    fileName?: string;
+    contentType?: string;
+  }) => Promise<CompanionImageAttachment | null>;
+  removeImage: (attachmentId: string) => void;
+  clearPendingImages: () => void;
+
   loadHistory: () => Promise<void>;
   setMessageFeedback: (messageId: string, rating: 'up' | 'down' | null) => void;
   sendMessage: (text: string, context?: CompanionUserContext) => Promise<void>;
@@ -142,6 +167,7 @@ function mergeThreadContext(
   const noteCtx = get().activeNoteContext;
   const conversationId = get().activeConversationId;
   const pendingNew = get().pendingNewConversation;
+  const images = get().pendingImages;
   return {
     ...context,
     ...(noteCtx
@@ -149,6 +175,10 @@ function mergeThreadContext(
       : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
     ...(conversationId ? { conversationId } : { conversationId: undefined }),
     ...(pendingNew && !conversationId ? { newConversation: true } : {}),
+    // The server only reads the ids out of these; the text rides along for the
+    // chip. Omitted entirely when nothing is attached, so a plain question is
+    // not carrying an empty array around.
+    ...(images.length ? { imageAttachments: images } : { imageAttachments: undefined }),
   };
 }
 
@@ -168,6 +198,33 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   pendingNewConversation: false,
   conversations: [],
   isLoadingConversations: false,
+  pendingImages: [],
+  isUploadingImage: false,
+  imageError: null,
+
+  attachImage: async (input) => {
+    set({ isUploadingImage: true, imageError: null });
+    try {
+      const attachment = await uploadCompanionImage(input);
+      set(s => ({
+        pendingImages: [...s.pendingImages, attachment],
+        isUploadingImage: false,
+      }));
+      return attachment;
+    } catch (err: any) {
+      set({
+        isUploadingImage: false,
+        imageError: err?.message || 'Could not read that image. Try another photo.',
+      });
+      return null;
+    }
+  },
+  removeImage: (attachmentId: string) =>
+    set(s => ({
+      pendingImages: s.pendingImages.filter(img => img.attachmentId !== attachmentId),
+      imageError: null,
+    })),
+  clearPendingImages: () => set({ pendingImages: [], imageError: null }),
 
   open: () => set({ isOpen: true }),
   /**
@@ -427,6 +484,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         isLoading: false,
         activeConversationId: conversationId || s.activeConversationId,
         pendingNewConversation: false,
+        // The attachment belonged to that question. Keeping it would silently
+        // staple the photo to every later question in the thread.
+        pendingImages: [],
       }));
       void get().loadConversations();
     } catch (err: any) {
@@ -496,6 +556,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           isStreaming: false,
           activeConversationId: conversationId || s.activeConversationId,
           pendingNewConversation: false,
+          // One question, one attachment — see sendMessage.
+          pendingImages: [],
         }));
         void get().loadConversations();
       },

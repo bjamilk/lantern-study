@@ -72,6 +72,7 @@ import {
 } from './boardComposerModel';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
 import { useProfileIdentity } from '../../hooks/useProfileIdentity';
+import { brand } from '../../theme';
 
 export type BoardNavigation = {
   goBack: () => void;
@@ -1439,7 +1440,7 @@ export function CommunityBoardScreen({
           ListEmptyComponent={
             isLoadingPosts ? (
               <View className="py-10 items-center">
-                <ActivityIndicator color="#6366f1" />
+                <ActivityIndicator color={brand.text} />
               </View>
             ) : (
               <View className="px-6 py-10">
@@ -1470,7 +1471,7 @@ export function CommunityBoardScreen({
                 className="mx-3 my-3 min-h-[44px] items-center justify-center rounded-xl border border-lantern-border"
               >
                 {isLoadingMore ? (
-                  <ActivityIndicator color="#6366f1" />
+                  <ActivityIndicator color={brand.text} />
                 ) : (
                   <Text className="text-sm font-semibold text-lantern-primary-text">
                     {COMMUNITY_BOARD_COPY.loadOlder}

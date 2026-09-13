@@ -12,6 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { useMarketplaceStore, useAuthStore } from '../../stores';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 /** Which private-pilot surface a gated screen belongs to. */
 export type PilotSurface = 'marketplace' | 'jobs';
@@ -58,7 +59,7 @@ function MarketplacePrivatePilotScreen({ surface }: { surface: PilotSurface }) {
       </View>
       <View className="flex-1 items-center justify-center px-8 -mt-10">
         <View className="w-16 h-16 rounded-2xl bg-lantern-primary-background dark:bg-lantern-primary-dark/30 items-center justify-center mb-5">
-          <AppIcon name={copy.icon} size={30} color="#6366f1" />
+          <AppIcon name={copy.icon} size={30} color={brand.text} />
         </View>
         <Text className="text-lg font-bold text-lantern-text text-center mb-2">
           {copy.title}
@@ -150,7 +151,7 @@ export function withMarketplaceGate<P extends object>(
     }
     return (
       <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center" edges={['top']}>
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color={brand.text} />
       </SafeAreaView>
     );
   }

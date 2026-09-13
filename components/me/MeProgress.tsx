@@ -78,13 +78,7 @@ export const MeProgress: React.FC<MeProgressProps> = ({
 }) => {
   const displayStreak = Math.max(serverStreak, computeStudyStreak(studyActivityDays).current);
   return (
-  <section className="mt-6 space-y-4">
-    <div>
-      <h2 className="text-title font-semibold text-lantern-text">Progress</h2>
-      <p className="text-caption text-lantern-text-secondary mt-1">
-        Goals, quizzes, achievements and test history live here — not on Home.
-      </p>
-    </div>
+  <section className="space-y-4">
 
     {dailyQuests.length > 0 || questsLoaded ? (
       <DailyQuestsWidget

@@ -18,7 +18,14 @@ import {
 } from '../services/ai';
 import { transcribeAudioForNote } from '../services/notes';
 import { AIDisclaimer } from './AIDisclaimer';
-import AIUsageInline from './AIUsageInline';
+import { ImageAttachmentChips } from './companion/ImageAttachmentChips';
+import {
+  IMAGE_ATTACH_ACCEPT,
+  IMAGE_ATTACH_COST_LABEL,
+  MAX_IMAGE_ATTACHMENTS,
+  readFileAsBase64,
+  validateImagePick,
+} from './companion/imageAttach';
 import ReactMarkdown from 'react-markdown';
 // The phone's hand-rolled bubble parser renders tables; without gfm the web
 // bubble showed the same answer's table as a row of raw pipes.
@@ -225,6 +232,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     activeNoteContext, setActiveNoteContext,
     activeConversationId, conversations, isLoadingConversations,
     loadConversations, openConversation, startNewChat,
+    pendingImages, isUploadingImage, imageError, attachImage, removeImage,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
   const notesLoading = useNotesStore((s) => s.isLoading);
@@ -270,6 +278,39 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const discardRecordingRef = useRef(false);
   const transcribeAbortRef = useRef<AbortController | null>(null);
   const inputValueRef = useRef('');
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  /**
+   * Picked a photo: check it here first (the server charges before it reads, so
+   * a file that was never going to be accepted should not cost AI uses), then
+   * upload — the read happens now, not on send.
+   */
+  const handlePickImage = async (file: File | null | undefined) => {
+    if (imageInputRef.current) imageInputRef.current.value = '';
+    if (!file) return;
+    if (pendingImages.length >= MAX_IMAGE_ATTACHMENTS) {
+      showToast(`You can attach up to ${MAX_IMAGE_ATTACHMENTS} images per question.`, 'info');
+      return;
+    }
+    const problem = validateImagePick(file);
+    if (problem) {
+      showToast(problem, 'error');
+      return;
+    }
+    try {
+      const base64Data = await readFileAsBase64(file);
+      const attached = await attachImage({
+        base64Data,
+        fileName: file.name || 'image.jpg',
+        contentType: file.type || undefined,
+      });
+      if (attached && attached.wordCount === 0) {
+        showToast('No readable text in that image — try a sharper, closer photo.', 'info');
+      }
+    } catch {
+      showToast('Could not read that file.', 'error');
+    }
+  };
 
   // Load active thread (+ conversation list) when the panel opens
   const hasLoaded = useRef(false);
@@ -910,11 +951,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
           />
         ) : (
         /* Messages area. `relative` anchors the "Jump to latest" pill. */
-        <div className="relative flex-1 min-h-0 flex flex-col">
+        <div className="relative flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col">
         <div
           ref={scrollRef}
           onScroll={handleMessagesScroll}
-          className="flex-1 overflow-y-auto px-4 py-3 space-y-4"
+          className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-4"
         >
           {isLoadingHistory && (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-lantern-text-secondary">
@@ -998,7 +1039,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
 
         {/* Input area — pad above home indicator; stays above bottom nav when that is visible */}
         {!showHistoryList && (
-        <div className={`px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] border-t flex-shrink-0
+        <div className={`px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] border-t flex-shrink-0 min-w-0 overflow-x-hidden
           ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
           {activeNoteContext && (
             <div className="mb-2 flex items-center gap-2">
@@ -1080,8 +1121,42 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               </div>
             </div>
           )}
+          <ImageAttachmentChips
+            images={pendingImages}
+            onRemove={removeImage}
+            theme={theme}
+            disabled={isBusy}
+          />
+          {imageError && (
+            <p className="mb-2 text-xs text-red-500" role="alert">{imageError}</p>
+          )}
+          <input
+            ref={imageInputRef}
+            type="file"
+            accept={IMAGE_ATTACH_ACCEPT}
+            className="hidden"
+            onChange={(e) => void handlePickImage(e.target.files?.[0])}
+          />
           <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
             ${theme === 'dark' ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}>
+            <button
+              type="button"
+              onClick={() => imageInputRef.current?.click()}
+              disabled={isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS}
+              // The price is in the tooltip because it is spent on the pick,
+              // before anything is typed or sent.
+              title={`Add image — ${IMAGE_ATTACH_COST_LABEL}`}
+              aria-label={`Add image (${IMAGE_ATTACH_COST_LABEL})`}
+              className={`flex-shrink-0 min-h-[36px] min-w-[36px] flex items-center justify-center rounded-lg transition-colors disabled:opacity-40
+                ${pendingImages.length
+                  ? 'text-lantern-primary bg-lantern-primary-background dark:bg-lantern-primary/20'
+                  : theme === 'dark'
+                    ? 'text-lantern-text-tertiary hover:bg-lantern-surface hover:text-lantern-primary'
+                    : 'text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-primary'
+                }`}
+            >
+              <AppIcon name={isUploadingImage ? 'time' : 'image'} size={16} />
+            </button>
             <button
               type="button"
               onClick={() => setShowNotePicker((v) => !v)}
@@ -1163,10 +1238,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
                 : 'Converting speech to text…'}
             </p>
           )}
-          <div className={`mt-1.5 flex items-center justify-center gap-2 text-center ${theme === 'dark' ? 'text-lantern-text-secondary' : 'text-lantern-text-tertiary'}`}>
-            {/* Chat spends daily AI credits — show the countdown where it's spent. */}
-            <AIUsageInline cost={1} />
-            <span aria-hidden>·</span>
+          <div className="mt-1.5 flex items-center justify-center text-center">
             <AIDisclaimer compact />
           </div>
         </div>
@@ -1177,7 +1249,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   if (variant === 'rail') {
     return (
       <aside
-        className={`h-full min-h-0 flex flex-col ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
+        className={`h-full min-h-0 min-w-0 overflow-x-hidden flex flex-col ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
         aria-labelledby="ai-companion-title"
       >
         {body}
@@ -1193,7 +1265,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
       maxWidthClass="max-w-sm"
       zIndexClass="z-[70]"
       backdropClassName="bg-black/20 md:hidden"
-      panelClassName={`!p-0 shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
+      panelClassName={`!p-0 min-w-0 overflow-x-hidden shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
       loading={isSending}
       closeOnBackdrop={!isSending}
     >
@@ -1299,9 +1371,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
 
   if (isUser) {
     return (
-      <div className="flex justify-end">
+      <div className="flex min-w-0 max-w-full justify-end">
         <div
-          className={`max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-md px-3 py-2 text-sm leading-relaxed
+          className={`max-w-[85%] min-w-0 break-words whitespace-pre-wrap rounded-2xl rounded-tr-md px-3 py-2 text-sm leading-relaxed
             ${theme === 'dark'
               ? 'bg-lantern-surface-secondary text-white'
               : 'bg-lantern-background-secondary text-lantern-text'
@@ -1322,7 +1394,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
       </div>
       <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
         <div
-          className={`w-full text-sm leading-relaxed ${isStreaming ? 'whitespace-pre-wrap' : ''}
+          className={`w-full min-w-0 break-words text-sm leading-relaxed ${isStreaming ? 'whitespace-pre-wrap' : ''}
             ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}
         >
           {isStreaming ? (

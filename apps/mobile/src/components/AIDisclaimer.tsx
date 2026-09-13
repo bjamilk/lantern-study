@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Linking } from 'react-native';
 import { getLegalPageUrl } from '@lantern/shared';
+import { brand } from '../theme';
 
 interface AIDisclaimerProps {
   compact?: boolean;
@@ -8,7 +9,7 @@ interface AIDisclaimerProps {
   linkColor?: string;
 }
 
-export function AIDisclaimer({ compact, textColor = '#6b7280', linkColor = '#6366f1' }: AIDisclaimerProps) {
+export function AIDisclaimer({ compact, textColor = '#6b7280', linkColor = brand.text }: AIDisclaimerProps) {
   const openPrivacy = () => void Linking.openURL(getLegalPageUrl('privacy'));
 
   return (

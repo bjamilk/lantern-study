@@ -8,6 +8,7 @@ import {
 } from '@lantern/shared/network';
 import { fetchFeed, fetchLearningConnections } from '../services/api';
 import { AppIcon } from './ui/AppIcon';
+import { brand } from '../theme';
 
 /**
  * The academic feed panel on the mobile dashboard (Phase 3 · M).
@@ -88,7 +89,7 @@ export function AcademicFeedPanel({ onOpenFeed, limit = 4, className }: Academic
       </View>
 
       {loading ? (
-        <ActivityIndicator color="#6366f1" />
+        <ActivityIndicator color={brand.text} />
       ) : rendered.length === 0 ? (
         <Text className="text-xs text-lantern-text-tertiary">
           Follow a creator or join a community and their activity shows up here.

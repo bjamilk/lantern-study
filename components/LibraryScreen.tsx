@@ -201,6 +201,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
       onOpenOffline={onOpenOffline}
       onCreateStudyPack={onCreateStudyPackFromCourse}
       onTurnSemesterIntoProducts={onTurnSemesterIntoProducts}
+      countFocus={tab}
     />
   );
 
@@ -257,7 +258,11 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                     selected, the scope row below says so and can clear it. */}
                 <span className="inline-flex items-center gap-2 min-w-0">
                   <AppIcon name="school" size={16} className="shrink-0 text-lantern-primary-text" aria-hidden />
-                  <span className="truncate">Browse by course</span>
+                  <span className="truncate">
+                    {courseFilterId === UNFILED_COURSE_ID
+                      ? 'Unfiled'
+                      : selectedCourse?.code || 'Courses'}
+                  </span>
                 </span>
                 {railOpen ? (
                   <AppIcon name="chevron-up" size={16} className="shrink-0" aria-hidden />

@@ -4,6 +4,7 @@ import { COMMUNITY_BOARD_COPY, pinnedPostAccessibilityLabel } from '@lantern/sha
 import { splitBoardBody } from '../../utils/boardPosts';
 import type { Message } from '../../stores/groupStore';
 import { AppIcon } from '../ui/AppIcon';
+import { brand } from '../../theme';
 
 /**
  * The board's one server-side pinned post (§4.1 region 2). Every member sees
@@ -43,7 +44,7 @@ export function PinnedBanner({
         className="flex-1 min-w-0 min-h-[44px] justify-center"
       >
         <View className="flex-row items-center">
-          <AppIcon name="pin" size={12} color="#6366f1" />
+          <AppIcon name="pin" size={12} color={brand.text} />
           <Text className="ml-1 text-label font-bold tracking-wide text-lantern-primary-text">
             {COMMUNITY_BOARD_COPY.pinnedLabel}
           </Text>

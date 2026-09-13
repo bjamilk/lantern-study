@@ -1467,7 +1467,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       id: `group-${Date.now()}`,
       name: groupInput.name,
       description: groupInput.description,
-      avatarUrl: groupInput.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(groupInput.name)}&background=6366f1&color=fff`,
+      avatarUrl: groupInput.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(groupInput.name)}&background=191919&color=fff`,
       ownerId: groupInput.ownerId,
       parentId: groupInput.parentId, // Set parent if creating a subgroup
       courseId: groupInput.courseId ?? null,

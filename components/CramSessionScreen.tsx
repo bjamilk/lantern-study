@@ -1,6 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Deck, Flashcard, FlashcardSession, FlashcardType } from '../types';
 import { AppIcon } from './ui/AppIcon';
+import { Button, FeatureDisc } from './ui';
+import {
+  FLASHCARD_GRADE_CHIP,
+  FlashcardFace,
+  FlashcardFlip,
+  flashcardPromptClass,
+} from './flashcards/FlashcardFace';
 import { escapeHtml } from '../utils/helpers';
 import { FLASHCARD_MODE_LABELS } from '@lantern/shared';
 import { formatFreeformPointsForSvg, getBlurRegions, getFreeformPaths } from '@lantern/shared/utils';
@@ -97,7 +104,9 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
           {card.imageUrl && !showAnswer && (
             <ResolvedStorageImg src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
           )}
-          <p className="text-lg md:text-xl text-lantern-text">{showAnswer ? card.back : card.front}</p>
+          <p className={flashcardPromptClass(showAnswer ? card.back : card.front)}>
+            {showAnswer ? card.back : card.front}
+          </p>
         </div>
       );
     }
@@ -106,11 +115,27 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
       const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
-        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary">$1</strong>');
-        return <div className="text-lg md:text-xl" dangerouslySetInnerHTML={{ __html: revealedText }} />;
+        const revealedText = content.replace(
+          clozeRegex,
+          '<strong class="text-lantern-feature-flashcards-ink">$1</strong>'
+        );
+        return (
+          <div
+            className={flashcardPromptClass(card.clozeText)}
+            dangerouslySetInnerHTML={{ __html: revealedText }}
+          />
+        );
       } else {
-        const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-lantern-background-secondary dark:bg-lantern-border rounded">[...]</span>');
-        return <div className="text-lg md:text-xl" dangerouslySetInnerHTML={{ __html: hiddenText }} />;
+        const hiddenText = content.replace(
+          clozeRegex,
+          '<span class="px-2 py-1 bg-lantern-background-secondary dark:bg-lantern-border rounded">[...]</span>'
+        );
+        return (
+          <div
+            className={flashcardPromptClass(card.clozeText)}
+            dangerouslySetInnerHTML={{ __html: hiddenText }}
+          />
+        );
       }
     }
 
@@ -120,7 +145,7 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
 
       return (
         <div className="flex flex-col items-center gap-3">
-          {card.front ? <p className="text-lg md:text-xl text-lantern-text">{card.front}</p> : null}
+          {card.front ? <p className={flashcardPromptClass(card.front)}>{card.front}</p> : null}
           {card.imageUrl ? (
             <div className="relative inline-block max-w-full">
               <ResolvedStorageImg
@@ -200,32 +225,29 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
     }
 
     // Unknown type
-    return <p className="text-lg md:text-xl text-lantern-text">{card.front}</p>;
+    return <p className={flashcardPromptClass(card.front)}>{card.front}</p>;
   };
 
   if (isSessionComplete) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-        <h2 className="text-2xl font-bold text-lantern-primary">Cram Session Complete!</h2>
+        <h2 className="text-2xl font-bold text-lantern-text">Cram session complete</h2>
         <p className="text-lantern-text-secondary mt-2">You reviewed {session.cardQueue.length} cards.</p>
         <div className="my-6 text-xl">
-            <p>Correct: <span className="font-bold text-green-500">{correctCount}</span></p>
-            <p>Incorrect: <span className="font-bold text-red-500">{incorrectCards.length}</span></p>
+            <p>Correct: <span className="font-bold text-lantern-success">{correctCount}</span></p>
+            <p>Incorrect: <span className="font-bold text-lantern-error">{incorrectCards.length}</span></p>
         </div>
         <div className="flex space-x-4">
-            <button
-              onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })}
-              className="px-6 py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold"
-            >
-              <AppIcon name="arrow-undo" size={20} className="mr-2" /> Finish
-            </button>
+            <Button onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })}>
+              <AppIcon name="arrow-undo" size={20} /> Finish
+            </Button>
             {incorrectCards.length > 0 && (
-                 <button
+                 <Button
+                    variant="secondary"
                     onClick={() => onCramIncorrect(incorrectCards)}
-                    className="px-6 py-3 bg-orange-500 hover:bg-orange-600 text-white rounded-md flex items-center font-semibold"
                 >
-                    Cram Incorrect ({incorrectCards.length})
-                </button>
+                    Cram incorrect ({incorrectCards.length})
+                </Button>
             )}
         </div>
       </div>
@@ -235,70 +257,92 @@ const CramSessionScreen: React.FC<CramSessionScreenProps> = ({ session, onAnswer
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-lantern-background-secondary dark:bg-lantern-background">
       <div className="min-h-full flex flex-col p-4 md:p-6">
-      <div className="flex-shrink-0 flex justify-between items-center mb-4">
-        <div>
-          <h1 className="text-xl font-semibold text-lantern-primary">{modeLabel} — {session.deck.name}</h1>
-          {timeLeft !== null && (
-            <div className="mt-1 text-sm font-medium text-lantern-text-secondary">
-              Time left: <span className={isTimeLow ? 'text-rose-600 dark:text-rose-400' : ''}>{formatTime(timeLeft)}</span>
-            </div>
-          )}
+      <div className="flex-shrink-0 flex justify-between items-center mb-4 gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <FeatureDisc feature="flashcards" icon={<AppIcon name="layers" size={16} />} size={32} />
+          <div className="min-w-0">
+            <h1 className="text-title font-semibold text-lantern-text truncate">{modeLabel} — {session.deck.name}</h1>
+            {timeLeft !== null && (
+              <div className="mt-1 text-caption font-medium text-lantern-text-secondary">
+                Time left:{' '}
+                <span className={isTimeLow ? 'text-lantern-error' : ''}>{formatTime(timeLeft)}</span>
+              </div>
+            )}
+          </div>
         </div>
-        <span className="text-sm font-medium text-lantern-text-secondary bg-lantern-background-secondary dark:bg-lantern-surface-secondary px-3 py-1 rounded-full">
+        <span className="text-caption font-medium text-lantern-text-secondary border border-lantern-border px-3 py-1 rounded-full">
           {currentIndex + 1} / {session.cardQueue.length}
         </span>
       </div>
 
       <div className="flex-1 flex flex-col justify-safe-center items-center py-2">
-        <div className="w-full max-w-2xl min-h-[300px] bg-lantern-surface dark:bg-lantern-surface rounded-xl shadow-lg p-6 flex flex-col">
-          <div className="text-center flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col justify-safe-center items-center pr-1">
-            {renderCardContent(currentCard, false)}
-            
-            {isAnswerShown && (
-              <>
-                <hr className="w-1/4 my-4 border-lantern-border" />
-                {renderCardContent(currentCard, true)}
-              </>
-            )}
-          </div>
-
-          <div className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border">
-            {!isAnswerShown ? (
-              <button
-                onClick={() => setIsAnswerShown(true)}
-                className="w-full py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-lg font-semibold transition"
-              >
-                Show Answer
-              </button>
-            ) : (
-              <div className="grid grid-cols-2 gap-4">
-                <button onClick={() => handleAnswer(false)} className="py-3 bg-red-500 hover:bg-red-600 text-white rounded-lg font-semibold flex items-center justify-center">
-                    <AppIcon name="close" size={24} className="mr-2" /> Incorrect
-                </button>
-                 <button onClick={() => handleAnswer(true)} className="py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-semibold flex items-center justify-center">
-                    <AppIcon name="checkmark" size={24} className="mr-2" /> Correct
-                </button>
-              </div>
-            )}
-            {/* Leech card helper */}
-            {isAnswerShown && (currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
-              <div className="mt-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
-                <span className="text-sm text-amber-700 dark:text-amber-400">Keep struggling with this one?</span>
-                <button
-                  onClick={() => {
-                    const companion = useCompanionStore.getState();
-                    companion.open();
-                    companion.sendMessage(`I keep getting this flashcard wrong in cram mode. Can you explain it differently and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`);
-                  }}
-                  className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
-                >
-                  <AppIcon name="sparkles" size={14} />
-                  Ask Lantern
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <FlashcardFlip
+          flipped={isAnswerShown}
+          front={
+            <FlashcardFace
+              side="question"
+              interactive
+              onActivate={() => setIsAnswerShown(true)}
+              ariaLabel="Flashcard prompt, press to reveal answer"
+              footer={
+                <Button fullWidth size="lg" onClick={() => setIsAnswerShown(true)}>
+                  Show answer
+                </Button>
+              }
+            >
+              {renderCardContent(currentCard, false)}
+            </FlashcardFace>
+          }
+          back={
+            <FlashcardFace
+              side="answer"
+              ariaLabel="Flashcard answer"
+              footer={
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => handleAnswer(false)}
+                      className={`flex items-center justify-center rounded-xl py-3 font-semibold ${FLASHCARD_GRADE_CHIP.again}`}
+                    >
+                      <AppIcon name="close" size={20} className="mr-2" /> Incorrect
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAnswer(true)}
+                      className={`flex items-center justify-center rounded-xl py-3 font-semibold ${FLASHCARD_GRADE_CHIP.good}`}
+                    >
+                      <AppIcon name="checkmark" size={20} className="mr-2" /> Correct
+                    </button>
+                  </div>
+                  {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
+                    <div className="mt-3 flex items-center justify-between rounded-lg border border-lantern-warning/30 bg-lantern-warning/10 px-3 py-2">
+                      <span className="text-sm text-lantern-warning">Keep struggling with this one?</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const companion = useCompanionStore.getState();
+                          companion.open();
+                          companion.sendMessage(
+                            `I keep getting this flashcard wrong in cram mode. Can you explain it differently and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`
+                          );
+                        }}
+                        className="ml-3 inline-flex items-center gap-1 rounded-full bg-lantern-warning px-3 py-1 text-xs font-semibold text-white"
+                      >
+                        <AppIcon name="sparkles" size={14} />
+                        Ask Lantern
+                      </button>
+                    </div>
+                  )}
+                </>
+              }
+            >
+              {renderCardContent(currentCard, false)}
+              <hr className="w-1/4 my-4 border-lantern-border" />
+              {renderCardContent(currentCard, true)}
+            </FlashcardFace>
+          }
+        />
       </div>
       <div className="flex-shrink-0 text-center pb-4">
         <button onClick={() => onEndSession({ correct: correctCount, incorrect: incorrectCards.length })} className="text-sm text-lantern-text-secondary hover:underline">End Cram Session</button>

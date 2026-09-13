@@ -283,7 +283,7 @@ import { StudyRoomScreen } from '../screens/study/StudyRoomScreen';
 import { SettingsScreen, OfflineScreen, NotificationsScreen, EditProfileScreen, BlockedUsersScreen, AcademicSettingsScreen, InviteFriendsScreen, JoinClassScreen } from '../screens/settings';
 
 import { CampusScreen } from '../screens/campus';
-import { MeScreen, UsageLimitsScreen } from '../screens/me';
+import { MeScreen, MeProgressScreen, UsageLimitsScreen } from '../screens/me';
 
 import { TestScreen, TestBuilderScreen, TestTakingScreen, TestResultsScreen, TestAnalysisScreen } from '../screens/tests';
 
@@ -616,7 +616,7 @@ function CampusNavigator() {
 /**
  * Me — profile and academic details, Budget, Downloads, the two modes,
  * Settings and Log out. Budget is on this stack, not a tab of its own: it is
- * one student's ledger, so Back returns to Me and the Me tab stays lit.
+ * one student's ledger, so Back returns to Profile and the Profile tab stays lit.
  */
 function MeNavigator() {
 
@@ -625,6 +625,8 @@ function MeNavigator() {
     <MeStack.Navigator screenOptions={{ headerShown: false }} initialRouteName={TAB_STACK_ROOT_ROUTE.MeTab}>
 
       <MeStack.Screen name="Me" component={MeScreen} />
+
+      <MeStack.Screen name="MeProgress" component={MeProgressScreen} />
 
       <MeStack.Screen name="BudgetHome" component={BudgetScreen} />
 

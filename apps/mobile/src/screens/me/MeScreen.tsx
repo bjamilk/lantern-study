@@ -1,6 +1,11 @@
 import React, { useCallback } from 'react';
-import { Pressable, Switch, Text, View } from 'react-native';
-import { ScreenScroll, useChrome } from '../../components/layout';
+import { Linking, Pressable, Switch, Text, View } from 'react-native';
+import {
+  KeyboardAwareScrollView,
+  Screen,
+  useChrome,
+  useScreenBottomPadding,
+} from '../../components/layout';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { useAppTheme, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
@@ -10,10 +15,8 @@ import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { buildMeSections, type MeRow, type MeRowId } from './meRows';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { FeatureDisc } from '../../components/ui';
-import { useAIUsage } from '../../components/AIUsageBadge';
-import { MeProgress } from '../../components/me/MeProgress';
-import { getAIResetLabel } from '@lantern/shared/utils';
-import { typeScale, tabularNums } from '../../design/typeScale';
+import { studyLevelLabel } from '@lantern/shared';
+import { MeWorkspaceBar } from './MeWorkspaceBar';
 
 interface Props {
   navigation: {
@@ -21,37 +24,33 @@ interface Props {
   };
 }
 
-/** 44px minimum touch target — NativeWind inlines rem at 14 here, so px. */
 const ROW_MIN_HEIGHT = 56;
+const TEACH_URL = 'https://lanternstudy.com/teach';
 
 /**
- * Me — the fifth destination, and the one that is nobody else's.
- *
- * It replaces the profile drawer, which was a left-edge swipe and an avatar
- * tap away from being undiscoverable, and which mixed shared destinations
- * (Community, Jobs) in with personal settings. What is here is exactly what
- * belongs to one student: their profile and academic details, the two ledgers
- * they alone read (Budget, Downloads), the two modes that change how the app
- * behaves for them, Settings and Log out.
- *
- * The row list itself is built by meRows.ts, which is pure and unit-tested;
- * this file is the render and the wiring.
+ * Profile — the fifth destination's account half. Progress is the peer screen.
  */
 export function MeScreen({ navigation }: Props) {
   const { colors } = useTheme();
   const theme = useAppTheme();
   const { profileName, profileAvatarUri, profileEmail } = useChrome();
+  const academicProfile = useAuthStore((s) => s.academicProfile);
   const signOut = useAuthStore((s) => s.signOut);
   const updateSettings = useSettingsStore((s) => s.updateSettings);
   const { lowDataMode, toggleLowDataMode } = useLowDataMode();
-  // The credits row is a READOUT: the same figures the top bar's sparkle
-  // carries, printed where a student goes looking for what is theirs.
-  const aiUsage = useAIUsage();
+  const bottomPadding = useScreenBottomPadding({ bottom: 'auto' });
 
   const darkMode = theme === 'dark';
 
+  const academicLine = [
+    academicProfile?.institution?.name || null,
+    academicProfile?.programme || null,
+    academicProfile?.studyLevel != null ? studyLevelLabel(academicProfile.studyLevel) : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   const toggleTheme = useCallback(() => {
-    // The quick switch is light/dark only; Settings keeps the System option.
     void updateSettings('appearance', { theme: darkMode ? 'light' : 'dark' });
   }, [darkMode, updateSettings]);
 
@@ -59,8 +58,6 @@ export function MeScreen({ navigation }: Props) {
     (id: MeRowId) => {
       switch (id) {
         case 'credits':
-          // Usage & limits: the counter, every action's price, and what still
-          // works at zero. A root-stack modal, like Academic details.
           navigateFromRoot('UsageLimits');
           return;
         case 'academic':
@@ -70,14 +67,16 @@ export function MeScreen({ navigation }: Props) {
           navigateFromRoot('JoinClass');
           return;
         case 'budget':
-          // Budget lives on this stack, so Back returns to Me and the Me tab
-          // stays lit the whole time.
           navigation.navigate('BudgetHome');
           return;
         case 'downloads':
-          // The Downloads screen is a root-stack modal, shared with the
-          // Library tree's course-filtered link — one screen, one door.
           navigateFromRoot('Offline');
+          return;
+        case 'teach':
+          void Linking.openURL(TEACH_URL);
+          return;
+        case 'invite':
+          navigateFromRoot('InviteFriends');
           return;
         case 'darkMode':
           toggleTheme();
@@ -87,6 +86,8 @@ export function MeScreen({ navigation }: Props) {
           return;
         case 'settings':
           navigateFromRoot('Settings');
+          return;
+        case 'admin':
           return;
         case 'logout':
           void signOut();
@@ -98,47 +99,19 @@ export function MeScreen({ navigation }: Props) {
 
   const sections = buildMeSections({ darkMode, lowDataMode });
 
-  const creditsHint =
-    aiUsage.limit > 0
-      ? getAIResetLabel(aiUsage.resetsAt, { used: aiUsage.used, limit: aiUsage.limit })
-      : '';
-
   const renderRow = (row: MeRow) => {
     const destructive = row.kind === 'destructive';
     const isSwitch = row.kind === 'switch';
-    const isReadout = row.kind === 'readout';
-    // A readout is not pressable, so it must not be a Pressable: RN would
-    // still announce it as a button and a reader would tap it expecting a
-    // screen. `View` is the honest element.
-    const Row = isReadout ? View : Pressable;
-    const hint = row.id === 'credits' ? creditsHint || row.hint : row.hint;
     return (
-      <Row
+      <Pressable
         key={row.id}
-        {...(isReadout
-          ? // A plain View speaks its accessibilityLabel only when it is an
-            // accessible element; without this the counter (hidden below) is
-            // silent to a screen reader.
-            { accessible: true }
-          : {
-              onPress: () => onRow(row.id),
-              accessibilityRole: isSwitch ? ('switch' as const) : ('button' as const),
-              accessibilityState: isSwitch ? { checked: row.value === true } : undefined,
-            })}
+        onPress={() => onRow(row.id)}
+        accessibilityRole={isSwitch ? ('switch' as const) : ('button' as const)}
+        accessibilityState={isSwitch ? { checked: row.value === true } : undefined}
         style={{ minHeight: ROW_MIN_HEIGHT }}
-        accessibilityLabel={
-          isReadout && row.id === 'credits' && aiUsage.limit > 0
-            ? `${row.accessibilityLabel}, ${aiUsage.remaining} of ${aiUsage.limit} left${creditsHint ? `. ${creditsHint}` : ''}`
-            : row.accessibilityLabel
-        }
-        className={`flex-row items-center gap-3 px-4 py-3 ${
-          isReadout ? '' : 'active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary'
-        }`}
+        accessibilityLabel={row.accessibilityLabel}
+        className="flex-row items-center gap-3 px-4 py-3 active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
       >
-        {/* Neutral everywhere except the two rows §5.7 accents: Downloads on
-            amber, Credits on indigo. Everything else is a plain glyph in the
-            secondary ink — the whole row list used to be primary indigo, which
-            made nine equally loud rows and so highlighted nothing. */}
         {row.feature ? (
           <FeatureDisc feature={row.feature} icon={row.icon} size={32} />
         ) : (
@@ -156,29 +129,16 @@ export function MeScreen({ navigation }: Props) {
           >
             {row.label}
           </Text>
-          {hint ? (
-            <Text className="text-caption text-lantern-text-secondary mt-0.5">{hint}</Text>
+          {row.hint ? (
+            <Text className="text-caption text-lantern-text-secondary mt-0.5">{row.hint}</Text>
           ) : null}
         </View>
-        {isReadout ? (
-          // Tabular numerals so the counter does not jitter as it ticks down.
-          <Text
-            style={[typeScale.body, tabularNums, { color: colors.text, fontWeight: '700' }]}
-            importantForAccessibility="no"
-          >
-            {aiUsage.limit > 0 ? `${aiUsage.remaining}/${aiUsage.limit}` : '—'}
-          </Text>
-        ) : isSwitch ? (
+        {isSwitch ? (
           <Switch
             value={row.value === true}
             onValueChange={() => onRow(row.id)}
-            // The row already announces itself as a switch with its state;
-            // a second focusable control would announce the same thing twice.
             accessibilityElementsHidden
             importantForAccessibility="no-hide-descendants"
-            // The theme's four switch tokens, the same ones Settings uses.
-            // Without an explicit thumb, Android paints its own accent — which
-            // on this device was a green thumb riding a purple track.
             trackColor={{ false: colors.switchTrackOff, true: colors.switchTrackOn }}
             thumbColor={row.value === true ? colors.switchThumbOn : colors.switchThumbOff}
             ios_backgroundColor={colors.switchTrackOff}
@@ -186,48 +146,56 @@ export function MeScreen({ navigation }: Props) {
         ) : destructive ? null : (
           <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
         )}
-      </Row>
+      </Pressable>
     );
   };
 
   return (
-    <ScreenScroll>
-      <Pressable
-        onPress={() => navigateFromRoot('EditProfile')}
-        accessibilityRole="button"
-        accessibilityLabel={`Edit profile, ${profileName}`}
-        style={{ minHeight: ROW_MIN_HEIGHT }}
-        className="flex-row items-center gap-3 px-4 py-4"
-      >
-        <ResolvedAvatar name={profileName} uri={profileAvatarUri} size={56} decorative />
-        <View className="flex-1 min-w-0">
-          <Text className="text-heading font-bold text-lantern-text" numberOfLines={1}>
-            {profileName}
-          </Text>
-          {profileEmail ? (
-            <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
-              {profileEmail}
-            </Text>
-          ) : null}
-          <Text className="text-caption font-medium text-lantern-primary-text mt-0.5">Edit profile</Text>
-        </View>
-        <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
-      </Pressable>
-
-      {/* The progress hub sits between the profile header and the row list —
-          what the student has earned and sat, above the doors and switches.
-          The rows below are unchanged: this block only adds. */}
-      <MeProgress />
-
-      {sections.map((section) => (
-        <View
-          key={section.id}
-          className="mt-2 border-t border-lantern-border bg-lantern-surface"
+    <Screen bottom="none">
+      <MeWorkspaceBar
+        active="profile"
+        onSelect={(section) => {
+          if (section === 'progress') navigation.navigate('MeProgress');
+        }}
+      />
+      <KeyboardAwareScrollView bottomPadding={bottomPadding}>
+        <Pressable
+          onPress={() => navigateFromRoot('EditProfile')}
+          accessibilityRole="button"
+          accessibilityLabel={`Edit profile, ${profileName}`}
+          style={{ minHeight: ROW_MIN_HEIGHT }}
+          className="flex-row items-center gap-3 px-4 py-4"
         >
-          {section.rows.map(renderRow)}
-        </View>
-      ))}
-    </ScreenScroll>
+          <ResolvedAvatar name={profileName} uri={profileAvatarUri} size={56} decorative />
+          <View className="flex-1 min-w-0">
+            <Text className="text-heading font-bold text-lantern-text" numberOfLines={1}>
+              {profileName}
+            </Text>
+            {profileEmail ? (
+              <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
+                {profileEmail}
+              </Text>
+            ) : null}
+            {academicLine ? (
+              <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
+                {academicLine}
+              </Text>
+            ) : null}
+            <Text className="text-caption font-medium text-lantern-primary-text mt-0.5">Edit profile</Text>
+          </View>
+          <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
+        </Pressable>
+
+        {sections.map((section) => (
+          <View
+            key={section.id}
+            className="mt-2 border-t border-lantern-border bg-lantern-surface"
+          >
+            {section.rows.map(renderRow)}
+          </View>
+        ))}
+      </KeyboardAwareScrollView>
+    </Screen>
   );
 }
 

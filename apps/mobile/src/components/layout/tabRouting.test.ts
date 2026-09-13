@@ -10,7 +10,7 @@ import {
 } from './tabRouting';
 
 describe('the five destinations', () => {
-  it('are Home · Study · Chat · Campus · Me, in that order', () => {
+  it('are Home · Study · Chat · Campus · Profile, in that order', () => {
     expect(BOTTOM_TABS).toEqual(['Home', 'Study', 'Chat', 'Campus', 'Me']);
   });
 
@@ -26,7 +26,7 @@ describe('the five destinations', () => {
 
   it('gives every destination exactly one name', () => {
     expect(TAB_LABELS.Campus).toBe('Campus');
-    expect(TAB_LABELS.Me).toBe('Me');
+    expect(TAB_LABELS.Me).toBe('Profile');
     // "AI credits" is one string elsewhere; the surface itself is Lantern AI.
     expect(TAB_LABELS.AI).toBe('Lantern AI');
     const printed = BOTTOM_TABS.map((tab) => TAB_LABELS[tab]);
@@ -87,7 +87,7 @@ describe('resolveActiveTab', () => {
 describe('tabTitle', () => {
   it('titles the top bar with the destination the reader is in', () => {
     expect(tabTitle('Campus')).toBe('Campus');
-    expect(tabTitle('Me')).toBe('Me');
+    expect(tabTitle('Me')).toBe('Profile');
     expect(tabTitle('Notifications')).toBe('Notifications');
   });
 });

@@ -4,6 +4,7 @@ import {
   CAMPUS_SEGMENTS,
   EPHEMERAL_APP_MODES,
   ME_PATH,
+  ME_PROGRESS_PATH,
   SHOP_COURSES_PATH,
   SHOP_PATH,
   SHOP_SELL_PATH,
@@ -112,16 +113,19 @@ describe('Campus: one destination, three segments', () => {
   });
 });
 
-describe('Me', () => {
+describe('Profile', () => {
   it('is a standalone route with no mode behind it', () => {
     expect(parseAppRoute(ME_PATH)).toEqual({ mode: null, params: {}, standalone: 'me' });
+    expect(parseAppRoute(ME_PROGRESS_PATH)).toEqual({ mode: null, params: {}, standalone: 'me' });
+    expect(parseAppRoute('/me/unknown')).toEqual({ mode: null, params: {}, redirect: ME_PATH });
     // Not the dashboard bounce an unknown path gets.
     expect(parseAppRoute('/nope')).toEqual({ mode: null, params: {}, redirect: '/dashboard' });
   });
 
-  it('lights the Me tab from the path, whatever mode is underneath', () => {
+  it('lights the Profile tab from both peer paths, whatever mode is underneath', () => {
     expect(resolveActiveDestination(AppMode.DASHBOARD, ME_PATH)).toBe('me');
     expect(resolveActiveDestination(AppMode.DASHBOARD, '/me/')).toBe('me');
+    expect(resolveActiveDestination(AppMode.DASHBOARD, ME_PROGRESS_PATH)).toBe('me');
     expect(resolveActiveDestination(AppMode.DASHBOARD, '/dashboard')).toBe('home');
   });
 });

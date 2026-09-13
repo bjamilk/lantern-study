@@ -43,6 +43,7 @@ import {
 import type { JobsStackParamList } from "../../navigation/types";
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 /** Employment types promoted to one-tap chips; the panel still exposes all 8. */
 const QUICK_TYPE_CHIPS: JobEmploymentType[] = [
@@ -500,7 +501,7 @@ export function JobsHomeScreen() {
               className="flex-1 items-center gap-1 rounded-xl border border-lantern-border bg-lantern-surface px-2 py-2.5"
               style={{ minHeight: 64 }}
             >
-              <AppIcon name={row.icon} size={18} color="#6366f1" />
+              <AppIcon name={row.icon} size={18} color={brand.text} />
               <Text
                 numberOfLines={2}
                 className="text-center text-[11px] font-semibold text-lantern-primary-text"

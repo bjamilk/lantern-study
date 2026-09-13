@@ -1,74 +1,97 @@
-import React from 'react';
-import { AppIcon, type AppIconName } from '../ui/AppIcon';
+import React, { useState } from 'react';
+import { buildMeSections, type MeAreaSection, type MeRow, type MeRowId } from '@lantern/shared';
+import { studyLevelLabel } from '@lantern/shared';
+import { AppIcon } from '../ui/AppIcon';
+import { FeatureDisc } from '../ui/FeatureDisc';
 import { AppMode, type User } from '../../types';
 import { Avatar } from '../ui';
+import { Modal } from '../ui/Modal';
+import { JoinClassCard } from '../classes/JoinClassCard';
 import { resolveAvatarSrc } from '../../utils/avatar';
 import { useLowDataModeToggle } from '../../hooks/useLowDataModeToggle';
 import { usePlatformAdmin } from '../../hooks/usePlatformAdmin';
-import { studyLevelLabel } from '@lantern/shared';
+import { MeWorkspaceBar } from './MeWorkspaceBar';
+
+export type SettingsDeepLink = 'profile' | 'academic' | 'usage';
 
 /**
- * Me — the fifth destination: profile, account, and the student's own
- * progress (goals, quizzes, achievements, test history).
+ * Profile — the fifth destination's account half. Progress is the peer tab.
  */
 export interface MeScreenProps {
+  section: MeAreaSection;
+  onSelectSection: (section: MeAreaSection) => void;
   currentUser: User;
   theme: 'light' | 'dark';
   onToggleTheme: () => void;
   onNavigate: (mode: AppMode) => void;
   onOpenTeach: () => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab?: SettingsDeepLink) => void;
   onLogout: () => void;
   pendingSyncCount?: number;
   progress?: React.ReactNode;
 }
 
 const Row: React.FC<{
-  icon: AppIconName;
-  label: string;
-  hint?: string;
+  row: MeRow;
   badge?: number;
   onClick: () => void;
-  destructive?: boolean;
-}> = ({ icon, label, hint, badge, onClick, destructive }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`flex w-full items-center gap-3 px-4 text-left transition-colors min-h-[52px] hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 ${
-      destructive ? 'text-red-600 dark:text-red-400' : 'text-lantern-text'
-    }`}
-  >
-    <AppIcon name={icon} size={20} className="shrink-0" />
-    <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
-    {badge != null && badge > 0 ? (
-      <span className="rounded-full bg-lantern-error-strong px-2 py-0.5 text-label tracking-normal text-white">
-        {badge > 99 ? '99+' : badge}
+}> = ({ row, badge, onClick }) => {
+  const destructive = row.kind === 'destructive';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors min-h-[52px] hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40 ${
+        destructive ? 'text-red-600 dark:text-red-400' : 'text-lantern-text'
+      }`}
+    >
+      {row.feature ? (
+        <FeatureDisc
+          feature={row.feature}
+          icon={<AppIcon name={row.icon} size={16} />}
+          size={32}
+        />
+      ) : (
+        <AppIcon name={row.icon} size={20} className="shrink-0" />
+      )}
+      <span className="flex-1 min-w-0">
+        <span className="block text-body font-medium">{row.label}</span>
+        {row.hint ? (
+          <span className="block text-caption text-lantern-text-secondary mt-0.5">{row.hint}</span>
+        ) : null}
       </span>
-    ) : null}
-    {hint ? <span className="text-caption text-lantern-text-secondary">{hint}</span> : null}
-    {!destructive ? (
-      <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
-    ) : null}
-  </button>
-);
+      {badge != null && badge > 0 ? (
+        <span className="rounded-full bg-lantern-error-strong px-2 py-0.5 text-label tracking-normal text-white">
+          {badge > 99 ? '99+' : badge}
+        </span>
+      ) : null}
+      {!destructive ? (
+        <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
+      ) : null}
+    </button>
+  );
+};
 
 const SwitchRow: React.FC<{
-  icon: AppIconName;
-  label: string;
+  row: MeRow;
   checked: boolean;
   onToggle: () => void;
-}> = ({ icon, label, checked, onToggle }) => (
+}> = ({ row, checked, onToggle }) => (
   <button
     type="button"
     role="switch"
     aria-checked={checked}
-    aria-label={label}
+    aria-label={row.accessibilityLabel}
     onClick={onToggle}
-    className="flex w-full items-center gap-3 px-4 text-left transition-colors min-h-[52px] text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
+    className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors min-h-[52px] text-lantern-text hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
   >
-    <AppIcon name={icon} size={20} className="shrink-0" />
-    <span className="flex-1 min-w-0 text-body font-medium">{label}</span>
-    {/* Never colour alone: the knob's position says on/off as well as the fill. */}
+    <AppIcon name={row.icon} size={20} className="shrink-0" />
+    <span className="flex-1 min-w-0">
+      <span className="block text-body font-medium">{row.label}</span>
+      {row.hint ? (
+        <span className="block text-caption text-lantern-text-secondary mt-0.5">{row.hint}</span>
+      ) : null}
+    </span>
     <span
       aria-hidden="true"
       className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${
@@ -88,6 +111,8 @@ const SwitchRow: React.FC<{
 );
 
 const MeScreen: React.FC<MeScreenProps> = ({
+  section,
+  onSelectSection,
   currentUser,
   theme,
   onToggleTheme,
@@ -100,6 +125,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
 }) => {
   const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
+  const [joinOpen, setJoinOpen] = useState(false);
 
   const academicLine = [
     currentUser.institution?.name || null,
@@ -109,98 +135,128 @@ const MeScreen: React.FC<MeScreenProps> = ({
     .filter(Boolean)
     .join(' · ');
 
+  const sections = buildMeSections({
+    darkMode: theme === 'dark',
+    lowDataMode,
+    includeAdmin: isPlatformAdmin,
+  });
+
+  const onRow = (id: MeRowId) => {
+    switch (id) {
+      case 'academic':
+        onOpenSettings('academic');
+        return;
+      case 'joinClass':
+        setJoinOpen(true);
+        return;
+      case 'budget':
+        onNavigate(AppMode.BUDGET_TRACKER);
+        return;
+      case 'downloads':
+        onNavigate(AppMode.OFFLINE_MODE);
+        return;
+      case 'credits':
+        onOpenSettings('usage');
+        return;
+      case 'teach':
+        onOpenTeach();
+        return;
+      case 'invite':
+        onNavigate(AppMode.INVITE_FRIENDS);
+        return;
+      case 'darkMode':
+        onToggleTheme();
+        return;
+      case 'lowData':
+        toggleLowDataMode();
+        return;
+      case 'settings':
+        onOpenSettings();
+        return;
+      case 'admin':
+        onNavigate(AppMode.ADMIN);
+        return;
+      case 'logout':
+        onLogout();
+        return;
+    }
+  };
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto bg-lantern-background">
-      <div className="mx-auto w-full max-w-4xl px-4 md:px-6 pb-10">
-        <div className="flex items-center gap-4 py-6">
-          <Avatar
-            name={currentUser.name}
-            id={currentUser.id}
-            src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
-            size="lg"
-            localOnly={lowDataMode}
-          />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-title text-lantern-text">{currentUser.name}</h1>
-            {currentUser.username ? (
-              <p className="truncate text-caption text-lantern-text-secondary">@{currentUser.username}</p>
-            ) : null}
-            <p className="mt-0.5 text-caption text-lantern-text-secondary">
-              {currentUser.points} points
-            </p>
-          </div>
+      <MeWorkspaceBar active={section} onSelect={onSelectSection} />
+      {section === 'progress' ? (
+        <div className="mx-auto w-full max-w-4xl px-4 md:px-6 pb-10 pt-4">{progress}</div>
+      ) : (
+        <div className="mx-auto w-full max-w-4xl px-4 md:px-6 pb-10">
+          <button
+            type="button"
+            onClick={() => onOpenSettings('profile')}
+            className="flex w-full items-center gap-4 py-6 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
+            aria-label={`Edit profile, ${currentUser.name}`}
+          >
+            <Avatar
+              name={currentUser.name}
+              id={currentUser.id}
+              src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
+              size="lg"
+              localOnly={lowDataMode}
+            />
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-title text-lantern-text">{currentUser.name}</h1>
+              {currentUser.username ? (
+                <p className="truncate text-caption text-lantern-text-secondary">@{currentUser.username}</p>
+              ) : null}
+              <p className="mt-0.5 truncate text-caption text-lantern-text-secondary">
+                {academicLine || 'Add your campus, programme and level'}
+              </p>
+              <p className="mt-0.5 text-caption text-lantern-text-secondary">
+                {currentUser.points} points
+              </p>
+              <p className="mt-0.5 text-caption font-medium text-lantern-primary">Edit profile</p>
+            </div>
+            <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
+          </button>
+
+          {sections.map((block) => (
+            <div
+              key={block.id}
+              className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface"
+            >
+              {block.rows.map((row) =>
+                row.kind === 'switch' ? (
+                  <SwitchRow
+                    key={row.id}
+                    row={row}
+                    checked={row.id === 'darkMode' ? theme === 'dark' : lowDataMode}
+                    onToggle={() => onRow(row.id)}
+                  />
+                ) : (
+                  <Row
+                    key={row.id}
+                    row={row}
+                    badge={row.id === 'downloads' ? pendingSyncCount : undefined}
+                    onClick={() => onRow(row.id)}
+                  />
+                )
+              )}
+            </div>
+          ))}
         </div>
+      )}
 
-        <button
-          type="button"
-          onClick={onOpenSettings}
-          className="flex w-full items-center gap-3 border-y border-lantern-border bg-lantern-surface px-4 py-3 text-left hover:bg-lantern-background-secondary focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary/40"
-        >
-          <AppIcon name="school" size={20} className="shrink-0 text-lantern-text-secondary" />
-          <span className="min-w-0 flex-1">
-            <span className="block text-body font-medium text-lantern-text">Academic details</span>
-            <span className="block truncate text-caption text-lantern-text-secondary">
-              {academicLine || 'Add your campus, programme and level'}
-            </span>
-          </span>
-          <AppIcon name="chevron-forward" size={16} className="shrink-0 text-lantern-text-tertiary" />
-        </button>
-
-        {progress}
-
-        <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
-          <Row
-            icon="people"
-            label="Teach"
-            hint="Classes, roster, join codes"
-            onClick={onOpenTeach}
-          />
-          <Row
-            icon="cash"
-            label="Budget"
-            onClick={() => onNavigate(AppMode.BUDGET_TRACKER)}
-          />
-          <Row
-            icon="cloud-download"
-            label="Downloads"
-            badge={pendingSyncCount}
-            onClick={() => onNavigate(AppMode.OFFLINE_MODE)}
-          />
-          <Row
-            icon="gift"
-            label="Invite friends"
-            onClick={() => onNavigate(AppMode.INVITE_FRIENDS)}
-          />
+      <Modal
+        isOpen={joinOpen}
+        onClose={() => setJoinOpen(false)}
+        ariaLabelledBy="join-class-title"
+      >
+        <div className="p-4">
+          <h2 id="join-class-title" className="text-heading font-semibold text-lantern-text mb-3">
+            Join a class
+          </h2>
+          <JoinClassCard onJoined={() => setJoinOpen(false)} />
         </div>
-
-        <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
-          <SwitchRow
-            icon={theme === 'dark' ? 'sunny' : 'moon'}
-            label="Dark mode"
-            checked={theme === 'dark'}
-            onToggle={onToggleTheme}
-          />
-          <SwitchRow
-            icon={lowDataMode ? 'cellular-off' : 'cellular'}
-            label="Low-data mode"
-            checked={lowDataMode}
-            onToggle={toggleLowDataMode}
-          />
-        </div>
-
-        <div className="mt-4 divide-y divide-lantern-border border-y border-lantern-border bg-lantern-surface">
-          <Row icon="settings" label="Settings" onClick={onOpenSettings} />
-          {isPlatformAdmin ? (
-            <Row icon="people" label="Admin console" onClick={() => onNavigate(AppMode.ADMIN)} />
-          ) : null}
-          <Row
-            icon="log-out"
-            label="Log out"
-            destructive
-            onClick={onLogout}
-          />
-        </div>
-      </div>
+      </Modal>
     </div>
   );
 };

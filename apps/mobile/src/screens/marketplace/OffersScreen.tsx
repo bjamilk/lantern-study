@@ -20,6 +20,7 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { StickyActionBar } from './components/StickyActionBar';
 import { scrollClearanceForActionBar } from './components/keyboardSafeLayout';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -314,7 +315,7 @@ export function OffersScreen({
       </View>
 
       {isLoading && offers.length === 0 ? (
-        <ActivityIndicator className="mt-8" color="#6366f1" />
+        <ActivityIndicator className="mt-8" color={brand.text} />
       ) : (
         <FlatList
           data={offers}
@@ -332,7 +333,7 @@ export function OffersScreen({
             <RefreshControl
               refreshing={isLoading && offers.length > 0}
               onRefresh={() => void load()}
-              tintColor="#6366f1"
+              tintColor={brand.text}
             />
           }
           ListEmptyComponent={

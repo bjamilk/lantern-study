@@ -39,6 +39,12 @@ export interface LectureTabsProps {
   /** Needed only to play — and re-sign — the audio attachment. */
   noteId?: string | null;
   source: LectureTabSource;
+  /**
+   * The note's own title, for the lock-screen / notification-shade session.
+   * `LectureTabSource` carries only the body and the attachments, so the two
+   * screens that mount this surface pass the title they already hold.
+   */
+  noteTitle?: string | null;
   /** A take is running: the tab row locks onto My Notes. */
   recording?: boolean;
   /** The My Notes pane. `typed` is the body with transcript and Smart Notes removed. */
@@ -51,6 +57,7 @@ export interface LectureTabsProps {
 export function LectureTabs({
   noteId,
   source,
+  noteTitle,
   recording = false,
   renderNotes,
   tab: controlledTab,
@@ -144,7 +151,7 @@ export function LectureTabs({
           <T.Label>Audio</T.Label>
           <View className="mt-2">
             {noteId && audioRow ? (
-              <LectureAudioPlayer noteId={noteId} attachment={audioRow} />
+              <LectureAudioPlayer noteId={noteId} attachment={audioRow} noteTitle={noteTitle} />
             ) : (
               <T.Body tone="tertiary">No recording is saved on this lecture yet.</T.Body>
             )}

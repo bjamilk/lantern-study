@@ -61,7 +61,7 @@ import {
   suggestMarketplaceSearch,
 } from '@lantern/shared/marketplace';
 import { useChrome } from '../../components/layout/ChromeContext';
-import { useTheme } from '../../theme';
+import { brand, useTheme } from '../../theme';
 import { getFontScaleValue } from '../../theme/installFontScale';
 import {
   alertsLabel,
@@ -843,7 +843,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <AppIcon
               name="notifications"
               size={20}
-              color={openPanel === 'alerts' ? '#6366f1' : colors.textSecondary}
+              color={openPanel === 'alerts' ? brand.text : colors.textSecondary}
             />
             {showHeaderLabels ? (
               <Text numberOfLines={1} className="text-xs font-medium text-lantern-text-secondary">
@@ -1085,7 +1085,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
             <AppIcon
               name="options"
               size={14}
-              color={activeFilterCount > 0 || openPanel === 'filters' ? '#6366f1' : colors.textSecondary}
+              color={activeFilterCount > 0 || openPanel === 'filters' ? brand.text : colors.textSecondary}
             />
             <Text
               className={
@@ -1366,7 +1366,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
       {activeTab === 'shops' ? (
         shopsLoading && !shops.length ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#6366f1" />
+            <ActivityIndicator color={brand.text} />
           </View>
         ) : (
           <FlatList
@@ -1387,7 +1387,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                   });
                   setRefreshing(false);
                 }}
-                tintColor="#6366f1"
+                tintColor={brand.text}
               />
             }
             ListEmptyComponent={
@@ -1408,7 +1408,7 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
                 }
                 className="mb-3 rounded-2xl overflow-hidden border border-lantern-border bg-lantern-surface"
               >
-                <View className="h-16 bg-indigo-600">
+                <View className="h-16 bg-lantern-ink">
                   {item.coverImageUrl ? (
                     <ListingImage uri={item.coverImageUrl} className="w-full h-full" />
                   ) : null}
@@ -1483,12 +1483,12 @@ export function MarketplaceScreen({ navigation }: { navigation: NavigationProp }
           }
           contentContainerStyle={{ padding: 8, paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ justifyContent: 'space-between' }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brand.text} />}
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
           ListFooterComponent={
             isLoading && displayListings.length > 0 ? (
-              <ActivityIndicator className="my-4" color="#6366f1" />
+              <ActivityIndicator className="my-4" color={brand.text} />
             ) : null
           }
           ListEmptyComponent={

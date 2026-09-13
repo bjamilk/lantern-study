@@ -19,7 +19,7 @@ import {
   INCOME_CATEGORIES,
 } from '../../stores/budgetStore';
 import { summarizeBudgetPlan } from '@lantern/shared/utils';
-import { useTheme } from '../../theme';
+import { BRAND_INK, BRAND_TINT, brand, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -144,7 +144,7 @@ export default function SetBudgetScreen() {
       >
         {/* Month Display */}
         <View style={[styles.monthContainer, { backgroundColor: colors.card }]}>
-          <AppIcon name="calendar" size={20} color="#6366f1" />
+          <AppIcon name="calendar" size={20} color={brand.text} />
           <Text style={[styles.monthText, { color: colors.text }]}>{currentMonth}</Text>
         </View>
 
@@ -295,7 +295,7 @@ export default function SetBudgetScreen() {
 
         {/* Info Card */}
         <View style={[styles.infoCard, { backgroundColor: colors.card }]}>
-          <AppIcon name="information-circle" size={24} color="#6366f1" />
+          <AppIcon name="information-circle" size={24} color={brand.text} />
           <View style={styles.infoContent}>
             <Text style={[styles.infoTitle, { color: colors.text }]}>How budgets work</Text>
             <Text style={[styles.infoText, { color: colors.textSecondary }]}>
@@ -338,7 +338,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   saveButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 20,
@@ -375,7 +375,7 @@ const styles = StyleSheet.create({
   monthText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#6366f1',
+    color: BRAND_INK,
   },
   amountSection: {
     alignItems: 'center',
@@ -393,7 +393,7 @@ const styles = StyleSheet.create({
   currencySymbol: {
     fontSize: 40,
     fontWeight: 'bold',
-    color: '#6366f1',
+    color: BRAND_INK,
     marginRight: 4,
   },
   amountInput: {
@@ -487,15 +487,15 @@ const styles = StyleSheet.create({
     borderColor: '#334155',
   },
   suggestionChipActive: {
-    backgroundColor: '#6366f120',
-    borderColor: '#6366f1',
+    backgroundColor: BRAND_TINT,
+    borderColor: BRAND_INK,
   },
   suggestionText: {
     fontSize: 14,
     color: '#9ca3af',
   },
   suggestionTextActive: {
-    color: '#6366f1',
+    color: BRAND_INK,
     fontWeight: '600',
   },
   infoCard: {

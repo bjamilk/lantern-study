@@ -16,6 +16,7 @@ import { Button, Card, ScreenHeader } from '../../components/ui';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -173,7 +174,7 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
     return (
       <Screen>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
         </View>
       </Screen>
     );
@@ -206,9 +207,9 @@ export default function EditProfileScreen({ navigation }: { navigation: Navigati
             />
             <View className="absolute bottom-0 right-0 w-8 h-8 rounded-full bg-lantern-surface dark:bg-lantern-surface-secondary border border-lantern-border items-center justify-center">
               {uploadingAvatar ? (
-                <ActivityIndicator size="small" color="#6366f1" />
+                <ActivityIndicator size="small" color={brand.text} />
               ) : (
-                <AppIcon name="camera" size={16} color="#6366f1" />
+                <AppIcon name="camera" size={16} color={brand.text} />
               )}
             </View>
           </Pressable>

@@ -3,7 +3,9 @@ import { Pressable, Text, View } from 'react-native';
 import { FlashcardType } from '@lantern/shared';
 import { shuffleArray } from '@lantern/shared/utils';
 import { useFlashcardStore, type Flashcard } from '../../stores';
-import { Button, Card } from '../../components/ui';
+import { Button } from '../../components/ui';
+import { useFeatureAccent } from '../../components/ui/FeatureDisc';
+import { CARD, useTheme } from '../../theme';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { FlashcardImage } from '../../components/FlashcardImage';
 import { ImageOcclusionView } from '../../components/ImageOcclusionView';
@@ -23,6 +25,8 @@ interface Props {
 }
 
 export function CramSessionScreen({ navigation, route }: Props) {
+  const { colors } = useTheme();
+  const flashcardsAccent = useFeatureAccent('flashcards');
   // `presentation: 'fullScreenModal'` puts this route in its own native
   // window, which the app-root SafeAreaProvider never measures — the raw
   // `useSafeAreaInsets()` this used to call returned 0 on every edge, so the
@@ -194,11 +198,14 @@ export function CramSessionScreen({ navigation, route }: Props) {
           Exit
         </Button>
         <View className="items-end">
-          <Text className="text-sm font-medium text-amber-600 dark:text-amber-400">
+          <Text className="text-sm font-medium" style={{ color: flashcardsAccent.ink }}>
             Cram · {index + 1}/{queue.length}
           </Text>
           {timedMinutes > 0 ? (
-            <Text className={`text-xs ${timeRemaining < 60 ? 'text-red-500' : 'text-lantern-text-secondary'}`}>
+            <Text
+              className="text-xs"
+              style={{ color: timeRemaining < 60 ? colors.error : colors.textSecondary }}
+            >
               {formatTime(timeRemaining)}
             </Text>
           ) : null}
@@ -207,8 +214,19 @@ export function CramSessionScreen({ navigation, route }: Props) {
 
       <View className="flex-1 px-4 justify-center">
         <Pressable onPress={() => { hapticSelection(); setShowBack(v => !v); }} className="active:opacity-95">
-          <Card className="min-h-[220px] items-center justify-center border-amber-100 dark:border-amber-900/40">
-            <Text className="text-xs uppercase tracking-wide text-lantern-text-tertiary mb-3">
+          <View
+            className="min-h-[220px] overflow-hidden bg-lantern-surface items-center justify-center px-4 pb-5"
+            style={{
+              borderRadius: CARD.radius,
+              borderWidth: 1,
+              borderColor: colors.border,
+            }}
+          >
+            <View style={{ height: 3, alignSelf: 'stretch', backgroundColor: flashcardsAccent.ink, marginBottom: 16 }} />
+            <Text
+              className="text-xs uppercase tracking-wide font-semibold mb-3"
+              style={{ color: flashcardsAccent.ink }}
+            >
               {showBack ? 'Answer' : 'Question'}
             </Text>
             {isImageOcclusion ? (
@@ -229,25 +247,47 @@ export function CramSessionScreen({ navigation, route }: Props) {
               </>
             )}
             {!showBack ? (
-              <Text className="text-xs text-amber-600 mt-6">Tap to reveal</Text>
+              <Text className="text-xs mt-6" style={{ color: colors.textTertiary }}>
+                Tap to reveal
+              </Text>
             ) : null}
-          </Card>
+          </View>
         </Pressable>
       </View>
 
       <View className="px-4 gap-2" style={{ paddingBottom: footerPadding }}>
         {!showBack ? (
-          <Button variant="accent" fullWidth onPress={() => setShowBack(true)}>
-            Show Answer
+          <Button fullWidth onPress={() => setShowBack(true)}>
+            Show answer
           </Button>
         ) : (
           <View className="flex-row gap-3">
-            <Button variant="danger" className="flex-1" onPress={() => advance(false)}>
-              Missed
-            </Button>
-            <Button variant="accent" className="flex-1" onPress={() => advance(true)}>
-              Got it
-            </Button>
+            <Pressable
+              onPress={() => advance(false)}
+              className="flex-1 items-center justify-center"
+              style={{
+                minHeight: 48,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.errorBackground,
+              }}
+            >
+              <Text className="font-semibold" style={{ color: colors.error }}>Missed</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => advance(true)}
+              className="flex-1 items-center justify-center"
+              style={{
+                minHeight: 48,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: colors.border,
+                backgroundColor: colors.successBackground,
+              }}
+            >
+              <Text className="font-semibold" style={{ color: colors.success }}>Got it</Text>
+            </Pressable>
           </View>
         )}
       </View>

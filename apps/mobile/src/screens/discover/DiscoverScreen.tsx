@@ -52,6 +52,7 @@ import { RequestError } from '../../components/RequestError';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -350,7 +351,7 @@ function DiscoverHub({
                 {communityDisplayName(item.name)}
               </Text>
               {item.is_official ? (
-                <AppIcon name="checkmark-circle" size={16} color="#6366f1" />
+                <AppIcon name="checkmark-circle" size={16} color={brand.text} />
               ) : null}
               <UnreadPill unread={unread} />
               <View className="flex-1" />
@@ -683,7 +684,7 @@ function DiscoverHub({
 
       {listState === 'loading' ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : listState === 'failed' ? (
         <RequestError

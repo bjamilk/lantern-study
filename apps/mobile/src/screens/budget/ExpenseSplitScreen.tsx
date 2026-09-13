@@ -14,6 +14,7 @@ import { ScreenHeader, Button, Card } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { splitHeadcountLabel, splitPerPersonShare } from './expenseSplitPlanner';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 export default function ExpenseSplitScreen() {
   const navigation = useNavigation<any>();
@@ -97,7 +98,7 @@ export default function ExpenseSplitScreen() {
           {/* Participants */}
           <Text className="text-xs font-medium text-lantern-text-secondary">{splitHeadcountLabel(namedOthers.length)}</Text>
           <View className="flex-row items-center gap-2 bg-lantern-primary-background rounded-xl px-3 py-2.5">
-            <AppIcon name="person-circle" size={18} color="#6366f1" />
+            <AppIcon name="person-circle" size={18} color={brand.text} />
             <Text className="text-sm text-lantern-primary-text font-medium">{userName} (you)</Text>
           </View>
           {others.map((name, i) => (
@@ -117,7 +118,7 @@ export default function ExpenseSplitScreen() {
             </View>
           ))}
           <TouchableOpacity onPress={() => setOthers(prev => [...prev, ''])} className="flex-row items-center gap-1.5 py-1">
-            <AppIcon name="person-add" size={16} color="#6366f1" />
+            <AppIcon name="person-add" size={16} color={brand.text} />
             <Text className="text-sm text-lantern-primary-text font-medium">Add person</Text>
           </TouchableOpacity>
 

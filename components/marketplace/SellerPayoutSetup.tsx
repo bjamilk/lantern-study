@@ -131,7 +131,7 @@ export function SellerPayoutSetup({ showToast }: Props) {
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
+          className="rounded-lg bg-lantern-primary-fill px-4 py-2 text-sm font-medium text-white disabled:opacity-60"
         >
           {saving ? 'Saving…' : profile?.status === 'active' ? 'Update bank account' : 'Save bank account'}
         </button>

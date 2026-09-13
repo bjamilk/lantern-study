@@ -3,6 +3,8 @@ export { useTheme, useColors, lightColors, darkColors, ColorsThemeProvider } fro
 export type { ThemeColors, ThemeMode } from './ThemeContext';
 export { ThemeScope } from './ThemeScope';
 export { lightLanternVars, darkLanternVars } from './lanternCssVars';
+// The hook-free brand ink, for module-scope StyleSheet and RN colour props.
+export { brand, setBrandPalette, getBrandPalette, BRAND_INK, BRAND_ON_INK, BRAND_TINT } from './brand';
 // The display face, and the one rule about which strings get it.
 export {
   SERIF_FAMILIES,

@@ -22,8 +22,14 @@
 import { AA_NORMAL, contrastRatio, darkTheme, lightTheme } from '@lantern/shared/design';
 import { applyAccentToColors, applyHighContrastToColors } from '@lantern/shared/settings';
 
-/** Mirrors SettingsScreen.tsx ACCENT_PRESETS; the first is the default. */
-const ACCENT_PRESETS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+import { ACCENT_PRESETS as ACCENT_PRESET_ENTRIES } from '../../screens/settings/accentPresets';
+import { LEGACY_DEFAULT_ACCENT_COLOR } from '@lantern/shared/settings';
+
+/** The shipped swatches, plus the legacy default accounts still persist. */
+const ACCENT_PRESETS = [
+  ...ACCENT_PRESET_ENTRIES.map((p) => p.hex),
+  LEGACY_DEFAULT_ACCENT_COLOR,
+];
 
 function toMobile<T extends Record<string, string>>(palette: T) {
   return { ...palette, card: palette.surface };

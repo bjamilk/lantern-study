@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { useRoute, useNavigation, RouteProp } from '@react-navigation/native';
-import { useTheme } from '../../theme';
+import { BRAND_INK, brand, useTheme } from '../../theme';
 import { useGameStore } from '../../stores';
 import { useAuthStore } from '../../stores/authStore';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -556,7 +556,7 @@ export default function GameScreen() {
         {/* Players */}
         <View style={styles.playersRow}>
           <View style={styles.playerInfo}>
-            {renderAvatar(session.user, '#6366f1')}
+            {renderAvatar(session.user, brand.text)}
             <Text style={[styles.playerName, { color: colors.text }]} numberOfLines={1}>
               {session.user.name}
             </Text>
@@ -580,7 +580,7 @@ export default function GameScreen() {
               <Animated.View
                 style={[
                   styles.progressFill,
-                  { backgroundColor: '#6366f1', width: `${userProgress}%` },
+                  { backgroundColor: brand.text, width: `${userProgress}%` },
                 ]}
               />
             </View>
@@ -764,7 +764,7 @@ const styles = StyleSheet.create({
   },
   optionSelected: {
     backgroundColor: '#eff6ff',
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
     borderWidth: 2,
   },
   optionCorrect: {
@@ -796,8 +796,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   checkboxSelected: {
-    backgroundColor: '#6366f1',
-    borderColor: '#6366f1',
+    backgroundColor: BRAND_INK,
+    borderColor: BRAND_INK,
   },
   fillContainer: {
     marginTop: 8,
@@ -831,7 +831,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     alignItems: 'center',
     justifyContent: 'center',
     marginLeft: -12,

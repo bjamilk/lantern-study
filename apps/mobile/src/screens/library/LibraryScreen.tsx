@@ -381,6 +381,7 @@ export function LibraryScreen({ navigation, route }: Props) {
           }
           onRetry={() => setOverviewAttempt(a => a + 1)}
           onManageCourses={() => navigateRootStack('AcademicSettings')}
+          countFocus={tab}
         />
 
         {/* The one place the live filter is announced. The tree rows no longer

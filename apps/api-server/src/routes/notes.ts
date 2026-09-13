@@ -2031,15 +2031,47 @@ router.get('/:noteId/attachments/:attachmentId/url', asyncHandler(async (req: Re
   }
   const storagePath = supabaseService.resolveNoteAttachmentStoragePath(attachment);
   if (!storagePath) {
-    res.status(400).json({ error: 'No storage path available for this attachment.' });
+    // Name the shape, because the client now SHOWS this sentence. An audio row
+    // transcribed straight from base64 is stored with `metadata.storagePath:
+    // null` and no `fileUrl` (see transcribe-audio above), and "no storage
+    // path" alone sent the Round 2 device pass hunting an expiry bug that was
+    // never there.
+    const detail = attachment.fileUrl
+      ? 'Its saved link does not point at this app\u2019s note storage.'
+      : 'This attachment was saved without a stored file.';
+    logger.warn('attachment url has no storage path', {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+      type: attachment.type || null,
+      hasFileUrl: Boolean(attachment.fileUrl),
+    });
+    res.status(400).json({
+      error: `This file cannot be opened. ${detail}`,
+      message: `This file cannot be opened. ${detail}`,
+    });
     return;
   }
   const variant = req.query.variant === 'thumb' ? 'thumb' : 'original';
-  const url = await supabaseService.createSignedNoteFileUrl(
-    storagePath,
-    60 * 60 * 24,
-    variant,
-  );
+  let url: string;
+  try {
+    url = await supabaseService.createSignedNoteFileUrl(storagePath, 60 * 60 * 24, variant);
+  } catch (error) {
+    // Storage refusing to sign means the object is gone (or the bucket is not
+    // the one the row claims). That is a 404 about the FILE, not a 500 about
+    // this server, and the difference is the whole diagnosis on the handset.
+    const detail = error instanceof Error ? error.message : String(error);
+    logger.warn('attachment url signing failed', {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+      storagePath,
+      message: detail,
+    });
+    res.status(404).json({
+      error: 'The stored file could not be found. It may have been removed from storage.',
+      message: 'The stored file could not be found. It may have been removed from storage.',
+    });
+    return;
+  }
   res.json({ success: true, data: { url, expiresIn: 60 * 60 * 24, variant } });
 }));
 
@@ -2462,7 +2494,24 @@ router.get('/:noteId/attachments/:attachmentId/content', asyncHandler(async (req
   }
   const storagePath = supabaseService.resolveNoteAttachmentStoragePath(attachment);
   if (!storagePath) {
-    res.status(400).json({ error: 'No storage path available for this attachment.' });
+    // Name the shape, because the client now SHOWS this sentence. An audio row
+    // transcribed straight from base64 is stored with `metadata.storagePath:
+    // null` and no `fileUrl` (see transcribe-audio above), and "no storage
+    // path" alone sent the Round 2 device pass hunting an expiry bug that was
+    // never there.
+    const detail = attachment.fileUrl
+      ? 'Its saved link does not point at this app\u2019s note storage.'
+      : 'This attachment was saved without a stored file.';
+    logger.warn('attachment url has no storage path', {
+      noteId: req.params.noteId,
+      attachmentId: req.params.attachmentId,
+      type: attachment.type || null,
+      hasFileUrl: Boolean(attachment.fileUrl),
+    });
+    res.status(400).json({
+      error: `This file cannot be opened. ${detail}`,
+      message: `This file cannot be opened. ${detail}`,
+    });
     return;
   }
   const { buffer, contentType } = await supabaseService.downloadNoteFile(storagePath);

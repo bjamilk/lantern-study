@@ -129,16 +129,19 @@ svg[data-slot="icon"].w-24 {
   /* #64748b was 4.39:1 on the warm background — fails AA for the 10-12px
      text this token mostly styles. #5b6a7f clears 4.5:1 on cream and white. */
   --color-text-tertiary: 91 106 127;
-  --color-primary: 79 70 229;
-  --color-primary-light: 99 102 241;
-  --color-primary-dark: 55 48 163;
-  --color-primary-background: #eef2ff;
-  /* Build 153: one `primary` served both a fill under white text and text on
-     a tint. `-fill` is the ground (white on it is 6.29:1); `-text` is the ink
-     (6.29 on white, 5.80 on cream, 5.62 on the #eef2ff tint). Mirrors
-     packages/shared/src/design/tokens.ts. */
-  --color-primary-fill: 79 70 229;
-  --color-primary-text: 79 70 229;
+  /* 2026-09-12 colour pivot: primary is the theme's INK, not indigo. Light's
+     ink is #191919 with white on it; `-light` (#333333) is hover and `-dark`
+     (#000000) is pressed. Mirrors packages/shared/src/design/tokens.ts. */
+  --color-primary: 25 25 25;
+  --color-primary-light: 51 51 51;
+  --color-primary-dark: 0 0 0;
+  /* Neutral putty, not an indigo wash — primary is ink now, so its tint is
+     the paper one step down rather than a hue. */
+  --color-primary-background: #e9e4d8;
+  /* `-fill` is the ground (white on it is 16.9:1); `-text` is the ink
+     (16.9 on white, 15.6 on cream, 15.2 on the putty tint). */
+  --color-primary-fill: 25 25 25;
+  --color-primary-text: 25 25 25;
   /* Accent/success/warning darkened one step: the 600-weight values sat at
      3.0-3.6:1 as text on white/cream and behind white button labels. The 700
      weights clear AA both as text and as button fills with white labels. */
@@ -245,17 +248,17 @@ svg[data-slot="icon"].w-24 {
   --color-text-secondary: 148 163 184;
   /* UI-01: raised for WCAG AA (≥4.5:1) on dark surfaces */
   --color-text-tertiary: 132 148 168;
-  --color-primary: 129 140 248;
-  --color-primary-light: 165 180 252;
-  --color-primary-dark: 99 102 241;
+  /* The ink INVERTS in dark — a near-black pill on a black page is a hole —
+     so the primary fill is near-white and what sits on it is the inverse ink
+     (#0f172a), forced onto un-migrated `text-white` call sites below. */
+  --color-primary: 245 245 245;
+  --color-primary-light: 255 255 255;
+  --color-primary-dark: 212 212 212;
   /* Values mirror packages/shared/src/design/tokens.ts darkTheme exactly —
      that file is the palette's source of truth for both platforms. */
-  --color-primary-background: #6366f120;
-  /* Same fill as light on purpose: white needs a dark ground in either theme.
-     Dark's `--color-primary` (#818cf8) under a white label is 2.98:1. The ink
-     stays #818cf8 — 6.29 on the surface, 5.58 on the composited tint. */
-  --color-primary-fill: 79 70 229;
-  --color-primary-text: 129 140 248;
+  --color-primary-background: #f5f5f512;
+  --color-primary-fill: 245 245 245;
+  --color-primary-text: 245 245 245;
   --color-accent: 251 191 36;
   --color-accent-background: #f59e0b20;
   --color-border: 47 51 54;
@@ -314,11 +317,20 @@ svg[data-slot="icon"].w-24 {
   --app-atmosphere: linear-gradient(180deg, #000000 0%, #000000 100%);
 }
 
-/* Dark-mode primary (#818cf8) and accent (#fbbf24) are bright fills — white
-   labels sit at 2.98:1 / 1.77:1 on them. Dark ink clears 7:1 on both. Scoped
-   to dark only; light fills (#4f46e5 / #b45309) pass with white labels. */
+/* Dark-mode primary (the near-white ink, #f5f5f5) and accent (#fbbf24) are
+   bright fills — a white label on them is 1.04:1 / 1.77:1. The inverse ink
+   clears 15:1 on the primary fill and 7:1 on the accent. Scoped to dark only;
+   light fills (#191919 / #b45309) pass with white labels. Every primary fill
+   utility is listed, not just the bare one: after the 2026-09-12 pivot
+   `-fill`, `-light` and `-dark` are all light grounds in dark mode. */
 .dark .bg-lantern-primary,
 .dark .bg-lantern-primary .text-white,
+.dark .bg-lantern-primary-fill,
+.dark .bg-lantern-primary-fill .text-white,
+.dark .bg-lantern-primary-light,
+.dark .bg-lantern-primary-light .text-white,
+.dark .bg-lantern-primary-dark,
+.dark .bg-lantern-primary-dark .text-white,
 .dark .bg-lantern-accent,
 .dark .bg-lantern-accent .text-white {
   color: #0f172a;
@@ -423,7 +435,7 @@ body {
 
 /* Focus-visible ring for keyboard navigation */
 :focus-visible {
-  outline: 2px solid rgb(var(--color-primary, 79 70 229));
+  outline: 2px solid rgb(var(--color-primary, 25 25 25));
   outline-offset: 2px;
   border-radius: 4px;
 }
@@ -627,4 +639,42 @@ body {
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* Review / Cram paper card. Faces share one grid cell so height follows the
+   taller side (grades live on the back). Reduced motion drops the rotate and
+   hides the unused face — the global reduce-motion rule zeroes transforms,
+   which would otherwise stack both faces. */
+.flashcard-flip {
+  perspective: 1200px;
+}
+.flashcard-flip-inner {
+  display: grid;
+  transform-style: preserve-3d;
+  transition: transform 0.5s ease;
+}
+.flashcard-flip-inner.is-flipped {
+  transform: rotateY(180deg);
+}
+.flashcard-flip-face {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flashcard-flip-face-back {
+  transform: rotateY(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .flashcard-flip-inner,
+  .flashcard-flip-inner.is-flipped,
+  .flashcard-flip-face-back {
+    transform: none !important;
+    transition: none !important;
+  }
+  .flashcard-flip-inner:not(.is-flipped) .flashcard-flip-face-back,
+  .flashcard-flip-inner.is-flipped .flashcard-flip-face:not(.flashcard-flip-face-back) {
+    visibility: hidden;
+    pointer-events: none;
+  }
 }

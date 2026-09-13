@@ -97,7 +97,7 @@ const InviteJoinScreen: React.FC<InviteJoinScreenProps> = ({ inviteId, userId })
   const avatar =
     preview?.avatarUrl ||
     (preview
-      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(preview.name)}&background=6366f1&color=fff&size=128`
+      ? `https://ui-avatars.com/api/?name=${encodeURIComponent(preview.name)}&background=191919&color=fff&size=128`
       : '');
 
   return (

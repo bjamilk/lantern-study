@@ -86,7 +86,7 @@ export function TopBar({ onOpenMe, onNotifications, onAI, unreadNotificationCoun
         <Pressable
           onPress={onOpenMe}
           accessibilityRole="button"
-          accessibilityLabel="Me"
+          accessibilityLabel="Profile"
           accessibilityHint="Your profile, Budget, Downloads and settings"
           accessibilityState={{ selected: activeTab === 'Me' }}
           style={{ width: TOUCH, height: TOUCH }}

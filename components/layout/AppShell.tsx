@@ -5,7 +5,6 @@ import { AppMode } from '../../types';
 import { AppRouteParams } from '../../utils/appRoutes';
 import Sidebar from '../Sidebar';
 import BottomNav from './BottomNav';
-import { ConnectionBadge } from '../ui/ConnectionBadge';
 import { useUIStore } from '../../stores/uiStore';
 import { useTestStore } from '../../stores/testStore';
 import { useCompanionStore } from '../../stores/companionStore';
@@ -55,7 +54,7 @@ const AppShell: React.FC<AppShellProps> = ({
     onOpenLectureNote,
 }) => {
     const location = useLocation();
-    const { appMode, isSidebarExpanded, isChatsSectionExpanded, activeCommunity, lowDataMode, importProgress, clearImportProgress } = useUIStore();
+    const { appMode, isSidebarExpanded, isChatsSectionExpanded, activeCommunity, importProgress, clearImportProgress } = useUIStore();
     const uploadJobList = useNoteUploadStore((s) => s.jobs);
     const uploadJobs = useMemo(() => getVisibleUploadJobs(uploadJobList), [uploadJobList]);
     const activeUploadJob = useMemo(() => getActiveUploadJob(uploadJobList), [uploadJobList]);
@@ -302,31 +301,14 @@ const AppShell: React.FC<AppShellProps> = ({
                         </div>
                     </div>
                 )}
-                {/* Connection status strip — single badge; compact on mobile */}
-                <div className="shrink-0 px-3 py-1 md:px-4 md:py-2 border-b border-lantern-border bg-lantern-surface flex items-center justify-between gap-2 min-w-0 max-w-full overflow-x-hidden">
-                    <ConnectionBadge
-                        isOnline={sidebarProps.isOnline}
-                        lowDataMode={lowDataMode}
-                        pendingSyncCount={sidebarProps.pendingSyncCount}
-                        compact
-                        className="md:hidden"
-                    />
-                    <ConnectionBadge
-                        isOnline={sidebarProps.isOnline}
-                        lowDataMode={lowDataMode}
-                        pendingSyncCount={sidebarProps.pendingSyncCount}
-                        compact={false}
-                        className="hidden md:inline-flex"
-                    />
-                    {/*
-                      The two things that FOLLOW you. On desktop they are
-                      labelled rows in the sidebar; at phone width the bar below
-                      is the five destinations and nothing else, so they live
-                      here — the same place mobile keeps them. This also retires
-                      the standalone AI-usage badge: a count belongs on the thing
-                      it counts, not floating beside it.
-                    */}
-                    <div className="md:hidden flex items-center gap-1 shrink-0">
+                {/*
+                  Phone-only: Lantern AI and Notifications follow you here.
+                  Desktop already has both in the sidebar, so this strip must
+                  not also carry the Synced badge — that left an empty status
+                  bar across the top of every screen.
+                */}
+                <div className="md:hidden shrink-0 px-3 py-1 border-b border-lantern-border bg-lantern-surface flex items-center justify-end gap-2 min-w-0 max-w-full overflow-x-hidden">
+                    <div className="flex items-center gap-1 shrink-0">
                         {appMode !== AppMode.COURSE_WORKSPACE && appMode !== AppMode.STUDY_SET_WORKSPACE ? (
                         <button
                             type="button"

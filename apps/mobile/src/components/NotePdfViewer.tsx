@@ -4,7 +4,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
 import * as WebBrowser from 'expo-web-browser';
 import type { NoteAttachment } from '../services/notes';
-import { refreshNoteAttachmentUrl } from '../services/notes';
+import {
+  describeAttachmentUrlError,
+  fetchNoteAttachmentUrl,
+  logLectureMedia,
+} from '../services/noteAttachmentUrl';
 import { useTheme } from '../theme';
 import { AppIcon } from './ui/AppIcon';
 
@@ -41,6 +45,8 @@ export function NotePdfViewer({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [webViewFailed, setWebViewFailed] = useState(false);
+  /** What the WebView itself said. Shown instead of a guess about connectivity. */
+  const [webViewReason, setWebViewReason] = useState<string | null>(null);
   // Fullscreen is a nested RN Modal, which is safe because the note editor is
   // a plain stack screen — never move this component into a fullScreenModal
   // screen without turning the viewer into its own route first (nested Modals
@@ -59,21 +65,27 @@ export function NotePdfViewer({
     setLoading(true);
     setError(null);
     setWebViewFailed(false);
+    setWebViewReason(null);
     setViewerUri(null);
     setSignedUrl(null);
 
     (async () => {
       try {
-        const result = await refreshNoteAttachmentUrl(noteId, attachment.id);
+        const url = await fetchNoteAttachmentUrl(noteId, attachment.id);
         if (cancelled) return;
-        if (!result?.url) {
-          throw new Error('Document URL unavailable');
-        }
-        setSignedUrl(result.url);
-        setViewerUri(buildInAppViewerUri(result.url));
+        setSignedUrl(url);
+        setViewerUri(buildInAppViewerUri(url));
       } catch (err: unknown) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : 'Failed to load document');
+          // The server's own sentence and status, never "you may be offline":
+          // a 400 "No storage path available for this attachment" is not a
+          // connectivity problem and telling the student it is wastes their day.
+          logLectureMedia('pdf:sign', {
+            noteId,
+            attachmentId: attachment.id,
+            message: err instanceof Error ? err.message : String(err),
+          });
+          setError(describeAttachmentUrlError(err, 'Failed to load document'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -118,9 +130,16 @@ export function NotePdfViewer({
 
   const webViewFallback = (fallbackHeight?: number) => (
     <View className="items-center justify-center px-4 py-10" style={fallbackHeight ? { height: fallbackHeight } : { flex: 1 }}>
-      <Text className="text-sm text-center mb-3" style={{ color: colors.textSecondary }}>
+      <Text className="text-sm text-center" style={{ color: colors.textSecondary }}>
         In-app preview is unavailable for this file.
       </Text>
+      {webViewReason ? (
+        <Text className="text-label text-center mb-3 mt-1" style={{ color: colors.textTertiary }}>
+          {webViewReason}
+        </Text>
+      ) : (
+        <View className="mb-3" />
+      )}
       <Pressable
         onPress={() => void openExternally()}
         className="flex-row items-center gap-2 px-4 py-2 rounded-xl"
@@ -228,12 +247,28 @@ export function NotePdfViewer({
             onTouchStart={lockParentScroll}
             onTouchEnd={unlockParentScroll}
             onTouchCancel={unlockParentScroll}
-            onError={() => {
+            onError={(event) => {
+              const { description, code } = event.nativeEvent;
+              logLectureMedia('pdf:webview', {
+                attachmentId: attachment.id,
+                status: typeof code === 'number' ? code : undefined,
+                message: description,
+              });
               setParentLocked(false);
+              setWebViewReason(description || null);
               setWebViewFailed(true);
             }}
-            onHttpError={() => {
+            onHttpError={(event) => {
+              const { statusCode, description } = event.nativeEvent;
+              logLectureMedia('pdf:webview:http', {
+                attachmentId: attachment.id,
+                status: statusCode,
+                message: description,
+              });
               setParentLocked(false);
+              setWebViewReason(
+                statusCode ? `The preview service answered ${statusCode}.` : description || null
+              );
               setWebViewFailed(true);
             }}
             renderLoading={() => (
@@ -297,7 +332,10 @@ export function NotePdfViewer({
               domStorageEnabled
               mixedContentMode="always"
               scalesPageToFit
-              onError={() => setWebViewFailed(true)}
+              onError={(event) => {
+              setWebViewReason(event.nativeEvent.description || null);
+              setWebViewFailed(true);
+            }}
               onHttpError={() => setWebViewFailed(true)}
               renderLoading={() => (
                 <View

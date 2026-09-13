@@ -44,7 +44,7 @@ const CLOSED_STATUSES = new Set<JobApplicationStatus>([
 
 const STATUS_STYLES: Record<JobApplicationStatus, string> = {
   interested: "bg-sky-100 text-sky-800",
-  chatting: "bg-indigo-100 text-indigo-800",
+  chatting: "bg-lantern-primary-background text-lantern-primary-text",
   new: "bg-blue-100 text-blue-800",
   reviewing: "bg-violet-100 text-violet-800",
   interview: "bg-amber-100 text-amber-800",

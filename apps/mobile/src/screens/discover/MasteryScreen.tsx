@@ -14,6 +14,7 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { runReadinessAction } from '../../components/dashboard/CourseReadinessCard';
 import { buildReadinessRow } from '../../components/dashboard/readinessCardModel';
+import { brand } from '../../theme';
 
 type NavigationProp = { goBack: () => void };
 type RouteProp = { params?: { courseId?: string } };
@@ -256,7 +257,7 @@ export function MasteryScreen({
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: scrollBottomPadding }}>

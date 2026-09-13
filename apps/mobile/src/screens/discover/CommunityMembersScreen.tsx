@@ -30,6 +30,7 @@ import { MemberRow } from '../../components/community';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { DiscoverComingSoon } from './DiscoverComingSoon';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -194,7 +195,7 @@ function CommunityMembersList({
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : (
         <SectionList
@@ -252,7 +253,7 @@ function CommunityMembersList({
                 className="mx-4 mt-3 min-h-[44px] items-center justify-center rounded-lg bg-lantern-background-secondary"
               >
                 {loadingMore ? (
-                  <ActivityIndicator color="#6366f1" />
+                  <ActivityIndicator color={brand.text} />
                 ) : (
                   <Text className="text-sm font-semibold text-lantern-primary-text">Load more</Text>
                 )}

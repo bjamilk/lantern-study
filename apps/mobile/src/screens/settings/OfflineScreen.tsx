@@ -27,7 +27,7 @@ import { useTestStore } from '../../stores/testStore';
 import { offlineQuestionsToTestQuestions } from '../../utils/questionHelpers';
 import { planBundlePlayability } from '../../utils/offlineQuestionShape';
 import { useFlashcardStore } from '../../stores/flashcardStore';
-import { useTheme } from '../../theme';
+import { BRAND_INK, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { restoreQuestionBanks } from '../../services/api';
 import { PublishQuestionBankModal } from './PublishQuestionBankModal';
@@ -892,7 +892,7 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
   },
   activeTabText: {
-    color: '#6366f1',
+    color: BRAND_INK,
     fontWeight: '500',
   },
   // Section

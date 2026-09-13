@@ -81,7 +81,12 @@ const INK_ON_TINT = [
  * as text — it is gated by what sits ON it.
  */
 const WHITE_ON_FILL = [
-  ['--color-primary-fill', '255 255 255'],
+  // After the 2026-09-12 pivot the primary fill IS the theme's ink, so it
+  // inverts: near-black under white in light, near-white under the inverse
+  // ink (#0f172a) in dark. A per-theme label, because a single one cannot be
+  // right for both — white on dark's #f5f5f5 fill is 1.04:1, which is exactly
+  // the regression the `.dark .bg-lantern-primary*` rule in index.css fixes.
+  ['--color-primary-fill', { light: '255 255 255', dark: '#0f172a' }],
   // The badge fix: white on `--color-error` was 3.76:1 in dark. Both themes
   // are gated so a future re-lightening of either value fails here.
   ['--color-error-strong', '255 255 255'],
@@ -453,7 +458,12 @@ function run() {
         drift.push(`${t.name}: index.css is missing ${fillVar}`);
         continue;
       }
-      check(`${t.name} white label`, fillVar, label, fill);
+      const themeLabel = typeof label === 'string' ? label : label[t.name];
+      if (!themeLabel) {
+        drift.push(`${t.name}: ${fillVar} has no label colour declared`);
+        continue;
+      }
+      check(`${t.name} label on fill`, fillVar, themeLabel, fill);
     }
 
     // The warning chip ("Buy freeze", DailyQuestsWidget) is painted on

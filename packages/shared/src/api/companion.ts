@@ -6,6 +6,7 @@ import type {
   CompanionAction,
   CompanionCitation,
   CompanionConversation,
+  CompanionImageAttachment,
   CompanionUserContext,
 } from '../types';
 import type { AIClientConfig } from './ai';
@@ -30,6 +31,39 @@ export function normalizeCompanionCitation(raw: unknown): CompanionCitation | nu
       typeof c.noteTitle === 'string' && c.noteTitle.trim() ? c.noteTitle.trim() : 'Untitled note',
     excerpts,
   };
+}
+
+/**
+ * Labels that name a CLASS of failure and say nothing about THIS one.
+ *
+ * `errorHandler.ts` answers an unhandled route throw with
+ * `{ error: apiError.name || 'Error', message: '<the real reason>' }`, so
+ * reading `error` alone surfaced the literal word "Error" to the student —
+ * which is exactly what the "Add image" upload showed on the phone. When the
+ * label is one of these, the sentence in `message` is the one to show.
+ */
+const GENERIC_ERROR_LABELS = new Set([
+  'error',
+  'apierror',
+  'request failed',
+  'validation error',
+  'bad request',
+  'internal server error',
+  'service unavailable',
+  'unknown error',
+]);
+
+/** The most useful sentence an error body has to offer. */
+export function companionErrorText(
+  body: { error?: unknown; message?: unknown },
+  status: number
+): string {
+  const label = typeof body?.error === 'string' ? body.error.trim() : '';
+  const detail = typeof body?.message === 'string' ? body.message.trim() : '';
+  if (label && !GENERIC_ERROR_LABELS.has(label.toLowerCase())) return label;
+  if (detail) return detail;
+  if (label) return label;
+  return `Companion request failed (${status})`;
 }
 
 type CompanionRequestOptions = {
@@ -93,6 +127,7 @@ export function createCompanionClient(config: AIClientConfig) {
     const json = (await response.json().catch(() => ({}))) as {
       jobId?: string;
       error?: string;
+      message?: string;
     };
 
     if (response.status === 202 && typeof json.jobId === 'string') {
@@ -100,7 +135,11 @@ export function createCompanionClient(config: AIClientConfig) {
     }
 
     if (!response.ok) {
-      throw new Error(json.error || `Companion request failed (${response.status})`);
+      const failure = new Error(companionErrorText(json, response.status)) as Error & {
+        status?: number;
+      };
+      failure.status = response.status;
+      throw failure;
     }
 
     return json as T;
@@ -117,6 +156,25 @@ export function createCompanionClient(config: AIClientConfig) {
         citations?: CompanionCitation | null;
         conversationId?: string;
       }>('/message', 'POST', { message, context }),
+
+    /**
+     * Upload one photo for the next companion turn and get back what the
+     * server read out of it.
+     *
+     * This is NOT a chat turn — it is the image read, charged at the same OCR
+     * price the note photo path charges (2 AI uses), which is why it updates
+     * the usage badge: the credits are gone before the student types anything.
+     */
+    uploadCompanionImage: (params: {
+      base64Data: string;
+      fileName?: string;
+      contentType?: string;
+    }) =>
+      companionRequest<CompanionImageAttachment>('/attachments', 'POST', {
+        base64Data: params.base64Data,
+        fileName: params.fileName || 'image.jpg',
+        contentType: params.contentType,
+      }),
 
     fetchCompanionConversations: () =>
       companionRequest<{ conversations: CompanionConversation[] }>(

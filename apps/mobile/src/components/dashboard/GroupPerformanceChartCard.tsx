@@ -19,7 +19,7 @@ import {
 } from '@lantern/shared/utils';
 import { useSettingsStore } from '../../stores/settingsStore';
 import { AppIcon } from '../ui/AppIcon';
-import { useTheme } from '../../theme';
+import { brand, useTheme } from '../../theme';
 // Wave T: the axis labels were the app's smallest strings (9 sp) AND its only
 // hardcoded chart ink. Both come from the scale and the theme now.
 import { typeScale } from '../../design/typeScale';
@@ -43,7 +43,7 @@ interface GroupPerformanceChartCardProps {
   testResults: LeanTestResultLike[];
 }
 
-const SERIES_COLORS = ['#4f46e5', '#e11d48', '#0d9488', '#d97706', '#0284c7', '#c026d3'];
+const SERIES_COLORS = [brand.text, '#e11d48', '#0d9488', '#d97706', '#0284c7', '#c026d3'];
 
 async function loadSelectedIds(): Promise<string[]> {
   try {
@@ -365,7 +365,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
   return (
     <Card className="mb-4">
       <View className="flex-row items-center gap-2 mb-2">
-        <AppIcon name="stats-chart" size={16} color="#4f46e5" />
+        <AppIcon name="stats-chart" size={16} color={brand.text} />
         <Text className="text-body font-semibold text-lantern-text">Group performance</Text>
       </View>
 

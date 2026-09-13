@@ -419,11 +419,11 @@ export function OrderDetailScreen({
         ) : null}
 
         {needsPaystack ? (
-          <View className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 gap-3">
-            <Text className="font-semibold text-indigo-900 dark:text-indigo-200">
+          <View className="p-4 rounded-xl bg-lantern-primary-background gap-3">
+            <Text className="font-semibold text-lantern-primary-text">
               Pay with Paystack
             </Text>
-            <Text className="text-sm text-indigo-800 dark:text-indigo-300">
+            <Text className="text-sm text-lantern-primary-text">
               You pay the listed price — no extra charge. Funds go to the seller after you confirm
               delivery.
             </Text>

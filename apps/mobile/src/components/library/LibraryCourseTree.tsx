@@ -78,11 +78,22 @@ interface Props {
   onTurnSemesterIntoProducts?: () => void;
   onRetry: () => void;
   onManageCourses: () => void;
+  /** The open Library tab — show one count instead of four chips. */
+  countFocus?: 'notes' | 'flashcards';
 }
 
 const UNFILED_FILTER: LibraryCourseFilter = { id: UNFILED_COURSE_ID, label: 'Unfiled' };
 
-function CountChips({ counts }: { counts: Counts }) {
+function CountChips({ counts, focus }: { counts: Counts; focus?: 'notes' | 'flashcards' }) {
+  if (focus) {
+    const n = focus === 'notes' ? counts.notes : counts.decks;
+    if (n <= 0) return null;
+    return (
+      <Text className="text-[11px] text-lantern-text-tertiary mt-0.5">
+        {n}
+      </Text>
+    );
+  }
   const chips: Array<{ key: string; label: string }> = [];
   if (counts.notes > 0) chips.push({ key: 'notes', label: `${counts.notes} ${counts.notes === 1 ? 'note' : 'notes'}` });
   if (counts.decks > 0) chips.push({ key: 'decks', label: `${counts.decks} ${counts.decks === 1 ? 'deck' : 'decks'}` });
@@ -110,6 +121,7 @@ function TreeRow({
   title,
   subtitle,
   counts,
+  countFocus,
   selected,
   archived,
   topicsOpen,
@@ -120,6 +132,7 @@ function TreeRow({
   title: string;
   subtitle?: string;
   counts: Counts;
+  countFocus?: 'notes' | 'flashcards';
   selected: boolean;
   archived?: boolean;
   /** Passed for courses (not the Unfiled row), which always expand. */
@@ -170,7 +183,7 @@ function TreeRow({
               {subtitle}
             </Text>
           ) : null}
-          <CountChips counts={counts} />
+          <CountChips counts={counts} focus={countFocus} />
         </View>
       </Pressable>
       <Pressable
@@ -190,10 +203,12 @@ function TreeRow({
 function TopicRow({
   row,
   selected,
+  countFocus,
   onPress,
 }: {
   row: LibraryTopicRow;
   selected: boolean;
+  countFocus?: 'notes' | 'flashcards';
   onPress: () => void;
 }) {
   const { colors } = useTheme();
@@ -220,7 +235,7 @@ function TopicRow({
         >
           {row.title}
         </Text>
-        <CountChips counts={row.counts} />
+        <CountChips counts={row.counts} focus={countFocus} />
       </View>
     </Pressable>
   );
@@ -272,6 +287,7 @@ export function LibraryCourseTree({
   onTurnSemesterIntoProducts,
   onRetry,
   onManageCourses,
+  countFocus,
 }: Props) {
   const { colors } = useTheme();
   // Persisted (and collapsed by default): local state re-opened the tree on
@@ -380,6 +396,7 @@ export function LibraryCourseTree({
           title={node.course.code}
           subtitle={node.course.title && node.course.title.toUpperCase() !== node.course.code ? node.course.title : undefined}
           counts={node.counts}
+          countFocus={countFocus}
           // Only one row reads as selected at a time: with a topic picked, the
           // topic row carries the selection, not the course above it.
           selected={courseSelected && !selectedTopicId}
@@ -400,6 +417,7 @@ export function LibraryCourseTree({
                   key={`${rowKey}:${row.id}`}
                   row={row}
                   selected={selected}
+                  countFocus={countFocus}
                   onPress={() =>
                     onSelectTopic(filter, selected ? null : { id: row.id, label: row.title, courseId: node.course.id })
                   }
@@ -490,21 +508,7 @@ export function LibraryCourseTree({
 
           {tree && activeCount > 0 ? (
             <>
-              <View className="flex-row items-center">
-                <View className="flex-1">
-                  <SectionHeader label="This semester" count={activeCount} open={thisOpen} onToggle={() => setThisOpen(o => !o)} />
-                </View>
-                {onTurnSemesterIntoProducts ? (
-                  <Pressable
-                    onPress={onTurnSemesterIntoProducts}
-                    accessibilityRole="button"
-                    hitSlop={6}
-                    className="px-2 py-1"
-                  >
-                    <Text className="text-[11px] font-semibold text-lantern-primary-text">Products</Text>
-                  </Pressable>
-                ) : null}
-              </View>
+              <SectionHeader label="This semester" count={activeCount} open={thisOpen} onToggle={() => setThisOpen(o => !o)} />
               {thisOpen ? tree.thisSemester.map(node => renderCourse(node, false)) : null}
             </>
           ) : null}
@@ -539,6 +543,7 @@ export function LibraryCourseTree({
                 title="Unfiled"
                 subtitle="Not linked to a course"
                 counts={tree.unfiled}
+                countFocus={countFocus}
                 selected={selectedCourseId === UNFILED_COURSE_ID}
                 onPress={() => toggle(UNFILED_FILTER)}
                 // No course behind these items, so no outline and no study pack.

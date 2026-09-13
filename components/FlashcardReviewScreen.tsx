@@ -4,6 +4,13 @@ import { useToastStore } from '../stores/toastStore';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { Flashcard, FlashcardComment, FlashcardSession, FlashcardType } from '../types';
 import { AppIcon } from './ui/AppIcon';
+import { Button, FeatureDisc } from './ui';
+import {
+  FLASHCARD_GRADE_CHIP,
+  FlashcardFace,
+  FlashcardFlip,
+  flashcardPromptClass,
+} from './flashcards/FlashcardFace';
 import { escapeHtml } from '../utils/helpers';
 import { useAuthStore } from '../stores/authStore';
 import { fetchFlashcardComments, addFlashcardComment } from '../services/supabase';
@@ -413,7 +420,9 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
           {card.imageUrl && !showAnswer && (
             <ResolvedStorageImg src={card.imageUrl} alt="Flashcard" className="max-w-full max-h-64 rounded-lg object-contain" />
           )}
-          <p className="text-lg md:text-xl text-lantern-text">{showAnswer ? card.back : card.front}</p>
+          <p className={flashcardPromptClass(showAnswer ? card.back : card.front)}>
+            {showAnswer ? card.back : card.front}
+          </p>
         </div>
       );
     }
@@ -423,11 +432,27 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       const clozeRegex = /\{\{c1::(.*?)\}\}/g;
       const content = escapeHtml(card.clozeText || '');
       if (showAnswer) {
-        const revealedText = content.replace(clozeRegex, '<strong class="text-lantern-primary">$1</strong>');
-        return <div className="text-lg md:text-xl text-lantern-text" dangerouslySetInnerHTML={{ __html: revealedText }} />;
+        const revealedText = content.replace(
+          clozeRegex,
+          '<strong class="text-lantern-feature-flashcards-ink">$1</strong>'
+        );
+        return (
+          <div
+            className={flashcardPromptClass(card.clozeText)}
+            dangerouslySetInnerHTML={{ __html: revealedText }}
+          />
+        );
       } else {
-        const hiddenText = content.replace(clozeRegex, '<span class="px-2 py-1 bg-lantern-border rounded text-lantern-text">[...]</span>');
-        return <div className="text-lg md:text-xl text-lantern-text" dangerouslySetInnerHTML={{ __html: hiddenText }} />;
+        const hiddenText = content.replace(
+          clozeRegex,
+          '<span class="px-2 py-1 bg-lantern-border rounded text-lantern-text">[...]</span>'
+        );
+        return (
+          <div
+            className={flashcardPromptClass(card.clozeText)}
+            dangerouslySetInnerHTML={{ __html: hiddenText }}
+          />
+        );
       }
     }
 
@@ -436,7 +461,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       const overlayTransition = 'transition-opacity duration-500 ease-out';
       return (
         <div className="flex flex-col items-center gap-3">
-          {card.front ? <p className="text-lg md:text-xl text-lantern-text">{card.front}</p> : null}
+          {card.front ? <p className={flashcardPromptClass(card.front)}>{card.front}</p> : null}
           {card.imageUrl ? (
             <div className="relative inline-block max-w-full">
               <ResolvedStorageImg
@@ -515,7 +540,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       );
     }
 
-    return <p className="text-lg md:text-xl text-lantern-text">{card.front}</p>;
+    return <p className={flashcardPromptClass(card.front)}>{card.front}</p>;
   };
 
   if (isSessionComplete) {
@@ -525,8 +550,8 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
 
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center bg-lantern-background">
-        <div className="w-full max-w-md bg-lantern-surface rounded-lantern-xl shadow-lg border border-lantern-border p-6">
-          <h2 className="text-2xl font-bold text-green-500 dark:text-green-400">Session Complete!</h2>
+        <div className="w-full max-w-md bg-lantern-surface rounded-lantern-xl border border-lantern-border p-6">
+          <h2 className="text-2xl font-bold text-lantern-text">Session complete</h2>
           <p className="text-lantern-text-secondary mt-1">
             {reviewedCount === 0
               ? 'No cards were rated this session.'
@@ -537,15 +562,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
             {REVIEW_GRADES.map((grade) => (
               <div
                 key={grade}
-                className={`rounded-lg py-2 ${
-                  grade === 'again'
-                    ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300'
-                    : grade === 'hard'
-                      ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300'
-                      : grade === 'good'
-                        ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300'
-                        : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300'
-                }`}
+                className={`rounded-lg py-2 ${FLASHCARD_GRADE_CHIP[grade]}`}
               >
                 <div className="text-xl font-bold tabular-nums">{gradeCounts[grade]}</div>
                 <div className="text-[11px] font-medium">{FLASHCARD_GRADE_LABELS[grade].label}</div>
@@ -581,7 +598,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
             )}
             <button
               onClick={onEndSession}
-              className="px-6 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md flex items-center font-semibold transition-colors"
+              className="px-6 py-2.5 bg-lantern-ink text-lantern-surface rounded-full flex items-center font-semibold hover:opacity-90 transition-colors"
             >
               <AppIcon name="arrow-undo" size={20} className="mr-2" /> Back to Decks
             </button>
@@ -605,7 +622,7 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
               clearAutoAdvanceTimer();
               setCurrentIndex((prev) => prev + 1);
             }}
-            className="px-5 py-2.5 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-md font-semibold transition-colors"
+            className="px-5 py-2.5 bg-lantern-ink text-lantern-surface rounded-full font-semibold hover:opacity-90 transition-colors"
           >
             Continue
           </button>
@@ -626,15 +643,18 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto overscroll-y-contain bg-lantern-background">
       <div className="min-h-full flex flex-col p-4 md:p-6">
-      <div className="flex-shrink-0 flex justify-between items-center mb-4">
-        <h1 className="text-title font-semibold text-rose-600 dark:text-rose-400">
-          {session.deck.name}
-          {queueDecks > 1 ? (
-            <span className="ml-2 text-caption font-medium text-lantern-text-secondary">
-              and {queueDecks - 1} more deck{queueDecks - 1 === 1 ? '' : 's'}
-            </span>
-          ) : null}
-        </h1>
+      <div className="flex-shrink-0 flex justify-between items-center mb-4 gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <FeatureDisc feature="flashcards" icon={<AppIcon name="layers" size={16} />} size={32} />
+          <h1 className="text-title font-semibold text-lantern-text truncate">
+            {session.deck.name}
+            {queueDecks > 1 ? (
+              <span className="ml-2 text-caption font-medium text-lantern-text-secondary">
+                and {queueDecks - 1} more deck{queueDecks - 1 === 1 ? '' : 's'}
+              </span>
+            ) : null}
+          </h1>
+        </div>
         <div className="flex items-center gap-2">
           <span className="text-caption text-lantern-text-secondary mr-2">
             {flashcardReviewCounterLabel(currentIndex + 1, session.cardQueue.length, queueDecks)}
@@ -669,96 +689,87 @@ const FlashcardReviewScreen: React.FC<FlashcardReviewScreenProps> = ({ session, 
       </div>
 
       <div className="flex-1 flex flex-col justify-safe-center items-center py-2">
-        {isAnswerShown ? (
-          <article
-            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col border border-lantern-border"
-            aria-label="Flashcard answer"
-          >
-            <div
-              key={`${currentCard.id}-back`}
-              className="text-center flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col justify-safe-center items-center animate-[fadeIn_0.25s_ease-out] pr-1"
-            >
-              {renderCardContent(currentCard, true)}
-            </div>
-            <div
-              ref={gradingRegionRef}
-              tabIndex={-1}
-              className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border outline-none"
-            >
-              {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
-                <div className="mb-3 flex items-center justify-between bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2">
-                  <span className="text-sm text-amber-700 dark:text-amber-400">You've struggled with this card. Want some help?</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const companion = useCompanionStore.getState();
-                      companion.open();
-                      companion.sendMessage(`I keep getting this flashcard wrong. Can you help me understand it and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`);
-                    }}
-                    className="ml-3 flex items-center gap-1 px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold rounded-md transition-colors"
-                  >
-                    <AppIcon name="sparkles" size={14} />
-                    Ask Lantern
-                  </button>
-                </div>
-              )}
-              <p className="mb-3 text-xs text-center text-lantern-text-tertiary">1–4 to rate</p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-tip-id="flashcards.grading">
-                {(['again', 'hard', 'good', 'easy'] as const).map((grade) => (
-                  <button
-                    key={grade}
-                    type="button"
-                    onClick={() => handleRatePerformance(grade)}
-                    disabled={ratingLocked || advanceGuardRef.current.hasRated(currentCard.id)}
-                    className={`py-3 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                      grade === 'again'
-                        ? 'bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-900/60'
-                        : grade === 'hard'
-                          ? 'bg-orange-100 dark:bg-orange-900/40 text-orange-700 dark:text-orange-300 hover:bg-orange-200 dark:hover:bg-orange-900/60'
-                          : grade === 'good'
-                            ? 'bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-900/60'
-                            : 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-900/60'
-                    }`}
-                  >
-                    <span className="block">{FLASHCARD_GRADE_LABELS[grade].label}</span>
-                    <span className="block text-xs font-normal opacity-80">{FLASHCARD_GRADE_LABELS[grade].meaning}</span>
-                    {intervalPreview && (
-                      <span className="mt-0.5 block text-[11px] font-normal tabular-nums opacity-60">
-                        {formatStudyInterval(intervalPreview[grade])}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </article>
-        ) : (
-          <div
-            className="w-full max-w-2xl min-h-[300px] bg-lantern-surface rounded-lantern-xl shadow-lg p-6 flex flex-col border border-lantern-border cursor-pointer"
-            onClick={handleShowAnswer}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleShowAnswer(); } }}
-            aria-label="Flashcard prompt, press to reveal answer"
-          >
-            <div
-              key={`${currentCard.id}-front`}
-              className="text-center flex-1 min-h-0 overflow-y-auto overscroll-y-contain flex flex-col justify-safe-center items-center animate-[fadeIn_0.25s_ease-out] pr-1"
+        <FlashcardFlip
+          flipped={isAnswerShown}
+          front={
+            <FlashcardFace
+              side="question"
+              interactive
+              onActivate={handleShowAnswer}
+              ariaLabel="Flashcard prompt, press to reveal answer"
+              footer={
+                <Button
+                  fullWidth
+                  size="lg"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    handleShowAnswer();
+                  }}
+                >
+                  Show answer
+                </Button>
+              }
             >
               {renderCardContent(currentCard, false)}
-              <p className="mt-4 text-xs text-lantern-text-tertiary">Space or click to reveal</p>
-            </div>
-            <div className="flex-shrink-0 mt-6 pt-4 border-t border-lantern-border">
-              <button
-                type="button"
-                onClick={(e) => { e.stopPropagation(); handleShowAnswer(); }}
-                className="w-full py-3 bg-lantern-primary hover:bg-lantern-primary-dark text-white rounded-lg text-lg font-semibold transition-colors"
-              >
-                Show Answer
-              </button>
-            </div>
-          </div>
-        )}
+              <p className="mt-4 text-caption text-lantern-text-tertiary">Space or click to reveal</p>
+            </FlashcardFace>
+          }
+          back={
+            <FlashcardFace
+              side="answer"
+              ariaLabel="Flashcard answer"
+              footer={
+                <div ref={gradingRegionRef} tabIndex={-1} className="outline-none">
+                  {(currentCard.srsData?.isLeech || (currentCard.srsData?.failedAttempts ?? 0) >= 3) && (
+                    <div className="mb-3 flex items-center justify-between rounded-lg border border-lantern-warning/30 bg-lantern-warning/10 px-3 py-2">
+                      <span className="text-sm text-lantern-warning">
+                        You&apos;ve struggled with this card. Want some help?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const companion = useCompanionStore.getState();
+                          companion.open();
+                          companion.sendMessage(
+                            `I keep getting this flashcard wrong. Can you help me understand it and give me a mnemonic? Front: "${currentCard.front || currentCard.clozeText || ''}". Back: "${currentCard.back || ''}"`
+                          );
+                        }}
+                        className="ml-3 inline-flex items-center gap-1 rounded-full bg-lantern-warning px-3 py-1 text-xs font-semibold text-white"
+                      >
+                        <AppIcon name="sparkles" size={14} />
+                        Ask Lantern
+                      </button>
+                    </div>
+                  )}
+                  <p className="mb-3 text-caption text-center text-lantern-text-tertiary">1–4 to rate</p>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3" data-tip-id="flashcards.grading">
+                    {REVIEW_GRADES.map((grade) => (
+                      <button
+                        key={grade}
+                        type="button"
+                        onClick={() => handleRatePerformance(grade)}
+                        disabled={ratingLocked || advanceGuardRef.current.hasRated(currentCard.id)}
+                        className={`rounded-xl py-3 font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${FLASHCARD_GRADE_CHIP[grade]}`}
+                      >
+                        <span className="block">{FLASHCARD_GRADE_LABELS[grade].label}</span>
+                        <span className="block text-xs font-normal opacity-80">
+                          {FLASHCARD_GRADE_LABELS[grade].meaning}
+                        </span>
+                        {intervalPreview && (
+                          <span className="mt-0.5 block text-[11px] font-normal tabular-nums opacity-60">
+                            {formatStudyInterval(intervalPreview[grade])}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              }
+            >
+              {renderCardContent(currentCard, true)}
+            </FlashcardFace>
+          }
+        />
       </div>
       <div className="flex-shrink-0 mt-6 bg-lantern-surface rounded-xl shadow-inner border border-lantern-border">
         <button

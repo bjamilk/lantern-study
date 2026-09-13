@@ -61,9 +61,9 @@ import {
 import ReportContentModal from './moderation/ReportContentModal';
 import AppealListingModal from './moderation/AppealListingModal';
 import { usePageSeo } from '../hooks/usePageSeo';
-import MarketplaceComplianceBanner from './marketplace/MarketplaceComplianceBanner';
 import SaleCountdown from './marketplace/SaleCountdown';
 import { MarketplaceListingRail } from './marketplace/MarketplaceListingRail';
+import { SampleFlashcardPreview } from './marketplace/SampleFlashcardPreview';
 import { useAuthStore } from '../stores/authStore';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import { MarketplaceListing, MarketplaceReview, MarketplacePickupNudge } from '../types';
@@ -655,9 +655,6 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
 
   return (
     <div className="flex-1 bg-lantern-background overflow-y-auto">
-      <div className="px-3 sm:px-4 md:px-6 pt-3">
-        <MarketplaceComplianceBanner />
-      </div>
       {/* Header */}
       <div className="bg-lantern-surface border-b border-lantern-border px-3 sm:px-4 md:px-6 py-2.5 sm:py-3">
         <div className="flex items-center justify-between">
@@ -1432,16 +1429,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                 <h3 className="text-xs font-semibold text-lantern-text-secondary uppercase tracking-wide mb-2">
                   Sample flashcards
                 </h3>
-                <ul className="space-y-1.5">
-                  {studyPackPreview.flashcardFronts.map((front, index) => (
-                    <li
-                      key={index}
-                      className="text-sm text-lantern-text-secondary rounded-lg bg-lantern-background-secondary/50 border border-lantern-border px-3 py-2"
-                    >
-                      {front}
-                    </li>
-                  ))}
-                </ul>
+                <SampleFlashcardPreview fronts={studyPackPreview.flashcardFronts} />
               </div>
             )}
 

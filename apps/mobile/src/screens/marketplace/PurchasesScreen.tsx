@@ -8,6 +8,7 @@ import {
   downloadQuestionBank,
 } from '../../services/api';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -78,7 +79,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
           <AppIcon
             name={isStudyPack ? 'albums' : 'star'}
             size={18}
-            color="#6366f1"
+            color={brand.text}
           />
         </View>
         <View className="flex-1 min-w-0">
@@ -145,7 +146,7 @@ export function PurchasesScreen({ navigation }: { navigation: NavigationProp }) 
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : purchases.length === 0 ? (
         <View className="flex-1 items-center justify-center px-8">

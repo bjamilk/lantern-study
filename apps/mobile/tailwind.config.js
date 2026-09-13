@@ -22,6 +22,12 @@ module.exports = {
           'nav-column': 'rgb(var(--color-lantern-nav-column) / <alpha-value>)',
           'nav-column-text': 'rgb(var(--color-lantern-nav-column-text) / <alpha-value>)',
           'nav-column-text-secondary': 'rgb(var(--color-lantern-nav-column-text-secondary) / <alpha-value>)',
+          // The theme's STRONG ink: the solid pill, the filled control, the
+          // lit tab. Near-black in light, near-white in dark, so a pill is
+          // never ink-on-ink. The var was already published by
+          // theme/lanternCssVars.ts but had no Tailwind colour, so
+          // `bg-lantern-ink` silently compiled to nothing.
+          ink: 'rgb(var(--color-lantern-ink) / <alpha-value>)',
           surface: 'rgb(var(--color-lantern-surface) / <alpha-value>)',
           'surface-secondary': 'rgb(var(--color-lantern-surface-secondary) / <alpha-value>)',
           text: 'rgb(var(--color-lantern-text) / <alpha-value>)',

@@ -39,7 +39,6 @@ import {
 } from './campusSegments';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { FeatureDisc, Illustration, useFeatureAccent } from '../../components/ui';
-import { smallTextInk } from '../../components/ui/FeatureDisc';
 import {
   COMMUNITY_CHIPS,
   buildCommunityHub,
@@ -375,15 +374,24 @@ function CommunitiesPanel({
             accessibilityRole="button"
             accessibilityState={{ selected }}
             accessibilityLabel={`${communityChipLabel(value)} communities`}
+            // A FILTER PILL IS A CONTROL (2026-09-12). It used to be the
+            // campus violet on the campus pastel — #6d28d9 on #ede9fe — which
+            // build 198's device pass read as the one coloured object on an
+            // otherwise ink-and-cream screen, saying "campus" on a screen that
+            // is already nothing but campus. Selected is now the theme ink
+            // under its inverse, the same pill every other selected control in
+            // the app draws; resting is the page hairline. The campus pastel
+            // stays where it answers a real question — the hero panel below
+            // and the room discs.
             style={{
               minHeight: 32,
-              backgroundColor: selected ? campusAccent.tint : 'transparent',
-              borderColor: selected ? campusAccent.ink : colors.border,
+              backgroundColor: selected ? colors.primaryFill : 'transparent',
+              borderColor: selected ? colors.primaryFill : colors.border,
             }}
             className="rounded-full border px-3 py-1.5"
           >
             <Text
-              style={{ color: selected ? smallTextInk('campus', campusAccent, isDark) : colors.textSecondary }}
+              style={{ color: selected ? colors.textInverse : colors.textSecondary }}
               className="text-caption font-semibold"
             >
               {communityChipLabel(value)}

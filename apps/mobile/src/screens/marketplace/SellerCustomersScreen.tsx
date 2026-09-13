@@ -9,6 +9,7 @@ import { pluralize } from '@lantern/shared/utils/plural';
 import { formatPrice } from './marketplaceHelpers';
 import { SellerCampaignModal } from './modals/SellerCampaignModal';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 const SEGMENT_LABELS: Record<SellerCustomerSegment, string> = {
   repeat_buyer: 'Repeat buyers',
@@ -114,7 +115,7 @@ export function SellerCustomersScreen({ navigation }: { navigation: NavigationPr
       </View>
 
       {loading ? (
-        <ActivityIndicator className="mt-8" color="#6366f1" />
+        <ActivityIndicator className="mt-8" color={brand.text} />
       ) : (
         <FlatList
           data={buyers}

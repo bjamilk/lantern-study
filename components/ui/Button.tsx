@@ -29,7 +29,7 @@ const variantClasses: Record<ButtonVariant, string> = {
   secondary:
     'bg-lantern-surface border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary',
   accent:
-    'bg-lantern-accent hover:brightness-95 text-white shadow-lantern hover:shadow-lantern-md',
+    'bg-lantern-feature-flashcards-tint text-lantern-feature-flashcards-ink hover:brightness-95',
   ghost:
     'bg-transparent text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text',
   // Destructive stays RED and stays saturated: it is the one action whose

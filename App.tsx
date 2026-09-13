@@ -161,6 +161,7 @@ import { useAppNavigation } from './hooks/useAppNavigation';
 import { useRouteSync } from './hooks/useRouteSync';
 import {
     ME_PATH,
+    ME_PROGRESS_PATH,
     SHOP_COURSES_PATH,
     SHOP_PATH,
     TEST_BUILDER_PATH,
@@ -1166,7 +1167,8 @@ export const App: React.FC = () => {
      * immediately re-launch the test.
      */
     const normalizedPath = location.pathname.replace(/\/$/, '');
-    const onMePath = normalizedPath === ME_PATH;
+    const onMePath = normalizedPath === ME_PATH || normalizedPath === ME_PROGRESS_PATH;
+    const meSection = normalizedPath === ME_PROGRESS_PATH ? 'progress' : 'profile';
     const standaloneRoute = parseAppRoute(location.pathname);
     const onTeachPath = standaloneRoute.standalone === 'teach';
     const joinCode = standaloneRoute.standalone === 'join' ? standaloneRoute.params.joinCode ?? '' : null;
@@ -1795,6 +1797,12 @@ export const App: React.FC = () => {
             onMoveNoteToCourse={(noteId, courseId, topicId) =>
                 noteHandlers.handleMoveNoteToCourse(noteId, courseId, topicId ?? null).catch((e: any) => {
                     showToast(e?.message || 'Failed to move note', 'error');
+                    throw e;
+                })
+            }
+            onMoveNotesToCourse={(noteIds, courseId, topicId) =>
+                noteHandlers.handleMoveNotesToCourse(noteIds, courseId, topicId ?? null).catch((e: any) => {
+                    showToast(e?.message || 'Failed to move notes', 'error');
                     throw e;
                 })
             }
@@ -3469,12 +3477,19 @@ export const App: React.FC = () => {
         if (onMePath) {
             return (
                 <MeScreen
+                    section={meSection}
+                    onSelectSection={(next) => {
+                        navigateToPath(next === 'progress' ? ME_PROGRESS_PATH : ME_PATH);
+                    }}
                     currentUser={currentUser}
                     theme={theme}
                     onToggleTheme={toggleTheme}
                     onNavigate={(mode) => navigateTo(mode)}
                     onOpenTeach={() => navigateToPath('/teach')}
-                    onOpenSettings={() => openModal('settings')}
+                    onOpenSettings={(tab) => {
+                        openModal('settings');
+                        useUIStore.getState().setSettingsTab(tab ?? 'profile');
+                    }}
                     onLogout={handleLogoutAndRedirect}
                     pendingSyncCount={pendingSyncResults.length + pendingFlashcardReviews.length}
                     progress={
@@ -3604,7 +3619,6 @@ export const App: React.FC = () => {
         onNavigateToMe: () => navigateToPath(ME_PATH),
         currentPath: location.pathname,
         pendingSyncCount: pendingSyncResults.length + pendingFlashcardReviews.length, isOnline,
-        onUpdateCurrentUserAvatar: handleUpdateCurrentUserAvatar,
         currentAppMode: appMode,
         isExpanded: isSidebarExpanded, onToggleExpand: toggleSidebar,
         onOpenNewDmModal: () => openModal('newDm'),

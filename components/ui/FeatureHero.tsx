@@ -13,7 +13,9 @@ interface FeatureHeroProps {
 export const FeatureHero: React.FC<FeatureHeroProps> = ({
   title,
   subtitle,
-  accentColor = '#4f46e5',
+  // The light theme's ink (`--color-ink`), not indigo: an unaccented hero
+  // draws in the same colour a primary control does (2026-09-12 pivot).
+  accentColor = '#191919',
   icon,
   actions,
   children,

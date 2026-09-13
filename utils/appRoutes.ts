@@ -63,8 +63,10 @@ export function campusSegmentMode(segment: CampusSegment): AppMode {
   return AppMode.DISCOVER;
 }
 
-/** The Me destination has no AppMode: it is a route App.tsx renders directly. */
+/** The Profile destination has no AppMode: it is a route App.tsx renders directly. */
 export const ME_PATH = '/me';
+/** Progress peer section — still the Profile destination, not a sixth tab. */
+export const ME_PROGRESS_PATH = '/me/progress';
 
 /**
  * Shop sub-destinations that own a URL.
@@ -479,7 +481,12 @@ export function parseAppRoute(pathname: string): ParsedAppRoute {
   if (path === '/study/session') return { mode: AppMode.STUDY_ACTIVE, params: {} };
   if (path === '/game') return { mode: AppMode.GAME_ACTIVE, params: {} };
   if (path === '/game/results') return { mode: AppMode.GAME_RESULTS, params: {} };
-  if (path === ME_PATH) return { mode: null, params: {}, standalone: 'me' };
+  if (path === ME_PATH || path === ME_PROGRESS_PATH) {
+    return { mode: null, params: {}, standalone: 'me' };
+  }
+  if (path.startsWith(`${ME_PATH}/`)) {
+    return { mode: null, params: {}, redirect: ME_PATH };
+  }
   // Lecturer portal and class join are real destinations with no AppMode —
   // App.tsx renders them outside the student shell. useRouteSync must not
   // bounce them to the dashboard.

@@ -25,7 +25,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Constants from 'expo-constants';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { useTheme } from '../../theme';
+import { BRAND_TINT, brand, useTheme } from '../../theme';
 import { SCREEN_KEYBOARD_BEHAVIOR, Screen, useScreenBottomPadding } from '../../components/layout';
 import { exportUserData, fetchMarketplaceCampuses } from '../../services/api';
 import type { AccountLifecycleInfo } from '@lantern/shared';
@@ -43,6 +43,7 @@ import { ContactSupportModal } from '../../components/ContactSupportModal';
 import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { checkAndApplyOtaUpdate, getOtaDiagnostics } from '../../services/otaUpdates';
 import { useFeatureTipStore } from '../../stores/featureTipStore';
+import { typeScale } from '../../design/typeScale';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { useProfileIdentity } from '../../hooks/useProfileIdentity';
 import { ChatWallpaperSheet } from '../../components/chat/ChatWallpaperSheet';
@@ -60,9 +61,7 @@ import {
 import { pushToggleState, notificationCategoriesState } from '../../utils/pushDiagnostics';
 import { reRegisterPushToken } from '../../services/pushNotifications';
 
-// First entry must match DEFAULT_USER_SETTINGS.appearance.accentColor so a fresh
-// account shows a selected swatch (and matches the web default primary).
-const ACCENT_PRESETS = ['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'] as const;
+import { ACCENT_PRESETS, isPresetSelected } from './accentPresets';
 const THEME_OPTIONS = [
   { value: 'system' as const, label: 'System', icon: 'phone-portrait' as const },
   { value: 'light' as const, label: 'Light', icon: 'sunny' as const },
@@ -254,7 +253,7 @@ export default function SettingsScreen() {
   // Sync indicator
   const SyncIndicator = () => {
     if (isSyncing) {
-      return <ActivityIndicator size="small" color="#6366f1" style={{ marginRight: 8 }} />;
+      return <ActivityIndicator size="small" color={brand.text} style={{ marginRight: 8 }} />;
     }
     if (hasUnsyncedChanges) {
       return <View style={styles.unsyncedDot} />;
@@ -530,7 +529,7 @@ export default function SettingsScreen() {
             style={styles.editProfileButton}
             onPress={() => navigation.navigate('EditProfile' as never)}
           >
-            <AppIcon name="pencil" size={18} color="#6366f1" />
+            <AppIcon name="pencil" size={18} color={brand.text} />
           </TouchableOpacity>
         </View>
 
@@ -639,7 +638,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="mail-unread"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Group Invites"
               subtitle="When someone invites you to a group"
               rightElement={
@@ -739,7 +738,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="mail"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Email Notifications"
               subtitle="Job alerts and important account updates"
               rightElement={
@@ -782,7 +781,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="school"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Default Session Mode"
               subtitle={settings.study.defaultTestMode === 'exam' ? 'Timed test mode' : 'Study mode'}
               rightElement={
@@ -965,22 +964,29 @@ export default function SettingsScreen() {
                 </View>
               </View>
               <View style={styles.accentRow}>
-                {ACCENT_PRESETS.map((hex) => {
-                  const selected = settings.appearance.accentColor?.toLowerCase() === hex.toLowerCase();
+                {ACCENT_PRESETS.map((preset) => {
+                  const selected = isPresetSelected(settings.appearance.accentColor, preset);
                   return (
-                    <TouchableOpacity
-                      key={hex}
-                      onPress={() => void updateSingleSetting('appearance', 'accentColor', hex)}
-                      style={[
-                        styles.accentSwatch,
-                        {
-                          backgroundColor: hex,
-                          borderColor: selected ? colors.text : 'transparent',
-                        },
-                      ]}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Accent ${hex}`}
-                    />
+                    <View key={preset.hex} style={styles.accentSwatchColumn}>
+                      <TouchableOpacity
+                        onPress={() => void updateSingleSetting('appearance', 'accentColor', preset.hex)}
+                        style={[
+                          styles.accentSwatch,
+                          {
+                            backgroundColor: preset.hex,
+                            borderColor: selected ? colors.text : 'transparent',
+                          },
+                        ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected }}
+                        accessibilityLabel={`Accent ${preset.label ?? preset.hex}`}
+                      />
+                      {preset.label ? (
+                        <Text style={[styles.accentSwatchLabel, { color: colors.textSecondary }]}>
+                          {preset.label}
+                        </Text>
+                      ) : null}
+                    </View>
                   );
                 })}
               </View>
@@ -988,7 +994,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="text"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Font Size"
               subtitle={
                 settings.appearance.fontSize === 'small'
@@ -1014,7 +1020,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="school"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="University, programme & courses"
               subtitle={
                 academicProfile?.institution?.name
@@ -1040,7 +1046,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="school"
-              iconColor="#4f46e5"
+              iconColor={brand.text}
               title="Teach classes"
               subtitle="Open the lecturer portal on the web"
               onPress={() => void Linking.openURL('https://lanternstudy.com/teach')}
@@ -1076,7 +1082,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="school"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Your campus"
               subtitle={campusesLoading ? 'Loading campuses…' : selectedCampusLabel}
               onPress={() => setShowCampusModal(true)}
@@ -1091,7 +1097,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="eye"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Profile Visibility"
               subtitle={
                 settings.privacy.profileVisibility === 'public'
@@ -1127,7 +1133,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="search"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Discoverable for Invites"
               subtitle="Let others find you by name or @username in people search and invites"
               rightElement={
@@ -1230,7 +1236,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="cloud-download"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Offline Mode"
               subtitle="Download tests for offline access"
               onPress={() => navigation.navigate('Offline')}
@@ -1300,7 +1306,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="help-circle"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Help & FAQ"
               onPress={() => setShowHelpModal(true)}
             />
@@ -1340,7 +1346,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="download"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Export my data"
               subtitle="Download a JSON copy (once per 24h)"
               onPress={() => void handleExportData()}
@@ -1385,7 +1391,7 @@ export default function SettingsScreen() {
             <SettingItem
               colors={colors}
               icon="cloud-upload"
-              iconColor="#6366f1"
+              iconColor={brand.text}
               title="Import backup"
               subtitle="Restore notes and flashcards from export"
               onPress={() => setShowImportAccountModal(true)}
@@ -1995,7 +2001,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#6366f120',
+    backgroundColor: BRAND_TINT,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2200,6 +2206,14 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     borderWidth: 2,
+  },
+  accentSwatchColumn: {
+    alignItems: 'center',
+    width: 44,
+  },
+  accentSwatchLabel: {
+    ...typeScale.label,
+    marginTop: 4,
   },
   complianceBanner: {
     marginHorizontal: 16,

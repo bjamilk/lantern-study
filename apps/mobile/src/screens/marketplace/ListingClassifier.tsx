@@ -15,6 +15,7 @@ import {
   type TaxonomyNode,
 } from '@lantern/shared/marketplace';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 interface Props {
   department?: MarketplaceDepartment;
@@ -219,7 +220,7 @@ export function ListingClassifier({ department, title, selectedNodeId, onSelect 
                     <AppIcon
                       name={leaf ? (chosen ? 'checkmark-circle' : 'ellipse') : 'chevron-forward'}
                       size={leaf ? 18 : 16}
-                      color={chosen ? '#6366f1' : '#94a3b8'}
+                      color={chosen ? brand.text : '#94a3b8'}
                     />
                   </Pressable>
                 );

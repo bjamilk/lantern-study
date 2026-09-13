@@ -215,7 +215,6 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/marketplace/ListingCard.tsx': 6,
   'components/marketplace/ListingClassifier.tsx': 24,
   'components/marketplace/MarketplaceBrowseTree.tsx': 2,
-  'components/marketplace/MarketplaceComplianceBanner.tsx': 1,
   'components/marketplace/MarketplaceFilterPanel.tsx': 3,
   'components/marketplace/MarketplaceListingRail.tsx': 4,
   'components/marketplace/MarketplacePrivatePilot.tsx': 9,

@@ -19,7 +19,7 @@ export const LanternBrandIcon: React.FC<LanternBrandIconProps> = ({
     className={className}
     aria-hidden
   >
-    <rect width="32" height="32" fill="#6569EE" />
+    <rect width="32" height="32" fill="#191919" />
     <path
       fill="#FFFFFF"
       fillRule="evenodd"

@@ -45,6 +45,7 @@ import {
 import type { AIGeneratedFlashcard } from '../../services/ai';
 import { getCardDisplayText, getCardStatus, getDeckCardStats } from '../../utils/flashcardHelpers';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -609,7 +610,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         right={
           <View className="flex-row items-center gap-1">
             <Button variant="ghost" size="sm" onPress={openManageDeck} accessibilityLabel="Manage deck">
-              <AppIcon name="ellipsis-horizontal" size={20} color="#6366f1" />
+              <AppIcon name="ellipsis-horizontal" size={20} color={brand.text} />
             </Button>
             <Button variant="ghost" size="sm" onPress={() => navigation.goBack()}>
               Back
@@ -727,7 +728,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
 
       {isLoading && cards.length === 0 ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
         </View>
       ) : (
         <FlatList

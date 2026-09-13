@@ -18,7 +18,7 @@ import {
 import { PieChart } from 'react-native-gifted-charts';
 import type { RecentTest, TestAnalysisQuestionTime } from '../types/dashboardStats';
 import { STATUS_BAR_COLORS } from '../utils/testAnalysisHelpers';
-import { useTheme } from '../theme';
+import { BRAND_INK, useTheme } from '../theme';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AppIcon } from './ui/AppIcon';
 import { formatSessionDuration } from '../utils/testAttemptMapping';
@@ -523,7 +523,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 20,

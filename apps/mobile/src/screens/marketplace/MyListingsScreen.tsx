@@ -42,6 +42,7 @@ import { LISTING_APPEAL_STATUS_LABELS } from '@lantern/shared/moderation';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ListingTakedownNotice } from '../../components/moderation/ListingTakedownNotice';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type StatusTab = 'active' | 'sold' | 'inactive';
 
@@ -335,7 +336,7 @@ export function MyListingsScreen({
                 accessibilityRole="button"
                 accessibilityLabel="View my shop"
               >
-                <AppIcon name="storefront" size={18} color="#6366f1" />
+                <AppIcon name="storefront" size={18} color={brand.text} />
               </Pressable>
               <Pressable
                 onPress={() =>
@@ -367,7 +368,7 @@ export function MyListingsScreen({
 
       {isLoading && !filtered.length && !myListings.length ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
         </View>
       ) : (
         <FlatList
@@ -375,7 +376,7 @@ export function MyListingsScreen({
           keyExtractor={item => item.id}
           ListHeaderComponent={listHeader}
           contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brand.text} />}
           ListEmptyComponent={
             <View className="items-center py-16">
               <AppIcon name="storefront" size={48} color="#cbd5e1" />

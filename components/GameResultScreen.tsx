@@ -148,7 +148,7 @@ const GameResultScreen: React.FC<GameResultScreenProps> = ({ session, currentUse
                 <div className="relative mb-2">
                   <div className="w-14 h-14 rounded-full border-4 border-lantern-primary overflow-hidden bg-lantern-background-secondary flex items-center justify-center">
                     <img 
-                      src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=6366f1&color=fff&size=56`} 
+                      src={currentUser.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser.name)}&background=191919&color=fff&size=56`} 
                       alt={currentUser.name} 
                       className="w-full h-full object-cover"
                       onError={(e) => { e.currentTarget.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='%239ca3af' viewBox='0 0 24 24'%3E%3Cpath d='M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z'/%3E%3C/svg%3E"; }}

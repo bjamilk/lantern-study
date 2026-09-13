@@ -8,6 +8,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type {
   CompanionConversation,
+  CompanionImageAttachment,
   CompanionMessage,
   CompanionUserContext,
 } from '@lantern/shared';
@@ -21,7 +22,9 @@ import {
   fetchCompanionHistory,
   clearCompanionHistory,
   fetchCompanionConversations,
+  uploadCompanionImage,
 } from '../services/ai';
+import { describeImageAttachFailure } from '../components/companion/imageAttach';
 
 export type CompanionNoteContext = {
   id: string;
@@ -184,6 +187,25 @@ interface CompanionState {
   failedMessage: string | null;
   consumeFailedMessage: () => string | null;
 
+  /**
+   * Photos already read and waiting on the next question. Uploaded (and paid
+   * for) at pick time — the read is what costs credits, so the chip can state
+   * the word count before anything is typed.
+   */
+  pendingImages: CompanionImageAttachment[];
+  isUploadingImage: boolean;
+  imageError: string | null;
+  /** The small print behind the composer's "Details" toggle (file, migration). */
+  imageErrorDetail: string | null;
+  attachImage: (input: {
+    base64Data: string;
+    fileName?: string;
+    contentType?: string;
+  }) => Promise<CompanionImageAttachment | null>;
+  removeImage: (attachmentId: string) => void;
+  clearPendingImages: () => void;
+  clearImageError: () => void;
+
   loadHistory: () => Promise<void>;
   setMessageFeedback: (messageId: string, rating: 'up' | 'down' | null) => void;
   sendMessage: (text: string, context?: CompanionUserContext) => Promise<void>;
@@ -199,6 +221,7 @@ function mergeThreadContext(
   const noteCtx = get().activeNoteContext;
   const conversationId = get().activeConversationId;
   const pendingNew = get().pendingNewConversation;
+  const images = get().pendingImages;
   return {
     ...context,
     ...(noteCtx
@@ -206,6 +229,8 @@ function mergeThreadContext(
       : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
     ...(conversationId ? { conversationId } : { conversationId: undefined }),
     ...(pendingNew && !conversationId ? { newConversation: true } : {}),
+    // The server trusts only the ids in here; the text rides along for the chip.
+    ...(images.length ? { imageAttachments: images } : { imageAttachments: undefined }),
   };
 }
 
@@ -226,6 +251,49 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   pendingNewConversation: false,
   conversations: [],
   isLoadingConversations: false,
+  pendingImages: [],
+  isUploadingImage: false,
+  imageError: null,
+  imageErrorDetail: null,
+
+  /**
+   * Upload one photo and keep the reason when it fails.
+   *
+   * The failure path used to store `err.message` as-is, which meant the API's
+   * generic label reached the composer as the single word "Error". Every
+   * failure now goes through `describeImageAttachFailure`, and the panel that
+   * called this is never closed by it — a failed read leaves the sheet up with
+   * the sentence under the chip row.
+   */
+  attachImage: async (input) => {
+    set({ isUploadingImage: true, imageError: null, imageErrorDetail: null });
+    try {
+      const attachment = await uploadCompanionImage(input);
+      set((s) => ({
+        pendingImages: [...s.pendingImages, attachment],
+        isUploadingImage: false,
+        imageError: null,
+        imageErrorDetail: null,
+      }));
+      return attachment;
+    } catch (err: any) {
+      const failure = describeImageAttachFailure(err, input.fileName);
+      set({
+        isUploadingImage: false,
+        imageError: failure.message,
+        imageErrorDetail: failure.detail,
+      });
+      return null;
+    }
+  },
+  removeImage: (attachmentId: string) =>
+    set((s) => ({
+      pendingImages: s.pendingImages.filter((img) => img.attachmentId !== attachmentId),
+      imageError: null,
+      imageErrorDetail: null,
+    })),
+  clearPendingImages: () => set({ pendingImages: [], imageError: null, imageErrorDetail: null }),
+  clearImageError: () => set({ imageError: null, imageErrorDetail: null }),
 
   open: () => set({ isOpen: true, requestedScope: null }),
   /**
@@ -606,6 +674,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         isLoading: false,
         activeConversationId: conversationId || s.activeConversationId,
         pendingNewConversation: false,
+        // The attachment belonged to that question — keeping it would staple
+        // the photo to every later question in the thread.
+        pendingImages: [],
       }));
       void get().loadConversations();
     } catch (err: unknown) {
@@ -678,6 +749,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           isStreaming: false,
           activeConversationId: conversationId || s.activeConversationId,
           pendingNewConversation: false,
+          // One question, one attachment — see sendMessage.
+          pendingImages: [],
         }));
         void get().loadConversations();
       },

@@ -10,6 +10,7 @@ import { formatDisplayDate } from '@lantern/shared/utils/displayDate';
 import { fetchFeed, fetchLearningConnections } from '../../services/api';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -149,7 +150,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : (
         <FlatList
@@ -166,7 +167,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
                 setRefreshing(true);
                 void load().finally(() => setRefreshing(false));
               }}
-              tintColor="#6366f1"
+              tintColor={brand.text}
             />
           }
           ListEmptyComponent={
@@ -175,7 +176,7 @@ export function FeedScreen({ navigation }: { navigation: NavigationProp }) {
             </Text>
           }
           ListFooterComponent={
-            loadingMore ? <ActivityIndicator className="my-4" color="#6366f1" /> : null
+            loadingMore ? <ActivityIndicator className="my-4" color={brand.text} /> : null
           }
         />
       )}

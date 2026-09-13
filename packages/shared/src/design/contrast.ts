@@ -206,21 +206,37 @@ export function allContrastChecks(): ContrastCheck[] {
  * ink was only ever checked against the surface and so failed on the
  * `primaryBackground` TINT (4.07 dark, 4.35 light).
  *
- * So: the fill is gated by WHITE on it, and the text ink by all four grounds
- * it is actually painted on — surface, card, page, and the tint composited
- * over the surface and over the page.
+ * So: the fill is gated by the LABEL on it, and the text ink by all four
+ * grounds it is actually painted on — surface, card, page, and the tint
+ * composited over the surface and over the page.
+ *
+ * 2026-09-12 colour pivot: `primaryFill` is now the theme's ink, so it
+ * inverts, and the label on it is `textInverse` — white in light, #0f172a in
+ * dark. Gating it against a hardcoded white would have passed light at 16.9:1
+ * and failed dark at 1.04:1.
  */
 export function primarySplitChecks(
   palette: Pick<
     ThemePalette,
-    'primaryFill' | 'primaryText' | 'primaryBackground' | 'surface' | 'card' | 'background'
+    | 'primaryFill'
+    | 'primaryText'
+    | 'primaryBackground'
+    | 'surface'
+    | 'card'
+    | 'background'
+    | 'textInverse'
   >,
   label: string
 ): ContrastCheck[] {
   const tintOverSurface = compositeOver(palette.primaryBackground, palette.surface);
   const tintOverPage = compositeOver(palette.primaryBackground, palette.background);
   return [
-    check(`${label} white on primaryFill`, `fill ${palette.primaryFill}`, '#ffffff', palette.primaryFill),
+    check(
+      `${label} textInverse on primaryFill`,
+      `fill ${palette.primaryFill}`,
+      palette.textInverse,
+      palette.primaryFill
+    ),
     check(`${label} primaryText`, `surface ${palette.surface}`, palette.primaryText, palette.surface),
     check(`${label} primaryText`, `card ${palette.card}`, palette.primaryText, palette.card),
     check(`${label} primaryText`, `page ${palette.background}`, palette.primaryText, palette.background),

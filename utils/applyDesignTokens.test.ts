@@ -81,13 +81,18 @@ describe('applyDesignTokensToDom', () => {
     expect(root().style.getPropertyValue('--color-primary')).toBe(darkText);
   });
 
-  it('clears all three vars for the default accent so the stylesheet palette wins', () => {
-    applyDesignTokensToDom('light', { accentColor: '#f59e0b' });
-    applyDesignTokensToDom('light', { accentColor: '#6366f1' });
-    for (const name of ['--color-primary', '--color-primary-fill', '--color-primary-text', '--lantern-accent']) {
-      expect(root().style.getPropertyValue(name)).toBe('');
+  // Both sentinels mean "no override": the ink default a fresh account stores,
+  // and the retired indigo still persisted for every pre-pivot account.
+  it.each(['#191919', '#6366f1'])(
+    'clears all three vars for the default accent %s so the stylesheet palette wins',
+    (accent) => {
+      applyDesignTokensToDom('light', { accentColor: '#f59e0b' });
+      applyDesignTokensToDom('light', { accentColor: accent });
+      for (const name of ['--color-primary', '--color-primary-fill', '--color-primary-text', '--lantern-accent']) {
+        expect(root().style.getPropertyValue(name)).toBe('');
+      }
     }
-  });
+  );
 
   it('clears the vars for an unparseable accent rather than poisoning them', () => {
     applyDesignTokensToDom('light', { accentColor: '#f59e0b' });

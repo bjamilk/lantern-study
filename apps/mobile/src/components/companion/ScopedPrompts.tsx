@@ -13,7 +13,8 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import type { StudySetPathActivity } from '@lantern/shared/learning/studySetRoutes';
-import { T, useFeatureAccent } from '../ui';
+import { useTheme } from '../../theme';
+import { T } from '../ui';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import {
   QUICK_PROMPTS,
@@ -43,7 +44,10 @@ export function ScopedPrompts({
   onAsk,
   disabled,
 }: Props) {
-  const ai = useFeatureAccent('ai');
+  // Every prompt here is tappable, so it wears the app's ink pill — the same
+  // `primaryFill`/`textInverse` pair `Button` primary and the selected
+  // `ContextualBar` segment draw — not the violet `ai` accent.
+  const { colors } = useTheme();
   const scoped = scopedPrompts(activity);
   const generic = visibleQuickPrompts(expanded);
   const canExpand = QUICK_PROMPTS.length > generic.length;
@@ -65,7 +69,7 @@ export function ScopedPrompts({
                 accessibilityLabel={prompt.label}
                 accessibilityHint={prompt.ask}
                 accessibilityState={{ disabled: !!disabled }}
-                style={{ minHeight: CHIP_MIN_HEIGHT, backgroundColor: ai.tint }}
+                style={{ minHeight: CHIP_MIN_HEIGHT, backgroundColor: colors.primaryFill }}
                 className={`flex-row items-center justify-center px-3 rounded-full ${
                   disabled ? 'opacity-40' : ''
                 }`}
@@ -74,12 +78,12 @@ export function ScopedPrompts({
                   <AppIcon
                     name={prompt.icon as AppIconName}
                     size={16}
-                    color={ai.ink}
+                    color={colors.textInverse}
                     importantForAccessibility="no"
                   />
                 ) : null}
                 <T.Caption
-                  style={{ marginLeft: prompt.icon ? 6 : 0, color: ai.ink, fontWeight: '500' }}
+                  style={{ marginLeft: prompt.icon ? 6 : 0, color: colors.textInverse, fontWeight: '500' }}
                 >
                   {prompt.label}
                 </T.Caption>
@@ -115,7 +119,7 @@ export function ScopedPrompts({
             style={{ minHeight: CHIP_MIN_HEIGHT }}
             className="justify-center px-4 rounded-full"
           >
-            <T.Caption style={{ color: ai.ink, fontWeight: '500' }}>
+            <T.Caption style={{ color: colors.text, fontWeight: '500' }}>
               {expanded ? 'View less' : 'View more'}
             </T.Caption>
           </Pressable>

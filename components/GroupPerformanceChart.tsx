@@ -21,7 +21,7 @@ interface GroupPerformanceChartProps {
 
 const COLORS = {
     light: [
-        'rgba(79, 70, 229, 0.8)',   // lantern-primary
+        'rgba(25, 25, 25, 0.8)',    // lantern-primary / ink #191919
         'rgba(225, 29, 72, 0.8)',   // rose-600
         'rgba(13, 148, 136, 0.8)',  // teal-600
         'rgba(245, 158, 11, 0.8)',  // amber-600
@@ -29,7 +29,7 @@ const COLORS = {
         'rgba(192, 38, 211, 0.8)',  // fuchsia-600
     ],
     dark: [
-        'rgba(99, 102, 241, 0.8)',  // lantern-primary-light
+        'rgba(245, 245, 245, 0.8)', // dark ink #f5f5f5
         'rgba(251, 113, 133, 0.8)', // rose-400
         'rgba(45, 212, 191, 0.8)',  // teal-400
         'rgba(252, 211, 77, 0.8)',  // amber-400

@@ -25,7 +25,7 @@ export const RoleBadge: React.FC<{ role: CommunityRole }> = ({ role }) => {
     role === 'owner'
       ? 'text-amber-600 dark:text-amber-400'
       : role === 'admin'
-        ? 'text-indigo-600 dark:text-indigo-400'
+        ? 'text-lantern-primary-text'
         : 'text-slate-500 dark:text-slate-400';
   return (
     <span className={`inline-flex shrink-0 items-center gap-1 text-[11px] font-medium ${tone}`} title={label}>

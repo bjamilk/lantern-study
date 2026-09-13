@@ -12,8 +12,8 @@
  * -------------------
  * A bottom tab is a PLACE a student goes on purpose several times a week. The
  * top bar holds only the two things that FOLLOW you (Lantern AI,
- * Notifications). "Me" is me and nothing else. A mode or a setting is never a
- * destination, and every feature has exactly one name and one door.
+ * Notifications). Profile is the student's own place. A mode or a setting is
+ * never a destination, and every feature has exactly one name and one door.
  */
 
 /**
@@ -43,7 +43,7 @@ export const TAB_LABELS: Record<TabKey, string> = {
   Study: 'Study',
   Chat: 'Chat',
   Campus: 'Campus',
-  Me: 'Me',
+  Me: 'Profile',
   Notifications: 'Notifications',
   AI: 'Lantern AI',
 };

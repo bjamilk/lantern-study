@@ -12,6 +12,7 @@ import {
 } from '@lantern/shared/marketplace';
 import { pluralize } from '@lantern/shared/utils/plural';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -100,7 +101,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
           time.
         </Text>
         {loading ? (
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         ) : proposals.length === 0 ? (
           <Text className="text-sm text-lantern-text-secondary">
             No courses with notes this year.
@@ -121,7 +122,7 @@ export function SemesterProductsScreen({ navigation }: { navigation: NavigationP
                   <AppIcon
                     name={checked ? 'checkbox' : 'square'}
                     size={22}
-                    color={checked ? '#6366f1' : '#94a3b8'}
+                    color={checked ? brand.text : '#94a3b8'}
                   />
                   <View className="flex-1">
                     <Text className="text-sm font-semibold text-lantern-text">{p.suggestedTitle}</Text>

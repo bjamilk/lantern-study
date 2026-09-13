@@ -189,12 +189,12 @@ export function useTabBarClearance(extra = 16): number {
 }
 
 /**
- * The bottom bar: Home · Study · Chat · Campus · Me.
+ * The bottom bar: Home · Study · Chat · Campus · Profile.
  *
  * These five are the whole product's map. A bottom tab is a PLACE a student
  * goes on purpose several times a week — which is why Lantern AI and
  * Notifications are not here (they follow you, from the top bar), why Budget
- * and Downloads are not here (they are mine, so they are rows inside Me), and
+ * and Downloads are not here (they are mine, so they are rows inside Profile), and
  * why Shop and Jobs are not here (they are segments of Campus).
  *
  * The bar does not move, and the five are never traded away. Scrolling,
@@ -262,8 +262,13 @@ export function BottomTabBar({
             // Ink and ground, not the indigo accent: the lit tab is a
             // BLACK pill with a white glyph, and in dark mode that same
             // relationship is a white pill with a black one.
-            pillColor={colors.text}
-            onPillColor={colors.background}
+            // `primaryFill` / `textInverse`, not `text` / `background`: light
+            // `text` is the navy-tinted slate-900, and the lit pill drawn
+            // in it did not match the #191919 of every primary BUTTON beside
+            // it (build 198's device pass). One ink token for every filled
+            // control.
+            pillColor={colors.primaryFill}
+            onPillColor={colors.textInverse}
             inactiveColor={colors.tabBarInactive}
           />
         ))}

@@ -23,6 +23,7 @@ import { formatPrice, ListingImage } from './marketplaceHelpers';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { ReportContentSheet } from '../../components/moderation/ReportContentSheet';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -172,7 +173,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
   if (isLoading && !profile) {
     return (
       <SafeAreaView className="flex-1 bg-lantern-background items-center justify-center" edges={['top']}>
-        <ActivityIndicator size="large" color="#6366f1" />
+        <ActivityIndicator size="large" color={brand.text} />
       </SafeAreaView>
     );
   }
@@ -180,7 +181,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
       {profile?.coverImageUrl ? (
-        <View className="h-28 bg-indigo-700">
+        <View className="h-28 bg-lantern-ink">
           <ListingImage uri={profile.coverImageUrl} className="w-full h-full" />
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.45)']}
@@ -188,7 +189,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           />
         </View>
       ) : (
-        <LinearGradient colors={['#4f46e5', '#6366f1', '#059669']} className="h-28" />
+        <LinearGradient colors={[brand.ink, brand.text, '#059669']} className="h-28" />
       )}
 
       <View className="px-4 -mt-10">
@@ -290,7 +291,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
 
       {loadingListings && !listings.length ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : (
         <FlatList
@@ -299,7 +300,7 @@ export function SellerProfileScreen({ navigation, route }: Props) {
           numColumns={2}
           contentContainerStyle={{ padding: 8, paddingBottom: tabBarClearance }}
           columnWrapperStyle={{ justifyContent: 'space-between' }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brand.text} />}
           ListEmptyComponent={
             <View className="items-center py-12">
               <AppIcon name="bag" size={40} color="#cbd5e1" />

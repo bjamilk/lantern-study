@@ -15,6 +15,7 @@ import { ListingImage, timeAgo } from './marketplaceHelpers';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type InquiryItem = {
   id: string;
@@ -221,14 +222,14 @@ export function InquiriesScreen({
 
       {loading && !inquiries.length ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
         </View>
       ) : (
         <FlatList
           data={inquiries}
           keyExtractor={item => item.id}
           contentContainerStyle={{ padding: 16, paddingBottom: tabBarClearance }}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brand.text} />}
           ListEmptyComponent={
             <View className="items-center py-16 px-6">
               <AppIcon name="chatbubbles" size={48} color="#cbd5e1" />
@@ -291,7 +292,7 @@ export function InquiriesScreen({
                 ) : null}
               </View>
               <View className="justify-center pr-3">
-                <AppIcon name="chatbubble" size={18} color="#6366f1" />
+                <AppIcon name="chatbubble" size={18} color={brand.text} />
               </View>
             </Pressable>
           )}

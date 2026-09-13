@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { FlashcardType, FLASHCARD_GRADE_LABELS } from '@lantern/shared';
 import { continueDueReviewLabel, dueReviewProgress } from '@lantern/shared/learning';
@@ -19,6 +19,7 @@ import {
 } from '@lantern/shared/settings';
 import { useAuthStore, useFlashcardStore, type Flashcard } from '../../stores';
 import { Button } from '../../components/ui';
+import { useFeatureAccent } from '../../components/ui/FeatureDisc';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { SwipeableFlashcard } from '../../components/SwipeableFlashcard';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -59,37 +60,25 @@ interface Props {
 
 const GRADE_BUTTONS: {
   rating: PerformanceRating;
-  variant: 'danger' | 'secondary' | 'primary' | 'accent';
   accessibilityLabel: string;
 }[] = [
   {
     rating: 'again',
-    variant: 'danger',
     accessibilityLabel: `${FLASHCARD_GRADE_LABELS.again.label}, ${FLASHCARD_GRADE_LABELS.again.meaning}`,
   },
   {
     rating: 'hard',
-    variant: 'secondary',
     accessibilityLabel: `${FLASHCARD_GRADE_LABELS.hard.label}, ${FLASHCARD_GRADE_LABELS.hard.meaning}`,
   },
   {
     rating: 'good',
-    variant: 'primary',
     accessibilityLabel: `${FLASHCARD_GRADE_LABELS.good.label}, ${FLASHCARD_GRADE_LABELS.good.meaning}`,
   },
   {
     rating: 'easy',
-    variant: 'accent',
     accessibilityLabel: `${FLASHCARD_GRADE_LABELS.easy.label}, ${FLASHCARD_GRADE_LABELS.easy.meaning}`,
   },
 ];
-
-const GRADE_TEXT_CLASS: Record<(typeof GRADE_BUTTONS)[number]['variant'], string> = {
-  danger: 'text-white',
-  secondary: 'text-lantern-text',
-  primary: 'text-white',
-  accent: 'text-white',
-};
 
 const EMPTY_CARDS: Flashcard[] = [];
 
@@ -185,6 +174,7 @@ function buildSessionQueue(cards: Flashcard[]): Flashcard[] {
 
 export function FlashcardReviewScreen({ navigation, route }: Props) {
   const { reduceMotion, colors } = useTheme();
+  const flashcardsAccent = useFeatureAccent('flashcards');
   // `presentation: 'fullScreenModal'` gives this route its own native window,
   // which the app-root SafeAreaProvider never measures: the raw
   // `useSafeAreaInsets()` returned 0 on every edge here, so the Exit/Undo row
@@ -565,11 +555,11 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   if (isComplete || !currentCard) {
     const reviewedCount = gradeCounts.again + gradeCounts.hard + gradeCounts.good + gradeCounts.easy;
     const reviewCount = Math.max(0, reviewedCount - newCount);
-    const summaryBreakdown: { rating: PerformanceRating; textClass: string }[] = [
-      { rating: 'again', textClass: 'text-red-500' },
-      { rating: 'hard', textClass: 'text-orange-500' },
-      { rating: 'good', textClass: 'text-green-500' },
-      { rating: 'easy', textClass: 'text-blue-500' },
+    const summaryBreakdown: { rating: PerformanceRating; color: string }[] = [
+      { rating: 'again', color: colors.error },
+      { rating: 'hard', color: colors.text },
+      { rating: 'good', color: colors.success },
+      { rating: 'easy', color: flashcardsAccent.ink },
     ];
     return (
       <Screen edges={['top']} bottom="safe" className="flex-1" style={shellStyle}>
@@ -590,9 +580,9 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
           style={{ backgroundColor: colors.surface, borderColor: colors.border }}
         >
           <View className="flex-row justify-between">
-            {summaryBreakdown.map(({ rating, textClass }) => (
+            {summaryBreakdown.map(({ rating, color }) => (
               <View key={rating} className="flex-1 items-center">
-                <Text className={`text-xl font-bold ${textClass}`}>{gradeCounts[rating]}</Text>
+                <Text className="text-xl font-bold" style={{ color }}>{gradeCounts[rating]}</Text>
                 <Text
                   className="text-xs text-lantern-text-secondary mt-0.5"
                   style={{ color: colors.textSecondary }}
@@ -651,37 +641,61 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const { front, back } = getCardDisplayText(currentCard);
   const isImageOcclusion = currentCard.type === FlashcardType.IMAGE_OCCLUSION;
 
+  const gradeChipSkin = (rating: PerformanceRating) => {
+    switch (rating) {
+      case 'again':
+        return { backgroundColor: colors.errorBackground, color: colors.error };
+      case 'hard':
+        return { backgroundColor: colors.surface, color: colors.text };
+      case 'good':
+        return { backgroundColor: colors.successBackground, color: colors.success };
+      case 'easy':
+        return { backgroundColor: flashcardsAccent.tint, color: flashcardsAccent.ink };
+    }
+  };
+
   const renderGradeButton = ({
     rating,
-    variant,
     accessibilityLabel,
-  }: (typeof GRADE_BUTTONS)[number]) => (
-    <Button
-      key={rating}
-      variant={variant}
-      size="lg"
-      className="flex-1"
-      disabled={grading}
-      accessibilityLabel={
-        intervalPreview ? `${accessibilityLabel}, next in ${intervalPreview[rating]}` : accessibilityLabel
-      }
-      onPress={() => handleRate(rating)}
-    >
-      <View className="items-center">
-        <Text className={`text-sm font-semibold ${GRADE_TEXT_CLASS[variant]}`}>
-          {FLASHCARD_GRADE_LABELS[rating].label}
-        </Text>
-        <Text className={`text-xs opacity-80 ${GRADE_TEXT_CLASS[variant]}`}>
-          {FLASHCARD_GRADE_LABELS[rating].meaning}
-        </Text>
-        {intervalPreview ? (
-          <Text className={`text-[11px] mt-0.5 opacity-70 ${GRADE_TEXT_CLASS[variant]}`}>
-            {intervalPreview[rating]}
+  }: (typeof GRADE_BUTTONS)[number]) => {
+    const skin = gradeChipSkin(rating);
+    return (
+      <Pressable
+        key={rating}
+        disabled={grading}
+        accessibilityRole="button"
+        accessibilityLabel={
+          intervalPreview ? `${accessibilityLabel}, next in ${intervalPreview[rating]}` : accessibilityLabel
+        }
+        onPress={() => handleRate(rating)}
+        className="flex-1"
+        style={{
+          minHeight: 56,
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: colors.border,
+          backgroundColor: skin.backgroundColor,
+          paddingVertical: 10,
+          paddingHorizontal: 8,
+          opacity: grading ? 0.5 : 1,
+        }}
+      >
+        <View className="items-center">
+          <Text className="text-sm font-semibold" style={{ color: skin.color }}>
+            {FLASHCARD_GRADE_LABELS[rating].label}
           </Text>
-        ) : null}
-      </View>
-    </Button>
-  );
+          <Text className="text-xs" style={{ color: skin.color, opacity: 0.8 }}>
+            {FLASHCARD_GRADE_LABELS[rating].meaning}
+          </Text>
+          {intervalPreview ? (
+            <Text className="text-[11px] mt-0.5" style={{ color: skin.color, opacity: 0.7 }}>
+              {intervalPreview[rating]}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+    );
+  };
 
   return (
     <Screen edges={['top']} bottom="none" className="flex-1" style={shellStyle}>

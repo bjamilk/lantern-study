@@ -20,7 +20,7 @@ import {
 } from 'react-native';
 import { appAlert } from './ui/appDialog';
 import * as ImagePicker from 'expo-image-picker';
-import { useTheme, ThemeScope } from '../theme';
+import { BRAND_INK, ThemeScope, useTheme } from '../theme';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
 
 export type QuestionType = 
@@ -1026,7 +1026,7 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   typeCardSelected: {
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
   },
   typeIcon: {
     width: 48,
@@ -1037,7 +1037,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   typeIconSelected: {
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
   },
   typeLabel: {
     fontSize: 14,
@@ -1045,7 +1045,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   typeLabelSelected: {
-    color: '#6366f1',
+    color: BRAND_INK,
   },
   inputGroup: {
     marginBottom: 20,

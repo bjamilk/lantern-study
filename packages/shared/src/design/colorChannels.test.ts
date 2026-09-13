@@ -51,6 +51,7 @@ describe('alpha-baked palette keys', () => {
 
   it('light-theme equivalents are opaque and convert cleanly', () => {
     expect(hexHasAlpha(lightTheme.primaryBackground)).toBe(false);
-    expect(hexToRgbChannels(lightTheme.primary)).toBe('79 70 229');
+    // #191919 since the 2026-09-12 colour pivot: primary is the theme's ink.
+    expect(hexToRgbChannels(lightTheme.primary)).toBe('25 25 25');
   });
 });

@@ -41,7 +41,7 @@ import { BoardRepostSheet } from '../../components/board/BoardRepostSheet';
 import { VoiceNotePlayer } from '../../components/chat/VoiceNotePlayer';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
 import { BackButton } from '../../components/ui';
-import { useTheme } from '../../theme';
+import { brand, useTheme } from '../../theme';
 import { ActionSheet, type ActionSheetItem } from '../../components/ui';
 import {
   boardActionTargetId,
@@ -590,7 +590,7 @@ export function CommunityPostScreen({
           ListEmptyComponent={
             loading ? (
               <View className="py-10 items-center">
-                <ActivityIndicator color="#6366f1" />
+                <ActivityIndicator color={brand.text} />
               </View>
             ) : (
               <Text className="px-4 py-8 text-center text-sm text-lantern-text-tertiary">

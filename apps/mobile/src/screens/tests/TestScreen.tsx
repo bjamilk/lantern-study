@@ -22,7 +22,7 @@ import { COURSE_TOPIC_COPY } from '@lantern/shared';
 import { pluralize } from '@lantern/shared/utils/plural';
 import { useAuthStore } from '../../stores/authStore';
 import { useSettingsStore } from '../../stores/settingsStore';
-import { serifDisplayStyle, useTheme } from '../../theme';
+import { BRAND_INK, BRAND_TINT, brand, serifDisplayStyle, useTheme } from '../../theme';
 import TestConfigModal, { type TestConfigOptions } from '../../components/TestConfigModal';
 import { BackButton, Button, CourseChip, EmptyState, FeatureDisc, useFeatureAccent } from '../../components/ui';
 import { normalizeApiQuestions } from '../../utils/questionHelpers';
@@ -840,8 +840,8 @@ export default function TestScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#6366f1"
-              colors={['#6366f1']}
+              tintColor={brand.text}
+              colors={[brand.text]}
             />
           }
         />
@@ -859,8 +859,8 @@ export default function TestScreen() {
             <RefreshControl
               refreshing={refreshing}
               onRefresh={onRefresh}
-              tintColor="#6366f1"
-              colors={['#6366f1']}
+              tintColor={brand.text}
+              colors={[brand.text]}
             />
           }
         />
@@ -1053,7 +1053,7 @@ export default function TestScreen() {
                     setSelectedTest(null);
                   }}
                 >
-                  <AppIcon name="settings" size={16} color="#6366f1" />
+                  <AppIcon name="settings" size={16} color={brand.text} />
                   <Text style={styles.advancedLinkText}>Configure test</Text>
                 </TouchableOpacity>
               </>
@@ -1327,7 +1327,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 16,
-    backgroundColor: '#6366f120',
+    backgroundColor: BRAND_TINT,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
@@ -1385,7 +1385,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
@@ -1422,7 +1422,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   modeOptionActive: {
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
     backgroundColor: '#1a1d21',
   },
   modeIconContainer: {
@@ -1435,7 +1435,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   modeIconContainerActive: {
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
   },
   modeTitle: {
     ...typeScale.body,
@@ -1466,7 +1466,7 @@ const styles = StyleSheet.create({
   },
   advancedLinkText: {
     ...typeScale.body,
-    color: '#6366f1',
+    color: BRAND_INK,
     fontWeight: '500',
   },
 });

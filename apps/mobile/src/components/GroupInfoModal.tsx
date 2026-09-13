@@ -23,7 +23,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Group, GroupMember } from '../stores/groupStore';
 import { uploadGroupAvatar } from '../services/api';
 import { GroupInviteLinkPanel } from './GroupInviteLinkPanel';
-import { useTheme } from '../theme';
+import { brand, useTheme } from '../theme';
 import type { ThemeColors } from '../theme';
 import { ReportContentSheet } from './moderation/ReportContentSheet';
 import { GroupDiscoverabilityFields, type GroupDiscoveryValue } from '../screens/discover/GroupDiscoverabilityFields';
@@ -300,7 +300,7 @@ export default function GroupInfoModal({
       {/* Group Avatar */}
       <View style={styles.avatarSection}>
         <Image
-          source={{ uri: avatarPreview || group.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=6366f1&color=fff&size=100` }}
+          source={{ uri: avatarPreview || group.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(group.name)}&background=191919&color=fff&size=100` }}
           style={styles.groupAvatar}
         />
         {isAdmin && (
@@ -447,7 +447,7 @@ export default function GroupInfoModal({
         <View key={member.id} style={styles.memberItem}>
           <View style={styles.memberInfo}>
             <Image
-              source={{ uri: member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=6366f1&color=fff` }}
+              source={{ uri: member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(member.name)}&background=191919&color=fff` }}
               style={styles.memberAvatar}
             />
             <View>
@@ -466,7 +466,7 @@ export default function GroupInfoModal({
                 )}
                 {member.role === 'admin' && (
                   <View style={styles.adminBadge}>
-                    <AppIcon name="shield-checkmark" size={10} color="#6366f1" />
+                    <AppIcon name="shield-checkmark" size={10} color={brand.text} />
                     <Text style={styles.adminBadgeText}>Admin</Text>
                   </View>
                 )}

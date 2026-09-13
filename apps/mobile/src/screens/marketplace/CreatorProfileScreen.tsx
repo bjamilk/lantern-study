@@ -6,6 +6,7 @@ import { fetchCreatorProfile, followCreator, unfollowCreator } from '../../servi
 import { useAuthStore } from '../../stores/authStore';
 import { formatPrice } from './marketplaceHelpers';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -94,7 +95,7 @@ export function CreatorProfileScreen({
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : !creator ? (
         <View className="flex-1 items-center justify-center px-8">
@@ -117,7 +118,7 @@ export function CreatorProfileScreen({
                   </Text>
                   {creator.isVerified ? (
                     <View className="flex-row items-center rounded-full bg-lantern-primary/10 px-2 py-0.5" style={{ gap: 3 }}>
-                      <AppIcon name="checkmark-circle" size={11} color="#6366f1" />
+                      <AppIcon name="checkmark-circle" size={11} color={brand.text} />
                       <Text className="text-[11px] font-semibold text-lantern-primary-text">Verified</Text>
                     </View>
                   ) : null}

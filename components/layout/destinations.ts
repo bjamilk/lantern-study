@@ -1,5 +1,5 @@
 import { AppMode } from '../../types';
-import { ME_PATH, TEST_BUILDER_PATH } from '../../utils/appRoutes';
+import { ME_PATH, ME_PROGRESS_PATH, TEST_BUILDER_PATH } from '../../utils/appRoutes';
 
 /**
  * The five places a student goes on purpose. One vocabulary, shared by the
@@ -8,7 +8,7 @@ import { ME_PATH, TEST_BUILDER_PATH } from '../../utils/appRoutes';
  *
  * The rule that produced this list: a destination is a PLACE, visited several
  * times a week. A mode is not a destination (a running test lives under Study);
- * a setting is not a destination (dark mode lives under Me); the two things
+ * a setting is not a destination (dark mode lives under Profile); the two things
  * that FOLLOW you — Lantern AI and Notifications — are not destinations either,
  * they sit apart from the five.
  */
@@ -27,10 +27,10 @@ export const DESTINATION_LABELS: Record<DestinationId, string> = {
   study: 'Study',
   chat: 'Chat',
   campus: 'Campus',
-  me: 'Me',
+  me: 'Profile',
 };
 
-/** Where each destination's tap lands. Me is a path, not a mode. */
+/** Where each destination's tap lands. Profile is a path, not a mode. */
 export const DESTINATION_MODE: Record<Exclude<DestinationId, 'me'>, AppMode> = {
   home: AppMode.DASHBOARD,
   study: AppMode.STUDY_HUB,
@@ -40,7 +40,7 @@ export const DESTINATION_MODE: Record<Exclude<DestinationId, 'me'>, AppMode> = {
 
 /**
  * Which destination owns each mode. Every screen belongs to exactly one — a
- * listing is Campus, a running test is Study, Budget is Me — so the lit tab is
+ * listing is Campus, a running test is Study, Budget is Profile — so the lit tab is
  * always the section the student is actually inside.
  */
 const MODE_OWNER: Partial<Record<AppMode, DestinationId>> = {
@@ -113,7 +113,7 @@ export function resolveActiveDestination(
   pathname?: string | null,
 ): DestinationId | null {
   const path = pathname ? pathname.replace(/\/$/, '') : null;
-  if (path === ME_PATH) return 'me';
+  if (path === ME_PATH || path === ME_PROGRESS_PATH) return 'me';
   // `/study/tests/new` and `/study/tests/:testId` have no AppMode behind them
   // (they render from the path, as `/me` does), so the mode underneath is
   // whatever the student came from. The path is the only truthful signal, and

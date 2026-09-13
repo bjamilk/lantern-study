@@ -24,6 +24,7 @@ import { OrderStatusPill } from './components/OrderStatusPill';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -229,7 +230,7 @@ export function OrdersScreen({
           keyExtractor={(item) => item.id}
           contentContainerStyle={{ padding: 16, gap: 12, paddingBottom: tabBarClearance }}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor="#6366f1" />
+            <RefreshControl refreshing={refreshing} onRefresh={() => void onRefresh()} tintColor={brand.text} />
           }
           ListEmptyComponent={
             <View className="items-center mt-12 px-6">

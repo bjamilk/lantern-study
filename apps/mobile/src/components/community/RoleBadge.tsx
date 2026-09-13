@@ -2,6 +2,7 @@ import React from 'react';
 import { Text, View } from 'react-native';
 import { communityRoleLabel, type CommunityRole } from '@lantern/shared/network';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
+import { brand } from '../../theme';
 
 /**
  * Owner = amber star, Admin = indigo shield-checkmark, Moderator = shield
@@ -14,18 +15,18 @@ export function RoleBadge({ role }: { role: CommunityRole }) {
   if (!label) return null;
   const icon: AppIconName =
     role === 'owner' ? 'star' : role === 'admin' ? 'shield-checkmark' : 'shield';
-  const color = role === 'owner' ? '#f59e0b' : role === 'admin' ? '#6366f1' : '#64748b';
+  const color = role === 'owner' ? '#f59e0b' : role === 'admin' ? brand.text : '#64748b';
   const tone =
     role === 'owner'
       ? 'bg-amber-100 dark:bg-amber-900/40'
       : role === 'admin'
-        ? 'bg-indigo-100 dark:bg-indigo-900/40'
+        ? 'bg-lantern-primary-background'
         : 'bg-slate-100 dark:bg-slate-800';
   const textTone =
     role === 'owner'
       ? 'text-amber-700 dark:text-amber-300'
       : role === 'admin'
-        ? 'text-indigo-700 dark:text-indigo-300'
+        ? 'text-lantern-primary-text'
         : 'text-slate-600 dark:text-slate-300';
   return (
     <View

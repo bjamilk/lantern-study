@@ -1,4 +1,5 @@
 export { MeScreen, default } from './MeScreen';
+export { MeProgressScreen } from './MeProgressScreen';
 export { UsageLimitsScreen } from './UsageLimitsScreen';
 export {
   buildMeSections,

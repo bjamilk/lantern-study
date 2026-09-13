@@ -16,6 +16,7 @@ import * as api from '../services/api';
 import { Button } from './ui';
 import { SCREEN_KEYBOARD_BEHAVIOR } from './layout';
 import { AppIcon } from './ui/AppIcon';
+import { brand } from '../theme';
 
 interface SearchUser {
   id: string;
@@ -148,7 +149,7 @@ export default function CollaboratorsModal({
         <View className="bg-lantern-surface rounded-t-3xl max-h-[85%] min-h-[50%]" style={{ paddingBottom: insets.bottom + 8 }}>
           <View className="flex-row items-center justify-between px-5 py-4 border-b border-lantern-border dark:border-lantern-border">
             <View className="flex-row items-center gap-2">
-              <AppIcon name="people" size={22} color="#6366f1" />
+              <AppIcon name="people" size={22} color={brand.text} />
               <Text className="text-lg font-bold text-lantern-text">Collaborators</Text>
             </View>
             <Pressable onPress={onClose} className="p-2">
@@ -168,7 +169,7 @@ export default function CollaboratorsModal({
               className="border border-lantern-border rounded-xl px-4 py-3 text-lantern-text bg-lantern-background-secondary mb-2"
             />
 
-            {isSearching ? <ActivityIndicator className="mb-2" color="#6366f1" /> : null}
+            {isSearching ? <ActivityIndicator className="mb-2" color={brand.text} /> : null}
 
             {userSuggestions.length > 0 ? (
               <View className="mb-3 rounded-xl border border-lantern-border overflow-hidden">
@@ -215,7 +216,7 @@ export default function CollaboratorsModal({
           </View>
 
           {isLoading ? (
-            <ActivityIndicator className="py-8" color="#6366f1" />
+            <ActivityIndicator className="py-8" color={brand.text} />
           ) : (
             <FlatList
               data={collaborators}

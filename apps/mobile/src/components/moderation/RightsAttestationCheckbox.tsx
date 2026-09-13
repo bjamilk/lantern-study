@@ -10,6 +10,7 @@ import { RIGHTS_ATTESTATION_TEXT } from '@lantern/shared/moderation';
 import { LEGAL_DOCUMENT_TITLES } from '@lantern/shared/legal';
 import { navigate } from '../../navigation/navigationRef';
 import { AppIcon } from '../ui/AppIcon';
+import { brand } from '../../theme';
 
 export function openSellerTerms(): void {
   navigate('LegalDocument', { document: 'seller-terms' });
@@ -41,7 +42,7 @@ export function RightsAttestationCheckbox({ value, onChange, error, disabled }: 
         <AppIcon
           name={value ? 'checkbox' : 'square'}
           size={22}
-          color={value ? '#4f46e5' : '#94a3b8'}
+          color={value ? brand.text : '#94a3b8'}
           style={{ marginTop: 1 }}
         />
         <Text className="flex-1 text-xs leading-relaxed text-lantern-text">{RIGHTS_ATTESTATION_TEXT}</Text>

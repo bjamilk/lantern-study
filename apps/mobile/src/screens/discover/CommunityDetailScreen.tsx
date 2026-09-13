@@ -60,6 +60,7 @@ import { MANAGE_COPY, resolveManageAccess } from './communityManageModel';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -680,7 +681,7 @@ function CommunityServer({
           <BackButton onPress={() => navigation.goBack()} style={{ marginLeft: 4 }} />
         </View>
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" accessibilityLabel="Loading this community" />
+          <ActivityIndicator color={brand.text} accessibilityLabel="Loading this community" />
         </View>
       </Screen>
     );
@@ -702,7 +703,7 @@ function CommunityServer({
             <AppIcon
               name="checkmark-circle"
               size={16}
-              color="#6366f1"
+              color={brand.text}
               style={{ marginLeft: 4 }}
               accessibilityLabel="Official"
             />
@@ -833,7 +834,7 @@ function CommunityServer({
           ListEmptyComponent={
             loading ? (
               <View className="py-8 items-center">
-                <ActivityIndicator color="#6366f1" />
+                <ActivityIndicator color={brand.text} />
               </View>
             ) : null
           }

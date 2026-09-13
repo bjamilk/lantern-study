@@ -40,7 +40,7 @@ if (IS_PRODUCTION_BUILD) {
   }
 }
 
-const SPLASH_BACKGROUND_COLOR = '#6569EE';
+const SPLASH_BACKGROUND_COLOR = '#F7F6EF';
 
 /**
  * Android push needs a Firebase configuration baked into the binary.
@@ -289,6 +289,14 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'MODIFY_AUDIO_SETTINGS',
       'FOREGROUND_SERVICE',
       'FOREGROUND_SERVICE_MICROPHONE',
+      // Playback's half of the pair. `expo-audio`'s media3
+      // `AudioControlsService` is what puts the lecture's play/pause/skip
+      // transport on the lock screen and in the shade, and Android 14+ kills a
+      // `mediaPlayback` foreground service started without this permission.
+      // The library's own manifest declares both the service and the
+      // permission; listing it here keeps it visible next to its microphone
+      // twin instead of appearing only in a merged manifest.
+      'FOREGROUND_SERVICE_MEDIA_PLAYBACK',
       'POST_NOTIFICATIONS',
       'WAKE_LOCK',
     ],
@@ -355,6 +363,22 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-secure-store',
     'expo-web-browser',
     'expo-av',
+    // Lecture playback. `expo-av` plays in the background but writes no
+    // now-playing metadata, so a student who locked the phone mid-lecture had
+    // audio and no way to pause it. `expo-audio` is the SDK 54 successor and
+    // ships a real transport: a media3 `MediaSessionService` on Android and
+    // `MPRemoteCommandCenter` on iOS. Recording still runs through `expo-av`
+    // and the local `lecture-recording-service` module, so background
+    // recording stays off here — the microphone strings and
+    // FOREGROUND_SERVICE_MICROPHONE above are already set by those.
+    // See src/services/lectureAudioEngine.ts.
+    [
+      'expo-audio',
+      {
+        microphonePermission:
+          'Lantern Study needs the microphone to record lectures and hear lesson commands.',
+      },
+    ],
     [
       'expo-speech-recognition',
       {
@@ -369,7 +393,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       'expo-splash-screen',
       {
         image: './assets/splash-icon.png',
-        imageWidth: 260,
+        // 280, not 260, because the ASSET changed shape (2026-09-12). Android
+        // 12+ always masks the splash icon to a circle of diameter 2/3 the icon
+        // canvas, which sheared the corners off the old 760/1024 rounded square
+        // and shipped a plain black circle. The square is now 440 px on a 1024
+        // canvas (half-diagonal 311 < the 341 mask radius), so it survives the
+        // mask whole — but it is also only 43% of the image width, so the
+        // drawable has to be scaled up for the square to land at ~120 dp:
+        // 120 / (440/1024) = 279.
+        imageWidth: 280,
         resizeMode: 'contain',
         backgroundColor: SPLASH_BACKGROUND_COLOR,
       },

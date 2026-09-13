@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Keyboard, Platform, Pressable, Text, View } from 'react-native';
-import { featureAccentsDark, featureAccentsLight } from '@lantern/shared/design';
+import type { ThemePalette } from '@lantern/shared/design';
 import {
   activeItem,
   planContextualPress,
@@ -44,9 +44,10 @@ import {
  *
  * - A row WITH a selection: the selected door shows its label beside
  *   its icon inside a filled pill; every other item is its icon alone. The
- *   pill's fill is the feature's own `tint` ground and its label the feature's
- *   `ink` — the pair the contrast gate (scripts/design/contrast.mjs) already
- *   asserts clears 4.5:1 in BOTH themes. The word is `text-body` (15 sp), one
+ *   pill's fill is the theme's `primaryFill` ink and its label `textInverse` —
+ *   the CONTROL pair, not a feature accent (see `Segment`). The word is a
+ *   NAMED step and never a raw size — `text-label` (11 sp) since the pill went
+ *   stacked, `text-body` (15 sp) while it was horizontal — one
  *   line, tail-ellipsised and font-capped so "Flashcards" (the worst case) stays
  *   inside the row even at a large accessibility text size.
  * - Every OTHER row — a pass-through row (deck, note, walk-through, community),
@@ -90,13 +91,32 @@ interface SegmentProps {
   item: ContextualBarItem;
   plan: ContextualPillPlan;
   onPress: () => void;
-  isDark: boolean;
+  /** The live theme palette — this row's colours are CONTROL colours now. */
+  colors: ThemePalette;
 }
 
-function Segment({ item, plan, onPress, isDark }: SegmentProps) {
-  const accents = isDark ? featureAccentsDark : featureAccentsLight;
-  const ink = accents[item.feature].ink;
-  const tint = accents[item.feature].tint;
+function Segment({ item, plan, onPress, colors }: SegmentProps) {
+  // A NAVIGATION SEGMENT IS A CONTROL, NOT A FEATURE (2026-09-12).
+  //
+  // This row used to paint each door in its own feature accent — the Study
+  // row's "Ask" in the `ai` violet, the Shop row's Browse/Cart/You in the
+  // `campus` violet — and the selected door's pill in that
+  // feature's pastel tint. Build 198's device pass is what killed it: the Study
+  // row read as four neutral glyphs plus one inexplicably violet one, and the
+  // whole Shop sub-nav read as a violet island inside an otherwise ink-and-
+  // cream app. A feature colour answers "what KIND of thing is this" — the
+  // right question on a type tile or a FeatureDisc, where the pastels remain.
+  // It is the wrong question on a row whose only job is "which door are you
+  // standing in", and the answer to THAT is the same everywhere in the app:
+  // the ink when you are on it, the muted outline when you are not.
+  //
+  // So: the selected door is a `primaryFill` pill under `textInverse`, the
+  // same object the global bar's lit tab and every primary button draw; every
+  // other door is `tabBarInactive`, the same muted the five tabs below use.
+  const selectedInk = colors.textInverse;
+  const selectedFill = colors.primaryFill;
+  const restingInk = colors.tabBarInactive;
+  const ink = plan.selected ? selectedInk : restingInk;
 
   return (
     <Pressable
@@ -117,9 +137,10 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
       accessibilityLabel={plan.accessibleName}
     >
       {plan.variant === 'selectedPill' ? (
-        // The SELECTED door: icon over label on the feature's own tint pill.
-        // Icon and word share the feature `ink`, the pair contrast.mjs gates
-        // ≥4.5:1 on this tint in both themes.
+        // The SELECTED door: icon over label on the theme's ink pill, the
+        // same object the global bar's lit tab and every primary button draw.
+        // Icon and word share `textInverse`, which the palette pairs with
+        // `primaryFill` at 15.6:1 (light) / 15.9:1 (dark).
         //
         // STACKED, not side by side — founder direction 2026-09-11, and the
         // same shape the global bar's lit tab now takes. A horizontal word cost
@@ -134,13 +155,11 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
         // ellipsis let a long label truncate rather than push the pill past it.
         <View
           className="max-w-full items-center self-center rounded-full px-1.5 py-1"
-          style={{ backgroundColor: tint }}
+          style={{ backgroundColor: selectedFill }}
         >
           <AppIcon
             name={item.icon}
             size={18}
-            tone="feature"
-            feature={item.feature}
             color={ink}
             importantForAccessibility="no"
           />
@@ -162,16 +181,14 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
         // Study hub, the Shop root): icon with a small label UNDER it, no fill —
         // the same shape the global tab labels use (`text-label`, 11 sp), so a
         // pass-through toolbar and a section hub alike read as a labelled row
-        // rather than nameless glyphs. Icon and word share the feature `ink`, as
-        // the icon-only items already do on this bar. The word is capped and
+        // rather than nameless glyphs. Icon and word share `tabBarInactive` —
+        // a resting door on this row is muted exactly as a resting tab is. The word is capped and
         // tail-ellipsised so a long one ("Flashcards" on the tight Study row)
         // stays on its single line inside the 44 dp row.
         <View className="items-center">
           <AppIcon
             name={item.icon}
             size={18}
-            tone="feature"
-            feature={item.feature}
             color={ink}
             importantForAccessibility="no"
           />
@@ -192,8 +209,6 @@ function Segment({ item, plan, onPress, isDark }: SegmentProps) {
         <AppIcon
           name={item.icon}
           size={18}
-          tone="feature"
-          feature={item.feature}
           color={ink}
           importantForAccessibility="no"
         />
@@ -409,7 +424,7 @@ export function ContextualBar({
               item={item}
               plan={plan}
               onPress={() => press(item)}
-              isDark={isDark}
+              colors={colors}
             />
           );
         })}

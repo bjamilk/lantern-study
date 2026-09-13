@@ -11,7 +11,7 @@ import {
 import { appAlert } from '../../components/ui/appDialog';
 import { useNavigation } from '@react-navigation/native';
 import { useBudgetStore } from '../../stores/budgetStore';
-import { useTheme } from '../../theme';
+import { BRAND_INK, brand, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
   closeButton: { padding: 8 },
   headerTitle: { fontSize: 18, fontWeight: '700' },
   saveButton: {
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
-  currency: { fontSize: 18, fontWeight: '700', color: '#6366f1', marginRight: 8 },
+  currency: { fontSize: 18, fontWeight: '700', color: brand.text, marginRight: 8 },
   input: { flex: 1, fontSize: 24, fontWeight: '700' },
   textArea: {
     borderRadius: 12,

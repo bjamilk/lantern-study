@@ -187,7 +187,9 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   },
   appearance: {
     theme: 'light',
-    accentColor: '#6366f1',
+    // Byte-identical to DEFAULT_ACCENT_COLOR (the ink) and ACCENT_PRESETS[0].
+    // Inlined to keep this module free of an appearanceEffects import cycle.
+    accentColor: '#191919',
     fontSize: 'medium',
     compactMode: false,
     showAnimations: true,

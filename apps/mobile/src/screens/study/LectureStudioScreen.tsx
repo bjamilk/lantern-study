@@ -498,6 +498,7 @@ export function LectureStudioScreen({ navigation, route }: Props) {
             <LectureTabs
               noteId={activeNote?.id}
               source={tabSource}
+              noteTitle={title || activeNote?.title}
               recording={recording}
               tab={requestedTab}
               onTabChange={setRequestedTab}

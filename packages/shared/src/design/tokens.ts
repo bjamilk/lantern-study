@@ -3,9 +3,14 @@
 // ===========================================
 
 export const lanternColors = {
-  primary: '#4f46e5',
-  primaryLight: '#6366f1',
-  primaryDark: '#3730a3',
+  // 2026-09-12 colour pivot: the brand's primary is no longer indigo. A
+  // primary control is the theme's INK — the same near-black pill the
+  // StudyFetch-look primitives already use — so `primary`, `primaryLight`
+  // (hover) and `primaryDark` (pressed) are the light theme's ink and its two
+  // neighbours. Dark's values live in `darkBase`, which inverts the ink.
+  primary: '#191919',
+  primaryLight: '#333333',
+  primaryDark: '#000000',
   // UI-02: amber-600 (#d97706) was 3.0-3.6:1 as text on white/cream and under
   // white button labels; amber-700 clears AA for both roles.
   accent: '#b45309',
@@ -13,6 +18,9 @@ export const lanternColors = {
   accentDark: '#b45309',
 } as const;
 
+// NOTE: every value below is a LITERAL hex on purpose. `scripts/design/
+// contrast.mjs` PARSES this file rather than importing it (so the gate can run
+// before a build), and an identifier here reads to it as a missing token.
 const lightBase = {
   // Paper ground, measured off StudyFetch (2026-09-11 direction): a warm
   // near-neutral rather than the old peachy cream, so the pastel panels on
@@ -58,19 +66,28 @@ const lightBase = {
   primary: lanternColors.primary,
   primaryLight: lanternColors.primaryLight,
   primaryDark: lanternColors.primaryDark,
-  primaryBackground: '#eef2ff',
+  // Neutral putty, not an indigo wash: the tint a primary-coloured chip or
+  // callout sits in now that primary is ink.
+  //
+  // One step DARKER than `backgroundSecondary` (#f2f0e8) on purpose. The pivot
+  // first set them to the same value, which made all 118
+  // `bg-lantern-primary-background` panels vanish wherever the second plane is
+  // the ground. #e9e4d8 is 1.11:1 against #f2f0e8 — a visible edge — and still
+  // carries the ink above at 13.9:1.
+  primaryBackground: '#e9e4d8',
   /**
-   * Primary used as a FILL under WHITE text (buttons, badges, chips).
-   * White on #4f46e5 is 6.29:1. Identical in both themes on purpose: a fill
-   * that carries white has to be dark, and "dark mode" does not change that.
+   * Primary used as a FILL under INVERSE text (buttons, badges, chips). It is
+   * the theme's `ink`, so it INVERTS with the theme — near-black under white
+   * in light, near-white under near-black in dark. What sits on it is
+   * `textInverse`, never a hardcoded white.
    */
-  primaryFill: lanternColors.primary,
+  primaryFill: '#191919',
   /**
    * Primary used as TEXT or an icon glyph, on the surface, the card AND the
-   * `primaryBackground` tint. Light: 6.29 on white, 5.80 on cream, 5.62 on
-   * the #eef2ff tint.
+   * `primaryBackground` tint. #191919 is 16.9 on white, 15.6 on cream, 13.9
+   * on the putty tint.
    */
-  primaryText: lanternColors.primary,
+  primaryText: '#191919',
   accent: lanternColors.accent,
   accentBackground: '#fff7ed',
   // UI-02: 700-weight for AA as small text on white/cream (see accent above).
@@ -109,7 +126,7 @@ const lightBase = {
   inputPlaceholder: '#5b6a7f',
   modalOverlay: 'rgba(0, 0, 0, 0.5)',
   modalBackground: '#ffffff',
-  switchTrackOn: '#4f46e580',
+  switchTrackOn: '#19191980',
   // WhatsApp-style chat surface: warm paper ground, green own-bubble,
   // white peer bubble, muted slate meta text.
   chatBackground: '#efeae2',
@@ -151,21 +168,24 @@ const darkBase = {
   /** @deprecated See lightBase.primary. Dark's dominant role is TEXT, so this
    * equals `primaryText`; using it as a FILL under white is the 2.98:1 bug
    * found on build 153 (Home's "Review due cards"). Use `primaryFill`. */
-  primary: '#818cf8',
-  primaryLight: '#a5b4fc',
-  primaryDark: '#6366f1',
-  primaryBackground: '#6366f120',
+  primary: '#f5f5f5',
+  primaryLight: '#ffffff',
+  primaryDark: '#d4d4d4',
+  /** The putty tint's dark twin: a translucent wash of the ink itself, which
+   * composites to a near-black plane over either the surface or the page. */
+  primaryBackground: '#f5f5f512',
   /**
-   * Same value as light: white text needs a dark ground in either theme.
-   * #818cf8 (the dark `primary`) under white is 2.98:1; #4f46e5 is 6.29:1.
+   * The ink INVERTS here — a near-black pill on a black page is a hole. What
+   * sits on it is `textInverse` (#0f172a), which inverts with it: 15.9:1.
+   * A white label on this fill would be 1.04:1, so `.dark` in index.css
+   * forces the inverse ink onto the un-migrated `text-white` call sites.
    */
-  primaryFill: lanternColors.primary,
+  primaryFill: '#f5f5f5',
   /**
    * Primary used as TEXT on the dark surface, the black page AND the
-   * translucent #6366f120 tint composited over both: 6.29 / 7.04 / 5.58 /
-   * 6.45. The raw #6366f1 is 4.20 on the surface and 4.07 on the tint.
+   * translucent tint composited over both — all above 15:1.
    */
-  primaryText: '#818cf8',
+  primaryText: '#f5f5f5',
   accent: '#fbbf24',
   accentBackground: '#f59e0b20',
   success: '#10b981',
@@ -186,7 +206,7 @@ const darkBase = {
   borderLight: '#26292d',
   tabBar: '#000000',
   tabBarBorder: '#2f3336',
-  tabBarActive: '#818cf8',
+  tabBarActive: '#f5f5f5',
   tabBarInactive: '#8494a8',
   inputBackground: '#101214',
   inputBorder: '#2f3336',
@@ -194,9 +214,9 @@ const darkBase = {
   inputPlaceholder: '#8494a8',
   modalOverlay: 'rgba(0, 0, 0, 0.7)',
   modalBackground: '#101214',
-  switchTrackOn: '#818cf880',
+  switchTrackOn: '#f5f5f580',
   switchTrackOff: '#2f3336',
-  switchThumbOn: '#818cf8',
+  switchThumbOn: '#f5f5f5',
   switchThumbOff: '#8494a8',
 } as const;
 

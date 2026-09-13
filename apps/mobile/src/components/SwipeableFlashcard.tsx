@@ -11,7 +11,6 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import type { PerformanceRating } from '@lantern/shared/utils';
-import { Card } from './ui';
 import { ImageOcclusionView } from './ImageOcclusionView';
 import { useResolvedStorageUrl } from '../hooks/useResolvedStorageUrl';
 
@@ -32,6 +31,8 @@ function FlashcardImage({ url }: { url?: string | null }) {
   );
 }
 import type { Flashcard } from '../stores';
+import { BRAND_INK, CARD, useTheme } from '../theme';
+import { useFeatureAccent } from './ui/FeatureDisc';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const SWIPE_THRESHOLD_X = SCREEN_WIDTH * 0.28;
@@ -112,6 +113,9 @@ export function SwipeableFlashcard({
       ? (showBack ? 1 : 0)
       : withTiming(showBack ? 1 : 0, { duration: 280 });
   }, [showBack, flipProgress, reduceMotion]);
+
+  const { colors } = useTheme();
+  const flashcardsAccent = useFeatureAccent('flashcards');
 
   const finishGrade = (rating: PerformanceRating, gradedCardId: string) => {
     // Ignore stale swipe animation completions after the visible card changed.
@@ -250,14 +254,22 @@ export function SwipeableFlashcard({
 
         <View style={styles.flipContainer}>
           <Animated.View style={[styles.face, frontFaceStyle]}>
-            <Card className="min-h-[260px] border-lantern-primary/20 dark:border-lantern-primary/30/50">
+            <View
+              className="min-h-[260px] overflow-hidden bg-lantern-surface"
+              style={{
+                borderRadius: CARD.radius,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ height: 3, backgroundColor: flashcardsAccent.ink }} />
               <ScrollView
                 nestedScrollEnabled
                 showsVerticalScrollIndicator={isImageOcclusion}
                 contentContainerStyle={styles.cardScrollContent}
                 bounces={isImageOcclusion}
               >
-                <Text style={styles.sideLabel}>Question</Text>
+                <Text style={[styles.sideLabel, { color: flashcardsAccent.ink }]}>Question</Text>
                 {isImageOcclusion ? (
                   <View style={styles.occlusionWrap}>
                     {front ? (
@@ -272,25 +284,39 @@ export function SwipeableFlashcard({
                     {/* A picture attached to an ordinary card was stored but never
                         drawn, so attaching one had no visible effect. */}
                     <FlashcardImage url={card.imageUrl} />
-                    <Text className="text-xl font-medium text-lantern-text text-center px-2">
+                    <Text
+                      /* Two steps, chosen by length: a long front drops to `text-body`
+                          so it still fits the face, a short one keeps the
+                          `text-title` numeral. Same behaviour as the raw
+                          `text-base`/`text-xl` pair it replaces, on the scale. */
+                      className={`${front.length > 80 ? 'text-body' : 'text-title'} font-medium text-lantern-text text-center px-2`}
+                    >
                       {front}
                     </Text>
                     <Text style={styles.hintText}>Tap to reveal answer</Text>
                   </>
                 )}
               </ScrollView>
-            </Card>
+            </View>
           </Animated.View>
 
           <Animated.View style={[styles.face, styles.faceBack, backFaceStyle]}>
-            <Card className="min-h-[260px] border-lantern-primary/20 dark:border-lantern-primary/30/50">
+            <View
+              className="min-h-[260px] overflow-hidden bg-lantern-surface"
+              style={{
+                borderRadius: CARD.radius,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}
+            >
+              <View style={{ height: 3, backgroundColor: flashcardsAccent.ink }} />
               <ScrollView
                 nestedScrollEnabled
                 showsVerticalScrollIndicator={isImageOcclusion}
                 contentContainerStyle={styles.cardScrollContent}
                 bounces={isImageOcclusion}
               >
-                <Text style={styles.sideLabel}>Answer</Text>
+                <Text style={[styles.sideLabel, { color: flashcardsAccent.ink }]}>Answer</Text>
                 {isImageOcclusion ? (
                   <View style={styles.occlusionWrap}>
                     {front ? (
@@ -301,12 +327,14 @@ export function SwipeableFlashcard({
                     <ImageOcclusionView card={card} showAnswer />
                   </View>
                 ) : (
-                  <Text className="text-xl font-medium text-lantern-text text-center px-2">
+                  <Text
+                    className={`${(back || front).length > 80 ? 'text-body' : 'text-title'} font-medium text-lantern-text text-center px-2`}
+                  >
                     {back || front}
                   </Text>
                 )}
               </ScrollView>
-            </Card>
+            </View>
           </Animated.View>
         </View>
       </Animated.View>
@@ -341,7 +369,7 @@ const styles = StyleSheet.create({
   },
   hintText: {
     fontSize: 12,
-    color: '#6366f1',
+    color: BRAND_INK,
     marginTop: 24,
   },
   cardScrollContent: {
@@ -375,7 +403,7 @@ const styles = StyleSheet.create({
     top: 16,
     alignSelf: 'center',
     left: '38%',
-    backgroundColor: 'rgba(245, 158, 11, 0.92)',
+    backgroundColor: 'rgba(63, 98, 18, 0.92)',
   },
   overlayHard: {
     bottom: 16,

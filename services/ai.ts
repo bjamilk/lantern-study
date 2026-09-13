@@ -16,6 +16,7 @@ import type {
   CompanionAction,
   CompanionCitation,
   CompanionConversation,
+  CompanionImageAttachment,
   CompanionUserContext,
 } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -24,6 +25,7 @@ import { pollApiJob } from './jobPoll';
 
 export type {
   CompanionUserContext,
+  CompanionImageAttachment,
   CompanionAction,
   CompanionConversation,
   CompanionMessage,
@@ -484,6 +486,25 @@ export async function companionSendMessage(
   conversationId?: string;
 }> {
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
+}
+
+/**
+ * Upload one photo for the next companion turn.
+ *
+ * Reading the image costs AI credits (the same 2 the note photo OCR path
+ * charges), and they are spent here rather than on send — so unlike the other
+ * companion calls this one lets the usage badge update.
+ */
+export async function uploadCompanionImage(params: {
+  base64Data: string;
+  fileName?: string;
+  contentType?: string;
+}): Promise<CompanionImageAttachment> {
+  return companionRequest('/attachments', 'POST', {
+    base64Data: params.base64Data,
+    fileName: params.fileName || 'image.jpg',
+    contentType: params.contentType,
+  });
 }
 
 export async function fetchCompanionConversations(): Promise<{

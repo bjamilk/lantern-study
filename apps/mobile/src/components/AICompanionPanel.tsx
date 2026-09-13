@@ -15,6 +15,7 @@ import * as Clipboard from 'expo-clipboard';
 // The same engine the recap and lesson studios narrate with, so "Read aloud"
 // uses the voice the student has already heard rather than a second stack.
 import * as Speech from 'expo-speech';
+import * as ImagePicker from 'expo-image-picker';
 import { appAlert } from './ui/appDialog';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -23,12 +24,17 @@ import { useCompanionStore } from '../stores/companionStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useToastStore } from '../stores/toastStore';
 import { AIDisclaimer } from './AIDisclaimer';
-import AIUsageBadge from './AIUsageBadge';
-import { AI_FEATURE_CREDIT_COST } from '@lantern/shared/utils/aiCredits';
 import { navigate as navigateFromRef, navigationRef } from '../navigation/navigationRef';
 import { toTab } from '../navigation/nestedTab';
 import { submitCompanionFeedback } from '../services/ai';
 import type { CompanionAction } from '@lantern/shared/types';
+import {
+  IMAGE_ATTACH_COST_LABEL,
+  describeImageAttachFailure,
+  MAX_IMAGE_ATTACHMENTS,
+  describeImageAttachment,
+  validateImageAsset,
+} from './companion/imageAttach';
 
 /** Action chips the mobile panel can actually honor (web handles the rest). */
 const MOBILE_ACTION_ROUTES: Partial<Record<CompanionAction['type'], (payload?: Record<string, string>) => void>> = {
@@ -143,9 +149,16 @@ const COMPOSER_KEYBOARD_BEHAVIOR: 'padding' | undefined =
 export function AICompanionPanel({ context }: Props) {
   const theme = useAppTheme();
   const { colors } = useTheme();
-  // Lantern AI is the `ai` feature identity (indigo ink), not the orange
-  // budget accent every hex in here used to be.
+  // `ai` now dresses ONE thing: the lilac citation chip, which is the
+  // companion's own mark and matches the web rail (StudyFetch parity). Every
+  // control and every piece of chrome in here is the app's ink — `primaryFill`
+  // under `textInverse` when filled, `text` when it is a bare glyph — so the
+  // panel's buttons read as the same black pills as `Button` primary and the
+  // selected `ContextualBar` segment rather than as a second, violet system.
   const ai = useFeatureAccent('ai');
+  /** The filled ink pill, identical to `useButtonSkin('primary')`. */
+  const inkFill = colors.primaryFill;
+  const inkGlyph = colors.textInverse;
   /** Turn-into makes study material, so its pill wears the flashcards accent. */
   const flashcardsAccent = useFeatureAccent('flashcards');
   const user = useAuthStore(s => s.user);
@@ -180,6 +193,13 @@ export function AICompanionPanel({ context }: Props) {
     startNewChat,
     deleteConversation,
     setMessageFeedback,
+    pendingImages,
+    isUploadingImage,
+    imageError,
+    imageErrorDetail,
+    clearImageError,
+    attachImage,
+    removeImage,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
   const notesLoading = useNotesStore((s) => s.isLoading);
@@ -197,9 +217,121 @@ export function AICompanionPanel({ context }: Props) {
       setInput((prev) => (prev.trim() ? prev : restored));
     }
   }, [failedMessage, consumeFailedMessage]);
+  /**
+   * True from the moment we launch the picker/camera Activity until shortly
+   * after it hands control back. The AppState watcher below reads it so OUR
+   * Activity switch is not mistaken for the student leaving the app.
+   */
+  const pickerBusyRef = useRef(false);
+
+  /**
+   * A failed read belongs to the room it failed in.
+   *
+   * The message used to survive a change of study set, so a stale red line sat
+   * under a composer that had never tried to attach anything.
+   */
+  const companionScopeId = useCompanionStore((s) => s.activeScopeId);
+  useEffect(() => {
+    setShowImageErrorDetail(false);
+    clearImageError();
+  }, [companionScopeId, clearImageError]);
+
+  /** A new message replaces the old small print rather than re-opening it. */
+  useEffect(() => {
+    setShowImageErrorDetail(false);
+  }, [imageError]);
+
+  /**
+   * Pick a photo and have it read.
+   *
+   * `base64: true` keeps this to one dependency — the picker already returns
+   * the bytes, so there is no file read step. The read is charged on pick, so
+   * the cost is announced in the chooser above it, not after.
+   */
+  const pickCompanionImage = useCallback(
+    async (source: 'library' | 'camera') => {
+      if (pendingImages.length >= MAX_IMAGE_ATTACHMENTS) {
+        showToast(`Up to ${MAX_IMAGE_ATTACHMENTS} images per question.`, 'info');
+        return;
+      }
+      pickerBusyRef.current = true;
+      try {
+        const permission =
+          source === 'camera'
+            ? await ImagePicker.requestCameraPermissionsAsync()
+            : await ImagePicker.requestMediaLibraryPermissionsAsync();
+        if (permission.status !== 'granted') {
+          appAlert(
+            'Permission needed',
+            source === 'camera'
+              ? 'Camera access is required to photograph a page.'
+              : 'Photo library access is required to attach an image.'
+          );
+          return;
+        }
+        const result =
+          source === 'camera'
+            ? await ImagePicker.launchCameraAsync({ quality: 0.85, exif: false, base64: true })
+            : await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ImagePicker.MediaTypeOptions.Images,
+                quality: 0.85,
+                exif: false,
+                base64: true,
+              });
+        if (result.canceled || !result.assets?.[0]) return;
+        const asset = result.assets[0];
+        const problem = validateImageAsset(asset);
+        if (problem) {
+          useCompanionStore.setState({ imageError: problem, imageErrorDetail: null });
+          return;
+        }
+        if (!asset.base64) {
+          useCompanionStore.setState({
+            imageError: 'Could not read that image — the file came back empty.',
+            imageErrorDetail: asset.fileName ? `File: ${asset.fileName}` : null,
+          });
+          return;
+        }
+        const attached = await attachImage({
+          base64Data: asset.base64,
+          fileName: asset.fileName || 'photo.jpg',
+          contentType: asset.mimeType || undefined,
+        });
+        if (attached && attached.wordCount === 0) {
+          showToast('No readable text in that image — try a sharper, closer photo.', 'info');
+        }
+      } catch (err) {
+        // Anything the picker itself throws is still a reason, not a shrug:
+        // write it under the chip row where a failed upload writes its own.
+        const failure = describeImageAttachFailure(err, null);
+        useCompanionStore.setState({
+          isUploadingImage: false,
+          imageError: failure.message,
+          imageErrorDetail: failure.detail,
+        });
+      } finally {
+        // Cleared a tick late: Android delivers the foreground AppState change
+        // after the picker's promise resolves.
+        setTimeout(() => {
+          pickerBusyRef.current = false;
+        }, 1200);
+      }
+    },
+    [attachImage, pendingImages.length, showToast]
+  );
+
+  const handleAddImage = useCallback(() => {
+    appAlert('Add image', IMAGE_ATTACH_COST_LABEL, [
+      { text: 'Take photo', onPress: () => void pickCompanionImage('camera') },
+      { text: 'Photo library', onPress: () => void pickCompanionImage('library') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [pickCompanionImage]);
+
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [showNotePicker, setShowNotePicker] = useState(false);
+  const [showImageErrorDetail, setShowImageErrorDetail] = useState(false);
   const [showHistoryList, setShowHistoryList] = useState(false);
   const [noteSearch, setNoteSearch] = useState('');
   const [promptsExpanded, setPromptsExpanded] = useState(false);
@@ -387,6 +519,14 @@ export function AICompanionPanel({ context }: Props) {
   useEffect(() => {
     const sub = AppState.addEventListener('change', (next) => {
       if (next !== 'background') return;
+      // The system photo picker and the camera are separate Activities: on
+      // Android they STOP this one, so AppState reports 'background', not
+      // 'inactive'. Closing here is what dismissed the companion the moment a
+      // photo was chosen — the upload then finished against a sheet nobody
+      // could see, which is how a real error read as "the app just quit the
+      // panel". While we are the ones who launched that Activity, leaving is
+      // not leaving the app.
+      if (pickerBusyRef.current) return;
       if (!useCompanionStore.getState().isOpen) return;
       useCompanionStore.getState().close();
     });
@@ -857,7 +997,7 @@ export function AICompanionPanel({ context }: Props) {
       >
         <KeyboardAvoidingView className="flex-1" behavior={COMPOSER_KEYBOARD_BEHAVIOR}>
         <View className="flex-row items-center px-4 py-3 border-b border-lantern-border">
-          <AppIcon name="sparkles" size={22} color={ai.ink} />
+          <AppIcon name="sparkles" size={22} color={colors.text} />
           {/* flex:1 is correct HERE — the header row is full width. It is only
               inside the intrinsically sized bubble that flex-1 collapses. */}
           {/* Title over the scope line — the rail's two-line header. Without
@@ -874,7 +1014,7 @@ export function AICompanionPanel({ context }: Props) {
             </T.Caption>
           </View>
           <Pressable onPress={handleOpenHistory} className="p-2" accessibilityLabel="Past chats">
-            <AppIcon name="time" size={20} color={showHistoryList ? ai.ink : colors.textTertiary} />
+            <AppIcon name="time" size={20} color={showHistoryList ? colors.text : colors.textTertiary} />
           </Pressable>
           <Pressable onPress={handleNewChat} className="p-2" accessibilityLabel="New chat">
             <AppIcon name="create" size={20} color={colors.textTertiary} />
@@ -886,23 +1026,8 @@ export function AICompanionPanel({ context }: Props) {
             <AppIcon name="close" size={24} color={colors.textTertiary} />
           </Pressable>
         </View>
-        {/*
-          Two lines, not one row.
-
-          Side by side, the disclaimer and the credit line shared a phone's
-          width and both lost: the device pass read
-          "…Not professional advice.71/100 AI uses left ·" — no space where
-          the row ran out, the reset countdown gone off the right edge. They
-          are two different sentences about two different things; stacking
-          them is what lets each one finish.
-        */}
         <View className="px-4 pb-2">
-          <AIDisclaimer compact textColor={colors.textTertiary} linkColor={ai.ink} />
-          {/* Chat spends daily AI credits; the floating badge is hidden while
-              the panel is open, so show the countdown here instead. */}
-          <View className="mt-1">
-            <AIUsageBadge variant="inline" cost={AI_FEATURE_CREDIT_COST} />
-          </View>
+          <AIDisclaimer compact textColor={colors.textTertiary} linkColor={colors.text} />
         </View>
 
         {showHistoryList ? (
@@ -1019,9 +1144,10 @@ export function AICompanionPanel({ context }: Props) {
                           close();
                           MOBILE_ACTION_ROUTES[action.type]?.(action.payload);
                         }}
-                        className="px-3 py-1.5 rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20"
+                        style={{ backgroundColor: inkFill }}
+                        className="px-3 py-1.5 rounded-full"
                       >
-                        <T.Label style={{ color: ai.ink }}>{action.label}</T.Label>
+                        <T.Label style={{ color: inkGlyph }}>{action.label}</T.Label>
                       </Pressable>
                     ))}
                   </View>
@@ -1054,7 +1180,7 @@ export function AICompanionPanel({ context }: Props) {
                       <AppIcon
                         name={speakingMessageId === item.id ? 'stop' : 'volume-medium'}
                         size={14}
-                        color={speakingMessageId === item.id ? ai.ink : colors.textTertiary}
+                        color={speakingMessageId === item.id ? colors.text : colors.textTertiary}
                       />
                     </Pressable>
                     <Pressable
@@ -1074,12 +1200,12 @@ export function AICompanionPanel({ context }: Props) {
                       accessibilityRole="button"
                       accessibilityLabel="I don't understand — explain more simply"
                       accessibilityState={{ disabled: isBusy }}
-                      style={{ minHeight: 32, backgroundColor: ai.tint }}
+                      style={{ minHeight: 32, backgroundColor: inkFill }}
                       className={`justify-center px-2.5 rounded-full ml-0.5 ${
                         isBusy ? 'opacity-40' : ''
                       }`}
                     >
-                      <T.Label style={{ color: ai.ink, fontWeight: '500' }}>
+                      <T.Label style={{ color: inkGlyph, fontWeight: '500' }}>
                         I don&apos;t understand
                       </T.Label>
                     </Pressable>
@@ -1175,7 +1301,7 @@ export function AICompanionPanel({ context }: Props) {
                             name={rating === 'up' ? 'thumbs-up' : 'thumbs-down'}
                             filled={active}
                             size={14}
-                            color={active ? ai.ink : colors.textTertiary}
+                            color={active ? colors.text : colors.textTertiary}
                           />
                         </Pressable>
                       );
@@ -1204,10 +1330,10 @@ export function AICompanionPanel({ context }: Props) {
         {!showHistoryList && (
         <View className="px-4 py-3 border-t border-lantern-border">
           {activeNoteContext ? (
-            <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-primary-background dark:bg-lantern-primary/20 px-3 py-1.5">
-              <AppIcon name="document-text" size={14} color={ai.ink} />
+            <View className="mb-2 flex-row items-center self-start max-w-full rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary px-3 py-1.5">
+              <AppIcon name="document-text" size={14} color={colors.text} />
               <T.Caption
-                style={{ marginLeft: 6, marginRight: 8, flexShrink: 1, fontWeight: '500', color: ai.ink }}
+                style={{ marginLeft: 6, marginRight: 8, flexShrink: 1, fontWeight: '500', color: colors.text }}
                 numberOfLines={1}
               >
                 {activeNoteContext.title}
@@ -1220,7 +1346,7 @@ export function AICompanionPanel({ context }: Props) {
                 hitSlop={8}
                 accessibilityLabel="Remove note context"
               >
-                <AppIcon name="close" size={14} color={ai.ink} />
+                <AppIcon name="close" size={14} color={colors.text} />
               </Pressable>
             </View>
           ) : null}
@@ -1278,19 +1404,93 @@ export function AICompanionPanel({ context }: Props) {
             </View>
           ) : null}
 
+          {pendingImages.length ? (
+            <View className="mb-2 flex-row flex-wrap items-center gap-2">
+              {pendingImages.map((image) => (
+                <View
+                  key={image.attachmentId}
+                  className="flex-row items-center rounded-full bg-lantern-background-secondary px-2 py-1.5"
+                >
+                  <AppIcon name="image" size={14} color={colors.text} />
+                  <T.Caption
+                    style={{ marginLeft: 6, marginRight: 8, flexShrink: 1, color: colors.text }}
+                    numberOfLines={1}
+                  >
+                    {describeImageAttachment(image.wordCount)}
+                  </T.Caption>
+                  <Pressable
+                    onPress={() => removeImage(image.attachmentId)}
+                    hitSlop={8}
+                    accessibilityLabel={`Remove ${image.fileName}`}
+                  >
+                    <AppIcon name="close" size={14} color={colors.text} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {imageError ? (
+            <View className="mb-2">
+              <Text className="text-red-600 dark:text-red-300 text-caption">{imageError}</Text>
+              {imageErrorDetail ? (
+                <Pressable
+                  onPress={() => setShowImageErrorDetail((v) => !v)}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                >
+                  <Text className="mt-0.5 text-red-600 dark:text-red-300 text-caption underline">
+                    {showImageErrorDetail ? 'Hide details' : 'Details'}
+                  </Text>
+                </Pressable>
+              ) : null}
+              {showImageErrorDetail && imageErrorDetail ? (
+                <Text className="mt-0.5 text-lantern-text-secondary text-caption">
+                  {imageErrorDetail}
+                </Text>
+              ) : null}
+            </View>
+          ) : null}
+
           <View className="flex-row items-end gap-2">
+            <Pressable
+              onPress={handleAddImage}
+              disabled={isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS}
+              accessibilityRole="button"
+              accessibilityLabel={`Add image (${IMAGE_ATTACH_COST_LABEL})`}
+              style={pendingImages.length ? { backgroundColor: inkFill } : undefined}
+              className={`h-11 w-11 items-center justify-center rounded-full ${
+                pendingImages.length ? '' : 'bg-lantern-background-secondary'
+              } ${isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS ? 'opacity-40' : ''}`}
+            >
+              {isUploadingImage ? (
+                <ActivityIndicator
+                  size="small"
+                  color={pendingImages.length ? inkGlyph : colors.text}
+                />
+              ) : (
+                <AppIcon
+                  name="image"
+                  size={20}
+                  color={pendingImages.length ? inkGlyph : colors.text}
+                />
+              )}
+            </Pressable>
             <Pressable
               onPress={() => setShowNotePicker((v) => !v)}
               disabled={isBusy}
               accessibilityRole="button"
               accessibilityLabel="Attach a note as context"
+              style={showNotePicker || activeNoteContext ? { backgroundColor: inkFill } : undefined}
               className={`h-11 w-11 items-center justify-center rounded-full ${
-                showNotePicker || activeNoteContext
-                  ? 'bg-lantern-primary-background'
-                  : 'bg-lantern-background-secondary'
+                showNotePicker || activeNoteContext ? '' : 'bg-lantern-background-secondary'
               } ${isBusy ? 'opacity-40' : ''}`}
             >
-              <AppIcon name="add" size={22} color={ai.ink} />
+              <AppIcon
+                name="add"
+                size={22}
+                color={showNotePicker || activeNoteContext ? inkGlyph : colors.text}
+              />
             </Pressable>
             <Pressable
               onPress={() => {
@@ -1309,7 +1509,7 @@ export function AICompanionPanel({ context }: Props) {
                 name={isRecording ? 'stop' : 'mic'}
                 size={20}
                 // White on the red recording fill in both themes: the fill is not a token.
-                color={isRecording ? '#ffffff' : ai.ink}
+                color={isRecording ? '#ffffff' : colors.text}
               />
             </Pressable>
             <TextInput

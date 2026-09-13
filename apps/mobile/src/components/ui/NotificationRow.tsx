@@ -6,6 +6,7 @@ import {
   type NotificationIconKey,
 } from '@lantern/shared';
 import { AppIcon, type AppIconName } from './AppIcon';
+import { useTheme } from '../../theme/ThemeContext';
 
 const iconMap: Record<NotificationIconKey, AppIconName> = {
   bell: 'notifications',
@@ -44,7 +45,13 @@ export function NotificationRow({
   onPress,
   className = '',
 }: NotificationRowProps) {
+  const { colors } = useTheme();
   const meta = getNotificationMeta(link, { type, data, link });
+  // The brand-coloured kinds carry a THEME token, not a hex: dark inverts the
+  // ink, and near-black on dark's translucent tint would be invisible.
+  const iconColor = meta.mobileIconToken
+    ? colors[meta.mobileIconToken]
+    : meta.mobileIconColor;
 
   return (
     <Pressable
@@ -61,7 +68,7 @@ export function NotificationRow({
         <View
           className={`w-9 h-9 rounded-xl items-center justify-center ${meta.mobileBgClass}`}
         >
-          <AppIcon name={iconMap[meta.iconKey]} size={18} color={meta.mobileIconColor} />
+          <AppIcon name={iconMap[meta.iconKey]} size={18} color={iconColor} />
         </View>
         <View className="flex-1 min-w-0">
           <View className="flex-row items-start justify-between gap-2">

@@ -1,17 +1,27 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Pressable, View } from 'react-native';
-import { Audio, type AVPlaybackStatus } from 'expo-av';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Pressable, View } from 'react-native';
 import {
   LECTURE_AUDIO_SPEEDS,
   formatLectureAudioSpeed,
   formatLectureAudioTime,
+  lectureAudioFileName,
   nextLectureAudioSpeed,
   type LectureAttachmentLike,
 } from '@lantern/shared';
 import { T } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { useTheme } from '../../theme';
-import { refreshNoteAttachmentUrl } from '../../services/notes';
+import {
+  describeAttachmentUrlError,
+  fetchNoteAttachmentUrl,
+  logLectureMedia,
+} from '../../services/noteAttachmentUrl';
+import {
+  LECTURE_AUDIO_JUMP_SECONDS,
+  LectureAudioEngine,
+  initialLectureAudioState,
+  type LectureAudioState,
+} from '../../services/lectureAudioEngine';
 
 /**
  * The Audio tab of the lecture surface on the phone.
@@ -21,196 +31,193 @@ import { refreshNoteAttachmentUrl } from '../../services/notes';
  * transcribed and storage caps every signed URL at 24 hours, so it is dead by
  * the next day. This mints a fresh one through
  * `GET /notes/:noteId/attachments/:id/url` before loading, keeps the stored URL
- * only as a fallback, and re-signs once more if the sound fails to load.
+ * only as a fallback, and re-signs once more if the sound fails to open.
  *
- * What `expo-av` gives us here: play/pause, seek, duration, and a playback rate
- * (`setRateAsync` with pitch correction). `staysActiveInBackground` keeps a
- * lecture playing when the student leaves the app — the app is already built
- * with `UIBackgroundModes: ['audio']` and the Android foreground-service
- * permissions, so this is real rather than aspirational. What it does NOT give
- * us is a lock-screen / notification transport: expo-av writes no
- * now-playing metadata, so there are no OS play/pause controls. That needs a
- * different native module and is not something this file can fake.
+ * All playback lives in `services/lectureAudioEngine.ts`, which owns the
+ * `expo-audio` player and the lock-screen session. This file is the view: it
+ * renders engine state and sends transport commands back. The controls on the
+ * lock screen and in the notification shade drive the same engine, so the two
+ * can never disagree about where the playhead is.
  */
 export interface LectureAudioPlayerProps {
   noteId: string;
   attachment: LectureAttachmentLike;
+  /** The note's own title — what the lock screen should call this recording. */
+  noteTitle?: string | null;
 }
 
-export function LectureAudioPlayer({ noteId, attachment }: LectureAudioPlayerProps) {
+/**
+ * What the lock screen calls this recording.
+ *
+ * The NOTE TITLE wins: that is the name the student gave the lecture, and it is
+ * what they are looking for on the lock screen. `LectureTabs` passes it down
+ * (`LectureTabSource` itself carries no title, so the two screens that mount
+ * the surface supply it).
+ *
+ * The file name is the fallback for an older row saved before the title was
+ * threaded through: `physiology-week-4.m4a` becomes `Physiology week 4`, and
+ * the recorder's default name becomes plain "Lecture recording" rather than
+ * showing the student a slug.
+ */
+function nowPlayingTitle(
+  attachment: LectureAttachmentLike,
+  noteTitle?: string | null
+): string {
+  const named = (noteTitle ?? '').trim();
+  if (named && named.toLowerCase() !== 'untitled note') return named;
+  const raw = lectureAudioFileName(attachment);
+  const stem = raw.replace(/\.[a-z0-9]{1,5}$/i, '');
+  const words = stem.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!words || words.toLowerCase() === 'lecture recording') return 'Lecture recording';
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * The app mark shown beside the transport on the lock screen and in the
+ * notification shade. `expo-audio` takes a URL string, so the bundled asset has
+ * to be resolved to one: a packager URL in dev, a `file://`/bundle path in a
+ * release build. Resolved once, and defensively — a null here would cost the
+ * whole player, and artwork is the most optional field on the session.
+ */
+const LOCK_SCREEN_ARTWORK_URL: string | undefined = (() => {
+  try {
+    return Image.resolveAssetSource(require('../../../assets/icon.png'))?.uri || undefined;
+  } catch {
+    return undefined;
+  }
+})();
+
+export function LectureAudioPlayer({ noteId, attachment, noteTitle }: LectureAudioPlayerProps) {
   const { colors } = useTheme();
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const engineRef = useRef<LectureAudioEngine | null>(null);
   const trackWidthRef = useRef(0);
   const resignedRef = useRef(false);
   const [url, setUrl] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [playing, setPlaying] = useState(false);
-  const [positionMs, setPositionMs] = useState(0);
-  const [durationMs, setDurationMs] = useState(0);
-  const [speed, setSpeed] = useState<number>(1);
+  /** Null while healthy; otherwise the reason the student is shown. */
+  const [failure, setFailure] = useState<string | null>(null);
+  const [state, setState] = useState<LectureAudioState>(initialLectureAudioState);
 
   const attachmentId = attachment.id;
   const storedUrl = (attachment.fileUrl ?? '').trim();
+  const title = useMemo(() => nowPlayingTitle(attachment, noteTitle), [attachment, noteTitle]);
 
-  const resign = useCallback(async (): Promise<string | null> => {
-    if (!attachmentId) return null;
-    try {
-      const result = await refreshNoteAttachmentUrl(noteId, attachmentId);
-      return result?.url || null;
-    } catch {
-      return null;
-    }
-  }, [noteId, attachmentId]);
+  /**
+   * Answers a URL, or the reason there is none. The reason is the point: the
+   * server says whether the row has no storage path, whether the object is
+   * gone, or whether the session expired, and the student used to be told
+   * "it may have been removed from storage" in all three cases.
+   */
+  const resign = useCallback(
+    async (step: 'sign' | 'resign'): Promise<{ url?: string; error?: string }> => {
+      if (!attachmentId) return { error: 'This recording has no attachment id.' };
+      try {
+        return { url: await fetchNoteAttachmentUrl(noteId, attachmentId, { step }) };
+      } catch (err) {
+        return {
+          error: describeAttachmentUrlError(err, 'The recording link could not be refreshed.'),
+        };
+      }
+    },
+    [noteId, attachmentId]
+  );
 
   useEffect(() => {
     let cancelled = false;
     resignedRef.current = false;
-    setFailed(false);
+    setFailure(null);
     setUrl(null);
     void (async () => {
-      const fresh = await resign();
+      const fresh = await resign('sign');
       if (cancelled) return;
-      const next = fresh || storedUrl;
-      if (next) setUrl(next);
-      else setFailed(true);
+      const next = fresh.url || storedUrl;
+      if (next) {
+        setUrl(next);
+        return;
+      }
+      logLectureMedia('audio:no-url', { noteId, attachmentId, message: fresh.error });
+      setFailure(fresh.error || 'This recording has no file to play.');
     })();
     return () => {
       cancelled = true;
     };
-  }, [resign, storedUrl]);
-
-  const onStatus = useCallback((status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-    if (typeof status.durationMillis === 'number' && status.durationMillis > 0) {
-      setDurationMs(status.durationMillis);
-    }
-    if (status.didJustFinish) {
-      setPlaying(false);
-      setPositionMs(0);
-      void soundRef.current?.setPositionAsync(0);
-      return;
-    }
-    setPositionMs(status.positionMillis ?? 0);
-    setPlaying(status.isPlaying);
-  }, []);
+  }, [resign, storedUrl, noteId, attachmentId]);
 
   useEffect(() => {
-    let cancelled = false;
-    setPlaying(false);
-    setPositionMs(0);
-    setDurationMs(0);
-
-    const previous = soundRef.current;
-    soundRef.current = null;
-    if (previous) void previous.unloadAsync();
     if (!url) return;
+    let cancelled = false;
 
-    const load = async (uri: string): Promise<boolean> => {
-      try {
-        // Keep playing when the phone goes to sleep or the student switches
-        // apps — a 50-minute lecture is not something you sit and watch.
-        await Audio.setAudioModeAsync({
-          allowsRecordingIOS: false,
-          playsInSilentModeIOS: true,
-          staysActiveInBackground: true,
-          playThroughEarpieceAndroid: false,
-        }).catch(() => undefined);
-        const { sound } = await Audio.Sound.createAsync(
-          { uri },
-          { shouldPlay: false, progressUpdateIntervalMillis: 250, rate: speed, shouldCorrectPitch: true },
-          onStatus
-        );
-        if (cancelled) {
-          await sound.unloadAsync();
-          return true;
-        }
-        soundRef.current = sound;
-        return true;
-      } catch {
-        return false;
-      }
-    };
+    const engine = new LectureAudioEngine({
+      nowPlaying: {
+        title,
+        artist: 'Lantern Study',
+        ...(LOCK_SCREEN_ARTWORK_URL ? { artworkUrl: LOCK_SCREEN_ARTWORK_URL } : {}),
+      },
+      onState: (next) => {
+        if (!cancelled) setState(next);
+      },
+    });
+    engineRef.current = engine;
 
     void (async () => {
-      if (await load(url)) return;
-      if (cancelled || resignedRef.current) {
-        if (!cancelled) setFailed(true);
+      const first = await engine.load(url);
+      if (cancelled) return;
+      if (first.ok) return;
+      logLectureMedia('audio:load', { noteId, attachmentId, message: first.message });
+      // One re-sign, once: a URL minted seconds ago that still will not open is
+      // a missing object, not an expiry, and retrying forever just spins.
+      if (resignedRef.current) {
+        engine.markFailed(first.message);
+        setFailure(first.message);
         return;
       }
       resignedRef.current = true;
-      const fresh = await resign();
+      const fresh = await resign('resign');
       if (cancelled) return;
-      if (!fresh || !(await load(fresh))) setFailed(true);
-      else setUrl(fresh);
+      if (!fresh.url) {
+        engine.markFailed(fresh.error);
+        setFailure(fresh.error || first.message);
+        return;
+      }
+      const second = await engine.load(fresh.url);
+      if (cancelled) return;
+      if (!second.ok) {
+        logLectureMedia('audio:load:retry', {
+          noteId,
+          attachmentId,
+          message: second.message,
+        });
+        engine.markFailed(second.message);
+        setFailure(second.message);
+        return;
+      }
+      setUrl(fresh.url);
     })();
 
     return () => {
       cancelled = true;
-      const sound = soundRef.current;
-      soundRef.current = null;
-      if (sound) void sound.unloadAsync();
+      engineRef.current = null;
+      engine.destroy();
     };
-    // `speed` is applied through setRateAsync below, not by reloading the sound.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [url, onStatus, resign]);
+  }, [url, title, resign, noteId, attachmentId]);
 
-  const toggle = async () => {
-    const sound = soundRef.current;
-    if (!sound) return;
-    try {
-      const status = await sound.getStatusAsync();
-      if (!status.isLoaded) return;
-      if (status.isPlaying) {
-        await sound.pauseAsync();
-        return;
-      }
-      const total = status.durationMillis ?? durationMs;
-      const atEnd =
-        !!status.didJustFinish ||
-        (typeof total === 'number' && total > 0 && (status.positionMillis ?? 0) >= total - 40);
-      if (atEnd) await sound.playFromPositionAsync(0);
-      else await sound.playAsync();
-    } catch {
-      setPlaying(false);
-    }
-  };
-
-  const seekToRatio = async (ratio: number) => {
-    const sound = soundRef.current;
-    if (!sound || !(durationMs > 0)) return;
-    const next = Math.max(0, Math.min(durationMs, Math.floor(ratio * durationMs)));
-    // Stop just short of the tail so scrubbing to the end does not park the
-    // player in the finished state.
-    const clamped = next >= durationMs - 40 ? Math.max(0, durationMs - 40) : next;
-    try {
-      await sound.setPositionAsync(clamped);
-      setPositionMs(clamped);
-    } catch {
-      // A failed seek is not worth an error state; the playhead just stays put.
-    }
-  };
-
-  const nudgeSeconds = async (deltaSec: number) => {
+  const seekToRatio = (ratio: number) => {
+    const { durationMs } = state;
     if (!(durationMs > 0)) return;
-    await seekToRatio(Math.max(0, Math.min(durationMs, positionMs + deltaSec * 1000)) / durationMs);
+    void engineRef.current?.command({
+      type: 'seek',
+      positionMs: Math.floor(ratio * durationMs),
+    });
   };
 
-  const cycleSpeed = async () => {
-    const next = nextLectureAudioSpeed(speed);
-    setSpeed(next);
-    try {
-      await soundRef.current?.setRateAsync(next, true);
-    } catch {
-      // Rate changes are best-effort on older Android decoders.
-    }
-  };
+  // The watchdog inside the engine is the only thing that notices a source
+  // that opens, reports nothing, and never plays — so its reason counts too.
+  const shownFailure = failure || (state.phase === 'failed' ? state.errorMessage : null);
 
-  if (failed) {
+  if (shownFailure) {
     return (
       <View className="rounded-xl border border-lantern-border bg-lantern-surface p-3">
-        <T.Body tone="secondary">
-          This recording could not be opened. It may have been removed from storage.
-        </T.Body>
+        <T.Body tone="secondary">This recording could not be opened.</T.Body>
+        <T.Caption tone="tertiary">{shownFailure}</T.Caption>
       </View>
     );
   }
@@ -223,13 +230,15 @@ export function LectureAudioPlayer({ noteId, attachment }: LectureAudioPlayerPro
     );
   }
 
+  const { positionMs, durationMs, playing, rate } = state;
   const progress = durationMs > 0 ? Math.min(1, positionMs / durationMs) : 0;
+  const jumpLabel = `${LECTURE_AUDIO_JUMP_SECONDS} seconds`;
 
   return (
     <View className="gap-3 rounded-xl border border-lantern-border bg-lantern-surface p-3">
       <View className="flex-row items-center gap-3">
         <Pressable
-          onPress={() => void toggle()}
+          onPress={() => void engineRef.current?.command({ type: 'toggle' })}
           accessibilityRole="button"
           accessibilityLabel={playing ? 'Pause the recording' : 'Play the recording'}
           className="items-center justify-center rounded-full"
@@ -245,7 +254,7 @@ export function LectureAudioPlayer({ noteId, attachment }: LectureAudioPlayerPro
             onPress={(event) => {
               const width = trackWidthRef.current;
               if (!(width > 0)) return;
-              void seekToRatio(Math.max(0, Math.min(1, event.nativeEvent.locationX / width)));
+              seekToRatio(Math.max(0, Math.min(1, event.nativeEvent.locationX / width)));
             }}
             style={{ height: 20, justifyContent: 'center' }}
             accessibilityRole="adjustable"
@@ -256,12 +265,17 @@ export function LectureAudioPlayer({ noteId, attachment }: LectureAudioPlayerPro
               now: Math.round(positionMs / 1000),
             }}
             accessibilityActions={[
-              { name: 'increment', label: 'Forward 10 seconds' },
-              { name: 'decrement', label: 'Back 10 seconds' },
+              { name: 'increment', label: `Forward ${jumpLabel}` },
+              { name: 'decrement', label: `Back ${jumpLabel}` },
             ]}
             onAccessibilityAction={(event) => {
-              if (event.nativeEvent.actionName === 'increment') void nudgeSeconds(10);
-              else if (event.nativeEvent.actionName === 'decrement') void nudgeSeconds(-10);
+              const name = event.nativeEvent.actionName;
+              if (name !== 'increment' && name !== 'decrement') return;
+              void engineRef.current?.command({
+                type: 'jump',
+                seconds:
+                  name === 'increment' ? LECTURE_AUDIO_JUMP_SECONDS : -LECTURE_AUDIO_JUMP_SECONDS,
+              });
             }}
           >
             <View
@@ -294,19 +308,41 @@ export function LectureAudioPlayer({ noteId, attachment }: LectureAudioPlayerPro
       </View>
       <View className="flex-row flex-wrap items-center gap-2">
         <Pressable
-          onPress={() => void cycleSpeed()}
+          onPress={() =>
+            void engineRef.current?.command({ type: 'jump', seconds: -LECTURE_AUDIO_JUMP_SECONDS })
+          }
           accessibilityRole="button"
-          accessibilityLabel={`Playback speed ${formatLectureAudioSpeed(speed)}`}
+          accessibilityLabel={`Back ${jumpLabel}`}
           className="min-h-[44px] justify-center rounded-full border border-lantern-border px-3"
         >
-          <T.Body tabular>{formatLectureAudioSpeed(speed)}</T.Body>
+          <T.Body tabular>{`−${LECTURE_AUDIO_JUMP_SECONDS}s`}</T.Body>
+        </Pressable>
+        <Pressable
+          onPress={() =>
+            void engineRef.current?.command({ type: 'jump', seconds: LECTURE_AUDIO_JUMP_SECONDS })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Forward ${jumpLabel}`}
+          className="min-h-[44px] justify-center rounded-full border border-lantern-border px-3"
+        >
+          <T.Body tabular>{`+${LECTURE_AUDIO_JUMP_SECONDS}s`}</T.Body>
+        </Pressable>
+        <Pressable
+          onPress={() =>
+            void engineRef.current?.command({ type: 'rate', rate: nextLectureAudioSpeed(rate) })
+          }
+          accessibilityRole="button"
+          accessibilityLabel={`Playback speed ${formatLectureAudioSpeed(rate)}`}
+          className="min-h-[44px] justify-center rounded-full border border-lantern-border px-3"
+        >
+          <T.Body tabular>{formatLectureAudioSpeed(rate)}</T.Body>
         </Pressable>
         <T.Caption tone="tertiary">
           {LECTURE_AUDIO_SPEEDS.map(formatLectureAudioSpeed).join(' · ')}
         </T.Caption>
       </View>
       <T.Caption tone="tertiary">
-        Playback keeps going when you leave the app. There are no lock-screen controls.
+        {`Playback keeps going when you leave the app. Play, pause and ${jumpLabel.replace(' seconds', '-second')} skips are on your lock screen too.`}
       </T.Caption>
     </View>
   );

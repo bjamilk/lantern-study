@@ -37,6 +37,15 @@ export type NotificationIconKey =
   | "heart"
   | "alert";
 
+/**
+ * The brand-coloured notification kinds (campaign, listing, generic, ...) pair
+ * with `bg-lantern-primary-background` on both platforms, so their glyph is the
+ * theme's INK, not the retired indigo. This literal is the LIGHT ink
+ * (`lanternColors.primary`); a consumer that has a theme must prefer
+ * `mobileIconToken` below, because dark inverts the ink.
+ */
+export const PRIMARY_INK = "#191919";
+
 export interface NotificationMeta {
   iconKey: NotificationIconKey;
   label: string | null;
@@ -44,6 +53,13 @@ export interface NotificationMeta {
   webColorClass: string;
   /** Hex color for mobile Ionicons */
   mobileIconColor: string;
+  /**
+   * Set only on the brand-coloured kinds: the glyph is a THEME token, so a
+   * themed consumer must paint `colors.primaryText` and ignore
+   * `mobileIconColor` (which is the light-theme fallback). Near-black ink on
+   * dark's translucent tint would otherwise be invisible.
+   */
+  mobileIconToken?: "primaryText";
   /** Tailwind bg class for mobile icon container */
   mobileBgClass: string;
   /** Hex accent for the row's left border — the colour-coding cue. */
@@ -280,8 +296,9 @@ export function getNotificationMeta(
       iconKey: "megaphone",
       label: "Shop campaign",
       webColorClass: "text-lantern-primary bg-lantern-primary-background",
-      mobileIconColor: "#4f46e5",
-      accentColor: "#4f46e5",
+      mobileIconColor: PRIMARY_INK,
+      mobileIconToken: "primaryText",
+      accentColor: PRIMARY_INK,
       mobileBgClass: "bg-lantern-primary-background",
     };
   }
@@ -311,8 +328,9 @@ export function getNotificationMeta(
       iconKey: "bell",
       label: null,
       webColorClass: "text-lantern-primary bg-lantern-primary-background",
-      mobileIconColor: "#4f46e5",
-      accentColor: "#4f46e5",
+      mobileIconColor: PRIMARY_INK,
+      mobileIconToken: "primaryText",
+      accentColor: PRIMARY_INK,
       mobileBgClass: "bg-lantern-primary-background",
     };
   }
@@ -385,8 +403,9 @@ export function getNotificationMeta(
         label: "Listing",
         webColorClass:
           "text-lantern-primary-light bg-lantern-primary-background",
-        mobileIconColor: "#6366f1",
-      accentColor: "#6366f1",
+        mobileIconColor: PRIMARY_INK,
+        mobileIconToken: "primaryText",
+      accentColor: PRIMARY_INK,
         mobileBgClass:
           "bg-lantern-primary-background dark:bg-lantern-primary-background",
       };
@@ -414,8 +433,9 @@ export function getNotificationMeta(
         iconKey: "envelope",
         label: "Group invite",
         webColorClass: "text-lantern-primary bg-lantern-primary-background",
-        mobileIconColor: "#4f46e5",
-      accentColor: "#4f46e5",
+        mobileIconColor: PRIMARY_INK,
+        mobileIconToken: "primaryText",
+      accentColor: PRIMARY_INK,
         mobileBgClass: "bg-lantern-primary-background",
       };
     case "group":
@@ -491,8 +511,9 @@ export function getNotificationMeta(
         iconKey: "bell",
         label: null,
         webColorClass: "text-lantern-primary bg-lantern-primary-background",
-        mobileIconColor: "#4f46e5",
-      accentColor: "#4f46e5",
+        mobileIconColor: PRIMARY_INK,
+        mobileIconToken: "primaryText",
+      accentColor: PRIMARY_INK,
         mobileBgClass: "bg-lantern-primary-background",
       };
   }

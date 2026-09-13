@@ -1,9 +1,7 @@
-import React, { useRef, useState, useMemo } from 'react';
-import { useToastStore } from '../stores/toastStore';
+import React, { useState, useMemo } from 'react';
 import { Group, AppMode, User, Badge, DMThread, TestSessionData, StudySessionData, ChatItem, GameSession } from '../types';
 import GroupListItem from './GroupListItem';
 import { Avatar, ConnectionBadge, LanternIcon } from './ui';
-import { compressImage } from '../utils/imageCompression';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { AppIcon, type AppIconName } from './ui/AppIcon';
 import { useLowDataModeToggle } from '../hooks/useLowDataModeToggle';
@@ -32,7 +30,6 @@ interface SidebarProps {
   currentPath: string;
   pendingSyncCount: number;
   isOnline: boolean;
-  onUpdateCurrentUserAvatar: (avatarUrl: string) => void;
   currentAppMode: AppMode;
   isExpanded: boolean;
   onToggleExpand: () => void;
@@ -66,7 +63,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   currentPath,
   pendingSyncCount,
   isOnline,
-  onUpdateCurrentUserAvatar,
   currentAppMode,
   isExpanded,
   onToggleExpand,
@@ -83,7 +79,6 @@ const Sidebar: React.FC<SidebarProps> = ({
   isCompanionOpen,
   onCommunityNavigate,
 }) => {
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
   const [isArchivedExpanded, setIsArchivedExpanded] = useState(false);
   const { lowDataMode } = useLowDataModeToggle();
@@ -201,49 +196,6 @@ const Sidebar: React.FC<SidebarProps> = ({
     );
   };
 
-  const handleAvatarClick = () => {
-    if (fileInputRef.current) {
-      fileInputRef.current.click();
-    }
-  };
-
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      try {
-        if (file.size > 2 * 1024 * 1024) { 
-          useToastStore.getState().showToast("Image is too large. Please select an image under 2MB.", 'error');
-          return;
-        }
-        const base64 = await compressImage(file, {
-          maxWidth: 150,
-          maxHeight: 150,
-          quality: 0.7,
-          outputType: 'base64',
-        }) as string;
-        const base64Data = base64.includes(',') ? base64.split(',')[1]! : base64;
-        const { uploadProfileAvatar } = await import('../services/supabase');
-        const mimeMatch = base64.match(/^data:([^;]+);/);
-        const contentType = mimeMatch?.[1] || 'image/webp';
-        const uploaded = await uploadProfileAvatar(
-          currentUser.id,
-          contentType === 'image/png' ? 'avatar.png' : 'avatar.webp',
-          base64Data,
-          contentType
-        );
-        // Canonical storage URL persists; Avatar component re-signs for display.
-        onUpdateCurrentUserAvatar(uploaded.avatarUrl);
-      } catch (error) {
-        console.error("Error uploading avatar:", error);
-        useToastStore.getState().showToast("Error uploading avatar. Please try another one.", 'error');
-      } finally {
-        if (event.target) {
-            event.target.value = "";
-        }
-      }
-    }
-  };
-  
   // The chats flyout column replaces the old in-sidebar vertical accordion:
   // expanding Chats slides out a dedicated column beside the sidebar instead
   // of unfolding the list downward. On the chat screen itself ChatWindow
@@ -309,7 +261,7 @@ const Sidebar: React.FC<SidebarProps> = ({
     isActive?: boolean;
     badgeCount?: number;
     badgeSuffix?: string;
-    /** A plain count rendered beside the label (AI credits), not an alert. */
+    /** A plain count under the label (AI credits), not an alert. */
     countLabel?: string;
     tipId?: string;
   }) => {
@@ -325,7 +277,7 @@ const Sidebar: React.FC<SidebarProps> = ({
       data-tip-id={tipId}
       aria-label={accessibleName}
       aria-current={isActive ? 'page' : undefined}
-      className={`w-full flex items-center p-2.5 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all duration-150 relative ${
+      className={`w-full flex ${showText && countLabel ? 'items-start' : 'items-center'} p-2.5 rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-white/40 transition-all duration-150 relative ${
           isActive
             // 2026-09-11: a GREY pill, not an indigo fill. The reference's rail
             // carries no hue at all — the lit item is the same outline glyph
@@ -351,16 +303,16 @@ const Sidebar: React.FC<SidebarProps> = ({
           className={`flex-shrink-0 ${showText ? 'mr-3' : ''}`}
         />
       ) : null}
-      {showText && <span className="flex-grow text-left text-body tracking-tight">{label}</span>}
-      {showText && countLabel ? (
-        <span aria-hidden="true" className={`ml-2 shrink-0 rounded-full px-2 py-0.5 text-label tracking-normal ${
-          isActive
-            ? 'bg-white/20 text-lantern-nav-column-text'
-            : 'bg-white/10 text-lantern-nav-column-text-secondary'
-        }`}>
-          {countLabel}
+      {showText && (
+        <span className="min-w-0 flex-1 flex flex-col items-start text-left leading-tight">
+          <span className="text-body tracking-tight">{label}</span>
+          {countLabel ? (
+            <span aria-hidden="true" className="mt-0.5 text-label tracking-normal text-lantern-nav-column-text-secondary">
+              {countLabel}
+            </span>
+          ) : null}
         </span>
-      ) : null}
+      )}
       {showBadge && (
           <span aria-hidden="true" className={`absolute top-1.5 right-1.5 bg-lantern-error-strong text-white text-label tracking-normal px-1.5 py-0.5 rounded-full`}>
               {formatUnreadBadgeCount(badgeCount!)}
@@ -391,7 +343,7 @@ const Sidebar: React.FC<SidebarProps> = ({
             title={DESTINATION_LABELS.home}
           >
             <LanternIcon size={28} />
-            <span className="font-display text-title font-semibold tracking-tight text-lantern-nav-column-text">
+            <span className="font-display text-heading font-semibold tracking-tight whitespace-nowrap text-lantern-nav-column-text">
               Lantern Study
             </span>
           </button>
@@ -510,24 +462,6 @@ const Sidebar: React.FC<SidebarProps> = ({
           compact
           className={showText ? 'w-full justify-center' : 'w-full justify-center px-1'}
         />
-        <div className="relative group mt-2 flex justify-center" title="Change profile picture">
-          <Avatar
-            name={currentUser.name}
-            id={currentUser.id}
-            src={resolveAvatarSrc(currentUser.avatarUrl, lowDataMode)}
-            size="sm"
-            localOnly={lowDataMode}
-          />
-          <button
-            type="button"
-            onClick={handleAvatarClick}
-            aria-label="Change profile picture"
-            className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-opacity rounded-full"
-          >
-            <AppIcon name="camera" size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-          <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-        </div>
       </div>
     </div>
 

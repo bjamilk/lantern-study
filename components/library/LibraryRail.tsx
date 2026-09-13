@@ -43,6 +43,11 @@ export interface LibraryRailProps {
   onTurnSemesterIntoProducts?: () => void;
   /** Tighter rows for the small-screen top panel. */
   compact?: boolean;
+  /**
+   * The open Library tab. The rail then shows one quiet count for that
+   * artefact instead of four badges under every course.
+   */
+  countFocus?: 'notes' | 'flashcards';
   className?: string;
 }
 
@@ -76,8 +81,10 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
   onCreateStudyPack,
   onTurnSemesterIntoProducts,
   compact = false,
+  countFocus,
   className = '',
 }) => {
+  void onTurnSemesterIntoProducts;
   const overview = useLibraryStore((s) => s.overview);
   const loading = useLibraryStore((s) => s.overviewLoading);
   const error = useLibraryStore((s) => s.overviewError);
@@ -173,13 +180,31 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
    * row a whole second line, and their aria-labels were all a screen reader got,
    * so the marker has to say the same thing.
    */
-  const renderEmptyMarker = (selected: boolean, extraClass = '') => (
-    <span
-      className={`text-label tracking-normal shrink-0 ${selected ? 'text-white/70' : 'text-lantern-text-tertiary'} ${extraClass}`}
-    >
+  const renderEmptyMarker = (_selected: boolean, extraClass = '') => (
+    <span className={`text-label tracking-normal shrink-0 text-lantern-text-tertiary ${extraClass}`}>
       empty<span className="sr-only"> — no notes, decks, tests or offline packs</span>
     </span>
   );
+
+  const renderFocusCount = (
+    counts: Pick<LibraryCourseCounts, 'notes' | 'decks'>,
+  ) => {
+    if (!countFocus) return null;
+    const n = countFocus === 'notes' ? counts.notes || 0 : counts.decks || 0;
+    if (n <= 0) return null;
+    return (
+      <span className="ml-auto shrink-0 tabular-nums text-[11px] text-lantern-text-tertiary">
+        {n}
+      </span>
+    );
+  };
+
+  const selectedRowClass = (selected: boolean) =>
+    `w-full rounded-xl ${rowPad} text-left cursor-pointer transition-colors ${
+      selected
+        ? 'bg-lantern-background-secondary text-lantern-text'
+        : 'text-lantern-text hover:bg-lantern-background-secondary'
+    }`;
 
   const renderCounts = (
     counts: Pick<LibraryCourseCounts, 'notes' | 'decks' | 'tests' | 'bundles'> & { purchasedPacks?: number },
@@ -242,21 +267,19 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
           onClick={toggle}
           onKeyDown={rowActivate(toggle)}
           title={row.untopiced ? 'Items in this course that are not under any topic' : row.title}
-          className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-            selected ? 'bg-lantern-primary-fill text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
-          }`}
+          className={selectedRowClass(selected)}
         >
           <div className="flex items-center gap-1.5 min-w-0">
             <span
               className={`text-xs truncate ${
-                row.untopiced && !selected ? 'italic text-lantern-text-secondary' : 'font-medium'
+                row.untopiced ? 'italic text-lantern-text-secondary' : 'font-medium'
               }`}
             >
               {row.title}
             </span>
-            {total === 0 ? renderEmptyMarker(selected, 'ml-auto') : null}
+            {countFocus ? renderFocusCount(row.counts) : total === 0 ? renderEmptyMarker(selected, 'ml-auto') : null}
           </div>
-          {renderCounts(row.counts, (key) => openTopicCount(courseId, row, key), selected)}
+          {countFocus ? null : renderCounts(row.counts, (key) => openTopicCount(courseId, row, key), selected)}
         </div>
       </li>
     );
@@ -290,13 +313,9 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
           aria-pressed={courseSelected && !selectedTopicId}
           onClick={select}
           onKeyDown={rowActivate(select)}
-          className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-            courseSelected && !selectedTopicId
-              ? 'bg-lantern-primary-fill text-white'
-              : 'text-lantern-text hover:bg-lantern-background-secondary'
-          }`}
+          className={selectedRowClass(courseSelected && !selectedTopicId)}
         >
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-start gap-1.5 min-w-0">
             {topics.length > 0 ? (
               <button
                 type="button"
@@ -307,9 +326,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                   e.stopPropagation();
                   toggleTopics(rowKey);
                 }}
-                className={`shrink-0 -ml-1 grid place-items-center min-w-[24px] min-h-[24px] rounded ${
-                  courseSelected && !selectedTopicId ? 'hover:bg-white/20' : 'hover:bg-lantern-border/60'
-                }`}
+                className="shrink-0 -ml-1 grid place-items-center min-w-[24px] min-h-[24px] rounded hover:bg-lantern-border/60"
               >
                 {topicsOpen ? (
                   <AppIcon name="chevron-down" size={14} aria-hidden />
@@ -318,19 +335,21 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 )}
               </button>
             ) : null}
-            <span className="text-sm font-semibold shrink-0">{node.course.code}</span>
-            {node.course.title && node.course.title !== node.course.code ? (
-              <span
-                className={`text-xs truncate ${
-                  courseSelected && !selectedTopicId ? 'text-white/80' : 'text-lantern-text-secondary'
-                }`}
-                title={node.course.title}
-              >
-                — {node.course.title}
+            <span className="min-w-0 flex-1">
+              <span className="flex items-center gap-1.5 min-w-0">
+                <span className="text-sm font-semibold truncate">{node.course.code}</span>
+                {courseSelected && !selectedTopicId ? (
+                  <AppIcon name="checkmark" size={14} className="shrink-0 text-lantern-text-tertiary" aria-hidden />
+                ) : null}
               </span>
-            ) : null}
+              {node.course.title && node.course.title !== node.course.code ? (
+                <span className="block text-[11px] text-lantern-text-secondary truncate" title={node.course.title}>
+                  {node.course.title}
+                </span>
+              ) : null}
+            </span>
             <span className="ml-auto flex items-center gap-1 shrink-0">
-              {total === 0 ? renderEmptyMarker(courseSelected && !selectedTopicId) : null}
+              {countFocus ? renderFocusCount(node.counts) : total === 0 ? renderEmptyMarker(false) : null}
               {/* One overflow menu per course, in the same 24px the manage-topics
                   gear used to occupy — and on every course, not only ones with
                   topic rows: an outline whose topics hold nothing yet
@@ -343,11 +362,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
                 <MenuTrigger
                   aria-label={`Actions for ${node.course.code}`}
                   title={`Actions for ${node.course.code}`}
-                  className={`grid place-items-center min-w-[24px] min-h-[24px] rounded ${
-                    courseSelected && !selectedTopicId
-                      ? 'text-white/80 hover:bg-white/20'
-                      : 'text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60'
-                  }`}
+                  className="grid place-items-center min-w-[24px] min-h-[24px] rounded text-lantern-text-tertiary hover:text-lantern-text hover:bg-lantern-border/60"
                 >
                   <AppIcon name="ellipsis-horizontal" size={16} aria-hidden />
                 </MenuTrigger>
@@ -370,7 +385,7 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               </Menu>
             </span>
           </div>
-          {renderCounts(node.counts, (key) => openCount(node.course.id, key), courseSelected && !selectedTopicId)}
+          {countFocus ? null : renderCounts(node.counts, (key) => openCount(node.course.id, key), courseSelected && !selectedTopicId)}
         </div>
         {topicsOpen ? (
           <ul
@@ -400,16 +415,18 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
             aria-pressed={allSelected}
             onClick={() => onSelectCourse(null)}
             onKeyDown={rowActivate(() => onSelectCourse(null))}
-            className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-              allSelected ? 'bg-lantern-primary-fill text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
-            }`}
+            className={selectedRowClass(allSelected)}
           >
             <span className="flex items-center gap-2">
               <AppIcon name="school" size={16} className="shrink-0" aria-hidden />
-              <span className="font-semibold">All items</span>
-              {overview && countsTotal(tree.totals) === 0 ? renderEmptyMarker(allSelected, 'ml-auto') : null}
+              <span className="font-semibold">All</span>
+              {overview && countFocus
+                ? renderFocusCount(tree.totals)
+                : overview && countsTotal(tree.totals) === 0
+                  ? renderEmptyMarker(allSelected, 'ml-auto')
+                  : null}
             </span>
-            {overview ? renderCounts(tree.totals, (key) => openCount(null, key), allSelected) : null}
+            {overview && !countFocus ? renderCounts(tree.totals, (key) => openCount(null, key), allSelected) : null}
           </div>
         </li>
       </ul>
@@ -438,23 +455,12 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
       {overview ? (
         <>
           <section className="mt-3" aria-labelledby="library-rail-current">
-            <div className="px-2 mb-1 flex items-center justify-between gap-2">
-              <h3
-                id="library-rail-current"
-                className="text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
-              >
-                This semester
-              </h3>
-              {onTurnSemesterIntoProducts ? (
-                <button
-                  type="button"
-                  onClick={onTurnSemesterIntoProducts}
-                  className="text-[11px] font-semibold text-lantern-primary-text hover:underline"
-                >
-                  Turn into products
-                </button>
-              ) : null}
-            </div>
+            <h3
+              id="library-rail-current"
+              className="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary"
+            >
+              This semester
+            </h3>
             {tree.current.length > 0 ? (
               <ul className="space-y-0.5">{tree.current.map(renderCourseRow)}</ul>
             ) : (
@@ -507,17 +513,19 @@ export const LibraryRail: React.FC<LibraryRailProps> = ({
               aria-pressed={unfiledSelected}
               onClick={() => onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID)}
               onKeyDown={rowActivate(() => onSelectCourse(unfiledSelected ? null : UNFILED_COURSE_ID))}
-              className={`w-full rounded-lg ${rowPad} text-left cursor-pointer transition-colors ${
-                unfiledSelected ? 'bg-lantern-primary-fill text-white' : 'text-lantern-text hover:bg-lantern-background-secondary'
-              }`}
+              className={selectedRowClass(unfiledSelected)}
               title="Items not filed under any course"
             >
               <span className="flex items-center gap-2">
                 <AppIcon name="inbox" size={16} className="shrink-0" aria-hidden />
                 <span className="font-semibold">Unfiled</span>
-                {countsTotal(tree.unfiled) === 0 ? renderEmptyMarker(unfiledSelected, 'ml-auto') : null}
+                {countFocus
+                  ? renderFocusCount(tree.unfiled)
+                  : countsTotal(tree.unfiled) === 0
+                    ? renderEmptyMarker(unfiledSelected, 'ml-auto')
+                    : null}
               </span>
-              {renderCounts(tree.unfiled, (key) => openCount(UNFILED_COURSE_ID, key), unfiledSelected)}
+              {countFocus ? null : renderCounts(tree.unfiled, (key) => openCount(UNFILED_COURSE_ID, key), unfiledSelected)}
             </div>
           </section>
         </>

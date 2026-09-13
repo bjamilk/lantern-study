@@ -24,7 +24,7 @@ import {
   getCategoryInfo,
   type MarketplaceListing,
 } from '../../stores';
-import { Avatar, Button, Card } from '../../components/ui';
+import { Avatar, Button, Card, FeatureDisc } from '../../components/ui';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { StickyActionBar } from './components/StickyActionBar';
 import { scrollClearanceForActionBar } from './components/keyboardSafeLayout';
@@ -64,6 +64,7 @@ import { shouldShowTrustChip, trustLabel } from '@lantern/shared/network';
 
 import { useMarketplacePaymentsConfig } from '../../hooks/useMarketplacePaymentsConfig';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 type NavigationProp = {
   goBack: () => void;
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -502,7 +503,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
     return (
       <Screen bottom="safe">
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator size="large" color="#6366f1" />
+          <ActivityIndicator size="large" color={brand.text} />
         </View>
       </Screen>
     );
@@ -909,8 +910,22 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                     Sample flashcards
                   </Text>
                   {studyPackPreview.flashcardFronts.map((front, index) => (
-                    <View key={index} className="mb-1.5 rounded-lg border border-lantern-border p-2.5">
-                      <Text className="text-sm text-lantern-text-secondary">{front}</Text>
+                    <View
+                      key={`${index}-${front.slice(0, 24)}`}
+                      className="mb-2 overflow-hidden rounded-2xl border border-lantern-border bg-lantern-surface"
+                    >
+                      <View className="h-[3px] bg-lantern-feature-flashcards-ink" />
+                      <View className="flex-row items-start gap-3 px-3 py-3">
+                        <FeatureDisc feature="flashcards" icon="layers" size={32} />
+                        <View className="flex-1 min-w-0">
+                          <Text className="text-label font-semibold uppercase tracking-wider text-lantern-feature-flashcards-ink">
+                            Question
+                          </Text>
+                          <Text className="mt-1 text-body text-lantern-text" numberOfLines={3}>
+                            {front}
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                   ))}
                 </View>
@@ -1038,7 +1053,7 @@ export function ListingDetailScreen({ navigation, route }: Props) {
                     <Text className="text-label font-semibold text-lantern-primary-text">
                       {reviewStarFilter}-star only
                     </Text>
-                    <AppIcon name="close" size={11} color="#6366f1" />
+                    <AppIcon name="close" size={11} color={brand.text} />
                   </Pressable>
                 ) : null}
               </View>

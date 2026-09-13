@@ -14,6 +14,7 @@ import type { StudyPackDraft, StudyPackDraftSummary } from '@lantern/shared/mark
 import { summarizeStudyPackCounts, STUDY_PACK_DRAFT_CREDITS } from '@lantern/shared/marketplace';
 import { PublishStudyPackModal } from '../settings/PublishStudyPackModal';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -104,12 +105,12 @@ export function StudyProductDraftsScreen({
       <View className="mx-4 mb-3 rounded-xl border border-lantern-border bg-lantern-surface p-4 flex-row items-start">
         <View className="w-9 h-9 rounded-lg bg-lantern-primary/10 items-center justify-center mr-3 mt-0.5">
           {pending ? (
-            <ActivityIndicator size="small" color="#6366f1" />
+            <ActivityIndicator size="small" color={brand.text} />
           ) : (
             <AppIcon
               name={item.status === 'failed' ? 'alert-circle' : 'sparkles'}
               size={18}
-              color={item.status === 'failed' ? '#ef4444' : '#6366f1'}
+              color={item.status === 'failed' ? '#ef4444' : brand.text}
             />
           )}
         </View>
@@ -173,7 +174,7 @@ export function StudyProductDraftsScreen({
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : drafts.length === 0 && !source ? (
         <View className="flex-1 items-center justify-center px-8">

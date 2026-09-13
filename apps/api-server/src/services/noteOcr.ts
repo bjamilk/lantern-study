@@ -22,7 +22,15 @@ import {
 } from './perceiveVision';
 import { logger } from '../utils/logger';
 
-async function readPhotoPageText(
+/**
+ * Read one photograph: Tesseract first, escalating to the Gemini vision
+ * transcriber when the local pass comes back weak.
+ *
+ * Exported for the companion's image attachments, which need exactly this
+ * chain on a single photo — a second copy of it would be a second set of
+ * fallback rules to keep in step with this one.
+ */
+export async function readPhotoPageText(
   buffer: Buffer,
   timeoutMs: number
 ): Promise<{ text: string; provider: string }> {

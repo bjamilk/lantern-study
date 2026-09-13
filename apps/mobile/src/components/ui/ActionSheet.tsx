@@ -10,7 +10,7 @@
 import React from 'react';
 import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SHEET, useTheme } from '../../theme';
+import { SHEET, brand, useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
 import { Title } from './Text';
 
@@ -159,7 +159,7 @@ export function ActionSheet({
                     name={item.icon}
                     filled={item.iconFilled}
                     size={20}
-                    color={item.destructive ? '#ef4444' : '#6366f1'}
+                    color={item.destructive ? '#ef4444' : brand.text}
                   />
                 ) : null}
                 <View className="flex-1">

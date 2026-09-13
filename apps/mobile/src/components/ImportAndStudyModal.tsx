@@ -22,7 +22,7 @@ import { useNotesStore } from '../stores/notesStore';
 import { useStudyGoalsStore } from '../stores/studyGoalsStore';
 import { useJobsStore } from '../stores/jobsStore';
 import { saveGeneratedDeck } from '../services/jobArtifacts';
-import { useTheme } from '../theme';
+import { brand, useTheme } from '../theme';
 import { Button, SheetShell } from './ui';
 import { AppIcon } from './ui/AppIcon';
 
@@ -343,7 +343,7 @@ export default function ImportAndStudyModal({
                   onPress={handlePickPhotos}
                   className="flex-row items-center gap-3 border-2 border-dashed border-lantern-border rounded-xl px-3 py-3 mb-3"
                 >
-                  <AppIcon name="camera" size={22} color="#6366f1" />
+                  <AppIcon name="camera" size={22} color={brand.text} />
                   <View className="flex-1">
                     <Text className="text-sm font-semibold text-lantern-text">Photograph pages</Text>
                     <Text className="text-xs text-lantern-text-secondary">
@@ -379,7 +379,7 @@ export default function ImportAndStudyModal({
 
             {step === 'processing' ? (
               <View className="items-center py-8">
-                <ActivityIndicator size="large" color="#6366f1" />
+                <ActivityIndicator size="large" color={brand.text} />
                 <Text className="font-medium text-lantern-text mt-4">
                   Saving your note...
                 </Text>

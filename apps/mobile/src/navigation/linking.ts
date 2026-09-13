@@ -99,6 +99,7 @@ export const linkingConfig: LinkingOptions<RootStackParamList> = {
             initialRouteName: 'Me',
             screens: {
               Me: 'me',
+              MeProgress: 'me/progress',
               BudgetHome: 'budget',
               SavingsGoals: 'budget/savings',
               Wallet: 'budget/wallet',

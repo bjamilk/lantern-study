@@ -11,6 +11,7 @@ import * as boardApi from '../../services/boardActions';
 import { BackButton } from '../../components/ui';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 type Navigation = {
   goBack: () => void;
@@ -167,7 +168,7 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
         ListEmptyComponent={
           loading ? (
             <View className="items-center py-10">
-              <ActivityIndicator color="#6366f1" />
+              <ActivityIndicator color={brand.text} />
             </View>
           ) : (
             <View className="px-6 py-10">
@@ -182,7 +183,7 @@ export function SavedPostsScreen({ navigation }: { navigation: Navigation }) {
         ListFooterComponent={
           loadingMore ? (
             <View className="items-center py-4">
-              <ActivityIndicator color="#6366f1" />
+              <ActivityIndicator color={brand.text} />
             </View>
           ) : null
         }

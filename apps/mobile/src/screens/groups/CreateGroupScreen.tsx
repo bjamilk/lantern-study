@@ -30,6 +30,7 @@ import type { ChatStackParamList } from '../../navigation/types';
 import { AppIcon } from '../../components/ui/AppIcon';
 import { toTab } from '../../navigation/nestedTab';
 import { profileDisplayName } from '../../hooks/profileIdentity';
+import { brand } from '../../theme';
 
 type CreateGroupParams = ChatStackParamList['CreateGroup'];
 
@@ -76,7 +77,7 @@ function PermissionToggle({
   return (
     <View className="flex-row items-center justify-between py-3 border-b border-lantern-border">
       <Text className="text-sm font-medium text-lantern-text flex-1 pr-3">{label}</Text>
-      <Switch value={enabled} onValueChange={onChange} trackColor={{ true: '#6366f1' }} />
+      <Switch value={enabled} onValueChange={onChange} trackColor={{ true: brand.text }} />
     </View>
   );
 }
@@ -425,7 +426,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
           </View>
 
           <View className="min-h-[48px] justify-center">
-            {isSearching ? <ActivityIndicator color="#6366f1" /> : null}
+            {isSearching ? <ActivityIndicator color={brand.text} /> : null}
           </View>
 
           {!isSearching && searchTerm.length >= 2 && searchResults.length === 0 ? (
@@ -452,7 +453,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                   <Text className="text-sm text-lantern-primary-text">@{u.username}</Text>
                 ) : null}
               </View>
-              <AppIcon name="add-circle" size={22} color="#6366f1" />
+              <AppIcon name="add-circle" size={22} color={brand.text} />
             </Pressable>
           ))}
 
@@ -471,7 +472,7 @@ export function CreateGroupScreen({ navigation, route }: Props) {
                     <Text className="text-sm text-lantern-primary-dark mr-1">
                       {u.username ? `@${u.username}` : u.name}
                     </Text>
-                    <AppIcon name="close" size={14} color="#6366f1" />
+                    <AppIcon name="close" size={14} color={brand.text} />
                   </Pressable>
                 ))}
               </View>

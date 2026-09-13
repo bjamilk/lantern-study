@@ -13,6 +13,7 @@ import { useAuthStore } from '../stores/authStore';
 import { ColorsThemeProvider } from './ThemeContext';
 import { darkLanternVars, lightLanternVars } from './lanternCssVars';
 import { setFontScale } from './installFontScale';
+import { setBrandPalette } from './brand';
 
 /** Upper bound on the OS Dynamic Type contribution alone. */
 const MAX_OS_FONT_SCALE = 1.6;
@@ -40,6 +41,11 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const isDark =
     Boolean(user) &&
     (effectivePref === 'dark' || (effectivePref === 'system' && deviceScheme === 'dark'));
+
+  // The hook-free brand accessors (theme/brand.ts) read a module-level
+  // palette; point it at the effective theme BEFORE the tree below renders,
+  // or the first paint after a theme flip uses the outgoing ink.
+  setBrandPalette(isDark);
 
   useEffect(() => {
     const scheme = isDark ? 'dark' : 'light';

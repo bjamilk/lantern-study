@@ -74,6 +74,7 @@ import {
   memberMuteLabel,
   resolveManageAccess,
 } from './communityManageModel';
+import { brand } from '../../theme';
 
 type NavigationProp = {
   goBack: () => void;
@@ -438,7 +439,7 @@ export function CommunityManageScreen({
           ) : null}
         </View>
         {busy ? (
-          <ActivityIndicator size="small" color="#6366f1" />
+          <ActivityIndicator size="small" color={brand.text} />
         ) : (
           <AppIcon name="chevron-forward" size={16} color="#94a3b8" />
         )}
@@ -563,7 +564,7 @@ export function CommunityManageScreen({
       {tab === 'members' ? (
         loadingMembers ? (
           <View className="flex-1 items-center justify-center">
-            <ActivityIndicator color="#6366f1" />
+            <ActivityIndicator color={brand.text} />
           </View>
         ) : (
           <FlatList
@@ -604,7 +605,7 @@ export function CommunityManageScreen({
                   className="mx-4 mt-3 min-h-[44px] items-center justify-center rounded-lg bg-lantern-background-secondary"
                 >
                   {loadingMore ? (
-                    <ActivityIndicator color="#6366f1" />
+                    <ActivityIndicator color={brand.text} />
                   ) : (
                     <Text className="text-body font-semibold text-lantern-primary-text">
                       Load more
@@ -617,7 +618,7 @@ export function CommunityManageScreen({
         )
       ) : loadingInvites ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#6366f1" />
+          <ActivityIndicator color={brand.text} />
         </View>
       ) : (
         <FlatList

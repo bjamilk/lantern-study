@@ -55,9 +55,14 @@ import { useUIStore } from '../../stores/uiStore';
 import { matchesCourseFilter, matchesTopicFilter, UNFILED_COURSE_ID, UNTOPICED_TOPIC_ID } from '../../utils/libraryArchive';
 import type { Course, CourseTopic } from '@lantern/shared/types';
 import { COURSE_TOPIC_COPY, isLectureNote } from '@lantern/shared';
+import {
+  NOTES_LIST_VIEW_OPTIONS,
+  noteMatchesListView,
+  type NotesListView,
+} from '@lantern/shared/learning';
 import { toTab } from '../../navigation/nestedTab';
 import { confirmSheet } from '../../stores/confirmStore';
-import { useTheme } from '../../theme';
+import { brand, useTheme } from '../../theme';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { SCREEN_KEYBOARD_BEHAVIOR } from '../../components/layout';
 import { useChrome, useScrollToTopRequest } from '../../components/layout/ChromeContext';
@@ -132,8 +137,21 @@ function FolderChip({
         accessibilityRole="button"
         accessibilityLabel={`Select folder ${folder.name}`}
       >
+        {/* The dot marks that this chip IS a folder; it is not a swatch.
+            `folder.color` is stored data, and every folder made before the
+            colour pivot holds the retired indigo — which is how build
+            198's device pass found two indigo dots sitting in a nav row of an
+            otherwise ink-and-cream app. A chip in a FILTER row is a control, so
+            its dot takes the control's own foreground: the chip's inverse ink
+            when the chip is lit, the muted outline when it is not. The stored
+            colour still identifies the folder where the folder is the SUBJECT
+            (the manage-folders list below). */}
         {folder.color ? (
-          <View className="w-2 h-2 rounded-full" style={{ backgroundColor: folder.color }} />
+          <View
+            className={`w-2 h-2 rounded-full ${
+              isActive ? 'bg-white' : 'bg-lantern-text-tertiary'
+            }`}
+          />
         ) : null}
         <Text
           className={`text-caption font-semibold ${
@@ -203,7 +221,7 @@ function NoteCard({
             <AppIcon
               name={selected ? 'checkbox' : 'square'}
               size={20}
-              color={selected ? '#6366f1' : '#94a3b8'}
+              color={selected ? brand.text : '#94a3b8'}
               style={{ marginTop: 10 }}
             />
           ) : null}
@@ -219,7 +237,7 @@ function NoteCard({
             <View className="flex-row items-start gap-2">
               <View className="flex-1 flex-row items-start gap-1.5 min-w-0">
                 {note.isPinned ? (
-                  <AppIcon name="bookmark" size={16} color="#6366f1" style={{ marginTop: 2 }} />
+                  <AppIcon name="bookmark" size={16} color={brand.text} style={{ marginTop: 2 }} />
                 ) : null}
                 <Text
                   className="flex-1 text-body font-semibold text-lantern-text"
@@ -232,14 +250,12 @@ function NoteCard({
             </View>
             {isShared ? (
               <View className="flex-row items-center gap-1 mt-1">
-                <AppIcon name="people" size={13} color="#6366f1" />
+                <AppIcon name="people" size={13} color={brand.text} />
                 <Text className="text-caption text-lantern-text-secondary">
-                  Shared by {note.owner?.name || note.owner?.username || 'another member'} · {note.accessRole}
+                  Shared by {note.owner?.name || note.owner?.username || 'another member'}
                 </Text>
               </View>
-            ) : (
-              <Text className="text-caption text-lantern-text-tertiary mt-1">Mine</Text>
-            )}
+            ) : null}
             <Text className="text-body text-lantern-text-secondary mt-1" numberOfLines={2}>
               {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
             </Text>
@@ -330,11 +346,11 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
   const [importingFile, setImportingFile] = useState(false);
   const [pendingImport, setPendingImport] = useState<PendingImport | null>(null);
   /** The import menu; the four entry points used to sit inline above the list. */
-  const [importOpen, setImportOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [moveKindOpen, setMoveKindOpen] = useState(false);
   const [youtubeOpen, setYoutubeOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
-  const [ownershipFilter, setOwnershipFilter] = useState<'mine' | 'shared'>('mine');
-  const [listFilter, setListFilter] = useState<'active' | 'archived'>('active');
+  const [listView, setListView] = useState<NotesListView>('mine');
   const [renameFolder, setRenameFolder] = useState<NoteFolder | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [renamingFolder, setRenamingFolder] = useState(false);
@@ -388,12 +404,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
 
   const filteredNotes = useMemo(() => {
     let list = notes;
-    list = list.filter((note) =>
-      ownershipFilter === 'mine' ? !note.accessRole || note.accessRole === 'owner' : note.accessRole !== 'owner'
-    );
-    list = list.filter((note) =>
-      listFilter === 'archived' ? Boolean(note.isArchived) : !note.isArchived,
-    );
+    list = list.filter((note) => noteMatchesListView(note, listView));
     // Notes load unfiltered (shared store), so the Library course/topic filter
     // is applied HERE, client-side — this is the only place narrowing happens.
     if (courseFilterId) {
@@ -424,7 +435,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       const bTime = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
       return bTime - aTime;
     });
-  }, [notes, selectedFolderId, search, ownershipFilter, listFilter, courseFilterId, topicFilterId]);
+  }, [notes, selectedFolderId, search, listView, courseFilterId, topicFilterId]);
 
   const canManageNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner' || note.accessRole === 'editor';
@@ -958,6 +969,33 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     },
   ];
 
+  const moreActionItems: ActionSheetItem[] = [
+    {
+      label: 'Select',
+      icon: 'checkbox',
+      onPress: () => setSelectMode(true),
+    },
+    {
+      label: 'New folder',
+      icon: 'folder',
+      onPress: () => void handleCreateFolder(),
+    },
+    ...importActionItems,
+  ];
+
+  const moveKindItems: ActionSheetItem[] = [
+    {
+      label: 'To folder',
+      icon: 'folder',
+      onPress: () => setMovePickerOpen(true),
+    },
+    {
+      label: 'To course',
+      icon: 'school',
+      onPress: () => setCourseMoveTarget({ noteIds: selectedNoteIds, currentCourseId: null }),
+    },
+  ];
+
   const handleYoutubeImport = async () => {
     const url = youtubeUrl.trim();
     if (!url || !youtubeUrlValid) return;
@@ -1085,10 +1123,16 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         onClose={() => setNoteActions(null)}
       />
       <ActionSheet
-        visible={importOpen}
-        title="Import a note"
-        items={importActionItems}
-        onClose={() => setImportOpen(false)}
+        visible={moreOpen}
+        title="Notes"
+        items={moreActionItems}
+        onClose={() => setMoreOpen(false)}
+      />
+      <ActionSheet
+        visible={moveKindOpen}
+        title="Move selected"
+        items={moveKindItems}
+        onClose={() => setMoveKindOpen(false)}
       />
       <ReportContentSheet
         visible={!!reportNote}
@@ -1170,7 +1214,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                   >
                     <View
                       className="w-2.5 h-2.5 rounded-full"
-                      style={{ backgroundColor: folder.color || '#6366f1' }}
+                      style={{ backgroundColor: folder.color || brand.text }}
                     />
                     <Text className="flex-1 text-body font-medium text-lantern-text" numberOfLines={1}>
                       {folder.name}
@@ -1206,32 +1250,38 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
       )}
       {/* One action row for both modes — the standalone screen used to carry
           these in the header while the embedded panel had its own copy. */}
-      <View className="flex-row flex-wrap gap-1.5 justify-end px-4 pt-2 pb-1">
-        <Button
-          size="sm"
-          variant="secondary"
-          onPress={() => (selectMode ? exitSelectMode() : setSelectMode(true))}
+      <View className="flex-row items-center gap-2 px-4 pt-2 pb-1">
+        <Segmented
+          className="flex-1"
+          value={listView}
+          onChange={setListView}
+          options={NOTES_LIST_VIEW_OPTIONS.map((option) => ({
+            id: option.id,
+            label: option.label,
+            accessibilityLabel:
+              option.id === 'mine'
+                ? 'Show notes I own'
+                : option.id === 'shared'
+                  ? 'Show notes shared with me'
+                  : 'Show archived notes',
+          }))}
+        />
+        <Button size="sm" onPress={handleCreateNote} accessibilityLabel="New note">
+          New
+        </Button>
+        <Pressable
+          onPress={() => setMoreOpen(true)}
+          hitSlop={8}
+          className="min-h-[36px] min-w-[36px] items-center justify-center rounded-full border border-lantern-border bg-lantern-surface"
+          accessibilityRole="button"
+          accessibilityLabel="More note actions"
         >
-          {selectMode ? 'Cancel' : 'Select'}
-        </Button>
-        <Button size="sm" variant="secondary" onPress={handleCreateFolder}>
-          Folder
-        </Button>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={importingFile}
-          onPress={() => setImportOpen(true)}
-        >
-          Import
-        </Button>
-        <Button size="sm" onPress={handleCreateNote}>
-          + Note
-        </Button>
+          <AppIcon name="ellipsis-horizontal" size={18} color={colors.text} />
+        </Pressable>
       </View>
 
       {selectMode ? (
-        <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2 rounded-lg border border-lantern-border bg-lantern-surface px-3 py-2">
+        <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2 rounded-2xl border border-lantern-border bg-lantern-surface px-3 py-2">
           <Text className="flex-1 text-body text-lantern-text">
             {selectedNoteIds.length === 0
               ? 'Select notes'
@@ -1241,19 +1291,10 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
             size="sm"
             variant="secondary"
             disabled={selectedNoteIds.length === 0 || selectionBusy}
-            loading={movingNotes}
-            onPress={() => setMovePickerOpen(true)}
+            loading={movingNotes || movingCourse}
+            onPress={() => setMoveKindOpen(true)}
           >
             Move
-          </Button>
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={selectedNoteIds.length === 0 || selectionBusy}
-            loading={movingCourse}
-            onPress={() => setCourseMoveTarget({ noteIds: selectedNoteIds, currentCourseId: null })}
-          >
-            Course
           </Button>
           <Button
             size="sm"
@@ -1266,9 +1307,13 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           >
             Delete
           </Button>
+          <Button size="sm" variant="ghost" disabled={selectionBusy} onPress={exitSelectMode}>
+            Done
+          </Button>
         </View>
       ) : null}
 
+      {folders.length > 0 ? (
       <View className="px-4 mb-1.5 flex-row items-center gap-1.5">
         {/* The folder row's "everything" chip. Selected, it wears the same ink
             ground the `Segmented` halves below it do (`useSegmentSkin`), not
@@ -1310,6 +1355,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           </ScrollView>
         ) : null}
       </View>
+      ) : null}
 
       {courseFilter && !embedded ? (
         <View className="mx-4 mb-2 flex-row flex-wrap items-center gap-2">
@@ -1348,40 +1394,6 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
           ) : null}
         </View>
       ) : null}
-
-      {/* Two binary switches on one row: stacked, they spent 92px of an 844px
-          screen on four words. */}
-      <View className="mx-4 mb-2 flex-row items-center gap-2">
-        {/* Both switches are the shared `Segmented` primitive: the selected
-            half is the page's ink under the page's ground — the same black
-            pill the primary button and the lit tab draw — where these two
-            hardcoded `bg-lantern-primary-fill`, the indigo that direction
-            removed (build 185's device pass found them still indigo inside
-            Library). */}
-        <Segmented
-          className="flex-1"
-          value={ownershipFilter}
-          onChange={setOwnershipFilter}
-          options={[
-            { id: 'mine', label: 'Mine', accessibilityLabel: 'Show notes I own' },
-            { id: 'shared', label: 'Shared', accessibilityLabel: 'Show notes shared with me' },
-          ]}
-        />
-        <Segmented
-          className="flex-1"
-          value={listFilter}
-          onChange={setListFilter}
-          options={[
-            { id: 'active', label: 'Active', accessibilityLabel: 'Show active notes' },
-            {
-              id: 'archived',
-              label: 'Archived',
-              icon: 'archive',
-              accessibilityLabel: 'Show archived notes',
-            },
-          ]}
-        />
-      </View>
 
       {/* Embedded, the Library's box drives this list instead (`listQuery`), so
           a second input here would be two boxes for one intent. */}
@@ -1520,31 +1532,31 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
                 name={
                   search.trim()
                     ? 'search'
-                    : listFilter === 'archived'
+                    : listView === 'archived'
                       ? 'archive'
                       : 'document-text'
                 }
                 size={40}
-                color="#818cf8"
+                color={brand.text}
               />
               <Text className="text-body text-lantern-text-secondary text-center mt-3 px-4">
                 {/* A query that matches nothing is not an empty library:
                     "No notes yet" there reads as if the notes had gone. */}
                 {search.trim()
-                  ? `Nothing matches “${search.trim()}” in this list. The folder, Mine/Shared and Archived choices above still apply${embedded ? '; “Search everything” also covers your decks, cards and offline bundles' : ''}.`
-                  : listFilter === 'archived'
+                    ? `Nothing matches “${search.trim()}” in this list. The folder and Mine / Shared / Archived choice above still apply${embedded ? '; “Search everything” also covers your decks, cards and offline bundles' : ''}.`
+                  : listView === 'archived'
                     ? 'No archived notes. Long-press a note to archive it.'
-                    : ownershipFilter === 'shared'
+                    : listView === 'shared'
                       ? 'No shared notes yet.'
                       : courseFilter
                         ? `No notes in ${courseFilter.label} yet. Create one here, or use “Move to course…” on an existing note.`
                         : 'No notes yet. Create one to get started.'}
               </Text>
-              {search.trim() ? null : listFilter === 'archived' ? (
-                <Button className="mt-4" size="sm" variant="secondary" onPress={() => setListFilter('active')}>
-                  Back to active
+              {search.trim() ? null : listView === 'archived' || listView === 'shared' ? (
+                <Button className="mt-4" size="sm" variant="secondary" onPress={() => setListView('mine')}>
+                  Back to mine
                 </Button>
-              ) : ownershipFilter === 'mine' ? (
+              ) : listView === 'mine' ? (
                 <>
                   <Button className="mt-4" size="sm" onPress={handleCreateNote}>
                     New note

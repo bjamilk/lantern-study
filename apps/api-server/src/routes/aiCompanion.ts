@@ -2,8 +2,16 @@
  * AI Companion Routes — persistent, context-aware "Lantern" study companion
  */
 import { Router, Request, Response } from 'express';
-import { aiRateLimit, aiRateLimitForFeature, refundFeatureAiCredit } from '../middleware/aiRateLimit';
-import { aiPostBurstRateLimit } from '../middleware/rateLimit';
+import {
+  NOTE_OCR_CREDIT_COST,
+  aiRateLimit,
+  aiRateLimitForFeature,
+  applyGlobalUsageHeaders,
+  chargeAiCreditsDetailed,
+  refundAiCredits,
+  refundFeatureAiCredit,
+} from '../middleware/aiRateLimit';
+import { aiPostBurstRateLimit, uploadBurstRateLimit } from '../middleware/rateLimit';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import { companionChat, summarizeGroupChat, CompanionContext } from '../services/aiService';
 import { SupabaseService } from '../services/supabase';
@@ -27,6 +35,11 @@ import {
   resolveConversationForSend,
   touchConversation,
 } from '../services/companionConversations';
+import {
+  CompanionImageTableMissingError,
+  createCompanionImageAttachment,
+  loadTrustedCompanionImages,
+} from '../services/companionImageAttachments';
 
 let supabaseService: SupabaseService;
 
@@ -48,10 +61,30 @@ const HISTORY_COLUMNS = `${HISTORY_COLUMNS_WITHOUT_CITATIONS}, citations`;
 router.use(authMiddleware as any);
 router.use(requirePermission('ai'));
 
-type CompanionRequestContext = CompanionContext & {
+// `imageAttachments` is re-declared: what a client sends is a list of ids,
+// what companionChat receives is the server-read transcript of each one.
+type CompanionRequestContext = Omit<CompanionContext, 'imageAttachments'> & {
   conversationId?: string;
   newConversation?: boolean;
+  /**
+   * Photos the student attached to this turn. Only the ids are believed: the
+   * transcripts are read back out of the table for rows this user owns, so a
+   * forged `imageAttachments[].extractedText` cannot reach the prompt.
+   */
+  imageAttachmentIds?: unknown;
+  imageAttachments?: Array<{ attachmentId?: unknown }>;
 };
+
+/** Ids from either shape the clients may send. */
+function collectImageAttachmentIds(context?: CompanionRequestContext): string[] {
+  const direct = Array.isArray(context?.imageAttachmentIds) ? context!.imageAttachmentIds : [];
+  const fromObjects = Array.isArray(context?.imageAttachments)
+    ? context!.imageAttachments!.map((item) => item?.attachmentId)
+    : [];
+  return [...direct, ...fromObjects].filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0
+  );
+}
 
 function parseNoteContextId(value: unknown): string | null {
   return parseCompanionUuid(value);
@@ -320,6 +353,94 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
   }
 });
 
+/**
+ * Attach a photo to the next companion turn.
+ *
+ * Declared ABOVE the companion feature limiter on purpose: reading a picture
+ * is not a chat turn, and charging it against the companion counter as well as
+ * the OCR credits would bill one upload twice. It charges exactly what the
+ * note photo path charges to read an image — NOTE_OCR_CREDIT_COST — and gives
+ * it back when the read never produced an attachment.
+ */
+router.post('/attachments', uploadBurstRateLimit, async (req: Request, res: Response) => {
+  const userId = (req as any).user.id;
+  const { base64Data, fileName, contentType } = req.body as {
+    base64Data?: unknown;
+    fileName?: unknown;
+    contentType?: unknown;
+  };
+
+  if (typeof base64Data !== 'string' || !base64Data.trim()) {
+    res.status(400).json({ error: 'base64Data is required' });
+    return;
+  }
+
+  // Strip a data: URL prefix — the web file picker produces one.
+  const payload = base64Data.replace(/^data:[^;]+;base64,/, '');
+  let buffer: Buffer;
+  try {
+    buffer = Buffer.from(payload, 'base64');
+  } catch {
+    res.status(400).json({ error: 'Image data could not be read' });
+    return;
+  }
+  if (buffer.length === 0) {
+    res.status(400).json({ error: 'Image data could not be read' });
+    return;
+  }
+
+  const charge = await chargeAiCreditsDetailed(userId, NOTE_OCR_CREDIT_COST, 'Reading an image');
+  if (!charge.ok) {
+    res.status(429).json(charge.denial);
+    return;
+  }
+
+  try {
+    const attachment = await createCompanionImageAttachment({
+      supabaseService,
+      userId,
+      buffer,
+      fileName: typeof fileName === 'string' ? fileName : 'image.jpg',
+      contentType: typeof contentType === 'string' ? contentType : null,
+    });
+    await applyGlobalUsageHeaders(res, userId);
+    res.status(201).json({
+      attachmentId: attachment.attachmentId,
+      url: attachment.url,
+      fileName: attachment.fileName,
+      extractedText: attachment.extractedText,
+      wordCount: attachment.wordCount,
+      creditsCharged: charge.credits,
+    });
+  } catch (err: any) {
+    // Nothing was attached, so nothing should have been paid for.
+    await refundAiCredits(userId, charge.credits, charge.pool).catch(() => {});
+    await applyGlobalUsageHeaders(res, userId).catch(() => {});
+
+    if (err instanceof CompanionImageTableMissingError) {
+      console.error('Companion image attachment table missing:', err.message);
+      res.status(503).json({ error: err.message });
+      return;
+    }
+    // The upload validators throw a student-readable reason (wrong type, too
+    // large, truncated bytes). `status` is how fileValidation marks those, and
+    // the size/type checks in noteFiles carry the same readable sentence — a
+    // bad photo is the student's to fix, not a server fault.
+    const message = String(err?.message || 'Failed to attach image');
+    const isValidation =
+      err?.status === 400 ||
+      /Invalid file type|too large|appears truncated|supported image|content does not match|Could not read image metadata/i.test(
+        message
+      );
+    if (isValidation) {
+      res.status(400).json({ error: message });
+      return;
+    }
+    console.error('Companion image attachment error:', message);
+    res.status(500).json({ error: 'Failed to attach image' });
+  }
+});
+
 router.use(aiPostBurstRateLimit);
 router.use(aiRateLimitForFeature('companion'));
 
@@ -444,7 +565,12 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
         const trustedContext = await buildTrustedCompanionContext(
           supabaseService,
           userId,
-          context || {}
+          { ...(context || {}), imageAttachments: undefined }
+        );
+        trustedContext.imageAttachments = await loadTrustedCompanionImages(
+          supabaseService,
+          userId,
+          collectImageAttachmentIds(context)
         );
         const threadNoteId = trustedContext.noteId || null;
         const client = supabaseService.getClient();
@@ -566,7 +692,12 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     const trustedContext = await buildTrustedCompanionContext(
       supabaseService,
       userId,
-      context || {}
+      { ...(context || {}), imageAttachments: undefined }
+    );
+    trustedContext.imageAttachments = await loadTrustedCompanionImages(
+      supabaseService,
+      userId,
+      collectImageAttachmentIds(context)
     );
     const threadNoteId = trustedContext.noteId || null;
     const client = supabaseService.getClient();

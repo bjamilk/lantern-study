@@ -3,6 +3,7 @@ import { View, Text, Pressable, ActivityIndicator } from 'react-native';
 import type { DailyQuizSession, StudyGoalMode } from '@lantern/shared';
 import { Card, Button } from './ui';
 import { AppIcon } from './ui/AppIcon';
+import { brand } from '../theme';
 
 const GOAL_LABELS: Record<StudyGoalMode, string> = {
   casual: 'Casual review',
@@ -214,7 +215,7 @@ export function DailyQuizWidget({
           {feedback}
         </Text>
       ) : loading ? (
-        <ActivityIndicator className="mt-3" color="#6366f1" />
+        <ActivityIndicator className="mt-3" color={brand.text} />
       ) : null}
     </Card>
   );

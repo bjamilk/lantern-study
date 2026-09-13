@@ -8,7 +8,7 @@ import {
   relativeLuminance,
 } from '@lantern/shared/design';
 import { hexToRgbChannels } from '@lantern/shared/design';
-import { DEFAULT_USER_SETTINGS } from '@lantern/shared/settings';
+import { isDefaultAccentColor } from '@lantern/shared/settings';
 
 const FEATURE_VAR_MAP: Record<keyof typeof featureAccents, string> = {
   dashboard: '--color-feature-dashboard',
@@ -63,8 +63,10 @@ export function applyDesignTokensToDom(
   }
 
   const accent = opts?.accentColor?.trim().toLowerCase();
-  const defaultAccent = DEFAULT_USER_SETTINGS.appearance.accentColor.toLowerCase();
-  if (accent && accent !== defaultAccent) {
+  // Both the ink default and the retired indigo mean "no override" — see
+  // `isDefaultAccentColor`. Comparing against a single constant would repaint
+  // every pre-pivot account in the retired hue.
+  if (accent && !isDefaultAccentColor(accent)) {
     // An explicit custom accent applies to both themes (the user's choice).
     // --lantern-accent keeps the whole colour (it is used as one); but
     // --color-primary is consumed as `rgb(var(--color-primary) / <alpha>)`,
@@ -82,8 +84,9 @@ export function applyDesignTokensToDom(
       for (const name of ACCENT_VARS) root.style.removeProperty(name);
     }
   } else {
-    // Default accent = no override: each theme keeps its designed primary
-    // (#4f46e5 light / #818cf8 dark), which also fixes primary contrast in dark.
+    // Default accent (ink, retired indigo, or nothing) = no override: each
+    // theme keeps its designed primary (#191919 light / #f5f5f5 dark, since
+    // the 2026-09-12 pivot).
     root.style.removeProperty('--lantern-accent');
     for (const name of ACCENT_VARS) root.style.removeProperty(name);
   }
@@ -96,7 +99,7 @@ const ACCENT_VARS = ['--color-primary', '--color-primary-fill', '--color-primary
  * kept in lockstep so a custom accent renders the same roles on both.
  *
  *   --color-primary-fill  the accent darkened until a WHITE label clears AA
- *                         (the default #6366f1 is 4.47:1 and needs one step).
+ *                         (a mid-tone accent typically needs one step).
  *   --color-primary-text  the accent adjusted until it clears AA on the
  *                         theme's surface AND on `primaryBackground`
  *                         composited over it — the tint is where the accent

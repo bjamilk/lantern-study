@@ -7,7 +7,15 @@ import { CourseChips, useCourseFilterShownAbove } from './academic/CourseChips';
 import { TopicFilterChip } from './academic/TopicFilterChip';
 import { useLibraryPanelSearch } from './library/libraryPanelSearch';
 import { AppIcon } from './ui/AppIcon';
-import { isCardDue, getDeckListStatsLine, getStudyCtaLabel, getStudyAllDueLabel } from '@lantern/shared';
+import {
+  isCardDue,
+  getDeckListStatsLine,
+  getStudyCtaLabel,
+  getStudyAllDueLabel,
+  deckDisplayTitle,
+  deckDisplaySubtitle,
+  sortDecksForList,
+} from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
 import { useCompanionStore } from '../stores/companionStore';
 import { useUIStore } from '../stores/uiStore';
@@ -15,7 +23,17 @@ import { useLibraryStore } from '../stores/libraryStore';
 import { UNFILED_COURSE_ID, matchesCourseFilter, matchesTopicFilter } from '../utils/libraryArchive';
 import { MoveToCourseModal } from './academic/MoveToCourseModal';
 import { ImportCardsModal } from './flashcards/ImportCardsModal';
-import { SkeletonCard, ScreenHeader, Button, EmptyState, Menu, MenuTrigger, MenuContent, MenuItem } from './ui';
+import {
+  SkeletonCard,
+  ScreenHeader,
+  Button,
+  EmptyState,
+  FeatureDisc,
+  Menu,
+  MenuTrigger,
+  MenuContent,
+  MenuItem,
+} from './ui';
 
 interface FlashcardsScreenProps {
   decks: Deck[];
@@ -32,15 +50,6 @@ interface FlashcardsScreenProps {
   onMoveDeckToCourse?: (deck: Deck, courseId: string | null, topicId: string | null) => void | Promise<void>;
   embedded?: boolean;
 }
-
-const ACCENT_GRADIENTS = [
-  'from-rose-500 via-pink-500 to-fuchsia-500',
-  'from-fuchsia-500 via-rose-500 to-red-500',
-  'from-pink-500 via-rose-400 to-orange-400',
-  'from-rose-400 via-red-400 to-amber-400',
-  'from-red-500 via-rose-500 to-pink-500',
-  'from-orange-400 via-rose-500 to-fuchsia-500',
-];
 
 const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   decks,
@@ -187,11 +196,16 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
 
   const totalDueCount = flashcards.filter(fc => isCardDue(fc.srsData)).length;
 
-  // Embedded, the rail takes ~200px off the panel, so the viewport-wide
-  // breakpoints land three crushed columns at 1024px. Step them one up.
-  const deckGridClass = `grid gap-5 grid-cols-1 ${
-    embedded ? 'lg:grid-cols-2 xl:grid-cols-3' : 'md:grid-cols-2 lg:grid-cols-3'
-  }`;
+  const listedDecks = sortDecksForList(
+    visibleDecks.map((deck) => {
+      const { dueCards, totalCards } = getDeckStats(deck.id);
+      return { ...deck, due_count: dueCards, card_count: totalCards };
+    })
+  );
+
+  // List-row cards: one column on the phone, two from lg up. A third column
+  // crushed the FeatureDisc + due pill anatomy.
+  const deckGridClass = 'grid gap-3 grid-cols-1 lg:grid-cols-2';
 
   const handleOfflineToggle = (e: React.MouseEvent, deck: Deck) => {
     e.stopPropagation();
@@ -317,90 +331,104 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
             </div>
           )}
           <div className={deckGridClass}>
-            {visibleDecks.map((deck, index) => {
-              const { dueCards, totalCards } = getDeckStats(deck.id);
-              const gradient = ACCENT_GRADIENTS[index % ACCENT_GRADIENTS.length];
+            {listedDecks.map((deck) => {
+              const dueCards = deck.due_count ?? 0;
+              const totalCards = deck.card_count ?? 0;
+              const title = deckDisplayTitle(deck);
+              const subtitle = deckDisplaySubtitle(deck);
+              const offline = isDeckOffline(deck.id);
               return (
                 <div
                   key={deck.id}
-                  className="rounded-2xl shadow-md hover:shadow-xl flex flex-col overflow-hidden border border-lantern-border bg-lantern-surface group"
+                  className="rounded-2xl border border-lantern-border bg-lantern-surface p-3"
                 >
-                  <div
-                    className={`relative h-14 bg-gradient-to-r ${gradient} px-4 flex items-center justify-between cursor-pointer`}
-                    onClick={() => onSelectDeck(deck)}
-                  >
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      <AppIcon name="albums" size={20} className="text-white/90 flex-shrink-0" />
-                      <h2 className="text-sm font-bold text-white truncate drop-shadow-sm">{deck.name}</h2>
-                      {deck.isShared && (
-                        <span className="text-label font-bold uppercase tracking-wide text-white/90 bg-white/20 px-1.5 py-0.5 rounded flex-shrink-0">
-                          Shared
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
-                      <button
-                        type="button"
-                        onClick={(e) => handleOfflineToggle(e, deck)}
-                        className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors"
-                        title={isDeckOffline(deck.id) ? 'Remove from offline' : 'Save for offline'}
-                      >
-                        {isDeckOffline(deck.id) ? (
-                          <AppIcon name="cloud-upload" size={16} />
-                        ) : (
-                          <AppIcon name="cloud-download" size={16} />
-                        )}
-                      </button>
-                      {onMoveDeckToCourse ? (
-                        <div onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
-                          <Menu
-                            open={deckMenuId === deck.id}
-                            onOpenChange={(open) => setDeckMenuId(open ? deck.id : null)}
-                          >
-                            <MenuTrigger
-                              aria-label={`Deck options for ${deck.name}`}
-                              className="p-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white transition-colors inline-flex items-center justify-center"
-                            >
-                              <AppIcon name="ellipsis-vertical" size={16} />
-                            </MenuTrigger>
-                            <MenuContent align="end" className="w-48">
-                              <MenuItem onSelect={() => setMovingDeck(deck)}>
-                                <span className="inline-flex items-center gap-2">
-                                  <AppIcon name="school" size={16} /> Move to course…
-                                </span>
-                              </MenuItem>
-                            </MenuContent>
-                          </Menu>
-                        </div>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div className="p-4 flex-grow flex flex-col">
-                    <p
-                      className="text-sm text-lantern-text-secondary line-clamp-2 mb-2 flex-grow cursor-pointer"
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
                       onClick={() => onSelectDeck(deck)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
+                      aria-label={`Deck ${title}. ${getDeckListStatsLine(dueCards, totalCards)}`}
                     >
-                      {deck.description || 'No description'}
-                    </p>
-                    <p className="text-xs text-lantern-text-secondary mb-4">
-                      {getDeckListStatsLine(dueCards, totalCards)}
-                    </p>
-                    {onStudyDeck && (
+                      <FeatureDisc
+                        feature="flashcards"
+                        icon={<AppIcon name="layers" size={20} />}
+                        size={40}
+                      />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <h2 className="truncate text-body font-semibold text-lantern-text">{title}</h2>
+                          {offline ? (
+                            <AppIcon
+                              name="cloud-done"
+                              size={14}
+                              className="shrink-0 text-lantern-feature-flashcards-ink"
+                              aria-label="Saved for offline"
+                            />
+                          ) : null}
+                          {deck.isShared ? (
+                            <span className="shrink-0 text-label text-lantern-text-secondary">Shared</span>
+                          ) : null}
+                        </span>
+                        <span className="mt-0.5 block text-caption tabular-nums text-lantern-text-secondary">
+                          {getDeckListStatsLine(dueCards, totalCards)}
+                        </span>
+                      </span>
+                    </button>
+                    {dueCards > 0 ? (
+                      <span className="shrink-0 rounded-full bg-lantern-feature-flashcards-tint px-2 py-0.5 text-label font-bold tabular-nums text-lantern-feature-flashcards-ink">
+                        {dueCards > 99 ? '99+' : dueCards} due
+                      </span>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={(e) => handleOfflineToggle(e, deck)}
+                      className="shrink-0 rounded-lg p-1.5 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
+                      title={offline ? 'Remove from offline' : 'Save for offline'}
+                      aria-label={offline ? `Remove ${title} from offline` : `Save ${title} for offline`}
+                    >
+                      {offline ? (
+                        <AppIcon name="cloud-upload" size={16} />
+                      ) : (
+                        <AppIcon name="cloud-download" size={16} />
+                      )}
+                    </button>
+                    {onMoveDeckToCourse ? (
+                      <Menu
+                        open={deckMenuId === deck.id}
+                        onOpenChange={(open) => setDeckMenuId(open ? deck.id : null)}
+                      >
+                        <MenuTrigger
+                          aria-label={`Deck options for ${title}`}
+                          className="inline-flex shrink-0 items-center justify-center rounded-lg p-1.5 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
+                        >
+                          <AppIcon name="ellipsis-vertical" size={16} />
+                        </MenuTrigger>
+                        <MenuContent align="end" className="w-48">
+                          <MenuItem onSelect={() => setMovingDeck(deck)}>
+                            <span className="inline-flex items-center gap-2">
+                              <AppIcon name="school" size={16} /> Move to course…
+                            </span>
+                          </MenuItem>
+                        </MenuContent>
+                      </Menu>
+                    ) : null}
+                  </div>
+                  {subtitle ? (
+                    <p className="mt-2 text-caption text-lantern-text-secondary line-clamp-2">{subtitle}</p>
+                  ) : null}
+                  {onStudyDeck && dueCards > 0 ? (
+                    <div className="mt-2 flex justify-end">
                       <Button
-                        variant="accent"
                         size="sm"
-                        fullWidth
                         onClick={(e) => {
                           e.stopPropagation();
                           onStudyDeck(deck);
                         }}
                       >
-                        <AppIcon name="school" size={16} />
                         {getStudyCtaLabel(dueCards, totalCards)}
                       </Button>
-                    )}
-                  </div>
+                    </div>
+                  ) : null}
                 </div>
               );
             })}

@@ -59,15 +59,22 @@ function useButtonSkin(variant: Variant): {
   label: string;
   spinner: string;
 } {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
   switch (variant) {
     case 'primary':
-      // Black in light, white in dark, each under the other's ink. The label
-      // is `textInverse`'s job in neither theme — it is literally the ground.
+      // Black in light, white in dark, each under the other's ink.
+      //
+      // `primaryFill` / `textInverse`, NOT `text` / `background`
+      // (2026-09-12). The two pairs look interchangeable and are not:
+      // light `text` is slate-900, a NAVY-tinted near-black, while
+      // `primaryFill` is the brand's true neutral ink. Build 198's device pass
+      // caught both shipping side by side — Home's "Study all 68 due" and the
+      // lit tab in the slate, Shop's "Sell" in the brand ink — two different
+      // "blacks" on one screen. Every filled control takes the one ink token.
       return {
-        backgroundColor: colors.text,
-        label: colors.background,
-        spinner: colors.background,
+        backgroundColor: colors.primaryFill,
+        label: colors.textInverse,
+        spinner: colors.textInverse,
       };
     case 'secondary':
       return {
@@ -80,8 +87,10 @@ function useButtonSkin(variant: Variant): {
       // `errorStrong`, not `error`: this fill carries a WHITE label, and
       // dark's `error` (#ef4444) is 3.76:1 under white.
       return { backgroundColor: colors.errorStrong, label: '#ffffff', spinner: '#ffffff' };
-    case 'accent':
-      return { backgroundColor: colors.accent, label: '#ffffff', spinner: '#ffffff' };
+    case 'accent': {
+      const flashcards = isDark ? featureAccentsDark.flashcards : featureAccentsLight.flashcards;
+      return { backgroundColor: flashcards.tint, label: flashcards.ink, spinner: flashcards.ink };
+    }
     case 'ghost':
     default:
       return {
@@ -166,10 +175,13 @@ export function Button({
  *
  * A selected segment is the page's INK under the page's GROUND — black pill,
  * white label in light; the inverse in dark — which is the same relationship
- * `Button`'s primary variant and the bottom bar's lit tab already draw. It is
- * not `primaryFill`: the indigo fill is the treatment this direction removed
- * (see the Button comment above), and a screen carrying an indigo segment beside
- * a black primary button has two controls claiming to be the one live thing.
+ * `Button`'s primary variant and the bottom bar's lit tab already draw.
+ *
+ * It IS `primaryFill` now (2026-09-12). The comment here used to say the
+ * opposite, and it was true of the pre-pivot palette where `primaryFill` was
+ * indigo; it is not true of the post-pivot one, where `primaryFill` is the
+ * brand's neutral ink and `colors.text` is the navy-tinted slate-900.
+ * Reading the fill off `text` was what put two different blacks on one screen.
  *
  * There is no Tailwind token for "the inverse of the text colour", so the two
  * colours come off the theme rather than out of a class, exactly as the button
@@ -178,7 +190,7 @@ export function Button({
 export function useSegmentSkin(selected: boolean): { backgroundColor: string; color: string } {
   const { colors } = useTheme();
   return selected
-    ? { backgroundColor: colors.text, color: colors.background }
+    ? { backgroundColor: colors.primaryFill, color: colors.textInverse }
     : { backgroundColor: colors.surface, color: colors.text };
 }
 

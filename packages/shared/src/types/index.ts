@@ -1926,6 +1926,35 @@ export interface CompanionUserContext {
   conversationId?: string;
   /** When true, create a new thread instead of continuing the latest for this note scope. */
   newConversation?: boolean;
+  /**
+   * Photos attached to this turn, as returned by `uploadCompanionImage`.
+   *
+   * The server believes the `attachmentId` and nothing else — it reads each
+   * transcript back out of its own table for rows the student owns. The text
+   * and word count travel here only so the composer chip can say
+   * "Image · 240 words" without a second round trip.
+   */
+  imageAttachments?: CompanionImageAttachment[];
+}
+
+/**
+ * One photo the companion has already read.
+ *
+ * There is no vision model in the chat path, so "the companion can see my
+ * photo" is really "the photo was transcribed once, at upload, and the
+ * transcript grounds the answer" — which is why `wordCount` is part of the
+ * contract: zero words means the picture gave the companion nothing, and the
+ * student needs to be told that rather than left wondering.
+ */
+export interface CompanionImageAttachment {
+  attachmentId: string;
+  /** Signed URL for the stored (normalized) image — a thumbnail source. */
+  url: string;
+  fileName: string;
+  extractedText: string;
+  wordCount: number;
+  /** AI uses actually spent reading it. */
+  creditsCharged?: number;
 }
 
 export interface UserPreferences {

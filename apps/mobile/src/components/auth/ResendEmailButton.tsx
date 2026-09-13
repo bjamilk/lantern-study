@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, Text, ActivityIndicator } from 'react-native';
 import { RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
+import { brand } from '../../theme';
 
 interface ResendEmailButtonProps {
   label: string;
@@ -24,7 +25,7 @@ export function ResendEmailButton({
       className={`py-3 ${disabled ? 'opacity-50' : ''}`}
     >
       {loading ? (
-        <ActivityIndicator size="small" color="#6366f1" />
+        <ActivityIndicator size="small" color={brand.text} />
       ) : (
         <Text className="text-center text-sm font-medium text-lantern-primary-text">
           {cooldownSeconds > 0 ? `${label} (${cooldownSeconds}s)` : label}

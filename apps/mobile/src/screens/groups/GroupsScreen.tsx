@@ -44,7 +44,7 @@ import type { ChatStackParamList } from '../../navigation/types';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { Screen } from '../../components/layout';
 import { useChrome } from '../../components/layout/ChromeContext';
-import { useTheme } from '../../theme';
+import { brand, useTheme } from '../../theme';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { useNetworkStatus } from '../../hooks/useSync';
 import { planReconnectRetry } from './reconnectRetry';
@@ -1133,7 +1133,7 @@ export function GroupsScreen({ navigation }: Props) {
           accessibilityRole="button"
           accessibilityLabel="New direct message"
         >
-          <AppIcon name="chatbubble" size={18} color="#6366f1" />
+          <AppIcon name="chatbubble" size={18} color={brand.text} />
         </Pressable>
       </View>
       )}
@@ -1174,7 +1174,7 @@ export function GroupsScreen({ navigation }: Props) {
           // swallowed dismissing the keyboard, so opening one took two taps.
           keyboardShouldPersistTaps="handled"
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366f1" />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={brand.text} />
           }
           ListHeaderComponent={
             listError ? (
@@ -1307,7 +1307,7 @@ export function GroupsScreen({ navigation }: Props) {
                       </Text>
                     ) : null}
                   </View>
-                  <AppIcon name="chatbubble" size={18} color="#6366f1" />
+                  <AppIcon name="chatbubble" size={18} color={brand.text} />
                 </Pressable>
               );
             }

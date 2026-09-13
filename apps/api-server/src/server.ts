@@ -325,7 +325,10 @@ function isLargeNotesPath(pathname: string): boolean {
     pathname.endsWith('/notes/upload-presentation') ||
     pathname.endsWith('/notes/upload-images') ||
     /\/notes\/[^/]+\/regenerate-preview$/.test(pathname) ||
-    /\/notes\/[^/]+\/attachments\/upload-images$/.test(pathname)
+    /\/notes\/[^/]+\/attachments\/upload-images$/.test(pathname) ||
+    // "Add image" in the companion composer posts the same base64 photo body
+    // as a note photo. At the 1mb default every real phone picture 413s.
+    pathname.endsWith('/ai/companion/attachments')
   );
 }
 

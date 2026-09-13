@@ -15,6 +15,7 @@ import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { BudgetDatePicker } from '../../components/budget/BudgetDatePicker';
 import { formatBudgetDate } from './budgetFormat';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 interface RecurringRule {
   id: string;
@@ -128,7 +129,7 @@ export default function RecurringScreen() {
 
         {/* Existing rules */}
         {loading ? (
-          <View className="py-6 items-center"><ActivityIndicator color="#6366f1" /></View>
+          <View className="py-6 items-center"><ActivityIndicator color={brand.text} /></View>
         ) : rules.length === 0 ? (
           <Text className="text-sm text-lantern-text-tertiary text-center py-4">No recurring items yet.</Text>
         ) : (
@@ -221,7 +222,7 @@ export default function RecurringScreen() {
         <BudgetDatePicker
           visible={showDatePicker}
           date={date}
-          accentColor="#6366f1"
+          accentColor={brand.text}
           onSelect={setDate}
           onClose={() => setShowDatePicker(false)}
         />

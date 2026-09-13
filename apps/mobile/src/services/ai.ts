@@ -164,6 +164,7 @@ export const aiHealthCheck = ai.aiHealthCheck;
 export const aiGenerateListingDescription = ai.aiGenerateListingDescription;
 
 export const companionSendMessage = companion.companionSendMessage;
+export const uploadCompanionImage = companion.uploadCompanionImage;
 export const fetchCompanionHistory = companion.fetchCompanionHistory;
 export const clearCompanionHistory = companion.clearCompanionHistory;
 export const fetchCompanionConversations = companion.fetchCompanionConversations;

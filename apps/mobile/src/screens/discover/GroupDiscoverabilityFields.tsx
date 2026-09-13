@@ -3,6 +3,7 @@ import { Pressable, Switch, Text, View } from 'react-native';
 import { COMMUNITY_COPY, resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';
 import { fetchMyCommunities } from '../../services/api';
 import { AppIcon } from '../../components/ui/AppIcon';
+import { brand } from '../../theme';
 
 export type GroupDiscoveryValue = {
   visibility: 'private' | 'community' | 'public';
@@ -38,7 +39,7 @@ export function GroupDiscoverabilityFields({
       <View>
         <Text className="font-semibold text-lantern-text">Discover</Text>
         <View className="mt-2 flex-row items-center">
-          <AppIcon name="people" size={16} color="#6366f1" />
+          <AppIcon name="people" size={16} color={brand.text} />
           <Text className="ml-2 flex-1 text-sm text-lantern-text-secondary">
             {COMMUNITY_COPY.listedIn(lockedCommunity.name)}
           </Text>
@@ -66,7 +67,7 @@ export function GroupDiscoverabilityFields({
                 : { visibility: 'private', communityId: null }
             )
           }
-          trackColor={{ true: '#6366f1' }}
+          trackColor={{ true: brand.text }}
         />
       </View>
       {listed ? (

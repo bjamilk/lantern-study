@@ -5,6 +5,7 @@ import { completeSellerOnboarding } from '../../../services/api';
 import type { SellerOnboardingStatus } from '@lantern/shared/types';
 import { Button } from '../../../components/ui';
 import { AppIcon } from '../../../components/ui/AppIcon';
+import { brand } from '../../../theme';
 
 interface Props {
   visible: boolean;
@@ -41,7 +42,7 @@ export function SellerOnboardingModal({ visible, status, onComplete, onDismiss }
       <View className="flex-1 justify-end bg-black/40">
         <View className="bg-lantern-surface rounded-t-3xl p-5" style={{ paddingBottom: insets.bottom + 20 }}>
           <View className="flex-row items-center gap-2 mb-2">
-            <AppIcon name="rocket" size={22} color="#6366f1" />
+            <AppIcon name="rocket" size={22} color={brand.text} />
             <Text className="text-lg font-bold text-lantern-text">Seller setup</Text>
           </View>
           {!isLast ? (

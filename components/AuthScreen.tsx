@@ -117,7 +117,9 @@ const AnimatedBackground = () => {
         const y = Math.random() * scene.clientHeight;
         const radius = Math.random() * 20 + 10;
         const sides = Math.floor(Math.random() * 3) + 3; // Triangle to pentagon
-        const colors = ['#a5b4fc', '#818cf8', '#6366f1']; // Indigo palette
+        // Ink greys, not indigo (2026-09-12 pivot): the backdrop shapes are
+        // decoration, so they ride the brand's neutral ramp.
+        const colors = ['#d4d4d4', '#333333', '#191919'];
         const body = Matter.Bodies.polygon(x, y, sides, radius, {
           restitution: 0.9,
           friction: 0.01,

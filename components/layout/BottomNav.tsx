@@ -9,7 +9,7 @@ import {
 
 interface BottomNavProps {
     currentMode: AppMode;
-    /** Pathname — the only way to know Me is open; it has no AppMode. */
+    /** Pathname — the only way to know Profile is open; it has no AppMode. */
     currentPath: string;
     onNavigate: (mode: AppMode) => void;
     onNavigateToMe: () => void;
@@ -34,7 +34,7 @@ interface NavTab {
  * things: a marketplace, notifications, Budget, Offline Mode, the AI companion,
  * the theme switch and logout. A menu called More is where navigation goes to
  * hide — nothing in it has a name you can look for. Every one of those items
- * now lives under the destination it belongs to (Campus, Me) or with the two
+ * now lives under the destination it belongs to (Campus, Profile) or with the two
  * things that follow you, in the sidebar's own group.
  *
  * The labels, the order and the meanings are identical to mobile's bottom tabs.

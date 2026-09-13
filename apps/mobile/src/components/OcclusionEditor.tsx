@@ -18,6 +18,7 @@ import {
 } from 'react-native';
 import Svg, { Polygon } from 'react-native-svg';
 import type { OcclusionData } from '@lantern/shared';
+import { brand, BRAND_INK } from '../theme';
 
 export type OcclusionMode = 'rectangles' | 'circles' | 'freeform' | 'blur';
 
@@ -539,7 +540,7 @@ function renderDraft(
         <Polygon
           points={path.map((pt) => `${pt.x * width},${pt.y * height}`).join(' ')}
           fill="rgba(99,102,241,0.35)"
-          stroke="#6366f1"
+          stroke={brand.text}
           strokeWidth={2}
         />
       </Svg>
@@ -599,7 +600,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     backgroundColor: 'rgba(99,102,241,0.35)',
     borderWidth: 2,
-    borderColor: '#6366f1',
+    borderColor: BRAND_INK,
   },
 });
 

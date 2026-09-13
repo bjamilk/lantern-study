@@ -23,12 +23,17 @@ function textGrounds(theme: ThemePalette) {
 }
 
 describe('the primaryFill / primaryText split', () => {
-  it('carries a fill that holds a WHITE label in BOTH themes', () => {
+  it('carries a fill that holds its INVERSE label in BOTH themes', () => {
     // Build 153: Home's "Review due cards" was the dark `primary` (#818cf8)
     // used as a fill — white on it is 2.98:1.
-    expect(contrastRatio('#ffffff', lightTheme.primaryFill)).toBeGreaterThanOrEqual(AA);
-    expect(contrastRatio('#ffffff', darkTheme.primaryFill)).toBeGreaterThanOrEqual(AA);
-    expect(darkTheme.primaryFill).toBe(lightTheme.primaryFill);
+    //
+    // The 2026-09-12 pivot made the fill the theme's INK, which INVERTS: a
+    // near-black pill on a black page is a hole, so dark's fill is near-white.
+    // What sits on it is therefore `textInverse`, which inverts with it — a
+    // hardcoded white on dark's fill is 1.09:1 and is the bug this guards.
+    expect(contrastRatio(lightTheme.textInverse, lightTheme.primaryFill)).toBeGreaterThanOrEqual(AA);
+    expect(contrastRatio(darkTheme.textInverse, darkTheme.primaryFill)).toBeGreaterThanOrEqual(AA);
+    expect(darkTheme.primaryFill).not.toBe(lightTheme.primaryFill);
   });
 
   it('carries a text ink that clears AA on every ground it is painted on', () => {
@@ -113,10 +118,15 @@ describe('ensureTextContrastOn', () => {
 describe('applyAccentToColors', () => {
   const accents = ['#6366f1', '#4f46e5', '#0ea5e9', '#f59e0b', '#22c55e', '#ec4899'];
 
-  it.each(accents)('keeps a white label legible on the fill: %s', (accent) => {
+  it.each(accents)('keeps the inverse label legible on the fill: %s', (accent) => {
     for (const theme of [lightTheme, darkTheme] as ThemePalette[]) {
       const out = applyAccentToColors({ ...theme } as Record<string, string>, accent);
-      expect(contrastRatio('#ffffff', out.primaryFill)).toBeGreaterThanOrEqual(AA);
+      // A DERIVED fill (accent !== default) is darkened for a WHITE label; the
+      // palette's own fill is the theme ink and carries `textInverse`. Which
+      // one applies is exactly `accent === DEFAULT_ACCENT_COLOR`.
+      const label =
+        out.primaryFill === theme.primaryFill ? theme.textInverse : '#ffffff';
+      expect(contrastRatio(label, out.primaryFill)).toBeGreaterThanOrEqual(AA);
     }
   });
 
@@ -138,8 +148,11 @@ describe('applyAccentToColors', () => {
     const light = applyAccentToColors({ ...lightTheme } as Record<string, string>, '#6366f1');
     expect(light.primaryText).not.toBe('#5e61e5');
     expect(contrastRatio(light.primaryText, '#eef2ff')).toBeGreaterThanOrEqual(AA);
-    // (c) Home's filled CTA in dark: white on the fill, not on #818cf8.
-    expect(contrastRatio('#ffffff', dark.primaryFill)).toBeGreaterThanOrEqual(AA);
+    // (c) Home's filled CTA in dark: the label on the fill, not on #818cf8.
+    // #6366f1 is the default accent, so no override applies and the palette's
+    // own inverting ink fill ships — its label is `textInverse`, not white.
+    expect(dark.primaryFill).toBe(darkTheme.primaryFill);
+    expect(contrastRatio(darkTheme.textInverse, dark.primaryFill)).toBeGreaterThanOrEqual(AA);
   });
 
   it('gives `primary` each theme dominant role, so un-migrated call sites do not shift', () => {

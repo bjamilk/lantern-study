@@ -25,7 +25,7 @@ import {
   getCategoryColor,
   type Transaction,
 } from '../../stores/budgetStore';
-import { useTheme } from '../../theme';
+import { BRAND_INK, brand, useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
 import { FeatureHero } from '../../components/ui';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
@@ -863,7 +863,7 @@ export default function BudgetScreen() {
               style={[styles.sectionCard, { backgroundColor: colors.card, flexDirection: 'row', alignItems: 'center', gap: 12 }]}
               onPress={() => selectTab('wallet')}
             >
-              <AppIcon name="wallet" size={24} color="#6366f1" />
+              <AppIcon name="wallet" size={24} color={brand.text} />
               <View style={{ flex: 1 }}>
                 <Text style={{ color: colors.text, fontWeight: '600' }}>Study wallet</Text>
                 <Text style={{ color: colors.textSecondary, fontSize: 12 }}>{walletBalance} coins</Text>
@@ -1002,7 +1002,7 @@ const styles = StyleSheet.create({
   },
   editBudgetText: {
     fontSize: 13,
-    color: '#6366f1',
+    color: BRAND_INK,
     fontWeight: '600',
   },
   budgetAmounts: {
@@ -1046,7 +1046,7 @@ const styles = StyleSheet.create({
   },
   monthTodayLink: {
     fontSize: 11,
-    color: '#6366f1',
+    color: BRAND_INK,
     marginTop: 2,
   },
   paceRow: {
@@ -1114,7 +1114,7 @@ const styles = StyleSheet.create({
   },
   setBudgetButtonText: {
     fontSize: 14,
-    color: '#6366f1',
+    color: BRAND_INK,
     fontWeight: '600',
   },
   summaryRow: {
@@ -1322,7 +1322,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'transparent',
   },
   tabItemActive: {
-    borderBottomColor: '#6366f1',
+    borderBottomColor: BRAND_INK,
   },
   tabLabel: {
     fontSize: 11,
@@ -1340,7 +1340,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#334155',
   },
   txFilterBtnActive: {
-    backgroundColor: '#6366f1',
+    backgroundColor: BRAND_INK,
   },
   txFilterText: {
     fontSize: 12,

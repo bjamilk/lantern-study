@@ -341,11 +341,11 @@ const MarketplaceOrderDetailScreen: React.FC<MarketplaceOrderDetailScreenProps> 
         {(order.status === 'awaiting_payment' || order.status === 'pending_payment') &&
           order.payment_id &&
           isBuyer && (
-          <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900/40 space-y-3">
-            <h2 className="text-sm font-semibold text-indigo-900 dark:text-indigo-200">
+          <div className="p-4 rounded-xl bg-lantern-primary-background border border-lantern-border space-y-3">
+            <h2 className="text-sm font-semibold text-lantern-primary-text">
               Pay with Paystack
             </h2>
-            <p className="text-sm text-indigo-800 dark:text-indigo-300">
+            <p className="text-sm text-lantern-text-secondary">
               Complete checkout to pay the listed price — no extra charge. Funds are
               released to the seller after you confirm delivery.
             </p>

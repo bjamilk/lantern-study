@@ -4,6 +4,7 @@ import Svg, { Path } from 'react-native-svg';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuthStore } from '../../stores/authStore';
 import { isAppleSignInAvailable } from '../../services/socialAuth';
+import { brand } from '../../theme';
 
 type SocialProvider = 'google' | 'apple';
 
@@ -93,7 +94,7 @@ export function SocialAuthButtons({ disabled = false }: Props) {
           style={({ pressed }) => (pressed ? { opacity: 0.7 } : undefined)}
         >
           {loading('google') ? (
-            <ActivityIndicator size="small" color="#4f46e5" />
+            <ActivityIndicator size="small" color={brand.text} />
           ) : (
             <>
               <GoogleMark size={20} />
@@ -111,7 +112,7 @@ export function SocialAuthButtons({ disabled = false }: Props) {
           <View style={{ opacity: busy ? 0.5 : 1 }} pointerEvents={busy ? 'none' : 'auto'}>
             {loading('apple') ? (
               <View className="h-12 items-center justify-center rounded-2xl border border-lantern-border">
-                <ActivityIndicator size="small" color="#4f46e5" />
+                <ActivityIndicator size="small" color={brand.text} />
               </View>
             ) : (
               <AppleAuthentication.AppleAuthenticationButton
