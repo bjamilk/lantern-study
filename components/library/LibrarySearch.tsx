@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import type { LibrarySearchResult } from '../../types';
+import type { LibrarySearchResult, LibrarySearchType } from '../../types';
 import { CourseChip, FeatureDisc } from '../ui';
 import { searchLibrary } from '../../services/library';
 import { useAcademicStore } from '../../stores/academicStore';
@@ -106,6 +106,8 @@ export interface LibrarySearchResultsProps {
   onOpenNote: (noteId: string) => void;
   onOpenDeck: (deckId: string) => void;
   onOpenBundle: (bundle: LibrarySearchResult) => void;
+  /** Omit to search every artefact. Flashcards tab passes decks/cards/bundles. */
+  types?: LibrarySearchType[];
   className?: string;
 }
 
@@ -128,6 +130,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
   onOpenNote,
   onOpenDeck,
   onOpenBundle,
+  types,
   className = '',
 }) => {
   const debouncedQuery = useDebouncedValue(query.trim(), LIBRARY_SEARCH_DEBOUNCE_MS);
@@ -135,6 +138,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
   const knownCourses = useAcademicStore((s) => s.knownCourses);
   void knownCourses; // subscribe so course codes on rows resolve once loaded
+  const typesKey = types && types.length > 0 ? types.join(',') : '';
 
   useEffect(() => {
     if (!isSearchableQuery(debouncedQuery)) {
@@ -150,6 +154,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
       q: debouncedQuery,
       courseId: courseId || undefined,
       topicId: topicId || undefined,
+      types: types && types.length > 0 ? types : undefined,
       limit: LIBRARY_SEARCH_LIMIT,
     })
       .then((rows) => {
@@ -167,7 +172,7 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, courseId, topicId]);
+  }, [debouncedQuery, courseId, topicId, typesKey]);
 
   const groups: LibrarySearchGroups | null = useMemo(() => {
     const rows = state.status === 'idle' ? null : state.results;

@@ -451,8 +451,14 @@ export function LibraryCourseTree({
         ) : null}
         {!open && tree ? (
           <Text className="text-[11px] text-lantern-text-secondary mr-1" numberOfLines={1}>
-            {activeCount} active · {totalNotes} {totalNotes === 1 ? 'note' : 'notes'} · {totalDecks}{' '}
-            {totalDecks === 1 ? 'deck' : 'decks'}
+            {activeCount} active
+            {countFocus === 'flashcards'
+              ? ` · ${totalDecks} ${totalDecks === 1 ? 'deck' : 'decks'}`
+              : countFocus === 'notes'
+                ? ` · ${totalNotes} ${totalNotes === 1 ? 'note' : 'notes'}`
+                : ` · ${totalNotes} ${totalNotes === 1 ? 'note' : 'notes'} · ${totalDecks} ${
+                    totalDecks === 1 ? 'deck' : 'decks'
+                  }`}
           </Text>
         ) : null}
         <AppIcon name={open ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textTertiary} />

@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Tabs, TabList, Tab, TabPanel } from './ui';
 import { featureAccents } from '@lantern/shared/design';
 import { COURSE_TOPIC_COPY } from '@lantern/shared';
-import type { LibrarySearchResult } from '../types';
+import type { LibrarySearchResult, LibrarySearchType } from '../types';
 import { useLibraryStore } from '../stores/libraryStore';
 import { useAcademicStore } from '../stores/academicStore';
 import { useUIStore } from '../stores/uiStore';
@@ -138,10 +138,18 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
   // this reason, and the two clients have to agree.
   const countsLabel = useMemo(() => {
     const parts: string[] = [];
-    if (noteCount != null) parts.push(`${noteCount} ${noteCount === 1 ? 'note' : 'notes'}`);
-    if (deckCount != null) parts.push(`${deckCount} ${deckCount === 1 ? 'deck' : 'decks'}`);
+    if (tab === 'notes' && noteCount != null) {
+      parts.push(`${noteCount} ${noteCount === 1 ? 'note' : 'notes'}`);
+    }
+    if (tab === 'flashcards' && deckCount != null) {
+      parts.push(`${deckCount} ${deckCount === 1 ? 'deck' : 'decks'}`);
+    }
     return parts.join(' · ');
-  }, [noteCount, deckCount]);
+  }, [noteCount, deckCount, tab]);
+  const flashcardSearchTypes = useMemo<LibrarySearchType[]>(
+    () => ['decks', 'flashcards', 'bundles'],
+    []
+  );
 
   const trimmedQuery = query.trim();
   const canSearchEverything = isSearchableQuery(query);
@@ -428,7 +436,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
           ) : null}
 
           <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-            {!searchEverything ? (
+            {!searchEverything && tab === 'notes' ? (
               <div className="px-4 pt-3 shrink-0">
                 <ClassOfficialMaterials
                   courseId={
@@ -443,6 +451,7 @@ export const LibraryScreen: React.FC<LibraryScreenProps> = ({
                 query={query}
                 courseId={courseFilterId}
                 topicId={topicFilterId}
+                types={tab === 'flashcards' ? flashcardSearchTypes : undefined}
                 onOpenNote={onOpenNote}
                 onOpenDeck={onOpenDeck}
                 onOpenBundle={handleOpenBundle}

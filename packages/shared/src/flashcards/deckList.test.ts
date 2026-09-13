@@ -2,6 +2,7 @@ import {
   cleanDeckTitle,
   deckDisplaySubtitle,
   deckDisplayTitle,
+  isEmptyGeneratedDeck,
   sortDecksForList,
   type DeckListItem,
 } from './deckList';
@@ -29,6 +30,13 @@ describe('cleanDeckTitle', () => {
     );
   });
 
+  it('drops the From: prefix a generated deck name carries', () => {
+    expect(cleanDeckTitle('From: SDOH')).toBe('SDOH');
+    expect(cleanDeckTitle('From: N448_Gas_Exchange_Study_Guide')).toBe(
+      'N448 Gas Exchange Study Guide'
+    );
+  });
+
   it('leaves a title a person typed exactly as they typed it', () => {
     expect(cleanDeckTitle('Fluid and Electrolytes — NCLEX Review')).toBe(
       'Fluid and Electrolytes — NCLEX Review'
@@ -44,22 +52,19 @@ describe('cleanDeckTitle', () => {
 });
 
 describe('deckDisplaySubtitle', () => {
-  it('says where the deck came from in words, not a filename', () => {
+  it('does not recategorize a deck as the note it was made from', () => {
+    expect(
+      deckDisplaySubtitle(
+        deck({
+          name: 'From: SDOH',
+          description: 'Generated from note: SDOH',
+        })
+      )
+    ).toBeNull();
     expect(
       deckDisplaySubtitle(
         deck({
           name: 'Cardiology cards',
-          description: 'Generated from note: 1782589411975-Gestational_Diabetes_PPT',
-        })
-      )
-    ).toBe('From your note: Gestational Diabetes PPT');
-  });
-
-  it('drops a source line that only repeats the title', () => {
-    expect(
-      deckDisplaySubtitle(
-        deck({
-          name: '-Gestational_Diabetes_PPT',
           description: 'Generated from note: 1782589411975-Gestational_Diabetes_PPT',
         })
       )
@@ -75,6 +80,26 @@ describe('deckDisplaySubtitle', () => {
 describe('deckDisplayTitle', () => {
   it('falls back rather than drawing a nameless row', () => {
     expect(deckDisplayTitle(deck({ name: '   ' }))).toBe('Untitled deck');
+  });
+
+  it('draws a generated deck as a deck, not as From: a note', () => {
+    expect(deckDisplayTitle(deck({ name: 'From: SDOH' }))).toBe('SDOH');
+  });
+});
+
+describe('isEmptyGeneratedDeck', () => {
+  it('hides a From: shell with no cards', () => {
+    expect(isEmptyGeneratedDeck(deck({ name: 'From: SDOH', card_count: 0 }))).toBe(true);
+    expect(
+      isEmptyGeneratedDeck(
+        deck({ name: 'SDOH', description: 'Generated from note: SDOH', card_count: 0 })
+      )
+    ).toBe(true);
+  });
+
+  it('keeps a generated deck that has cards, and any empty deck a person made', () => {
+    expect(isEmptyGeneratedDeck(deck({ name: 'From: SDOH', card_count: 20 }))).toBe(false);
+    expect(isEmptyGeneratedDeck(deck({ name: 'biology', card_count: 0 }))).toBe(false);
   });
 });
 

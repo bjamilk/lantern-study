@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, TextInput } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { featureAccents } from '@lantern/shared/design';
-import type { LibraryOverview } from '@lantern/shared/types';
+import type { LibraryOverview, LibrarySearchType } from '@lantern/shared/types';
 import { NotesScreen } from '../notes/NotesScreen';
 import { FlashcardsScreen } from '../flashcards/FlashcardsScreen';
 import { LibraryCourseTree, type LibraryTopicFilter } from '../../components/library/LibraryCourseTree';
@@ -152,11 +152,16 @@ export function LibraryScreen({ navigation, route }: Props) {
    * and offline bundles. Web behaves the same way.
    */
   const [searchEverything, setSearchEverything] = useState(false);
+  const flashcardSearchTypes = useMemo<LibrarySearchType[]>(
+    () => ['decks', 'flashcards', 'bundles'],
+    []
+  );
   const search = useLibrarySearch({
     // Only the deliberate search hits the network; the panel filter is local.
     query: searchEverything ? query : '',
     courseId: courseFilter?.id ?? null,
     topicId: activeTopic?.id ?? null,
+    types: tab === 'flashcards' ? flashcardSearchTypes : undefined,
   });
   const trimmedQuery = query.trim();
   const canSearchEverything = isLibrarySearchable(query);
@@ -427,12 +432,14 @@ export function LibraryScreen({ navigation, route }: Props) {
           </View>
         ) : null}
 
-        <ClassOfficialMaterials
-          courseId={
-            courseFilter?.id && courseFilter.id !== UNFILED_COURSE_ID ? courseFilter.id : null
-          }
-          onOpenNote={(noteId) => navigation.navigate('NoteEditor', { noteId })}
-        />
+        {tab === 'notes' && !searchEverything ? (
+          <ClassOfficialMaterials
+            courseId={
+              courseFilter?.id && courseFilter.id !== UNFILED_COURSE_ID ? courseFilter.id : null
+            }
+            onOpenNote={(noteId) => navigation.navigate('NoteEditor', { noteId })}
+          />
+        ) : null}
 
         {/* Only while something is typed: the way out to decks, cards and
             bundles, and the way back. One line, and only then. */}
@@ -520,6 +527,7 @@ export function LibraryScreen({ navigation, route }: Props) {
             searching={search.searching}
             error={search.error}
             query={query}
+            includeNotes={tab !== 'flashcards'}
             courseLabel={courseFilter?.label ?? null}
             topicLabel={activeTopic?.label ?? null}
             bottomPadding={tabBarClearance}

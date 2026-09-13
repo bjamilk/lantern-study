@@ -15,6 +15,11 @@
  *    is what was left when something stripped the digits off the front. None
  *    of it was ever typed by a person.
  *
+ * 3. Decks made from a note are stored as "From: <note title>" and described
+ *    "Generated from note: …". On the Flashcards tab that reads as the note
+ *    filed under flashcards — and the note is still on the Notes tab. The
+ *    list draws a deck title, not a note category.
+ *
  * Display-time only, and deliberately: the stored name is what the student can
  * rename, what the server search matches and what an export carries. This
  * module decides what is READ, never what is saved.
@@ -28,6 +33,8 @@ export interface DeckListItem {
   card_count?: number | null;
 }
 
+/** Leading `From: ` a generated deck name carries. */
+const FROM_PREFIX = /^\s*from\s*[:\-–—]\s*/i;
 /** `1782589411975-Something` — an upload's epoch stamp and its separator. */
 const EPOCH_PREFIX = /^\s*\d{10,16}[-_. ]*/;
 /** Anything a person would not open a title with, once the stamp is gone. */
@@ -47,6 +54,7 @@ export function cleanDeckTitle(raw: string | null | undefined): string {
   const original = (raw ?? '').trim();
   if (!original) return '';
   const cleaned = original
+    .replace(FROM_PREFIX, '')
     .replace(EPOCH_PREFIX, '')
     .replace(FILE_EXTENSION, '')
     .replace(LEADING_JUNK, '')
@@ -66,18 +74,28 @@ export function deckDisplayTitle(deck: DeckListItem): string {
 /**
  * The line under the title, when it says something the title does not.
  *
- * "Generated from note: <the same filename again>" is the row saying nothing
- * twice, so a source line that cleans down to the title is dropped entirely.
+ * A "Generated from note: …" description is how the deck was made, not what
+ * to study. The Flashcards list is decks; the source note stays on Notes.
  */
 export function deckDisplaySubtitle(deck: DeckListItem): string | null {
   const raw = (deck.description ?? '').trim();
   if (!raw) return null;
-  const match = /^generated from note:\s*(.*)$/i.exec(raw);
-  if (!match) return raw;
-  const source = cleanDeckTitle(match[1]);
-  if (!source) return null;
-  if (source.toLowerCase() === deckDisplayTitle(deck).toLowerCase()) return null;
-  return `From your note: ${source}`;
+  if (/^generated from note:\s*/i.test(raw)) return null;
+  return raw;
+}
+
+/** Stored like a note (`From: …` / generated-from-note description). */
+export function isGeneratedFromNoteDeck(deck: DeckListItem): boolean {
+  if (FROM_PREFIX.test(deck.name ?? '')) return true;
+  return /^generated from note:/i.test((deck.description ?? '').trim());
+}
+
+/**
+ * Empty generation leftovers. A failed or interrupted save used to leave a
+ * "From: … · 0 cards" row next to the note it was made from.
+ */
+export function isEmptyGeneratedDeck(deck: DeckListItem): boolean {
+  return isGeneratedFromNoteDeck(deck) && (deck.card_count ?? 0) <= 0;
 }
 
 /**

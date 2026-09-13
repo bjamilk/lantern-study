@@ -14,6 +14,7 @@ import {
   getStudyAllDueLabel,
   deckDisplayTitle,
   deckDisplaySubtitle,
+  isEmptyGeneratedDeck,
   sortDecksForList,
 } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -197,10 +198,12 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   const totalDueCount = flashcards.filter(fc => isCardDue(fc.srsData)).length;
 
   const listedDecks = sortDecksForList(
-    visibleDecks.map((deck) => {
-      const { dueCards, totalCards } = getDeckStats(deck.id);
-      return { ...deck, due_count: dueCards, card_count: totalCards };
-    })
+    visibleDecks
+      .map((deck) => {
+        const { dueCards, totalCards } = getDeckStats(deck.id);
+        return { ...deck, due_count: dueCards, card_count: totalCards };
+      })
+      .filter((deck) => !isEmptyGeneratedDeck(deck))
   );
 
   // List-row cards: one column on the phone, two from lg up. A third column
@@ -296,7 +299,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           <EmptyState
             icon={<AppIcon name="search" size={32} />}
             title={`No decks match “${panelSearch}”`}
-            description="This searches the deck names and the cards saved on this device. “Search everything” above also covers your notes and offline bundles."
+            description="This searches the deck names and the cards saved on this device. “Search everything” above also covers other decks, cards and offline bundles."
           />
         ) : courseFilterId && visibleDecks.length === 0 ? (
           <EmptyState

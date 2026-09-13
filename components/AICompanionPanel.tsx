@@ -127,6 +127,11 @@ interface AICompanionPanelProps {
   /** Show the close control on a rail so the note can take the column back. */
   closable?: boolean;
   /**
+   * Drawer width only. The global companion stays `max-w-sm`; Study can pass
+   * a wider class so the chat matches the docked rail.
+   */
+  drawerMaxWidthClass?: string;
+  /**
    * Turn the attached note into a study product — the same six targets the
    * studios offer, reusing `TurnIntoMenu`.
    *
@@ -223,6 +228,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   theme = 'light',
   variant = 'drawer',
   closable = false,
+  drawerMaxWidthClass = 'max-w-sm',
   onTurnInto,
   turnIntoExisting,
   onTurnIntoMessage,
@@ -1266,7 +1272,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
       isOpen={isOpen}
       onClose={close}
       ariaLabelledBy="ai-companion-title"
-      maxWidthClass="max-w-sm"
+      maxWidthClass={drawerMaxWidthClass}
       zIndexClass="z-[70]"
       backdropClassName="bg-black/20 md:hidden"
       panelClassName={`!p-0 min-w-0 overflow-x-hidden shadow-2xl ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}

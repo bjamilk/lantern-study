@@ -15,6 +15,8 @@ interface Props {
   searching: boolean;
   error: string | null;
   query: string;
+  /** False on the Flashcards tab — search does not include notes. */
+  includeNotes?: boolean;
   courseLabel?: string | null;
   /** Topic inside `courseLabel`, when the tree has one selected. */
   topicLabel?: string | null;
@@ -101,6 +103,7 @@ export function LibrarySearchResults({
   searching,
   error,
   query,
+  includeNotes = true,
   courseLabel,
   topicLabel,
   bottomPadding = 24,
@@ -162,7 +165,9 @@ export function LibrarySearchResults({
         <View className="items-center py-10 px-6">
           <AppIcon name="search" size={36} color={colors.textTertiary} />
           <Text className="text-sm text-lantern-text-secondary text-center mt-3">
-            Nothing matched{scopeLabel ? ` in ${scopeLabel}` : ''}. Notes (including attachment text), decks, flashcards and offline bundles are searched.
+            Nothing matched{scopeLabel ? ` in ${scopeLabel}` : ''}. {includeNotes
+              ? 'Notes (including attachment text), decks, flashcards and offline bundles are searched.'
+              : 'Decks, flashcards and offline bundles are searched.'}
           </Text>
           {/* A topic is the narrowest filter, so it is the first thing to widen —
               matches web's "Try widening the filter to the whole course." */}

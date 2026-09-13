@@ -1684,7 +1684,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </div>
 
         {companionRail ? (
-        <aside className="flex w-full lg:w-80 h-72 lg:h-auto shrink-0 min-h-0">
+        <aside className="flex w-full lg:w-96 xl:w-[28rem] 2xl:w-[32rem] h-96 lg:h-auto shrink-0 min-h-0">
           <div className="flex flex-1 min-h-0 flex-col rounded-lantern-xl border border-lantern-border overflow-hidden">
             {studySetId ? (
               <StudySetGuidedPrompts
@@ -1725,6 +1725,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         ) : (
           <AICompanionPanel
             variant="drawer"
+            drawerMaxWidthClass="max-w-lg"
             context={companionContext}
             onAction={onCompanionAction}
             theme={theme}

@@ -3,7 +3,7 @@
  * course and topic filters. Stale responses are dropped by request id.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { LibrarySearchResult } from '@lantern/shared/types';
+import type { LibrarySearchResult, LibrarySearchType } from '@lantern/shared/types';
 import { searchLibrary } from '../services/api';
 import { isLibrarySearchable, matchesTopicFilter, UNFILED_COURSE_ID } from '../utils/libraryArchive';
 
@@ -15,9 +15,12 @@ export function useLibrarySearch(options: {
   courseId?: string | null;
   /** Topic uuid inside `courseId`, `'null'` for untopiced, or null/undefined for the whole course. */
   topicId?: string | null;
+  /** Omit to search every artefact. Flashcards tab passes decks/cards/bundles. */
+  types?: LibrarySearchType[];
   limit?: number;
 }): { results: LibrarySearchResult[]; searching: boolean; error: string | null; active: boolean } {
-  const { query, courseId, topicId, limit = 30 } = options;
+  const { query, courseId, topicId, types, limit = 30 } = options;
+  const typesKey = types && types.length > 0 ? types.join(',') : '';
   const [results, setResults] = useState<LibrarySearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -39,7 +42,13 @@ export function useLibrarySearch(options: {
       // The shared client drops `topicId` until it learns the query param, so
       // narrow the rows here as well — a no-op once the server filters, and the
       // rows' own `topicId` is absent (not null) until the migration lands.
-      const params = { q: query.trim(), courseId: courseId ?? undefined, topicId: scopedTopicId ?? undefined, limit };
+      const params = {
+        q: query.trim(),
+        courseId: courseId ?? undefined,
+        topicId: scopedTopicId ?? undefined,
+        types: types && types.length > 0 ? types : undefined,
+        limit,
+      };
       searchLibrary(params)
         .then(rows => {
           if (requestId !== requestRef.current) return;
@@ -57,7 +66,7 @@ export function useLibrarySearch(options: {
         });
     }, LIBRARY_SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [query, courseId, topicId, limit, active]);
+  }, [query, courseId, topicId, typesKey, limit, active]);
 
   return { results, searching, error, active };
 }
