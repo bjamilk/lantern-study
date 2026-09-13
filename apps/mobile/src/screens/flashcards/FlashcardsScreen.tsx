@@ -40,7 +40,7 @@ import { confirmSheet } from '../../stores/confirmStore';
 import { AppIcon } from '../../components/ui/AppIcon';
 
 import { toTab } from '../../navigation/nestedTab';
-import { deckDisplaySubtitle, deckDisplayTitle, isEmptyGeneratedDeck, sortDecksForList } from './deckList';
+import { deckDisplaySubtitle, deckDisplayTitle, isLibraryFlashcardDeck, sortDecksForList } from './deckList';
 
 type NavigationProp = {
   navigate: (screen: string, params?: Record<string, unknown>) => void;
@@ -269,10 +269,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
       list = list.filter(d => matchesCourseFilter(d.course_id, courseFilterId));
       if (topicFilterId) list = list.filter(d => matchesTopicFilter(d.topic_id, topicFilterId));
     }
-    list = list.filter((d) => {
-      const cardCount = d.card_count ?? cardsByDeck[d.id]?.length ?? 0;
-      return !isEmptyGeneratedDeck({ ...d, card_count: cardCount });
-    });
+    list = list.filter((d) => isLibraryFlashcardDeck(d));
     // Study-first: a deck with cards due is the reason this screen was
     // opened, and it used to sit under five decks reading "Nothing ready".
     if (!deckQuery) return sortDecksForList(list);

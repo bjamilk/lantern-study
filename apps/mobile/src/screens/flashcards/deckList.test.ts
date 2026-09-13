@@ -3,6 +3,7 @@ import {
   deckDisplaySubtitle,
   deckDisplayTitle,
   isEmptyGeneratedDeck,
+  isLibraryFlashcardDeck,
   sortDecksForList,
   type DeckListItem,
 } from './deckList';
@@ -100,6 +101,22 @@ describe('isEmptyGeneratedDeck', () => {
   it('keeps a generated deck that has cards, and any empty deck a person made', () => {
     expect(isEmptyGeneratedDeck(deck({ name: 'From: SDOH', card_count: 20 }))).toBe(false);
     expect(isEmptyGeneratedDeck(deck({ name: 'biology', card_count: 0 }))).toBe(false);
+  });
+});
+
+describe('isLibraryFlashcardDeck', () => {
+  it('keeps standalone decks on Flashcards', () => {
+    expect(isLibraryFlashcardDeck(deck({ name: 'biology', card_count: 4 }))).toBe(true);
+    expect(isLibraryFlashcardDeck(deck({ name: 'Weak Areas Review', card_count: 12 }))).toBe(true);
+  });
+
+  it('hides every From: / generated-from-note deck, even when it has cards', () => {
+    expect(isLibraryFlashcardDeck(deck({ name: 'From: SDOH', card_count: 20 }))).toBe(false);
+    expect(
+      isLibraryFlashcardDeck(
+        deck({ name: 'SDOH', description: 'Generated from note: SDOH', card_count: 20 })
+      )
+    ).toBe(false);
   });
 });
 

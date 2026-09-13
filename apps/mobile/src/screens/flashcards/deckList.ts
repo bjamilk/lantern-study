@@ -8,6 +8,8 @@ export {
   deckDisplayTitle,
   isEmptyGeneratedDeck,
   isGeneratedFromNoteDeck,
+  isGeneratedFromNoteTitle,
+  isLibraryFlashcardDeck,
   sortDecksForList,
   type DeckListItem,
 } from '@lantern/shared/flashcards';

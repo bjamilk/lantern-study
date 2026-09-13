@@ -16,9 +16,9 @@
  *    of it was ever typed by a person.
  *
  * 3. Decks made from a note are stored as "From: <note title>" and described
- *    "Generated from note: …". On the Flashcards tab that reads as the note
- *    filed under flashcards — and the note is still on the Notes tab. The
- *    list draws a deck title, not a note category.
+ *    "Generated from note: …". Listing them on Flashcards puts the same
+ *    material on both tabs. The Library Flashcards list hides those rows;
+ *    the source note stays on Notes.
  *
  * Display-time only, and deliberately: the stored name is what the student can
  * rename, what the server search matches and what an export carries. This
@@ -84,10 +84,19 @@ export function deckDisplaySubtitle(deck: DeckListItem): string | null {
   return raw;
 }
 
+export function isGeneratedFromNoteTitle(title: string | null | undefined): boolean {
+  return FROM_PREFIX.test(title ?? '');
+}
+
 /** Stored like a note (`From: …` / generated-from-note description). */
 export function isGeneratedFromNoteDeck(deck: DeckListItem): boolean {
-  if (FROM_PREFIX.test(deck.name ?? '')) return true;
+  if (isGeneratedFromNoteTitle(deck.name)) return true;
   return /^generated from note:/i.test((deck.description ?? '').trim());
+}
+
+/** Library Flashcards tab: standalone decks only. Note-made decks stay off this list. */
+export function isLibraryFlashcardDeck(deck: DeckListItem): boolean {
+  return !isGeneratedFromNoteDeck(deck);
 }
 
 /**

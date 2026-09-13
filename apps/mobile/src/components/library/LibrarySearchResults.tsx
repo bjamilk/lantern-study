@@ -6,6 +6,7 @@
 import React, { useMemo } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import type { LibrarySearchMatchField, LibrarySearchResult } from '@lantern/shared/types';
+import { isGeneratedFromNoteTitle } from '@lantern/shared';
 import { useTheme } from '../../theme';
 import { groupLibrarySearchResults, type LibraryDeckGroup } from '../../utils/libraryArchive';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
@@ -112,7 +113,14 @@ export function LibrarySearchResults({
   onOpenBundle,
 }: Props) {
   const { colors } = useTheme();
-  const grouped = useMemo(() => groupLibrarySearchResults(results), [results]);
+  const grouped = useMemo(() => {
+    const rows = includeNotes
+      ? results
+      : results.filter(
+          (row) => !isGeneratedFromNoteTitle(row.title) && !isGeneratedFromNoteTitle(row.deckTitle)
+        );
+    return groupLibrarySearchResults(rows);
+  }, [results, includeNotes]);
   const scopeLabel = topicLabel ? (courseLabel ? `${courseLabel} · ${topicLabel}` : topicLabel) : courseLabel;
 
   const renderDeckGroup = (group: LibraryDeckGroup) => (

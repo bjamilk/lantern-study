@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibrarySearchResult, LibrarySearchType } from '../../types';
+import { isGeneratedFromNoteTitle } from '@lantern/shared';
 import { CourseChip, FeatureDisc } from '../ui';
 import { searchLibrary } from '../../services/library';
 import { useAcademicStore } from '../../stores/academicStore';
@@ -176,8 +177,15 @@ export const LibrarySearchResults: React.FC<LibrarySearchResultsProps> = ({
 
   const groups: LibrarySearchGroups | null = useMemo(() => {
     const rows = state.status === 'idle' ? null : state.results;
-    return rows ? groupLibrarySearchResults(rows) : null;
-  }, [state]);
+    if (!rows) return null;
+    const flashcardsOnly = Boolean(types && !types.includes('notes'));
+    const scoped = flashcardsOnly
+      ? rows.filter(
+          (row) => !isGeneratedFromNoteTitle(row.title) && !isGeneratedFromNoteTitle(row.deckTitle)
+        )
+      : rows;
+    return groupLibrarySearchResults(scoped);
+  }, [state, types]);
 
   const typed = query.trim();
   const tooShort = typed.length > 0 && typed.length < LIBRARY_SEARCH_MIN_CHARS;

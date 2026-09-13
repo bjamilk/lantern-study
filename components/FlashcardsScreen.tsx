@@ -14,7 +14,7 @@ import {
   getStudyAllDueLabel,
   deckDisplayTitle,
   deckDisplaySubtitle,
-  isEmptyGeneratedDeck,
+  isLibraryFlashcardDeck,
   sortDecksForList,
 } from '@lantern/shared';
 import { useFlashcardStore } from '../stores/flashcardStore';
@@ -203,7 +203,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
         const { dueCards, totalCards } = getDeckStats(deck.id);
         return { ...deck, due_count: dueCards, card_count: totalCards };
       })
-      .filter((deck) => !isEmptyGeneratedDeck(deck))
+      .filter((deck) => isLibraryFlashcardDeck(deck))
   );
 
   // List-row cards: one column on the phone, two from lg up. A third column
