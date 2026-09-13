@@ -504,37 +504,37 @@ const MessageItem = React.memo<MessageItemProps>(({ message, isCurrentUserMessag
                       </div>
                     )}
                     {onForward && copyText && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onForward(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onForward(message); }}>
                         Forward
                       </button>
                     )}
                     {onCopy && copyText && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onCopy(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onCopy(message); }}>
                         Copy
                       </button>
                     )}
                     {onStar && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onStar(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onStar(message); }}>
                         {starred ? 'Unstar' : 'Star'}
                       </button>
                     )}
                     {onPin && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onPin(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onPin(message); }}>
                         {pinned ? 'Unpin' : 'Pin'}
                       </button>
                     )}
                     {canEdit && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onEditMessage?.(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onEditMessage?.(message); }}>
                         Edit
                       </button>
                     )}
                     {canRemove && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onRemoveMessage?.(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body text-red-600 hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onRemoveMessage?.(message); }}>
                         Remove
                       </button>
                     )}
                     {canReport && (
-                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onReportMessage?.(message); }}>
+                      <button type="button" role="menuitem" className="w-full px-3 py-2 text-left text-body text-red-600 hover:bg-lantern-background" onClick={() => { setMenuOpen(false); onReportMessage?.(message); }}>
                         Report
                       </button>
                     )}

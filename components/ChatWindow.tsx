@@ -1517,7 +1517,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             onChange={(e) => setThreadSearch(e.target.value)}
             placeholder="Search this chat"
             aria-label="Search this chat"
-            className="flex-1 bg-transparent text-sm text-lantern-text outline-none"
+            className="flex-1 bg-transparent text-body text-lantern-text outline-none"
             autoFocus
           />
           <button
@@ -1526,7 +1526,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               setThreadSearch('');
               setThreadSearchOpen(false);
             }}
-            className="text-xs font-semibold text-lantern-primary"
+            className="text-caption font-semibold text-lantern-primary"
           >
             Close
           </button>
@@ -1535,10 +1535,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       {starredOnly && (
         <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
           <AppIcon name="star" size={14} className="text-amber-500" />
-          <p className="flex-1 text-xs font-semibold text-amber-800 dark:text-amber-300">
+          <p className="flex-1 text-caption font-semibold text-amber-800 dark:text-amber-300">
             Starred messages ({visibleMessages.length})
           </p>
-          <button type="button" onClick={() => setStarredOnly(false)} className="text-xs font-semibold text-amber-800">
+          <button type="button" onClick={() => setStarredOnly(false)} className="text-caption font-semibold text-amber-800">
             Show all
           </button>
         </div>
@@ -1550,7 +1550,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           className="flex items-center gap-2 w-full px-4 py-2 text-left border-b border-lantern-border bg-lantern-background-secondary"
         >
           <AppIcon name="pin" size={14} className="text-lantern-text-tertiary" />
-          <span className="flex-1 text-xs truncate text-lantern-text">
+          <span className="flex-1 text-caption truncate text-lantern-text">
             {pinnedMessage.questionStem || pinnedMessage.text || 'Pinned message'}
           </span>
         </button>

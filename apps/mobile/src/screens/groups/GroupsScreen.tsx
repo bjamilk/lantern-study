@@ -49,6 +49,7 @@ import { useChrome } from '../../components/layout/ChromeContext';
 import { brand, useTheme } from '../../theme';
 import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { useNetworkStatus } from '../../hooks/useSync';
+import { toTab } from '../../navigation/nestedTab';
 import { planReconnectRetry } from './reconnectRetry';
 import { AppIcon } from '../../components/ui/AppIcon';
 
@@ -215,11 +216,11 @@ function ChatRow({
           </Text>
         ) : null}
         {preview ? (
-          <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
+          <Text className="text-caption text-lantern-text-secondary mt-0.5" numberOfLines={1}>
             {preview}
           </Text>
         ) : communityName ? (
-          <Text className="text-sm text-lantern-text-secondary mt-0.5" numberOfLines={1}>
+          <Text className="text-caption text-lantern-text-secondary mt-0.5" numberOfLines={1}>
             in {communityName}
           </Text>
         ) : null}
@@ -1205,7 +1206,7 @@ export function GroupsScreen({ navigation }: Props) {
               accessibilityRole="button"
               accessibilityState={{ selected: inboxFilter === id }}
             >
-              <Text className={`text-xs font-semibold ${inboxFilter === id ? 'text-lantern-surface' : 'text-lantern-text-secondary'}`}>
+              <Text className={`text-label ${inboxFilter === id ? 'text-lantern-surface' : 'text-lantern-text-secondary'}`}>
                 {id === 'all' ? 'All' : 'Unread'}
               </Text>
             </Pressable>
@@ -1290,10 +1291,7 @@ export function GroupsScreen({ navigation }: Props) {
                         onPress={() =>
                           navigation.getParent()?.navigate(
                             'CampusTab',
-                            {
-                              screen: 'CommunityDetail',
-                              params: { slug: myCommunities[0].slug },
-                            } as never,
+                            toTab('CommunityDetail', { slug: myCommunities[0].slug }) as never,
                           )
                         }
                       >
@@ -1440,10 +1438,10 @@ export function GroupsScreen({ navigation }: Props) {
                   renderRightActions={() => (
                     <View className="flex-row h-full">
                       <Pressable onPress={() => void muteOne(`d:${item.thread.id}`)} className="w-[72px] bg-amber-500 items-center justify-center">
-                        <Text className="text-white text-xs font-semibold">Mute</Text>
+                        <Text className="text-white text-label">Mute</Text>
                       </Pressable>
                       <Pressable onPress={() => void archiveOne(item)} className="w-[72px] bg-slate-500 items-center justify-center">
-                        <Text className="text-white text-xs font-semibold">Archive</Text>
+                        <Text className="text-white text-label">Archive</Text>
                       </Pressable>
                     </View>
                   )}
@@ -1483,10 +1481,10 @@ export function GroupsScreen({ navigation }: Props) {
                 renderRightActions={() => (
                   <View className="flex-row h-full">
                     <Pressable onPress={() => void muteOne(`g:${g.id}`)} className="w-[72px] bg-amber-500 items-center justify-center">
-                      <Text className="text-white text-xs font-semibold">Mute</Text>
+                      <Text className="text-white text-label">Mute</Text>
                     </Pressable>
                     <Pressable onPress={() => void archiveOne(item)} className="w-[72px] bg-slate-500 items-center justify-center">
-                      <Text className="text-white text-xs font-semibold">Archive</Text>
+                      <Text className="text-white text-label">Archive</Text>
                     </Pressable>
                   </View>
                 )}

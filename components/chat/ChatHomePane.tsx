@@ -47,14 +47,14 @@ export const ChatHomePane: React.FC<ChatHomePaneProps> = ({
           <AppIcon name="chatbubbles" size={40} className="text-lantern-feature-groups-ink" />
         </div>
       )}
-      <h2 className={compact ? 'text-sm font-semibold text-lantern-text' : 'text-xl font-bold text-lantern-text mb-2'}>
+      <h2 className={compact ? 'text-body font-semibold text-lantern-text' : 'text-title text-lantern-text mb-2'}>
         {title}
       </h2>
-      <p className={`text-lantern-text-secondary ${compact ? 'text-xs' : 'max-w-sm mb-6'}`}>
+      <p className={`text-lantern-text-secondary ${compact ? 'text-caption' : 'max-w-sm mb-6'}`}>
         {body}
       </p>
       {!compact && !firstRun && (
-        <p className="text-xs text-lantern-text-tertiary mb-6">{CHAT_HOME_COPY.inboxHint}</p>
+        <p className="text-caption text-lantern-text-tertiary mb-6">{CHAT_HOME_COPY.inboxHint}</p>
       )}
 
       {!compact && !firstRun && model.recents.length > 0 && onSelectRecent && (
@@ -68,9 +68,9 @@ export const ChatHomePane: React.FC<ChatHomePaneProps> = ({
             >
               <Avatar name={recent.name} id={recent.id} src={recent.avatarUrl} size="sm" />
               <span className="min-w-0 flex-1">
-                <span className="block text-sm font-semibold text-lantern-text truncate">{recent.name}</span>
+                <span className="block text-body font-semibold text-lantern-text truncate">{recent.name}</span>
                 {recent.preview ? (
-                  <span className="block text-xs text-lantern-text-secondary truncate">{recent.preview}</span>
+                  <span className="block text-caption text-lantern-text-secondary truncate">{recent.preview}</span>
                 ) : null}
               </span>
             </button>
@@ -106,8 +106,8 @@ export const ChatHomePane: React.FC<ChatHomePaneProps> = ({
                 icon={<AppIcon name="business" size={16} />}
               />
               <span className="min-w-0">
-                <span className="block text-sm font-semibold text-lantern-text truncate">{lounge.name}</span>
-                <span className="block text-xs text-lantern-text-secondary">{CHAT_HOME_COPY.openLounge}</span>
+                <span className="block text-body font-semibold text-lantern-text truncate">{lounge.name}</span>
+                <span className="block text-caption text-lantern-text-secondary">{CHAT_HOME_COPY.openLounge}</span>
               </span>
             </button>
           ))}
@@ -123,10 +123,10 @@ export const ChatHomePane: React.FC<ChatHomePaneProps> = ({
                 icon={<AppIcon name="pricetag" size={16} />}
               />
               <span className="min-w-0">
-                <span className="block text-sm font-semibold text-lantern-text">
+                <span className="block text-body font-semibold text-lantern-text">
                   {CHAT_HOME_COPY.viewInquiries}
                 </span>
-                <span className="block text-xs text-lantern-text-secondary truncate">
+                <span className="block text-caption text-lantern-text-secondary truncate">
                   {model.inquiries[0].title}
                 </span>
               </span>
@@ -135,7 +135,7 @@ export const ChatHomePane: React.FC<ChatHomePaneProps> = ({
         </div>
       )}
 
-      <p className={`text-lantern-text-tertiary ${compact ? 'text-[11px] mt-3' : 'text-xs mt-6'}`}>
+      <p className={`text-lantern-text-tertiary ${compact ? 'text-label mt-3' : 'text-caption mt-6'}`}>
         {CHAT_HOME_COPY.privacy}
       </p>
     </div>

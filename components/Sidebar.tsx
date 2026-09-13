@@ -595,7 +595,7 @@ const Sidebar: React.FC<SidebarProps> = ({
               value={inboxQuery}
               onChange={(e) => setInboxQuery(e.target.value)}
               placeholder="Search chats"
-              className="w-full rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-sm text-lantern-text placeholder:text-lantern-text-tertiary"
+              className="w-full rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-body text-lantern-text placeholder:text-lantern-text-tertiary"
             />
             <div className="flex gap-1">
               {(['all', 'unread'] as const).map((id) => (
@@ -603,7 +603,7 @@ const Sidebar: React.FC<SidebarProps> = ({
                   key={id}
                   type="button"
                   onClick={() => setInboxFilter(id)}
-                  className={`px-2.5 py-1 rounded-full text-xs font-semibold min-h-[32px] ${
+                  className={`px-2.5 py-1 rounded-full text-label min-h-[32px] ${
                     inboxFilter === id
                       ? 'bg-lantern-ink text-lantern-surface'
                       : 'bg-lantern-background-secondary text-lantern-text-secondary'

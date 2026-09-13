@@ -729,6 +729,10 @@ export function createApiEndpoints(client: ApiClient) {
         studyLevel?: number | null;
         entryYear?: number | null;
         expectedGraduationYear?: number | null;
+        // Privacy-safe presence, from the route's own presenceFields() —
+        // lastSeenAt is nulled when the peer hides their online status.
+        lastSeenAt?: string | null;
+        onlineStatus?: "online" | "offline" | "hidden";
         created_at: string;
         updated_at: string;
       }>(`/users/${userId}`),

@@ -46,6 +46,34 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'pdf-viewer-photo-race-chat-home-1-0-53',
+    title: 'PDFs open in your phone’s viewer, photo questions always see the photo, and a chat home with gallery, forwarding and link previews (1.0.53)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-13',
+    summary:
+      'On Android, Open PDF hands the downloaded file to the system PDF viewer instead of a share sheet. A photo question sent while the photo was still being read went out without the photo and was answered blind; the companion now waits for the read to finish. Dark mode’s outgoing chat bubble is legible again. Chat gains a home pane with drafts and presence, an in-chat media gallery, forwarding to another chat, link previews and reactions; communities file student rooms under their real kind.',
+    details: [
+      'expo-intent-launcher added (native dependency): Open PDF fires ACTION_VIEW with a content URI from the cache; the share sheet remains only as the fallback when no viewer is installed. Both lockfiles regenerated.',
+      'Companion store awaits the in-flight image read before building the request context; a wire-level test asserts the request carries context.imageAttachments and that pending images clear only after a successful send.',
+      'Dark-mode user bubble uses the inverted theme pair (primaryFill + textInverse) instead of hard-coded white text.',
+      'Chat (web + mobile): chat home pane with drafts, inbox and presence; media gallery per chat; forward a message to another chat; link preview chips; message reactions; DM header shows the peer’s presence.',
+      'Communities: hub model and discovery plan reworked; migration 20260912200000_community_kind_backfill.sql promotes purpose-tagged topic rooms to their real kind (safe to re-run).',
+    ],
+    howToUse: [
+      'Library → a note with a PDF → Open PDF: your PDF app opens it.',
+      'Ask Lantern → “+” → Add image: wait for the chip to show the word count, then ask; questions sent early now wait for the read.',
+      'Chats → the home pane lists conversations with drafts and who is online; open a chat → gallery for its media, long-press a message to react or forward.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Migration 20260912200000_community_kind_backfill.sql is hand-applied; until then student rooms created before 20260908120000 stay filed as topic.',
+      'Migration 20260912090000_companion_message_citations.sql is still hand-applied (citations vanish on reload until then).',
+      'Lock-screen media controls are verified only where a keyguard is enabled (emulators default to none).',
+    ],
+    commits: ['500c0aeb'],
+  },
+  {
     id: 'ink-pivot-lockscreen-photos-1-0-52',
     title: 'One dark ink instead of blue, lecture controls on the lock screen, photos in Lantern AI (1.0.52)',
     area: 'platform',

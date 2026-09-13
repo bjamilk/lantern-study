@@ -48,7 +48,7 @@ export function ChatGallerySheet({
           style={{ backgroundColor: colors.modalBackground, paddingBottom: insets.bottom + 16 }}
         >
           <View className="flex-row items-center justify-between px-4 pt-4 pb-2">
-            <Text className="text-base font-semibold" style={{ color: colors.text }}>
+            <Text className="text-heading" style={{ color: colors.text }}>
               Photos and voice
             </Text>
             <Pressable onPress={onClose} hitSlop={8} accessibilityLabel="Close">
@@ -56,7 +56,7 @@ export function ChatGallerySheet({
             </Pressable>
           </View>
           {items.length === 0 ? (
-            <Text className="px-4 py-6 text-sm" style={{ color: colors.textSecondary }}>
+            <Text className="px-4 py-6 text-caption" style={{ color: colors.textSecondary }}>
               No photos or voice notes in this chat yet.
             </Text>
           ) : (

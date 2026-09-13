@@ -681,7 +681,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                       type="button"
                       role="menuitem"
                       onClick={() => { setTrayOpen(false); onOpenQuestionModal(); }}
-                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                      className="w-full flex items-center gap-2.5 px-3 py-2.5 text-body text-lantern-text hover:bg-lantern-background text-left"
                     >
                       <AppIcon name="create" size={16} className="text-lantern-primary" />
                       Submit a question
@@ -691,7 +691,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                     type="button"
                     role="menuitem"
                     onClick={() => { setTrayOpen(false); cameraInputRef.current?.click(); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-body text-lantern-text hover:bg-lantern-background text-left"
                   >
                     <AppIcon name="camera" size={16} className="text-lantern-primary" />
                     Camera
@@ -700,7 +700,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                     type="button"
                     role="menuitem"
                     onClick={() => { setTrayOpen(false); imageInputRef.current?.click(); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-body text-lantern-text hover:bg-lantern-background text-left"
                   >
                     <AppIcon name="image" size={16} className="text-lantern-primary" />
                     Photo library
@@ -709,7 +709,7 @@ const MessageInputBar: React.FC<MessageInputBarProps> = ({
                     type="button"
                     role="menuitem"
                     onClick={() => { setTrayOpen(false); documentInputRef.current?.click(); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-sm text-lantern-text hover:bg-lantern-background text-left"
+                    className="w-full flex items-center gap-2.5 px-3 py-2.5 text-body text-lantern-text hover:bg-lantern-background text-left"
                   >
                     <AppIcon name="document" size={16} className="text-lantern-primary" />
                     Document

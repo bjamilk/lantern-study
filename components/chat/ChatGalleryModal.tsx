@@ -24,7 +24,7 @@ export function ChatGalleryModal({
     >
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 id="chat-gallery-title" className="text-base font-semibold text-lantern-text">
+          <h2 id="chat-gallery-title" className="text-heading text-lantern-text">
             Photos and voice
           </h2>
           <button
@@ -37,7 +37,7 @@ export function ChatGalleryModal({
           </button>
         </div>
         {items.length === 0 ? (
-          <p className="text-sm text-lantern-text-secondary">No photos or voice notes in this chat yet.</p>
+          <p className="text-body text-lantern-text-secondary">No photos or voice notes in this chat yet.</p>
         ) : (
           <ul className="grid grid-cols-3 gap-2 max-h-80 overflow-y-auto">
             {items.map((item) => (

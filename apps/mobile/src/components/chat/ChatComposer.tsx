@@ -310,7 +310,7 @@ export function ChatComposer({
             className="flex-1 min-h-[44px] items-center justify-center rounded-xl bg-lantern-background-secondary"
             accessibilityLabel="Camera"
           >
-            <Text className="text-xs font-semibold" style={{ color: colors.text }}>Camera</Text>
+            <Text className="text-caption font-semibold" style={{ color: colors.text }}>Camera</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -320,7 +320,7 @@ export function ChatComposer({
             className="flex-1 min-h-[44px] items-center justify-center rounded-xl bg-lantern-background-secondary"
             accessibilityLabel="Photo library"
           >
-            <Text className="text-xs font-semibold" style={{ color: colors.text }}>Photos</Text>
+            <Text className="text-caption font-semibold" style={{ color: colors.text }}>Photos</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -330,7 +330,7 @@ export function ChatComposer({
             className="flex-1 min-h-[44px] items-center justify-center rounded-xl bg-lantern-background-secondary"
             accessibilityLabel="Document"
           >
-            <Text className="text-xs font-semibold" style={{ color: colors.text }}>Document</Text>
+            <Text className="text-caption font-semibold" style={{ color: colors.text }}>Document</Text>
           </Pressable>
         </View>
       ) : null}

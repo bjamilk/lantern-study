@@ -17,7 +17,7 @@ export function LinkPreviewChip({
       href={url}
       target="_blank"
       rel="noopener noreferrer"
-      className={`mt-2 flex items-center gap-2 rounded-lg border px-2.5 py-2 text-xs ${
+      className={`mt-2 flex items-center gap-2 rounded-lg border px-2.5 py-2 text-caption ${
         onPrimary
           ? 'border-white/30 bg-white/10 text-white'
           : 'border-lantern-border bg-lantern-background-secondary text-lantern-text'

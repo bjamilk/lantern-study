@@ -80,7 +80,7 @@ export function ForwardChatModal({
     >
       <div className="p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 id="forward-chat-title" className="text-base font-semibold text-lantern-text">
+          <h2 id="forward-chat-title" className="text-heading text-lantern-text">
             Forward message
           </h2>
           <button
@@ -98,7 +98,7 @@ export function ForwardChatModal({
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search chats"
           aria-label="Search chats to forward to"
-          className="w-full mb-3 rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-sm"
+          className="w-full mb-3 rounded-lg border border-lantern-border bg-lantern-background px-3 py-2 text-body"
         />
         <ul className="max-h-72 overflow-y-auto divide-y divide-lantern-border">
           {targets.map((target) => (
@@ -107,14 +107,14 @@ export function ForwardChatModal({
                 type="button"
                 disabled={!!sendingKey}
                 onClick={() => void handlePick(target)}
-                className="w-full text-left px-2 py-2.5 text-sm text-lantern-text hover:bg-lantern-background-secondary rounded-md disabled:opacity-50"
+                className="w-full text-left px-2 py-2.5 text-body text-lantern-text hover:bg-lantern-background-secondary rounded-md disabled:opacity-50"
               >
                 {sendingKey === target.key ? 'Sending…' : target.name}
               </button>
             </li>
           ))}
           {targets.length === 0 && (
-            <li className="px-2 py-4 text-sm text-lantern-text-secondary">No chats to forward to.</li>
+            <li className="px-2 py-4 text-body text-lantern-text-secondary">No chats to forward to.</li>
           )}
         </ul>
       </div>

@@ -170,7 +170,7 @@ export function CreatorProfileScreen({
                 }}
                 className="mt-3 items-center rounded-lg py-2.5 bg-lantern-background-secondary"
               >
-                <Text className="text-sm font-semibold text-lantern-text">Message</Text>
+                <Text className="text-caption font-semibold text-lantern-text">Message</Text>
               </Pressable>
               <Pressable
                 onPress={() => void toggleFollow()}

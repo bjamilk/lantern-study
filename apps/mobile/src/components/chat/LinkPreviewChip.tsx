@@ -18,10 +18,10 @@ export function LinkPreviewChip({ text }: { text?: string | null }) {
     >
       <AppIcon name="link" size={14} color={colors.textSecondary} />
       <View className="flex-1 min-w-0">
-        <Text className="text-xs font-semibold" style={{ color: colors.text }} numberOfLines={1}>
+        <Text className="text-caption font-semibold" style={{ color: colors.text }} numberOfLines={1}>
           {linkPreviewHostname(url)}
         </Text>
-        <Text className="text-[11px]" style={{ color: colors.textTertiary }} numberOfLines={1}>
+        <Text className="text-label" style={{ color: colors.textTertiary }} numberOfLines={1}>
           {url}
         </Text>
       </View>

@@ -293,7 +293,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
           <p className="text-xs text-lantern-text-tertiary">
             Every sale now waits for you to confirm payment before it counts as paid — cash at pickup included.
           </p>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-body">
             <input
               type="checkbox"
               checked={hallDropoffEnabled}
@@ -301,7 +301,7 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
             />
             Offer hall dropoff on eligible combined orders
           </label>
-          <label className="flex items-center gap-2 text-sm">
+          <label className="flex items-center gap-2 text-body">
             <input
               type="checkbox"
               checked={shippingEnabled}
@@ -314,21 +314,21 @@ export const SellerInsightsDrawer: React.FC<SellerInsightsDrawerProps> = ({
             value={shippingFee}
             onChange={(e) => setShippingFee(e.target.value)}
             placeholder="Shipping fee ₦"
-            className="lantern-field w-full text-sm"
+            className="lantern-field w-full text-body"
           />
           <input
             type="number"
             value={shippingFreeOver}
             onChange={(e) => setShippingFreeOver(e.target.value)}
             placeholder="Free over ₦ (optional)"
-            className="lantern-field w-full text-sm"
+            className="lantern-field w-full text-body"
           />
           <input
             type="text"
             value={shipsFromCity}
             onChange={(e) => setShipsFromCity(e.target.value)}
             placeholder="Ships from city"
-            className="lantern-field w-full text-sm"
+            className="lantern-field w-full text-body"
           />
           <div className="flex gap-2">
             <input

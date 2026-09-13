@@ -1253,11 +1253,11 @@ export function DirectMessageScreen({ navigation, route }: Props) {
           size={36}
         />
         <View className="flex-1 min-w-0">
-          <Text className="text-base font-semibold text-lantern-text" numberOfLines={1}>
+          <Text className="text-body font-semibold text-lantern-text" numberOfLines={1}>
             {displayName}
           </Text>
           {peerPresenceLabel ? (
-            <Text className="text-xs text-lantern-text-secondary" numberOfLines={1}>
+            <Text className="text-caption text-lantern-text-secondary" numberOfLines={1}>
               {peerPresenceLabel}
             </Text>
           ) : null}
