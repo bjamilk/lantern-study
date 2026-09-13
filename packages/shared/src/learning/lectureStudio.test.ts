@@ -160,6 +160,9 @@ describe('lecture studio helpers', () => {
       '[0:00] mine'
     );
     expect(latestLectureTranscript([{ extractedText: 'one' }, { extractedText: 'two' }])).toBe('two');
+    expect(
+      latestLectureTranscript([{ type: 'pdf', extractedText: 'slide text that is not captions' }])
+    ).toBe('');
   });
 
   it('writes captions into the note under a Transcript heading', () => {
@@ -232,6 +235,13 @@ describe('lecture tab planner', () => {
     expect(lectureTabs({}).map((tab) => tab.label)).toEqual(['My Notes']);
   });
 
+  it('can keep the Transcript tab open before captions exist', () => {
+    expect(tabIds({ body: 'Just what I typed.', showTranscriptTab: true })).toEqual([
+      'notes',
+      'transcript',
+    ]);
+  });
+
   it('opens each tab from its own source and all four together', () => {
     const body = composeLectureNoteBody(TYPED, TRANSCRIPT);
     expect(tabIds({ body: withEnhanced(TYPED) })).toEqual(['notes', 'enhanced']);
@@ -251,6 +261,24 @@ describe('lecture tab planner', () => {
       'transcript',
       'audio',
     ]);
+  });
+
+  it('offers Materials beside Enhanced when a document or video is attached', () => {
+    expect(tabIds({ attachments: [{ type: 'pdf', fileUrl: 'x' }] })).toEqual(['notes', 'materials']);
+    expect(tabIds({ sourceType: 'youtube', youtubeVideoId: 'abc' })).toEqual(['notes', 'materials']);
+    expect(tabIds({ body: TYPED, showEnhancedTab: true })).toEqual(['notes', 'enhanced']);
+    expect(
+      tabIds({
+        body: withEnhanced(composeLectureNoteBody(TYPED, TRANSCRIPT)),
+        attachments: [audioRow, { type: 'pdf', fileUrl: 'x' }],
+      })
+    ).toEqual(['notes', 'enhanced', 'materials', 'transcript', 'audio']);
+  });
+
+  it('opens a document note on Materials, and Enhanced once Smart Notes exist', () => {
+    const pdf = { sourceType: 'pdf' as const, attachments: [{ type: 'pdf', fileUrl: 'x' }] };
+    expect(defaultLectureTab(pdf)).toBe('materials');
+    expect(defaultLectureTab({ ...pdf, body: withEnhanced(TYPED) })).toBe('enhanced');
   });
 
   it('counts a recording whose signed URL failed but whose storage path was kept', () => {

@@ -110,6 +110,11 @@ export type PendingAiSave =
        * still writes the test the student actually asked for.
        */
       config?: Record<string, unknown>;
+      /**
+       * When set, Open / the notification stay on this note instead of
+       * launching the full test screen.
+       */
+      stayOnNoteId?: string;
     };
 
 /** What the panel says when a reload finds generated work that never saved. */

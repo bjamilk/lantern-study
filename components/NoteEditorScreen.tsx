@@ -7,15 +7,33 @@ import {
   getAttachmentExtractionStatus,
   getExtractionStatusMessage,
   getNoteStudyContent,
+  getNoteStudyContentForSmartNotes,
   hasEnoughNoteStudyContent,
+  isLectureNote,
   isPhotoNoteSource,
   isPlaceholderExtractedText,
   latestLectureTranscript,
+  lectureAudioAttachment,
+  lectureNoteParts,
+  lectureTabs,
+  lectureTranscriptLines,
+  listSmartNoteSources,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+  noteHasMaterials,
   preferLectureTranscript,
+  resolveLectureTab,
   splitLectureNoteBody,
+  toggleSmartNoteFilter,
+  type LectureTabId,
+  type SmartNoteSourceId,
 } from '@lantern/shared';
+import {
+  upsertSmartNotesSection,
+  type SmartNotesDepth,
+} from '@lantern/shared/utils/smartNotes';
 import type { Group, NoteAttachment, NoteComment, StudyNote, DailyQuizSession, StudyGoalMode } from '../types';
-import NoteLearnPanel from './NoteLearnPanel';
+import { NoteDocumentActions } from './NoteDocumentActions';
+import { SmartNoteCompose } from './SmartNoteCompose';
 import { runAiJob, type AiJobHooks } from '../stores/aiJobRunner';
 import { useAiJobUserId } from '../hooks/useAiJobs';
 import {
@@ -34,6 +52,10 @@ import Modal from './ui/Modal';
 import NotePdfViewer from './NotePdfViewer';
 import NoteImageGallery from './NoteImageGallery';
 import { NoteReadingView } from './study/NoteReadingView';
+import { LectureAudioPlayer } from './study/LectureAudioPlayer';
+import { Tab, TabList, TabPanel, Tabs } from './ui/Tabs';
+import AICompanionPanel from './AICompanionPanel';
+import { useCompanionStore } from '../stores/companionStore';
 import { Button } from './ui';
 import { FEATURE_INK_TEXT } from './ui/featureClasses';
 import * as notesApi from '../services/notes';
@@ -76,7 +98,7 @@ interface NoteEditorScreenProps {
   onGenerateQuiz: (
     editorState?: { title?: string; body?: string },
     hooks?: AiJobHooks
-  ) => Promise<void>;
+  ) => Promise<DailyQuizSession | void | null>;
   studyGoal?: StudyGoalMode;
   dailyQuiz?: DailyQuizSession | null;
   dailyQuizProgress?: number;
@@ -171,8 +193,17 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
       latestLectureTranscript(note.attachments) ||
       splitLectureNoteBody(body).transcript,
   });
+  const [smartNotesGuidance, setSmartNotesGuidance] = useState('');
+  const [smartNotesDepth, setSmartNotesDepth] = useState<SmartNotesDepth>('standard');
+  const [smartNoteCompose, setSmartNoteCompose] = useState(false);
+  const [requestedTab, setRequestedTab] = useState<LectureTabId | null>(null);
+  const [selectedSources, setSelectedSources] = useState<SmartNoteSourceId[]>([]);
+  const [writingSmartNote, setWritingSmartNote] = useState(false);
+  const companionOpen = useCompanionStore((s) => s.isOpen);
   const [generatingCards, setGeneratingCards] = useState(false);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [quizColumnDismissed, setQuizColumnDismissed] = useState(false);
+  const [heldQuiz, setHeldQuiz] = useState<DailyQuizSession | null>(null);
   const [generatingPreview, setGeneratingPreview] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewBannerDismissed, setPreviewBannerDismissed] = useState(false);
@@ -251,7 +282,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
 
   const aiJobUserId = useAiJobUserId();
   /** One flag for the Turn-into row: never offer a second job while one runs. */
-  const turnIntoBusy = generatingCards || generatingQuiz || transcribingForThisNote;
+  const turnIntoBusy = generatingCards || generatingQuiz || transcribingForThisNote || writingSmartNote;
 
 
   /**
@@ -312,8 +343,18 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     );
   };
 
+  const revealQuiz = (session: DailyQuizSession | void | null) => {
+    if (!session?.questions?.length) return;
+    setHeldQuiz({ ...session, noteId: session.noteId || note.id });
+    setQuizColumnDismissed(false);
+  };
+
   const runQuizJob = async () => {
-    if (!aiJobUserId) return onGenerateQuiz({ title, body });
+    const openReturned = (session: DailyQuizSession | void | null) => {
+      revealQuiz(session);
+      return session;
+    };
+    if (!aiJobUserId) return openReturned(await onGenerateQuiz({ title, body }));
     return runAiJob(
       {
         userId: aiJobUserId,
@@ -321,13 +362,12 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         title: title || note.title || 'Untitled note',
         stages: ['Reading your note', 'Writing questions', 'Saving your test'],
         creditCost: AI_CREDIT_COSTS.generate_questions,
-        // A guess, and only a fallback: the save records the test's own route
-        // the moment it lands, and that is what Open uses.
-        target: { path: `/notes/${note.id}`, label: 'Open note' },
+        target: { path: `/notes/${note.id}`, label: 'Open quiz' },
       },
       async (report, hooks) => {
         report(1);
         const result = await onGenerateQuiz({ title, body }, hooks);
+        revealQuiz(result);
         report(2);
         return result;
       }
@@ -415,6 +455,64 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setBody(value);
   };
 
+  const isLectureSurface = isLectureNote(note);
+  const studyInput = {
+    sourceType: note.sourceType,
+    body,
+    summary: note.summary,
+    attachments: note.attachments,
+  };
+  const availableSources = listSmartNoteSources(studyInput);
+  const availableSourceKey = availableSources.map((source) => source.id).join(',');
+  const lectureSource = {
+    body,
+    attachments: note.attachments,
+    liveTranscript,
+    showTranscriptTab: isLectureSurface,
+    showEnhancedTab: Boolean(
+      smartNoteCompose ||
+        (canEdit && (isLectureSurface || noteHasMaterials({
+          attachments: note.attachments,
+          sourceType: note.sourceType,
+          youtubeVideoId: note.youtubeVideoId,
+        })))
+    ),
+    sourceType: note.sourceType,
+    youtubeVideoId: note.youtubeVideoId,
+  };
+  const lectureParts = lectureNoteParts(lectureSource);
+  const lectureTabList = lectureTabs(lectureSource);
+  const activeLectureTab = resolveLectureTab(lectureSource, requestedTab);
+  const showNoteTabs = lectureTabList.length > 1;
+  const persistableTranscript = lectureNoteParts({
+    body,
+    attachments: note.attachments,
+  }).transcript;
+  const lectureTranscriptRows = lectureTranscriptLines(lectureParts.transcript);
+  const lectureAudioRow = lectureAudioAttachment(lectureSource);
+  const synthesizeSources = availableSources.length > 0 ? selectedSources : undefined;
+  const activeNoteQuiz = (() => {
+    const candidate = heldQuiz ?? dailyQuiz;
+    if (!candidate || candidate.questions.length === 0) return null;
+    if (candidate.noteId && candidate.noteId !== note.id) return null;
+    return candidate;
+  })();
+  const showQuizColumn =
+    canEdit &&
+    !quizColumnDismissed &&
+    (generatingQuiz || Boolean(activeNoteQuiz && onDailyQuizAnswer && onCompleteDailyQuiz));
+  const synthesizeReady =
+    getNoteStudyContentForSmartNotes(studyInput, synthesizeSources).trim().length >=
+    MIN_NOTE_STUDY_CONTENT_CHARS;
+
+  const handleTypedNotesChange = (value: string) => {
+    let next = isLectureSurface
+      ? composeLectureNoteBody(value, persistableTranscript)
+      : value;
+    if (lectureParts.enhanced) next = upsertSmartNotesSection(next, lectureParts.enhanced);
+    handleBodyChange(next);
+  };
+
   const handleImageAttachmentsChange = (attachments: NoteAttachment[]) => {
     const other = (note.attachments || []).filter((a) => a.type !== 'image');
     setSelectedNote({ ...note, attachments: [...other, ...attachments] });
@@ -448,7 +546,30 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     setPreviewError(null);
     setPreviewBannerDismissed(false);
     previewAttemptedRef.current.delete(note.id);
+    setRequestedTab(null);
+    setSmartNoteCompose(false);
+    setQuizColumnDismissed(false);
+    setHeldQuiz(null);
   }, [note.id]);
+
+  useEffect(() => {
+    if (generatingQuiz) setQuizColumnDismissed(false);
+  }, [generatingQuiz]);
+
+  useEffect(() => {
+    if (!dailyQuiz?.questions?.length) return;
+    if (dailyQuiz.noteId && dailyQuiz.noteId !== note.id) return;
+    setHeldQuiz((current) => {
+      if (dailyQuiz.completed && !current) return current;
+      return dailyQuiz;
+    });
+  }, [dailyQuiz, note.id]);
+
+  useEffect(() => {
+    setSelectedSources(
+      availableSourceKey ? (availableSourceKey.split(',') as SmartNoteSourceId[]) : []
+    );
+  }, [note.id, availableSourceKey]);
 
   // Poll while a YouTube transcript job is still processing so Smart Notes unlocks.
   useEffect(() => {
@@ -915,7 +1036,8 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         </button>}
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col-reverse lg:flex-row">
+      <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col-reverse lg:flex-row">
         <div className="flex-1 min-w-0 lg:overflow-y-auto p-3 sm:p-4 space-y-3">
           <div
             className={`sticky top-0 z-10 flex flex-wrap gap-2 py-2 -mt-2 lg:static lg:mt-0 lg:py-0 ${
@@ -1027,46 +1149,16 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </div>
           </div>
 
-          {(recordingForThisNote || liveTranscript) && (
-            <div className="rounded-xl border border-lantern-border bg-lantern-background p-3">
-              <h2 className="text-label uppercase text-lantern-text-secondary mb-2">Live transcript</h2>
-              {liveTranscript ? (
-                <p className="text-body whitespace-pre-wrap">{liveTranscript}</p>
-              ) : (
-                <p className="text-body text-lantern-text-tertiary">
-                  {lecturePaused ? 'Paused.' : 'Listening… captions appear in a few seconds.'}
-                </p>
-              )}
-            </div>
-          )}
-
           {/* ─── Turn into ───────────────────────────────────────────────
-              The four things a note becomes, at the top of the note rather
-              than only in the right-hand panel — which on a phone is below the
-              whole editor, so the actions a student came for were the last
-              thing on the page. The pills are NEUTRAL — the editor is a
-              reading surface, which §5.6 keeps flat (no tint, ≤2% chromatic) —
-              and each glyph is stroked in the ink of the thing it makes, the
-              same as the mobile "Turn into" tiles.
-
-              Each pill prints what it costs, from `formatCreditCost` over the
-              SAME constants the server charges (`aiCredits.ts`) — a number
-              typed in here is how the counter starts lying. Smart note quotes
-              the standard depth because that is what this shortcut runs; the
-              panel below owns depth, guidance and the counter, and this row
-              disables itself while a job is running so it cannot
-              double-charge. */}
+              One row: Cards, Test, Smart note, Ask Lantern. Smart note
+              opens Enhanced Notes compose instead of running immediately. */}
           {canEdit && studyContentLength > 0 && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-label uppercase text-lantern-text-secondary">Turn into</span>
               {([
                 { key: 'cards', label: 'Cards', cost: formatCreditCost(AI_CREDIT_COSTS.generate_flashcards), feature: 'flashcards', icon: <AppIcon name="albums" size={16} />, run: () => { setGeneratingCards(true); void runFlashcardJob().finally(() => setGeneratingCards(false)); } },
                 { key: 'test', label: 'Test', cost: formatCreditCost(AI_CREDIT_COSTS.generate_questions), feature: 'tests', icon: <AppIcon name="help-circle" size={16} />, run: () => { setGeneratingQuiz(true); void runQuizJob().finally(() => setGeneratingQuiz(false)); } },
-                { key: 'smart', label: 'Smart note', cost: formatCreditCost(SMART_NOTES_CREDIT_COST.standard), feature: 'ai', icon: <AppIcon name="sparkles" size={16} />, run: () => { void runSmartNoteJob({ title, body }); } },
-                // Opening the companion spends nothing; the reply is charged in
-                // the chat's own counter, so promising "free" here would be a
-                // lie by omission.
-                { key: 'ai', label: 'Ask AI', cost: 'no credit to open', feature: 'ai', icon: <AppIcon name="chatbubbles" size={16} />, run: onChatWithNote },
+                { key: 'ai', label: 'Ask Lantern', cost: 'no credit to open', feature: 'ai', icon: <AppIcon name="chatbubbles" size={16} />, run: onChatWithNote },
               ] as const).map((action) => (
                 <button
                   key={action.key}
@@ -1085,137 +1177,38 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
                   </span>
                 </button>
               ))}
-            </div>
-          )}
-
-          {note.youtubeVideoId && (
-            <YouTubeEmbed videoId={note.youtubeVideoId} title={title || note.title} />
-          )}
-
-          {isYoutubeNote && (
-            <YoutubeTranscriptPanel
-              theme={theme}
-              attachment={youtubeAttachment}
-              canRetry={canEdit}
-              retrying={retryingYoutubeTranscript}
-              onRetry={() => void handleRetryYoutubeTranscript()}
-            />
-          )}
-
-          {documentAttachment && (
-            <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
-          )}
-
-          {showImageGallery && imageAttachments.length > 0 && (
-            <>
-              <input
-                ref={addPhotosInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="hidden"
-                onChange={(event) => void handleAddPhotosSelected(event)}
-              />
-              <NoteImageGallery
-                noteId={note.id}
-                attachments={imageAttachments}
-                theme={theme}
-                editable={isPhotoNote && canEdit}
-                onAttachmentsChange={handleImageAttachmentsChange}
-                onAddPhotos={
-                  isPhotoNote && canEdit
-                    ? () => {
-                        if (!addingPhotos) addPhotosInputRef.current?.click();
-                      }
-                    : undefined
-                }
-              />
-            </>
-          )}
-
-          {extractionMessage &&
-            (note.sourceType === 'pdf' ||
-              note.sourceType === 'presentation' ||
-              isPhotoNoteSource(note.sourceType)) && (
-            <div
-              className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${
-                isDark
-                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
-                  : 'border-amber-500/40 bg-amber-50 text-amber-950'
-              }`}
-              role="status"
-            >
-              <p>{runningOcr || extractionStatus === 'ocr_processing' ? 'Running local OCR…' : extractionMessage}</p>
-              {(extractionStatus === 'needs_ocr' ||
-                extractionStatus === 'empty' ||
-                extractionStatus === 'ocr_failed') &&
-                canEdit && (
-                  <Button size="sm" variant="secondary" onClick={() => void handleRunOcr()} disabled={runningOcr}>
-                    {runningOcr ? 'Running OCR…' : 'Run OCR (local)'}
-                  </Button>
-                )}
-            </div>
-          )}
-
-          {showPreviewBanner && (
-            <div
-              className={`text-sm rounded-lg border px-3 py-2 flex items-start justify-between gap-3 ${
-                isDark ? 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary-light' : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary-dark'
-              }`}
-              role="status"
-            >
-              <div className="space-y-1">
-                <p>
-                  Slide preview is being prepared
-                  {extractionStatus === 'ok'
-                    ? ' — extracted text is available for AI tools.'
-                    : ' — AI tools need readable text (wait for extraction/OCR if this deck is image-based).'}
-                </p>
-                {presentationAttachment && (
-                  <button
-                    type="button"
-                    className="text-lantern-primary underline text-left text-xs"
-                    onClick={() => void handleDownloadOriginalSlides()}
-                  >
-                    Download original slides ({presentationAttachment.fileName || 'presentation'})
-                  </button>
-                )}
-              </div>
               <button
                 type="button"
-                className={`shrink-0 text-xs underline ${isDark ? 'text-lantern-primary-light' : 'text-lantern-primary'}`}
-                onClick={() => setPreviewBannerDismissed(true)}
+                onClick={() => {
+                  setSmartNoteCompose(true);
+                  setRequestedTab('enhanced');
+                }}
+                disabled={turnIntoBusy}
+                aria-expanded={activeLectureTab === 'enhanced'}
+                aria-label={`Smart note — ${formatCreditCost(SMART_NOTES_CREDIT_COST[smartNotesDepth])}`}
+                className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-full border px-3 text-body font-medium transition-colors disabled:opacity-50 ${
+                  activeLectureTab === 'enhanced'
+                    ? 'border-lantern-primary bg-lantern-primary text-white'
+                    : 'border-lantern-border bg-lantern-surface text-lantern-text hover:border-lantern-text-tertiary'
+                }`}
               >
-                Dismiss
+                <span className={activeLectureTab === 'enhanced' ? 'text-white' : FEATURE_INK_TEXT.ai} aria-hidden="true">
+                  <AppIcon name="sparkles" size={16} />
+                </span>
+                Smart note
+                <span className={`text-caption font-normal ${activeLectureTab === 'enhanced' ? 'text-white/80' : 'text-lantern-text-tertiary'}`} aria-hidden="true">
+                  · {formatCreditCost(SMART_NOTES_CREDIT_COST[smartNotesDepth])}
+                </span>
               </button>
-            </div>
-          )}
-
-          {isDocumentNote && !documentAttachment && !showPreviewBanner && (
-            <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-lantern-border text-lantern-text-tertiary' : 'border-lantern-border text-lantern-text-secondary'}`}>
-              <p>
-                {previewError ||
-                  (note.sourceType === 'presentation'
-                    ? extractionStatus === 'ok'
-                      ? 'Slide preview is unavailable. Extracted text is available for AI tools.'
-                      : 'Slide preview is unavailable. Extracted text may be missing — run OCR or add notes.'
-                    : 'Document preview is unavailable.')}
-                {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
-              </p>
-              {note.sourceType === 'presentation' && presentationAttachment && (
+              {activeNoteQuiz && quizColumnDismissed ? (
                 <button
                   type="button"
-                  className="text-lantern-primary underline text-left block"
-                  onClick={() => void handleDownloadOriginalSlides()}
+                  onClick={() => setQuizColumnDismissed(false)}
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border bg-lantern-surface px-3 text-body font-medium text-lantern-text hover:border-lantern-text-tertiary"
                 >
-                  Download original slides
+                  Open quiz
                 </button>
-              )}
-              {note.sourceType === 'presentation' && previewError && (
-                <Button size="sm" variant="secondary" onClick={handleRetryPreview}>
-                  Retry preview
-                </Button>
-              )}
+              ) : null}
             </div>
           )}
 
@@ -1232,37 +1225,287 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
             </div>
           )}
 
-          {isDocumentNote || isPhotoNote || isYoutubeNote ? (
-            <div>
-              <h4 className={`text-sm font-semibold mb-2 ${isDark ? 'text-lantern-text' : 'text-lantern-text'}`}>
-                Your notes
-              </h4>
-              {isViewer ? (
-                <div
-                  aria-label="Note body"
-                  className="w-full min-h-[160px] sm:min-h-[200px] overflow-y-auto rounded-xl border border-lantern-border bg-lantern-surface p-3 sm:p-4"
-                >
-                  <NoteReadingView body={body} emptyLine="This note is empty." />
+          {showNoteTabs ? (
+            <Tabs
+              value={activeLectureTab}
+              onValueChange={(next) => setRequestedTab(next as LectureTabId)}
+              variant="segmented"
+              aria-label={isLectureSurface ? 'Lecture' : 'Note'}
+              className="flex flex-col"
+            >
+              <TabList className="overflow-x-auto">
+                {lectureTabList.map((row, index) => (
+                  <Tab key={row.id} value={row.id} index={index}>
+                    {row.label}
+                  </Tab>
+                ))}
+              </TabList>
+              <TabPanel value="notes" className="pt-3">
+                {isViewer ? (
+                  <div
+                    aria-label="Typed lecture notes"
+                    className="w-full min-h-[240px] sm:min-h-[360px] overflow-y-auto rounded-xl border border-lantern-border bg-lantern-surface p-3 sm:p-4"
+                  >
+                    <NoteReadingView
+                      body={lectureParts.typed}
+                      emptyLine={
+                        isLectureSurface
+                          ? 'Type during class. The transcript stays on its own tab.'
+                          : 'This note is empty.'
+                      }
+                    />
+                  </div>
+                ) : (
+                  <textarea
+                    value={lectureParts.typed}
+                    onChange={(event) => handleTypedNotesChange(event.target.value)}
+                    readOnly={transcribingForThisNote}
+                    aria-label="Typed lecture notes"
+                    placeholder={
+                      isLectureSurface
+                        ? 'Type during class. The transcript stays on its own tab.'
+                        : isPhotoNote
+                          ? 'Add your own notes alongside these photos...'
+                          : isYoutubeNote
+                            ? 'Add your own notes alongside this video transcript...'
+                            : isDocumentNote
+                              ? 'Add your own notes on top of this document...'
+                              : 'Start typing your notes...'
+                    }
+                    className={`w-full min-h-[240px] sm:min-h-[360px] p-3 sm:p-4 rounded-xl border resize-y text-body leading-relaxed ${
+                      isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
+                    }`}
+                  />
+                )}
+              </TabPanel>
+              <TabPanel value="transcript" className="pt-3">
+                <div className="rounded-xl border border-lantern-border bg-lantern-background p-3 sm:p-4 space-y-3">
+                  <p className="text-caption text-lantern-text-secondary">
+                    {recordingForThisNote
+                      ? lecturePaused
+                        ? 'Paused. Captions stay here — copy a sentence into My notes if you want it in your own words.'
+                        : 'Listening… captions appear here. Copy a sentence into My notes if you want it in your own words.'
+                      : 'Read-only captions. Copy a sentence into My notes if you want it in your own words.'}
+                  </p>
+                  {lectureTranscriptRows.length ? (
+                    <ol className="space-y-2">
+                      {lectureTranscriptRows.map((line, index) => (
+                        <li key={`${line.time ?? ''}-${index}`} className="flex gap-3">
+                          <span className="w-12 shrink-0 text-caption tabular-nums text-lantern-text-secondary">
+                            {line.time ?? ''}
+                          </span>
+                          <span className="min-w-0 text-body text-lantern-text">{line.text}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : (
+                    <p className="text-body text-lantern-text-tertiary">
+                      {recordingForThisNote
+                        ? 'Captions appear in a few seconds.'
+                        : 'No transcript on this lecture yet.'}
+                    </p>
+                  )}
+                  {canEdit && lectureParts.transcript.trim() ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => {
+                        const addition = lectureParts.transcript.trim();
+                        const typed = lectureParts.typed.trim();
+                        handleTypedNotesChange(typed ? `${typed}\n\n${addition}` : addition);
+                        setRequestedTab('notes');
+                      }}
+                    >
+                      Add to my notes
+                    </Button>
+                  ) : null}
                 </div>
-              ) : (
-              <textarea
-                value={body}
-                onChange={e => handleBodyChange(e.target.value)}
-                readOnly={transcribingForThisNote}
-                aria-label="Note body"
-                placeholder={
-                  isPhotoNote
-                    ? 'Add your own notes alongside these photos...'
-                    : isYoutubeNote
-                      ? 'Add your own notes alongside this video transcript...'
-                      : 'Add your own notes on top of this document...'
-                }
-                className={`w-full min-h-[160px] sm:min-h-[200px] p-3 sm:p-4 rounded-xl border resize-y text-sm leading-relaxed ${
-                  isDark ? 'bg-lantern-surface border-lantern-border text-lantern-text' : 'bg-lantern-surface border-lantern-border text-lantern-text'
-                }`}
-              />
-              )}
-            </div>
+              </TabPanel>
+              <TabPanel value="enhanced" className="pt-3 space-y-4">
+                {canEdit ? (
+                  <SmartNoteCompose
+                    theme={theme}
+                    sources={availableSources.map((source) => source.id)}
+                    selectedSources={selectedSources}
+                    onToggleFilter={(id) => {
+                      setSelectedSources((current) =>
+                        toggleSmartNoteFilter(
+                          id,
+                          current,
+                          availableSources.map((source) => source.id)
+                        )
+                      );
+                    }}
+                    depth={smartNotesDepth}
+                    onDepthChange={setSmartNotesDepth}
+                    guidance={smartNotesGuidance}
+                    onGuidanceChange={setSmartNotesGuidance}
+                    writing={writingSmartNote}
+                    writeDisabled={!synthesizeReady || turnIntoBusy}
+                    onWrite={() => {
+                      setWritingSmartNote(true);
+                      void runSmartNoteJob(
+                        { title, body },
+                        {
+                          guidance: smartNotesGuidance.trim() || undefined,
+                          depth: smartNotesDepth,
+                          sources: synthesizeSources,
+                        }
+                      )
+                        .then(() => setRequestedTab('enhanced'))
+                        .finally(() => setWritingSmartNote(false));
+                    }}
+                  />
+                ) : null}
+                <div className="rounded-xl border border-lantern-border bg-lantern-surface p-3 sm:p-4">
+                  <NoteReadingView
+                    body={lectureParts.enhanced}
+                    emptyLine="No enhanced notes yet."
+                  />
+                </div>
+              </TabPanel>
+              <TabPanel value="materials" className="pt-3 space-y-3">
+                <NoteDocumentActions
+                  noteId={note.id}
+                  noteTitle={title || note.title}
+                  attachments={note.attachments}
+                  theme={theme}
+                />
+                {note.youtubeVideoId && (
+                  <YouTubeEmbed videoId={note.youtubeVideoId} title={title || note.title} />
+                )}
+                {isYoutubeNote && (
+                  <YoutubeTranscriptPanel
+                    theme={theme}
+                    attachment={youtubeAttachment}
+                    canRetry={canEdit}
+                    retrying={retryingYoutubeTranscript}
+                    onRetry={() => void handleRetryYoutubeTranscript()}
+                  />
+                )}
+                {documentAttachment && (
+                  <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
+                )}
+                {showImageGallery && imageAttachments.length > 0 && (
+                  <>
+                    <input
+                      ref={addPhotosInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={(event) => void handleAddPhotosSelected(event)}
+                    />
+                    <NoteImageGallery
+                      noteId={note.id}
+                      attachments={imageAttachments}
+                      theme={theme}
+                      editable={isPhotoNote && canEdit}
+                      onAttachmentsChange={handleImageAttachmentsChange}
+                      onAddPhotos={
+                        isPhotoNote && canEdit
+                          ? () => {
+                              if (!addingPhotos) addPhotosInputRef.current?.click();
+                            }
+                          : undefined
+                      }
+                    />
+                  </>
+                )}
+                {extractionMessage &&
+                  (note.sourceType === 'pdf' ||
+                    note.sourceType === 'presentation' ||
+                    isPhotoNoteSource(note.sourceType)) && (
+                  <div
+                    className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${
+                      isDark
+                        ? 'border-amber-500/40 bg-amber-500/10 text-amber-100'
+                        : 'border-amber-500/40 bg-amber-50 text-amber-950'
+                    }`}
+                    role="status"
+                  >
+                    <p>{runningOcr || extractionStatus === 'ocr_processing' ? 'Running local OCR…' : extractionMessage}</p>
+                    {(extractionStatus === 'needs_ocr' ||
+                      extractionStatus === 'empty' ||
+                      extractionStatus === 'ocr_failed') &&
+                      canEdit && (
+                        <Button size="sm" variant="secondary" onClick={() => void handleRunOcr()} disabled={runningOcr}>
+                          {runningOcr ? 'Running OCR…' : 'Run OCR (local)'}
+                        </Button>
+                      )}
+                  </div>
+                )}
+                {showPreviewBanner && (
+                  <div
+                    className={`text-sm rounded-lg border px-3 py-2 flex items-start justify-between gap-3 ${
+                      isDark ? 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary-light' : 'border-lantern-primary/30 bg-lantern-primary-background text-lantern-primary-dark'
+                    }`}
+                    role="status"
+                  >
+                    <div className="space-y-1">
+                      <p>
+                        Slide preview is being prepared
+                        {extractionStatus === 'ok'
+                          ? ' — extracted text is available for AI tools.'
+                          : ' — AI tools need readable text (wait for extraction/OCR if this deck is image-based).'}
+                      </p>
+                      {presentationAttachment && (
+                        <button
+                          type="button"
+                          className="text-lantern-primary underline text-left text-xs"
+                          onClick={() => void handleDownloadOriginalSlides()}
+                        >
+                          Download original slides ({presentationAttachment.fileName || 'presentation'})
+                        </button>
+                      )}
+                    </div>
+                    <button
+                      type="button"
+                      className={`shrink-0 text-xs underline ${isDark ? 'text-lantern-primary-light' : 'text-lantern-primary'}`}
+                      onClick={() => setPreviewBannerDismissed(true)}
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+                {isDocumentNote && !documentAttachment && !showPreviewBanner && (
+                  <div className={`text-sm rounded-lg border px-3 py-2 space-y-2 ${isDark ? 'border-lantern-border text-lantern-text-tertiary' : 'border-lantern-border text-lantern-text-secondary'}`}>
+                    <p>
+                      {previewError ||
+                        (note.sourceType === 'presentation'
+                          ? extractionStatus === 'ok'
+                            ? 'Slide preview is unavailable. Extracted text is available for AI tools.'
+                            : 'Slide preview is unavailable. Extracted text may be missing — run OCR or add notes.'
+                          : 'Document preview is unavailable.')}
+                      {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
+                    </p>
+                    {note.sourceType === 'presentation' && presentationAttachment && (
+                      <button
+                        type="button"
+                        className="text-lantern-primary underline text-left block"
+                        onClick={() => void handleDownloadOriginalSlides()}
+                      >
+                        Download original slides
+                      </button>
+                    )}
+                    {note.sourceType === 'presentation' && previewError && (
+                      <Button size="sm" variant="secondary" onClick={handleRetryPreview}>
+                        Retry preview
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </TabPanel>
+              <TabPanel value="audio" className="pt-3">
+                {lectureAudioRow ? (
+                  <LectureAudioPlayer noteId={note.id} attachment={lectureAudioRow} />
+                ) : (
+                  <p className="text-body text-lantern-text-tertiary">
+                    No recording is saved on this lecture yet.
+                  </p>
+                )}
+              </TabPanel>
+            </Tabs>
           ) : isViewer ? (
             <div
               aria-label="Note body"
@@ -1359,50 +1602,68 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           </div>
         </div>
 
-        <aside className={`w-full lg:w-[40rem] lg:max-w-[45vw] lg:shrink-0 lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-[max(1.5rem,calc(1rem+env(safe-area-inset-bottom,0px)))] lg:pb-6 ${isDark ? 'border-lantern-border bg-lantern-surface/50' : 'border-lantern-border bg-lantern-surface'}`}>
-          {canEdit && <NoteLearnPanel
-            note={{ ...note, title, body }}
-            studyContentLength={studyContentLength}
-            theme={theme}
-            onSmartNote={runSmartNoteJob}
-            onChatWithNote={onChatWithNote}
-            onGenerateFlashcards={async () => {
-              setGeneratingCards(true);
-              try {
-                await runFlashcardJob();
-              } finally {
-                setGeneratingCards(false);
-              }
-            }}
-            onGenerateQuiz={async () => {
-              setGeneratingQuiz(true);
-              try {
-                await runQuizJob();
-              } finally {
-                setGeneratingQuiz(false);
-              }
-            }}
-            isBusy={transcribingForThisNote || generatingCards || generatingQuiz}
-          />}
-          {canEdit && dailyQuiz && onDailyQuizAnswer && onCompleteDailyQuiz && (
+        {showQuizColumn ? (
+        <aside className={`w-full lg:min-w-0 lg:shrink lg:overflow-y-auto border-t lg:border-t-0 lg:border-l p-4 sm:p-6 space-y-5 pb-[max(1.5rem,calc(1rem+env(safe-area-inset-bottom,0px)))] lg:pb-6 ${
+          companionOpen ? 'lg:w-80 lg:max-w-[28vw]' : 'lg:w-[40rem] lg:max-w-[45vw]'
+        } ${isDark ? 'border-lantern-border bg-lantern-surface/50' : 'border-lantern-border bg-lantern-surface'}`}>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => setQuizColumnDismissed(true)}
+              aria-label="Close quiz"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg text-lantern-text-secondary hover:bg-lantern-background hover:text-lantern-text"
+            >
+              <AppIcon name="close" size={20} />
+            </button>
+          </div>
+          {generatingQuiz && !activeNoteQuiz ? (
+            <p className="text-body text-lantern-text-secondary" role="status">
+              Writing your quiz…
+            </p>
+          ) : null}
+          {activeNoteQuiz && onDailyQuizAnswer && onCompleteDailyQuiz ? (
             <DailyQuizWidget
               theme={theme}
               studyGoal={studyGoal}
-              dailyQuiz={dailyQuiz}
+              dailyQuiz={activeNoteQuiz}
               progress={dailyQuizProgress}
               title="Note quiz"
               onStudyGoalChange={onStudyGoalChange || (() => {})}
               onStartQuiz={(_noteId) => {}}
               onAnswer={onDailyQuizAnswer}
-              onComplete={onCompleteDailyQuiz}
+              onComplete={() => {
+                onCompleteDailyQuiz?.();
+              }}
               onRegenerateQuiz={
                 onRegenerateQuiz
-                  ? () => { void onRegenerateQuiz(); }
+                  ? () => {
+                      setQuizColumnDismissed(false);
+                      setGeneratingQuiz(true);
+                      void onRegenerateQuiz().finally(() => setGeneratingQuiz(false));
+                    }
                   : undefined
               }
             />
-          )}
+          ) : null}
         </aside>
+        ) : null}
+        </div>
+        {companionOpen ? (
+          <aside className="flex w-full lg:w-80 h-72 lg:h-auto shrink-0 min-h-0">
+            <div className="flex flex-1 min-h-0 flex-col rounded-lantern-xl border border-lantern-border overflow-hidden">
+              <AICompanionPanel
+                variant="rail"
+                closable
+                theme={theme}
+                context={{
+                  currentScreen: `Note: ${title || note.title}`,
+                  noteId: note.id,
+                  noteTitle: title || note.title,
+                }}
+              />
+            </div>
+          </aside>
+        ) : null}
       </div>
 
       {showCollabModal && (

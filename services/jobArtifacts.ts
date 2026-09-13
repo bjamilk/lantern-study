@@ -68,6 +68,11 @@ export interface SaveGeneratedTestInput {
   courseId?: string | null;
   topicId?: string | null;
   studySetId?: string | null;
+  /**
+   * Take the quiz on this note instead of opening `/study/tests/:id`.
+   * The test is still filed in Tests for later.
+   */
+  stayOnNoteId?: string;
 }
 
 /** The copy a save failure is reported with when the request never landed. */
@@ -165,6 +170,7 @@ export async function saveGeneratedTest(input: SaveGeneratedTestInput): Promise<
     ...(input.courseId !== undefined ? { courseId: input.courseId } : {}),
     ...(input.topicId !== undefined ? { topicId: input.topicId } : {}),
     ...(input.studySetId !== undefined ? { studySetId: input.studySetId } : {}),
+    ...(input.stayOnNoteId ? { stayOnNoteId: input.stayOnNoteId } : {}),
   };
   jobs.recordPendingSave(input.jobId, payload);
 
@@ -327,17 +333,24 @@ async function writeTest(
     : payload.questions;
 
   return {
-    ref: {
-      type: 'test',
-      id,
-      // The test itself, not the list. A generated test used to hand back
-      // `/tests`, so "Open" and the push notification dropped the student on
-      // a list of everything and left them to spot which row was theirs.
-      route: payload.studySetId
-        ? `/study/sets/${encodeURIComponent(payload.studySetId)}/test/${encodeURIComponent(id)}`
-        : buildTestDetailPath(id),
-      name: (test?.title as string) || payload.title,
-    },
+    ref: payload.stayOnNoteId
+      ? {
+          type: 'note',
+          id: payload.stayOnNoteId,
+          route: `/notes/${encodeURIComponent(payload.stayOnNoteId)}`,
+          name: (test?.title as string) || payload.title,
+        }
+      : {
+          type: 'test',
+          id,
+          // The test itself, not the list. A generated test used to hand back
+          // `/tests`, so "Open" and the push notification dropped the student on
+          // a list of everything and left them to spot which row was theirs.
+          route: payload.studySetId
+            ? `/study/sets/${encodeURIComponent(payload.studySetId)}/test/${encodeURIComponent(id)}`
+            : buildTestDetailPath(id),
+          name: (test?.title as string) || payload.title,
+        },
     saved: questions.length,
   };
 }

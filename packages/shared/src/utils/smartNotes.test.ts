@@ -5,7 +5,10 @@ import {
   SMART_NOTES_START,
   chunkTextForSmartNotes,
   extractSmartNotesSection,
+  listSmartNoteFilters,
+  parseSmartNoteSources,
   stripSmartNotesSection,
+  toggleSmartNoteFilter,
   upsertSmartNotesSection,
 } from './smartNotes';
 
@@ -35,6 +38,31 @@ describe('smartNotes section helpers', () => {
 
     const legacy = 'Intro\n\n## Smart Notes\n\nOld stuff\n';
     expect(stripSmartNotesSection(legacy)).toBe('Intro');
+  });
+
+  it('parses summarize source ids and drops unknowns', () => {
+    expect(parseSmartNoteSources(undefined)).toBeUndefined();
+    expect(parseSmartNoteSources(['typed', 'document', 'typed', 'nope'])).toEqual([
+      'typed',
+      'document',
+    ]);
+    expect(parseSmartNoteSources([])).toEqual([]);
+  });
+
+  it('groups document, YouTube and photos as one Materials chip', () => {
+    expect(listSmartNoteFilters(['typed', 'transcript', 'document', 'youtube'])).toEqual([
+      'typed',
+      'transcript',
+      'materials',
+    ]);
+    expect(listSmartNoteFilters(['typed'])).toEqual(['typed']);
+    expect(
+      toggleSmartNoteFilter('materials', ['typed', 'document', 'youtube'], ['typed', 'document', 'youtube'])
+    ).toEqual(['typed']);
+    expect(toggleSmartNoteFilter('transcript', ['typed'], ['typed', 'transcript'])).toEqual([
+      'typed',
+      'transcript',
+    ]);
   });
 
   it('extracts section content', () => {

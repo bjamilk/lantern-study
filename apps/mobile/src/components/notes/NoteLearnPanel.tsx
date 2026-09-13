@@ -14,9 +14,9 @@
  * (`aiCredits.ts`), and a door that cannot run says why before it is pressed
  * rather than after a spinner.
  *
- * Three doors are not generations and are labelled as such: Chat and Walk me
- * through open something (the companion, the walk-through) and Record puts a
- * lecture INTO this note rather than making a new thing out of it.
+ * Three doors are not generations and are labelled as such: Ask Lantern and
+ * Walk me through open something (the companion, the walk-through) and Record
+ * puts a lecture INTO this note rather than making a new thing out of it.
  *
  * The panel owns no state and calls no API. Every handler belongs to
  * `NoteEditorScreen`, which still owns the note, the credits and the jobs —
@@ -40,7 +40,12 @@ import {
   narratedPageCount,
 } from '@lantern/shared/utils/aiCredits';
 import {
+  SMART_NOTE_FILTER_LABELS,
   SMART_NOTES_GUIDANCE_MAX_CHARS,
+  listSmartNoteFilters,
+  smartNoteFilterSelected,
+  type SmartNoteFilterId,
+  type SmartNoteSourceId,
   type SmartNotesDepth,
 } from '@lantern/shared/utils/smartNotes';
 import { NOTES_STUDIO_DEPTHS } from '@lantern/shared';
@@ -154,10 +159,145 @@ export interface NoteLearnPanelProps {
   onFlashcards: () => void;
   onTest: () => void;
   onSmartNotes: () => void;
+  /** True after Smart notes is selected — depth, guidance, and Write appear. */
+  smartNoteOpen?: boolean;
+  sources?: SmartNoteSourceId[];
+  selectedSources?: SmartNoteSourceId[];
+  onToggleFilter?: (id: SmartNoteFilterId) => void;
+  onWriteSmartNotes?: () => void;
+  writeDisabled?: boolean;
+  /** Hide Walk / Read when those doors already live on the Materials tab. */
+  hideDocumentActions?: boolean;
   onRecord: () => void;
   onChat: () => void;
   onWalkthrough: () => void;
   onReadAloud: () => void;
+}
+
+export function SmartNoteComposeFields({
+  sources,
+  selectedSources,
+  onToggleFilter,
+  guidance,
+  onGuidanceChange,
+  depth,
+  onDepthChange,
+  summarizing,
+  shortForSmartNote,
+  writeDisabled,
+  onWrite,
+}: {
+  sources: SmartNoteSourceId[];
+  selectedSources: SmartNoteSourceId[];
+  onToggleFilter?: (id: SmartNoteFilterId) => void;
+  guidance: string;
+  onGuidanceChange: (value: string) => void;
+  depth: SmartNotesDepth;
+  onDepthChange: (value: SmartNotesDepth) => void;
+  summarizing?: boolean;
+  shortForSmartNote?: boolean;
+  writeDisabled?: boolean;
+  onWrite?: () => void;
+}) {
+  const { colors } = useTheme();
+  const filters = listSmartNoteFilters(sources);
+
+  return (
+    <View>
+      {filters.length > 0 ? (
+        <View className="mb-3">
+          <Caption tone="secondary" className="mb-1.5">
+            Synthesize from
+          </Caption>
+          <View className="flex-row flex-wrap gap-1">
+            {filters.map((id) => {
+              const on = smartNoteFilterSelected(id, selectedSources, sources);
+              return (
+                <Pressable
+                  key={id}
+                  onPress={() => onToggleFilter?.(id)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  accessibilityLabel={SMART_NOTE_FILTER_LABELS[id]}
+                  className={`min-h-[44px] justify-center rounded-full border px-3 ${
+                    on
+                      ? 'bg-lantern-primary-fill border-lantern-primary'
+                      : 'bg-lantern-background border-lantern-border'
+                  }`}
+                >
+                  <Caption
+                    importantForAccessibility="no"
+                    style={{ fontWeight: '600', color: on ? '#ffffff' : colors.textSecondary }}
+                  >
+                    {SMART_NOTE_FILTER_LABELS[id]}
+                  </Caption>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      ) : null}
+      <Caption tone="secondary" className="mb-1.5">
+        Smart notes options
+      </Caption>
+      <TextInput
+        className="w-full px-3 py-2 mb-2 rounded-lg border border-lantern-border bg-lantern-background text-lantern-text"
+        style={typeScale.body}
+        placeholder="Optional: what should it focus on?"
+        placeholderTextColor={colors.textTertiary}
+        value={guidance}
+        onChangeText={onGuidanceChange}
+        maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
+        accessibilityLabel="Guidance for smart notes"
+      />
+      <View className="flex-row gap-1">
+        {NOTES_STUDIO_DEPTHS.map(({ id: value, label }) => (
+          <Pressable
+            key={value}
+            onPress={() => onDepthChange(value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: depth === value }}
+            accessibilityLabel={`${label}. ${formatCreditCost(SMART_NOTES_CREDIT_COST[value])}`}
+            className={`flex-1 px-2 py-1.5 rounded-lg border items-center ${
+              depth === value
+                ? 'bg-lantern-primary-fill border-lantern-primary'
+                : 'bg-lantern-background border-lantern-border'
+            }`}
+          >
+            <Caption
+              importantForAccessibility="no"
+              style={{ fontWeight: '600', color: depth === value ? '#ffffff' : colors.textSecondary }}
+            >
+              {`${label} · ${SMART_NOTES_CREDIT_COST[value]}`}
+            </Caption>
+          </Pressable>
+        ))}
+      </View>
+
+      {onWrite ? (
+        <View className="mt-3">
+          <NoteLearnOption
+            feature="ai"
+            icon="sparkles"
+            label="Write"
+            cost={formatCreditCost(SMART_NOTES_CREDIT_COST[depth])}
+            disabled={summarizing || shortForSmartNote || writeDisabled}
+            disabledReason={
+              shortForSmartNote
+                ? 'Not enough credits left today'
+                : writeDisabled
+                  ? 'Select a source with enough text'
+                  : undefined
+            }
+            onPress={onWrite}
+          />
+        </View>
+      ) : null}
+      <View className="mt-3">
+        <AIUsageBadge variant="inline" cost={SMART_NOTES_CREDIT_COST[depth]} />
+      </View>
+    </View>
+  );
 }
 
 export function NoteLearnPanel({
@@ -178,6 +318,13 @@ export function NoteLearnPanel({
   onFlashcards,
   onTest,
   onSmartNotes,
+  smartNoteOpen = false,
+  sources = [],
+  selectedSources = [],
+  onToggleFilter,
+  onWriteSmartNotes,
+  writeDisabled = false,
+  hideDocumentActions = false,
   onRecord,
   onChat,
   onWalkthrough,
@@ -217,12 +364,14 @@ export function NoteLearnPanel({
 
   return (
     <Card className="border-lantern-border">
-      <Heading className="mb-0.5">Learn from this note</Heading>
+      <Heading className="mb-0.5">Study tools</Heading>
       <Caption tone="secondary" className="mb-3">
         These make a new thing — your note stays as it is
       </Caption>
 
       <View className="flex-row flex-wrap gap-2">
+        {hideDocumentActions ? null : (
+          <>
         <NoteLearnOption
           feature="notes"
           icon="book"
@@ -247,6 +396,8 @@ export function NoteLearnPanel({
           disabledReason={narrationBlocked}
           onPress={onReadAloud}
         />
+          </>
+        )}
         <NoteLearnOption
           feature="flashcards"
           icon="albums"
@@ -277,11 +428,11 @@ export function NoteLearnPanel({
         <NoteLearnOption
           feature="ai"
           icon="chatbubble-ellipses"
-          label="Chat"
+          label="Ask Lantern"
           cost={null}
           // Opening the companion costs nothing; the message you send it does,
           // and the companion prints that itself.
-          hint="Opens the AI companion"
+          hint="Opens Ask Lantern"
           onPress={onChat}
         />
         <NoteLearnOption
@@ -299,57 +450,23 @@ export function NoteLearnPanel({
         />
       </View>
 
-      {/* Smart-notes options. Under the tiles and named after the one door
-          they change, because they used to sit above four buttons and look
-          like settings for all of them. */}
-      <View className="mt-4">
-        <Caption tone="secondary" className="mb-1.5">
-          Smart notes options
-        </Caption>
-        <TextInput
-          className="w-full px-3 py-2 mb-2 rounded-lg border border-lantern-border bg-lantern-background text-lantern-text"
-          // The six-step scale, not a Tailwind size class: NativeWind inlines
-          // rem at 14 here, so the Tailwind ladder runs a step small.
-          style={typeScale.body}
-          // Short enough to finish inside one line on a phone: the longer
-          // wording was cut mid-quote on device ("…focus on clinical
-          // applications) — a placeholder that ends without closing is read
-          // as a bug in the field, not as an example.
-          placeholder="Optional: what should it focus on?"
-          placeholderTextColor={colors.textTertiary}
-          value={guidance}
-          onChangeText={onGuidanceChange}
-          maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
-          accessibilityLabel="Guidance for smart notes"
-        />
-        <View className="flex-row gap-1">
-          {NOTES_STUDIO_DEPTHS.map(({ id: value, label }) => (
-            <Pressable
-              key={value}
-              onPress={() => onDepthChange(value)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: depth === value }}
-              accessibilityLabel={`${label}. ${formatCreditCost(SMART_NOTES_CREDIT_COST[value])}`}
-              className={`flex-1 px-2 py-1.5 rounded-lg border items-center ${
-                depth === value
-                  ? 'bg-lantern-primary-fill border-lantern-primary'
-                  : 'bg-lantern-background border-lantern-border'
-              }`}
-            >
-              <Caption
-                importantForAccessibility="no"
-                style={{ fontWeight: '600', color: depth === value ? '#ffffff' : colors.textSecondary }}
-              >
-                {`${label} · ${SMART_NOTES_CREDIT_COST[value]}`}
-              </Caption>
-            </Pressable>
-          ))}
+      {smartNoteOpen ? (
+        <View className="mt-4">
+          <SmartNoteComposeFields
+            sources={sources}
+            selectedSources={selectedSources}
+            onToggleFilter={onToggleFilter}
+            guidance={guidance}
+            onGuidanceChange={onGuidanceChange}
+            depth={depth}
+            onDepthChange={onDepthChange}
+            summarizing={summarizing}
+            shortForSmartNote={shortForSmartNote}
+            writeDisabled={writeDisabled}
+            onWrite={onWriteSmartNotes}
+          />
         </View>
-      </View>
-
-      <View className="mt-3">
-        <AIUsageBadge variant="inline" cost={SMART_NOTES_CREDIT_COST[depth]} />
-      </View>
+      ) : null}
     </Card>
   );
 }

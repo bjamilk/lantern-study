@@ -1,4 +1,10 @@
-import { stripSmartNotesSection } from './smartNotes';
+import { splitLectureNoteBody, preferLectureTranscript } from '../learning/lectureStudio';
+import {
+  SMART_NOTE_SOURCE_LABELS,
+  parseSmartNoteSources,
+  stripSmartNotesSection,
+  type SmartNoteSourceId,
+} from './smartNotes';
 
 export type NoteStudyContentInput = {
   sourceType?: string;
@@ -7,9 +13,16 @@ export type NoteStudyContentInput = {
   /** Archived notes are excluded from quiz sourcing — see isQuizzableNote. */
   isArchived?: boolean;
   attachments?: Array<{
+    type?: string | null;
     extractedText?: string | null;
     metadata?: Record<string, unknown> | null;
   }>;
+};
+
+export type SmartNoteSourceOption = {
+  id: SmartNoteSourceId;
+  label: string;
+  text: string;
 };
 
 export type GetNoteStudyContentOptions = {
@@ -227,12 +240,97 @@ export function aggregatePhotoOcrStatus(
   return 'ok';
 }
 
+function usableExtractedText(text: string | null | undefined): string {
+  const trimmed = text?.trim() || '';
+  if (!trimmed || isPlaceholderExtractedText(trimmed)) return '';
+  return trimmed;
+}
+
+function extractedByTypes(note: NoteStudyContentInput, types: readonly string[]): string {
+  return (note.attachments || [])
+    .filter((attachment) => types.includes(String(attachment.type ?? '')))
+    .map((attachment) => usableExtractedText(attachment.extractedText))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function typedSourceText(note: NoteStudyContentInput): string {
+  return splitLectureNoteBody(stripSmartNotesSection(note.body || '')).typed.trim();
+}
+
+function transcriptSourceText(note: NoteStudyContentInput): string {
+  const fromBody = splitLectureNoteBody(stripSmartNotesSection(note.body || '')).transcript.trim();
+  const fromAudio = (note.attachments || [])
+    .filter((attachment) => !attachment.type || attachment.type === 'audio')
+    .map((attachment) => usableExtractedText(attachment.extractedText))
+    .filter(Boolean)
+    .join('\n\n');
+  return preferLectureTranscript(fromBody, fromAudio);
+}
+
+function documentSourceText(note: NoteStudyContentInput): string {
+  return extractedByTypes(note, ['pdf', 'presentation']);
+}
+
+function youtubeSourceText(note: NoteStudyContentInput): string {
+  const fromAttachment = extractedByTypes(note, ['youtube']);
+  if (fromAttachment) return fromAttachment;
+  if (note.sourceType === 'youtube') {
+    return (note.attachments || [])
+      .map((attachment) => usableExtractedText(attachment.extractedText))
+      .filter(Boolean)
+      .join('\n\n');
+  }
+  return '';
+}
+
+function photosSourceText(note: NoteStudyContentInput): string {
+  return extractedByTypes(note, ['image']);
+}
+
+const SOURCE_TEXT: Record<SmartNoteSourceId, (note: NoteStudyContentInput) => string> = {
+  typed: typedSourceText,
+  transcript: transcriptSourceText,
+  document: documentSourceText,
+  youtube: youtubeSourceText,
+  photos: photosSourceText,
+};
+
+/** Sources that currently have readable text a student can turn on or off. */
+export function listSmartNoteSources(note: NoteStudyContentInput): SmartNoteSourceOption[] {
+  return (['typed', 'transcript', 'document', 'youtube', 'photos'] as const)
+    .map((id) => {
+      const text = SOURCE_TEXT[id](note);
+      return { id, label: SMART_NOTE_SOURCE_LABELS[id], text };
+    })
+    .filter((source) => source.text.length > 0);
+}
+
+/** Join only the selected materials. Empty selection is an empty string. */
+export function getNoteStudyContentForSources(
+  note: NoteStudyContentInput,
+  sources: readonly SmartNoteSourceId[] | undefined
+): string {
+  const parsed = parseSmartNoteSources(sources);
+  if (parsed === undefined) {
+    return getNoteStudyContent(note, { includeSummary: false, stripSmartNotes: true });
+  }
+  return parsed
+    .map((id) => SOURCE_TEXT[id](note))
+    .filter(Boolean)
+    .join('\n\n');
+}
+
 /**
  * Source text for Smart Notes generation: prefer full extracted transcript/PDF text,
  * keep user annotations, exclude prior summary / Smart Notes section.
+ * When `sources` is set, only those materials are included.
  */
-export function getNoteStudyContentForSmartNotes(note: NoteStudyContentInput): string {
-  return getNoteStudyContent(note, { includeSummary: false, stripSmartNotes: true });
+export function getNoteStudyContentForSmartNotes(
+  note: NoteStudyContentInput,
+  sources?: readonly SmartNoteSourceId[]
+): string {
+  return getNoteStudyContentForSources(note, sources);
 }
 
 export function hasEnoughNoteStudyContent(note: NoteStudyContentInput): boolean {

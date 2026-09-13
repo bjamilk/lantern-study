@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import {
@@ -18,7 +18,7 @@ import {
   formatCreditCost,
   getSmartNotesCreditCost,
 } from '@lantern/shared/utils/aiCredits';
-import type { SmartNotesDepth } from '@lantern/shared/utils/smartNotes';
+import { SMART_NOTES_GUIDANCE_MAX_CHARS, type SmartNotesDepth } from '@lantern/shared/utils/smartNotes';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
 import { Button, ScreenHeader, T } from '../../components/ui';
@@ -86,6 +86,7 @@ export function NotesStudioScreen({ navigation, route }: Props) {
   }, [jobs, note?.title]);
 
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
+  const [guidance, setGuidance] = useState('');
   const [writing, setWriting] = useState(false);
 
   useEffect(() => {
@@ -105,7 +106,10 @@ export function NotesStudioScreen({ navigation, route }: Props) {
     }
     setWriting(true);
     try {
-      const result = await summarizeNote(note.id, { depth });
+      const result = await summarizeNote(note.id, {
+        depth,
+        guidance: guidance.trim() || undefined,
+      });
       if (result.note) {
         setSelectedNote({
           ...(useNotesStore.getState().selectedNote ?? note),
@@ -305,6 +309,14 @@ export function NotesStudioScreen({ navigation, route }: Props) {
               </Button>
             </View>
             <T.Label tone="secondary">ENHANCE</T.Label>
+            <TextInput
+              value={guidance}
+              onChangeText={setGuidance}
+              maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
+              placeholder='Optional guidance — e.g. "focus on mechanisms"'
+              accessibilityLabel="Smart Notes guidance"
+              className="min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-body text-lantern-text"
+            />
             <View className="flex-row flex-wrap gap-2">
               {NOTES_STUDIO_DEPTHS.map((option) => (
                 <Pressable

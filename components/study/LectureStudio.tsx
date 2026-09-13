@@ -392,6 +392,8 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
     body: activeNote?.body ?? '',
     attachments: activeNote?.attachments ?? [],
     liveTranscript,
+    sourceType: activeNote?.sourceType,
+    youtubeVideoId: activeNote?.youtubeVideoId,
   };
   const tabs = lectureTabs(tabSource);
   const tab = resolveLectureTab(tabSource, requestedTab, { recording });
@@ -661,6 +663,12 @@ export const LectureStudio: React.FC<LectureStudioProps> = ({
                     you stop.
                   </p>
                 )}
+              </TabPanel>
+
+              <TabPanel value="materials" className="p-3">
+                <p className="text-body text-lantern-text-secondary">
+                  Uploaded files and Walk / Read live on this lecture in Library.
+                </p>
               </TabPanel>
 
               <TabPanel value="audio">

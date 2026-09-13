@@ -108,7 +108,11 @@ import {
   hasEnoughNoteStudyContent,
   MIN_NOTE_STUDY_CONTENT_CHARS,
 } from '@lantern/shared/utils/noteStudyContent';
-import { upsertSmartNotesSection } from '@lantern/shared/utils/smartNotes';
+import {
+  parseSmartNoteSources,
+  upsertSmartNotesSection,
+  type SmartNoteSourceId,
+} from '@lantern/shared/utils/smartNotes';
 import { defaultPhotoNoteTitle } from '@lantern/shared/utils/photoNoteTitle';
 import { parseYoutubeVideoId, canonicalYoutubeUrl } from '@lantern/shared/utils/youtube';
 import { fetchYoutubeMetadata } from '../services/youtubeTranscript';
@@ -140,7 +144,7 @@ export const initializeNotesRoutes = (supabase: SupabaseService, cache: CacheSer
 async function resolveNoteStudyContent(
   noteId: string,
   note: { body?: string; summary?: string; sourceType?: string },
-  options?: { forSmartNotes?: boolean }
+  options?: { forSmartNotes?: boolean; sources?: SmartNoteSourceId[] }
 ): Promise<string> {
   const attachments = await supabaseService.getNoteAttachments(noteId);
   const input = {
@@ -150,7 +154,7 @@ async function resolveNoteStudyContent(
     attachments,
   };
   if (options?.forSmartNotes) {
-    return getNoteStudyContentForSmartNotes(input);
+    return getNoteStudyContentForSmartNotes(input, options.sources);
   }
   return getNoteStudyContent(input);
 }
@@ -2764,7 +2768,8 @@ router.post('/:noteId/summarize', requireNoteEdit('noteId'), requirePermission('
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
   const note = await supabaseService.getNote(req.params.noteId, userId);
-  const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true });
+  const sources = parseSmartNoteSources(req.body?.sources);
+  const content = await resolveNoteStudyContent(note.id, note, { forSmartNotes: true, sources });
   if (!content || content.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
     // No manual refund here: aiRateLimitWithCost's finish hook refunds every
     // non-2xx response — the old manual refundAiCredits DOUBLED the refund,

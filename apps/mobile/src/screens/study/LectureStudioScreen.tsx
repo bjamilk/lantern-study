@@ -212,6 +212,8 @@ export function LectureStudioScreen({ navigation, route }: Props) {
     body: activeNote?.body ?? '',
     attachments: activeNote?.attachments ?? [],
     liveTranscript,
+    sourceType: activeNote?.sourceType,
+    youtubeVideoId: activeNote?.youtubeVideoId,
   };
 
   /**

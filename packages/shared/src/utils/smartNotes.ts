@@ -16,11 +16,103 @@ export const SMART_NOTES_DEPTHS: readonly SmartNotesDepth[] = ['concise', 'stand
 /** Max characters of free-text guidance accepted by the summarize endpoint. */
 export const SMART_NOTES_GUIDANCE_MAX_CHARS = 500;
 
+/** Which materials Smart Notes may read when a note has more than one source. */
+export const SMART_NOTE_SOURCE_IDS = [
+  'typed',
+  'transcript',
+  'document',
+  'youtube',
+  'photos',
+] as const;
+
+export type SmartNoteSourceId = (typeof SMART_NOTE_SOURCE_IDS)[number];
+
+export const SMART_NOTE_SOURCE_LABELS: Record<SmartNoteSourceId, string> = {
+  typed: 'My notes',
+  transcript: 'Transcript',
+  document: 'Document',
+  youtube: 'YouTube',
+  photos: 'Photos',
+};
+
+/** Uploaded file / video / photos — one chip on Enhanced compose. */
+export const SMART_NOTE_MATERIAL_SOURCE_IDS = ['document', 'youtube', 'photos'] as const;
+
+export type SmartNoteMaterialSourceId = (typeof SMART_NOTE_MATERIAL_SOURCE_IDS)[number];
+
+export const SMART_NOTE_FILTER_IDS = ['typed', 'transcript', 'materials'] as const;
+
+export type SmartNoteFilterId = (typeof SMART_NOTE_FILTER_IDS)[number];
+
+export const SMART_NOTE_FILTER_LABELS: Record<SmartNoteFilterId, string> = {
+  typed: 'My notes',
+  transcript: 'Transcript',
+  materials: 'Materials',
+};
+
+export function isMaterialSmartNoteSource(id: SmartNoteSourceId): boolean {
+  return (SMART_NOTE_MATERIAL_SOURCE_IDS as readonly string[]).includes(id);
+}
+
+/** Chips shown on Enhanced compose: My notes, Transcript, Materials. */
+export function listSmartNoteFilters(sources: readonly SmartNoteSourceId[]): SmartNoteFilterId[] {
+  const filters: SmartNoteFilterId[] = [];
+  if (sources.includes('typed')) filters.push('typed');
+  if (sources.includes('transcript')) filters.push('transcript');
+  if (sources.some(isMaterialSmartNoteSource)) filters.push('materials');
+  return filters;
+}
+
+export function materialSourceIdsFrom(
+  sources: readonly SmartNoteSourceId[]
+): SmartNoteSourceId[] {
+  return sources.filter(isMaterialSmartNoteSource);
+}
+
+export function smartNoteFilterSelected(
+  filter: SmartNoteFilterId,
+  selected: readonly SmartNoteSourceId[],
+  available: readonly SmartNoteSourceId[]
+): boolean {
+  const target = filter === 'materials' ? materialSourceIdsFrom(available) : [filter];
+  return target.length > 0 && target.every((id) => selected.includes(id));
+}
+
+export function toggleSmartNoteFilter(
+  filter: SmartNoteFilterId,
+  selected: readonly SmartNoteSourceId[],
+  available: readonly SmartNoteSourceId[]
+): SmartNoteSourceId[] {
+  const target = filter === 'materials' ? materialSourceIdsFrom(available) : available.filter((id) => id === filter);
+  const on = target.length > 0 && target.every((id) => selected.includes(id));
+  if (on) return selected.filter((id) => !target.includes(id));
+  const next = [...selected];
+  for (const id of target) {
+    if (!next.includes(id)) next.push(id);
+  }
+  return next;
+}
+
+/** Parse `sources` from a summarize body. `undefined` means the legacy full merge. */
+export function parseSmartNoteSources(raw: unknown): SmartNoteSourceId[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const allowed = new Set<string>(SMART_NOTE_SOURCE_IDS);
+  const next: SmartNoteSourceId[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string' || !allowed.has(value)) continue;
+    const id = value as SmartNoteSourceId;
+    if (!next.includes(id)) next.push(id);
+  }
+  return next;
+}
+
 /** Client-side request options for POST /notes/:id/summarize. */
 export interface SmartNotesRequestOptions {
   /** Free-text goals, e.g. "focus on clinical applications". Server-sanitized. */
   guidance?: string;
   depth?: SmartNotesDepth;
+  /** When set, only these materials are synthesized. Omitted = current full merge. */
+  sources?: SmartNoteSourceId[];
 }
 
 const MARKER_SECTION_RE = new RegExp(

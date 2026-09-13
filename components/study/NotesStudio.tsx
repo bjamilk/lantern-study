@@ -12,7 +12,11 @@ import {
   splitLectureNoteBody,
   type TurnIntoTargetId,
 } from '@lantern/shared';
-import type { SmartNotesDepth, SmartNotesRequestOptions } from '@lantern/shared/utils/smartNotes';
+import {
+  SMART_NOTES_GUIDANCE_MAX_CHARS,
+  type SmartNotesDepth,
+  type SmartNotesRequestOptions,
+} from '@lantern/shared/utils/smartNotes';
 import {
   SMART_NOTES_CREDIT_COST,
   formatCreditCost,
@@ -101,6 +105,7 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
   const [title, setTitle] = useState(note.title || '');
   const [body, setBody] = useState(note.body || '');
   const [depth, setDepth] = useState<SmartNotesDepth>('standard');
+  const [guidance, setGuidance] = useState('');
   const [highlight, setHighlight] = useState('');
   const [writing, setWriting] = useState(false);
   /**
@@ -249,14 +254,14 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
     }
     setWriting(true);
     try {
-      await onSmartNote(snapshot, { depth });
+      await onSmartNote(snapshot, { depth, guidance: guidance.trim() || undefined });
       showToast('Smart Notes saved on this note.', 'success');
     } catch (error) {
       showToast(error instanceof Error ? error.message : 'Could not write notes.', 'error');
     } finally {
       setWriting(false);
     }
-  }, [depth, note, onSmartNote, showToast]);
+  }, [depth, guidance, note, onSmartNote, showToast]);
 
   const onBodySelect = (event: React.SyntheticEvent<HTMLTextAreaElement>) => {
     const el = event.currentTarget;
@@ -306,6 +311,15 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
             </button>
           ))}
         </div>
+        <input
+          type="text"
+          value={guidance}
+          onChange={(event) => setGuidance(event.target.value)}
+          maxLength={SMART_NOTES_GUIDANCE_MAX_CHARS}
+          placeholder='Optional guidance — e.g. "focus on mechanisms"'
+          aria-label="Smart Notes guidance"
+          className="min-w-[12rem] flex-1 px-3 py-2 rounded-lg text-body border border-lantern-border bg-lantern-background text-lantern-text placeholder:text-lantern-text-tertiary"
+        />
         <Button size="sm" onClick={() => void writeNotes()} loading={writing} disabled={writing}>
           Write notes · {writeCost}
         </Button>

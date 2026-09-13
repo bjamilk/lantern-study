@@ -197,15 +197,40 @@ const DailyQuizWidget: React.FC<DailyQuizWidgetProps> = ({
           noteTitle={dailyQuiz.sourceNoteTitle}
           isDark={isDark}
         />
-        <p
-          className={`text-sm mt-2 mb-3 ${
-            isDark ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'
-          }`}
-        >
-          {onRegenerateQuiz
-            ? 'Generate a fresh set of questions from this note.'
-            : 'Great work — come back tomorrow for a new set.'}
-        </p>
+        <ol className="mt-3 mb-3 space-y-3">
+          {(dailyQuiz.questions ?? []).map((question, index) => {
+            const given = dailyQuiz.answers?.[question.id];
+            const correct = given
+              ? isQuizAnswerCorrect(given, question)
+              : false;
+            const resolvedCorrect = resolveQuizCorrectAnswer(
+              question.correctAnswer,
+              question.options
+            );
+            return (
+              <li key={question.id} className="text-sm text-lantern-text">
+                <p className="font-medium">
+                  Q{index + 1}. {question.text}
+                </p>
+                {given ? (
+                  <p className="mt-1 text-lantern-text-secondary">
+                    Your answer: {given}
+                    {correct ? ' · Correct' : ` · Correct: ${resolvedCorrect}`}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-lantern-text-secondary">
+                    Answer: {resolvedCorrect}
+                  </p>
+                )}
+                {question.explanation ? (
+                  <p className="mt-1 text-caption text-lantern-text-secondary">
+                    {question.explanation}
+                  </p>
+                ) : null}
+              </li>
+            );
+          })}
+        </ol>
         {onRegenerateQuiz && (
           <Button size="sm" onClick={onRegenerateQuiz}>
             <AppIcon name="refresh" size={16} className="mr-1" />

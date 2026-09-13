@@ -45,7 +45,7 @@ export function useNoteHandlers(currentUserId?: string) {
     postComment,
   } = useNotesStore();
   const { setStudyGoal, setDailyQuiz, studyGoal } = useStudyGoalsStore();
-  const { openWithMessage } = useCompanionStore();
+  const { open, setActiveNoteContext } = useCompanionStore();
   const { navigateTo } = useAppNavigation();
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -170,7 +170,7 @@ export function useNoteHandlers(currentUserId?: string) {
       await loadNote(noteId);
       const note = useNotesStore.getState().selectedNote;
       if (!note) throw new Error('Note not found.');
-      const smartNotesSource = getNoteStudyContentForSmartNotes(note);
+      const smartNotesSource = getNoteStudyContentForSmartNotes(note, options?.sources);
       if (smartNotesSource.length < MIN_NOTE_STUDY_CONTENT_CHARS) {
         throw new Error(
           `Need at least ${MIN_NOTE_STUDY_CONTENT_CHARS} characters of study content. For scanned PDFs, wait for OCR or add your own notes.`
@@ -192,13 +192,13 @@ export function useNoteHandlers(currentUserId?: string) {
 
   const handleChatWithNote = useCallback(() => {
     if (!selectedNote) return;
-    const studyContent = getNoteStudyContent(selectedNote);
-    openWithMessage(
-      studyContent.length >= 50
-        ? `Help me study my note "${selectedNote.title}". Ask me questions and explain key concepts from this material:\n\n${studyContent.slice(0, 4000)}`
-        : `I want to study my note "${selectedNote.title}". Ask me questions about it or help me understand key concepts based on this material.`
-    );
-  }, [selectedNote, openWithMessage]);
+    void setActiveNoteContext({
+      id: selectedNote.id,
+      title: selectedNote.title || 'Untitled note',
+      scopeId: selectedNote.studySetId ?? selectedNote.courseId ?? null,
+    });
+    open();
+  }, [selectedNote, open, setActiveNoteContext]);
 
   const handleGenerateFlashcards = useCallback(
     async (_deckId: string, count: number = 10) => {
@@ -363,7 +363,11 @@ export function useNoteHandlers(currentUserId?: string) {
    * later at no further charge.
    */
   const handleStartNoteQuiz = useCallback(
-    async (editorState?: { title?: string; body?: string }, hooks?: AiJobHooks) => {
+    async (
+      editorState?: { title?: string; body?: string },
+      hooks?: AiJobHooks,
+      options?: { replace?: boolean }
+    ) => {
       if (!selectedNote) return null;
       cancelAutoSave();
       if (editorState) {
@@ -374,6 +378,15 @@ export function useNoteHandlers(currentUserId?: string) {
       if (!note || !hasEnoughNoteStudyContent(note)) {
         throw new Error(INSUFFICIENT_STUDY_CONTENT_MESSAGE);
       }
+      // A finished or started quiz is protected on the server. Clearing it
+      // first is what lets "Generate new set" actually write new questions.
+      if (options?.replace) {
+        try {
+          await notesApi.updateNoteQuiz(note.id, { answers: {}, completed: false });
+        } catch {
+          // No quiz saved yet — generate will create one.
+        }
+      }
       const session = await notesApi.generateNoteQuiz(
         note.id,
         studyGoal,
@@ -383,7 +396,11 @@ export function useNoteHandlers(currentUserId?: string) {
           onServerProgress: hooks.onServerProgress,
         }
       );
-      const withTitle = { ...session, sourceNoteTitle: note.title };
+      const withTitle = {
+        ...session,
+        noteId: session.noteId || note.id,
+        sourceNoteTitle: note.title,
+      };
       setDailyQuiz(withTitle);
 
       const questions = Array.isArray(session?.questions) ? session.questions : [];
@@ -392,6 +409,11 @@ export function useNoteHandlers(currentUserId?: string) {
           jobId: hooks.clientJobId,
           title: `Quiz: ${note.title || 'Untitled Note'}`.slice(0, 120),
           sourceNoteId: note.id,
+          stayOnNoteId: note.id,
+          config: {
+            sourceNoteId: note.id,
+            sourceNoteTitle: note.title,
+          },
           questions,
           courseId: note.courseId,
           studySetId: note.studySetId,

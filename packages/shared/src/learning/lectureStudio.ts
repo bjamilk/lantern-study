@@ -243,15 +243,51 @@ export function typedNotesFromBody(body: string, whisperTranscript: string): str
   return splitLectureNoteBody(body, whisperTranscript).typed;
 }
 
+const MATERIAL_ATTACHMENT_TYPES = new Set(['pdf', 'presentation', 'image', 'youtube']);
+
 export function latestLectureTranscript(
-  attachments?: Array<{ extractedText?: string | null }> | null
+  attachments?: Array<{ type?: string | null; extractedText?: string | null }> | null
 ): string {
   if (!attachments) return '';
   for (let index = attachments.length - 1; index >= 0; index -= 1) {
-    const text = attachments[index]?.extractedText?.trim();
+    const row = attachments[index];
+    if (MATERIAL_ATTACHMENT_TYPES.has(String(row?.type ?? ''))) continue;
+    const text = row?.extractedText?.trim();
     if (text) return text;
   }
   return '';
+}
+
+/** Uploaded document, YouTube, or photos — not the lecture recording. */
+export function noteHasMaterials(source: LectureTabSource): boolean {
+  if (source.showMaterialsTab) return true;
+  if ((source.youtubeVideoId ?? '').trim()) return true;
+  const sourceType = source.sourceType ?? '';
+  if (
+    sourceType === 'youtube' ||
+    sourceType === 'pdf' ||
+    sourceType === 'presentation' ||
+    sourceType === 'photos'
+  ) {
+    return true;
+  }
+  return (source.attachments ?? []).some((row) =>
+    MATERIAL_ATTACHMENT_TYPES.has(String(row.type ?? ''))
+  );
+}
+
+/** Notes whose first job is reading a file or video, not typing. */
+export function isMaterialPrimaryNote(source: LectureTabSource): boolean {
+  const sourceType = source.sourceType ?? '';
+  if (
+    sourceType === 'youtube' ||
+    sourceType === 'pdf' ||
+    sourceType === 'presentation' ||
+    sourceType === 'photos'
+  ) {
+    return true;
+  }
+  return Boolean((source.youtubeVideoId ?? '').trim());
 }
 
 export type LectureStudioNoteDecision =
@@ -285,18 +321,19 @@ export function resolveLectureStudioNote(input: {
  * ------------------------------------------------------------------ */
 
 /**
- * A lecture note is four things at once — what the student typed, what the
- * model wrote from it, what was said, and the recording itself. They used to
- * be stacked down one scroll, so the transcript pushed the notes off screen
- * and the audio had nowhere to live at all. This is the planner both clients
- * ask which of the four surfaces a given note actually has, so neither can
+ * A lecture note is several surfaces — what the student typed, what the
+ * model wrote, uploaded materials, what was said, and the recording itself.
+ * They used to be stacked down one scroll, so the transcript pushed the notes
+ * off screen and the audio had nowhere to live at all. This is the planner
+ * both clients ask which surfaces a given note actually has, so neither can
  * invent an empty tab and neither can quietly drop one.
  */
-export type LectureTabId = 'notes' | 'enhanced' | 'transcript' | 'audio';
+export type LectureTabId = 'notes' | 'enhanced' | 'materials' | 'transcript' | 'audio';
 
 export const LECTURE_TAB_LABELS: Record<LectureTabId, string> = {
   notes: 'My Notes',
   enhanced: 'Enhanced Notes',
+  materials: 'Materials',
   transcript: 'Transcript',
   audio: 'Audio',
 };
@@ -315,6 +352,14 @@ export interface LectureTabSource {
   attachments?: LectureAttachmentLike[] | null;
   /** Captions that exist only in memory during a take, not yet in the body. */
   liveTranscript?: string;
+  /** Always offer Transcript — a lecture has that surface even before captions. */
+  showTranscriptTab?: boolean;
+  /** Offer Enhanced Notes before the first generate. */
+  showEnhancedTab?: boolean;
+  /** Force Materials even before attachments are typed. */
+  showMaterialsTab?: boolean;
+  sourceType?: string | null;
+  youtubeVideoId?: string | null;
 }
 
 export interface LectureTab {
@@ -378,12 +423,13 @@ export function lectureNoteParts(source: LectureTabSource): LectureNoteParts {
   return { typed: split.typed, enhanced, transcript };
 }
 
-/** Which of the four surfaces this note has. My Notes is never absent. */
+/** Which surfaces this note has. My Notes is never absent. */
 export function lectureTabs(source: LectureTabSource): LectureTab[] {
   const parts = lectureNoteParts(source);
   const ids: LectureTabId[] = ['notes'];
-  if (parts.enhanced) ids.push('enhanced');
-  if (parts.transcript.trim()) ids.push('transcript');
+  if (parts.enhanced || source.showEnhancedTab) ids.push('enhanced');
+  if (noteHasMaterials(source)) ids.push('materials');
+  if (parts.transcript.trim() || source.showTranscriptTab) ids.push('transcript');
   if (lectureAudioAttachment(source)) ids.push('audio');
   return ids.map((id) => ({ id, label: LECTURE_TAB_LABELS[id] }));
 }
@@ -436,7 +482,14 @@ export function defaultLectureTab(
   options: LectureTabOptions = {}
 ): LectureTabId {
   if (options.recording) return 'notes';
-  return lectureTabs(source).some((tab) => tab.id === 'enhanced') ? 'enhanced' : 'notes';
+  const tabs = lectureTabs(source);
+  if (lectureNoteParts(source).enhanced && tabs.some((tab) => tab.id === 'enhanced')) {
+    return 'enhanced';
+  }
+  if (isMaterialPrimaryNote(source) && tabs.some((tab) => tab.id === 'materials')) {
+    return 'materials';
+  }
+  return 'notes';
 }
 
 /** Keep a chosen tab only while it still exists; otherwise fall to the default. */

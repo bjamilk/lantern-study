@@ -18,7 +18,7 @@ import {
     ONBOARDING_COMPLETE_VALUE,
     isOnboardingCompleteFlag,
 } from '@lantern/shared/settings';
-import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isQuizzableNote, parseStudySetPath, pickOpenStudySetId, TURN_INTO_TARGETS } from '@lantern/shared';
+import { buildStudySetPath, dueReviewPlan, getNoteStudyContent, isLectureNote, isQuizzableNote, parseStudySetPath, pickOpenStudySetId, resolveLectureStudioNote, TURN_INTO_TARGETS } from '@lantern/shared';
 import type { MessageNoteDraft, TurnIntoTargetId } from '@lantern/shared';
 import { buildFlashcardReviewQueue, getTodayStudyCounts, isNewFlashcard, normalizeUserSettings } from '@lantern/shared/settings';
 import { AppMode, DirectMessage, MessageType, TransactionType, TestResult, User } from './types';
@@ -1434,24 +1434,44 @@ export const App: React.FC = () => {
             return;
         }
         const lastSetId = useStudySetStore.getState().lastOpenedId;
-        void noteHandlers.handleCreateNote(newLectureNoteTitle(), {
+        const notesState = useNotesStore.getState();
+        const todayTitle = newLectureNoteTitle();
+        const decision = resolveLectureStudioNote({
+            lectures: notesState.notes.filter(isLectureNote),
+            recordingNoteId: lecture.noteId,
+            todayTitle,
+        });
+        const landOnLecture = (noteId?: string, resumed = false) => {
+            if (lastSetId) {
+                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
+                    studySetId: lastSetId,
+                    workspaceActivity: 'lecture',
+                });
+            } else if (noteId) {
+                void noteHandlers.openNote(noteId);
+            }
+            showToast(
+                resumed
+                    ? 'Lecture ready \u2014 press Record to start.'
+                    : 'New note ready \u2014 press Record to start.',
+                'info'
+            );
+        };
+        if (decision.action === 'resume') {
+            void (async () => {
+                if (notesState.selectedNote?.id !== decision.noteId) {
+                    await notesState.loadNote(decision.noteId);
+                }
+                landOnLecture(decision.noteId, true);
+            })().catch((e: any) => showToast(e?.message || 'Could not open the lecture.', 'error'));
+            return;
+        }
+        void noteHandlers.handleCreateNote(decision.title, {
             courseId,
             studySetId: lastSetId,
         })
             .then((created) => {
-                if (lastSetId) {
-                    navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                        studySetId: lastSetId,
-                        workspaceActivity: 'lecture',
-                    });
-                } else if (created?.id) {
-                    // No set to file it under: the tile still has to land
-                    // somewhere, so open the new note in the standalone editor
-                    // rather than leaving the student on Home with a toast
-                    // about a note they cannot see.
-                    void noteHandlers.openNote(created.id);
-                }
-                showToast('New note ready \u2014 press Record to start.', 'info');
+                landOnLecture(created?.id, false);
             })
             .catch((e: any) => showToast(e?.message || 'Failed to create note', 'error'));
     };
@@ -2340,12 +2360,25 @@ export const App: React.FC = () => {
                     onExit={() => { setActiveGameSession(null); setAppMode(AppMode.CHAT); }} />;
             case AppMode.TEST_REVIEW:
                 if (!activeTestResult) return null;
-                return <TestReviewScreen results={activeTestResult} allTestResults={testResults} groups={groups}
-                    onExit={() => { setActiveTestResult(null); setAppMode(AppMode.CHAT); }}
-                    onNavigateToDashboard={() => { setActiveTestResult(null); setAppMode(AppMode.DASHBOARD); }}
-                    onRetakeTest={(session) => { void handleRetakeTestFromResult(session, activeTestResult?.id); }}
-                    onPracticeFailedQuestions={handlePracticeFailedQuestions}
-                    onExplainAnswer={handleAIExplainAnswer} />;
+                {
+                    const sourceNoteId = activeTestResult.session?.config?.sourceNoteId || null;
+                    const sourceNoteTitle = activeTestResult.session?.config?.sourceNoteTitle;
+                    return <TestReviewScreen results={activeTestResult} allTestResults={testResults} groups={groups}
+                        onExit={() => { setActiveTestResult(null); setAppMode(AppMode.CHAT); }}
+                        onNavigateToDashboard={() => { setActiveTestResult(null); setAppMode(AppMode.DASHBOARD); }}
+                        onBackToNote={
+                          sourceNoteId
+                            ? () => {
+                                setActiveTestResult(null);
+                                void noteHandlers.openNote(sourceNoteId);
+                              }
+                            : undefined
+                        }
+                        backToNoteLabel={sourceNoteTitle ? `Back to ${sourceNoteTitle}` : undefined}
+                        onRetakeTest={(session) => { void handleRetakeTestFromResult(session, activeTestResult?.id); }}
+                        onPracticeFailedQuestions={handlePracticeFailedQuestions}
+                        onExplainAnswer={handleAIExplainAnswer} />;
+                }
             case AppMode.DASHBOARD:
                 return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser}
                     studyActivityDays={studyActivityDays}
@@ -2844,10 +2877,16 @@ export const App: React.FC = () => {
                         }}
                         onGenerateQuiz={async (editorState, jobHooks) => {
                             try {
-                                const session = await noteHandlers.handleStartNoteQuiz(editorState, jobHooks);
+                                const existing = getQuizForNote(selectedNote.id);
+                                const session = await noteHandlers.handleStartNoteQuiz(
+                                    editorState,
+                                    jobHooks,
+                                    { replace: Boolean(existing?.completed) }
+                                );
                                 if (session?.questions?.length) {
-                                    showToast(`Quiz ready — ${session.questions.length} questions below`, 'success');
+                                    showToast(`Quiz ready — ${session.questions.length} questions beside your note`, 'success');
                                 }
+                                return session;
                             } catch (e: any) {
                                 showToast(e?.message || 'Failed to generate quiz', 'error');
                             }
@@ -2860,18 +2899,16 @@ export const App: React.FC = () => {
                         onCompleteDailyQuiz={completeDailyQuiz}
                         onRegenerateQuiz={async () => {
                             try {
-                                const session = await noteHandlers.handleStartNoteQuiz({
-                                    title: selectedNote.title,
-                                    body: selectedNote.body,
-                                });
-                                // The API marks an unchanged existing quiz with `reused: true`.
-                                // Older API versions omit the field — treat absent as fresh.
-                                const reused =
-                                    (session as null | (typeof session & { reused?: boolean }))?.reused === true;
-                                if (reused) {
-                                    showToast('Kept your existing quiz — finish or reset it to get new questions', 'info');
-                                } else {
-                                    showToast('New quiz ready!', 'success');
+                                const session = await noteHandlers.handleStartNoteQuiz(
+                                    {
+                                        title: selectedNote.title,
+                                        body: selectedNote.body,
+                                    },
+                                    undefined,
+                                    { replace: true }
+                                );
+                                if (session?.questions?.length) {
+                                    showToast(`New quiz ready — ${session.questions.length} questions beside your note`, 'success');
                                 }
                             } catch (e: any) {
                                 showToast(e?.message || 'Failed to generate quiz', 'error');
@@ -3866,7 +3903,7 @@ export const App: React.FC = () => {
                     });
                     closeModal('usernameRequired');
                 }} />}
-            {appMode !== AppMode.COURSE_WORKSPACE && appMode !== AppMode.STUDY_SET_WORKSPACE && (
+            {appMode !== AppMode.COURSE_WORKSPACE && appMode !== AppMode.STUDY_SET_WORKSPACE && appMode !== AppMode.NOTE_EDITOR && (
             <AICompanionPanel
                 context={companionContext}
                 onAction={handleCompanionAction}

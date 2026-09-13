@@ -5,7 +5,9 @@ import {
   getExtractionStatusMessage,
   getNoteStudyContent,
   getNoteStudyContentForSmartNotes,
+  getNoteStudyContentForSources,
   hasEnoughNoteStudyContent,
+  listSmartNoteSources,
   isPlaceholderExtractedText,
   isThinOrUnusableStudyContent,
   MIN_NOTE_STUDY_CONTENT_CHARS,
@@ -335,5 +337,63 @@ describe('isQuizzableNote', () => {
     };
     expect(isQuizzableNote(pdfNote)).toBe(true);
     expect(isQuizzableNote({ ...pdfNote, isArchived: true })).toBe(false);
+  });
+});
+
+describe('Smart Notes source filter', () => {
+  const typed = 'My own notes on the lecture go here and are long enough.';
+  const pdfText = 'The uploaded slides cover enzymes and activation energy in detail.';
+  const youtubeText = 'The video walks through the same pathway from a clinical angle.';
+
+  const mixed = {
+    sourceType: 'typed',
+    body: typed,
+    attachments: [
+      { type: 'pdf', extractedText: pdfText },
+      { type: 'youtube', extractedText: youtubeText },
+    ],
+  };
+
+  it('lists only sources that already have readable text', () => {
+    expect(listSmartNoteSources(mixed).map((source) => source.id)).toEqual([
+      'typed',
+      'document',
+      'youtube',
+    ]);
+    expect(listSmartNoteSources({ sourceType: 'typed', body: typed }).map((source) => source.id)).toEqual([
+      'typed',
+    ]);
+  });
+
+  it('keeps transcript and uploaded materials as separate sources on a lecture', () => {
+    const lecture = {
+      sourceType: 'typed',
+      body: `${typed}\n\nTranscript\n\nSpoken captions from the recording go here.`,
+      attachments: [{ type: 'pdf', extractedText: pdfText }],
+    };
+    expect(listSmartNoteSources(lecture).map((source) => source.id)).toEqual([
+      'typed',
+      'transcript',
+      'document',
+    ]);
+  });
+
+  it('joins only the selected materials and ignores Smart Notes already in the body', () => {
+    const body = upsertSmartNotesSection(typed, 'Old generated block');
+    expect(getNoteStudyContentForSources({ ...mixed, body }, ['document', 'youtube'])).toBe(
+      `${pdfText}\n\n${youtubeText}`
+    );
+    expect(getNoteStudyContentForSources({ ...mixed, body }, ['typed'])).toBe(typed);
+    expect(getNoteStudyContentForSources(mixed, [])).toBe('');
+  });
+
+  it('keeps the legacy full merge when sources are omitted', () => {
+    expect(getNoteStudyContentForSmartNotes(mixed)).toBe(typed);
+    expect(
+      getNoteStudyContentForSmartNotes(
+        { ...mixed, sourceType: 'pdf' },
+        ['document', 'typed']
+      )
+    ).toBe(`${pdfText}\n\n${typed}`);
   });
 });

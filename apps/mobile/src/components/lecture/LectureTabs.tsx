@@ -16,7 +16,7 @@ import { LectureAudioPlayer } from './LectureAudioPlayer';
 import { isLectureTabLocked } from './lectureTabLock';
 
 /**
- * The lecture surface — My Notes / Enhanced Notes / Transcript / Audio.
+ * The lecture surface — My Notes / Enhanced Notes / Materials / Transcript / Audio.
  *
  * This used to live inside `screens/study/LectureStudioScreen.tsx`, which is
  * only reachable from a set or course room. Every lecture opened from the
@@ -49,6 +49,10 @@ export interface LectureTabsProps {
   recording?: boolean;
   /** The My Notes pane. `typed` is the body with transcript and Smart Notes removed. */
   renderNotes: (parts: { typed: string }) => React.ReactNode;
+  /** Library Enhanced compose. Omit to show the stored markdown only. */
+  renderEnhanced?: (parts: { enhanced: string }) => React.ReactNode;
+  /** Uploaded document / YouTube / photos. */
+  renderMaterials?: () => React.ReactNode;
   /** Controlled selection. Omit to let this component keep its own. */
   tab?: LectureTabId | null;
   onTabChange?: (tab: LectureTabId) => void;
@@ -60,6 +64,8 @@ export function LectureTabs({
   noteTitle,
   recording = false,
   renderNotes,
+  renderEnhanced,
+  renderMaterials,
   tab: controlledTab,
   onTabChange,
 }: LectureTabsProps) {
@@ -82,7 +88,7 @@ export function LectureTabs({
 
   return (
     <View className="gap-4">
-      {/* The same four surfaces as the web studio, in the same order. */}
+      {/* The same surfaces as the web studio, in the same order. */}
       <View accessibilityRole="tablist" className="flex-row flex-wrap gap-2">
         {tabs.map((row) => {
           const selected = active === row.id;
@@ -111,12 +117,24 @@ export function LectureTabs({
       {active === 'notes' ? renderNotes({ typed: parts.typed }) : null}
 
       {active === 'enhanced' ? (
-        <View>
-          <T.Label>Enhanced notes</T.Label>
-          <View className="mt-2 min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
-            <NoteBody body={parts.enhanced} emptyLine="No enhanced notes yet." />
+        renderEnhanced ? (
+          renderEnhanced({ enhanced: parts.enhanced })
+        ) : (
+          <View>
+            <T.Label>Enhanced notes</T.Label>
+            <View className="mt-2 min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
+              <NoteBody body={parts.enhanced} emptyLine="No enhanced notes yet." />
+            </View>
           </View>
-        </View>
+        )
+      ) : null}
+
+      {active === 'materials' ? (
+        renderMaterials ? (
+          renderMaterials()
+        ) : (
+          <T.Body tone="secondary">Uploaded files open in Library.</T.Body>
+        )
       ) : null}
 
       {active === 'transcript' ? (

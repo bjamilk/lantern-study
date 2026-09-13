@@ -94,7 +94,8 @@ export const useStudyGoalsStore = create<StudyGoalsState>()(
 
       getQuizForNote: (noteId: string) => {
         const quiz = normalizeDailyQuiz(get().dailyQuiz);
-        if (!quiz || quiz.noteId !== noteId || quiz.questions.length === 0) return null;
+        if (!quiz || quiz.questions.length === 0) return null;
+        if (quiz.noteId && quiz.noteId !== noteId) return null;
         return quiz;
       },
 

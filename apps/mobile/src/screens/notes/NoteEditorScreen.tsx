@@ -25,14 +25,28 @@ import {
   getNoteStudyContent,
   hasEnoughNoteStudyContent,
   MarkdownRenderer,
-  MIN_NOTE_STUDY_CONTENT_CHARS,
   buildSpanQuestion,
   buildFigureQuestion,
   canAskAboutHighlight,
   highlightFromRange,
   isWalkableAttachment,
   isLectureNote,
+  composeLectureNoteBody,
+  displayLectureTranscript,
+  getNoteStudyContentForSmartNotes,
+  latestLectureTranscript,
+  lectureNoteParts,
+  lectureTabs,
+  listSmartNoteSources,
+  MIN_NOTE_STUDY_CONTENT_CHARS,
+  noteHasMaterials,
+  toggleSmartNoteFilter,
+  preferLectureTranscript,
+  splitLectureNoteBody,
+  type LectureTabId,
+  type SmartNoteSourceId,
 } from '@lantern/shared';
+import { upsertSmartNotesSection } from '@lantern/shared/utils/smartNotes';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useCompanionStore } from '../../stores/companionStore';
@@ -70,7 +84,7 @@ import { ErrorBoundary } from '../../components/ErrorBoundary';
 import { NotePdfViewer } from '../../components/NotePdfViewer';
 import { NoteImageGallery } from '../../components/NoteImageGallery';
 import { NoteCollaboratorsModal } from '../../components/NoteCollaboratorsModal';
-import { NoteLearnPanel } from '../../components/notes/NoteLearnPanel';
+import { NoteLearnPanel, SmartNoteComposeFields } from '../../components/notes/NoteLearnPanel';
 import { getLatestAIUsage, subscribeToAIUsage } from '../../services/ai';
 import { makeCardsConfirmMessage, noCreditsLeftMessage } from './noteCardsPrompt';
 import { topicIdAfterCourseChange } from '../../utils/topicSelection';
@@ -170,6 +184,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const discardLectureRecording = useLectureRecordingStore((s) => s.discard);
   const cancelLectureTranscription = useLectureRecordingStore((s) => s.cancelTranscription);
   const setCurrentBodyProvider = useLectureRecordingStore((s) => s.setCurrentBodyProvider);
+  const committedTranscript = useLectureRecordingStore((s) => s.committedTranscript);
+  const interimTranscript = useLectureRecordingStore((s) => s.interimTranscript);
+  const whisperTranscript = useLectureRecordingStore((s) => s.whisperTranscript);
   const isRecording = lectureNoteId === noteId && lectureStatus === 'recording';
   const transcribing =
     lectureNoteId === noteId &&
@@ -216,6 +233,9 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const [smartNotesDepth, setSmartNotesDepth] =
     useState<import('@lantern/shared/utils/smartNotes').SmartNotesDepth>('standard');
+  const [smartNoteOpen, setSmartNoteOpen] = useState(false);
+  const [requestedTab, setRequestedTab] = useState<LectureTabId | null>(null);
+  const [selectedSources, setSelectedSources] = useState<SmartNoteSourceId[]>([]);
 
   const [aiUsage, setAiUsage] = useState(getLatestAIUsage());
 
@@ -259,6 +279,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
   const [learnPanelHeight, setLearnPanelHeight] = useState(0);
   const openCompanionWithMessage = useCompanionStore(s => s.openWithMessage);
+  const openCompanion = useCompanionStore(s => s.open);
   const setActiveNoteContext = useCompanionStore(s => s.setActiveNoteContext);
   const handleDocumentScrollLock = useCallback((locked: boolean) => {
     setParentScrollEnabled(!locked);
@@ -272,14 +293,49 @@ export function NoteEditorScreen({ navigation, route }: Props) {
     selectedNote?.sourceType === 'youtube' || Boolean(selectedNote?.youtubeVideoId);
   const isPhotoNote = selectedNote?.sourceType === 'photos';
   /**
-   * A lecture is four things at once, and this screen is the door the Library
-   * opens. Until Wave 3 it showed the stored body as one scroll — the
-   * transcript dumped under the typed notes, no Enhanced tab, and the recording
-   * with nowhere to live — while the same note opened from a set room got the
-   * full surface. Same predicate, same planner, same component now; Edit still
-   * opens the raw body so nothing the student typed is unreachable.
+   * A lecture is one note with tabs. My notes is the only writable surface;
+   * the transcript stays behind the marker / attachment.
    */
   const isLectureSurface = Boolean(selectedNote && isLectureNote(selectedNote));
+  const liveTranscript = displayLectureTranscript({
+    committed: committedTranscript,
+    interim: interimTranscript,
+    whisper:
+      whisperTranscript ||
+      latestLectureTranscript(selectedNote?.attachments) ||
+      splitLectureNoteBody(body).transcript,
+  });
+  const lectureTabSource = {
+    body,
+    attachments: selectedNote?.attachments ?? [],
+    liveTranscript,
+    showTranscriptTab: isLectureSurface,
+    showEnhancedTab: Boolean(
+      smartNoteOpen ||
+        isLectureSurface ||
+        noteHasMaterials({
+          attachments: selectedNote?.attachments ?? [],
+          sourceType: selectedNote?.sourceType,
+          youtubeVideoId: selectedNote?.youtubeVideoId,
+        })
+    ),
+    sourceType: selectedNote?.sourceType,
+    youtubeVideoId: selectedNote?.youtubeVideoId,
+  };
+  const lectureParts = lectureNoteParts(lectureTabSource);
+  const lectureTabList = lectureTabs(lectureTabSource);
+  const showNoteTabs = lectureTabList.length > 1;
+  const persistableTranscript = lectureNoteParts({
+    body,
+    attachments: selectedNote?.attachments ?? [],
+  }).transcript;
+  const handleTypedNotesChange = (typed: string) => {
+    let next = isLectureSurface
+      ? composeLectureNoteBody(typed, persistableTranscript)
+      : typed;
+    if (lectureParts.enhanced) next = upsertSmartNotesSection(next, lectureParts.enhanced);
+    setBody(next);
+  };
   const youtubeAttachment = useMemo(
     () => selectedNote?.attachments?.find((a) => a.type === 'youtube'),
     [selectedNote?.attachments]
@@ -443,6 +499,30 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         : body.trim().length >= 50,
     [selectedNote, body]
   );
+
+  const studyInput = {
+    sourceType: selectedNote?.sourceType,
+    body,
+    summary: selectedNote?.summary,
+    attachments: selectedNote?.attachments,
+  };
+  const availableSources = listSmartNoteSources(studyInput);
+  const availableSourceKey = availableSources.map((source) => source.id).join(',');
+  const synthesizeSources = availableSources.length > 0 ? selectedSources : undefined;
+  const synthesizeReady =
+    getNoteStudyContentForSmartNotes(studyInput, synthesizeSources).trim().length >=
+    MIN_NOTE_STUDY_CONTENT_CHARS;
+
+  useEffect(() => {
+    setRequestedTab(null);
+    setSmartNoteOpen(false);
+  }, [noteId]);
+
+  useEffect(() => {
+    setSelectedSources(
+      availableSourceKey ? (availableSourceKey.split(',') as SmartNoteSourceId[]) : []
+    );
+  }, [noteId, availableSourceKey]);
 
   const handleImageAttachmentsChange = (attachments: NoteAttachment[]) => {
     if (!selectedNote) return;
@@ -922,13 +1002,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
   const handleSummarize = async () => {
 
-    if (!studyContent.trim()) {
+    if (!synthesizeReady) {
 
       appAlert(
         'Empty note',
         isYoutubeNote
           ? 'Wait for the video transcript, or add your own notes, before summarizing.'
-          : 'Add some content before summarizing.'
+          : 'Select materials with enough text, or add your own notes.'
       );
 
       return;
@@ -944,6 +1024,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       const result = await summarizeNote(noteId, {
         guidance: smartNotesGuidance.trim() || undefined,
         depth: smartNotesDepth,
+        sources: synthesizeSources,
       });
 
       const newSummary = result.summary || result.note?.summary || '';
@@ -954,6 +1035,7 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         setBody(result.note.body);
         pauseAutosaveUntilRef.current = Date.now() + AUTOSAVE_PAUSE_AFTER_TRANSCRIPT_MS;
       }
+      setRequestedTab('enhanced');
 
       if (result.note) {
         const prev = useNotesStore.getState().selectedNote;
@@ -977,14 +1059,13 @@ export function NoteEditorScreen({ navigation, route }: Props) {
 
 
   const handleChatWithNote = () => {
-    // Same prompt web builds in hooks/useNoteHandlers.ts so the companion gets
-    // the note's content either way, rather than being opened empty.
     const noteTitle = title || selectedNote?.title || 'Untitled Note';
-    openCompanionWithMessage(
-      studyContent.trim().length >= MIN_NOTE_STUDY_CONTENT_CHARS
-        ? `Help me study my note "${noteTitle}". Ask me questions and explain key concepts from this material:\n\n${studyContent.slice(0, 4000)}`
-        : `I want to study my note "${noteTitle}". Ask me questions about it or help me understand key concepts based on this material.`
-    );
+    void setActiveNoteContext({
+      id: noteId,
+      title: noteTitle,
+      scopeId: selectedNote?.studySetId ?? selectedNote?.courseId ?? null,
+    });
+    openCompanion();
   };
 
   const highlight = highlightFromRange(body, selection.start, selection.end);
@@ -1528,244 +1609,267 @@ export function NoteEditorScreen({ navigation, route }: Props) {
             </View>
           ) : null}
 
-          {documentAttachment ? (
-            <View className="mb-4">
-              <NotePdfViewer
-                noteId={noteId}
-                attachment={documentAttachment}
-                onScrollLockChange={handleDocumentScrollLock}
-              />
-            </View>
-          ) : null}
-
-          {showImageGallery && imageAttachments.length > 0 ? (
-            <ErrorBoundary fallbackTitle="Photos failed to load">
-              <NoteImageGallery
-                noteId={noteId}
-                attachments={imageAttachments}
-                editable={isPhotoNote && canEdit}
-                onAttachmentsChange={handleImageAttachmentsChange}
-                onAddPhotos={isPhotoNote && canEdit ? handleAddPhotos : undefined}
-                onAskAboutFigure={handleAskFigure}
-              />
-            </ErrorBoundary>
-          ) : null}
-
-          {selectedNote?.youtubeVideoId ? (
-            <Pressable
-              onPress={() =>
-                void Linking.openURL(
-                  selectedNote.youtubeUrl ||
-                    `https://www.youtube.com/watch?v=${selectedNote.youtubeVideoId}`
-                )
-              }
-              className="mb-4 rounded-xl border border-lantern-border bg-lantern-background-secondary p-4 flex-row items-center gap-3"
-            >
-              <AppIcon name="logo-youtube" size={28} color="#ef4444" />
-              <View className="flex-1">
-                <Text className="text-sm font-medium text-lantern-text">
-                  Linked YouTube video
-                </Text>
-                <Text className="text-xs text-lantern-primary-text mt-1">
-                  Tap to open in YouTube
-                </Text>
-              </View>
-            </Pressable>
-          ) : null}
-
-          {isYoutubeNote ? (
-            <View className="mb-4 rounded-xl border border-lantern-border bg-lantern-surface p-4">
-              <View className="flex-row items-start justify-between gap-3">
-                <View className="flex-1">
-                  <Text className="text-sm font-semibold text-lantern-text">
-                    {youtubeTranscriptStatus === 'ready'
-                      ? 'Video transcript'
-                      : youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript
-                        ? 'Fetching transcript…'
-                        : 'Transcript unavailable'}
-                  </Text>
-                  <Text className="text-xs text-lantern-text-secondary mt-1">
-                    {youtubeTranscriptStatus === 'ready'
-                      ? 'Ready for Smart Notes, flashcards, and chat.'
-                      : youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript
-                        ? 'We’ll use this transcript for Smart Notes and other AI study tools.'
-                        : youtubeTranscriptError ||
-                          'We couldn’t fetch captions for this video. Private videos, disabled captions, and some rate limits can block import.'}
-                  </Text>
-                </View>
-                {(youtubeTranscriptStatus === 'failed' ||
-                  youtubeTranscriptStatus === 'missing') &&
-                canEdit ? (
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    loading={retryingYoutubeTranscript}
-                    onPress={() => void handleRetryYoutubeTranscript()}
-                  >
-                    Retry
-                  </Button>
-                ) : null}
-                {youtubeTranscriptStatus === 'ready' && youtubeTranscriptText ? (
-                  <Pressable onPress={() => setYoutubeTranscriptExpanded((v) => !v)}>
-                    <Text className="text-xs font-medium text-lantern-primary-text">
-                      {youtubeTranscriptExpanded ? 'Hide' : 'Show'}
-                    </Text>
-                  </Pressable>
-                ) : null}
-              </View>
-              {(youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript) && (
-                <View className="flex-row items-center gap-2 mt-3">
-                  <ActivityIndicator size="small" color="#0ea5e9" />
-                  <Text className="text-xs text-lantern-text-tertiary">
-                    Pulling captions from YouTube…
-                  </Text>
-                </View>
-              )}
-              {youtubeTranscriptStatus === 'ready' &&
-              youtubeTranscriptExpanded &&
-              youtubeTranscriptText ? (
-                <ScrollView
-                  nestedScrollEnabled
-                  style={{ maxHeight: 224 }}
-                  className="mt-3 rounded-lg border border-lantern-border bg-lantern-background-secondary p-3"
-                >
-                  <Text className="text-xs leading-relaxed text-lantern-text-secondary">
-                    {youtubeTranscriptText}
-                  </Text>
-                </ScrollView>
-              ) : null}
-            </View>
-          ) : null}
-
-          {extractionMessage &&
-          (selectedNote?.sourceType === 'pdf' ||
-            selectedNote?.sourceType === 'presentation' ||
-            isPhotoNoteSource(selectedNote?.sourceType)) ? (
-            <View className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
-              <Text className="text-sm text-lantern-text mb-2">
-                {runningOcr || extractionStatus === 'ocr_processing'
-                  ? 'Running local OCR…'
-                  : extractionMessage}
-              </Text>
-              {(extractionStatus === 'needs_ocr' ||
-                extractionStatus === 'empty' ||
-                extractionStatus === 'ocr_failed') &&
-              canEdit ? (
-                <Button
-                  onPress={() => {
-                    if (!selectedNote || runningOcr) return;
-                    setRunningOcr(true);
-                    void runNoteOcr(selectedNote.id)
-                      .then((result) => {
-                        const prev = useNotesStore.getState().selectedNote;
-                        if (!prev || prev.id !== selectedNote.id) return;
-                        setSelectedNote({
-                          ...prev,
-                          attachments: result.attachments?.length
-                            ? [
-                                ...(prev.attachments || []).filter((a) => a.type !== 'image'),
-                                ...result.attachments,
-                              ]
-                            : prev.attachments?.map((a) =>
-                                a.id === result.attachment.id ? result.attachment : a
-                              ) ?? [result.attachment],
-                        });
-                        if (result.status === 'failed') {
-                          appAlert('OCR failed', result.ocrError || 'Local OCR failed.');
-                        }
-                      })
-                      .catch((err: unknown) => {
-                        appAlert(
-                          'OCR failed',
-                          err instanceof Error ? err.message : 'Failed to run OCR'
-                        );
-                      })
-                      .finally(() => setRunningOcr(false));
-                  }}
-                  disabled={runningOcr}
-                >
-                  {runningOcr
-                    ? 'Running OCR…'
-                    : `Run OCR · ${formatCreditCost(AI_CREDIT_COSTS.note_ocr)}`}
-                </Button>
-              ) : null}
-            </View>
-          ) : null}
-
-          {isDocumentNote && !documentAttachment ? (
-            <Text className="text-sm text-lantern-text-secondary mb-4">
-              {selectedNote?.sourceType === 'presentation'
-                ? extractionStatus === 'ok'
-                  ? 'Slide preview is unavailable. Extracted text is available for AI tools.'
-                  : 'Slide preview is unavailable. Extracted text may be missing — run OCR or add notes.'
-                : 'Document preview is unavailable.'}
-              {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
-            </Text>
-          ) : null}
-
-          {isDocumentNote || isPhotoNote || isYoutubeNote ? (
-            <>
-              <Text className="text-sm font-semibold text-lantern-text mb-2">
-                Your notes
-              </Text>
-              {reading ? (
-                <Pressable
-                  onPress={canEdit ? () => setMode('edit') : undefined}
-                  accessibilityRole={canEdit ? 'button' : undefined}
-                  accessibilityLabel="Note body"
-                  className="mb-4"
-                >
-                  <NoteBody
-                    body={body}
-                    emptyLine={
-                      canEdit
-                        ? 'No notes of your own yet. Tap Edit to add some.'
-                        : 'No notes of their own here.'
-                    }
-                  />
-                </Pressable>
-              ) : (
-              <TextInput
-                value={body}
-                onChangeText={setBody}
-                onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
-                editable={canEdit}
-                accessibilityLabel="Note body"
-                placeholder={
-                  isPhotoNote
-                    ? 'Add your own notes alongside these photos...'
-                    : isYoutubeNote
-                      ? 'Add your own notes alongside this video transcript...'
-                      : 'Add your own notes on top of this document...'
-                }
-                placeholderTextColor="#94a3b8"
-                multiline
-                textAlignVertical="top"
-                className="w-full min-h-[160px] p-4 rounded-xl border border-lantern-border bg-lantern-surface text-sm leading-relaxed text-lantern-text mb-4"
-              />
-              )}
-            </>
-          ) : reading && isLectureSurface ? (
+          {showNoteTabs ? (
             <View className="mb-4">
               <LectureTabs
                 noteId={noteId}
-                source={{ body, attachments: selectedNote?.attachments ?? [] }}
+                source={lectureTabSource}
                 noteTitle={title || selectedNote?.title}
-                renderNotes={({ typed }) => (
-                  <Pressable
-                    onPress={canEdit ? () => setMode('edit') : undefined}
-                    accessibilityRole={canEdit ? 'button' : undefined}
-                    accessibilityLabel="Note body"
-                  >
-                    <NoteBody
-                      body={typed}
-                      emptyLine={
-                        canEdit
-                          ? 'You typed nothing during this lecture. Tap to add notes.'
-                          : 'No notes of their own here.'
+                recording={false}
+                tab={requestedTab}
+                onTabChange={setRequestedTab}
+                renderNotes={({ typed }) =>
+                  reading ? (
+                    <Pressable
+                      onPress={canEdit ? () => setMode('edit') : undefined}
+                      accessibilityRole={canEdit ? 'button' : undefined}
+                      accessibilityLabel="Typed lecture notes"
+                    >
+                      <NoteBody
+                        body={typed}
+                        emptyLine={
+                          canEdit
+                            ? isLectureSurface
+                              ? 'Type during class. The transcript stays on its own tab.'
+                              : 'No notes of your own yet. Tap Edit to add some.'
+                            : 'No notes of their own here.'
+                        }
+                      />
+                    </Pressable>
+                  ) : (
+                    <TextInput
+                      value={typed}
+                      onChangeText={handleTypedNotesChange}
+                      onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
+                      editable={canEdit}
+                      accessibilityLabel="Typed lecture notes"
+                      placeholder={
+                        isLectureSurface
+                          ? 'Type during class. The transcript stays on its own tab.'
+                          : isPhotoNote
+                            ? 'Add your own notes alongside these photos...'
+                            : isYoutubeNote
+                              ? 'Add your own notes alongside this video transcript...'
+                              : 'Add your own notes on top of this document...'
                       }
+                      placeholderTextColor="#94a3b8"
+                      multiline
+                      textAlignVertical="top"
+                      className="w-full min-h-[160px] p-4 rounded-xl border border-lantern-border bg-lantern-surface text-body leading-relaxed text-lantern-text"
                     />
-                  </Pressable>
+                  )
+                }
+                renderEnhanced={({ enhanced }) => (
+                  <View className="gap-3">
+                    {canEdit ? (
+                      <SmartNoteComposeFields
+                        sources={availableSources.map((source) => source.id)}
+                        selectedSources={selectedSources}
+                        onToggleFilter={(id) => {
+                          setSelectedSources((current) =>
+                            toggleSmartNoteFilter(
+                              id,
+                              current,
+                              availableSources.map((source) => source.id)
+                            )
+                          );
+                        }}
+                        guidance={smartNotesGuidance}
+                        onGuidanceChange={setSmartNotesGuidance}
+                        depth={smartNotesDepth}
+                        onDepthChange={setSmartNotesDepth}
+                        summarizing={summarizing}
+                        shortForSmartNote={shortForSmartNote}
+                        writeDisabled={!synthesizeReady}
+                        onWrite={() => void handleSummarize()}
+                      />
+                    ) : null}
+                    <T.Label>Enhanced notes</T.Label>
+                    <View className="min-h-[140px] rounded-xl border border-lantern-border bg-lantern-surface p-3">
+                      <NoteBody body={enhanced} emptyLine="No enhanced notes yet." />
+                    </View>
+                  </View>
+                )}
+                renderMaterials={() => (
+                  <View className="gap-3">
+                    {walkthroughAttachmentId ? (
+                      <View className="gap-2">
+                        <Button size="sm" variant="secondary" onPress={handleWalkthrough}>
+                          Walk me through it
+                        </Button>
+                        <Button size="sm" variant="secondary" onPress={handleReadAloud}>
+                          Read it to me
+                        </Button>
+                      </View>
+                    ) : null}
+                    {documentAttachment ? (
+                      <NotePdfViewer
+                        noteId={noteId}
+                        attachment={documentAttachment}
+                        onScrollLockChange={handleDocumentScrollLock}
+                      />
+                    ) : null}
+                    {showImageGallery && imageAttachments.length > 0 ? (
+                      <ErrorBoundary fallbackTitle="Photos failed to load">
+                        <NoteImageGallery
+                          noteId={noteId}
+                          attachments={imageAttachments}
+                          editable={isPhotoNote && canEdit}
+                          onAttachmentsChange={handleImageAttachmentsChange}
+                          onAddPhotos={isPhotoNote && canEdit ? handleAddPhotos : undefined}
+                          onAskAboutFigure={handleAskFigure}
+                        />
+                      </ErrorBoundary>
+                    ) : null}
+                    {selectedNote?.youtubeVideoId ? (
+                      <Pressable
+                        onPress={() =>
+                          void Linking.openURL(
+                            selectedNote.youtubeUrl ||
+                              `https://www.youtube.com/watch?v=${selectedNote.youtubeVideoId}`
+                          )
+                        }
+                        className="rounded-xl border border-lantern-border bg-lantern-background-secondary p-4 flex-row items-center gap-3"
+                      >
+                        <AppIcon name="logo-youtube" size={28} color="#ef4444" />
+                        <View className="flex-1">
+                          <Text className="text-sm font-medium text-lantern-text">
+                            Linked YouTube video
+                          </Text>
+                          <Text className="text-xs text-lantern-primary-text mt-1">
+                            Tap to open in YouTube
+                          </Text>
+                        </View>
+                      </Pressable>
+                    ) : null}
+                    {isYoutubeNote ? (
+                      <View className="rounded-xl border border-lantern-border bg-lantern-surface p-4">
+                        <View className="flex-row items-start justify-between gap-3">
+                          <View className="flex-1">
+                            <Text className="text-sm font-semibold text-lantern-text">
+                              {youtubeTranscriptStatus === 'ready'
+                                ? 'Video transcript'
+                                : youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript
+                                  ? 'Fetching transcript…'
+                                  : 'Transcript unavailable'}
+                            </Text>
+                            <Text className="text-xs text-lantern-text-secondary mt-1">
+                              {youtubeTranscriptStatus === 'ready'
+                                ? 'Ready for Smart Notes, flashcards, and chat.'
+                                : youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript
+                                  ? 'We’ll use this transcript for Smart Notes and other AI study tools.'
+                                  : youtubeTranscriptError ||
+                                    'We couldn’t fetch captions for this video. Private videos, disabled captions, and some rate limits can block import.'}
+                            </Text>
+                          </View>
+                          {(youtubeTranscriptStatus === 'failed' ||
+                            youtubeTranscriptStatus === 'missing') &&
+                          canEdit ? (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              loading={retryingYoutubeTranscript}
+                              onPress={() => void handleRetryYoutubeTranscript()}
+                            >
+                              Retry
+                            </Button>
+                          ) : null}
+                          {youtubeTranscriptStatus === 'ready' && youtubeTranscriptText ? (
+                            <Pressable onPress={() => setYoutubeTranscriptExpanded((v) => !v)}>
+                              <Text className="text-xs font-medium text-lantern-primary-text">
+                                {youtubeTranscriptExpanded ? 'Hide' : 'Show'}
+                              </Text>
+                            </Pressable>
+                          ) : null}
+                        </View>
+                        {(youtubeTranscriptStatus === 'processing' || retryingYoutubeTranscript) && (
+                          <View className="flex-row items-center gap-2 mt-3">
+                            <ActivityIndicator size="small" color="#0ea5e9" />
+                            <Text className="text-xs text-lantern-text-tertiary">
+                              Pulling captions from YouTube…
+                            </Text>
+                          </View>
+                        )}
+                        {youtubeTranscriptStatus === 'ready' &&
+                        youtubeTranscriptExpanded &&
+                        youtubeTranscriptText ? (
+                          <ScrollView
+                            nestedScrollEnabled
+                            style={{ maxHeight: 224 }}
+                            className="mt-3 rounded-lg border border-lantern-border bg-lantern-background-secondary p-3"
+                          >
+                            <Text className="text-xs leading-relaxed text-lantern-text-secondary">
+                              {youtubeTranscriptText}
+                            </Text>
+                          </ScrollView>
+                        ) : null}
+                      </View>
+                    ) : null}
+                    {extractionMessage &&
+                    (selectedNote?.sourceType === 'pdf' ||
+                      selectedNote?.sourceType === 'presentation' ||
+                      isPhotoNoteSource(selectedNote?.sourceType)) ? (
+                      <View className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3">
+                        <Text className="text-sm text-lantern-text mb-2">
+                          {runningOcr || extractionStatus === 'ocr_processing'
+                            ? 'Running local OCR…'
+                            : extractionMessage}
+                        </Text>
+                        {(extractionStatus === 'needs_ocr' ||
+                          extractionStatus === 'empty' ||
+                          extractionStatus === 'ocr_failed') &&
+                        canEdit ? (
+                          <Button
+                            onPress={() => {
+                              if (!selectedNote || runningOcr) return;
+                              setRunningOcr(true);
+                              void runNoteOcr(selectedNote.id)
+                                .then((result) => {
+                                  const prev = useNotesStore.getState().selectedNote;
+                                  if (!prev || prev.id !== selectedNote.id) return;
+                                  setSelectedNote({
+                                    ...prev,
+                                    attachments: result.attachments?.length
+                                      ? [
+                                          ...(prev.attachments || []).filter((a) => a.type !== 'image'),
+                                          ...result.attachments,
+                                        ]
+                                      : prev.attachments?.map((a) =>
+                                          a.id === result.attachment.id ? result.attachment : a
+                                        ) ?? [result.attachment],
+                                  });
+                                  if (result.status === 'failed') {
+                                    appAlert('OCR failed', result.ocrError || 'Local OCR failed.');
+                                  }
+                                })
+                                .catch((err: unknown) => {
+                                  appAlert(
+                                    'OCR failed',
+                                    err instanceof Error ? err.message : 'Failed to run OCR'
+                                  );
+                                })
+                                .finally(() => setRunningOcr(false));
+                            }}
+                            disabled={runningOcr}
+                          >
+                            {runningOcr
+                              ? 'Running OCR…'
+                              : `Run OCR · ${formatCreditCost(AI_CREDIT_COSTS.note_ocr)}`}
+                          </Button>
+                        ) : null}
+                      </View>
+                    ) : null}
+                    {isDocumentNote && !documentAttachment ? (
+                      <Text className="text-sm text-lantern-text-secondary">
+                        {selectedNote?.sourceType === 'presentation'
+                          ? extractionStatus === 'ok'
+                            ? 'Slide preview is unavailable. Extracted text is available for AI tools.'
+                            : 'Slide preview is unavailable. Extracted text may be missing — run OCR or add notes.'
+                          : 'Document preview is unavailable.'}
+                        {presentationAttachment?.fileName ? ` (${presentationAttachment.fileName})` : ''}
+                      </Text>
+                    ) : null}
+                  </View>
                 )}
               />
             </View>
@@ -1869,7 +1973,25 @@ export function NoteEditorScreen({ navigation, route }: Props) {
               narrationReady={narrationReady}
               onFlashcards={handleGenerateFlashcards}
               onTest={handleGenerateQuiz}
-              onSmartNotes={() => void handleSummarize()}
+              onSmartNotes={() => {
+                setSmartNoteOpen(true);
+                setRequestedTab('enhanced');
+              }}
+              smartNoteOpen={smartNoteOpen && !showNoteTabs}
+              sources={availableSources.map((source) => source.id)}
+              selectedSources={selectedSources}
+              onToggleFilter={(id) => {
+                setSelectedSources((current) =>
+                  toggleSmartNoteFilter(
+                    id,
+                    current,
+                    availableSources.map((source) => source.id)
+                  )
+                );
+              }}
+              onWriteSmartNotes={() => void handleSummarize()}
+              writeDisabled={!synthesizeReady}
+              hideDocumentActions={Boolean(walkthroughAttachmentId && showNoteTabs)}
               onRecord={handleRecordPress}
               onChat={handleChatWithNote}
               onWalkthrough={handleWalkthrough}

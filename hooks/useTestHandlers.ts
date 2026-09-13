@@ -36,6 +36,7 @@ import { trackStudyActivity } from '../services/studyActivity';
 import { trackTestStarted, trackTestCompleted } from '../services/productAnalytics';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import { buildRetakeSession, retakeTitle } from '../utils/testRetake';
+import { appNavigate } from '../utils/appNavigation';
 import {
     bindDraftIdToActiveSession,
     cancelScheduledSessionDraftAutosave,
@@ -664,6 +665,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
         setActiveTestSession(null);
         setActiveStudySession(null);
+        const noteId = session?.config?.sourceNoteId;
+        if (typeof noteId === 'string' && noteId) {
+            appNavigate(`/notes/${noteId}`);
+            return;
+        }
         setAppMode(AppMode.CHAT);
     }, [activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession]);
 

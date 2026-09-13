@@ -22,12 +22,15 @@ interface TestReviewScreenProps {
   groups: Group[];
   onExit: () => void;
   onNavigateToDashboard: () => void;
+  /** When this attempt came from a note, send them back there instead of Home. */
+  onBackToNote?: () => void;
+  backToNoteLabel?: string;
   onRetakeTest: (session: TestSessionData) => void;
   onPracticeFailedQuestions: (failedQuestions: TestQuestion[]) => void;
   onExplainAnswer?: (question: string, userAnswer: string, correctAnswer: string, options?: string[]) => Promise<string | null>;
 }
 
-const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestResults, groups, onExit, onNavigateToDashboard, onRetakeTest, onPracticeFailedQuestions, onExplainAnswer }) => {
+const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestResults, groups, onExit, onNavigateToDashboard, onBackToNote, backToNoteLabel, onRetakeTest, onPracticeFailedQuestions, onExplainAnswer }) => {
   const [isAnalysisModalOpen, setIsAnalysisModalOpen] = useState(false);
   const [aiExplanations, setAiExplanations] = useState<Record<number, string>>({});
   const [aiExplainLoading, setAiExplainLoading] = useState<Record<number, boolean>>({});
@@ -138,20 +141,33 @@ const TestReviewScreen: React.FC<TestReviewScreenProps> = ({ results, allTestRes
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
             <h1 className="text-title text-lantern-primary-text dark:text-lantern-primary-light mb-2 sm:mb-0">Test review</h1>
             <div className="flex space-x-2">
-                <button
-                    onClick={onNavigateToDashboard}
-                    className="px-3 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 dark:focus:ring-teal-500 focus:ring-offset-2 flex items-center text-body"
-                    aria-label="View Dashboard"
-                >
-                    <AppIcon name="bar-chart" size={20} className="mr-1.5" /> Dashboard
-                </button>
-                <button
-                    onClick={onExit}
-                    className="px-3 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body"
-                    aria-label="Return to Chat"
-                >
-                    <AppIcon name="log-out" size={20} className="mr-1.5" /> Return to Chat
-                </button>
+                {onBackToNote ? (
+                  <button
+                    onClick={onBackToNote}
+                    className="px-3 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark text-white rounded-md focus:ring-2 focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body"
+                    aria-label={backToNoteLabel || 'Back to note'}
+                  >
+                    <AppIcon name="document-text" size={20} className="mr-1.5" />
+                    {backToNoteLabel || 'Back to note'}
+                  </button>
+                ) : (
+                  <>
+                    <button
+                        onClick={onNavigateToDashboard}
+                        className="px-3 py-2 bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white rounded-md focus:ring-2 focus:ring-teal-400 dark:focus:ring-teal-500 focus:ring-offset-2 flex items-center text-body"
+                        aria-label="View Dashboard"
+                    >
+                        <AppIcon name="bar-chart" size={20} className="mr-1.5" /> Dashboard
+                    </button>
+                    <button
+                        onClick={onExit}
+                        className="px-3 py-2 bg-lantern-primary-fill hover:bg-lantern-primary-dark dark:bg-lantern-primary-fill dark:hover:bg-lantern-primary-fill text-white rounded-md focus:ring-2 focus:ring-lantern-primary dark:focus:ring-lantern-primary focus:ring-offset-2 flex items-center text-body"
+                        aria-label="Return to Chat"
+                    >
+                        <AppIcon name="log-out" size={20} className="mr-1.5" /> Return to Chat
+                    </button>
+                  </>
+                )}
             </div>
         </div>
         <div className="mt-4 p-4 bg-lantern-surface rounded-lg shadow-md">
