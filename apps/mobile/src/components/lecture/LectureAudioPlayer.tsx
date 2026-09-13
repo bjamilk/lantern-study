@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import {
   LECTURE_AUDIO_SPEEDS,
   formatLectureAudioSpeed,
@@ -16,6 +16,7 @@ import {
   fetchNoteAttachmentUrl,
   logLectureMedia,
 } from '../../services/noteAttachmentUrl';
+import { peekLockScreenArtworkUrl, resolveLockScreenArtworkUrl } from './lockScreenArtwork';
 import {
   LECTURE_AUDIO_JUMP_SECONDS,
   LectureAudioEngine,
@@ -73,19 +74,14 @@ function nowPlayingTitle(
 }
 
 /**
- * The app mark shown beside the transport on the lock screen and in the
- * notification shade. `expo-audio` takes a URL string, so the bundled asset has
- * to be resolved to one: a packager URL in dev, a `file://`/bundle path in a
- * release build. Resolved once, and defensively — a null here would cost the
- * whole player, and artwork is the most optional field on the session.
+ * The app mark for the lock screen. Resolved through `expo-asset` (see
+ * `lockScreenArtwork.ts`): `Image.resolveAssetSource` answered the bare
+ * bundled-asset key `assets_icon` in a release build, which is not a URL, and
+ * Android threw it back out of `setActiveForLockScreen` as a load failure.
+ * Started at import so it is usually ready by the time a recording opens; the
+ * engine is handed it again once it lands.
  */
-const LOCK_SCREEN_ARTWORK_URL: string | undefined = (() => {
-  try {
-    return Image.resolveAssetSource(require('../../../assets/icon.png'))?.uri || undefined;
-  } catch {
-    return undefined;
-  }
-})();
+void resolveLockScreenArtworkUrl();
 
 export function LectureAudioPlayer({ noteId, attachment, noteTitle }: LectureAudioPlayerProps) {
   const { colors } = useTheme();
@@ -150,7 +146,7 @@ export function LectureAudioPlayer({ noteId, attachment, noteTitle }: LectureAud
       nowPlaying: {
         title,
         artist: 'Lantern Study',
-        ...(LOCK_SCREEN_ARTWORK_URL ? { artworkUrl: LOCK_SCREEN_ARTWORK_URL } : {}),
+        ...(peekLockScreenArtworkUrl() ? { artworkUrl: peekLockScreenArtworkUrl() } : {}),
       },
       onState: (next) => {
         if (!cancelled) setState(next);
@@ -161,8 +157,16 @@ export function LectureAudioPlayer({ noteId, attachment, noteTitle }: LectureAud
     void (async () => {
       const first = await engine.load(url);
       if (cancelled) return;
-      if (first.ok) return;
-      logLectureMedia('audio:load', { noteId, attachmentId, message: first.message });
+      if (first.ok) {
+        // The SUCCESS path logs too — one line per load, never per tick.
+        // Round 2d played a whole recording end to end and logcat carried no
+        // `[lecture-media]` line at all, because the tag only ever fired on
+        // failure: a silent log could not be told apart from instrumentation
+        // that was never wired up. Now a clean session proves itself.
+        logLectureMedia('audio:load', { noteId, attachmentId, ok: true });
+        return;
+      }
+      logLectureMedia('audio:load', { noteId, attachmentId, ok: false, message: first.message });
       // One re-sign, once: a URL minted seconds ago that still will not open is
       // a missing object, not an expiry, and retrying forever just spins.
       if (resignedRef.current) {
@@ -199,6 +203,24 @@ export function LectureAudioPlayer({ noteId, attachment, noteTitle }: LectureAud
       engine.destroy();
     };
   }, [url, title, resign, noteId, attachmentId]);
+
+  // The mark may land after the player did. Re-titling is cosmetic and already
+  // swallows its own failures, so this can never cost the recording.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const artworkUrl = await resolveLockScreenArtworkUrl();
+      if (cancelled || !artworkUrl) return;
+      engineRef.current?.updateNowPlaying({
+        title,
+        artist: 'Lantern Study',
+        artworkUrl,
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [url, title]);
 
   const seekToRatio = (ratio: number) => {
     const { durationMs } = state;

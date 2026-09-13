@@ -109,6 +109,18 @@ async function persistConversationId(id: string | null, scopeId: string | null =
   }
 }
 
+/**
+ * An attachment waiting on the next question.
+ *
+ * `previewUri` is the phone's own copy of the picked file. It never leaves the
+ * device — the server reads only `attachmentId` off this object — it exists so
+ * the composer chip can show the photo the student chose rather than a glyph
+ * that could be any picture.
+ */
+export type PendingCompanionImage = CompanionImageAttachment & {
+  previewUri?: string;
+};
+
 interface CompanionState {
   isOpen: boolean;
   open: () => void;
@@ -192,7 +204,7 @@ interface CompanionState {
    * for) at pick time — the read is what costs credits, so the chip can state
    * the word count before anything is typed.
    */
-  pendingImages: CompanionImageAttachment[];
+  pendingImages: PendingCompanionImage[];
   isUploadingImage: boolean;
   imageError: string | null;
   /** The small print behind the composer's "Details" toggle (file, migration). */
@@ -201,7 +213,9 @@ interface CompanionState {
     base64Data: string;
     fileName?: string;
     contentType?: string;
-  }) => Promise<CompanionImageAttachment | null>;
+    /** The picked asset's on-device uri, for the chip's thumbnail. */
+    previewUri?: string;
+  }) => Promise<PendingCompanionImage | null>;
   removeImage: (attachmentId: string) => void;
   clearPendingImages: () => void;
   clearImageError: () => void;
@@ -230,7 +244,13 @@ function mergeThreadContext(
     ...(conversationId ? { conversationId } : { conversationId: undefined }),
     ...(pendingNew && !conversationId ? { newConversation: true } : {}),
     // The server trusts only the ids in here; the text rides along for the chip.
-    ...(images.length ? { imageAttachments: images } : { imageAttachments: undefined }),
+    // `previewUri` is stripped: it is a local file:// path on this phone and
+    // means nothing to the server.
+    ...(images.length
+      ? {
+          imageAttachments: images.map(({ previewUri: _previewUri, ...image }) => image),
+        }
+      : { imageAttachments: undefined }),
   };
 }
 
@@ -268,7 +288,17 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   attachImage: async (input) => {
     set({ isUploadingImage: true, imageError: null, imageErrorDetail: null });
     try {
-      const attachment = await uploadCompanionImage(input);
+      const uploaded = await uploadCompanionImage({
+        base64Data: input.base64Data,
+        fileName: input.fileName,
+        contentType: input.contentType,
+      });
+      // The stored copy's signed URL needs a fetch and an auth round trip; the
+      // picked file is already on the device, so the chip can show the actual
+      // photo immediately instead of a generic glyph.
+      const attachment: PendingCompanionImage = input.previewUri
+        ? { ...uploaded, previewUri: input.previewUri }
+        : uploaded;
       set((s) => ({
         pendingImages: [...s.pendingImages, attachment],
         isUploadingImage: false,

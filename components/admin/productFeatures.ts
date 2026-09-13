@@ -46,6 +46,36 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'ink-pivot-lockscreen-photos-1-0-52',
+    title: 'One dark ink instead of blue, lecture controls on the lock screen, photos in Lantern AI (1.0.52)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-12',
+    summary:
+      'Buttons, links, active states, text, icons and the app icon now share one near-black ink on web and mobile; in dark mode they invert. The Android splash is a rounded square on cream. A playing lecture gets a media notification and lock-screen controls with the note’s title, and keeps playing in the background. Lantern AI can read a photo of a page or slide (2 AI uses) and answer about it. Recordings and PDFs that cannot be opened now say why, and PDFs open in the phone’s own viewer.',
+    details: [
+      'Primary, text and glyph tokens unified on #191919 light / #f5f5f5 dark with neutral grey secondaries, in packages/shared tokens and index.css together; “Default” accent is the ink, custom accents untouched.',
+      'Navigation pills, dots and filters are ink/outline controls; feature pastels stay on tiles and discs; lilac stays only on citation chips.',
+      'Android 12 masks the splash to a circle, so the mark is inscribed inside that circle (440/1024) and reads as a rounded square.',
+      'Lecture audio moved to expo-audio with a lock-screen media session; registering the session can never block playback, and artwork is a real file URL.',
+      'Companion photo attach: POST /ai/companion/attachments (OCR, 2 credits, fenced as untrusted text); the queue processor now feeds the transcript to the model; the “+” sheet offers Add image, Take photo, Attach a note.',
+      'PDF preview no longer uses Google’s viewer; Android shows a card with name and size and opens the file in a system app; iOS renders it in-app.',
+      'High-contrast mode detected dark by a literal slate hex and would have painted dialogs black on black; detection is now luminance-based.',
+    ],
+    howToUse: [
+      'Library → a lecture note → Audio → play: pull down the shade for the media controls; lock the phone for the lock-screen controls.',
+      'Ask Lantern → “+” → Add image or Take photo (2 AI uses): the chip shows the photo and its word count; ask about it.',
+      'Settings → Appearance: “Default” accent is the ink; pick any preset to colour buttons instead.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Two migrations are hand-applied: 20260912090000_companion_message_citations.sql and 20260912100000_companion_image_attachments.sql. Until the second is applied, Add image answers “Photos need a server update — try again later.”',
+      'Lock-screen controls cannot be verified on an emulator whose keyguard is disabled.',
+      'Open PDF on Android uses the share sheet; a direct viewer intent needs expo-intent-launcher, not yet added.',
+    ],
+    commits: ['83251ef7'],
+  },
+  {
     id: 'turn-into-and-due-counts-1-0-51',
     title:
       'Turn any Lantern AI answer into cards, a test or a lesson; Home counts due cards one way (1.0.51)',

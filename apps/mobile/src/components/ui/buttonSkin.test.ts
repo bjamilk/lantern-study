@@ -71,10 +71,10 @@ describe.each(MODES)('Button primary skin ($mode)', ({ mode, palette }) => {
   });
 
   it('is not the indigo this pivot removed', () => {
+    // The historical indigo trio, pinned by value: `primary*` are now the ink
+    // itself, so reading them from the theme would assert against the fill.
     const indigo = [
-      lanternColors.primary,
-      lanternColors.primaryLight,
-      lanternColors.primaryDark,
+      '#4338ca',
       '#4f46e5',
       '#6366f1',
       '#818cf8',

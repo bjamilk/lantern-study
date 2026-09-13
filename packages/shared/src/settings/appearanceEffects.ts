@@ -78,12 +78,27 @@ export function getAppearanceEffectFlags(settings: UserSettings): AppearanceEffe
   };
 }
 
+/**
+ * High contrast pushes the ink to the ends of its own ramp.
+ *
+ * Which end depends on the THEME, and that used to be decided by
+ * `colors.text === '#f8fafc'` — a literal comparison against dark's ink of
+ * the day. The moment that token changed (dark's ink is `#f5f5f5` now, the
+ * neutral twin of light's, not slate-50), every dark palette failed the test
+ * and was treated as light: black title and near-black body painted onto the
+ * near-black card, 1.12:1. A setting whose entire purpose is legibility made
+ * the dialog unreadable, silently, with no other edit anywhere near it.
+ *
+ * So ask the ink how light it is, not what it equals. The inks below are the
+ * neutral ends of the same ramp the palettes use — never slate.
+ */
 export function applyHighContrastToColors<T extends Record<string, string>>(colors: T): T {
+  const isDarkTheme = relativeLuminance(colors.text || '#000000') > 0.5;
   return {
     ...colors,
-    text: colors.text === '#f8fafc' ? '#ffffff' : '#000000',
-    textSecondary: colors.text === '#f8fafc' ? '#e2e8f0' : '#1e293b',
-    border: colors.text === '#f8fafc' ? '#64748b' : '#334155',
+    text: isDarkTheme ? '#ffffff' : '#000000',
+    textSecondary: isDarkTheme ? '#e6e6e6' : '#1a1a1a',
+    border: isDarkTheme ? '#8c8c8c' : '#333333',
   } as T;
 }
 

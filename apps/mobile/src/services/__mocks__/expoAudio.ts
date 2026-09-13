@@ -21,6 +21,8 @@ export class MockAudioPlayer {
   static instances: MockAudioPlayer[] = [];
   /** Set by a test to model a device that refuses the lock-screen session. */
   static lockScreenError: string | null = null;
+  /** Set by a test to model a native player that will not construct at all. */
+  static createError: string | null = null;
 
   calls: MockAudioPlayerCall[] = [];
   listeners: ((status: unknown) => void)[] = [];
@@ -80,6 +82,7 @@ export class MockAudioPlayer {
 }
 
 export function createAudioPlayer(_source?: unknown, _options?: unknown) {
+  if (MockAudioPlayer.createError) throw new Error(MockAudioPlayer.createError);
   const player = new MockAudioPlayer();
   MockAudioPlayer.instances.push(player);
   return player as unknown as never;
@@ -92,6 +95,7 @@ export async function setAudioModeAsync(_mode: unknown): Promise<void> {
 export function __resetExpoAudioMock() {
   MockAudioPlayer.instances = [];
   MockAudioPlayer.lockScreenError = null;
+  MockAudioPlayer.createError = null;
 }
 
 export type AudioPlayer = MockAudioPlayer;

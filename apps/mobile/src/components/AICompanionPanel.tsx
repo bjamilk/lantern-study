@@ -10,6 +10,7 @@ import {
   Platform,
   ActivityIndicator,
   AppState,
+  Image,
 } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 // The same engine the recap and lesson studios narrate with, so "Read aloud"
@@ -54,7 +55,7 @@ const MOBILE_ACTION_ROUTES: Partial<Record<CompanionAction['type'], (payload?: R
 import { useAuthStore } from '../stores/authStore';
 import { profileDisplayName } from '../hooks/profileIdentity';
 import { useAppTheme, useTheme } from '../theme';
-import { Button, T, useFeatureAccent } from './ui';
+import { ActionSheet, Button, T, useFeatureAccent } from './ui';
 import { FormattedBubbleText, BubbleTypingIndicator } from './companion/BubbleText';
 import { CompanionEmptyState } from './companion/CompanionEmptyState';
 import { CompanionHistory } from './companion/CompanionHistory';
@@ -296,6 +297,8 @@ export function AICompanionPanel({ context }: Props) {
           base64Data: asset.base64,
           fileName: asset.fileName || 'photo.jpg',
           contentType: asset.mimeType || undefined,
+          // The chip shows THIS picture, not a stand-in glyph.
+          previewUri: asset.uri || undefined,
         });
         if (attached && attached.wordCount === 0) {
           showToast('No readable text in that image — try a sharper, closer photo.', 'info');
@@ -320,13 +323,22 @@ export function AICompanionPanel({ context }: Props) {
     [attachImage, pendingImages.length, showToast]
   );
 
-  const handleAddImage = useCallback(() => {
-    appAlert('Add image', IMAGE_ATTACH_COST_LABEL, [
-      { text: 'Take photo', onPress: () => void pickCompanionImage('camera') },
-      { text: 'Photo library', onPress: () => void pickCompanionImage('library') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
-  }, [pickCompanionImage]);
+  /**
+   * One "+" , one sheet.
+   *
+   * The phone used to answer "+" with the note picker and keep a second button
+   * for photos, so the price line ("Reading a photo costs 2 AI uses") lived in
+   * an accessibility label nobody hears. Everything attachable is now one list,
+   * and the cost is printed under the two entries that charge for it.
+   */
+  const [showAttachSheet, setShowAttachSheet] = useState(false);
+
+  const handleAttachImage = useCallback(
+    (source: 'library' | 'camera') => {
+      void pickCompanionImage(source);
+    },
+    [pickCompanionImage]
+  );
 
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
@@ -798,6 +810,9 @@ export function AICompanionPanel({ context }: Props) {
   );
 
   const isBusy = isLoading || isStreaming || isLoadingHistory;
+  /** "+" reads as filled while anything is actually attached to this turn. */
+  const attachActive =
+    showAttachSheet || showNotePicker || Boolean(activeNoteContext) || pendingImages.length > 0;
   const dictationBusy = isRecording || isTranscribing;
 
   const handleOpenHistory = useCallback(() => {
@@ -1022,7 +1037,12 @@ export function AICompanionPanel({ context }: Props) {
           <Pressable onPress={handleDeleteChat} className="p-2" accessibilityLabel="Delete this chat">
             <AppIcon name="trash" size={20} color={colors.textTertiary} />
           </Pressable>
-          <Pressable onPress={close} className="p-2">
+          <Pressable
+            onPress={close}
+            className="p-2"
+            accessibilityRole="button"
+            accessibilityLabel="Close Lantern AI"
+          >
             <AppIcon name="close" size={24} color={colors.textTertiary} />
           </Pressable>
         </View>
@@ -1404,6 +1424,39 @@ export function AICompanionPanel({ context }: Props) {
             </View>
           ) : null}
 
+          <ActionSheet
+            visible={showAttachSheet}
+            title="Attach to this question"
+            onClose={() => setShowAttachSheet(false)}
+            items={[
+              {
+                label: 'Add image',
+                icon: 'image',
+                hint: IMAGE_ATTACH_COST_LABEL,
+                accessibilityLabel: `Add image (${IMAGE_ATTACH_COST_LABEL})`,
+                disabled: pendingImages.length >= MAX_IMAGE_ATTACHMENTS,
+                onPress: () => handleAttachImage('library'),
+              },
+              {
+                label: 'Take photo',
+                icon: 'camera',
+                hint: IMAGE_ATTACH_COST_LABEL,
+                accessibilityLabel: `Take photo (${IMAGE_ATTACH_COST_LABEL})`,
+                disabled: pendingImages.length >= MAX_IMAGE_ATTACHMENTS,
+                onPress: () => handleAttachImage('camera'),
+              },
+              {
+                label: 'Attach a note',
+                icon: 'document-text',
+                // Free, and saying nothing is how a student assumes otherwise
+                // when the two rows above it both carry a price.
+                hint: 'Grounds the answer in your note — no AI uses',
+                accessibilityLabel: 'Attach a note as context',
+                onPress: () => setShowNotePicker(true),
+              },
+            ]}
+          />
+
           {pendingImages.length ? (
             <View className="mb-2 flex-row flex-wrap items-center gap-2">
               {pendingImages.map((image) => (
@@ -1411,7 +1464,16 @@ export function AICompanionPanel({ context }: Props) {
                   key={image.attachmentId}
                   className="flex-row items-center rounded-full bg-lantern-background-secondary px-2 py-1.5"
                 >
-                  <AppIcon name="image" size={14} color={colors.text} />
+                  {image.previewUri ? (
+                    <Image
+                      source={{ uri: image.previewUri }}
+                      style={{ width: 22, height: 22, borderRadius: 5 }}
+                      resizeMode="cover"
+                      accessibilityIgnoresInvertColors
+                    />
+                  ) : (
+                    <AppIcon name="image" size={14} color={colors.text} />
+                  )}
                   <T.Caption
                     style={{ marginLeft: 6, marginRight: 8, flexShrink: 1, color: colors.text }}
                     numberOfLines={1}
@@ -1454,43 +1516,20 @@ export function AICompanionPanel({ context }: Props) {
 
           <View className="flex-row items-end gap-2">
             <Pressable
-              onPress={handleAddImage}
-              disabled={isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS}
+              onPress={() => setShowAttachSheet(true)}
+              disabled={isBusy || isUploadingImage}
               accessibilityRole="button"
-              accessibilityLabel={`Add image (${IMAGE_ATTACH_COST_LABEL})`}
-              style={pendingImages.length ? { backgroundColor: inkFill } : undefined}
+              accessibilityLabel="Attach to this question"
+              style={attachActive ? { backgroundColor: inkFill } : undefined}
               className={`h-11 w-11 items-center justify-center rounded-full ${
-                pendingImages.length ? '' : 'bg-lantern-background-secondary'
-              } ${isBusy || isUploadingImage || pendingImages.length >= MAX_IMAGE_ATTACHMENTS ? 'opacity-40' : ''}`}
+                attachActive ? '' : 'bg-lantern-background-secondary'
+              } ${isBusy || isUploadingImage ? 'opacity-40' : ''}`}
             >
               {isUploadingImage ? (
-                <ActivityIndicator
-                  size="small"
-                  color={pendingImages.length ? inkGlyph : colors.text}
-                />
+                <ActivityIndicator size="small" color={attachActive ? inkGlyph : colors.text} />
               ) : (
-                <AppIcon
-                  name="image"
-                  size={20}
-                  color={pendingImages.length ? inkGlyph : colors.text}
-                />
+                <AppIcon name="add" size={22} color={attachActive ? inkGlyph : colors.text} />
               )}
-            </Pressable>
-            <Pressable
-              onPress={() => setShowNotePicker((v) => !v)}
-              disabled={isBusy}
-              accessibilityRole="button"
-              accessibilityLabel="Attach a note as context"
-              style={showNotePicker || activeNoteContext ? { backgroundColor: inkFill } : undefined}
-              className={`h-11 w-11 items-center justify-center rounded-full ${
-                showNotePicker || activeNoteContext ? '' : 'bg-lantern-background-secondary'
-              } ${isBusy ? 'opacity-40' : ''}`}
-            >
-              <AppIcon
-                name="add"
-                size={22}
-                color={showNotePicker || activeNoteContext ? inkGlyph : colors.text}
-              />
             </Pressable>
             <Pressable
               onPress={() => {

@@ -8,7 +8,9 @@ import {
   isAtEnd,
   jumpTargetMs,
   lectureAudioReducer,
+  lockScreenMetadata,
   remoteCommandToCommand,
+  sanitizeLockScreenArtworkUrl,
   type LectureAudioState,
 } from './lectureAudioEngine';
 import { MockAudioPlayer, __resetExpoAudioMock } from './__mocks__/expoAudio';
@@ -195,6 +197,54 @@ describe('LectureAudioEngine', () => {
     engine.destroy();
   });
 
+  it('plays even when the device refuses the lock-screen session', async () => {
+    // Round 2c: Android threw MalformedURLException out of
+    // setActiveForLockScreen and the student was told the recording "could not
+    // be opened" — with nothing wrong with the recording.
+    MockAudioPlayer.lockScreenError =
+      "Cannot cast 'String' for field 'artworkUrl' ('java.net.URL?')";
+    const warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { engine } = build();
+    const result = await engine.load('https://example.test/lecture.m4a');
+    expect(result).toEqual({ ok: true });
+    const player = MockAudioPlayer.instances[0];
+    expect(player.calls.some((call) => call.method === 'remove')).toBe(false);
+    player.emit({ isLoaded: true, playing: false, currentTime: 0, duration: 120 });
+    expect(engine.getState()).toMatchObject({ phase: 'ready' });
+    expect(warn).toHaveBeenCalledWith('[lecture-media]', expect.stringContaining('lockscreen'));
+    warn.mockRestore();
+    engine.destroy();
+  });
+
+  it('never sends a bare bundled-asset key as the artwork URL', async () => {
+    const seen: LectureAudioState[] = [];
+    const engine = new LectureAudioEngine({
+      nowPlaying: {
+        title: 'Pharmacology week 4',
+        artist: 'Lantern Study',
+        artworkUrl: 'assets_icon',
+      },
+      onState: (next) => seen.push(next),
+    });
+    await engine.load('https://example.test/lecture.m4a');
+    const claim = MockAudioPlayer.instances[0].calls.find(
+      (call) => call.method === 'setActiveForLockScreen'
+    );
+    expect(claim?.args[1]).not.toHaveProperty('artworkUrl');
+    engine.updateNowPlaying({
+      title: 'Pharmacology week 4',
+      artist: 'Lantern Study',
+      artworkUrl: 'file:///data/user/0/com.lanternstudy.app/cache/icon.png',
+    });
+    const update = MockAudioPlayer.instances[0].calls.find(
+      (call) => call.method === 'updateLockScreenMetadata'
+    );
+    expect(update?.args[0]).toMatchObject({
+      artworkUrl: 'file:///data/user/0/com.lanternstudy.app/cache/icon.png',
+    });
+    engine.destroy();
+  });
+
   it('feeds native status frames through the reducer', async () => {
     const { engine } = build();
     await engine.load('https://example.test/lecture.m4a');
@@ -260,7 +310,9 @@ describe('LectureAudioEngine', () => {
   });
 
   it('surfaces the native reason when a source will not open', async () => {
-    MockAudioPlayer.lockScreenError = 'AudioFocus denied by the system.';
+    // A native construction fault, not a lock-screen refusal: the lock screen
+    // is optional and no longer fails a load (see the test above).
+    MockAudioPlayer.createError = 'AudioFocus denied by the system.';
     const { engine } = build();
     const result = await engine.load('https://example.test/lecture.m4a');
     expect(result).toEqual({ ok: false, message: 'AudioFocus denied by the system.' });
@@ -315,5 +367,29 @@ describe('LectureAudioEngine', () => {
     const before = seen.length;
     player.emit({ isLoaded: true, playing: true, currentTime: 99, duration: 120 });
     expect(seen.length).toBe(before);
+  });
+});
+
+describe('sanitizeLockScreenArtworkUrl', () => {
+  it('accepts only a URL a JVM can parse', () => {
+    expect(sanitizeLockScreenArtworkUrl('https://cdn.test/mark.png')).toBe(
+      'https://cdn.test/mark.png'
+    );
+    expect(sanitizeLockScreenArtworkUrl('file:///data/cache/icon.png')).toBe(
+      'file:///data/cache/icon.png'
+    );
+    // java.net.URL: "no protocol: assets_icon".
+    expect(sanitizeLockScreenArtworkUrl('assets_icon')).toBeUndefined();
+    expect(sanitizeLockScreenArtworkUrl('/assets/icon.png')).toBeUndefined();
+    expect(sanitizeLockScreenArtworkUrl('  ')).toBeUndefined();
+    expect(sanitizeLockScreenArtworkUrl(undefined)).toBeUndefined();
+  });
+
+  it('always carries a title and artist, with or without artwork', () => {
+    expect(lockScreenMetadata({ title: 'Week 4', artist: 'Lantern Study' })).toEqual({
+      title: 'Week 4',
+      artist: 'Lantern Study',
+      albumTitle: 'Lantern Study',
+    });
   });
 });

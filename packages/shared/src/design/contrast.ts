@@ -211,7 +211,7 @@ export function allContrastChecks(): ContrastCheck[] {
  * composited over the surface and over the page.
  *
  * 2026-09-12 colour pivot: `primaryFill` is now the theme's ink, so it
- * inverts, and the label on it is `textInverse` — white in light, #0f172a in
+ * inverts, and the label on it is `textInverse` — white in light, #191919 in
  * dark. Gating it against a hardcoded white would have passed light at 16.9:1
  * and failed dark at 1.04:1.
  */

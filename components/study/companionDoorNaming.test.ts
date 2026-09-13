@@ -29,4 +29,11 @@ describe('the companion door wears one name on web', () => {
       expect(source).not.toContain('Open in Lantern AI');
     }
   });
+
+  it('labels the Library note door Ask Lantern, never Ask AI', () => {
+    const source = fs.readFileSync(path.join(__dirname, '../NoteEditorScreen.tsx'), 'utf8');
+    expect(source).toContain('Ask Lantern');
+    expect(source).not.toContain('Ask AI');
+    expect(source).not.toContain('Open in Lantern AI');
+  });
 });

@@ -161,6 +161,30 @@ export async function createCompanionImageAttachment(params: {
   };
 }
 
+/**
+ * The attachment ids on a chat turn, from either shape a client may send.
+ *
+ * Clients post the whole `CompanionImageAttachment` objects the upload handed
+ * back (so the composer chip can keep its word count without a second round
+ * trip); only the ids in them are ever believed. Kept here, next to the reader
+ * that consumes them, because BOTH entry points need it — the HTTP route and
+ * the BullMQ processor that actually answers `/message` in production.
+ */
+export function collectCompanionImageAttachmentIds(context?: {
+  imageAttachmentIds?: unknown;
+  imageAttachments?: unknown;
+}): string[] {
+  const direct = Array.isArray(context?.imageAttachmentIds) ? context!.imageAttachmentIds : [];
+  const fromObjects = Array.isArray(context?.imageAttachments)
+    ? (context!.imageAttachments as Array<{ attachmentId?: unknown } | null>).map(
+        (item) => item?.attachmentId
+      )
+    : [];
+  return [...direct, ...fromObjects].filter(
+    (id): id is string => typeof id === 'string' && id.trim().length > 0
+  );
+}
+
 export type TrustedCompanionImage = {
   id: string;
   title: string;

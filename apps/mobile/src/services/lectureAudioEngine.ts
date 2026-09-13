@@ -60,6 +60,49 @@ export interface LectureAudioNowPlaying {
   artworkUrl?: string;
 }
 
+/**
+ * Android's `expo.modules.audio.Metadata` types `artworkUrl` as
+ * `java.net.URL?`, so ANY string without a protocol throws
+ * `MalformedURLException` straight out of `setActiveForLockScreen`. The value
+ * that shipped was `Image.resolveAssetSource(require('icon.png')).uri`, which
+ * in a release build is the bare bundled-asset key `assets_icon` — not a URL.
+ *
+ * So the engine accepts only an absolute URL a JVM will parse: http(s) for a
+ * remote mark, file:// for the bundled one after `expo-asset` has unpacked it
+ * (see `lockScreenArtwork.ts`). Anything else is dropped — artwork is the most
+ * optional field on the session, and a wrong one used to cost the lecture.
+ */
+export function sanitizeLockScreenArtworkUrl(value?: string | null): string | undefined {
+  const url = (value ?? '').trim();
+  if (!url) return undefined;
+  return /^(https?|file):\/\/./i.test(url) ? url : undefined;
+}
+
+/** The metadata payload handed to both lock-screen calls. */
+export function lockScreenMetadata(nowPlaying: LectureAudioNowPlaying): {
+  title: string;
+  artist: string;
+  albumTitle: string;
+  artworkUrl?: string;
+} {
+  const artworkUrl = sanitizeLockScreenArtworkUrl(nowPlaying.artworkUrl);
+  return {
+    title: nowPlaying.title,
+    artist: nowPlaying.artist,
+    albumTitle: nowPlaying.artist,
+    ...(artworkUrl ? { artworkUrl } : {}),
+  };
+}
+
+/**
+ * Local on purpose: `noteAttachmentUrl.logLectureMedia` drags supabase in, and
+ * this file is imported by the pure engine tests. Same `[lecture-media]` tag,
+ * so one logcat filter still catches every hop.
+ */
+function logLectureMedia(step: string, detail: Record<string, unknown>): void {
+  console.warn('[lecture-media]', JSON.stringify({ step, ...detail }));
+}
+
 export interface LectureAudioState {
   /**
    * `idle` before a source is handed over, `loading` while one is opening,
@@ -338,18 +381,24 @@ export class LectureAudioEngine {
       // Claim the lock screen / notification transport for this recording.
       // Only one player owns it at a time, which suits a lecture surface where
       // one recording plays at a time.
-      player.setActiveForLockScreen(
-        true,
-        {
-          title: this.options.nowPlaying.title,
-          artist: this.options.nowPlaying.artist,
-          albumTitle: this.options.nowPlaying.artist,
-          ...(this.options.nowPlaying.artworkUrl
-            ? { artworkUrl: this.options.nowPlaying.artworkUrl }
-            : {}),
-        },
-        { showSeekForward: true, showSeekBackward: true }
-      );
+      //
+      // NON-FATAL, and that is the whole point of the inner try: on Android
+      // `Metadata.artworkUrl` is a `java.net.URL`, so a bare bundled-asset key
+      // ("assets_icon") threw MalformedURLException out of this call, the outer
+      // catch tore the player down, and the student was told the recording
+      // "could not be opened" when the audio itself was fine (Round 2c, check
+      // 3). Playback must never depend on the lock-screen integration.
+      try {
+        player.setActiveForLockScreen(
+          true,
+          lockScreenMetadata(this.options.nowPlaying),
+          { showSeekForward: true, showSeekBackward: true }
+        );
+      } catch (error) {
+        logLectureMedia('lockscreen', {
+          message: error instanceof Error && error.message ? error.message : String(error),
+        });
+      }
       return { ok: true };
     } catch (error) {
       // A lock-screen session that will not open must not cost the student the
@@ -370,12 +419,7 @@ export class LectureAudioEngine {
   updateNowPlaying(nowPlaying: LectureAudioNowPlaying) {
     if (!this.player) return;
     try {
-      this.player.updateLockScreenMetadata({
-        title: nowPlaying.title,
-        artist: nowPlaying.artist,
-        albumTitle: nowPlaying.artist,
-        ...(nowPlaying.artworkUrl ? { artworkUrl: nowPlaying.artworkUrl } : {}),
-      });
+      this.player.updateLockScreenMetadata(lockScreenMetadata(nowPlaying));
     } catch {
       // Metadata is cosmetic; a refusal must not break playback.
     }

@@ -50,11 +50,21 @@ const lightBase = {
   surfaceSecondary: '#f1f5f9',
   card: '#ffffff',
   cardSecondary: '#f1f5f9',
-  text: '#0f172a',
-  textSecondary: '#475569',
+  // 2026-09-12 one-ink pass: body copy and glyphs ship in the SAME near-black
+  // as the filled controls (`ink` / `primaryFill` = #191919). Before this the
+  // app shipped two dark inks at once — #191919 pills beside #0f172a
+  // (slate-900) glyphs — which read as a printing error on the device pass.
+  // 17.58:1 on white, 16.56 on cream: one step off the old slate.
+  text: '#191919',
+  // Derived as NEUTRAL greys of that ink, not slate-tinted: StudyFetch's body
+  // copy is a neutral near-black, and a slate secondary under a neutral
+  // primary is the same two-ink tell one level down. Both land ABOVE the
+  // slate values they replace (7.81 vs 7.58 on white).
+  textSecondary: '#525252',
   // UI-02: #64748b was 4.39:1 on the warm background at the 10-12px sizes
-  // this token styles; #5b6a7f clears 4.5:1 on cream and white.
-  textTertiary: '#5b6a7f',
+  // this token styles; the neutral #666666 clears AA everywhere the old
+  // #5b6a7f did (5.74 white / 5.41 cream / 4.53 on the putty tint).
+  textTertiary: '#666666',
   textInverse: '#ffffff',
   /**
    * @deprecated The legacy DUAL-ROLE token. It is the value each theme
@@ -119,11 +129,12 @@ const lightBase = {
   tabBar: '#ffffff',
   tabBarBorder: '#eceae0',
   tabBarActive: lanternColors.primary,
-  tabBarInactive: '#5b6a7f',
+  tabBarInactive: '#666666',
   inputBackground: '#f1f5f9',
   inputBorder: '#c5cedd',
-  inputText: '#0f172a',
-  inputPlaceholder: '#5b6a7f',
+  inputText: '#191919',
+  // Neutral twin of `textTertiary` (same one-ink rule).
+  inputPlaceholder: '#666666',
   modalOverlay: 'rgba(0, 0, 0, 0.5)',
   modalBackground: '#ffffff',
   switchTrackOn: '#19191980',
@@ -154,11 +165,20 @@ const darkBase = {
   surfaceSecondary: '#1a1d21',
   card: '#101214',
   cardSecondary: '#1a1d21',
-  text: '#f8fafc',
-  textSecondary: '#94a3b8',
-  // UI-01: #64748b was ~3.5–3.9:1 on dark surfaces; #8494a8 clears 4.5:1 AA.
-  textTertiary: '#8494a8',
-  textInverse: '#0f172a',
+  // One ink, both themes. Dark's ink ramp is the NEUTRAL twin of light's
+  // (#191919 / #525252 / #666666), not slate: #f8fafc / #94a3b8 / #8494a8 are
+  // blue-tinted, so a dark screen read cooler than the light one it mirrors
+  // and `text` differed from `primary` (#f5f5f5) by a hair nobody chose.
+  // `text` IS dark's primary ink now, and the two greys below are plain greys.
+  text: '#f5f5f5',
+  textSecondary: '#b3b3b3',
+  // UI-01 still holds: this must clear 4.5:1 on every dark surface, which
+  // #8c8c8c does (6.25:1 on #000, 5.6:1 on #101214); #64748b did not.
+  textTertiary: '#8c8c8c',
+  // Dark's inverted pill is near-white, and the glyph on it is the SAME dark
+  // ink light mode paints text in (#191919, 16.13:1 on #f5f5f5) — not slate
+  // #0f172a. One dark ink across both themes.
+  textInverse: '#191919',
   chatBackground: '#000000',
   chatBubbleOwn: '#005c4b',
   chatBubbleOther: '#202c33',
@@ -176,7 +196,7 @@ const darkBase = {
   primaryBackground: '#f5f5f512',
   /**
    * The ink INVERTS here — a near-black pill on a black page is a hole. What
-   * sits on it is `textInverse` (#0f172a), which inverts with it: 15.9:1.
+   * sits on it is `textInverse` (#191919), which inverts with it: 16.1:1.
    * A white label on this fill would be 1.04:1, so `.dark` in index.css
    * forces the inverse ink onto the un-migrated `text-white` call sites.
    */
@@ -207,17 +227,17 @@ const darkBase = {
   tabBar: '#000000',
   tabBarBorder: '#2f3336',
   tabBarActive: '#f5f5f5',
-  tabBarInactive: '#8494a8',
+  tabBarInactive: '#8c8c8c',
   inputBackground: '#101214',
   inputBorder: '#2f3336',
-  inputText: '#f8fafc',
-  inputPlaceholder: '#8494a8',
+  inputText: '#f5f5f5',
+  inputPlaceholder: '#8c8c8c',
   modalOverlay: 'rgba(0, 0, 0, 0.7)',
   modalBackground: '#101214',
   switchTrackOn: '#f5f5f580',
   switchTrackOff: '#2f3336',
   switchThumbOn: '#f5f5f5',
-  switchThumbOff: '#8494a8',
+  switchThumbOff: '#8c8c8c',
 } as const;
 
 export const lightTheme = lightBase;

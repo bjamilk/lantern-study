@@ -29,6 +29,16 @@ describe('recorderDoorPrompt', () => {
     const now = new Date(2026, 0, 31);
     expect(recorderDoorPrompt(now).noteTitle).toBe(newLectureNoteTitle(now));
   });
+
+  it('names the lecture it will resume instead of creating a second row', () => {
+    const prompt = recorderDoorPrompt(new Date(2026, 8, 12), {
+      resumeTitle: 'Lecture — 12 Sep',
+    });
+    expect(prompt.title).toBe('Continue this lecture?');
+    expect(prompt.noteTitle).toBe('Lecture — 12 Sep');
+    expect(prompt.message).toContain('We\'ll open "Lecture — 12 Sep"');
+    expect(prompt.message).not.toContain('We\'ll create');
+  });
 });
 
 describe('shouldCreateLectureNote', () => {

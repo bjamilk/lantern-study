@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { WebView } from 'react-native-webview';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as WebBrowser from 'expo-web-browser';
 import type { NoteAttachment } from '../services/notes';
 import {
@@ -9,7 +10,17 @@ import {
   fetchNoteAttachmentUrl,
   logLectureMedia,
 } from '../services/noteAttachmentUrl';
+import {
+  attachmentSizeBytes,
+  cachedPdfFileName,
+  contentLengthBytes,
+  describePdfOpenFailure,
+  formatFileSize,
+  planPdfPreview,
+  type PdfPreviewPlan,
+} from './notePdfPreview';
 import { useTheme } from '../theme';
+import { T } from './ui';
 import { AppIcon } from './ui/AppIcon';
 
 interface NotePdfViewerProps {
@@ -20,18 +31,6 @@ interface NotePdfViewerProps {
   onScrollLockChange?: (locked: boolean) => void;
 }
 
-/**
- * Android WebView cannot load app cache file:// PDFs (net::ERR_ACCESS_DENIED)
- * and has no built-in PDF plugin. Use a signed HTTPS URL; on Android embed via
- * Google's viewer. Always offer an external open fallback.
- */
-function buildInAppViewerUri(signedUrl: string): string {
-  if (Platform.OS === 'android') {
-    return `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(signedUrl)}`;
-  }
-  return signedUrl;
-}
-
 export function NotePdfViewer({
   noteId,
   attachment,
@@ -40,11 +39,14 @@ export function NotePdfViewer({
 }: NotePdfViewerProps) {
   const { colors } = useTheme();
   const insets = useSafeAreaInsets();
-  const [viewerUri, setViewerUri] = useState<string | null>(null);
+  const [plan, setPlan] = useState<PdfPreviewPlan | null>(null);
   const [signedUrl, setSignedUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [webViewFailed, setWebViewFailed] = useState(false);
+  const [opening, setOpening] = useState(false);
+  /** Filled from the signed URL when the row never recorded a byte count. */
+  const [probedSize, setProbedSize] = useState<number | undefined>(undefined);
   /** What the WebView itself said. Shown instead of a guess about connectivity. */
   const [webViewReason, setWebViewReason] = useState<string | null>(null);
   // Fullscreen is a nested RN Modal, which is safe because the note editor is
@@ -66,15 +68,31 @@ export function NotePdfViewer({
     setError(null);
     setWebViewFailed(false);
     setWebViewReason(null);
-    setViewerUri(null);
+    setPlan(null);
     setSignedUrl(null);
+    setProbedSize(undefined);
 
     (async () => {
       try {
         const url = await fetchNoteAttachmentUrl(noteId, attachment.id);
         if (cancelled) return;
         setSignedUrl(url);
-        setViewerUri(buildInAppViewerUri(url));
+        setPlan(planPdfPreview(url, Platform.OS));
+        // Size, second source. Only when the row has none, only a HEAD (no
+        // body), and a refusal is silent — the card just keeps saying "PDF"
+        // rather than inventing a figure.
+        if (attachmentSizeBytes(attachment.metadata) === undefined) {
+          void (async () => {
+            try {
+              const head = await fetch(url, { method: 'HEAD' });
+              const bytes = contentLengthBytes(head.headers);
+              if (!cancelled && bytes) setProbedSize(bytes);
+            } catch {
+              // No size is an honest state; a failed probe is not an error
+              // the student can act on, so it never reaches the screen.
+            }
+          })();
+        }
       } catch (err: unknown) {
         if (!cancelled) {
           // The server's own sentence and status, never "you may be offline":
@@ -117,16 +135,62 @@ export function NotePdfViewer({
     }, 280);
   }, [setParentLocked]);
 
+  /**
+   * Open the file the student actually asked for.
+   *
+   * The signed URL is downloaded HERE, by the app, rather than handed to a
+   * remote renderer: the link is short-lived and scoped to this session, so
+   * anything else fetching it fails. The cached copy then goes to the system
+   * viewer through the share sheet (every Android phone has a PDF handler;
+   * iOS previews it inline). A browser tab on the signed URL is the fallback,
+   * and if even that refuses, the student reads OUR reason, with the status.
+   */
   const openExternally = useCallback(async () => {
     if (!signedUrl) return;
+    setOpening(true);
     try {
-      await WebBrowser.openBrowserAsync(signedUrl, {
-        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
-      });
-    } catch {
-      setError('Could not open document. Try again.');
+      const target = `${FileSystem.cacheDirectory}${cachedPdfFileName(attachment.fileName, attachment.id)}`;
+      const result = await FileSystem.downloadAsync(signedUrl, target);
+      // Third source, and the most certain one: this IS the file on disk.
+      const downloaded = contentLengthBytes(result.headers);
+      if (downloaded) setProbedSize(downloaded);
+      if (result.status >= 400) {
+        throw Object.assign(new Error('The file could not be downloaded.'), {
+          status: result.status,
+        });
+      }
+      // Lazy, like shareFile.ts: expo-sharing is a native module and a
+      // top-level import crashes any binary built before it existed.
+      const Sharing = await import('expo-sharing');
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(result.uri, {
+          mimeType: 'application/pdf',
+          UTI: 'com.adobe.pdf',
+          dialogTitle: attachment.fileName || 'Document',
+        });
+        return;
+      }
+      throw new Error('No app on this device can open a PDF.');
+    } catch (err: unknown) {
+      const status = (err as { status?: number } | null)?.status;
+      const message = err instanceof Error ? err.message : String(err);
+      logLectureMedia('pdf:open', { noteId, attachmentId: attachment.id, status, message });
+      try {
+        await WebBrowser.openBrowserAsync(signedUrl, {
+          presentationStyle: WebBrowser.WebBrowserPresentationStyle.FULL_SCREEN,
+        });
+      } catch (browserErr: unknown) {
+        logLectureMedia('pdf:open:browser', {
+          noteId,
+          attachmentId: attachment.id,
+          message: browserErr instanceof Error ? browserErr.message : String(browserErr),
+        });
+        setError(describePdfOpenFailure({ status, message }));
+      }
+    } finally {
+      setOpening(false);
     }
-  }, [signedUrl]);
+  }, [signedUrl, noteId, attachment.id, attachment.fileName]);
 
   const webViewFallback = (fallbackHeight?: number) => (
     <View className="items-center justify-center px-4 py-10" style={fallbackHeight ? { height: fallbackHeight } : { flex: 1 }}>
@@ -162,7 +226,7 @@ export function NotePdfViewer({
     );
   }
 
-  if (error || !viewerUri) {
+  if (error || !plan) {
     return (
       <View
         className="items-center justify-center py-8 px-4 rounded-xl border"
@@ -181,6 +245,54 @@ export function NotePdfViewer({
             <Text className="text-sm font-semibold text-white">Open document</Text>
           </Pressable>
         ) : null}
+      </View>
+    );
+  }
+
+  if (plan.kind === 'external') {
+    // Android: no in-app PDF renderer exists here without a new native
+    // dependency, so say so plainly and hand the file over, rather than
+    // embedding a remote viewer that cannot read a private signed link and
+    // blames the student's connection for it.
+    const sizeLabel = formatFileSize(attachmentSizeBytes(attachment.metadata) ?? probedSize);
+    return (
+      <View
+        className="rounded-xl border p-4"
+        style={{ borderColor: colors.border, backgroundColor: colors.surface }}
+      >
+        <View className="flex-row items-center gap-3">
+          <AppIcon name="document" size={28} color={colors.primaryText} />
+          <View className="flex-1">
+            <T.Body numberOfLines={2} style={{ fontWeight: '600' }}>
+              {attachment.fileName || 'Document'}
+            </T.Body>
+            <T.Label tone="tertiary" className="mt-0.5">
+              {sizeLabel ? `PDF · ${sizeLabel}` : 'PDF'}
+            </T.Label>
+          </View>
+        </View>
+        <T.Label tone="secondary" className="mt-3">
+          Android has no in-app PDF preview. Open it in your PDF app — the file is
+          downloaded from your own session, so it works on a private link.
+        </T.Label>
+        <Pressable
+          onPress={() => void openExternally()}
+          disabled={opening}
+          accessibilityRole="button"
+          accessibilityLabel="Open PDF"
+          accessibilityState={{ disabled: opening }}
+          className="flex-row items-center justify-center gap-2 px-4 py-2.5 rounded-xl mt-3"
+          style={{ backgroundColor: colors.primaryFill, opacity: opening ? 0.6 : 1 }}
+        >
+          {opening ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <AppIcon name="open" size={18} color="#fff" />
+          )}
+          <T.Label style={{ color: '#fff', fontWeight: '600' }}>
+            {opening ? 'Opening…' : 'Open PDF'}
+          </T.Label>
+        </Pressable>
       </View>
     );
   }
@@ -232,7 +344,7 @@ export function NotePdfViewer({
           onTouchCancel={unlockParentScroll}
         >
           <WebView
-            source={{ uri: viewerUri }}
+            source={{ uri: plan.kind === 'webview' ? plan.uri : '' }}
             style={{ flex: 1, height }}
             originWhitelist={['https://*', 'http://*']}
             startInLoadingState
@@ -323,7 +435,7 @@ export function NotePdfViewer({
             // No parent ScrollView inside the Modal, so none of the
             // scroll-lock choreography the inline preview needs.
             <WebView
-              source={{ uri: viewerUri }}
+              source={{ uri: plan.kind === 'webview' ? plan.uri : '' }}
               style={{ flex: 1 }}
               originWhitelist={['https://*', 'http://*']}
               startInLoadingState

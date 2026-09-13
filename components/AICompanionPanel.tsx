@@ -120,9 +120,12 @@ interface AICompanionPanelProps {
   theme?: 'light' | 'dark';
   /**
    * `drawer` is the overlay that follows every screen.
-   * `rail` is the docked pane in a course workspace — always visible, no close.
+   * `rail` is the docked pane in a course workspace — always visible, no close
+   * unless `closable` is set (Library note editor: the rail is optional).
    */
   variant?: 'drawer' | 'rail';
+  /** Show the close control on a rail so the note can take the column back. */
+  closable?: boolean;
   /**
    * Turn the attached note into a study product — the same six targets the
    * studios offer, reusing `TurnIntoMenu`.
@@ -219,6 +222,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   onOpenNote,
   theme = 'light',
   variant = 'drawer',
+  closable = false,
   onTurnInto,
   turnIntoExisting,
   onTurnIntoMessage,
@@ -906,7 +910,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             >
               <AppIcon name="trash" size={16} />
             </button>
-            {variant !== 'rail' && (
+            {(variant !== 'rail' || closable) && (
             <button
               onClick={close}
               title="Close"

@@ -54,15 +54,21 @@ export interface RecorderDoorPrompt {
   priceLine: string;
 }
 
-export function recorderDoorPrompt(now: Date = new Date()): RecorderDoorPrompt {
-  const noteTitle = newLectureNoteTitle(now);
+export function recorderDoorPrompt(
+  now: Date = new Date(),
+  options?: { resumeTitle?: string | null }
+): RecorderDoorPrompt {
+  const resumeTitle = options?.resumeTitle?.trim() || '';
+  const noteTitle = resumeTitle || newLectureNoteTitle(now);
   // Recording is free; transcribing is the charge, and its size depends on
   // how long the lecture runs. Both sentences are derived, never typed.
   const priceLine = `Recording is free. ${LECTURE_TRANSCRIPTION_PRICE_RULE} ${lectureCapacityLine()}`;
   return {
-    title: 'Start a lecture note?',
+    title: resumeTitle ? 'Continue this lecture?' : 'Start a lecture note?',
     // The name is quoted so the student knows what will be in their library.
-    message: `We'll create "${noteTitle}" and start recording straight away.\n\n${priceLine}`,
+    message: resumeTitle
+      ? `We'll open "${noteTitle}" and start recording.\n\n${priceLine}`
+      : `We'll create "${noteTitle}" and start recording straight away.\n\n${priceLine}`,
     confirmLabel: 'Start',
     cancelLabel: 'Cancel',
     noteTitle,

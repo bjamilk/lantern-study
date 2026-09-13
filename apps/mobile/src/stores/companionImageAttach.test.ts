@@ -89,6 +89,26 @@ describe('companion image attachments (mobile)', () => {
     expect(second.imageAttachments).toBeUndefined();
   });
 
+  it('keeps the picked file on the chip and off the wire', async () => {
+    const attached = await useCompanionStore
+      .getState()
+      .attachImage({ base64Data: 'AAAA', previewUri: 'file:///data/photo.jpg' });
+
+    // The chip draws the photo the student actually picked.
+    expect(attached?.previewUri).toBe('file:///data/photo.jpg');
+    expect(useCompanionStore.getState().pendingImages[0].previewUri).toBe(
+      'file:///data/photo.jpg'
+    );
+    // The upload takes bytes, not a path.
+    expect(uploadCompanionImage.mock.calls[0][0]).not.toHaveProperty('previewUri');
+
+    await useCompanionStore.getState().sendMessage('What is on this page?');
+    const [, context] = companionSendMessage.mock.calls[0] as unknown as [string, any];
+    // A file:// path on this phone means nothing to the server.
+    expect(context.imageAttachments[0]).not.toHaveProperty('previewUri');
+    expect(context.imageAttachments[0].attachmentId).toBe(ATTACHMENT.attachmentId);
+  });
+
   it('removes one attachment and clears the rest on demand', async () => {
     await useCompanionStore.getState().attachImage({ base64Data: 'AAAA' });
     uploadCompanionImage.mockResolvedValue({ ...ATTACHMENT, attachmentId: 'second-id' });

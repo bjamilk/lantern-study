@@ -38,6 +38,7 @@ import {
 import {
   CompanionImageTableMissingError,
   createCompanionImageAttachment,
+  collectCompanionImageAttachmentIds,
   loadTrustedCompanionImages,
 } from '../services/companionImageAttachments';
 
@@ -75,16 +76,9 @@ type CompanionRequestContext = Omit<CompanionContext, 'imageAttachments'> & {
   imageAttachments?: Array<{ attachmentId?: unknown }>;
 };
 
-/** Ids from either shape the clients may send. */
-function collectImageAttachmentIds(context?: CompanionRequestContext): string[] {
-  const direct = Array.isArray(context?.imageAttachmentIds) ? context!.imageAttachmentIds : [];
-  const fromObjects = Array.isArray(context?.imageAttachments)
-    ? context!.imageAttachments!.map((item) => item?.attachmentId)
-    : [];
-  return [...direct, ...fromObjects].filter(
-    (id): id is string => typeof id === 'string' && id.trim().length > 0
-  );
-}
+/** Ids from either shape the clients may send. Shared with the queue processor. */
+const collectImageAttachmentIds = (context?: CompanionRequestContext): string[] =>
+  collectCompanionImageAttachmentIds(context);
 
 function parseNoteContextId(value: unknown): string | null {
   return parseCompanionUuid(value);

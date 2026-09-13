@@ -13,7 +13,9 @@ import { useCompanionStore } from '../../stores/companionStore';
 import { useNotesStore } from '../../stores/notesStore';
 import { useToastStore } from '../../stores/toastStore';
 import { confirmSheet } from '../../stores/confirmStore';
+import { isLectureNote, resolveLectureStudioNote } from '@lantern/shared';
 import { recorderDoorPrompt, shouldCreateLectureNote } from '../../screens/study/recorderDoor';
+import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { AppIcon } from '../ui/AppIcon';
 import { useChrome } from './ChromeContext';
 import {
@@ -312,7 +314,23 @@ export function ContextualBar({
     if (openingRecorder) return;
     setOpeningRecorder(true);
     try {
-      const prompt = recorderDoorPrompt();
+      const lecture = useLectureRecordingStore.getState();
+      if (lecture.status !== 'idle' && lecture.noteId) {
+        onNavigate('NoteEditor', { noteId: lecture.noteId });
+        return;
+      }
+      const notesState = useNotesStore.getState();
+      const todayPrompt = recorderDoorPrompt();
+      const decision = resolveLectureStudioNote({
+        lectures: notesState.notes.filter(isLectureNote),
+        recordingNoteId: lecture.noteId,
+        todayTitle: todayPrompt.noteTitle,
+      });
+      const resumeTitle =
+        decision.action === 'resume'
+          ? notesState.notes.find((row) => row.id === decision.noteId)?.title || todayPrompt.noteTitle
+          : null;
+      const prompt = recorderDoorPrompt(new Date(), { resumeTitle });
       const confirmed = await confirmSheet({
         title: prompt.title,
         message: prompt.message,
@@ -320,6 +338,10 @@ export function ContextualBar({
         cancelLabel: prompt.cancelLabel,
       });
       if (!shouldCreateLectureNote(confirmed)) return;
+      if (decision.action === 'resume') {
+        onNavigate('NoteEditor', { noteId: decision.noteId, startRecording: true });
+        return;
+      }
       const note = await createNote({ title: prompt.noteTitle, body: '' });
       onNavigate('NoteEditor', { noteId: note.id, startRecording: true });
     } catch {

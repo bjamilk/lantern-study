@@ -39,6 +39,10 @@ import {
 import { logAIInference } from "../../services/aiInferenceLog";
 import { normalizeSurface, recordLearningEvent } from "../../services/learningEvents";
 import { buildTrustedCompanionContext } from "../../services/companionContext";
+import {
+  collectCompanionImageAttachmentIds,
+  loadTrustedCompanionImages,
+} from "../../services/companionImageAttachments";
 import { getStudyPackFactoryService } from "../../services/studyPackFactory";
 import {
   buildNarrationScript,
@@ -265,10 +269,27 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       }
       const client = supabaseService.getClient();
       await progress.stage("reading");
+      // Photos attached to this turn.
+      //
+      // In production BullMQ answers the JSON `/message` route — the ONLY
+      // route mobile uses, since React Native cannot read a streamed body — so
+      // this handler, not the one in routes/aiCompanion.ts, is what builds the
+      // prompt. It never loaded the transcripts, so a student was charged two
+      // AI uses to have a photo read and then told "I'm not seeing an image
+      // here". The ids are all that is believed; the text is read back from
+      // the table for rows this user owns, exactly as the HTTP path does.
       const trustedContext = await buildTrustedCompanionContext(
         supabaseService,
         userId,
-        (context || {}) as Parameters<typeof buildTrustedCompanionContext>[2],
+        {
+          ...((context || {}) as Parameters<typeof buildTrustedCompanionContext>[2]),
+          imageAttachments: undefined,
+        },
+      );
+      trustedContext.imageAttachments = await loadTrustedCompanionImages(
+        supabaseService,
+        userId,
+        collectCompanionImageAttachmentIds(context),
       );
       const threadNoteId = trustedContext.noteId || null;
       const conversation = await resolveConversationForSend(

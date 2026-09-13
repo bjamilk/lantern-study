@@ -124,11 +124,13 @@ svg[data-slot="icon"].w-24 {
   --color-ink: 25 25 25;
   --color-surface: 255 255 255;
   --color-surface-secondary: 241 245 249;
-  --color-text: 15 23 42;
-  --color-text-secondary: 71 85 105;
-  /* #64748b was 4.39:1 on the warm background — fails AA for the 10-12px
-     text this token mostly styles. #5b6a7f clears 4.5:1 on cream and white. */
-  --color-text-tertiary: 91 106 127;
+  /* 2026-09-12 one-ink pass: text and glyphs share the filled controls' ink
+     (#191919), not slate-900. The secondary/tertiary steps are NEUTRAL greys
+     of that ink (#525252 / #666666) and clear AA above the slate values they
+     replace. Mirrors packages/shared/src/design/tokens.ts. */
+  --color-text: 25 25 25;
+  --color-text-secondary: 82 82 82;
+  --color-text-tertiary: 102 102 102;
   /* 2026-09-12 colour pivot: primary is the theme's INK, not indigo. Light's
      ink is #191919 with white on it; `-light` (#333333) is hover and `-dark`
      (#000000) is pressed. Mirrors packages/shared/src/design/tokens.ts. */
@@ -244,13 +246,16 @@ svg[data-slot="icon"].w-24 {
   --color-nav-column-active: 56 56 56;
   --color-surface: 16 18 20;
   --color-surface-secondary: 26 29 33;
-  --color-text: 248 250 252;
-  --color-text-secondary: 148 163 184;
-  /* UI-01: raised for WCAG AA (≥4.5:1) on dark surfaces */
-  --color-text-tertiary: 132 148 168;
+  /* One ink, both themes: dark's ramp is the neutral twin of light's
+     (#191919/#525252/#666666), not slate. `text` IS dark's primary ink. */
+  --color-text: 245 245 245;
+  --color-text-secondary: 179 179 179;
+  /* UI-01 still holds: ≥4.5:1 on every dark surface (6.25:1 on #000). */
+  --color-text-tertiary: 140 140 140;
   /* The ink INVERTS in dark — a near-black pill on a black page is a hole —
      so the primary fill is near-white and what sits on it is the inverse ink
-     (#0f172a), forced onto un-migrated `text-white` call sites below. */
+     (#191919 — the same ink light mode writes in), forced onto un-migrated
+     `text-white` call sites below. */
   --color-primary: 245 245 245;
   --color-primary-light: 255 255 255;
   --color-primary-dark: 212 212 212;
@@ -333,7 +338,7 @@ svg[data-slot="icon"].w-24 {
 .dark .bg-lantern-primary-dark .text-white,
 .dark .bg-lantern-accent,
 .dark .bg-lantern-accent .text-white {
-  color: #0f172a;
+  color: #191919;
 }
 
 /* ===== Font modes scale the type; they do not swap the display face =====
@@ -595,7 +600,8 @@ body {
 .high-contrast .text-slate-500,
 .high-contrast .text-lantern-text-secondary,
 .high-contrast .text-lantern-text-tertiary {
-  color: rgb(15 23 42) !important;
+  /* #191919, light's own ink — not slate #0f172a (one ink, both themes). */
+  color: rgb(25 25 25) !important;
 }
 
 .dark.high-contrast .text-gray-400,
@@ -603,7 +609,8 @@ body {
 .dark.high-contrast .text-slate-400,
 .dark.high-contrast .text-lantern-text-secondary,
 .dark.high-contrast .text-lantern-text-tertiary {
-  color: rgb(248 250 252) !important;
+  /* #f5f5f5, dark's own ink — not slate-50. */
+  color: rgb(245 245 245) !important;
 }
 
 .font-size-small {

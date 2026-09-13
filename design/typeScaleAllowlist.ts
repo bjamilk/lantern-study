@@ -115,7 +115,7 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/NoteCollaboratorsModal.tsx': 17,
   'components/NoteEditorScreen.tsx': 27,
   'components/NoteImageGallery.tsx': 7,
-  'components/NoteLearnPanel.tsx': 10,
+  'components/NoteLearnPanel.tsx': 2,
   'components/NotePdfViewer.tsx': 4,
   'components/NoteShareAcceptScreen.tsx': 7,
   'components/NotificationModal.tsx': 3,
