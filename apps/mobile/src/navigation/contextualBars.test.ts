@@ -18,6 +18,7 @@ import {
   CONTEXTUAL_BAR_SEGMENTS,
   accentForRoute,
   activeItem,
+  contextualBarMode,
   planContextualPress,
   specForRoute,
   type ContextualBarItem,
@@ -466,33 +467,28 @@ describe('the walk-through row', () => {
 });
 
 describe('the active item', () => {
-  it('is the item that points at the current route', () => {
-    expect(activeItem('Library')?.id).toBe('library');
-    expect(activeItem('FlashcardsList')?.id).toBe('flashcards');
-    expect(activeItem('TestsList')?.id).toBe('tests');
+  it('is the item that points at the current route AND segment', () => {
+    // Two doors of the set row point at the SAME screen and differ only by a
+    // fixed param (the set library's `kind`). Matching on the route name alone
+    // lit whichever was declared first on both of them.
+    expect(activeItem('CourseRoom', { ...SET, segment: 'materials' })?.id).toBe('materials');
+    expect(activeItem('StudySetLibrary', { ...SET, kind: 'cards' })?.id).toBe('flashcards');
+    expect(activeItem('StudySetLibrary', { ...SET, kind: 'tests' })?.id).toBe('tests');
   });
 
   it('paints the row in that item’s feature accent', () => {
-    expect(accentForRoute('Library')).toBe('notes');
-    expect(accentForRoute('FlashcardsList')).toBe('flashcards');
-    expect(accentForRoute('TestsList')).toBe('tests');
+    expect(accentForRoute('CourseRoom', { ...SET, segment: 'materials' })).toBe('notes');
+    expect(accentForRoute('StudySetLibrary', { ...SET, kind: 'cards' })).toBe('flashcards');
+    expect(accentForRoute('StudySetLibrary', { ...SET, kind: 'tests' })).toBe('tests');
   });
 
-  it('keeps Tests active inside the test builder', () => {
-    // The builder is a room inside Tests, not a sixth door.
-    expect(activeItem('TestBuilder')?.id).toBe('tests');
-    expect(accentForRoute('TestBuilder')).toBe('tests');
-  });
-
-  it('is nothing on a Study screen no item points at', () => {
-    // The hub is the row's home, not one of its doors; Notes is reached through
-    // Library. Neither may borrow another item's highlight.
-    expect(activeItem('StudyHub')).toBeNull();
-    expect(accentForRoute('StudyHub')).toBeNull();
-    expect(activeItem('CourseRoom')).toBeNull();
-    expect(accentForRoute('CourseRoom')).toBeNull();
-    expect(activeItem('NotesStudio')).toBeNull();
-    expect(activeItem('NotesList')).toBeNull();
+  it('is nothing on a set screen no door points at', () => {
+    // The room's OVERVIEW is not the Materials door, and a studio is not any
+    // door: neither may borrow another item's highlight.
+    expect(activeItem('CourseRoom', SET)).toBeNull();
+    expect(accentForRoute('CourseRoom', SET)).toBeNull();
+    expect(activeItem('NotesStudio', SET)).toBeNull();
+    expect(activeItem('LectureStudio', SET)).toBeNull();
   });
 
   it('is what the ROW paints, not a target comparison the component repeats', () => {
@@ -516,78 +512,139 @@ describe('the active item', () => {
 });
 
 describe('planContextualPress', () => {
-  it('navigates to another screen in the stack', () => {
+  it('opens the set\u2019s own materials, decks and tests', () => {
+    // The exact params the room and the set library are opened with. A change
+    // here is a change to a contract shared with those screens.
     expect(
-      planContextualPress({ focusedRoute: 'Library', item: itemById(studyBar(), 'tests') }),
-    ).toEqual({ kind: 'navigate', route: 'TestsList' });
+      planContextualPress({
+        focusedRoute: 'LectureStudio',
+        focusedParams: SET,
+        item: itemById(setBar(), 'materials'),
+      }),
+    ).toEqual({
+      kind: 'navigate',
+      route: 'CourseRoom',
+      params: { segment: 'materials', studySetId: 'set-1', courseLabel: 'Pharmacology' },
+    });
+    expect(
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: SET,
+        item: itemById(setBar(), 'flashcards'),
+      }),
+    ).toEqual({
+      kind: 'navigate',
+      route: 'StudySetLibrary',
+      params: { kind: 'cards', studySetId: 'set-1', courseLabel: 'Pharmacology' },
+    });
+    expect(
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: SET,
+        item: itemById(setBar(), 'tests'),
+      }),
+    ).toEqual({
+      kind: 'navigate',
+      route: 'StudySetLibrary',
+      params: { kind: 'tests', studySetId: 'set-1', courseLabel: 'Pharmacology' },
+    });
   });
 
-  it('walks OUT of the builder rather than scrolling it', () => {
-    // Active is not the same as "you are here": Tests is highlighted in the
-    // builder, and pressing it must still reach the list.
+  it('takes Home back to the hub, where the global tabs are', () => {
     expect(
-      planContextualPress({ focusedRoute: 'TestBuilder', item: itemById(studyBar(), 'tests') }),
-    ).toEqual({ kind: 'navigate', route: 'TestsList' });
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: SET,
+        item: itemById(setBar(), 'home'),
+      }),
+    ).toEqual({ kind: 'navigate', route: 'StudyHub' });
   });
 
-  it('scrolls to top when the item IS the current route (a re-tap)', () => {
+  it('scrolls to top when the door IS the screen AND the segment (a re-tap)', () => {
     expect(
-      planContextualPress({ focusedRoute: 'TestsList', item: itemById(studyBar(), 'tests') }),
+      planContextualPress({
+        focusedRoute: 'StudySetLibrary',
+        focusedParams: { ...SET, kind: 'cards' },
+        item: itemById(setBar(), 'flashcards'),
+      }),
     ).toEqual({ kind: 'scrollToTop' });
+  });
+
+  it('navigates rather than scrolling when only the ROUTE matches', () => {
+    // Materials pressed from the room's overview is a move to another segment
+    // of the same screen, not a re-tap of it. Comparing route names alone made
+    // this door dead on the surface it is most likely to be pressed from.
     expect(
-      planContextualPress({ focusedRoute: 'Library', item: itemById(studyBar(), 'library') }),
-    ).toEqual({ kind: 'scrollToTop' });
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: SET,
+        item: itemById(setBar(), 'materials'),
+      }).kind,
+    ).toBe('navigate');
+    expect(
+      planContextualPress({
+        focusedRoute: 'StudySetLibrary',
+        focusedParams: { ...SET, kind: 'cards' },
+        item: itemById(setBar(), 'tests'),
+      }).kind,
+    ).toBe('navigate');
   });
 
   it('never resets the stack on a re-tap — that is the global bar’s job', () => {
     // Invariant 2: a contextual re-tap must not duplicate `tabPress`, which
-    // also pops to root. "I pressed Tests while on Tests" means scroll up.
+    // also pops to root.
     const plan = planContextualPress({
-      focusedRoute: 'TestsList',
-      item: itemById(studyBar(), 'tests'),
+      focusedRoute: 'StudySetLibrary',
+      focusedParams: { ...SET, kind: 'tests' },
+      item: itemById(setBar(), 'tests'),
     });
     expect(plan.kind).toBe('scrollToTop');
     expect(plan).not.toHaveProperty('route');
   });
 
-  it('navigates from the hub ROOT exactly as from any other Study route', () => {
-    // The hub is a Study route like the rest: its row is the same row, and a
-    // press on it means the same thing. (What made the press dead on the hub
-    // was the chrome's dispatch, not this plan — see stackNavigate.ts.)
-    for (const id of ['library', 'flashcards', 'tests']) {
-      const item = itemById(studyBar(), id);
-      const fromHub = planContextualPress({ focusedRoute: 'StudyHub', item });
-      const fromLibrary = planContextualPress({ focusedRoute: 'NotesList', item });
-      expect(fromHub).toEqual({
-        kind: 'navigate',
-        route: (item.target as { route: string }).route,
-      });
-      if (id !== 'library') expect(fromHub).toEqual(fromLibrary);
-    }
+  it('does nothing rather than opening a set library on no set', () => {
+    expect(
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: { courseId: 'course-9' },
+        item: itemById(setBar(), 'flashcards'),
+      }),
+    ).toEqual({ kind: 'unavailable' });
   });
 
-  it('opens the recorder door from anywhere in the row', () => {
-    for (const route of ['StudyHub', 'Library', 'NotesList', 'TestsList']) {
-      expect(
-        planContextualPress({ focusedRoute: route, item: itemById(studyBar(), 'record') }),
-      ).toEqual({ kind: 'record' });
-    }
+  it('records INTO the set the row is standing in', () => {
+    expect(
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: { ...SET, courseId: 'course-9' },
+        item: itemById(setBar(), 'record'),
+      }),
+    ).toEqual({ kind: 'record', params: { studySetId: 'set-1', courseId: 'course-9' } });
   });
 
-  it('opens the AI panel from anywhere in the row', () => {
-    for (const route of ['StudyHub', 'FlashcardsList', 'TestsList']) {
-      expect(
-        planContextualPress({ focusedRoute: route, item: itemById(studyBar(), 'ai') }),
-      ).toEqual({ kind: 'openAi' });
-    }
+  it('asks about the SET, not about the last note (SF2 §6 #14)', () => {
+    expect(
+      planContextualPress({
+        focusedRoute: 'CourseRoom',
+        focusedParams: { ...SET, noteId: 'note-7' },
+        item: itemById(setBar(), 'ai'),
+      }),
+    ).toEqual({ kind: 'openAi', scopeId: 'set-1', scopeLabel: 'Pharmacology' });
+  });
+
+  it('opens a plain AI panel when the door knows no room', () => {
+    // The note row's Ask, which has no scope keys at all: unchanged.
+    expect(
+      planContextualPress({ focusedRoute: 'NoteEditor', item: itemById(noteBar(), 'ai') }),
+    ).toEqual({ kind: 'openAi' });
   });
 
   it('still navigates when the focused route is unknown', () => {
     // A press that arrives a frame before focus settles must do the obvious
     // thing rather than silently scrolling something to the top.
     expect(
-      planContextualPress({ focusedRoute: undefined, item: itemById(studyBar(), 'library') }),
-    ).toEqual({ kind: 'navigate', route: 'Library' });
+      planContextualPress({ focusedRoute: undefined, item: itemById(setBar(), 'home') }),
+    ).toEqual({ kind: 'navigate', route: 'StudyHub' });
   });
 
   it('carries params when a target declares them', () => {
@@ -609,8 +666,9 @@ describe('planContextualPress', () => {
     // `{ params: undefined }` is not the same object as `{}` to React
     // Navigation's param merge; the plan must not invent one.
     const plan = planContextualPress({
-      focusedRoute: 'StudyHub',
-      item: itemById(studyBar(), 'library'),
+      focusedRoute: 'CourseRoom',
+      focusedParams: SET,
+      item: itemById(setBar(), 'home'),
     });
     expect(Object.prototype.hasOwnProperty.call(plan, 'params')).toBe(false);
   });
@@ -908,11 +966,11 @@ describe('params pass-through, in general', () => {
   it('ignores focused params entirely for a target with no paramsFrom', () => {
     expect(
       planContextualPress({
-        focusedRoute: 'StudyHub',
-        item: itemById(studyBar(), 'library'),
-        focusedParams: { deckId: 'deck-1' },
+        focusedRoute: 'CourseRoom',
+        item: itemById(setBar(), 'home'),
+        focusedParams: { ...SET, deckId: 'deck-1' },
       }),
-    ).toEqual({ kind: 'navigate', route: 'Library' });
+    ).toEqual({ kind: 'navigate', route: 'StudyHub' });
   });
 
   it('never lets `requires` name a key `paramsFrom` does not carry', () => {
@@ -932,32 +990,57 @@ describe('params pass-through, in general', () => {
   });
 });
 
-describe('where every row sits: ABOVE the global bar, with no mode to choose', () => {
-  // Build 185's device pass reverted the 2026-09-08 `replace` mode: inside
-  // Study and Shop the five labelled tabs were simply gone. The registry no
-  // longer carries a `mode`, `replacesGlobalBar` and `contextualExitControl` no
-  // longer exist, and these assertions are what stops them coming back — a row
-  // that cannot declare a placement cannot take the global bar away.
-  it('gives no registry a mode, or any other placement field', () => {
+describe('where every row sits, and which one may take the global bar away', () => {
+  // Build 185's device pass reverted the SECTIONWIDE `replace` mode of
+  // 2026-09-08: inside Study and Shop the five labelled tabs were simply gone,
+  // including on the hub and on every app-wide list, where the student is not
+  // inside anything. The mode is back for exactly one row and under three locks
+  // — it is about ONE thing the student is in, it carries its own way out, and
+  // it stands down when that thing is unknown. These assertions are the locks.
+  it('lets only the set row replace the bar; every other row sits above it', () => {
     for (const [route, spec] of entries()) {
-      expect(spec).not.toHaveProperty('mode');
-      expect(typeof route).toBe('string');
+      if (spec.mode === undefined || spec.mode === 'above') continue;
+      expect(spec.mode).toBe('replace');
+      // Keyed only on set surfaces, never on a hub, a list or a section root.
+      expect(spec).toBe(setBar());
+      expect(routeOf(route)).not.toBe('StudyHub');
     }
   });
 
-  it('keeps no replace/exit escape hatch in the registry source', () => {
-    // A source scan because the thing being asserted is an ABSENCE: a helper
-    // re-added here would be wired straight back into the chrome.
+  it('keeps the Shop row and every pass-through row above the bar', () => {
+    for (const bar of [shopBar(), deckBar(), noteBar(), walkthroughBar(), barFor('CommunityDetail')]) {
+      expect(bar.mode ?? 'above').toBe('above');
+    }
+  });
+
+  it('never lets a replace row exist without a set to be about', () => {
+    for (const [, spec] of entries()) {
+      if (spec.mode !== 'replace') continue;
+      expect(spec.requiresAnyParam?.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('reports the mode the chrome reads, and `above` where there is no row', () => {
+    expect(contextualBarMode('CourseRoom', SET)).toBe('replace');
+    expect(contextualBarMode('CourseRoom')).toBe('above');
+    expect(contextualBarMode('StudyHub')).toBe('above');
+    expect(contextualBarMode('ShopBrowse')).toBe('above');
+    expect(contextualBarMode(undefined)).toBe('above');
+  });
+
+  it('keeps no exit-control escape hatch in the registry source', () => {
+    // A source scan because the thing being asserted is an ABSENCE. The set
+    // row's way out is an ITEM (`Home`), drawn and labelled like every other
+    // door — not a chrome affordance bolted beside the row, which is what the
+    // 2026-09-08 mode needed and what made it a second, unnamed control.
     const src = fs.readFileSync(path.join(__dirname, 'contextualBars.ts'), 'utf8');
     expect(src).not.toMatch(/export function replacesGlobalBar/);
     expect(src).not.toMatch(/export function contextualExitControl/);
-    expect(src).not.toMatch(/^\s*mode: /m);
   });
 
-  it('still resolves a spec for the two sections and the pass-through screens', () => {
-    // The rows themselves are untouched by the revert — only where they sit.
+  it('still resolves a spec for every section and pass-through screen', () => {
     for (const bar of [
-      studyBar(),
+      setBar(),
       shopBar(),
       deckBar(),
       noteBar(),

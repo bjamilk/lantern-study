@@ -35,6 +35,7 @@ export * from './learning';
 
 // Study-set card presentation (tile art, count chips, relative last-studied)
 export * from './study';
+export * from './dashboard';
 
 // Jobs board (campus employment — sibling of marketplace goods)
 export * from './jobs';

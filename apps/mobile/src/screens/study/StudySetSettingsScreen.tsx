@@ -18,7 +18,17 @@ import {
 } from '@lantern/shared';
 import type { StudySetMode } from '@lantern/shared/learning';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, Card, ScreenHeader, T } from '../../components/ui';
+import { AppIcon, Button, Card, ScreenHeader, T } from '../../components/ui';
+import { CoverFailureLine, useCoverPicker } from '../../components/ui/CoverPicker';
+import {
+  MAX_STUDY_SET_COVER_BYTES,
+  STUDY_SET_COVER_HINT,
+} from '../../components/ui/coverPickerModel';
+import { SetCoverSquare } from '../../components/study/SetCoverSquare';
+import { setTileArt } from '../../components/study/setPresentation';
+import { setTileSkin } from '../../components/study/setTileColors';
+import { TILE_ICONS } from '../../components/study/StudySetCard';
+import { useTheme } from '../../theme';
 import { appAlert, confirmAsync } from '../../components/ui/appDialog';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { useStudySetStore } from '../../stores/studySetStore';
@@ -36,8 +46,39 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
   const removeSet = useStudySetStore((s) => s.removeSet);
   const folders = useStudySetStore((s) => s.folders);
   const loadFolders = useStudySetStore((s) => s.loadFolders);
+  const setCoverPath = useStudySetStore((s) => s.setCoverPath);
   const showToast = useToastStore((s) => s.showToast);
   const tabBarClearance = useTabBarClearance(16);
+  const { isDark } = useTheme();
+
+  /**
+   * The set's picture, StudyFetch's way: ONE button into the system photo
+   * picker, and Remove only once there is something to remove. No camera row
+   * (the reference's block has none) and no sheet in front of a button that
+   * already says what it does.
+   *
+   * The cover is applied the moment it is chosen, not on Save: the upload is
+   * its own request against its own route, so making it wait for the text
+   * fields would leave a student who pressed Back with a picture the server
+   * had already stored.
+   */
+  const cover = useCoverPicker(
+    { kind: 'study-set', id: studySetId },
+    {
+      hasCover: Boolean(studySet?.coverPath),
+      allowCamera: false,
+      maxBytes: MAX_STUDY_SET_COVER_BYTES,
+      onApplied: (coverPath) => {
+        setCoverPath(studySetId, coverPath);
+        showToast(coverPath ? 'Set picture updated.' : 'Set picture removed.', 'success');
+      },
+    }
+  );
+
+  // The same art the hub card draws, so the preview IS the tile being replaced
+  // rather than a generic placeholder standing in for it.
+  const tileArt = setTileArt(studySetId, studySet?.title || '');
+  const tileSkin = setTileSkin(tileArt.hue, isDark);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -174,6 +215,57 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
         contentContainerStyle={{ paddingBottom: 16, paddingHorizontal: 16, paddingTop: 8 }}
       >
         <ScreenHeader title="Set settings" onBack={() => navigation.goBack()} />
+
+        <Card className="mb-3">
+          <T.Caption tone="secondary" className="mb-2">
+            Study set picture
+          </T.Caption>
+          <View className="flex-row items-center gap-3">
+            <SetCoverSquare
+              coverPath={studySet.coverPath}
+              pendingUri={cover.pendingUri}
+              size={44}
+              radius={14}
+              accessibilityLabel={`${studySet.title} picture`}
+              fallback={
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 14,
+                    backgroundColor: tileSkin.tint,
+                  }}
+                  className="items-center justify-center"
+                  importantForAccessibility="no-hide-descendants"
+                >
+                  <AppIcon name={TILE_ICONS[tileArt.glyph]} size={22} color={tileSkin.ink} />
+                </View>
+              }
+            />
+            <View className="flex-1">
+              <View className="flex-row flex-wrap items-center gap-2">
+                <Button size="sm" onPress={cover.choose} disabled={cover.busy}>
+                  {cover.busy ? 'Uploading…' : 'Upload picture'}
+                </Button>
+                {studySet.coverPath ? (
+                  <Pressable
+                    onPress={cover.remove}
+                    disabled={cover.busy}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove picture"
+                    hitSlop={8}
+                  >
+                    <T.Caption className="text-red-600 dark:text-red-300">Remove picture</T.Caption>
+                  </Pressable>
+                ) : null}
+              </View>
+              <T.Caption tone="tertiary" className="mt-1">
+                {STUDY_SET_COVER_HINT}
+              </T.Caption>
+            </View>
+          </View>
+          <CoverFailureLine failure={cover.failure} onDismiss={cover.dismissFailure} />
+        </Card>
 
         <Card className="mb-3">
           <T.Caption tone="secondary" className="mb-1">

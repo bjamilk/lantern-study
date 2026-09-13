@@ -7,10 +7,16 @@ import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
 import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
-import { PublicError } from '../utils/safeError';
+import { PublicError, clientErrorMessage } from '../utils/safeError';
 import { AuthenticatedRequest } from '../types';
-import { SupabaseService } from '../services/supabase';
+import {
+  COVER_IMAGE_MIGRATION,
+  CoverColumnMissingError,
+  SupabaseService,
+} from '../services/supabase';
 import { getStudySetsService } from '../services/studySets';
+import { logger } from '../utils/logger';
+import { uploadBurstRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 let supabaseService: SupabaseService;
@@ -164,16 +170,145 @@ router.patch(
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
+    const setId = String(req.params.setId);
+    const body = (req.body || {}) as Record<string, unknown>;
+    // Only CLEARING is accepted through the generic patch. A cover is SET by
+    // POST /:setId/cover, which uploads the object itself — accepting an
+    // arbitrary `coverPath` string here would let any owner point their set at
+    // a storage object belonging to someone else.
+    const { coverPath, ...patch } = body;
     try {
-      const data = await getStudySetsService(supabaseService).update(
-        userId,
-        String(req.params.setId),
-        req.body || {}
-      );
+      const data = await getStudySetsService(supabaseService).update(userId, setId, patch);
+      if (coverPath === null) {
+        const { previousPath } = await supabaseService.setStudySetCoverPath(setId, userId, null);
+        await supabaseService.deleteCoverObject(previousPath);
+        (data as { coverPath?: string | null }).coverPath = null;
+      }
       res.json({ success: true, data });
     } catch (err) {
+      if (err instanceof CoverColumnMissingError) {
+        res.status(503).json({ success: false, error: err.message, migration: COVER_IMAGE_MIGRATION });
+        return;
+      }
       if (handlePublicError(err, res)) return;
       throw err;
+    }
+  })
+);
+
+// ---------- Study set cover image ----------
+// StudyFetch gives the picture to the SET, not to the deck or the note: it is
+// the chip in every room header and the thumbnail in every switcher row. The
+// stored value is the storage PATH — a signed URL would be a broken image in
+// 24h — and clients re-sign through POST /api/v1/storage/signed-urls.
+
+const ALLOWED_COVER_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+/**
+ * 5 MB, not the 10 MB decks and notes take.
+ *
+ * This is StudyFetch's own copy for this block — "Recommended: 400x400px, max
+ * 5MB" — and the number a student reads under the button has to be the number
+ * the server enforces, or the limit is a lie in one direction or the other.
+ */
+export const MAX_STUDY_SET_COVER_BYTES = 5 * 1024 * 1024;
+
+router.post(
+  '/:setId/cover',
+  authMiddleware,
+  validateStudySetId,
+  handleValidationErrors,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const setId = String(req.params.setId);
+    const { base64Data, fileName, contentType } = (req.body || {}) as Record<string, string>;
+
+    if (!base64Data || !fileName) {
+      res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+      return;
+    }
+    const normalizedType = typeof contentType === 'string' ? contentType.toLowerCase() : '';
+    if (!ALLOWED_COVER_TYPES.includes(normalizedType)) {
+      res.status(400).json({
+        success: false,
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+      return;
+    }
+    const estimatedBytes = Math.ceil((base64Data.length * 3) / 4);
+    if (estimatedBytes > MAX_STUDY_SET_COVER_BYTES) {
+      res.status(400).json({ success: false, error: 'Image exceeds 5 MB limit' });
+      return;
+    }
+
+    // Ownership is the write's own WHERE clause: `setStudySetCoverPath` scopes
+    // by user_id and reports "not found" as a 404 below, so someone else's set
+    // can never be pointed at an object this account uploaded.
+    let uploaded: { path: string; url: string; thumbUrl: string | null } | undefined;
+    try {
+      // Throws a PublicError ("Study set not found") for a set this account
+      // does not own — answered below before a byte is stored.
+      await getStudySetsService(supabaseService).get(userId, setId);
+      // Store first, then persist: a failed column write leaves an orphan
+      // object (deleted below), the reverse would leave a dangling path.
+      uploaded = await supabaseService.uploadCoverImage({
+        userId,
+        kind: 'study-set',
+        id: setId,
+        fileName,
+        base64Data,
+        contentType: normalizedType,
+      });
+      const { previousPath } = await supabaseService.setStudySetCoverPath(
+        setId,
+        userId,
+        uploaded.path
+      );
+      await supabaseService.deleteCoverObject(previousPath);
+      res.json({
+        success: true,
+        data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
+      });
+    } catch (error: unknown) {
+      if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
+      if (error instanceof CoverColumnMissingError) {
+        res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
+        return;
+      }
+      if (handlePublicError(error, res)) return;
+      logger.error('Failed to set study set cover', { setId, userId, error });
+      res
+        .status(500)
+        .json({ success: false, error: clientErrorMessage(error, 'Failed to set cover image') });
+    }
+  })
+);
+
+router.delete(
+  '/:setId/cover',
+  authMiddleware,
+  validateStudySetId,
+  handleValidationErrors,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const setId = String(req.params.setId);
+    try {
+      const { previousPath } = await supabaseService.setStudySetCoverPath(setId, userId, null);
+      await supabaseService.deleteCoverObject(previousPath);
+      res.json({ success: true, data: { coverPath: null } });
+    } catch (error: unknown) {
+      if (error instanceof CoverColumnMissingError) {
+        res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
+        return;
+      }
+      logger.error('Failed to clear study set cover', { setId, userId, error });
+      res
+        .status(500)
+        .json({ success: false, error: clientErrorMessage(error, 'Failed to clear cover image') });
     }
   })
 );

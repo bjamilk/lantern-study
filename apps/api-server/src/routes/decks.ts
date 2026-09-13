@@ -19,7 +19,11 @@ import {
   parseCourseFilter,
   parseTopicFilter,
 } from '../services/academicCourses';
-import { PublicError } from '../utils/safeError';
+import { clientErrorMessage, PublicError } from '../utils/safeError';
+import {
+  COVER_IMAGE_MIGRATION,
+  CoverColumnMissingError,
+} from '../services/supabase';
 
 const router = Router();
 const DEFAULT_DECK_PAGE_SIZE = 20;
@@ -276,11 +280,22 @@ router.put(
     if (!userId) return;
 
     const { deckId } = req.params;
-    const { name, description, isShared, courseId, studySetId, topicId } = req.body;
+    const { name, description, isShared, courseId, studySetId, topicId, coverPath } = req.body;
     let updatedDeck;
     try {
       updatedDeck = await supabaseService.updateDeck(deckId, { name, description, isShared, courseId, studySetId, topicId }, userId);
+      // Only CLEARING is accepted through the generic update — a cover is set by
+      // POST /:deckId/cover, so no client can aim the column at an arbitrary
+      // storage object it does not own.
+      if (coverPath === null) {
+        const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, null);
+        await supabaseService.deleteCoverObject(previousPath);
+        if (updatedDeck) (updatedDeck as any).coverPath = null;
+      }
     } catch (err) {
+      if (err instanceof CoverColumnMissingError) {
+        return res.status(503).json({ success: false, error: err.message, migration: COVER_IMAGE_MIGRATION });
+      }
       if (respondPublicError(err, res)) return;
       throw err;
     }
@@ -295,6 +310,97 @@ router.put(
     await cacheService.deletePattern(`decks:${userId}*`);
 
     res.json({ success: true, data: updatedDeck });
+  })
+);
+
+// ---------- Deck cover image ----------
+// The stored value is the storage PATH. Signed URLs expire after 24h, so one
+// persisted here would be a broken image tomorrow; clients re-sign through
+// POST /api/v1/storage/signed-urls (variant:'thumb' for grids).
+
+const ALLOWED_COVER_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+const MAX_COVER_BYTES = 10 * 1024 * 1024;
+
+router.post(
+  '/:deckId/cover',
+  authMiddleware,
+  requireDeckAccess('deckId', 'owner'),
+  validateDeckId,
+  handleValidationErrors,
+  uploadBurstRateLimit,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { deckId } = req.params;
+    const { base64Data, fileName, contentType } = req.body || {};
+
+    if (!base64Data || !fileName) {
+      return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+    }
+    const normalizedType = typeof contentType === 'string' ? contentType.toLowerCase() : '';
+    if (!ALLOWED_COVER_TYPES.includes(normalizedType)) {
+      return res.status(400).json({
+        success: false,
+        error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+      });
+    }
+    const estimatedBytes = Math.ceil((base64Data.length * 3) / 4);
+    if (estimatedBytes > MAX_COVER_BYTES) {
+      return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+    }
+
+    let uploaded: { path: string; url: string; thumbUrl: string | null } | undefined;
+    try {
+      // Store first, then persist. A failed column write leaves an orphan
+      // object (cleaned below); the reverse would leave a dangling path.
+      uploaded = await supabaseService.uploadCoverImage({
+        userId,
+        kind: 'deck',
+        id: deckId,
+        fileName,
+        base64Data,
+        contentType: normalizedType,
+      });
+      const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, uploaded.path);
+      await supabaseService.deleteCoverObject(previousPath);
+      return res.json({
+        success: true,
+        data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
+      });
+    } catch (error: any) {
+      if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
+      if (error instanceof CoverColumnMissingError) {
+        return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
+      }
+      logger.error('Failed to set deck cover', { deckId, userId, error });
+      return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to set cover image') });
+    }
+  })
+);
+
+router.delete(
+  '/:deckId/cover',
+  authMiddleware,
+  requireDeckAccess('deckId', 'owner'),
+  validateDeckId,
+  handleValidationErrors,
+  asyncHandler(async (req: any, res: any) => {
+    const userId = requireAuthUserId(req, res);
+    if (!userId) return;
+
+    const { deckId } = req.params;
+    try {
+      const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, null);
+      await supabaseService.deleteCoverObject(previousPath);
+      return res.json({ success: true, data: { coverPath: null } });
+    } catch (error: any) {
+      if (error instanceof CoverColumnMissingError) {
+        return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
+      }
+      logger.error('Failed to clear deck cover', { deckId, userId, error });
+      return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to clear cover image') });
+    }
   })
 );
 

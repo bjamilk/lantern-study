@@ -77,6 +77,13 @@ import { JobProgressSheet } from '../../components/jobs';
 import { setStudyIntent } from '../../hooks/usePresenceHeartbeat';
 
 import { Button, Card, T } from '../../components/ui';
+import {
+  CoverBanner,
+  CoverFailureLine,
+  CoverPicker,
+  useCoverPicker,
+} from '../../components/ui/CoverPicker';
+import { readCoverPath } from '../../components/ui/coverPickerModel';
 import { NoteBody } from '../../components/NoteBody';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
@@ -137,7 +144,17 @@ export function NoteEditorScreen({ navigation, route }: Props) {
   const noteId = route.params.noteId;
   const { user } = useAuthStore();
   const { colors } = useTheme();
-  const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote, setSelectedNote } = useNotesStore();
+  const { selectedNote, isLoading, isSaving, loadNote, saveNote, removeNote, setSelectedNote, setNoteCoverPath } = useNotesStore();
+  const noteCoverPath = readCoverPath(selectedNote);
+  const coverTarget = useMemo(() => ({ kind: 'note' as const, id: noteId }), [noteId]);
+  const applyCover = useCallback(
+    (coverPath: string | null) => setNoteCoverPath(noteId, coverPath),
+    [noteId, setNoteCoverPath],
+  );
+  const coverPicker = useCoverPicker(coverTarget, {
+    hasCover: Boolean(noteCoverPath),
+    onApplied: applyCover,
+  });
 
   const { isAILoading } = useAIHandlers();
   const startJob = useJobsStore((state) => state.startJob);
@@ -1429,6 +1446,16 @@ export function NoteEditorScreen({ navigation, route }: Props) {
         </Pressable>
         ) : null}
 
+        {canEdit ? (
+        <Pressable
+          onPress={() => coverPicker.open()}
+          className="p-2 rounded-lg active:bg-lantern-background-secondary dark:active:bg-lantern-surface-secondary"
+          accessibilityLabel={noteCoverPath ? 'Change cover image' : 'Add cover image'}
+        >
+          <AppIcon name="image" size={20} color={brand.text} />
+        </Pressable>
+        ) : null}
+
         {isOwner ? (
         <Pressable
           onPress={() => setShowCollaborators(true)}
@@ -1458,6 +1485,18 @@ export function NoteEditorScreen({ navigation, route }: Props) {
       </View>
 
 
+
+      {/* Banner first, the note's own title sits in the header above it and
+          its body below — 16:5 so a cover never costs the reader a screen of
+          the note they opened. */}
+      <CoverBanner
+        coverPath={noteCoverPath}
+        pendingUri={coverPicker.pendingUri}
+        accessibilityLabel="Note cover image"
+      />
+      <CoverFailureLine failure={coverPicker.failure} onDismiss={coverPicker.dismissFailure} />
+
+      <CoverPicker controller={coverPicker} title="Note cover" />
 
       {/* Keyboard handling moved up to <Screen keyboard>: this screen sits
           under the in-flow TopBar, and RN's KeyboardAvoidingView measures its

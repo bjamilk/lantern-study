@@ -12,6 +12,9 @@ import CollaboratorsModal from './CollaboratorsModal';
 import Modal from './ui/Modal';
 import { Button } from './ui';
 import { Menu, MenuTrigger, MenuContent, MenuItem } from './ui/Menu';
+import { CoverBanner, CoverMenuItems, CoverPickerDialog } from './ui/CoverPicker';
+import { coverErrorMessage } from './ui/coverPickerModel';
+import { removeCover } from '../stores/coverActions';
 import ReportContentModal from './moderation/ReportContentModal';
 import { MoveToCourseModal } from './academic/MoveToCourseModal';
 import { useAcademicStore } from '../stores/academicStore';
@@ -119,6 +122,7 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
   const [isReportOpen, setIsReportOpen] = useState(false);
   const [isSellOpen, setIsSellOpen] = useState(false);
   const [isUpdatePackOpen, setIsUpdatePackOpen] = useState(false);
+  const [isCoverPickerOpen, setIsCoverPickerOpen] = useState(false);
   // Course label under the title (Phase 1 · B); courses load lazily on first use.
   const resolveCourse = useAcademicStore((s) => s.resolveCourse);
   const knownCourses = useAcademicStore((s) => s.knownCourses);
@@ -357,6 +361,14 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
     </div>
   );
 
+  const handleRemoveCover = async () => {
+    try {
+      await removeCover('deck', deck.id);
+    } catch (err) {
+      useToastStore.getState().showToast(coverErrorMessage(err).message, 'error');
+    }
+  };
+
   return (
     <div className="h-screen flex flex-col flex-1 overflow-y-auto p-4 md:p-6 bg-lantern-background text-lantern-text">
       <div className="mb-6 pb-4 border-b border-lantern-border dark:border-lantern-border">
@@ -367,6 +379,10 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
           <AppIcon name="arrow-undo" size={20} className="mr-1.5" />
           Back to All Decks
         </button>
+        {/* 16:5 banner above the title — the same aspect the note editor uses,
+            so a deck and a note read as the same kind of object. Absent when no
+            cover is set; nothing reserves space for a picture that isn't there. */}
+        <CoverBanner coverPath={deck.coverPath} alt="" className="mb-4" />
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl md:text-3xl font-bold text-lantern-text truncate">{deck.name}</h1>
@@ -426,6 +442,14 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
                   <AppIcon name="pencil" size={16} /> Edit deck
                 </span>
               </MenuItem>
+              {/* Cover is the owner's to set; the route refuses anyone else. */}
+              {!isSharedWithMe && (
+                <CoverMenuItems
+                  hasCover={Boolean(deck.coverPath)}
+                  onChoose={() => setIsCoverPickerOpen(true)}
+                  onRemove={() => void handleRemoveCover()}
+                />
+              )}
               {onMoveDeckToCourse && (
                 <MenuItem onSelect={() => setIsMoveCourseOpen(true)}>
                   <span className="inline-flex items-center gap-2">
@@ -663,6 +687,13 @@ const DeckDetailScreen: React.FC<DeckDetailScreenProps> = ({
         onClose={() => setIsCollaboratorsModalOpen(false)}
         deckId={deck.id}
         currentUserId={currentUser?.id}
+      />
+      <CoverPickerDialog
+        open={isCoverPickerOpen}
+        kind="deck"
+        id={deck.id}
+        hasCover={Boolean(deck.coverPath)}
+        onClose={() => setIsCoverPickerOpen(false)}
       />
       {isSharedWithMe && isReportOpen ? (
         <ReportContentModal

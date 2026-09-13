@@ -191,6 +191,18 @@
       "require": "./dist/notes/*.js",
       "default": "./src/notes/*.ts"
     },
+    "./dashboard": {
+      "types": "./src/dashboard/index.ts",
+      "import": "./src/dashboard/index.ts",
+      "require": "./dist/dashboard/index.js",
+      "default": "./src/dashboard/index.ts"
+    },
+    "./dashboard/*": {
+      "types": "./src/dashboard/*.ts",
+      "import": "./src/dashboard/*.ts",
+      "require": "./dist/dashboard/*.js",
+      "default": "./src/dashboard/*.ts"
+    },
     "./study": {
       "types": "./src/study/index.ts",
       "import": "./src/study/index.ts",

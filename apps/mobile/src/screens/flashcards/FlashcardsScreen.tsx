@@ -38,6 +38,13 @@ import { topicIdAfterCourseChange } from '../../utils/topicSelection';
 import { navigate as navigateRootStack } from '../../navigation/navigationRef';
 import { confirmSheet } from '../../stores/confirmStore';
 import { AppIcon } from '../../components/ui/AppIcon';
+import {
+  CoverFailureLine,
+  CoverPicker,
+  CoverThumb,
+  useCoverPicker,
+} from '../../components/ui/CoverPicker';
+import { readCoverPath } from '../../components/ui/coverPickerModel';
 
 import { toTab } from '../../navigation/nestedTab';
 import { deckDisplaySubtitle, deckDisplayTitle, isLibraryFlashcardDeck, sortDecksForList } from './deckList';
@@ -109,7 +116,16 @@ function DeckCard({
       accessibilityHint={onMore ? 'Long press for more actions' : undefined}
     >
       <View className="flex-row items-center gap-3">
-        <FeatureDisc feature="flashcards" icon="layers" size={40} />
+        {/* StudyFetch's row: when the deck has a cover, the picture fills the
+            tile the pastel square occupied and the glyph becomes a badge on
+            it. No cover and nothing changes — `CoverThumb` falls back to the
+            same 40px FeatureDisc. */}
+        <CoverThumb
+          coverPath={readCoverPath(deck)}
+          feature="flashcards"
+          icon="layers"
+          label="Flashcard deck"
+        />
         <View className="flex-1 min-w-0">
           <View className="flex-row items-center gap-2">
             <T.Body style={{ fontWeight: '600' }} numberOfLines={1} className="flex-1">
@@ -204,6 +220,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
     markDeckOffline,
     unmarkDeckOffline,
     deleteDeck,
+    setDeckCoverPath,
   } = useFlashcardStore();
   /** Cards cached per deck; what the in-place search can match without the API. */
   const cardsByDeck = useFlashcardStore(s => s.flashcards);
@@ -429,6 +446,33 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
 
   const dueCount = useMemo(() => decks.reduce((s, d) => s + (d.due_count || 0), 0), [decks]);
 
+  /**
+   * The cover sheet, owned once by the screen rather than per row.
+   *
+   * A hook cannot live inside `DeckCard` and still be driven from the row's
+   * action sheet — but NOT read from `deckActions`, which `ActionSheet` clears
+   * on close before the pressed row's handler even runs. The deck is latched
+   * when "Add cover…" is pressed and held until the upload finishes; reading
+   * it live is what produced `POST /decks//cover`.
+   */
+  const [coverDeck, setCoverDeck] = useState<Deck | null>(null);
+  const coverDeckId = coverDeck?.id ?? '';
+  const coverTargetHasCover = Boolean(readCoverPath(coverDeck));
+  const coverTarget = useMemo(
+    () => ({ kind: 'deck' as const, id: coverDeckId }),
+    [coverDeckId],
+  );
+  const applyDeckCover = useCallback(
+    (coverPath: string | null) => {
+      if (coverDeckId) setDeckCoverPath(coverDeckId, coverPath);
+    },
+    [coverDeckId, setDeckCoverPath],
+  );
+  const coverPicker = useCoverPicker(coverTarget, {
+    hasCover: coverTargetHasCover,
+    onApplied: applyDeckCover,
+  });
+
   const deckActionItems: ActionSheetItem[] = deckActions
     ? [
         {
@@ -450,6 +494,22 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
           label: 'Generate cards with AI',
           icon: 'sparkles',
           onPress: () => openAiForDeck(deckActions.id),
+        },
+        {
+          section: 'Manage',
+          label: readCoverPath(deckActions) ? 'Change cover…' : 'Add cover…',
+          icon: 'image',
+          hint: 'A picture on this deck in the list',
+          // Let this sheet close before the cover sheet opens: two modals
+          // animating over each other is how Android loses the second one.
+          // The deck is captured now, because closing clears `deckActions`.
+          onPress: () => {
+            const deck = deckActions;
+            setTimeout(() => {
+              setCoverDeck(deck);
+              coverPicker.open();
+            }, 50);
+          },
         },
         {
           section: 'Manage',
@@ -508,6 +568,9 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
 
   return (
     <Wrapper {...wrapperProps}>
+      {/* A cover failure belongs where the press happened, not in a toast that
+          scrolls past: under the top of the list, in the server's own words. */}
+      <CoverFailureLine failure={coverPicker.failure} onDismiss={coverPicker.dismissFailure} />
       {embedded && (
         <View className="flex-row flex-wrap gap-2 justify-end px-4 pt-3">
           {dueCount > 0 ? (
@@ -696,6 +759,8 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
         items={deckActionItems}
         onClose={() => setDeckActions(null)}
       />
+
+      <CoverPicker controller={coverPicker} title={coverDeck?.name ?? 'Cover image'} />
 
       <CoursePicker
         visible={!!courseMoveDeck}

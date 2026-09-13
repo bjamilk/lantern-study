@@ -6,6 +6,7 @@
  * one of these decisions used to be impossible to check without a renderer.
  */
 import {
+  companionOpenAttachment,
   COMPANION_SUBTITLE_FALLBACK,
   companionScopeFromRoute,
   EXPLAIN_SIMPLY_PROMPT,
@@ -237,5 +238,45 @@ describe('companionScopeFromRoute — scope id', () => {
   it('is null when the route names no room', () => {
     expect(companionScopeFromRoute('StudyHub').scopeId).toBeNull();
     expect(companionScopeFromRoute('CourseRoom', { studySetId: '   ' }).scopeId).toBeNull();
+  });
+});
+
+
+describe('what the panel is attached to when it opens (SF2 \u00a76 #14)', () => {
+  it('attaches nothing when the student is standing in the SET', () => {
+    // The defect: Ask pressed in the `Client Centre Care` room read
+    // `On: Lecture — 12 Sep`, because the panel restored the last attachment
+    // persisted for that scope. A question about the set was silently grounded
+    // in one note inside it.
+    expect(companionOpenAttachment('CourseRoom', { studySetId: 'set-1' })).toBe('set');
+    expect(companionOpenAttachment('StudySetLibrary', { studySetId: 'set-1', kind: 'cards' })).toBe(
+      'set'
+    );
+    expect(companionOpenAttachment('CourseRoom', { courseId: 'course-9' })).toBe('set');
+  });
+
+  it('still attaches the note when the route names one', () => {
+    // The narrowest-wins rule is right — an attached note SHOULD beat its set.
+    // The fix is that standing in the room means nothing is attached.
+    expect(companionOpenAttachment('NotesStudio', { studySetId: 'set-1', noteId: 'note-7' })).toBe(
+      'route-note'
+    );
+    expect(companionOpenAttachment('NoteEditor', { noteId: 'note-7' })).toBe('route-note');
+  });
+
+  it('restores whatever was attached anywhere else', () => {
+    expect(companionOpenAttachment('Dashboard', null)).toBe('restore');
+    expect(companionOpenAttachment('StudyHub', {})).toBe('restore');
+    expect(companionOpenAttachment(null, null)).toBe('restore');
+    // A set screen with no set named is not a set scope either.
+    expect(companionOpenAttachment('CourseRoom', {})).toBe('restore');
+    expect(companionOpenAttachment('CourseRoom', { studySetId: '   ' })).toBe('restore');
+  });
+
+  it('leaves the set as the line the panel then draws', () => {
+    // With nothing attached, narrowest-wins lands on the room's own name.
+    expect(scopeLabel({ noteTitle: null, scopeName: 'Pharmacology', screenName: 'Study set' })).toBe(
+      'On: Pharmacology'
+    );
   });
 });

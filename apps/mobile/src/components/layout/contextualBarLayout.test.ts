@@ -136,6 +136,60 @@ describe('contextualBarClearance stacks the row ON TOP of the global bar', () =>
   });
 });
 
+describe('a row that stands IN the bar\u2019s place (the set row)', () => {
+  // The 2026-09-08 replace mode had this arithmetic and the build-185 revert
+  // deleted it. It is back because one row replaces the bar again — and a
+  // screen that still padded for BOTH would leave a 56 dp band of dead ground
+  // between its last item and the row.
+  it('pays for the row instead of for the bar', () => {
+    const base = tabBarClearance(48);
+    expect(
+      contextualBarClearance({
+        base,
+        contentHeight: 44,
+        present: true,
+        replace: true,
+        tabBarContentHeight: 56,
+      })
+    ).toBe(base + 44 - 56);
+  });
+
+  it('still adds the row on every other registry', () => {
+    const base = tabBarClearance(48);
+    expect(contextualBarClearance({ base, contentHeight: 44, present: true })).toBe(base + 44);
+    expect(
+      contextualBarClearance({ base, contentHeight: 44, present: true, replace: false, tabBarContentHeight: 56 })
+    ).toBe(base + 44);
+  });
+
+  it('never clears less than the row itself, whatever it is told', () => {
+    // The offline-box rule: err toward clearing too much. A nonsense bar height
+    // must not produce a clearance that leaves the last item under the chrome.
+    expect(
+      contextualBarClearance({
+        base: 10,
+        contentHeight: 44,
+        present: true,
+        replace: true,
+        tabBarContentHeight: 900,
+      })
+    ).toBe(44);
+  });
+
+  it('subtracts nothing when there is no row at all', () => {
+    const base = tabBarClearance(48);
+    expect(
+      contextualBarClearance({
+        base,
+        contentHeight: 44,
+        present: false,
+        replace: true,
+        tabBarContentHeight: 56,
+      })
+    ).toBe(base);
+  });
+});
+
 describe('the swap animation', () => {
   it('runs for 150 ms by default', () => {
     expect(contextualBarTransitionMs(false)).toBe(CONTEXTUAL_BAR_ANIMATION_MS);

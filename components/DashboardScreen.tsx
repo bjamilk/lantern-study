@@ -13,21 +13,29 @@ import { Card } from './ui';
 import { computeStudyStreak, getDashboardFirstName } from '@lantern/shared/utils';
 import {
   buildStudySetPath,
+  homeRegions,
+  isCalendarNote,
+  isLectureNote,
+  notePreviewText,
   primaryHomeAction,
   studySetLabel,
   todayDateOnlyLocal,
   upcomingExamsFromNotes,
+  type HomeRegionId,
   type StudyActivityDay,
 } from '@lantern/shared';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudyResumeStore } from '../stores/studyResumeStore';
 import { useStudySetStore } from '../stores/studySetStore';
+import { useCompanionStore } from '../stores/companionStore';
 import { useLoginStreak } from '../hooks/useLoginStreak';
 import { DashboardHero } from './dashboard/DashboardHero';
 import { GettingStartedChecklist } from './dashboard/GettingStartedChecklist';
 import { HomeQuickActions } from './dashboard/HomeQuickActions';
 import { HomeStudySets } from './dashboard/HomeStudySets';
 import { HomeRecentMaterials } from './dashboard/HomeRecentMaterials';
+import { RecentActivities } from './dashboard/RecentActivities';
+import { CourseReadinessCard } from './CourseReadinessCard';
 import AiJobsCard from './jobs/AiJobsCard';
 import Modal from './ui/Modal';
 import {
@@ -243,6 +251,103 @@ export default function DashboardScreen({
   }, [studySets, notes]);
 
   /**
+   * HOME'S SPINE, from `homeRegions()` in `@lantern/shared/dashboard`. Web and
+   * mobile render the same regions in the same order under the same headings;
+   * only mobile's `Your progress` door differs, and web keeps Streak in the
+   * right rail instead. The ids are read here so a heading cannot drift from
+   * the one mobile prints.
+   */
+  const regions = useMemo(
+    () =>
+      new Map<HomeRegionId, { label?: string; sublabel?: string }>(
+        homeRegions({
+          platform: 'web',
+          dueCount: homeDueTotal,
+          hasExamDate: upcomingExams.length > 0,
+        }).map((region) => [region.id, { label: region.label, sublabel: region.sublabel }])
+      ),
+    [homeDueTotal, upcomingExams.length]
+  );
+
+  const resumeRows = useStudyResumeStore((s) => s.recentActivities);
+  /**
+   * Companion threads are only in memory once the student has opened the
+   * companion panel — the store fetches nothing on Home. Read whatever is
+   * there and let an empty array contribute no rows; Home does not open a
+   * request to fill a section.
+   */
+  const companionConversations = useCompanionStore((s) => s.conversations);
+
+  /**
+   * `Recent activities`, assembled from what Home already holds. Each kind has
+   * exactly ONE source, so a row can never appear twice:
+   *
+   *   flashcards ← the resume feed's `cards` rows. There is no per-deck study
+   *                timestamp in `Deck` at all, so this is the only honest one.
+   *   tests      ← `testResults`, which carry the real attempt time and score.
+   *   materials  ← the notes store's `updatedAt` (notes have no `lastOpenedAt`;
+   *                this is the closest true thing, and it is what Recent
+   *                materials already sorts on).
+   *   companion  ← the companion store, when it has been loaded.
+   *
+   * Nothing here fetches.
+   */
+  const activityInput = useMemo(() => {
+    const setTitleById = new Map(studySets.map((set) => [set.id, studySetLabel(set)]));
+
+    const decks = resumeRows
+      .filter((row) => row.kind === 'cards')
+      .map((row) => ({
+        id: row.href,
+        title: row.title,
+        setId: row.studySetId || null,
+        setTitle: setTitleById.get(row.studySetId) ?? null,
+        lastStudiedAt: row.at,
+        // The resume href is more exact than the activity root: it can point
+        // at the very deck session that was paused.
+        targetRoute: row.href,
+      }));
+
+    const tests = rawTestResults
+      .filter((result) => result?.session?.startTime)
+      .map((result) => {
+        const at = result.session.endTime ?? result.session.startTime;
+        const setId = result.session.config?.studySetId ?? null;
+        return {
+          id: result.id,
+          title:
+            result.session.title ||
+            result.session.config?.groupName ||
+            'Test',
+          setId,
+          setTitle: setId ? setTitleById.get(setId) ?? null : null,
+          lastAttemptAt: at instanceof Date ? at.toISOString() : String(at ?? ''),
+          lastScore: typeof result.score === 'number' ? result.score : null,
+        };
+      });
+
+    const materials = notes
+      .filter((note) => !isCalendarNote(note))
+      .map((note) => ({
+        id: note.id,
+        title: note.title || '',
+        setId: note.studySetId || null,
+        setTitle: note.studySetId ? setTitleById.get(note.studySetId) ?? null : null,
+        lastOpenedAt: note.updatedAt || null,
+        isLecture: isLectureNote(note),
+      }));
+
+    const conversations = companionConversations.map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      lastMessageAt: conversation.updatedAt,
+      lastMessagePreview: notePreviewText(conversation.preview),
+    }));
+
+    return { decks, tests, notes: materials, conversations };
+  }, [resumeRows, rawTestResults, notes, studySets, companionConversations]);
+
+  /**
    * The three quick-action doors go three places. Each opens the last set's
    * own activity; with no set yet there is nothing to open, so they fall back
    * to the Study hub rather than dead-ending.
@@ -366,17 +471,28 @@ export default function DashboardScreen({
               onNavigatePath={onNavigatePath}
             />
 
+            <RecentActivities
+              {...activityInput}
+              onOpen={(activity) => {
+                // The companion has no URL of its own — it is a docked panel —
+                // so its rows open the panel rather than navigating to a route
+                // that does not exist.
+                if (activity.kind === 'companion') {
+                  onToggleCompanion?.();
+                  return;
+                }
+                onNavigatePath?.(activity.targetRoute);
+              }}
+            />
+
             <section>
-              <h2 className="text-title font-semibold text-lantern-text mb-4">Upcoming</h2>
+              <h2 className="text-title font-semibold text-lantern-text mb-4">
+                {regions.get('upcomingExam')?.label ?? 'Upcoming exam'}
+              </h2>
               <div className="space-y-3">
-                {onOpenCourseWorkspace && <WorkspaceJumpBack onOpen={onOpenCourseWorkspace} />}
-                <ClassWorkCard />
-                <div className="empty:hidden">
-                  <AiJobsCard />
-                </div>
-                <Card padding="md" className="rounded-2xl">
-                  <p className="text-body font-semibold text-lantern-text">Upcoming exam</p>
-                  {upcomingExams[0] ? (
+                {upcomingExams[0] ? (
+                  <Card padding="md" className="rounded-2xl">
+                    <p className="text-body font-semibold text-lantern-text">Upcoming exam</p>
                     <button
                       type="button"
                       onClick={() =>
@@ -390,12 +506,38 @@ export default function DashboardScreen({
                         {upcomingExams[0].title} · {upcomingExams[0].examDate}
                       </p>
                     </button>
-                  ) : (
-                    <p className="text-caption text-lantern-text-secondary mt-1">
-                      Add an exam date on a study set calendar when you have one.
-                    </p>
-                  )}
-                </Card>
+                  </Card>
+                ) : (
+                  // No exam date anywhere: the slot shows READINESS instead of
+                  // an empty card that only says a date is missing. The
+                  // readiness card is the mastery rollup per course, and it is
+                  // day-one useful — a brand-new student sees each course's
+                  // outline and a "Start here" pointer. The black pill under it
+                  // is the one action the empty state actually wants.
+                  <>
+                    <CourseReadinessCard
+                      onOpenDeck={onOpenDeckById}
+                      onOpenNote={onOpenNoteById}
+                      onOpenTests={onNavigateToTests}
+                      onOpenAcademicSettings={onOpenAcademicSettings}
+                    />
+                    {onOpenAcademicSettings ? (
+                      <button
+                        type="button"
+                        onClick={onOpenAcademicSettings}
+                        className="inline-flex items-center gap-1.5 rounded-full bg-lantern-ink px-4 py-2 text-caption font-semibold text-lantern-surface hover:opacity-90 transition-opacity"
+                      >
+                        <AppIcon name="calendar" size={14} aria-hidden />
+                        Add exam date
+                      </button>
+                    ) : null}
+                  </>
+                )}
+                {onOpenCourseWorkspace && <WorkspaceJumpBack onOpen={onOpenCourseWorkspace} />}
+                <ClassWorkCard />
+                <div className="empty:hidden">
+                  <AiJobsCard />
+                </div>
               </div>
             </section>
 
@@ -445,6 +587,16 @@ export default function DashboardScreen({
               onExploreMarketplace={() => onNavigateToMarketplace?.()}
               onTryOffline={() => onNavigateToOffline?.()}
             />
+
+            {/* Region 7 of the shared spine. It used to sit in the right rail,
+                which mobile has no equivalent of, so the two Homes ended on
+                different things. The rail now carries only Streak. */}
+            <section>
+              <h2 className="text-title font-semibold text-lantern-text mb-4">
+                {regions.get('joinClass')?.label ?? 'Join a class'}
+              </h2>
+              <JoinClassCard />
+            </section>
           </div>
 
           <aside className="space-y-4 lg:sticky lg:top-6">
@@ -457,7 +609,6 @@ export default function DashboardScreen({
                 Keep a day going to protect it.
               </p>
             </Card>
-            <JoinClassCard />
           </aside>
         </div>
       </div>

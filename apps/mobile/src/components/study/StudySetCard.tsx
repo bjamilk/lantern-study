@@ -28,6 +28,7 @@ import {
   type SetTileGlyph,
 } from './setPresentation';
 import { setTileSkin } from './setTileColors';
+import { SetCoverSquare } from './SetCoverSquare';
 
 /** Glyph per chip kind. The chips are scanned, not read, so each carries one. */
 const CHIP_ICONS: Record<string, AppIconName> = {
@@ -48,7 +49,7 @@ const CHIP_ICONS: Record<string, AppIconName> = {
  * monitor glyph mapped, and adding one to the shared icon map from this lane
  * would collide with two other lanes editing `components/ui`.
  */
-const TILE_ICONS: Record<SetTileGlyph, AppIconName> = {
+export const TILE_ICONS: Record<SetTileGlyph, AppIconName> = {
   layers: 'layers',
   monitor: 'easel',
   lightbulb: 'bulb',
@@ -66,6 +67,10 @@ const MAX_CHIPS = 4;
 export interface StudySetCardProps {
   setId: string;
   title: string;
+  /** The set's own picture. Absent or unsigned, the pastel art is drawn. */
+  coverPath?: string | null;
+  /** A picture chosen on this device and not yet uploaded. */
+  pendingCoverUri?: string | null;
   counts: SetCounts;
   /** 0-100, already clamped by the caller. */
   percent: number;
@@ -87,6 +92,8 @@ export interface StudySetCardProps {
 export function StudySetCard({
   setId,
   title,
+  coverPath,
+  pendingCoverUri,
   counts,
   percent,
   progressBasis,
@@ -129,13 +136,25 @@ export function StudySetCard({
         className="p-3 active:opacity-80"
       >
         <View className="flex-row items-start gap-3">
-          <View
-            style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: skin.tint }}
-            className="items-center justify-center"
-            importantForAccessibility="no-hide-descendants"
-          >
-            <AppIcon name={TILE_ICONS[art.glyph]} size={22} color={skin.ink} importantForAccessibility="no" />
-          </View>
+          {/* The set's picture stands exactly where the pastel tile stands:
+              same 44 square, same 14 radius, so a hub of sets with and without
+              pictures is still one aligned column. */}
+          <SetCoverSquare
+            coverPath={coverPath}
+            pendingUri={pendingCoverUri}
+            size={44}
+            radius={14}
+            accessibilityLabel={`${title} picture`}
+            fallback={
+              <View
+                style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: skin.tint }}
+                className="items-center justify-center"
+                importantForAccessibility="no-hide-descendants"
+              >
+                <AppIcon name={TILE_ICONS[art.glyph]} size={22} color={skin.ink} importantForAccessibility="no" />
+              </View>
+            }
+          />
 
           <View className="flex-1 min-w-0">
             <T.Body style={{ fontWeight: '600' }} numberOfLines={1}>

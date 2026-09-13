@@ -144,6 +144,28 @@ export function pruneStudyTimers(
 }
 
 /**
+ * Drop runs that finished before this page load began.
+ *
+ * A finished run is history, not state: nobody is in the room when a stored
+ * `startedAtMs` quietly passes zero, so rehydrating one paints `Time's up`
+ * about a session the student ended hours ago. `Time's up` is worth saying only
+ * about a run that ran out while someone was watching, so the persisted ones
+ * are cleared on the way in and the header opens idle.
+ */
+export function clearExpiredStudyTimers(
+  timers: Record<string, StudyTimerState> | undefined,
+  nowMs: number
+): Record<string, StudyTimerState> {
+  const live: Record<string, StudyTimerState> = {};
+  for (const [setId, timer] of Object.entries(timers || {})) {
+    if (!timer || typeof timer.baseSeconds !== 'number') continue;
+    if (isStudyTimerExpired(timer, nowMs)) continue;
+    live[setId] = timer;
+  }
+  return pruneStudyTimers(live);
+}
+
+/**
  * `localStorage`, or a per-process stand-in where there is none.
  *
  * Node (tests, SSR) has no `localStorage`, and a private-mode browser can have
@@ -230,6 +252,16 @@ export const useStudySetTimerStore = create<StudySetTimerStore>()(
       name: 'lantern-study-set-timers',
       storage: createJSONStorage(() => browserStorage()),
       partialize: (state) => ({ timers: pruneStudyTimers(state.timers) }),
+      // Rehydration, not the popover, is where a finished run is retired — the
+      // header can then derive its pill from state alone instead of waiting for
+      // someone to click the nag away.
+      merge: (persisted, current) => ({
+        ...current,
+        timers: clearExpiredStudyTimers(
+          (persisted as { timers?: Record<string, StudyTimerState> } | undefined)?.timers,
+          Date.now()
+        ),
+      }),
     }
   )
 );

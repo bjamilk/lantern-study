@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -58,9 +58,15 @@ import {
   SET_ROOM_TILE_ORDER,
   sectionHasBlock,
   tileCounts,
+  isSetRoomSectionId,
   type SetRoomBlockId,
   type SetRoomSectionId,
 } from '../../components/study/setRoomSections';
+import {
+  adoptSegmentRequest,
+  initialSegment,
+  readSegmentRequest,
+} from '../../navigation/segmentParamSync';
 import { useSetRoomUiStore } from '../../stores/setRoomUiStore';
 import { confirmAsync } from '../../components/ui/appDialog';
 import { ClassOfficialMaterials } from '../../components/classes/ClassOfficialMaterials';
@@ -86,7 +92,15 @@ import type { StudyNote } from '../../services/notes';
 type Props = NativeStackScreenProps<StudyStackParamList, 'CourseRoom'>;
 
 export function CourseRoomScreen({ navigation, route }: Props) {
-  const { courseId: courseIdParam, studySetId, courseLabel } = route.params;
+  const {
+    courseId: courseIdParam,
+    studySetId,
+    courseLabel,
+  } = route.params;
+  // The params object ITSELF is the per-press ticket (segmentParamSync.ts), so
+  // it is read whole rather than destructured into a value that cannot tell two
+  // presses of the same door apart.
+  const routeParams = route.params;
   const loadSets = useStudySetStore((s) => s.loadSets);
   const updateSet = useStudySetStore((s) => s.updateSet);
   const touchOpened = useStudySetStore((s) => s.touchOpened);
@@ -131,12 +145,51 @@ export function CourseRoomScreen({ navigation, route }: Props) {
   // Which segment this set was last left on. A segment row that forgets sends
   // the student back to Overview every time they open a lecture and return,
   // which is the scroll it was built to remove.
+  // …unless a door names one. `segment` is the set contextual row's Materials
+  // param, and pressing it from INSIDE the room only merges params — the screen
+  // is already focused, so nothing remounts. The param is an INBOX: seeded on
+  // mount, adopted once per press, and never written back (writing it back is
+  // what crash-looped build 205 — navigation/segmentParamSync.ts). What is on
+  // screen is published to the store instead, which is where the row reads its
+  // active pill.
   const [section, setSection] = useState<SetRoomSectionId>(() =>
-    useSetRoomUiStore.getState().sectionFor(studySetId)
+    initialSegment(
+      route.params.segment,
+      isSetRoomSectionId,
+      useSetRoomUiStore.getState().sectionFor(studySetId)
+    )
   );
+  // The mount's params are an ask already answered by the seed above.
+  const adoptedTicket = useRef<unknown>(route.params);
+  // …but the row reads the STORE, so a room pushed straight onto Materials has
+  // to say so once, or its pill would light whatever the set was left on.
   useEffect(() => {
+    useSetRoomUiStore.getState().setSection(studySetId, section);
+    // Mount only: every later change has its own writer below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const seededSet = useRef(studySetId);
+  useEffect(() => {
+    if (seededSet.current === studySetId) return;
+    seededSet.current = studySetId;
     setSection(useSetRoomUiStore.getState().sectionFor(studySetId));
   }, [studySetId]);
+  // An explicit press overrides the memory, and is written INTO it, so leaving
+  // and coming back lands on the segment the student last actually saw. The
+  // store write is here and not inside the `setSection` updater: an updater
+  // React may replay is no place to change the world.
+  useEffect(() => {
+    const adopted = adoptSegmentRequest({
+      request: readSegmentRequest(routeParams, 'segment', isSetRoomSectionId),
+      lastTicket: adoptedTicket.current,
+      current: section,
+    });
+    if (!adopted) return;
+    adoptedTicket.current = adopted.ticket;
+    if (adopted.alreadyShown) return;
+    setSection(adopted.segment);
+    useSetRoomUiStore.getState().setSection(studySetId, adopted.segment);
+  }, [routeParams, section, studySetId]);
   const onSelectSection = useCallback(
     (next: SetRoomSectionId) => {
       setSection(next);
@@ -524,6 +577,7 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             place. See SetRoomHeader.tsx. */}
         <SetRoomHeader
           title={label}
+          coverPath={studySet?.coverPath}
           subtitle={
             studySetId
               ? undefined

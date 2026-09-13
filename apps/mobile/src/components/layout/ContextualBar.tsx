@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useVisibleSetParams } from '../../stores/setRoomUiStore';
 import { Animated, Keyboard, Platform, Pressable, Text, View } from 'react-native';
 import type { ThemePalette } from '@lantern/shared/design';
 import {
@@ -247,13 +248,16 @@ export function ContextualBar({
   const {
     contextual,
     contextualRoute,
-    contextualParams,
+    contextualParams: routeParams,
     immersive,
     withinChrome,
     requestScrollToTop,
     runScreenAction,
   } = useChrome();
   const { colors, isDark, reduceMotion } = useTheme();
+  // The store is the single writer of the visible set segment/shelf; params are
+  // only an inbox, so the lit pill must follow the store, not the last ask.
+  const contextualParams = useVisibleSetParams(routeParams);
   const openCompanion = useCompanionStore((s) => s.open);
   // Ask INSIDE a set says which set before the sheet mounts — SF2 §6 #14.
   const openCompanionForScope = useCompanionStore((s) => s.openForScope);

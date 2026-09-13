@@ -111,6 +111,15 @@ interface StudySetState {
     }
   ) => Promise<StudySet>;
   removeSet: (setId: string) => Promise<void>;
+  /**
+   * Record a cover the cover ROUTE already stored (or cleared with null).
+   *
+   * Local only: the upload is its own request, so re-sending the path through
+   * PATCH would be a second write of a value the server set itself — and the
+   * PATCH refuses a non-null `coverPath` anyway, exactly so a client cannot
+   * aim the column at an object it does not own.
+   */
+  setCoverPath: (setId: string, coverPath: string | null) => void;
   resolveSet: (setId: string | null | undefined) => StudySet | null;
   touchOpened: (setId: string) => void;
   /** Tell the server the set was opened, so "last studied" is true on every device. */
@@ -256,6 +265,14 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
     set({ sets });
     writeCache(sets, new Date().toISOString());
     return updated;
+  },
+
+  setCoverPath: (setId, coverPath) => {
+    const sets = get().sets.map((row) => (row.id === setId ? { ...row, coverPath } : row));
+    set({ sets });
+    // Cached too: without this the cover vanishes on the next cold start and
+    // comes back only after the list refetch lands.
+    writeCache(sets, new Date().toISOString());
   },
 
   removeSet: async (setId) => {

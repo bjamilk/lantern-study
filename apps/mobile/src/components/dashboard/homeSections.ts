@@ -21,35 +21,54 @@ import {
   studySetLabel,
   studySetProgressPercent,
   type StudySetPlanProgress,
+  type StudyResumeActivity,
+  type StudyResumeKind,
 } from '@lantern/shared/learning';
 import { pluralize } from '@lantern/shared/utils/plural';
 import type { FeatureKey, IllustrationName } from '@lantern/shared/design';
 import type { StudySet } from '@lantern/shared/types';
+import {
+  HOME_QUICK_ACTIONS as SHARED_QUICK_ACTIONS,
+  RECENT_ACTIVITIES_LIMIT,
+  RECENT_ACTIVITY_VERBS,
+  homeRegions,
+  recentActivities,
+  relativeActivityTime,
+  type HomeQuickActionId,
+  type HomeRegion,
+  type HomeRegionId,
+  type RecentActivity,
+  type RecentActivityKind,
+} from '@lantern/shared/dashboard';
 // Type-only, so the node test never loads AppIcon's react-native subtree.
 import type { AppIconName } from '../ui/AppIcon';
 
-/** The regions of Home, in the order web renders them. */
-export type HomeRegionId =
-  | 'greeting'
-  | 'studySets'
-  | 'recentMaterials'
-  | 'upcomingExam'
-  | 'readiness'
-  | 'quickActions'
-  | 'streak'
-  | 'joinClass';
+/**
+ * The spine itself now lives in `@lantern/shared/dashboard`, so web and the
+ * phone cannot drift on WHICH regions Home has or what order they come in.
+ * Mobile re-exports it rather than keeping a second list beside it — the
+ * second list was how `streak` survived here after web had already replaced
+ * it with a door to Progress.
+ */
+export type { HomeRegionId, HomeRegion, RecentActivity, RecentActivityKind };
+export {
+  homeRegions,
+  recentActivities,
+  relativeActivityTime,
+  RECENT_ACTIVITIES_LIMIT,
+  RECENT_ACTIVITY_VERBS,
+};
 
 /* ------------------------------------------------------------------ *
  * 1. Quick actions
  * ------------------------------------------------------------------ */
 
-export type HomeQuickActionId =
-  | 'import'
-  | 'quiz'
-  | 'companion'
-  | 'tutor'
-  | 'record'
-  | 'study';
+export type { HomeQuickActionId };
+
+/** Shared labels, by id, so the phone prints web's exact wording. */
+const SHARED_LABEL = Object.fromEntries(
+  SHARED_QUICK_ACTIONS.map((action) => [action.id, action.label])
+) as Record<HomeQuickActionId, string>;
 
 export interface HomeQuickActionSpec {
   id: HomeQuickActionId;
@@ -77,22 +96,22 @@ export interface HomeQuickActionSpec {
 export const HOME_QUICK_ACTIONS: readonly HomeQuickActionSpec[] = [
   {
     id: 'import',
-    label: 'Import',
+    label: SHARED_LABEL.import,
     icon: 'cloud-upload',
     feature: 'notes',
     illustration: 'import-tray',
   },
-  { id: 'quiz', label: 'Create a quiz', icon: 'clipboard-check', feature: 'tests' },
-  { id: 'companion', label: 'Ask Lantern', icon: 'sparkles', feature: 'ai' },
-  { id: 'tutor', label: 'Tutor', icon: 'school', feature: 'campus' },
+  { id: 'createQuiz', label: SHARED_LABEL.createQuiz, icon: 'clipboard-check', feature: 'tests' },
+  { id: 'askLantern', label: SHARED_LABEL.askLantern, icon: 'sparkles', feature: 'ai' },
+  { id: 'tutor', label: SHARED_LABEL.tutor, icon: 'school', feature: 'campus' },
   {
-    id: 'record',
-    label: 'Record',
+    id: 'recordLecture',
+    label: SHARED_LABEL.recordLecture,
     icon: 'mic',
     feature: 'recording',
     illustration: 'mic-wave',
   },
-  { id: 'study', label: 'Open Study', icon: 'library', feature: 'sets' },
+  { id: 'openStudy', label: SHARED_LABEL.openStudy, icon: 'library', feature: 'sets' },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -274,33 +293,116 @@ function clampPercent(value: number): number {
 }
 
 /* ------------------------------------------------------------------ *
- * 5. Which regions render
+ * 5. A recent activity → a screen on the Study stack
  * ------------------------------------------------------------------ */
 
-export interface HomeRegionsInput {
-  studySetCount: number;
-  /** Rows the resume endpoint returned (or the cached notes standing in). */
-  recentMaterialCount: number;
-  hasUpcomingExam: boolean;
+/**
+ * Where a "Recent activities" row lands when tapped.
+ *
+ * The shared feed speaks in web paths, and most of them are study-set paths
+ * `resumeRouteForHref` already knows how to translate. The ones it cannot are
+ * the rows that have no set — a loose deck, a loose note — and for those the
+ * row's own `kind` and `id` name the screen directly. A companion row has no
+ * Study-stack screen at all, so it returns null and the caller opens the
+ * companion instead of navigating somewhere arbitrary.
+ *
+ * This is the rule the reviewer asked for as "tap = resume": the row opens the
+ * thing the verb names, never the set it happens to live in.
+ */
+export function recentActivityRoute(activity: RecentActivity): ResumeRoute | null {
+  const fromHref = resumeRouteForHref(activity.targetRoute);
+  if (fromHref) return fromHref;
+  switch (activity.kind) {
+    case 'flashcards':
+      return { screen: 'DeckDetail', params: { deckId: activity.id } };
+    case 'material':
+    case 'lecture':
+      return { screen: 'NoteEditor', params: { noteId: activity.id } };
+    default:
+      return null;
+  }
 }
 
+/* ------------------------------------------------------------------ *
+ * 5b. The server's resume feed → the shared "Recent activities" rows
+ * ------------------------------------------------------------------ */
+
+/** StudyFetch's five verbs, by the resume feed's nine kinds. */
+const RESUME_KIND_TO_ACTIVITY: Record<StudyResumeKind, RecentActivityKind> = {
+  note: 'material',
+  lecture: 'lecture',
+  cards: 'flashcards',
+  quiz: 'test',
+  test: 'test',
+  // A recap, a lesson, a play and an essay are all things made FROM material
+  // and studied as material. They get the material verb rather than a fifth
+  // one each — five honest verbs beat nine that each appear once.
+  recap: 'material',
+  lesson: 'material',
+  play: 'material',
+  essay: 'material',
+};
+
 /**
- * The regions Home draws, top to bottom.
+ * The phone's feed, in the shared row shape.
  *
- * Greeting, quick actions, streak and Join a class are unconditional: they are
- * the screen's spine and a student with nothing yet still needs a way in.
- * "Your study sets" is unconditional too, because its empty state is the
- * invitation to make one. Recent materials hides when there is nothing recent
- * — an empty "Recent materials" heading is a heading over nothing. The exam
- * region always draws; without a date it falls back to readiness, which is
- * why both ids can appear.
+ * `GET /users/me/study-resume` already returns what the student was doing,
+ * ordered and de-duplicated by the server, and Home fetches it anyway for the
+ * greeting's Continue button. Re-deriving the same feed from four local stores
+ * would be a second answer to one question, and the two would disagree the
+ * moment a device had studied something it had not yet synced down.
+ *
+ * So the server's rows are TRANSLATED rather than replaced: the shared verbs
+ * and the shared ordering apply, and `recentActivities()` below is the offline
+ * fallback for when the feed came back empty.
  */
-export function homeRegions(input: HomeRegionsInput): HomeRegionId[] {
-  const regions: HomeRegionId[] = ['greeting', 'studySets'];
-  if (input.recentMaterialCount > 0) regions.push('recentMaterials');
-  regions.push(input.hasUpcomingExam ? 'upcomingExam' : 'readiness');
-  regions.push('quickActions', 'streak', 'joinClass');
-  return regions;
+export function recentActivitiesFromResume(
+  rows: readonly StudyResumeActivity[],
+  limit = RECENT_ACTIVITIES_LIMIT
+): RecentActivity[] {
+  return rows.slice(0, Math.max(0, limit)).map((row) => {
+    const kind = RESUME_KIND_TO_ACTIVITY[row.kind] ?? 'material';
+    return {
+      kind,
+      verb: RECENT_ACTIVITY_VERBS[kind],
+      title: row.title,
+      targetRoute: row.href,
+      at: row.at,
+      // The href is the row's identity here: the feed is keyed by what was
+      // open, not by a row id the server does not send.
+      id: row.href,
+    };
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * 5c. The "Your progress" door's one line
+ * ------------------------------------------------------------------ */
+
+/**
+ * "12 day streak · Level 4 Scholar · 1,280 XP" — one line, three facts.
+ *
+ * Pure and tested because it is the screen's one remaining claim about the
+ * student's history, and the two dishonest versions of it are easy to write by
+ * accident. `known: false` means we have neither live stats nor a cached
+ * snapshot, so the figures are UNKNOWN — printing "0 day streak · Level 1 · 0
+ * XP" at a student who has been studying for a month is the defect Home's
+ * greeting card was already fixed for, and the door must not reintroduce it.
+ */
+export function progressSummaryLine(input: {
+  streak: number;
+  level?: { level: number; name: string } | null;
+  points: number;
+  known: boolean;
+  pending: boolean;
+}): string {
+  if (!input.known) return 'Your streak and XP will be here when you reconnect';
+  if (input.pending) return 'Loading your streak and XP…';
+  return [
+    `${input.streak} day streak`,
+    input.level ? `Level ${input.level.level} ${input.level.name}` : 'Level 1',
+    `${input.points.toLocaleString()} XP`,
+  ].join(' · ');
 }
 
 /* ------------------------------------------------------------------ *

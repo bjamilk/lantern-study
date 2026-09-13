@@ -128,7 +128,6 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/screens/budget/SetBudgetScreen.tsx': 17,
   'src/screens/budget/SetCategoryBudgetScreen.tsx': 2,
   'src/screens/budget/StudyWalletPanel.tsx': 7,
-  'src/screens/dashboard/DashboardScreen.tsx': 33,
   'src/screens/dashboard/LeaderboardScreen.tsx': 6,
   'src/screens/discover/CommunityBoardScreen.tsx': 8,
   'src/screens/discover/CommunityMembersScreen.tsx': 6,

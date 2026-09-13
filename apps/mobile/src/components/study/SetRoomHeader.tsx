@@ -17,10 +17,20 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { AppIcon, T } from '../ui';
+import { SetCoverSquare } from './SetCoverSquare';
 
 export interface SetRoomHeaderProps {
   /** The set's name. Two lines, then ellipsis. */
   title: string;
+  /**
+   * The set's picture, when it has one.
+   *
+   * Drawn ONLY when a cover exists: this header has never carried an identity
+   * tile, so inventing a pastel square for every set would be a layout change
+   * dressed up as a cover feature. A set with a picture gets the picture; a
+   * set without one looks exactly as it does today.
+   */
+  coverPath?: string | null;
   /** Shown under the title on a course room, where counts are the subtitle. */
   subtitle?: string;
   /** The study timer chip, rendered by the screen that owns the set id. */
@@ -35,6 +45,7 @@ export interface SetRoomHeaderProps {
 
 export function SetRoomHeader({
   title,
+  coverPath,
   subtitle,
   timer,
   onAllSets,
@@ -43,9 +54,20 @@ export function SetRoomHeader({
 }: SetRoomHeaderProps) {
   return (
     <View className="pt-2 pb-3">
-      <T.Title numberOfLines={2} ellipsizeMode="tail">
-        {title}
-      </T.Title>
+      <View className="flex-row items-center gap-3">
+        <SetCoverSquare
+          coverPath={coverPath}
+          size={44}
+          radius={14}
+          accessibilityLabel={`${title} picture`}
+          fallback={null}
+        />
+        <View className="flex-1">
+          <T.Title numberOfLines={2} ellipsizeMode="tail">
+            {title}
+          </T.Title>
+        </View>
+      </View>
       {subtitle ? (
         <T.Caption tone="secondary" className="mt-0.5">
           {subtitle}

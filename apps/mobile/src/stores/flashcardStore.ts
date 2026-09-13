@@ -31,6 +31,15 @@ export interface Deck {
   due_count?: number;
   new_count?: number;
   mastered_count?: number;
+  /**
+   * Cover image storage reference ("bucket/path"), NOT a URL — signed URLs
+   * live 24h, so the path is what is kept and clients re-sign on read.
+   * Both spellings are accepted because deck rows reach this store two ways:
+   * raw snake_case columns from the list endpoint and camelCase from the
+   * cover route's own response.
+   */
+  cover_path?: string | null;
+  coverPath?: string | null;
 }
 
 export type Flashcard = SharedFlashcard;
@@ -258,6 +267,14 @@ interface FlashcardState {
     userId: string
   ) => Promise<void>;
   deleteDeck: (deckId: string, userId: string) => Promise<void>;
+  /**
+   * Record a cover the SERVER has already stored (or cleared).
+   *
+   * Local-only and deliberately unqueued: the cover routes own the write, so
+   * there is nothing here to replay. Queuing it would re-POST a base64 image
+   * the device no longer holds.
+   */
+  setDeckCoverPath: (deckId: string, coverPath: string | null) => void;
   /**
    * Put a deck the SERVER has already written into the local store.
    *
@@ -652,6 +669,18 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
+  setDeckCoverPath: (deckId, coverPath) => {
+    // Both spellings are written so a row that arrived snake_case and a row
+    // that arrived camelCase cannot disagree about whether a cover exists.
+    const patch = { cover_path: coverPath, coverPath };
+    set(state => ({
+      decks: state.decks.map(d => (d.id === deckId ? { ...d, ...patch } : d)),
+      currentDeck:
+        state.currentDeck?.id === deckId ? { ...state.currentDeck, ...patch } : state.currentDeck,
+    }));
+    void get().saveToStorage();
+  },
+
   deleteDeck: async (deckId: string, userId: string) => {
     // Store previous state for rollback
     const previousDecks = get().decks;

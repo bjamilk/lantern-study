@@ -37,6 +37,10 @@ import { useIsMdUp } from '../hooks/useMediaQuery';
 import { buildFolderTree, folderParentOptions, folderScopeIds } from '../utils/libraryArchive';
 import { confirmDialog } from '../stores/confirmStore';
 import { AppIcon } from './ui/AppIcon';
+import { CoverMenuItems, CoverPickerDialog, CoverThumb } from './ui/CoverPicker';
+import { coverErrorMessage } from './ui/coverPickerModel';
+import { removeCover } from '../stores/coverActions';
+import { useToastStore } from '../stores/toastStore';
 
 interface NotesScreenProps {
   theme: 'light' | 'dark';
@@ -157,6 +161,9 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   const [listView, setListView] = useState<NotesListView>('mine');
   // Shared-with-me note being reported (content report to Lantern moderation).
   const [reportNote, setReportNote] = useState<StudyNote | null>(null);
+  // The note whose cover the picker is editing. Row menus unmount on select,
+  // so the dialog is owned by the screen.
+  const [coverNote, setCoverNote] = useState<StudyNote | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [movePickerOpen, setMovePickerOpen] = useState(false);
@@ -276,6 +283,19 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
   // owner's organization (see server-side guard in supabaseService.updateNote).
   const canMoveNote = (note: StudyNote) =>
     !note.accessRole || note.accessRole === 'owner';
+
+  // A cover is the owner's presentation of their own note; the route refuses
+  // an editor, so offering it to one would be a menu item that always 403s.
+  const canSetNoteCover = (note: StudyNote) =>
+    !note.accessRole || note.accessRole === 'owner';
+
+  const handleRemoveNoteCover = async (noteId: string) => {
+    try {
+      await removeCover('note', noteId);
+    } catch (err) {
+      useToastStore.getState().showToast(coverErrorMessage(err).message, 'error');
+    }
+  };
 
   const exitSelectMode = () => {
     setSelectMode(false);
@@ -1093,6 +1113,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                 const showMenu =
                   (canManageNote(note) &&
                     (onTogglePinNote || onArchiveNote || onMoveNotesToFolder || onDeleteNotes || canMoveToCourse)) ||
+                  canSetNoteCover(note) ||
                   canReportNote(note);
                 const isSelected = selectedNoteIds.includes(note.id);
                 const selectable = selectMode && canManageNote(note) && selectionEnabled;
@@ -1133,10 +1154,20 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                           {isSelected ? <AppIcon name="checkmark" size={14} /> : null}
                         </span>
                       ) : null}
-                      <FeatureDisc
-                        feature={mark.feature}
-                        icon={<AppIcon name={mark.icon} size={20} />}
-                        size={40}
+                      {/* The cover takes the tile's place; the mark it replaced
+                          comes back as a badge, since the pastel square was the
+                          only thing saying what kind of note this is. */}
+                      <CoverThumb
+                        coverPath={note.coverPath}
+                        alt=""
+                        badge={<AppIcon name={mark.icon} size={16} />}
+                        fallback={
+                          <FeatureDisc
+                            feature={mark.feature}
+                            icon={<AppIcon name={mark.icon} size={20} />}
+                            size={40}
+                          />
+                        }
                       />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-1.5 min-w-0">
@@ -1211,6 +1242,20 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                                 Move to course…
                               </button>
                             ) : null}
+                            {canSetNoteCover(note) ? (
+                              <CoverMenuItems
+                                as="button"
+                                hasCover={Boolean(note.coverPath)}
+                                onChoose={() => {
+                                  setNoteMenuId(null);
+                                  setCoverNote(note);
+                                }}
+                                onRemove={() => {
+                                  setNoteMenuId(null);
+                                  void handleRemoveNoteCover(note.id);
+                                }}
+                              />
+                            ) : null}
                             {onTogglePinNote && canManageNote(note) && !note.isArchived ? (
                               <button
                                 type="button"
@@ -1278,6 +1323,15 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
           )}
         </main>
       </div>
+      {coverNote ? (
+        <CoverPickerDialog
+          open
+          kind="note"
+          id={coverNote.id}
+          hasCover={Boolean(coverNote.coverPath)}
+          onClose={() => setCoverNote(null)}
+        />
+      ) : null}
       {reportNote ? (
         <ReportContentModal
           isOpen={!!reportNote}

@@ -468,6 +468,35 @@ async function writeWithTopicFallback(
   return run(rest);
 }
 
+// ============ COVER IMAGES (decks + notes) ============
+
+/** Bucket for deck/note covers. Created by the service role on first upload. */
+export const COVER_IMAGE_BUCKET = "cover-images";
+
+/** Named so a 503 can tell the operator exactly what to apply. */
+export const COVER_IMAGE_MIGRATION = "20260913120000_cover_images.sql";
+
+/**
+ * The cover_path column is missing, i.e. the migration above has not been
+ * applied to this database. Callers answer 503 rather than 500 so the client
+ * can say "not available yet" instead of "something broke".
+ */
+export function isMissingCoverPathColumn(
+  error: { code?: string; message?: string } | null | undefined,
+): boolean {
+  return isMissingColumnError(error) && /cover_path/i.test(error?.message || "");
+}
+
+export class CoverColumnMissingError extends Error {
+  readonly migration = COVER_IMAGE_MIGRATION;
+  constructor() {
+    super(
+      `Cover images are not available yet — apply migration ${COVER_IMAGE_MIGRATION}.`,
+    );
+    this.name = "CoverColumnMissingError";
+  }
+}
+
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
 // Known listing kinds, mirroring the DB CHECK constraint on
 // marketplace_listings.listing_kind (migrations 20260818120000 +
@@ -1078,6 +1107,25 @@ export class SupabaseService {
     if (bucket === "question-images") {
       if (!userId) return false;
       return this.canAccessQuestionImage(userId, path);
+    }
+
+    if (bucket === COVER_IMAGE_BUCKET) {
+      // {ownerId}/decks/{deckId}/... or {ownerId}/notes/{noteId}/...
+      // The owner already returned true above; everyone else has to be able to
+      // READ the artefact the cover belongs to (shared deck, note collaborator),
+      // or the cover would 403 on exactly the screens that show it.
+      if (!userId) return false;
+      const scope = parts[1];
+      const artefactId = parts[2];
+      if (!artefactId) return false;
+      if (scope === "decks") {
+        return this.verifyDeckAccess(userId, artefactId, "read");
+      }
+      if (scope === "notes") {
+        const access = await this.resolveNoteAccess(artefactId, userId);
+        return Boolean(access);
+      }
+      return false;
     }
 
     if (bucket === "note-files") {
@@ -4383,7 +4431,7 @@ export class SupabaseService {
     const cached = await cacheService.get<any[]>(cacheKey);
     if (cached !== null) return cached;
 
-    const selectClause =
+    const baseSelectClause =
       profile === "compact"
         ? "id, name, user_id, is_shared, course_id, study_set_id, created_at, study_count"
         // study_count (Phase 3 M) is selected so "studied by N" can render;
@@ -4408,7 +4456,13 @@ export class SupabaseService {
 
     // topic_id is projected (and filtered) only while it exists — naming a
     // column the migration has not added yet 42703s the whole deck list.
+    // Same rule as topic_id: project cover_path only while it exists, or the
+    // whole deck list 42703s before the migration is applied.
+    let withCover = true;
     const runQuery = (withTopic: boolean) => {
+      const selectClause = withCover
+        ? `${baseSelectClause}, cover_path`
+        : baseSelectClause;
       let query = this.supabase
         .from("decks")
         .select(withTopic ? `${selectClause}, topic_id` : selectClause)
@@ -4424,6 +4478,10 @@ export class SupabaseService {
     };
 
     let { data, error }: { data: any; error: any } = await runQuery(true);
+    if (error && isMissingCoverPathColumn(error)) {
+      withCover = false;
+      ({ data, error } = await runQuery(true));
+    }
     if (error && isMissingTopicColumn(error)) {
       // No deck can carry a topic before the migration: a named topic matches
       // nothing, and "no topic" matches every deck.
@@ -4459,6 +4517,8 @@ export class SupabaseService {
     const decksWithCounts = decks.map((d) => ({
       ...d,
       card_count: cardCountByDeck[d.id] || 0,
+      // Raw storage path; the client re-signs it through /storage/signed-urls.
+      coverPath: (d as any).cover_path ?? null,
     }));
 
     await cacheService.set(cacheKey, decksWithCounts, 1800); // 30 minutes
@@ -4986,6 +5046,216 @@ export class SupabaseService {
     };
   }
 
+  /**
+   * Store a deck/note cover image.
+   *
+   * Mirrors uploadFlashcardImage: magic-byte validated, normalized to WebP
+   * (animated GIFs pass through), with a best-effort 320px sibling thumb. The
+   * caller persists the returned PATH — the signed URLs expire in 24h.
+   */
+  async uploadCoverImage(params: {
+    userId: string;
+    kind: "deck" | "note" | "study-set";
+    id: string;
+    fileName: string;
+    base64Data: string;
+    contentType: string;
+  }): Promise<{ path: string; url: string; thumbUrl: string | null }> {
+    const bucket = COVER_IMAGE_BUCKET;
+    const buffer = Buffer.from(params.base64Data, "base64");
+    if (buffer.length > 10 * 1024 * 1024) {
+      throw new Error("Image exceeds 10 MB limit");
+    }
+    assertImageMagicBytes(buffer, params.contentType);
+    const { normalized, thumb } = await processImageForUpload(
+      buffer,
+      "flashcard",
+      { detectedMime: detectImageMime(buffer) || params.contentType },
+    );
+
+    const ownerSegment = params.userId.replace(/[^a-zA-Z0-9_-]/g, "");
+    const idSegment = params.id.replace(/[^a-zA-Z0-9_-]/g, "");
+    const kindSegment =
+      params.kind === "deck"
+        ? "decks"
+        : params.kind === "study-set"
+          ? "study-sets"
+          : "notes";
+    const baseName =
+      params.fileName
+        .replace(/\.[^/.]+$/, "")
+        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "cover";
+    // Timestamped so the path changes on every replace: the objects are served
+    // with an immutable cache header, and reusing a path would serve the old
+    // picture from cache forever.
+    const filePath = `${ownerSegment}/${kindSegment}/${idSegment}/${Date.now()}-${baseName}.${normalized.ext}`;
+
+    const attemptUpload = async () =>
+      this.supabase.storage.from(bucket).upload(filePath, normalized.buffer, {
+        contentType: normalized.contentType,
+        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
+        upsert: false,
+      });
+
+    let uploadResult = await attemptUpload();
+    // First cover ever uploaded: the bucket does not exist yet. The service
+    // role can create it, so this needs no dashboard step.
+    if (
+      uploadResult.error &&
+      typeof uploadResult.error.message === "string" &&
+      uploadResult.error.message.toLowerCase().includes("bucket") &&
+      uploadResult.error.message.toLowerCase().includes("not found")
+    ) {
+      await this.supabase.storage.createBucket(bucket, { public: false });
+      uploadResult = await attemptUpload();
+    }
+    if (uploadResult.error) {
+      logger.error("Error uploading cover image:", {
+        error: uploadResult.error,
+        filePath,
+      });
+      throw new Error(uploadResult.error.message);
+    }
+
+    await this.uploadSiblingThumb(bucket, filePath, thumb);
+    const url = await this.createSignedStorageUrl(bucket, filePath);
+    let thumbUrl: string | null = null;
+    if (thumb) {
+      try {
+        thumbUrl = await this.createSignedStorageUrlWithVariant(
+          bucket,
+          filePath,
+          60 * 60 * 24,
+          "thumb",
+        );
+      } catch {
+        thumbUrl = null;
+      }
+    }
+    return { path: filePath, url, thumbUrl };
+  }
+
+  /** Best-effort removal of a cover object and its sibling thumb. Never throws. */
+  async deleteCoverObject(coverPath: string | null | undefined): Promise<void> {
+    if (!coverPath) return;
+    const path = coverPath.startsWith(`${COVER_IMAGE_BUCKET}/`)
+      ? coverPath.slice(COVER_IMAGE_BUCKET.length + 1)
+      : coverPath;
+    if (!path || path.includes("..")) return;
+    try {
+      await this.supabase.storage
+        .from(COVER_IMAGE_BUCKET)
+        .remove([path, storageThumbPath(path)]);
+    } catch (error: any) {
+      logger.warn("Cover object delete failed", {
+        path,
+        error: error?.message,
+      });
+    }
+  }
+
+  /**
+   * Write (or clear with null) a deck cover path. Owner-scoped.
+   * Returns the PREVIOUS path so the caller can delete the replaced object.
+   */
+  async setDeckCoverPath(
+    deckId: string,
+    userId: string,
+    coverPath: string | null,
+  ): Promise<{ previousPath: string | null }> {
+    const { data: current, error: readError } = await this.supabase
+      .from("decks")
+      .select("id, cover_path")
+      .eq("id", deckId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (readError) {
+      if (isMissingCoverPathColumn(readError)) throw new CoverColumnMissingError();
+      throw readError;
+    }
+    if (!current) return { previousPath: null };
+
+    const { error } = await this.supabase
+      .from("decks")
+      .update({ cover_path: coverPath })
+      .eq("id", deckId)
+      .eq("user_id", userId);
+    if (error) {
+      if (isMissingCoverPathColumn(error)) throw new CoverColumnMissingError();
+      throw error;
+    }
+    await cacheService.deletePattern(`deck:${deckId}:user:*`);
+    await cacheService.deletePattern(`decks:user:${userId}*`);
+    await cacheService.deletePattern(`decks:${userId}*`);
+    return { previousPath: (current as any).cover_path ?? null };
+  }
+
+  /** Same for notes. Owner-scoped: a cover is the owner's presentation choice. */
+  async setNoteCoverPath(
+    noteId: string,
+    userId: string,
+    coverPath: string | null,
+  ): Promise<{ previousPath: string | null }> {
+    const { data: current, error: readError } = await this.supabase
+      .from("notes")
+      .select("id, cover_path")
+      .eq("id", noteId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (readError) {
+      if (isMissingCoverPathColumn(readError)) throw new CoverColumnMissingError();
+      throw readError;
+    }
+    if (!current) return { previousPath: null };
+
+    const { error } = await this.supabase
+      .from("notes")
+      .update({ cover_path: coverPath })
+      .eq("id", noteId)
+      .eq("user_id", userId);
+    if (error) {
+      if (isMissingCoverPathColumn(error)) throw new CoverColumnMissingError();
+      throw error;
+    }
+    await cacheService.delete(`note:${noteId}`);
+    return { previousPath: (current as any).cover_path ?? null };
+  }
+
+  /**
+   * Same for a study set. Owner-scoped for the same reason decks are: a set's
+   * cover is the shape the owner chose for it, and `study_sets` rows are
+   * already owner-only.
+   */
+  async setStudySetCoverPath(
+    setId: string,
+    userId: string,
+    coverPath: string | null,
+  ): Promise<{ previousPath: string | null }> {
+    const { data: current, error: readError } = await this.supabase
+      .from("study_sets")
+      .select("id, cover_path")
+      .eq("id", setId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (readError) {
+      if (isMissingCoverPathColumn(readError))
+        throw new CoverColumnMissingError();
+      throw readError;
+    }
+    if (!current) return { previousPath: null };
+
+    const { error } = await this.supabase
+      .from("study_sets")
+      .update({ cover_path: coverPath })
+      .eq("id", setId)
+      .eq("user_id", userId);
+    if (error) {
+      if (isMissingCoverPathColumn(error)) throw new CoverColumnMissingError();
+      throw error;
+    }
+    return { previousPath: (current as any).cover_path ?? null };
+  }
+
   /** SEC-07: marketplace images — magic-byte validated server upload. */
   async uploadMarketplaceImage(params: {
     fileName: string;
@@ -5470,16 +5740,28 @@ export class SupabaseService {
 
   /** Internal fetch — no access check. */
   private async fetchDeckRecord(deckId: string): Promise<any | null> {
-    const { data, error } = await this.supabase
-      .from("decks")
-      // study_set_id: this record is what a deck read is answered from, and a
-      // projection that omits the column reports every deck as unfiled.
-      .select("id, name, description, user_id, is_shared, course_id, study_set_id, created_at")
-      .eq("id", deckId)
-      .maybeSingle();
+    // study_set_id: this record is what a deck read is answered from, and a
+    // projection that omits the column reports every deck as unfiled.
+    const BASE =
+      "id, name, description, user_id, is_shared, course_id, study_set_id, created_at";
+    const run = (withCover: boolean) =>
+      this.supabase
+        .from("decks")
+        .select(withCover ? `${BASE}, cover_path` : BASE)
+        .eq("id", deckId)
+        .maybeSingle();
+
+    // cover_path is projected only while it exists — naming a column the
+    // migration has not added yet 42703s EVERY deck read, and deck reads gate
+    // access checks, so that would take the whole flashcards feature down.
+    let { data, error }: { data: any; error: any } = await run(true);
+    if (error && isMissingCoverPathColumn(error)) {
+      ({ data, error } = await run(false));
+    }
 
     if (error) throw error;
-    return data;
+    if (!data) return null;
+    return { ...data, coverPath: (data as any).cover_path ?? null };
   }
 
   async verifyDeckAccess(
@@ -15624,6 +15906,9 @@ export class SupabaseService {
       isArchived: Boolean(row.is_archived),
       isPinned: Boolean(row.is_pinned),
       pinnedAt: row.pinned_at || undefined,
+      // Raw storage path — the client re-signs it. Undefined (not null) before
+      // the cover_path migration is applied, so nothing renders a broken image.
+      coverPath: row.cover_path ?? null,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       version:
@@ -16138,6 +16423,8 @@ export class SupabaseService {
       delete (updates as Record<string, unknown>).courseId;
       delete (updates as Record<string, unknown>).studySetId;
       delete (updates as Record<string, unknown>).topicId;
+      // The cover is the owner's presentation choice, like folder placement.
+      delete (updates as Record<string, unknown>).coverPath;
     }
 
     const dbUpdates: Record<string, unknown> = {};
@@ -16156,6 +16443,9 @@ export class SupabaseService {
     // write attempt, so a wrong-course topic 400s instead of being stored.
     const topicId = await this.resolveArtefactTopicPatch("notes", noteId, updates);
     if (topicId !== undefined) dbUpdates.topic_id = topicId;
+    // Only clearing is accepted here; a cover is SET by POST /notes/:id/cover,
+    // so a client can never point the column at an arbitrary storage object.
+    if (updates.coverPath === null) dbUpdates.cover_path = null;
     if (updates.isShared !== undefined) dbUpdates.is_shared = updates.isShared;
     if (updates.youtubeUrl !== undefined)
       dbUpdates.youtube_url = updates.youtubeUrl;

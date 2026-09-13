@@ -105,7 +105,14 @@ export const StudySetSwitcher: React.FC<StudySetSwitcherProps> = ({
         aria-label="Switch study set"
         className="inline-flex min-h-[44px] max-w-[16rem] items-center gap-2 rounded-full border border-lantern-border bg-lantern-surface pl-1.5 pr-3 text-caption text-lantern-text hover:bg-lantern-background-secondary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
       >
-        {current ? <SetTile setId={current.id} title={studySetLabel(current)} size={28} /> : null}
+        {current ? (
+          <SetTile
+            setId={current.id}
+            title={studySetLabel(current)}
+            coverPath={current.coverPath}
+            size={28}
+          />
+        ) : null}
         <span className="truncate">{current ? studySetLabel(current) : 'Study sets'}</span>
         <AppIcon name="swap-horizontal" size={16} className="shrink-0 text-lantern-text-secondary" />
       </button>
@@ -148,7 +155,7 @@ export const StudySetSwitcher: React.FC<StudySetSwitcherProps> = ({
                       active ? 'bg-lantern-background-secondary' : ''
                     }`}
                   >
-                    <SetTile setId={set.id} title={studySetLabel(set)} size={28} />
+                    <SetTile setId={set.id} title={studySetLabel(set)} coverPath={set.coverPath} size={28} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-caption font-semibold text-lantern-text">
                         {studySetLabel(set)}

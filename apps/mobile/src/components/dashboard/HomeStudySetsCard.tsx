@@ -27,10 +27,11 @@ import {
   studySetLabel,
 } from '@lantern/shared';
 import { Card, FeatureDisc, T } from '../ui';
-import { useTheme } from '../../theme';
+import { TYPE_TILE, useTheme } from '../../theme';
 import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useStudySetStore } from '../../stores/studySetStore';
+import { SetCoverSquare } from '../study/SetCoverSquare';
 import {
   lastStudiedLabel,
   shouldRefetchSets,
@@ -173,7 +174,22 @@ export function HomeStudySetsCard({ onOpenSet, onOpenHub, onNewSet }: HomeStudyS
                 style={{ flexBasis: '47%', flexGrow: 1 }}
                 className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-3 active:opacity-80"
               >
-                <FeatureDisc feature={STUDY_SET_TILE.feature} icon={STUDY_SET_TILE.icon} size={32} />
+                {/* Home shows the set the way the hub and the room header show
+                    it: the picture if there is one, the pastel tile if not, in
+                    the same 32 square either way. */}
+                <SetCoverSquare
+                  coverPath={set.coverPath}
+                  size={32}
+                  radius={Math.round(32 * TYPE_TILE.radiusFraction)}
+                  accessibilityLabel={`${studySetLabel(set)} picture`}
+                  fallback={
+                    <FeatureDisc
+                      feature={STUDY_SET_TILE.feature}
+                      icon={STUDY_SET_TILE.icon}
+                      size={32}
+                    />
+                  }
+                />
                 <T.Body style={{ fontWeight: '600' }} numberOfLines={1} className="mt-2">
                   {studySetLabel(set)}
                 </T.Body>

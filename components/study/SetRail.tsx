@@ -245,7 +245,13 @@ const SetRail: React.FC<SetRailProps> = ({
           expanded ? '' : 'justify-center'
         }`}
       >
-        <SetTile title={model.setTitle} size={expanded ? 24 : 22} className="flex-shrink-0" />
+        <SetTile
+          setId={studySetId}
+          title={model.setTitle || ''}
+          coverPath={set?.coverPath}
+          size={expanded ? 24 : 22}
+          className="flex-shrink-0"
+        />
         {expanded ? (
           <>
             <span className="min-w-0 flex-1 truncate text-caption font-semibold">{model.setTitle}</span>
@@ -290,7 +296,13 @@ const SetRail: React.FC<SetRailProps> = ({
                     row.id === studySetId ? 'bg-lantern-background-secondary' : ''
                   }`}
                 >
-                  <SetTile title={studySetLabel(row)} size={26} className="flex-shrink-0" />
+                  <SetTile
+                    setId={row.id}
+                    title={studySetLabel(row)}
+                    coverPath={row.coverPath}
+                    size={26}
+                    className="flex-shrink-0"
+                  />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-caption font-semibold text-lantern-text">
                       {studySetLabel(row)}

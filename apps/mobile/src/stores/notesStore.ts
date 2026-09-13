@@ -32,6 +32,14 @@ interface NotesState {
   createNote: (payload?: Partial<StudyNote>) => Promise<StudyNote>;
   /** Merge a note that was written outside this store so the course room can see it. */
   upsertNote: (note: StudyNote) => void;
+  /**
+   * Record a cover the SERVER has already stored (or cleared).
+   *
+   * Local-only and unqueued: the cover routes own the write, so there is
+   * nothing to replay — and a queued retry would re-POST a base64 image this
+   * device no longer holds.
+   */
+  setNoteCoverPath: (noteId: string, coverPath: string | null) => void;
   saveNote: (noteId: string, updates: Partial<StudyNote>) => Promise<StudyNote>;
   /** Move notes into a folder, or `null` for All notes (unfiled). */
   moveNotesToFolder: (noteIds: string[], folderId: string | null) => Promise<void>;
@@ -133,6 +141,16 @@ export const useNotesStore = create<NotesState>((set, get) => ({
         ? notes.map((row) => (row.id === note.id ? { ...row, ...note } : row))
         : [note, ...notes],
     });
+  },
+
+  setNoteCoverPath: (noteId, coverPath) => {
+    set((state) => ({
+      notes: state.notes.map((row) => (row.id === noteId ? { ...row, coverPath } : row)),
+      selectedNote:
+        state.selectedNote?.id === noteId
+          ? { ...state.selectedNote, coverPath }
+          : state.selectedNote,
+    }));
   },
 
   saveNote: async (noteId, updates) => {

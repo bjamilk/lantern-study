@@ -28,6 +28,7 @@ const DEFAULT_BUCKETS = [
   'note-files',
   'profile-avatars',
   'group-avatars',
+  'cover-images',
 ];
 
 const THUMB_SIZE_BY_BUCKET = {
@@ -37,6 +38,8 @@ const THUMB_SIZE_BY_BUCKET = {
   'note-files': 480,
   'profile-avatars': 0, // no thumbs for avatars
   'group-avatars': 0,
+  // Deck/note covers render in grids at thumbnail size.
+  'cover-images': 320,
 };
 
 const IMAGE_EXT = /\.(jpe?g|png|gif|webp)$/i;

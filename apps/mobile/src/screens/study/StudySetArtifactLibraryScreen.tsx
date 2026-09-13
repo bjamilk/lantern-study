@@ -12,10 +12,15 @@
  * "All" is this set's shelf, a folder tile opens that folder's sets, and Back
  * returns to All instead of leaving the screen.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import {
+  adoptSegmentRequest,
+  initialSegment,
+  readSegmentRequest,
+} from '../../navigation/segmentParamSync';
 import { useFocusEffect } from '@react-navigation/native';
 import {
   isLectureNote,
@@ -38,10 +43,16 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useTestStore } from '../../stores/testStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useAuthStore } from '../../stores/authStore';
+import { useSetRoomUiStore } from '../../stores/setRoomUiStore';
 
 type Props = NativeStackScreenProps<StudyStackParamList, 'StudySetLibrary'>;
 
 export type ArtifactKind = 'cards' | 'tests' | 'lectures' | 'notes';
+
+/** Route params are unknown shapes until proven otherwise. */
+function isArtifactKind(value: unknown): value is ArtifactKind {
+  return value === 'cards' || value === 'tests' || value === 'lectures' || value === 'notes';
+}
 
 const TABS: Array<{ id: ArtifactKind; label: string }> = [
   { id: 'cards', label: 'Cards' },
@@ -60,10 +71,41 @@ interface GridItem {
 }
 
 export function StudySetArtifactLibraryScreen({ navigation, route }: Props) {
-  const { studySetId, courseId, courseLabel, kind } = route.params;
+  const { studySetId, courseId, courseLabel } = route.params;
+  // Read whole, not destructured: the params object's identity is the ticket
+  // that tells two presses of the same door apart (segmentParamSync.ts).
+  const routeParams = route.params;
   const tabBarClearance = useTabBarClearance(16);
   const { width: screenWidth } = useWindowDimensions();
-  const [tab, setTab] = useState<ArtifactKind>(kind ?? 'cards');
+  // The set row's Flashcards and Tests doors are THIS screen with a different
+  // `kind`, so pressing Tests from the Cards list only merges params into the
+  // focused route — `useState(kind ?? 'cards')` never heard it (build 204). The
+  // param is a mirror of the visible tab, adopted and published both ways
+  // (navigation/segmentParamSync.ts).
+  const [tab, setTab] = useState<ArtifactKind>(() =>
+    initialSegment(routeParams.kind, isArtifactKind, 'cards')
+  );
+  // The mount's params are an ask the seed above already answered.
+  const adoptedTicket = useRef<unknown>(routeParams);
+  // The row's pill reads the STORE, so the shelf on screen is published there —
+  // and NEVER back into the params. Publishing into the params is what
+  // crash-looped build 205: the publish effect ran in the same commit as the
+  // adopt effect, off the same pre-adopt snapshot, and reverted it for ever
+  // (navigation/segmentParamSync.ts).
+  useEffect(() => {
+    useSetRoomUiStore.getState().setKind(studySetId, tab);
+  }, [studySetId, tab]);
+  useEffect(() => {
+    const adopted = adoptSegmentRequest({
+      request: readSegmentRequest(routeParams, 'kind', isArtifactKind),
+      lastTicket: adoptedTicket.current,
+      current: tab,
+    });
+    if (!adopted) return;
+    adoptedTicket.current = adopted.ticket;
+    if (adopted.alreadyShown) return;
+    setTab(adopted.segment);
+  }, [routeParams, tab]);
 
   const userId = useAuthStore((s) => s.user?.id);
   const notes = useNotesStore((s) => s.notes);

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Pressable, View } from 'react-native';
 import { normalizeUserSettings } from '@lantern/shared/settings';
 import { isQuizzableNote } from '@lantern/shared/utils/noteStudyContent';
 import { Card, T } from '../ui';
@@ -21,6 +21,10 @@ import {
 import { DailyQuestsWidget } from '../DailyQuestsWidget';
 import { DailyQuizWidget } from '../DailyQuizWidget';
 import { DailyGoalsProgress } from '../DailyGoalsProgress';
+import { ActivityHeatmap } from '../dashboard/ActivityHeatmap';
+import { AIStudyCoachCard } from '../dashboard/AIStudyCoachCard';
+import { DashboardInsights } from '../dashboard/DashboardInsights';
+import { buildActivityHeatmapGrid, computeStudyStreak } from '@lantern/shared/utils';
 import { AchievementsCard } from './AchievementsCard';
 import { GroupPerformanceCard } from './GroupPerformanceCard';
 import { RecentTestsCard } from './RecentTestsCard';
@@ -28,12 +32,24 @@ import { RecentTestsCard } from './RecentTestsCard';
 /**
  * The progress hub on Profile — the same widgets web shows on /me/progress.
  *
- * Points, today's goals, daily quests, the daily quiz, achievements, group
- * performance and recent tests. It reads stores Home already fills and only
- * starts a fetch when this screen opens first.
+ * Points, today's goals, the three counters, the coach, daily quests, the
+ * daily quiz, the 16-week heatmap, achievements, insights, group performance,
+ * recent tests and the leaderboard. It reads stores Home already fills and
+ * only starts a fetch when this screen opens first.
+ *
+ * The heatmap, the counters, the coach, insights and the leaderboard arrived
+ * here when Home was cut back to its shared spine (SF2 · H2). Home had grown
+ * eleven looking-back regions below its six doors; every one of them is still
+ * in the app, and all of them are now on this screen, which is the one a
+ * student opens to look back. Home's `Your progress` card is the door.
  */
-export function MeProgress() {
-  const { colors } = useTheme();
+export interface MeProgressProps {
+  /** Supplied by the screen, which is the half that can navigate. */
+  onOpenLeaderboard?: () => void;
+}
+
+export function MeProgress({ onOpenLeaderboard }: MeProgressProps = {}) {
+  const { colors, isDark } = useTheme();
   const user = useAuthStore((s) => s.user);
   const groups = useGroupStore((s) => s.groups);
   const stats = useStatsStore((s) => s.stats);
@@ -139,6 +155,13 @@ export function MeProgress() {
 
   const activityDays = stats?.activityDays ?? [];
   const study = normalizeUserSettings({ study: studySettings }).study;
+  const heatmap = useMemo(() => buildActivityHeatmapGrid(activityDays), [activityDays]);
+  // The coach's streak, by the same rule Home's greeting uses: whichever of
+  // the server's count and the activity days is longer.
+  const streak = useMemo(
+    () => Math.max(computeStudyStreak(activityDays).current, stats?.currentStreak ?? 0),
+    [activityDays, stats?.currentStreak]
+  );
 
   return (
     <View className="px-4 pt-4">
@@ -171,7 +194,38 @@ export function MeProgress() {
         ) : null}
       </Card>
 
+      {/* The three counters that used to sit mid-Home. Flat cards, no amber:
+          the streak's flame takes the warning token rather than a Tailwind
+          orange hex that no theme owned. */}
+      <View className="flex-row gap-3 mb-4">
+        <Card className="flex-1 items-center py-3">
+          <T.Title tabular>{stats?.totalTestsTaken ?? '—'}</T.Title>
+          <T.Caption tone="secondary" className="mt-1">
+            Tests taken
+          </T.Caption>
+        </Card>
+        <Card className="flex-1 items-center py-3">
+          <T.Title tabular>
+            {stats?.averageTimePerQuestion ? `${stats.averageTimePerQuestion}s` : '—'}
+          </T.Title>
+          <T.Caption tone="secondary" className="mt-1">
+            Avg / question
+          </T.Caption>
+        </Card>
+        <Card className="flex-1 items-center py-3">
+          <View className="flex-row items-center gap-1">
+            <AppIcon name="flame" size={16} color={colors.warning} />
+            <T.Title tabular>{stats?.currentStreak ?? '—'}</T.Title>
+          </View>
+          <T.Caption tone="secondary" className="mt-1">
+            Streak
+          </T.Caption>
+        </Card>
+      </View>
+
       <DailyGoalsProgress study={study} activityDays={activityDays} />
+
+      <AIStudyCoachCard stats={stats} streak={streak} />
 
       {quests.length > 0 || questsLoaded ? (
         <DailyQuestsWidget
@@ -195,7 +249,23 @@ export function MeProgress() {
         onComplete={completeDailyQuiz}
       />
 
+      <Card className="mb-4">
+        <T.Body className="font-semibold mb-2">16-week activity</T.Body>
+        {statsLoading && !stats ? (
+          <T.Caption tone="tertiary">Loading activity…</T.Caption>
+        ) : (
+          <>
+            <ActivityHeatmap days={heatmap.days} theme={isDark ? 'dark' : 'light'} />
+            <T.Caption tone="tertiary" className="mt-2">
+              Darker = more study activity
+            </T.Caption>
+          </>
+        )}
+      </Card>
+
       <AchievementsCard badges={stats?.badges ?? []} loading={statsLoading} />
+
+      <DashboardInsights stats={stats} />
 
       <GroupPerformanceCard
         groups={groups}
@@ -204,6 +274,30 @@ export function MeProgress() {
       />
 
       <RecentTestsCard userId={user?.id} groups={groups} />
+
+      {/* The leaderboard's only door. It used to be a banner on Home with an
+          amber `#f59e0b` trophy; it is a flat row here, with the trophy in the
+          warning token so it answers to the theme. `Leaderboard` lives on the
+          Home stack, so the navigate names the tab and lets the nested
+          navigator find the screen. */}
+      {onOpenLeaderboard ? (
+        <Pressable
+          onPress={onOpenLeaderboard}
+          accessibilityRole="button"
+          accessibilityLabel="Open leaderboard"
+          testID="me-progress-leaderboard"
+          className="active:opacity-80 mb-4"
+        >
+          <Card className="flex-row items-center gap-3">
+            <AppIcon name="trophy" size={20} color={colors.warning} />
+            <View className="flex-1 min-w-0">
+              <T.Body className="font-semibold">Leaderboard</T.Body>
+              <T.Caption tone="secondary">See how you rank against other students</T.Caption>
+            </View>
+            <AppIcon name="chevron-forward" size={18} color={colors.textTertiary} />
+          </Card>
+        </Pressable>
+      ) : null}
     </View>
   );
 }

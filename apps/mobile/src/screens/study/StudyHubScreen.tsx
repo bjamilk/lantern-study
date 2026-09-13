@@ -364,6 +364,7 @@ export function StudyHubScreen({ navigation }: Props) {
               key={row.set.id}
               setId={row.set.id}
               title={studySetLabel(row.set)}
+              coverPath={row.set.coverPath}
               counts={row.counts}
               percent={row.progress.percent}
               progressBasis={row.progress.basis}

@@ -6,6 +6,7 @@ import {
 } from '../../components/layout';
 import { MeProgress } from '../../components/me/MeProgress';
 import { MeWorkspaceBar } from './MeWorkspaceBar';
+import { toTab } from '../../navigation/nestedTab';
 
 interface Props {
   navigation: {
@@ -14,7 +15,9 @@ interface Props {
 }
 
 /**
- * Progress peer section — the hub that used to sit on top of the Profile menu.
+ * Progress peer section — the hub that used to sit on top of the Profile menu,
+ * and now also the home of the eleven looking-back regions that came off Home
+ * when it was cut back to its shared spine (SF2 · H2).
  */
 export function MeProgressScreen({ navigation }: Props) {
   const bottomPadding = useScreenBottomPadding({ bottom: 'auto' });
@@ -28,7 +31,14 @@ export function MeProgressScreen({ navigation }: Props) {
         }}
       />
       <KeyboardAwareScrollView bottomPadding={bottomPadding}>
-        <MeProgress />
+        <MeProgress
+          // `Leaderboard` is a Home-stack screen. Naming the tab lets the
+          // nested navigator find it; it was reachable from nowhere else once
+          // Home's amber leaderboard banner came off.
+          onOpenLeaderboard={() =>
+            navigation.navigate('HomeTab', toTab('Leaderboard'))
+          }
+        />
       </KeyboardAwareScrollView>
     </Screen>
   );

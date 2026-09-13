@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   DEFAULT_STUDY_TIMER_KEY,
   STUDY_TIMER_DEFAULT_SECONDS,
+  clearExpiredStudyTimers,
   createStudyTimer,
   formatStudyTimer,
   isStudyTimerExpired,
@@ -143,5 +144,19 @@ describe('useStudySetTimerStore', () => {
     const state = useStudySetTimerStore.getState();
     expect(state.timers.pharm).toBeUndefined();
     expect(isStudyTimerRunning(state.timers.anatomy)).toBe(true);
+  });
+});
+
+describe('clearExpiredStudyTimers', () => {
+  it('retires runs that finished before this page load, and keeps live ones', () => {
+    const finished: StudyTimerState = { baseSeconds: 25 * 60, startedAtMs: T0 - 60 * MIN };
+    const live: StudyTimerState = { baseSeconds: 25 * 60, startedAtMs: T0 - 5 * MIN };
+    const paused: StudyTimerState = { baseSeconds: 10 * 60, startedAtMs: null };
+
+    const kept = clearExpiredStudyTimers({ a: finished, b: live, c: paused }, T0);
+
+    expect(kept.a).toBeUndefined();
+    expect(kept.b).toEqual(live);
+    expect(kept.c).toEqual(paused);
   });
 });

@@ -9,6 +9,7 @@ import {
   selectStudySetTimer,
   studyTimerAccessibilityLabel,
   studyTimerRemaining,
+  IDLE_STUDY_TIMER,
   STUDY_TIMER_DEFAULT_SECONDS,
   STUDY_TIMER_PRESET_MINUTES,
   useStudySetTimerStore,
@@ -33,6 +34,26 @@ export function idleTimerLabel(seconds: number): string {
   return `${minutes}m`;
 }
 
+/** What the header pill is saying: a length to pick, a clock, or a finished run. */
+export type StudyTimerPillState = 'idle' | 'running' | 'expired';
+
+/**
+ * The pill, derived from state alone — no click required to make it true.
+ *
+ * `Time's up` is a claim about something the student just lived through, so it
+ * is only earned by a run this room WATCHED reach zero (`expiryObserved`). A run
+ * that ran out while the tab was closed rehydrates as nothing at all: the room
+ * opens on a length to pick, which is what an untimed set should look like.
+ */
+export function studyTimerPillState(
+  timer: { baseSeconds: number; startedAtMs: number | null },
+  nowMs: number,
+  expiryObserved: boolean
+): StudyTimerPillState {
+  if (isStudyTimerExpired(timer, nowMs)) return expiryObserved ? 'expired' : 'idle';
+  return isStudyTimerRunning(timer) ? 'running' : 'idle';
+}
+
 /**
  * The study timer, as the StudyFetch reference draws it: a butter-yellow pill
  * in the room header that opens a small popover.
@@ -45,11 +66,12 @@ export function idleTimerLabel(seconds: number): string {
  * about a session the student had already finished. And there was no way to
  * study for any length but twenty-five minutes: the only control was a toggle.
  *
- * Now: an EXPIRED run is acknowledged once and then cleared the moment the
- * student opens the popover or starts anything, so `Time's up` is a state a run
- * actually reaches rather than a permanent label. The store still derives every
- * value from `Date.now()` against a stored start instant, so a reload, a shut
- * tab and a dropped tick all still cost nothing.
+ * Now the pill is DERIVED, so the header is right on its first paint rather
+ * than after someone clicks. `Time's up` belongs only to a run this room
+ * watched reach zero; a finished run found in storage is retired on arrival
+ * (here and in the store's rehydrate) and the room opens on the idle `25m`.
+ * The store still derives every value from `Date.now()` against a stored start
+ * instant, so a reload, a shut tab and a dropped tick all still cost nothing.
  *
  * `View stats` from the reference is deliberately NOT here: Lantern has no
  * study-stats screen to open, and a button that goes nowhere is the exact
@@ -66,7 +88,32 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
 
   const running = isStudyTimerRunning(timer);
   const remaining = studyTimerRemaining(timer, now);
-  const expired = isStudyTimerExpired(timer, now);
+  // Only a run this room saw reach zero may say so. Anything already at zero on
+  // the first render finished before the student got here.
+  const [expiryObserved, setExpiryObserved] = useState(false);
+  const wasTickingRef = useRef(running && remaining > 0);
+  const pill = studyTimerPillState(timer, now, expiryObserved);
+  const expired = pill === 'expired';
+
+  useEffect(() => {
+    if (running && remaining > 0) {
+      wasTickingRef.current = true;
+      return;
+    }
+    if (wasTickingRef.current && running && remaining <= 0) {
+      wasTickingRef.current = false;
+      setExpiryObserved(true);
+    }
+  }, [running, remaining]);
+
+  // A run that expired while nobody was in the room is retired on arrival, so
+  // the store stops carrying a finished session from page load to page load.
+  // (The store clears these on rehydrate too; this covers a room that was
+  // already mounted when the last second fell off in another tab.)
+  useEffect(() => {
+    if (isStudyTimerExpired(timer, Date.now()) && !expiryObserved) reset(setId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setId]);
 
   useEffect(() => {
     if (!running || remaining <= 0) return;
@@ -98,7 +145,14 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
     };
   }, [open]);
 
-  const label = expired ? "Time's up" : running ? formatStudyTimer(remaining) : idleTimerLabel(remaining);
+  const label =
+    pill === 'expired'
+      ? "Time's up"
+      : pill === 'running'
+        ? formatStudyTimer(remaining)
+        : idleTimerLabel(remaining > 0 ? remaining : STUDY_TIMER_DEFAULT_SECONDS);
+  // A stale finished run is idle to the screen reader as well as to the eye.
+  const spokenTimer = pill === 'idle' && remaining <= 0 ? IDLE_STUDY_TIMER : timer;
 
   return (
     <div className="relative" ref={rootRef}>
@@ -108,12 +162,15 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
           // Opening the popover is the acknowledgement: the finished run is
           // cleared here, so the header goes back to an idle length instead of
           // wearing `Time's up` until the next session happens to start.
-          if (expired) reset(setId);
+          if (expired || isStudyTimerExpired(timer, Date.now())) {
+            reset(setId);
+            setExpiryObserved(false);
+          }
           setOpen((value) => !value);
         }}
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={studyTimerAccessibilityLabel(timer, now)}
+        aria-label={studyTimerAccessibilityLabel(spokenTimer, now)}
         className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-full border border-lantern-border px-3.5 text-caption font-semibold transition-colors hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40 ${FEATURE_TINT_BG.recording} ${FEATURE_PANEL_INK_TEXT.recording}`}
       >
         <AppIcon name="time" size={16} />
@@ -136,7 +193,11 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
                 <button
                   key={minutes}
                   type="button"
-                  onClick={() => start(setId, minutes * 60)}
+                  onClick={() => {
+                    setExpiryObserved(false);
+                    start(setId, minutes * 60);
+                    setNow(Date.now());
+                  }}
                   aria-pressed={active}
                   className={`flex-1 min-h-[40px] rounded-full border text-caption ${
                     active
@@ -152,6 +213,7 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
           <Button
             className="mt-3 w-full"
             onClick={() => {
+              setExpiryObserved(false);
               toggle(setId);
               setNow(Date.now());
             }}
@@ -161,7 +223,10 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
           {running || timer.baseSeconds !== STUDY_TIMER_DEFAULT_SECONDS ? (
             <button
               type="button"
-              onClick={() => reset(setId)}
+              onClick={() => {
+                setExpiryObserved(false);
+                reset(setId);
+              }}
               className="mt-2 w-full min-h-[40px] text-caption text-lantern-text-secondary hover:underline"
             >
               Reset to 25 minutes

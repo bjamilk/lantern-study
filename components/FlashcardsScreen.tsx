@@ -35,6 +35,10 @@ import {
   MenuContent,
   MenuItem,
 } from './ui';
+import { CoverMenuItems, CoverPickerDialog, CoverThumb } from './ui/CoverPicker';
+import { coverErrorMessage } from './ui/coverPickerModel';
+import { removeCover } from '../stores/coverActions';
+import { useToastStore } from '../stores/toastStore';
 
 interface FlashcardsScreenProps {
   decks: Deck[];
@@ -102,6 +106,10 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
   // The zero-credit door: text export in, cards out, no AI use spent.
   const [importCardsOpen, setImportCardsOpen] = useState(false);
   const [deckMenuId, setDeckMenuId] = useState<string | null>(null);
+  // The deck whose cover the picker is editing. Held here, not inside the row
+  // menu, because the menu unmounts the moment an item is chosen.
+  const [coverDeck, setCoverDeck] = useState<Deck | null>(null);
+  const showToast = useToastStore((s) => s.showToast);
   useEffect(() => {
     if (!courseFilterId || !currentUserId) {
       setCourseDeckIds(null);
@@ -183,6 +191,14 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
       else next.delete(deck.id);
       return next;
     });
+  };
+
+  const handleRemoveCover = async (deck: Deck) => {
+    try {
+      await removeCover('deck', deck.id);
+    } catch (err) {
+      showToast(coverErrorMessage(err).message, 'error');
+    }
   };
 
   const handleAIGenerate = () => {
@@ -352,10 +368,21 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                       className="flex min-w-0 flex-1 items-center gap-3 text-left rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-ink/40"
                       aria-label={`Deck ${title}. ${getDeckListStatsLine(dueCards, totalCards)}`}
                     >
-                      <FeatureDisc
-                        feature="flashcards"
-                        icon={<AppIcon name="layers" size={20} />}
-                        size={40}
+                      {/* The cover fills the pastel tile's slot and the type
+                          glyph shrinks to a badge on it — with a photograph in
+                          this position the tile was the only thing saying
+                          "deck", so the badge has to carry that instead. */}
+                      <CoverThumb
+                        coverPath={deck.coverPath}
+                        alt=""
+                        badge={<AppIcon name="layers" size={16} />}
+                        fallback={
+                          <FeatureDisc
+                            feature="flashcards"
+                            icon={<AppIcon name="layers" size={20} />}
+                            size={40}
+                          />
+                        }
                       />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
@@ -395,7 +422,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                         <AppIcon name="cloud-download" size={16} />
                       )}
                     </button>
-                    {onMoveDeckToCourse ? (
+                    {onMoveDeckToCourse || !deck.isShared ? (
                       <Menu
                         open={deckMenuId === deck.id}
                         onOpenChange={(open) => setDeckMenuId(open ? deck.id : null)}
@@ -407,11 +434,23 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                           <AppIcon name="ellipsis-vertical" size={16} />
                         </MenuTrigger>
                         <MenuContent align="end" className="w-48">
-                          <MenuItem onSelect={() => setMovingDeck(deck)}>
-                            <span className="inline-flex items-center gap-2">
-                              <AppIcon name="school" size={16} /> Move to course…
-                            </span>
-                          </MenuItem>
+                          {onMoveDeckToCourse ? (
+                            <MenuItem onSelect={() => setMovingDeck(deck)}>
+                              <span className="inline-flex items-center gap-2">
+                                <AppIcon name="school" size={16} /> Move to course…
+                              </span>
+                            </MenuItem>
+                          ) : null}
+                          {/* Only the owner may restyle a deck — the route
+                              refuses a collaborator, so offering it here would
+                              be a menu item that always 403s. */}
+                          {!deck.isShared ? (
+                            <CoverMenuItems
+                              hasCover={Boolean(deck.coverPath)}
+                              onChoose={() => setCoverDeck(deck)}
+                              onRemove={() => void handleRemoveCover(deck)}
+                            />
+                          ) : null}
                         </MenuContent>
                       </Menu>
                     ) : null}
@@ -463,6 +502,15 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
           />
         )}
       </div>
+      {coverDeck ? (
+        <CoverPickerDialog
+          open
+          kind="deck"
+          id={coverDeck.id}
+          hasCover={Boolean(coverDeck.coverPath)}
+          onClose={() => setCoverDeck(null)}
+        />
+      ) : null}
       <ImportCardsModal
         isOpen={importCardsOpen}
         onClose={() => setImportCardsOpen(false)}

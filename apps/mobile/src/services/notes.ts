@@ -91,6 +91,12 @@ export interface StudyNote {
   isArchived?: boolean;
   isPinned?: boolean;
   pinnedAt?: string;
+  /**
+   * Cover image storage reference ("bucket/path"), NOT a URL. Signed URLs live
+   * 24h, so the path is what is persisted and clients re-sign on read through
+   * POST /storage/signed-urls (variant 'thumb' for list tiles).
+   */
+  coverPath?: string | null;
   updatedAt?: string;
   createdAt?: string;
   /**

@@ -13,6 +13,7 @@ import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import { FeatureDisc, Menu, MenuContent, MenuItem, MenuSeparator, MenuSubmenu } from '../ui';
 import type { FeatureKey } from '../ui/featureClasses';
 import { MenuTrigger } from '../ui/Menu';
+import { SetCoverSquare } from './SetRoomTile';
 
 /**
  * Hue -> feature token. The six pastels the direction names are already in the
@@ -179,9 +180,18 @@ export const StudySetCard: React.FC<StudySetCardProps> = ({
         onClick={onOpen}
         className="flex w-full min-w-0 items-start gap-3 pr-9 text-left"
       >
-        <FeatureDisc
-          feature={feature}
-          icon={<AppIcon name={GLYPH_ICON[art.glyph]} size={20} />}
+        {/* The cover, when the set has one, stands exactly where the pastel
+            tile stands: same 40px square, same radius, so a shelf of sets with
+            and without pictures stays one aligned grid. */}
+        <SetCoverSquare
+          coverPath={studySet.coverPath}
+          alt=""
+          fallback={
+            <FeatureDisc
+              feature={feature}
+              icon={<AppIcon name={GLYPH_ICON[art.glyph]} size={20} />}
+            />
+          }
         />
         <span className="min-w-0 flex-1">
           <span className="block truncate text-body font-semibold text-lantern-text">{title}</span>

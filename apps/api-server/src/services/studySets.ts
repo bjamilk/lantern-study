@@ -56,9 +56,46 @@ const STUDY_SET_DESCRIPTION_MAX = 280;
 const SET_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, exam_date, last_studied_at, created_at, updated_at';
 /** Everything but `exam_date` — the 20260911140000 migration is hand-applied. */
-const SET_COLUMNS_NO_EXAM =
+const SET_NO_EXAM_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, last_studied_at, created_at, updated_at';
-const SET_COLUMNS_MIN = 'id, user_id, title, course_id, created_at, updated_at';
+/** Everything but `cover_path` — 20260913120000_cover_images.sql is hand-applied too. */
+const SET_NO_COVER_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, visibility, mode, exam_date, last_studied_at, created_at, updated_at';
+/** Neither of the two hand-applied columns. */
+const SET_NO_EXAM_NO_COVER_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, visibility, mode, last_studied_at, created_at, updated_at';
+const SET_MIN_COLUMNS = 'id, user_id, title, course_id, created_at, updated_at';
+
+/**
+ * The projections to try, widest first.
+ *
+ * Two columns on this table are added by migrations an operator applies by
+ * hand (`exam_date`, `cover_path`), so either can be absent on a live
+ * database. PostgREST answers 42703/PGRST204 for the WHOLE statement when one
+ * name is unknown, which means a set list would 500 outright rather than come
+ * back without the column — the failure SF2's cover work would otherwise ship
+ * on day one. Walking this ladder degrades instead.
+ *
+ * Every rung is its OWN literal string constant whose name ends in `COLUMNS`,
+ * never a projection assembled at runtime: that is what lets the repo-wide
+ * embed guard (`postgrestEmbedDisambiguation.test.ts`) read each rung at its
+ * definition and classify any embed inside it. A rung built by concatenation,
+ * or named so the guard's scan skips it, would be a projection no guard reads.
+ */
+const SET_COLUMN_LADDER = [
+  SET_COLUMNS,
+  SET_NO_EXAM_COLUMNS,
+  SET_NO_COVER_COLUMNS,
+  SET_NO_EXAM_NO_COVER_COLUMNS,
+] as const;
+
+/** Drop the keys a projection cannot name, so a write body matches its RETURNING. */
+function omitUnsupported(patch: Record<string, unknown>, columns: string): Record<string, unknown> {
+  const next = { ...patch };
+  if (!columns.includes('exam_date')) delete next.exam_date;
+  if (!columns.includes('cover_path')) delete next.cover_path;
+  return next;
+}
 
 function normalizeStudySetTitle(title: string): string {
   return title.replace(/\s+/g, ' ').trim();
@@ -117,11 +154,6 @@ function mapFolder(row: Record<string, unknown>): StudySetFolder {
   };
 }
 
-function omitExamDate(patch: Record<string, unknown>): Record<string, unknown> {
-  const { exam_date: _dropped, ...rest } = patch;
-  return rest;
-}
-
 function optionalUuid(value: unknown, field: string): string | null {
   if (value === null || value === undefined || value === '') return null;
   if (!isUuid(value)) fail(`${field} must be a valid UUID`);
@@ -136,41 +168,63 @@ export class StudySetsService {
   }
 
   /**
-   * Run a write whose RETURNING projection names `exam_date`, retrying once
-   * without that column when this database has not had 20260911140000 applied.
-   * Returns the row plus whether the column was missing.
+   * Run a write whose RETURNING projection names the two hand-applied columns,
+   * retrying down `SET_COLUMN_LADDER` while the database rejects one of them.
+   * Returns the row plus whether `exam_date` was among the ones dropped.
    */
   private async writeWithExamColumn(
     run: (columns: string) => PromiseLike<{ data: unknown; error: any }>
   ): Promise<{ row: Record<string, unknown> | null; error: any; examMissing: boolean }> {
-    const first = await run(SET_COLUMNS);
-    if (!first.error) {
-      return { row: first.data as Record<string, unknown>, error: null, examMissing: false };
-    }
-    if (isMissingColumnCode(first.error) || isMissingColumn(first.error, 'exam_date')) {
-      const retry = await run(SET_COLUMNS_NO_EXAM);
-      if (!retry.error) {
-        return { row: retry.data as Record<string, unknown>, error: null, examMissing: true };
+    let lastError: any = null;
+    for (const columns of SET_COLUMN_LADDER) {
+      const attempt = await run(columns);
+      if (!attempt.error) {
+        return {
+          row: attempt.data as Record<string, unknown>,
+          error: null,
+          examMissing: !columns.includes('exam_date'),
+        };
       }
-      return { row: null, error: retry.error, examMissing: true };
+      lastError = attempt.error;
+      const retryable =
+        isMissingColumnCode(attempt.error) ||
+        isMissingColumn(attempt.error, 'exam_date') ||
+        isMissingColumn(attempt.error, 'cover_path');
+      if (!retryable) break;
     }
-    return { row: null, error: first.error, examMissing: false };
+    return { row: null, error: lastError, examMissing: false };
   }
 
   private async selectSets(userId: string, extra?: (query: any) => any) {
-    let query = this.db.from('study_sets').select(SET_COLUMNS).eq('user_id', userId);
-    if (extra) query = extra(query);
-    const first = await query.order('updated_at', { ascending: false });
-    if (first.error && (isMissingColumn(first.error, 'exam_date') || isMissingColumnCode(first.error))) {
-      let withoutExam = this.db.from('study_sets').select(SET_COLUMNS_NO_EXAM).eq('user_id', userId);
-      if (extra) withoutExam = extra(withoutExam);
-      const retry = await withoutExam.order('updated_at', { ascending: false });
-      if (!retry.error) {
-        return (retry.data || []).map((row) => mapSet(row as Record<string, unknown>));
+    // The projection is chosen at runtime from the ladder, so PostgREST's
+    // literal-type inference has nothing to narrow on: the rows come back as
+    // plain records, which is what `mapSet` reads anyway.
+    const read = async (columns: string): Promise<{ data: unknown[] | null; error: any }> => {
+      let query = this.db.from('study_sets').select(columns).eq('user_id', userId);
+      if (extra) query = extra(query);
+      return query.order('updated_at', { ascending: false }) as unknown as Promise<{
+        data: unknown[] | null;
+        error: any;
+      }>;
+    };
+    const first = await read(SET_COLUMNS);
+    if (
+      first.error &&
+      (isMissingColumnCode(first.error) ||
+        isMissingColumn(first.error, 'exam_date') ||
+        isMissingColumn(first.error, 'cover_path'))
+    ) {
+      // Widest first: a database missing only `cover_path` keeps its exam
+      // dates, and one missing only `exam_date` keeps its covers.
+      for (const columns of SET_COLUMN_LADDER.slice(1)) {
+        const retry = await read(columns);
+        if (!retry.error) {
+          return (retry.data || []).map((row) => mapSet(row as Record<string, unknown>));
+        }
       }
     }
     if (first.error && isMissingColumn(first.error, 'description')) {
-      let fallback = this.db.from('study_sets').select(SET_COLUMNS_MIN).eq('user_id', userId);
+      let fallback = this.db.from('study_sets').select(SET_MIN_COLUMNS).eq('user_id', userId);
       if (extra) fallback = extra(fallback);
       const second = await fallback.order('updated_at', { ascending: false });
       if (second.error) throw second.error;
@@ -229,7 +283,7 @@ export class StudySetsService {
       const retry = await this.db
         .from('study_sets')
         .insert({ user_id: userId, title, course_id: courseId })
-        .select(SET_COLUMNS_MIN)
+        .select(SET_MIN_COLUMNS)
         .single();
       if (retry.error) throw retry.error;
       return mapSet(retry.data as Record<string, unknown>);
@@ -310,7 +364,7 @@ export class StudySetsService {
     const wantsExamDate = patch.exam_date !== undefined;
     const writePatch = { ...patch };
     const updated = await this.writeWithExamColumn((columns) => {
-      const body = columns === SET_COLUMNS_NO_EXAM ? omitExamDate(writePatch) : writePatch;
+      const body = omitUnsupported(writePatch, columns);
       if (Object.keys(body).length === 0) {
         // Only the exam date was asked for and the column is absent: read the
         // row back rather than sending PostgREST an empty update body.
@@ -343,7 +397,7 @@ export class StudySetsService {
         .update(slim)
         .eq('user_id', userId)
         .eq('id', setId)
-        .select(SET_COLUMNS_MIN)
+        .select(SET_MIN_COLUMNS)
         .single();
       if (retry.error) throw retry.error;
       return mapSet(retry.data as Record<string, unknown>);

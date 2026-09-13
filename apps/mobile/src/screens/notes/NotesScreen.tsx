@@ -47,6 +47,13 @@ import {
   useSegmentSkin,
   type ActionSheetItem,
 } from '../../components/ui';
+import {
+  CoverFailureLine,
+  CoverPicker,
+  CoverThumb,
+  useCoverPicker,
+} from '../../components/ui/CoverPicker';
+import { readCoverPath } from '../../components/ui/coverPickerModel';
 import { noteRowMark } from './noteRowMark';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
@@ -225,13 +232,15 @@ function NoteCard({
               style={{ marginTop: 10 }}
             />
           ) : null}
-          {/* The type, as a shape. Labelled for a screen reader because the
-              row no longer prints the word anywhere. */}
-          <FeatureDisc
+          {/* The type, as a shape — or, when the note has a cover, that
+              picture filling the same tile with the type glyph demoted to a
+              badge on it. `CoverThumb` falls back to this exact disc when
+              there is no cover. */}
+          <CoverThumb
+            coverPath={readCoverPath(note)}
             feature={mark.feature}
             icon={mark.icon}
-            size={40}
-            accessibilityLabel={mark.label}
+            label={mark.label}
           />
           <View className="flex-1 min-w-0">
             <View className="flex-row items-start gap-2">
@@ -296,6 +305,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     removeNotes,
     setSelectedFolderId,
     setError,
+    setNoteCoverPath,
   } = useNotesStore();
   // The "All notes" chip is one of the same family of filters as the two
   // Segmented switches below it, so it borrows their skin rather than a class.
@@ -604,9 +614,49 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
     setNoteActions(note);
   };
 
+  /**
+   * The cover sheet, owned once by the screen.
+   *
+   * A hook cannot live inside `NoteCard` and still be driven from the row's
+   * action sheet, so the target is whichever note opened that sheet.
+   */
+  const [coverNote, setCoverNote] = useState<StudyNote | null>(null);
+  const coverNoteId = coverNote?.id ?? '';
+  const coverNoteHasCover = Boolean(readCoverPath(coverNote));
+  const coverTarget = useMemo(
+    () => ({ kind: 'note' as const, id: coverNoteId }),
+    [coverNoteId],
+  );
+  const applyNoteCover = useCallback(
+    (coverPath: string | null) => {
+      if (coverNoteId) setNoteCoverPath(coverNoteId, coverPath);
+    },
+    [coverNoteId, setNoteCoverPath],
+  );
+  const coverPicker = useCoverPicker(coverTarget, {
+    hasCover: coverNoteHasCover,
+    onApplied: applyNoteCover,
+  });
+
   const noteActionItems: ActionSheetItem[] = noteActions
     ? [
         ...(canManageNote(noteActions) ? ([
+        {
+          section: 'Organise',
+          label: readCoverPath(noteActions) ? 'Change cover…' : 'Add cover…',
+          icon: 'image',
+          hint: 'A picture on this note in the list',
+          // Latch the note HERE: `ActionSheet` calls onClose (which clears
+          // `noteActions`) before this handler runs, and the upload happens
+          // later still — reading the id then produced `/notes//cover`.
+          onPress: () => {
+            const note = noteActions;
+            setTimeout(() => {
+              setCoverNote(note);
+              coverPicker.open();
+            }, 50);
+          },
+        },
         {
           section: 'Organise',
           label: 'Move to folder',
@@ -1066,6 +1116,9 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
 
   return (
     <Wrapper {...wrapperProps}>
+      {/* A cover failure belongs where the press happened, not in a toast
+          that scrolls past: at the top of the list, in the server's words. */}
+      <CoverFailureLine failure={coverPicker.failure} onDismiss={coverPicker.dismissFailure} />
       <Modal
         visible={!!renameFolder}
         transparent
@@ -1122,6 +1175,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
         items={noteActionItems}
         onClose={() => setNoteActions(null)}
       />
+      <CoverPicker controller={coverPicker} title={coverNote?.title || 'Cover image'} />
       <ActionSheet
         visible={moreOpen}
         title="Notes"

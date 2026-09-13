@@ -75,6 +75,10 @@ import { navigateToPath } from '../utils/appNavigation';
 import { useNoteCommentsSync } from '../hooks/useNoteCommentsSync';
 import { setStudyIntent } from '../services/presenceHeartbeat';
 import { AppIcon } from './ui/AppIcon';
+import { Menu, MenuContent, MenuTrigger } from './ui/Menu';
+import { CoverBanner, CoverMenuItems, CoverPickerDialog } from './ui/CoverPicker';
+import { coverErrorMessage } from './ui/coverPickerModel';
+import { removeCover } from '../stores/coverActions';
 
 interface NoteEditorScreenProps {
   theme: 'light' | 'dark';
@@ -216,6 +220,7 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
   const setSelectedNote = useNotesStore((s) => s.setSelectedNote);
   const conflictReloadToken = useNotesStore((s) => s.conflictReloadToken);
   const showToast = useToastStore((s) => s.showToast);
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
   const isDark = theme === 'dark';
   const isOwner = note.accessRole === 'owner' || (!note.accessRole && note.userId === currentUserId);
   const canEdit = isOwner || note.accessRole === 'editor';
@@ -960,6 +965,14 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
     cancelLectureTranscription();
   };
 
+  const handleRemoveCover = async () => {
+    try {
+      await removeCover('note', note.id);
+    } catch (err) {
+      showToast(coverErrorMessage(err).message, 'error');
+    }
+  };
+
   const handleMakeCopy = async () => {
     try {
       const copied = await notesApi.copyNote(note.id);
@@ -1026,6 +1039,23 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
         </>}
         {!isOwner && <Button variant="secondary" size="sm" onClick={() => void handleMakeCopy()} aria-label="Make a copy" className="shrink-0 px-2 sm:px-3"><AppIcon name="copy" size={16} /></Button>}
         {!isOwner && <Button variant="ghost" size="sm" onClick={() => void handleLeave()} className="hidden sm:inline-flex">Leave</Button>}
+        {isOwner && (
+          <Menu>
+            <MenuTrigger
+              aria-label={note.coverPath ? 'Change cover' : 'Add cover'}
+              className="shrink-0 p-1.5 sm:p-2 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
+            >
+              <AppIcon name="image" size={20} />
+            </MenuTrigger>
+            <MenuContent align="end">
+              <CoverMenuItems
+                hasCover={Boolean(note.coverPath)}
+                onChoose={() => setCoverPickerOpen(true)}
+                onRemove={() => void handleRemoveCover()}
+              />
+            </MenuContent>
+          </Menu>
+        )}
         {isOwner && <button
           type="button"
           onClick={onDelete}
@@ -1035,6 +1065,23 @@ const NoteEditorScreen: React.FC<NoteEditorScreenProps> = ({
           <AppIcon name="trash" size={20} />
         </button>}
       </div>
+
+      {/* The cover sits directly under the title row as a 16:5 banner — the
+          same aspect the deck header uses. It is `shrink-0` inside a flex
+          column: without it the banner is crushed to nothing when the editor
+          body grows. Nothing renders at all when no cover is set. */}
+      {note.coverPath ? (
+        <div className="shrink-0 px-3 pt-3 sm:px-4">
+          <CoverBanner coverPath={note.coverPath} alt="" />
+        </div>
+      ) : null}
+      <CoverPickerDialog
+        open={coverPickerOpen}
+        kind="note"
+        id={note.id}
+        hasCover={Boolean(note.coverPath)}
+        onClose={() => setCoverPickerOpen(false)}
+      />
 
       <div className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row">
         <div className="flex-1 min-w-0 min-h-0 flex flex-col-reverse lg:flex-row">

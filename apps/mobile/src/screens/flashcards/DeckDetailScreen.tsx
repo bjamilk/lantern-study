@@ -25,6 +25,13 @@ import {
   resetDeckStatistics,
 } from '../../services/api';
 import { ActionSheet, Button, Card, ScreenHeader, type ActionSheetItem } from '../../components/ui';
+import {
+  CoverBanner,
+  CoverFailureLine,
+  CoverPicker,
+  useCoverPicker,
+} from '../../components/ui/CoverPicker';
+import { readCoverPath } from '../../components/ui/coverPickerModel';
 import { CoursePicker } from '../../components/CoursePicker';
 import { TopicPicker } from '../../components/TopicPicker';
 import { courseHasTopics } from '../../services/academic';
@@ -142,6 +149,7 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     offlineDeckIds,
     markDeckOffline,
     unmarkDeckOffline,
+    setDeckCoverPath,
   } = useFlashcardStore();
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -167,6 +175,17 @@ export function DeckDetailScreen({ navigation, route }: Props) {
   const cards = flashcards[deckId] ?? [];
   const stats = useMemo(() => getDeckCardStats(deckId, flashcards), [deckId, flashcards]);
   const deckName = deck?.name ?? route.params?.deckName ?? 'Deck';
+  /** Either spelling: list rows arrive snake_case, the cover route camelCase. */
+  const deckCoverPath = readCoverPath(deck);
+  const coverTarget = useMemo(() => ({ kind: 'deck' as const, id: deckId }), [deckId]);
+  const applyCover = useCallback(
+    (coverPath: string | null) => setDeckCoverPath(deckId, coverPath),
+    [deckId, setDeckCoverPath],
+  );
+  const coverPicker = useCoverPicker(coverTarget, {
+    hasCover: Boolean(deckCoverPath),
+    onApplied: applyCover,
+  });
   const studyLabel = getStudyCtaLabel(stats.dueCards, stats.total);
   const hasCards = cards.length > 0;
   const isOffline = offlineDeckIds.includes(deckId);
@@ -559,6 +578,14 @@ export function DeckDetailScreen({ navigation, route }: Props) {
     { section: 'Deck', label: 'Edit deck', icon: 'pencil', onPress: openEditDeck },
     {
       section: 'Deck',
+      label: deckCoverPath ? 'Change cover…' : 'Add cover…',
+      icon: 'image' as ActionSheetItem['icon'],
+      hint: 'The banner at the top of this deck',
+      // One sheet at a time: let the manage sheet dismiss before this opens.
+      onPress: () => setTimeout(() => coverPicker.open(), 50),
+    } as ActionSheetItem,
+    {
+      section: 'Deck',
       label: 'Move to course…',
       icon: 'school',
       hint: deck?.course_id ? 'Filed under a course — pick another or clear it' : 'File this deck under a course',
@@ -604,6 +631,15 @@ export function DeckDetailScreen({ navigation, route }: Props) {
 
   return (
     <SafeAreaView className="flex-1 bg-lantern-background" edges={['top']}>
+      {/* Banner first, title under it — StudyFetch's deck header. 16:5, not
+          16:9: a taller image would push the study buttons off the fold, and
+          those are what the deck was opened for. */}
+      <CoverBanner
+        coverPath={deckCoverPath}
+        pendingUri={coverPicker.pendingUri}
+        accessibilityLabel={`${deckName} cover image`}
+      />
+
       <ScreenHeader
         title={deckName}
         subtitle={deck?.description}
@@ -618,6 +654,8 @@ export function DeckDetailScreen({ navigation, route }: Props) {
           </View>
         }
       />
+
+      <CoverFailureLine failure={coverPicker.failure} onDismiss={coverPicker.dismissFailure} />
 
       <View className="px-4 mb-4">
         <Button
@@ -798,6 +836,8 @@ export function DeckDetailScreen({ navigation, route }: Props) {
         items={manageItems}
         onClose={() => setManageOpen(false)}
       />
+
+      <CoverPicker controller={coverPicker} title="Deck cover" />
 
       <PublishStudyPackModal
         visible={sellOpen}

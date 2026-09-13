@@ -64,7 +64,12 @@ import {
   parseCourseFilter,
   parseTopicFilter,
 } from '../services/academicCourses';
-import { SupabaseService } from '../services/supabase';
+import {
+  COVER_IMAGE_MIGRATION,
+  CoverColumnMissingError,
+  isMissingCoverPathColumn,
+  SupabaseService,
+} from '../services/supabase';
 import { CacheService } from '../services/cache';
 import {
   summarizeNoteContent,
@@ -2722,8 +2727,92 @@ router.patch('/:noteId', requireNoteEdit('noteId'), validateNoteId, validateNote
         data: (error as { current?: unknown }).current ?? null,
       });
     }
+    // `coverPath: null` before the migration is applied: say so rather than 500.
+    if (isMissingCoverPathColumn(error as any)) {
+      return res.status(503).json({
+        success: false,
+        error: `Cover images are not available yet — apply migration ${COVER_IMAGE_MIGRATION}.`,
+        migration: COVER_IMAGE_MIGRATION,
+      });
+    }
     if (respondPublicError(error, res)) return;
     throw error;
+  }
+}));
+
+// ---------- Note cover image ----------
+// Same contract as deck covers: persist the storage PATH, never a signed URL
+// (24h TTL); clients re-sign via POST /api/v1/storage/signed-urls.
+
+const ALLOWED_COVER_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+const MAX_COVER_BYTES = 10 * 1024 * 1024;
+
+router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handleValidationErrors, uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+
+  const { noteId } = req.params;
+  const { base64Data, fileName, contentType } = req.body || {};
+
+  if (!base64Data || !fileName) {
+    return res.status(400).json({ success: false, error: 'fileName and base64Data are required' });
+  }
+  const normalizedType = typeof contentType === 'string' ? contentType.toLowerCase() : '';
+  if (!ALLOWED_COVER_TYPES.includes(normalizedType)) {
+    return res.status(400).json({
+      success: false,
+      error: 'contentType is required. Only JPEG, PNG, GIF, and WebP are allowed.',
+    });
+  }
+  const estimatedBytes = Math.ceil((base64Data.length * 3) / 4);
+  if (estimatedBytes > MAX_COVER_BYTES) {
+    return res.status(400).json({ success: false, error: 'Image exceeds 10 MB limit' });
+  }
+
+  let uploaded: { path: string; url: string; thumbUrl: string | null } | undefined;
+  try {
+    uploaded = await supabaseService.uploadCoverImage({
+      userId,
+      kind: 'note',
+      id: noteId,
+      fileName,
+      base64Data,
+      contentType: normalizedType,
+    });
+    const { previousPath } = await supabaseService.setNoteCoverPath(noteId, userId, uploaded.path);
+    await supabaseService.deleteCoverObject(previousPath);
+    await cacheService.delete(`note:${noteId}`);
+    return res.json({
+      success: true,
+      data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
+    });
+  } catch (error: any) {
+    // Never leave the stored object behind when the column write failed.
+    if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
+    if (error instanceof CoverColumnMissingError) {
+      return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
+    }
+    logger.error('Failed to set note cover', { noteId, userId, error });
+    return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to set cover image') });
+  }
+}));
+
+router.delete('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
+  const userId = requireAuthUserId(req, res);
+  if (!userId) return;
+
+  const { noteId } = req.params;
+  try {
+    const { previousPath } = await supabaseService.setNoteCoverPath(noteId, userId, null);
+    await supabaseService.deleteCoverObject(previousPath);
+    await cacheService.delete(`note:${noteId}`);
+    return res.json({ success: true, data: { coverPath: null } });
+  } catch (error: any) {
+    if (error instanceof CoverColumnMissingError) {
+      return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
+    }
+    logger.error('Failed to clear note cover', { noteId, userId, error });
+    return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to clear cover image') });
   }
 }));
 

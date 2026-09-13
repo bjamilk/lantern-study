@@ -72,6 +72,16 @@ export interface Deck {
    * Maintained by record_deck_study; the owner's own study is excluded.
    */
   studyCount?: number;
+  /**
+   * Cover image storage reference ("bucket/path"), NOT a URL. Signed URLs live
+   * 24h, so the path is what is persisted; clients re-sign on read through
+   * POST /storage/signed-urls (variant 'thumb' for grids).
+   */
+  coverPath?: string | null;
+  /** Resolved signed URL for `coverPath`. Never persisted; present only on responses that sign. */
+  coverUrl?: string | null;
+  /** Resolved signed URL for the sibling thumbnail. Never persisted. */
+  coverThumbUrl?: string | null;
 }
 
 export interface FlashcardSession {
@@ -744,6 +754,15 @@ export interface StudyNote {
   /** Pinned notes sort above others in the active list. */
   isPinned?: boolean;
   pinnedAt?: string;
+  /**
+   * Cover image storage reference ("bucket/path"), NOT a URL — same contract as
+   * `Deck.coverPath`: persist the path, re-sign for display.
+   */
+  coverPath?: string | null;
+  /** Resolved signed URL for `coverPath`. Never persisted. */
+  coverUrl?: string | null;
+  /** Resolved signed URL for the sibling thumbnail. Never persisted. */
+  coverThumbUrl?: string | null;
   createdAt: string;
   updatedAt: string;
 }

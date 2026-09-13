@@ -1,11 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import { isValidStudySetTitle, normalizeStudySetTitle, STUDY_SET_DESCRIPTION_MAX, STUDY_SET_TITLE_MAX } from '@lantern/shared';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  isValidStudySetTitle,
+  normalizeStudySetTitle,
+  studySetLabel,
+  STUDY_SET_DESCRIPTION_MAX,
+  STUDY_SET_TITLE_MAX,
+} from '@lantern/shared';
 import type { StudySet } from '../../types';
 import { Button } from '../ui';
 import { Input } from '../ui/Input';
 import Modal from '../ui/Modal';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
+import { SetTile } from './SetRoomTile';
+import {
+  COVER_ACCEPT_ATTR,
+  coverErrorMessage,
+  validateCoverFile,
+  STUDY_SET_COVER_HINT,
+  STUDY_SET_COVER_MAX_BYTES,
+} from '../ui/coverPickerModel';
 
 interface StudySetSettingsModalProps {
   isOpen: boolean;
@@ -33,6 +47,19 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
   const loadFolders = useStudySetStore((s) => s.loadFolders);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  /**
+   * The cover is read LIVE from the store, not from the `studySet` prop.
+   *
+   * The prop is a snapshot the opener passed in; the upload writes to the
+   * store, so reading the prop here would leave the preview showing the old
+   * picture until the modal was closed and reopened.
+   */
+  const liveCoverPath = useStudySetStore((s) =>
+    studySet ? (s.resolveSet(studySet.id)?.coverPath ?? null) : null
+  );
+  const coverInputRef = useRef<HTMLInputElement>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverError, setCoverError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !studySet) return;
@@ -42,6 +69,8 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
     setFolderId(studySet.folderId || '');
     setConfirmDelete(false);
     setSaving(false);
+    setCoverError(null);
+    setCoverBusy(false);
     void loadFolders().catch(() => undefined);
   }, [isOpen, loadFolders, studySet]);
 
@@ -71,6 +100,53 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
     }
   };
 
+  /**
+   * The picture is applied the moment it is chosen, not on Save.
+   *
+   * That is how the reference behaves, and it is also the honest behaviour
+   * here: the upload is its own request against its own route, so holding the
+   * picture hostage to the text-field Save would mean a student who pressed
+   * Cancel still has the cover the server already stored.
+   */
+  const uploadCover = async (picked: File | undefined) => {
+    if (!picked || coverBusy) return;
+    const check = validateCoverFile(picked, STUDY_SET_COVER_MAX_BYTES);
+    if (!check.ok) {
+      setCoverError(check.message);
+      return;
+    }
+    setCoverError(null);
+    setCoverBusy(true);
+    try {
+      const { setStudySetCover } = await import('../../stores/coverActions');
+      await setStudySetCover(studySet.id, picked);
+      showToast('Set picture updated.', 'success');
+    } catch (err) {
+      // The server's own sentence, or the migration line behind a 503 — never
+      // a house "something went wrong" over a fixable refusal.
+      const described = coverErrorMessage(err);
+      setCoverError(described.details ? `${described.message} (${described.details})` : described.message);
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const clearCover = async () => {
+    if (coverBusy) return;
+    setCoverError(null);
+    setCoverBusy(true);
+    try {
+      const { removeStudySetCover } = await import('../../stores/coverActions');
+      await removeStudySetCover(studySet.id);
+      showToast('Set picture removed.', 'success');
+    } catch (err) {
+      const described = coverErrorMessage(err);
+      setCoverError(described.details ? `${described.message} (${described.details})` : described.message);
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
   const share = async () => {
     const url = `${window.location.origin}/study/sets/${encodeURIComponent(studySet.id)}`;
     try {
@@ -90,6 +166,65 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
         Rename this set, add a description, or delete it.
       </p>
       <div className="space-y-4">
+        {/* StudyFetch's own block, in its own order: a square preview, ONE
+            button that opens the system picker, the recommendation line, and
+            Remove only once there is something to remove. No "Generate" (this
+            app has no image generation), no camera (the reference's web block
+            has none), and no price — a cover is not a purchase. */}
+        <div>
+          <span className="text-caption text-lantern-text-secondary">Study set picture</span>
+          <div className="mt-2 flex items-center gap-3">
+            <SetTile
+              setId={studySet.id}
+              title={studySetLabel(studySet)}
+              coverPath={liveCoverPath}
+              size={44}
+            />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => coverInputRef.current?.click()}
+                  disabled={coverBusy}
+                >
+                  {coverBusy ? 'Uploading…' : 'Upload picture'}
+                </Button>
+                {liveCoverPath ? (
+                  <button
+                    type="button"
+                    onClick={() => void clearCover()}
+                    disabled={coverBusy}
+                    className="text-caption text-lantern-error hover:underline disabled:opacity-60"
+                  >
+                    Remove
+                  </button>
+                ) : null}
+              </div>
+              <p className="mt-1 text-caption text-lantern-text-tertiary">
+                {STUDY_SET_COVER_HINT}
+              </p>
+            </div>
+          </div>
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept={COVER_ACCEPT_ATTR}
+            className="hidden"
+            onChange={(event) => {
+              const picked = event.target.files?.[0];
+              // Cleared immediately so re-picking the SAME file fires change.
+              event.target.value = '';
+              void uploadCover(picked);
+            }}
+          />
+          {coverError ? (
+            <p role="alert" className="mt-2 text-caption text-lantern-error">
+              {coverError}
+            </p>
+          ) : null}
+        </div>
+
         <Input
           value={title}
           onChange={(event) => setTitle(event.target.value)}

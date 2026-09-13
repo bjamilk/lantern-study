@@ -956,6 +956,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           <SetRoomHeader
             setId={studySetId}
             title={label}
+            coverPath={studySet?.coverPath}
             progress={roomProgress}
             counts={roomCounts}
             onOpenSettings={() => setSettingsOpen(true)}

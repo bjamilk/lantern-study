@@ -14,6 +14,11 @@ interface SetRoomHeaderProps {
   /** The set's id, so its identity tile matches the one on its card. */
   setId: string;
   title: string;
+  /**
+   * The set's cover. Optional so a caller that has no set row in hand keeps
+   * today's pastel tile rather than failing to compile.
+   */
+  coverPath?: string | null;
   /** Null while the set has no plan and no materials to derive one from. */
   progress: StudySetPlanProgress | null;
   /** The one-line fallback when there is no plan: "4 notes · 2 decks". */
@@ -49,6 +54,7 @@ interface SetRoomHeaderProps {
 export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
   setId,
   title,
+  coverPath,
   progress,
   counts,
   controls,
@@ -83,7 +89,7 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
     <header className="mb-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex min-w-0 items-center gap-3">
-          <SetTile setId={setId} title={title} size={44} />
+          <SetTile setId={setId} title={title} coverPath={coverPath} size={44} />
           <h1 className="text-title text-lantern-text truncate">{title}</h1>
           <button
             type="button"

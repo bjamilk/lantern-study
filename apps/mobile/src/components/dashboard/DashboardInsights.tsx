@@ -8,6 +8,8 @@ import { Text, View } from 'react-native';
 import { Card } from '../ui';
 import type { DashboardStats } from '../../types/dashboardStats';
 import { AppIcon } from '../ui/AppIcon';
+import { useFeatureAccent } from '../ui/FeatureDisc';
+import { useTheme } from '../../theme';
 
 const MIN_TOPIC_QUESTIONS = 3;
 
@@ -28,6 +30,11 @@ function TopicRow({ tag, accuracy, tone }: { tag: string; accuracy: number; tone
 }
 
 export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
+  const { colors } = useTheme();
+  // Hooks before the early return: a card that renders nothing must still call
+  // the same hooks in the same order as one that renders.
+  const accent = useFeatureAccent('tests');
+
   if (!stats) return null;
 
   const rankedTopics = (stats.topicPerformance ?? [])
@@ -80,7 +87,9 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
       {showQuestions ? (
         <Card className="mb-4">
           <View className="flex-row items-center gap-2 mb-3">
-            <AppIcon name="warning" size={16} color="#f59e0b" />
+            {/* The warning TOKEN, not Tailwind's `#f59e0b`: a raw palette hex
+                is the same colour in both themes and answers to nothing. */}
+            <AppIcon name="warning" size={16} color={colors.warning} />
             <Text className="text-sm font-semibold text-lantern-text">Questions to review</Text>
           </View>
           <View className="gap-2">
@@ -91,8 +100,16 @@ export function DashboardInsights({ stats }: { stats: DashboardStats | null }) {
                   : 0;
               return (
                 <View key={q.id} className="flex-row items-start gap-3">
-                  <View className="w-10 h-10 rounded-lg bg-amber-100 dark:bg-amber-900/30 items-center justify-center">
-                    <Text className="text-xs font-bold text-amber-600 dark:text-amber-400">{accuracy}%</Text>
+                  {/* The tests family's own tint, by the same registry every
+                      other disc on the phone reads, so a score chip is not a
+                      fourth amber nobody owns. */}
+                  <View
+                    className="w-10 h-10 rounded-lg items-center justify-center"
+                    style={{ backgroundColor: accent.tint }}
+                  >
+                    <Text className="text-xs font-bold" style={{ color: accent.ink }}>
+                      {accuracy}%
+                    </Text>
                   </View>
                   <View className="flex-1 min-w-0">
                     <Text className="text-sm text-lantern-text" style={{ flexShrink: 1 }}>

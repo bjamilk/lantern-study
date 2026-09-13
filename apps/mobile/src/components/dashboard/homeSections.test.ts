@@ -1,10 +1,17 @@
 import type { StudySet } from '@lantern/shared/types';
 import { primaryHomeAction, type StudyResumeActivity } from '@lantern/shared/learning';
+import type { HomeRegionsInput } from '@lantern/shared/dashboard';
 import {
   HOME_DOOR_MIN_WIDTH,
   HOME_QUICK_ACTIONS,
+  RECENT_ACTIVITIES_LIMIT,
   homeQuickActionGrid,
   homeRegions,
+  progressSummaryLine,
+  recentActivitiesFromResume,
+  recentActivityRoute,
+  type HomeRegionId,
+  type RecentActivity,
   lastStudiedLabel,
   shouldRefetchSets,
   nearestUpcomingExam,
@@ -25,67 +32,127 @@ function activity(href: string): StudyResumeActivity {
   return { kind: 'note', title: 'Chapter 3', studySetId: 's1', href, at: '2026-09-10T09:00:00Z' };
 }
 
-describe('homeRegions', () => {
-  const cases: { name: string; sets: number; materials: number; exam: boolean }[] = [
-    { name: 'no sets, nothing recent', sets: 0, materials: 0, exam: false },
-    { name: 'one set, nothing recent', sets: 1, materials: 0, exam: false },
-    { name: 'many sets with materials', sets: 7, materials: 4, exam: true },
-  ];
+describe('homeRegions — the shared spine, as the phone draws it', () => {
+  // Not a re-test of the shared helper: these are the two facts the SCREEN
+  // depends on. It renders a fixed list of JSX in a fixed order, so if the
+  // spine ever grows a region or reorders one, this fails rather than the
+  // phone quietly drawing the old order.
+  const mobile = (patch: Partial<HomeRegionsInput> = {}): HomeRegionId[] =>
+    homeRegions({ platform: 'mobile', ...patch }).map((region) => region.id);
 
-  it.each(cases)('always draws the spine ($name)', ({ sets, materials, exam }) => {
-    const regions = homeRegions({
-      studySetCount: sets,
-      recentMaterialCount: materials,
-      hasUpcomingExam: exam,
-    });
-    // The screen's spine: a student with nothing yet still gets a way in, and
-    // "Your study sets" is what invites the first one.
-    expect(regions).toEqual(
-      expect.arrayContaining(['greeting', 'studySets', 'quickActions', 'streak', 'joinClass'])
-    );
-  });
-
-  it('hides Recent materials rather than heading an empty region', () => {
-    expect(
-      homeRegions({ studySetCount: 3, recentMaterialCount: 0, hasUpcomingExam: false })
-    ).not.toContain('recentMaterials');
-    expect(
-      homeRegions({ studySetCount: 3, recentMaterialCount: 1, hasUpcomingExam: false })
-    ).toContain('recentMaterials');
-  });
-
-  it('falls back to readiness when no set names an exam', () => {
-    const withExam = homeRegions({
-      studySetCount: 2,
-      recentMaterialCount: 2,
-      hasUpcomingExam: true,
-    });
-    const without = homeRegions({
-      studySetCount: 2,
-      recentMaterialCount: 2,
-      hasUpcomingExam: false,
-    });
-    expect(withExam).toContain('upcomingExam');
-    expect(withExam).not.toContain('readiness');
-    expect(without).toContain('readiness');
-    expect(without).not.toContain('upcomingExam');
-  });
-
-  it('keeps web order: sets before materials before the exam before the doors', () => {
-    const regions = homeRegions({
-      studySetCount: 2,
-      recentMaterialCount: 3,
-      hasUpcomingExam: true,
-    });
-    expect(regions).toEqual([
+  it('is the eight regions DashboardScreen renders, in that order', () => {
+    expect(mobile({ dueCount: 12, hasExamDate: true })).toEqual([
       'greeting',
       'studySets',
       'recentMaterials',
+      'recentActivities',
       'upcomingExam',
       'quickActions',
-      'streak',
+      'progress',
       'joinClass',
     ]);
+  });
+
+  it('keeps the spine whole for a student with nothing yet', () => {
+    // No sets, no exam, nothing due: every region still has its place, because
+    // each one's empty state is the invitation to fill it.
+    expect(mobile()).toEqual(mobile({ dueCount: 40, hasExamDate: true }));
+  });
+
+  it('gives the phone a progress DOOR — web renders the figures instead', () => {
+    const progress = homeRegions({ platform: 'mobile' }).find((r) => r.id === 'progress');
+    expect(progress?.door).toBe(true);
+    expect(homeRegions({ platform: 'web' }).some((r) => r.id === 'progress')).toBe(false);
+  });
+
+  it('labels the exam slot by whether a date is known', () => {
+    const slot = (hasExamDate: boolean) =>
+      homeRegions({ platform: 'mobile', hasExamDate }).find((r) => r.id === 'upcomingExam');
+    expect(slot(true)?.label).toBe('Upcoming exam');
+    // No date: the phone draws CourseReadinessCard in this slot, and the
+    // heading has to say readiness rather than promise an exam.
+    expect(slot(false)?.label).toBe('Exam readiness');
+  });
+});
+
+describe('recentActivitiesFromResume', () => {
+  it('gives every row a past-tense verb that matches its kind', () => {
+    const rows = recentActivitiesFromResume([
+      { kind: 'cards', title: 'Pharm deck', studySetId: 's1', href: '/study/sets/s1/cards', at: '2026-09-12T09:00:00Z' },
+      { kind: 'quiz', title: 'Week 4 quiz', studySetId: 's1', href: '/study/sets/s1/quiz', at: '2026-09-12T08:00:00Z' },
+      { kind: 'lecture', title: 'Lecture 9', studySetId: 's1', href: '/study/sets/s1/lecture', at: '2026-09-12T07:00:00Z' },
+    ]);
+    expect(rows.map((r) => [r.kind, r.verb])).toEqual([
+      ['flashcards', 'Practiced Flashcards'],
+      ['test', 'Took Test'],
+      ['lecture', 'Listened To Lecture'],
+    ]);
+  });
+
+  it('folds the made-from-material kinds onto the material verb', () => {
+    // Five honest verbs beat nine that each appear once.
+    const kinds = ['recap', 'lesson', 'play', 'essay', 'note'] as const;
+    const rows = recentActivitiesFromResume(
+      kinds.map((kind) => ({
+        kind,
+        title: kind,
+        studySetId: 's1',
+        href: `/study/sets/s1/${kind}`,
+        at: '2026-09-12T09:00:00Z',
+      }))
+    );
+    expect(rows.every((r) => r.kind === 'material' && r.verb === 'Studied Material')).toBe(true);
+  });
+
+  it('never hands Home more rows than the shared limit', () => {
+    const rows = recentActivitiesFromResume(
+      Array.from({ length: 20 }, (_, i) => ({
+        kind: 'note' as const,
+        title: `n${i}`,
+        studySetId: 's1',
+        href: `/study/sets/s1/notes/n${i}`,
+        at: '2026-09-12T09:00:00Z',
+      }))
+    );
+    expect(rows).toHaveLength(RECENT_ACTIVITIES_LIMIT);
+  });
+});
+
+describe('recentActivityRoute — tap resumes the ACTIVITY, not its set', () => {
+  const row = (patch: Partial<RecentActivity>): RecentActivity => ({
+    kind: 'material',
+    verb: 'Studied Material',
+    title: 'Chapter 3',
+    targetRoute: '/study/sets/s1/notes/n1',
+    at: '2026-09-12T09:00:00Z',
+    id: 'n1',
+    ...patch,
+  });
+
+  it('translates a study-set path to its studio', () => {
+    expect(recentActivityRoute(row({ targetRoute: '/study/sets/s1/quiz' }))).toEqual({
+      screen: 'AdaptiveQuiz',
+      params: { studySetId: 's1' },
+    });
+  });
+
+  it('falls back to the row s own id when it has no set', () => {
+    // `/study/decks/d9` is not a set path, so the deck id on the row is the
+    // only thing that can name a screen.
+    expect(
+      recentActivityRoute(row({ kind: 'flashcards', targetRoute: '/study/decks/d9', id: 'd9' }))
+    ).toEqual({ screen: 'DeckDetail', params: { deckId: 'd9' } });
+    expect(
+      recentActivityRoute(row({ kind: 'material', targetRoute: '/notes/n9', id: 'n9' }))
+    ).toEqual({ screen: 'NoteEditor', params: { noteId: 'n9' } });
+  });
+
+  it('returns null for a companion row rather than inventing a screen', () => {
+    // The Study stack has no conversation screen; the caller opens the
+    // companion instead of navigating somewhere arbitrary.
+    expect(
+      recentActivityRoute(row({ kind: 'companion', targetRoute: '/chat?conversation=c1', id: 'c1' }))
+    ).toBeNull();
   });
 });
 
@@ -258,6 +325,51 @@ describe('HOME_QUICK_ACTIONS', () => {
   it('has a unique id per door', () => {
     const ids = HOME_QUICK_ACTIONS.map((action) => action.id);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('prints the shared labels, so the phone and web name a door the same', () => {
+    // The reviewer's wording, and web's: "Import" and "Record" used to be the
+    // phone's own shorter labels, which made the same door two things.
+    expect(HOME_QUICK_ACTIONS.map((action) => action.label)).toEqual([
+      'Import materials',
+      'Create a quiz',
+      'Ask Lantern',
+      'Tutor',
+      'Record a lecture',
+      'Open Study',
+    ]);
+  });
+});
+
+describe('progressSummaryLine — the door s one claim', () => {
+  const known = { streak: 12, level: { level: 4, name: 'Scholar' }, points: 1280 };
+
+  it('names the three facts in order', () => {
+    expect(progressSummaryLine({ ...known, known: true, pending: false })).toBe(
+      '12 day streak · Level 4 Scholar · 1,280 XP'
+    );
+  });
+
+  it('says it does not know rather than printing zeros', () => {
+    // Offline with nothing cached. "0 day streak · Level 1 · 0 XP" at a
+    // student who has studied for a month is the exact defect the greeting
+    // card was fixed for; the door must not bring it back.
+    const line = progressSummaryLine({ ...known, known: false, pending: false });
+    expect(line).not.toMatch(/\d/);
+    expect(line).toMatch(/reconnect/);
+  });
+
+  it('says it is still loading for the beat before hydration', () => {
+    const line = progressSummaryLine({ streak: 0, level: null, points: 0, known: true, pending: true });
+    expect(line).not.toMatch(/0 day streak/);
+    expect(line).toMatch(/Loading/);
+  });
+
+  it('falls back to Level 1 rather than dropping the field', () => {
+    // A real account whose level has not arrived still gets three fields, so
+    // the line does not change shape between two renders of the same card.
+    expect(progressSummaryLine({ streak: 3, level: null, points: 40, known: true, pending: false }))
+      .toBe('3 day streak · Level 1 · 40 XP');
   });
 });
 

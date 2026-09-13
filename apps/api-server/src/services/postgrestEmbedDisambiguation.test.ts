@@ -418,9 +418,12 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/librarySearch.ts::column': 1,
       'services/moderation.ts::columns': 2,
       'services/schemaCapabilities.ts::column': 1,
-      // studySets' writeWithExamColumn: one write run twice, with and without
-      // exam_date, from SET_COLUMNS / SET_COLUMNS_NO_EXAM in the same file.
-      'services/studySets.ts::columns': 4,
+      // studySets: the write helper `writeWithExamColumn` and the read helper
+      // `selectSets`'s `read` both walk SET_COLUMN_LADDER, whose four rungs are
+      // literal constants in the same file (SET_COLUMNS, SET_NO_EXAM_COLUMNS,
+      // SET_NO_COVER_COLUMNS, SET_NO_EXAM_NO_COVER_COLUMNS) — each named so the
+      // scan reads it at its definition, so no embed hides behind the ladder.
+      'services/studySets.ts::columns': 5,
       'services/supabase.ts::columns': 7,
       'services/supabase.ts::select': 4,
     });

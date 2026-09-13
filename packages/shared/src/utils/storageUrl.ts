@@ -8,6 +8,10 @@ export const PRIVATE_STORAGE_BUCKETS = [
   "profile-avatars",
   "group-avatars",
   "job-resumes",
+  // Deck / note cover images. Created by the service role on first upload, so
+  // no dashboard step; listed here or every signed-URL request is denied by
+  // the deny-by-default bucket gate.
+  "cover-images",
 ] as const;
 
 export type PrivateStorageBucket = (typeof PRIVATE_STORAGE_BUCKETS)[number];

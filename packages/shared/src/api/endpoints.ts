@@ -202,6 +202,16 @@ function withNotEnabled<T>(run: () => Promise<T>): Promise<T> {
 }
 
 /** One live invite link, as the moderator's list renders it. */
+/**
+ * Result of a cover upload. `coverPath` is the durable value; the two URLs are
+ * 24h signed and must never be persisted.
+ */
+export interface CoverImageResult {
+  coverPath: string;
+  coverUrl: string;
+  coverThumbUrl: string | null;
+}
+
 export interface CommunityInviteSummary {
   code: string;
   /** ISO instant, or null when the link never expires. */
@@ -702,6 +712,67 @@ export function createApiEndpoints(client: ApiClient) {
         },
       );
     },
+
+    // ========== COVER IMAGES (decks + notes) ==========
+
+    /**
+     * Set a deck/note cover.
+     *
+     * The server stores the object and persists the storage PATH; the returned
+     * `coverUrl` is a 24h signed URL for immediate display only — persist
+     * `coverPath` and re-sign later via `/storage/signed-urls`.
+     */
+    uploadDeckCover: (
+      deckId: string,
+      payload: { base64Data: string; fileName: string; contentType: string },
+    ) =>
+      apiRequest<CoverImageResult>(`/decks/${deckId}/cover`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    clearDeckCover: (deckId: string) =>
+      apiRequest<{ coverPath: null }>(`/decks/${deckId}/cover`, {
+        method: "DELETE",
+      }),
+
+    uploadNoteCover: (
+      noteId: string,
+      payload: { base64Data: string; fileName: string; contentType: string },
+    ) =>
+      apiRequest<CoverImageResult>(`/notes/${noteId}/cover`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+
+    clearNoteCover: (noteId: string) =>
+      apiRequest<{ coverPath: null }>(`/notes/${noteId}/cover`, {
+        method: "DELETE",
+      }),
+
+    /**
+     * Set a STUDY SET's cover — the picture StudyFetch actually gives a
+     * student, drawn as the set chip in every room header and as the row
+     * thumbnail in the switcher.
+     *
+     * The ceiling here is 5 MB, not the 10 MB decks and notes take: that is
+     * the number printed under the button ("Recommended: 400x400px, max
+     * 5MB"), and the server refuses anything larger.
+     */
+    uploadStudySetCover: (
+      setId: string,
+      payload: { base64Data: string; fileName: string; contentType: string },
+    ) =>
+      apiRequest<CoverImageResult>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/cover`,
+        { method: "POST", body: JSON.stringify(payload) },
+      ),
+
+    clearStudySetCover: (setId: string) =>
+      apiRequest<{ coverPath: null }>(
+        `/users/me/study-sets/${encodeURIComponent(setId)}/cover`,
+        { method: "DELETE" },
+      ),
 
     // ========== USER PROFILE API ==========
 

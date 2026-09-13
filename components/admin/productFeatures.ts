@@ -46,6 +46,36 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'study-set-parity-covers-1-0-54',
+    title: 'The set stays in one place, Home reads in two screens, and sets, decks and notes take a picture (1.0.54)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-13',
+    summary:
+      'Inside a set the bottom bar becomes the set (Home, Materials, Flashcards, Tests, Record, Ask) and the room has a remembered segment row; on the web the left rail becomes the set with a switcher, its activities, Upload and a live materials tree. Set cards carry tile art, progress, count chips, a resume pill and the last-studied time, with Edit and Delete behind a menu. Both Homes share one eight-region spine with a new Recent activities section and a Progress door. Every tile and card is flat. Studio gates show a card and the button that resolves the blocker. A study set, deck or note can carry a picture uploaded from the gallery.',
+    details: [
+      'Mobile: segment row Overview · Materials · Practice · Lectures · Plan (remembered per set, driven one-way from the set bar through a ticketed param inbox — the store is the single writer); one bottom bar at a time; Study tab press returns to the hub; companion scopes to the set.',
+      'Web: SetRail from the path /study/sets/:id (switcher, Study plan, Chat, Tutor, Record, Practice group, Upload, materials tree); set room header as an object (tile, chip strip, progress), styled switcher, timer idle state with presets, plan unit pills with a lilac ring, in-set Recent materials with a type filter, Exam dates and syllabus cards on every room, compact own-way grid; /study no longer flashes the empty state before sets load.',
+      'Shared: packages/shared/src/study/setPresentation.ts (tile art, count chips, relative time) and dashboard/homeSections.ts (the Home spine, recentActivities); hard offset shadow removed app-wide (web --shadow-hard, mobile DOOR_TILE.shadowOffset).',
+      'Covers: migration 20260913120000_cover_images.sql adds cover_path to decks, notes and study_sets; private cover-images bucket auto-created; POST/DELETE /decks/:id/cover, /notes/:id/cover, /users/me/study-sets/:id/cover (5 MB cap on sets, 10 MB otherwise); thumbnails via the existing sibling-thumb pipeline; no AI generation (no provider exists).',
+      'Fonts, icon sizes and button skins unchanged (measured on device: title cap 41 px, primary pill 116 px, identical to 1.0.53).',
+    ],
+    howToUse: [
+      'Open a set: use the bottom bar (mobile) or the left rail (web) to move between its materials, cards, tests, recordings and plan without leaving it.',
+      'Study tab: search, sort, and read each set’s progress and contents on its card; ⋮ for Edit, Move, Delete.',
+      'Set settings → Study set picture → Upload picture (recommended 400×400px, max 5MB); a deck or note: ⋮ → Add cover.',
+      'Home → Your progress for goals, quests, the heatmap, badges, tests, group performance and the leaderboard.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Migration 20260913120000_cover_images.sql is hand-applied; until then cover uploads answer 503 naming the file and reads degrade to no cover.',
+      'Earlier hand-applied migrations still pending: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+      'The web timer’s View stats link was omitted: no stats screen exists yet.',
+      'components/dashboard GettingStartedChecklist is unreferenced after the Home trim.',
+    ],
+    commits: ['3fcd99ed'],
+  },
+  {
     id: 'pdf-viewer-photo-race-chat-home-1-0-53',
     title: 'PDFs open in your phone’s viewer, photo questions always see the photo, and a chat home with gallery, forwarding and link previews (1.0.53)',
     area: 'platform',
