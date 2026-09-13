@@ -1,4 +1,6 @@
+import { WORKSPACE_ACTIVITIES } from '../learning/courseWorkspace';
 import type { StudySetTopic, StudySetUnit } from '../learning/studySetPlan';
+import { workspaceActivityFromPath } from '../learning/studySetRoutes';
 import {
   initialOpenUnitId,
   isPlanTopicDone,
@@ -66,7 +68,7 @@ describe('planTopicState', () => {
 
 describe('planTopicActivity', () => {
   it('reads what is unseen, quizzes what is covered, drills what is mastered', () => {
-    expect(planTopicActivity(topic('1', 'u1', 10))).toBe('read');
+    expect(planTopicActivity(topic('1', 'u1', 10))).toBe('notes');
     expect(planTopicActivity(topic('2', 'u1', 20, 'covered'))).toBe('quiz');
     expect(planTopicActivity(topic('3', 'u1', 30, 'mastered'))).toBe('cards');
   });
@@ -75,6 +77,36 @@ describe('planTopicActivity', () => {
     expect(planTopicActivity(topic('4', 'u1', 40, 'unseen', []))).toBe('lesson');
     expect(planTopicActivityLabel(topic('4', 'u1', 40, 'unseen', []))).toBe('Tutor');
     expect(planTopicActivityLabel(topic('1', 'u1', 10))).toBe('Read');
+  });
+
+  // The regression: a plain note used to answer `read`, a URL the room maps
+  // onto the Walkthrough chip, so Continue lit Walkthrough over "Select a note
+  // with a PDF or slides attached." Every answer must now be a chip that the
+  // room can actually fill for THIS topic's source.
+  it('reads a plain note in the studio and a PDF note in the walkthrough', () => {
+    const unseen = topic('1', 'u1', 10);
+    expect(planTopicActivity(unseen)).toBe('notes');
+    expect(planTopicActivity(unseen, { hasWalkableSource: false })).toBe('notes');
+    expect(planTopicActivity(unseen, { hasWalkableSource: true })).toBe('walkthrough');
+    // One promise either way — the pill does not flicker when a PDF arrives.
+    expect(planTopicActivityLabel(unseen, { hasWalkableSource: true })).toBe('Read');
+    expect(planTopicActivityLabel(unseen, { hasWalkableSource: false })).toBe('Read');
+  });
+
+  it('never answers with a route the room maps onto another chip', () => {
+    const cases = [
+      planTopicActivity(topic('1', 'u1', 10)),
+      planTopicActivity(topic('1', 'u1', 10), { hasWalkableSource: true }),
+      planTopicActivity(topic('2', 'u1', 20, 'covered')),
+      planTopicActivity(topic('3', 'u1', 30, 'mastered')),
+      planTopicActivity(topic('4', 'u1', 40, 'unseen', [])),
+    ];
+    expect(cases).not.toContain('read');
+    // Each is an id in WORKSPACE_ACTIVITIES, so a chip exists to light.
+    const chips = new Set(WORKSPACE_ACTIVITIES.map((row) => row.id));
+    for (const kind of cases) expect(chips.has(kind)).toBe(true);
+    // …and each is its OWN route, not one the router redirects elsewhere.
+    for (const kind of cases) expect(workspaceActivityFromPath(kind)).toBe(kind);
   });
 });
 

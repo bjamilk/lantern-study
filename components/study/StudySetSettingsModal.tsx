@@ -1,5 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  SET_TILE_GLYPHS,
+  SET_TILE_HUES,
+  setTileArt,
+  type SetTileGlyph,
+  type SetTileHue,
+} from '@lantern/shared/study/setPresentation';
+import {
+  SET_TILE_UNSUPPORTED_MESSAGE,
+  changedSetTilePick,
+  isSetTileUnsupportedMessage,
+  setTileSaveDropped,
+} from '@lantern/shared/study/setTileSave';
+import {
   isValidStudySetTitle,
   normalizeStudySetTitle,
   studySetLabel,
@@ -13,7 +26,7 @@ import { Input } from '../ui/Input';
 import Modal from '../ui/Modal';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
-import { SetTile } from './SetRoomTile';
+import { GLYPH_ICON, SetTile } from './SetRoomTile';
 import { shareStudySet } from './shareStudySet';
 import {
   COVER_ACCEPT_ATTR,
@@ -45,6 +58,13 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'private' | 'public'>('private');
   const [folderId, setFolderId] = useState<string>('');
+  /**
+   * The tile pick, `null` for "derive it". Held locally and written by Save,
+   * like the name and the visibility — and unlike the picture, which is its
+   * own upload against its own route and lands the moment it is chosen.
+   */
+  const [tileHue, setTileHue] = useState<SetTileHue | null>(null);
+  const [tileGlyph, setTileGlyph] = useState<SetTileGlyph | null>(null);
   const folders = useStudySetStore((s) => s.folders);
   const loadFolders = useStudySetStore((s) => s.loadFolders);
   const [saving, setSaving] = useState(false);
@@ -62,6 +82,12 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
   const coverInputRef = useRef<HTMLInputElement>(null);
   const [coverBusy, setCoverBusy] = useState(false);
   const [coverError, setCoverError] = useState<string | null>(null);
+  /**
+   * Why the tile did not save, shown IN the tile block rather than as a green
+   * toast over a modal that just closed. A pre-migration api answers 200 and
+   * strips the tile keys, so success here has to be checked, not assumed.
+   */
+  const [tileError, setTileError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !studySet) return;
@@ -69,9 +95,12 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
     setDescription(studySet.description || '');
     setVisibility(studySet.visibility === 'public' ? 'public' : 'private');
     setFolderId(studySet.folderId || '');
+    setTileHue((studySet.tileHue as SetTileHue) || null);
+    setTileGlyph((studySet.tileGlyph as SetTileGlyph) || null);
     setConfirmDelete(false);
     setSaving(false);
     setCoverError(null);
+    setTileError(null);
     setCoverBusy(false);
     void loadFolders().catch(() => undefined);
   }, [isOpen, loadFolders, studySet]);
@@ -85,18 +114,38 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
       return;
     }
     setSaving(true);
+    // Only the halves that MOVED: Save sends the whole form, so a rename on a
+    // pre-migration api must not report a tile the student never touched.
+    const askedTile = changedSetTilePick(studySet, { hue: tileHue, glyph: tileGlyph });
+    setTileError(null);
     try {
-      await updateSet(studySet.id, {
+      const updated = await updateSet(studySet.id, {
         title: next,
         description: description.trim() || null,
         visibility,
         folderId: folderId || null,
+        tileHue,
+        tileGlyph,
       });
+      // An api older than the 503 strips what it does not know and answers a
+      // cheerful 200. Compare what came back with what was sent, and keep the
+      // modal open with the pick still chosen when the tile did not land.
+      if (setTileSaveDropped(askedTile, updated)) {
+        setTileError(SET_TILE_UNSUPPORTED_MESSAGE);
+        return;
+      }
       showToast('Study set updated.', 'success');
       onSaved?.();
       onClose();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not update this set.', 'error');
+      const message = error instanceof Error ? error.message : 'Could not update this set.';
+      // The api's own 503 for the unapplied migration. Same sentence, same
+      // place as the comparison above.
+      if (isSetTileUnsupportedMessage(message)) {
+        setTileError(SET_TILE_UNSUPPORTED_MESSAGE);
+        return;
+      }
+      showToast(message, 'error');
     } finally {
       setSaving(false);
     }
@@ -156,6 +205,16 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
    * the link either way. It now goes through the one shared helper, which
    * says so, and which the header pill and the card kebab also use.
    */
+  /**
+   * What the tile WOULD draw with the current pick — the derivation filling in
+   * whichever half is still null. This is what the swatches mark as selected,
+   * so an untouched set opens with its real colour ringed instead of nothing.
+   */
+  const preview = setTileArt(studySet.id, studySetLabel(studySet), {
+    hue: tileHue,
+    glyph: tileGlyph,
+  });
+
   const share = () =>
     shareStudySet({ setId: studySet.id, title: studySet.title, visibility });
 
@@ -180,6 +239,8 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
               setId={studySet.id}
               title={studySetLabel(studySet)}
               coverPath={liveCoverPath}
+              tileHue={tileHue}
+              tileGlyph={tileGlyph}
               size={44}
             />
             <div className="min-w-0">
@@ -223,6 +284,90 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
           {coverError ? (
             <p role="alert" className="mt-2 text-caption text-lantern-error">
               {coverError}
+            </p>
+          ) : null}
+        </div>
+
+        {/* The tile, which the reference lets a student CHOOSE rather than
+            only derive: one row of the six pastels, one of the six glyphs.
+            Both halves are independent and either can be left derived, so the
+            selected state is drawn against what the tile would ACTUALLY show
+            (`preview`) rather than against the raw pick — otherwise a set with
+            no pick would open with no swatch marked while plainly being mint.
+
+            Below a cover this block still edits something real: removing the
+            picture reveals the tile again, so it is never dead. The hint says
+            so rather than leaving the student to discover it. */}
+        <div>
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-caption text-lantern-text-secondary">Tile</span>
+            {tileHue || tileGlyph ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setTileHue(null);
+                  setTileGlyph(null);
+                  setTileError(null);
+                }}
+                className="text-caption text-lantern-text-secondary hover:underline"
+              >
+                Reset
+              </button>
+            ) : null}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Tile colour">
+            {SET_TILE_HUES.map((hue) => (
+              <button
+                key={hue}
+                type="button"
+                onClick={() => {
+                  setTileHue(hue);
+                  setTileError(null);
+                }}
+                aria-pressed={preview.hue === hue}
+                aria-label={`${hue} tile`}
+                className={`rounded-xl p-0.5 ${
+                  preview.hue === hue
+                    ? 'ring-2 ring-lantern-primary-fill'
+                    : 'ring-1 ring-transparent'
+                }`}
+              >
+                <SetTile setId={studySet.id} title="" tileHue={hue} tileGlyph={preview.glyph} size={32} />
+              </button>
+            ))}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2" role="group" aria-label="Tile symbol">
+            {SET_TILE_GLYPHS.map((glyph) => (
+              <button
+                key={glyph}
+                type="button"
+                onClick={() => {
+                  setTileGlyph(glyph);
+                  setTileError(null);
+                }}
+                aria-pressed={preview.glyph === glyph}
+                aria-label={`${glyph} symbol`}
+                className={`flex h-11 w-11 items-center justify-center rounded-xl border text-lantern-text ${
+                  preview.glyph === glyph
+                    ? 'border-transparent bg-lantern-primary-fill text-white'
+                    : 'border-lantern-border text-lantern-text-secondary'
+                }`}
+              >
+                <AppIcon name={GLYPH_ICON[glyph]} size={18} />
+              </button>
+            ))}
+          </div>
+          <p className="mt-1 text-caption text-lantern-text-tertiary">
+            {liveCoverPath
+              ? 'Shown wherever this set appears, once the picture is removed.'
+              : 'Shown wherever this set appears.'}
+          </p>
+          {/* The failure belongs to the block that failed, not to a toast that
+              slides in over a modal which has already closed. `role="alert"`
+              matches the cover block's line right above. */}
+          {tileError ? (
+            <p role="alert" className="mt-2 text-caption text-lantern-error">
+              {tileError}
             </p>
           ) : null}
         </div>

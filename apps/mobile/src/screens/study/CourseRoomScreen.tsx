@@ -45,9 +45,9 @@ import {
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
 import { Button, Card, DoorTile, doorTileColumnWidth, FeatureDisc, T } from '../../components/ui';
-import { type AppIconName } from '../../components/ui/AppIcon';
+import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
-import { DOOR_TILE } from '../../theme';
+import { DOOR_TILE, useTheme } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { StudySetTimer } from '../../components/study/StudySetTimer';
 import { SetRoomHeader } from '../../components/study/SetRoomHeader';
@@ -55,6 +55,14 @@ import { shareStudySet } from '../../components/study/shareStudySet';
 import { SetRoomSegments } from '../../components/study/SetRoomSegments';
 import { SetRoomTile } from '../../components/study/SetRoomTile';
 import { StudyPlanPanel } from '../../components/study/StudyPlanPanel';
+import {
+  MaterialSortButton,
+  ViewModeToggle,
+  useMaterialSort,
+  useViewMode,
+} from '../../components/study/ViewModeToggle';
+import { sortMaterials } from '../../components/study/viewMode';
+import { formatShortDate } from '@lantern/shared/study/setPresentation';
 import {
   SET_ROOM_TILE_LABELS,
   SET_ROOM_TILE_ORDER,
@@ -297,6 +305,26 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     [decks, courseId, studySetId]
   );
   const lectures = useMemo(() => courseNotes.filter(isLectureNote), [courseNotes]);
+  // Grid or list, and the order, for the room's two browsable shelves. Grid is
+  // the materials default and list the lectures default because that is the
+  // shape each had before the toggle existed — a remembered control must not
+  // change what a student who never touches it sees. The web keys the same two
+  // surfaces the same way (components/study/viewMode.ts).
+  const [materialsView, chooseMaterialsView] = useViewMode('setRoomMaterials', 'grid');
+  const [materialsSort, chooseMaterialsSort] = useMaterialSort('setRoomMaterials', 'newest');
+  const [lecturesView, chooseLecturesView] = useViewMode('setRoomLectures', 'list');
+  const [lecturesSort, chooseLecturesSort] = useMaterialSort('setRoomLectures', 'newest');
+  // Sorted BEFORE the cap, so `Recent materials` shows the eight the chosen
+  // order puts first — capping first and sorting the survivors would label a
+  // list `A–Z` while quietly having picked its eight rows by sync order.
+  const recentMaterials = useMemo(
+    () => sortMaterials([...lectures, ...studyNotes], materialsSort).slice(0, 8),
+    [lectures, studyNotes, materialsSort]
+  );
+  const sortedLectures = useMemo(
+    () => sortMaterials(lectures, lecturesSort),
+    [lectures, lecturesSort]
+  );
   const lessons = useMemo(() => courseNotes.filter(isLessonNote), [courseNotes]);
   const recaps = useMemo(() => courseNotes.filter(isRecapNote), [courseNotes]);
   const essays = useMemo(() => courseNotes.filter(isEssayNote), [courseNotes]);
@@ -580,6 +608,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         <SetRoomHeader
           title={label}
           coverPath={studySet?.coverPath}
+          // Only a SET room has art to draw; a course room passes nothing and
+          // its header is unchanged.
+          setId={studySetId}
+          tileHue={studySet?.tileHue}
+          tileGlyph={studySet?.tileGlyph}
           onShare={
             studySetId
               ? () => void shareStudySet({ setId: studySetId, title: label, visibility: studySet?.visibility })
@@ -884,34 +917,75 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
         {show('recentMaterials') ? (
         <Card className="mb-3">
-          <T.Caption tone="secondary" className="mb-2">
-            {studySetId ? 'Recent materials' : `Notes${studyNotes.length ? ` · ${studyNotes.length}` : ''}`}
-          </T.Caption>
+          <View className="flex-row items-center justify-between mb-2">
+            <T.Caption tone="secondary" className="flex-1 mr-2">
+              {studySetId ? 'Recent materials' : `Notes${studyNotes.length ? ` · ${studyNotes.length}` : ''}`}
+            </T.Caption>
+            {/* Controls only where there is something to arrange: a toggle over
+                an empty-state sentence is a control that cannot do anything. */}
+            {studySetId && recentMaterials.length > 0 ? (
+              <View className="flex-row items-center gap-2">
+                <MaterialSortButton
+                  value={materialsSort}
+                  onChange={chooseMaterialsSort}
+                  label="recent materials"
+                />
+                <ViewModeToggle
+                  value={materialsView}
+                  onChange={chooseMaterialsView}
+                  label="Recent materials"
+                />
+              </View>
+            ) : null}
+          </View>
           {(studySetId ? [...lectures, ...studyNotes] : studyNotes).length === 0 ? (
             <T.Body tone="secondary">{`${scopedCopy('notesEmpty', scopeNoun(studySetId, courseIdParam))}.`}</T.Body>
           ) : studySetId ? (
-            <View className="gap-3">
-              {[...lectures, ...studyNotes].slice(0, 8).map((note) => (
-                <MaterialTile
-                  key={note.id}
-                  title={note.title || (isLectureNote(note) ? 'Lecture' : 'Untitled note')}
-                  preview={notePreviewText(note.body)}
-                  lecture={isLectureNote(note)}
-                  onPress={() => {
-                    if (isLectureNote(note)) {
-                      openLectureStudio(note.id);
-                      return;
-                    }
-                    selectNote(note.id);
-                    navigation.navigate('NotesStudio', {
-                      courseId,
-                      courseLabel: label,
-                      noteId: note.id,
-                      studySetId,
-                    });
-                  }}
-                />
-              ))}
+            <View className={materialsView === 'grid' ? 'gap-3' : undefined}>
+              {recentMaterials.map((note, index) =>
+                materialsView === 'grid' ? (
+                  <MaterialTile
+                    key={note.id}
+                    title={note.title || (isLectureNote(note) ? 'Lecture' : 'Untitled note')}
+                    preview={notePreviewText(note.body)}
+                    lecture={isLectureNote(note)}
+                    onPress={() => {
+                      if (isLectureNote(note)) {
+                        openLectureStudio(note.id);
+                        return;
+                      }
+                      selectNote(note.id);
+                      navigation.navigate('NotesStudio', {
+                        courseId,
+                        courseLabel: label,
+                        noteId: note.id,
+                        studySetId,
+                      });
+                    }}
+                  />
+                ) : (
+                  <MaterialRow
+                    key={note.id}
+                    title={note.title || (isLectureNote(note) ? 'Lecture' : 'Untitled note')}
+                    date={note.createdAt}
+                    lecture={isLectureNote(note)}
+                    divided={index > 0}
+                    onPress={() => {
+                      if (isLectureNote(note)) {
+                        openLectureStudio(note.id);
+                        return;
+                      }
+                      selectNote(note.id);
+                      navigation.navigate('NotesStudio', {
+                        courseId,
+                        courseLabel: label,
+                        noteId: note.id,
+                        studySetId,
+                      });
+                    }}
+                  />
+                )
+              )}
             </View>
           ) : (
             studyNotes.map((note, index) => (
@@ -1005,18 +1079,47 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
         {lectures.length > 0 && show('lectureList') ? (
           <Card className="mb-3">
-            <T.Caption tone="secondary" className="mb-2">
-              Lectures · {lectures.length}
-            </T.Caption>
-            {lectures.map((note, index) => (
-              <Pressable
-                key={note.id}
-                onPress={() => openLectureStudio(note.id)}
-                className={`py-3 ${index > 0 ? 'border-t border-lantern-border' : ''}`}
-              >
-                <T.Body numberOfLines={1}>{note.title || 'Lecture'}</T.Body>
-              </Pressable>
-            ))}
+            <View className="flex-row items-center justify-between mb-2">
+              <T.Caption tone="secondary" className="flex-1 mr-2">
+                Lectures · {lectures.length}
+              </T.Caption>
+              <View className="flex-row items-center gap-2">
+                <MaterialSortButton
+                  value={lecturesSort}
+                  onChange={chooseLecturesSort}
+                  label="lectures"
+                />
+                <ViewModeToggle
+                  value={lecturesView}
+                  onChange={chooseLecturesView}
+                  label="Lectures"
+                />
+              </View>
+            </View>
+            {lecturesView === 'grid' ? (
+              <View className="gap-3">
+                {sortedLectures.map((note) => (
+                  <MaterialTile
+                    key={note.id}
+                    title={note.title || 'Lecture'}
+                    preview={notePreviewText(note.body)}
+                    lecture
+                    onPress={() => openLectureStudio(note.id)}
+                  />
+                ))}
+              </View>
+            ) : (
+              sortedLectures.map((note, index) => (
+                <MaterialRow
+                  key={note.id}
+                  title={note.title || 'Lecture'}
+                  date={note.createdAt}
+                  lecture
+                  divided={index > 0}
+                  onPress={() => openLectureStudio(note.id)}
+                />
+              ))
+            )}
           </Card>
         ) : null}
 
@@ -1240,9 +1343,36 @@ function SetHomeRecommended({
   const cards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
 
   if (empty) {
-    if (!showSetup) return null;
+    // An empty set still has a Plan segment, and that segment's `Details` sheet
+    // is the ONLY route to the study calendar. Returning null here left a set
+    // with no materials unable to reach its own schedule at all — the calendar
+    // renders a grid and a setup card for exactly this case, and nothing could
+    // open it (device pass SF3, check 2). The setup cards and the panel are now
+    // gated separately, so each segment draws what it owns.
+    if (!showSetup && !showPlan) return null;
     return (
       <View className="mb-4 gap-3">
+        {showPlan ? (
+          <StudyPlanPanel
+            units={planUnits}
+            topics={allTopics}
+            materials={planMaterials}
+            mode={mode}
+            planLoaded={planLoaded}
+            usingServerPlan={usingServerPlan}
+            canBuildPlan={notes.length > 0}
+            onGeneratePlan={onGeneratePlan}
+            onToggleTopic={() => undefined}
+            onContinue={() => onAsk()}
+            onAddSyllabus={onAddSyllabus}
+            onAddExam={onAddExam}
+            onViewSchedule={onViewSchedule}
+            examDate={examDate}
+            today={todayDateOnlyLocal()}
+          />
+        ) : null}
+        {showSetup ? (
+        <>
         <Card>
           <T.Body>Add your syllabus</T.Body>
           <T.Caption tone="secondary" className="mt-1">
@@ -1261,6 +1391,8 @@ function SetHomeRecommended({
             Add exam
           </Button>
         </Card>
+        </>
+        ) : null}
       </View>
     );
   }
@@ -1371,6 +1503,61 @@ function MaterialTile({
       <View className="px-3 py-2">
         <T.Body numberOfLines={1}>{title}</T.Body>
       </View>
+    </Pressable>
+  );
+}
+
+/**
+ * One material as a row: a glyph that says WHAT it is, the title, the date.
+ *
+ * The date is the reason list mode exists. The old lecture list was titles
+ * alone, so a set with twenty recordings called `Lecture` — which is what an
+ * unnamed recording is called — was twenty identical rows. `formatShortDate`
+ * writes `2 Sep` rather than `9/2/2026`, because this shares one line with a
+ * title that has already been given every pixel it can have.
+ */
+function MaterialRow({
+  title,
+  date,
+  lecture,
+  divided,
+  onPress,
+}: {
+  title: string;
+  date?: string | null;
+  lecture: boolean;
+  /** Draw the hairline above — every row but the first. */
+  divided: boolean;
+  onPress: () => void;
+}) {
+  const { colors } = useTheme();
+  // A row with an unreadable date shows no date rather than `Invalid Date` —
+  // the title is the thing the student came for either way.
+  const parsed = date ? new Date(date) : null;
+  const when = parsed && Number.isFinite(parsed.getTime()) ? formatShortDate(parsed) : '';
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`flex-row items-center gap-2 py-3 ${divided ? 'border-t border-lantern-border' : ''}`}
+      accessibilityRole="button"
+      // The glyph is decorative, so the KIND rides in the name instead — a
+      // reader must not have to guess whether a row is a note or a recording.
+      accessibilityLabel={[lecture ? 'Lecture' : 'Note', title, when].filter(Boolean).join(', ')}
+    >
+      <AppIcon
+        name={lecture ? 'mic' : 'document-text'}
+        size={16}
+        color={colors.textSecondary}
+        importantForAccessibility="no"
+      />
+      <T.Body numberOfLines={1} className="flex-1" importantForAccessibility="no">
+        {title}
+      </T.Body>
+      {when ? (
+        <T.Caption tone="secondary" importantForAccessibility="no">
+          {when}
+        </T.Caption>
+      ) : null}
     </Pressable>
   );
 }

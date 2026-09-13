@@ -18,19 +18,34 @@ import React from 'react';
 import { Pressable, View } from 'react-native';
 import { AppIcon, T } from '../ui';
 import { SetCoverSquare } from './SetCoverSquare';
+import { SetTileArt } from './StudySetCard';
 
 export interface SetRoomHeaderProps {
   /** The set's name. Two lines, then ellipsis. */
   title: string;
   /**
-   * The set's picture, when it has one.
-   *
-   * Drawn ONLY when a cover exists: this header has never carried an identity
-   * tile, so inventing a pastel square for every set would be a layout change
-   * dressed up as a cover feature. A set with a picture gets the picture; a
-   * set without one looks exactly as it does today.
+   * The set's picture, when it has one. It REPLACES the pastel tile.
    */
   coverPath?: string | null;
+  /**
+   * The set this room is for. Passing it makes the 44-square draw the set's
+   * own identity art instead of standing empty.
+   *
+   * It used to be `fallback={null}` — no tile at all unless a cover had been
+   * uploaded — on the reasoning that a header which had never carried a tile
+   * should not grow one. What that shipped instead was a set that is peach and
+   * a book in the hub, and nameless in its own room (SF4a device pass, check
+   * 3): two of the three surfaces the tile exists for did not show it. Web's
+   * `SetRoomTile` has drawn it in the header all along, so this was also the
+   * phone disagreeing with the browser about what a set looks like.
+   *
+   * Omitted on a COURSE room, which has no set and therefore no art to derive
+   * — that header is exactly as it was.
+   */
+  setId?: string | null;
+  /** The owner's pick. Either half may be absent and is then derived. */
+  tileHue?: string | null;
+  tileGlyph?: string | null;
   /** Shown under the title on a course room, where counts are the subtitle. */
   subtitle?: string;
   /** The study timer chip, rendered by the screen that owns the set id. */
@@ -56,6 +71,9 @@ export interface SetRoomHeaderProps {
 export function SetRoomHeader({
   title,
   coverPath,
+  setId,
+  tileHue,
+  tileGlyph,
   subtitle,
   timer,
   onAllSets,
@@ -66,12 +84,25 @@ export function SetRoomHeader({
   return (
     <View className="pt-2 pb-3">
       <View className="flex-row items-center gap-3">
+        {/* Same 44 square and 14 radius the hub card draws, so the set is the
+            same object in both places and the header's height does not move. */}
         <SetCoverSquare
           coverPath={coverPath}
           size={44}
           radius={14}
           accessibilityLabel={`${title} picture`}
-          fallback={null}
+          fallback={
+            setId ? (
+              <SetTileArt
+                setId={setId}
+                title={title}
+                tileHue={tileHue}
+                tileGlyph={tileGlyph}
+                size={44}
+                radius={14}
+              />
+            ) : null
+          }
         />
         <View className="flex-1">
           <T.Title numberOfLines={2} ellipsizeMode="tail">

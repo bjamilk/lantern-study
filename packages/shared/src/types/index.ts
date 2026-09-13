@@ -252,6 +252,17 @@ export interface StudySet {
   courseId?: string | null;
   folderId?: string | null;
   coverPath?: string | null;
+  /**
+   * The tile pastel its owner picked, or null/absent to derive one from the id
+   * (`setTileArt` in study/setPresentation). A cover picture still wins over
+   * both: cover > this > hash.
+   *
+   * Typed as the open `string` rather than `SetTileHue` because it arrives off
+   * a database row; `setTileArt` ignores a value outside the six.
+   */
+  tileHue?: string | null;
+  /** The tile glyph its owner picked. Null/absent derives one. */
+  tileGlyph?: string | null;
   visibility?: 'private' | 'public';
   mode?: 'cram' | 'standard' | 'comprehensive';
   /** "YYYY-MM-DD" — the set's own exam date, independent of any enrolment. */

@@ -132,18 +132,57 @@ function hash(value: string): number {
   return h >>> 0;
 }
 
+/** A set's own pick, from `study_sets.tile_hue` / `tile_glyph`. */
+export interface SetTileOverride {
+  hue?: string | null;
+  glyph?: string | null;
+}
+
+export function isSetTileHue(value: unknown): value is SetTileHue {
+  return typeof value === 'string' && (SET_TILE_HUES as readonly string[]).includes(value);
+}
+
+export function isSetTileGlyph(value: unknown): value is SetTileGlyph {
+  return typeof value === 'string' && (SET_TILE_GLYPHS as readonly string[]).includes(value);
+}
+
 /**
- * The pastel + glyph a set's tile is drawn with. Deterministic per set.
+ * The pastel + glyph a set's tile is drawn with.
  *
- * `setId` alone decides the hue, so the art never moves when a set is renamed —
- * a tile that changed colour on rename would stop being an identity.
+ * Without an `override` this is deterministic per set: `setId` alone decides
+ * the hue, so the art never moves when a set is renamed — a tile that changed
+ * colour on rename would stop being an identity.
+ *
+ * `override` is the student's own pick, and it WINS. The hash is a good
+ * default, not a verdict: the reference lets a set be the mint monitor because
+ * its owner said so. The two halves are independent — picking a hue and
+ * leaving the glyph alone keeps the derived glyph, which is what a settings
+ * screen with two separate rows of buttons has to mean.
+ *
+ * A value outside the six tables is IGNORED rather than rendered: these
+ * columns come off a database row, and a hand-written `'chartreuse'` must draw
+ * the derived tile rather than a hole where a tint should be. That is also why
+ * the parameter is typed `string | null` and not `SetTileHue` — the caller is
+ * passing untrusted row data, and saying so is more honest than a cast at
+ * every call site.
+ *
+ * Callers still draw a cover picture over the result when the set has one:
+ * cover > override > hash.
  */
-export function setTileArt(setId: string, title?: string): { hue: SetTileHue; glyph: SetTileGlyph } {
+export function setTileArt(
+  setId: string,
+  title?: string,
+  override?: SetTileOverride | null
+): { hue: SetTileHue; glyph: SetTileGlyph } {
   const seed = hash(setId || title || 'set');
   // `?? ` is unreachable — both tables are non-empty consts and the index is a
   // modulo of their length. It is here because the web app compiles with
   // noUncheckedIndexedAccess, which cannot see that.
-  const hue = SET_TILE_HUES[seed % SET_TILE_HUES.length] ?? 'mint';
+  const hue = isSetTileHue(override?.hue)
+    ? override.hue
+    : (SET_TILE_HUES[seed % SET_TILE_HUES.length] ?? 'mint');
+
+  if (isSetTileGlyph(override?.glyph)) return { hue, glyph: override.glyph };
 
   const needle = ` ${(title || '').toLowerCase()} `;
   for (const cue of GLYPH_CUES) {

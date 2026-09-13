@@ -2,6 +2,7 @@
  * /api/v1/users/me/study-sets — personal study sets on the Study tab.
  */
 import { Router, type Response } from 'express';
+import { SET_TILE_GLYPHS, SET_TILE_HUES } from '@lantern/shared/study/setPresentation';
 import { body, param } from 'express-validator';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
@@ -15,7 +16,11 @@ import {
   CoverStorageUnavailableError,
   SupabaseService,
 } from '../services/supabase';
-import { getStudySetsService } from '../services/studySets';
+import {
+  SET_TILE_MIGRATION,
+  SetTileColumnMissingError,
+  getStudySetsService,
+} from '../services/studySets';
 import { logger } from '../utils/logger';
 import { uploadBurstRateLimit } from '../middleware/rateLimit';
 
@@ -50,6 +55,18 @@ export const validateStudySetPatch = [
   body('visibility').optional().isIn(['private', 'public']),
   body('mode').optional().isIn(['cram', 'standard', 'comprehensive']),
   body('coverPath').optional({ values: 'null' }).isString(),
+  // The tile pick. Unlike `coverPath` this IS accepted through the generic
+  // patch: a hue is one of six words, not a pointer at a storage object, so
+  // there is nothing here for an owner to aim at someone else's data. `null`
+  // resets that half to the derivation.
+  body('tileHue')
+    .optional({ values: 'null' })
+    .isIn([...SET_TILE_HUES])
+    .withMessage(`tileHue must be one of ${SET_TILE_HUES.join(', ')} or null`),
+  body('tileGlyph')
+    .optional({ values: 'null' })
+    .isIn([...SET_TILE_GLYPHS])
+    .withMessage(`tileGlyph must be one of ${SET_TILE_GLYPHS.join(', ')} or null`),
   body('examDate')
     .optional({ values: 'null' })
     .matches(/^\d{4}-\d{2}-\d{2}$/)
@@ -189,6 +206,17 @@ router.patch(
     } catch (err) {
       if (err instanceof CoverColumnMissingError) {
         res.status(503).json({ success: false, error: err.message, migration: COVER_IMAGE_MIGRATION });
+        return;
+      }
+      // Never 200 for a dropped tile. The set list degrades past a missing
+      // tile column so a student can still see their sets; a PATCH that CHOSE
+      // a tile has to say the pick did not land, or the screen reports success
+      // over a row that never changed.
+      if (err instanceof SetTileColumnMissingError) {
+        logger.warn('study set tile column missing', {
+          setId, userId, migration: SET_TILE_MIGRATION,
+        });
+        res.status(503).json({ success: false, error: err.message, migration: SET_TILE_MIGRATION });
         return;
       }
       if (handlePublicError(err, res)) return;

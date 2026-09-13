@@ -20,13 +20,9 @@
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { AppIcon, T, type AppIconName } from '../ui';
+import { TILE_ICONS } from './setTileIcons';
 import { useTheme } from '../../theme';
-import {
-  setCountChips,
-  setTileArt,
-  type SetCounts,
-  type SetTileGlyph,
-} from './setPresentation';
+import { setCountChips, setTileArt, type SetCounts } from './setPresentation';
 import { setTileSkin } from './setTileColors';
 import { SetCoverSquare } from './SetCoverSquare';
 
@@ -40,29 +36,68 @@ const CHIP_ICONS: Record<string, AppIconName> = {
 };
 
 /**
- * The tile glyph names, in the app's own icon vocabulary.
- *
- * `setPresentation.ts` names glyphs the way the design direction does
- * (`lightbulb`, `monitor`) because the same six names ship on web, where the
- * icon set is a different one. The translation lives here rather than in the
- * contract. `easel` is this set's nearest thing to a screen; there is no
- * monitor glyph mapped, and adding one to the shared icon map from this lane
- * would collide with two other lanes editing `components/ui`.
+ * The glyph-name → icon-name map, re-exported so every existing importer
+ * (`StudySetSettingsScreen`) keeps its import path. It moved to a `.ts` of its
+ * own so its completeness can be tested without mounting react-native — see
+ * `setTileIcons.ts`.
  */
-export const TILE_ICONS: Record<SetTileGlyph, AppIconName> = {
-  layers: 'layers',
-  monitor: 'easel',
-  lightbulb: 'bulb',
-  book: 'book',
-  flask: 'flask',
-  globe: 'globe',
-};
+export { TILE_ICONS } from './setTileIcons';
 
 /**
  * How many chips fit on one line at the largest font-size setting before the
  * row wraps into a second line of grey. The rest collapse into `+N`.
  */
 const MAX_CHIPS = 4;
+
+/**
+ * A set's identity tile: the pastel square with its glyph.
+ *
+ * Split out of this card's fallback and EXPORTED because two other surfaces
+ * were drawing something else for the same object. Home's "Your study sets"
+ * grid drew `FeatureDisc` — one mint layers disc for every set, identical
+ * across four different sets — and the room header drew nothing at all, so a
+ * set that was peach-and-book in the hub was mint-and-layers on Home and
+ * nameless in its own room. An identity tile that differs per surface is not
+ * an identity.
+ *
+ * `size` and `radius` are told, never invented: each caller passes the square
+ * it already draws, so routing it through here changes what is IN the box and
+ * nothing about the box.
+ */
+export interface SetTileArtProps {
+  /** What the art is keyed on, so it survives a rename. */
+  setId: string;
+  /** Its name — where a subject cue ("Organic Chemistry") is read from. */
+  title: string;
+  /** The owner's pick. Either half may be absent and is then derived. */
+  tileHue?: string | null;
+  tileGlyph?: string | null;
+  size: number;
+  radius: number;
+}
+
+export function SetTileArt({ setId, title, tileHue, tileGlyph, size, radius }: SetTileArtProps) {
+  const { isDark } = useTheme();
+  const art = setTileArt(setId, title, { hue: tileHue, glyph: tileGlyph });
+  const skin = setTileSkin(art.hue, isDark);
+  return (
+    <View
+      style={{ width: size, height: size, borderRadius: radius, backgroundColor: skin.tint }}
+      className="items-center justify-center"
+      // The tile is decoration on a row whose label already names the set;
+      // a screen reader announcing "mint layers" here would be reading out
+      // the colour of the icon beside the title.
+      importantForAccessibility="no-hide-descendants"
+    >
+      <AppIcon
+        name={TILE_ICONS[art.glyph]}
+        size={Math.round(size * 0.5)}
+        color={skin.ink}
+        importantForAccessibility="no"
+      />
+    </View>
+  );
+}
 
 export interface StudySetCardProps {
   setId: string;
@@ -71,6 +106,12 @@ export interface StudySetCardProps {
   coverPath?: string | null;
   /** A picture chosen on this device and not yet uploaded. */
   pendingCoverUri?: string | null;
+  /**
+   * The art its owner picked. Either half may be absent and is then derived;
+   * a cover picture still wins over both.
+   */
+  tileHue?: string | null;
+  tileGlyph?: string | null;
   counts: SetCounts;
   /** 0-100, already clamped by the caller. */
   percent: number;
@@ -94,6 +135,8 @@ export function StudySetCard({
   title,
   coverPath,
   pendingCoverUri,
+  tileHue,
+  tileGlyph,
   counts,
   percent,
   progressBasis,
@@ -103,9 +146,9 @@ export function StudySetCard({
   onMenu,
   testID,
 }: StudySetCardProps) {
-  const { colors, isDark } = useTheme();
-  const art = setTileArt(setId, title);
-  const skin = setTileSkin(art.hue, isDark);
+  const { colors } = useTheme();
+  // The art itself is `SetTileArt`'s business now — the card only says which
+  // square to draw it in.
   const chips = setCountChips(counts);
   const shown = chips.slice(0, MAX_CHIPS);
   const overflow = chips.length - shown.length;
@@ -146,13 +189,14 @@ export function StudySetCard({
             radius={14}
             accessibilityLabel={`${title} picture`}
             fallback={
-              <View
-                style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: skin.tint }}
-                className="items-center justify-center"
-                importantForAccessibility="no-hide-descendants"
-              >
-                <AppIcon name={TILE_ICONS[art.glyph]} size={22} color={skin.ink} importantForAccessibility="no" />
-              </View>
+              <SetTileArt
+                setId={setId}
+                title={title}
+                tileHue={tileHue}
+                tileGlyph={tileGlyph}
+                size={44}
+                radius={14}
+              />
             }
           />
 

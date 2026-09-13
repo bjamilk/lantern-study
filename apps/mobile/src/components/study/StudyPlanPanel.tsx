@@ -381,8 +381,14 @@ export function StudyPlanPanel({
   const openId = openUnitId ?? defaultOpenUnitId(model);
   const exams = planExamRows(examDate, today);
 
-  if (model.empty) return null;
-
+  // NO EARLY RETURN ON AN EMPTY PLAN. The panel used to disappear entirely for
+  // a set with no topics, and it took `Details` with it — which is the only
+  // door in the app to the study calendar, and the only place to add the exam
+  // date that would give the calendar something to count back from. A set with
+  // nothing in it is exactly the set whose owner is trying to plan. The spine,
+  // the bar and the units are still hidden (there is nothing to draw); the
+  // header and the sheet are not. The sheet's own counts read `0 Topics · 0
+  // Covered · 0 Mastered`, which is the truth rather than an absence.
   return (
     <View className="mb-4">
       <View className="flex-row items-center justify-between mb-2">
@@ -392,6 +398,8 @@ export function StudyPlanPanel({
         </Button>
       </View>
 
+      {model.empty ? null : (
+      <>
       <PlanProgressBar percent={model.percent} />
 
       <View className="flex-row items-center gap-4 mt-2 mb-3">
@@ -461,6 +469,8 @@ export function StudyPlanPanel({
           onContinue={onContinue}
         />
       ))}
+      </>
+      )}
 
       <SheetShell
         visible={detailsOpen}

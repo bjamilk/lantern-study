@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   initialOpenUnitId,
+  isWalkableAttachment,
   pickRecommendedTopic,
   planTimeline,
   planTopicActivity,
@@ -12,6 +13,7 @@ import {
   topicsFromReadingNotes,
   unitsForTopics,
   unitsFromSourceMaterials,
+  type PlanTopicActivity,
   type StudySetMode,
   type StudySetTopic,
   type StudySetUnit,
@@ -35,7 +37,11 @@ interface StudySetPlanPanelProps {
   /** Exams read off the set's calendar notes. Past ones included. */
   exams?: readonly UpcomingExam[];
   onModeChange: (mode: StudySetMode) => void;
-  onStart: (kind: 'read' | 'quiz' | 'cards' | 'lesson', noteId?: string) => void;
+  /**
+   * Open the topic's next door. The kind is a workspace activity id, so the
+   * caller navigates to that activity's OWN route and the lit chip matches.
+   */
+  onStart: (kind: PlanTopicActivity, noteId?: string) => void;
   /** Defaults to the set's own calendar route. */
   onViewSchedule?: () => void;
   /** Defaults to the set's own add-material route. */
@@ -149,7 +155,15 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   };
 
   const startTopic = (topic: StudySetTopic) => {
-    onStart(planTopicActivity(topic), topic.sourceNoteIds[0]);
+    // Reading splits on what the source note actually carries: the walkthrough
+    // pages a PDF or slides and has nothing to show without one, so a plain
+    // note is read in the studio instead. Deciding that HERE — where the notes
+    // are — is what keeps `Continue` off a screen that would ask the student
+    // to "select a note with a PDF".
+    const noteId = topic.sourceNoteIds[0];
+    const sourceNote = noteId ? notes.find((row) => row.id === noteId) : undefined;
+    const hasWalkableSource = Boolean(sourceNote?.attachments?.some(isWalkableAttachment));
+    onStart(planTopicActivity(topic, { hasWalkableSource }), noteId);
   };
 
   const goToSetActivity = (workspaceActivity: 'calendar' | 'add') => {

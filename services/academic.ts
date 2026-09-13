@@ -210,6 +210,12 @@ export const updateStudySet = (
     mode?: 'cram' | 'standard' | 'comprehensive';
     /** "YYYY-MM-DD", or null to clear it. */
     examDate?: string | null;
+    /**
+     * The tile pick. `null` resets that half to the derivation rather than
+     * freezing the hash's current answer into the row.
+     */
+    tileHue?: string | null;
+    tileGlyph?: string | null;
   }
 ) =>
   academicRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {

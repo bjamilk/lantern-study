@@ -26,6 +26,8 @@
       "@lantern/shared/moderation": ["../../packages/shared/dist/moderation/index"],
       "@lantern/shared/notes": ["../../packages/shared/dist/notes/index"],
       "@lantern/shared/notes/*": ["../../packages/shared/dist/notes/*"],
+      "@lantern/shared/study": ["../../packages/shared/dist/study/index"],
+      "@lantern/shared/study/*": ["../../packages/shared/dist/study/*"],
       "@lantern/shared/types": ["../../packages/shared/dist/types/index"],
       "@lantern/shared/accountLifecycle": ["../../packages/shared/dist/accountLifecycle"],
       "@lantern/shared/contactForm": ["../../packages/shared/dist/contactForm"]

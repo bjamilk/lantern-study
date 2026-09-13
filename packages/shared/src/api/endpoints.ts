@@ -5016,6 +5016,15 @@ export function createApiEndpoints(client: ApiClient) {
         mode?: "cram" | "standard" | "comprehensive";
         /** "YYYY-MM-DD", or null to clear it. */
         examDate?: string | null;
+        /**
+         * The tile pick, one of the six hues / six glyphs; `null` resets that
+         * half to the derivation. The phone was already SENDING these — the
+         * patch type just did not admit it, so nothing typed against this
+         * client could be checked against the six names or reason about the
+         * 503 the api answers when 20260913150000 is unapplied.
+         */
+        tileHue?: string | null;
+        tileGlyph?: string | null;
       }
     ) =>
       apiRequest<StudySet>(`/users/me/study-sets/${encodeURIComponent(setId)}`, {

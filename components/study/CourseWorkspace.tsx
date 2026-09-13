@@ -74,6 +74,7 @@ import { StudySetTimer } from './StudySetTimer';
 import { StudySetUpload } from './StudySetUpload';
 import { CreateFromSource, parseCardExport } from './CreateFromSource';
 import { createDeckWithCards } from '../../services/apiEndpoints';
+import { NoteRoomRow } from './NoteRoomRow';
 import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { StudySetSwitcher } from './StudySetSwitcher';
 import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
@@ -201,6 +202,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   // here, not in the menu, which unmounts the moment an item is chosen).
   const [deckMenuId, setDeckMenuId] = useState<string | null>(null);
   const [coverDeck, setCoverDeck] = useState<Deck | null>(null);
+  const [noteMenuId, setNoteMenuId] = useState<string | null>(null);
+  const [coverNote, setCoverNote] = useState<StudyNote | null>(null);
   const recordActivity = useStudyResumeStore((s) => s.recordActivity);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
@@ -424,6 +427,51 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     } catch (err) {
       showToast(coverErrorMessage(err).message, 'error');
     }
+  };
+
+  const handleRemoveNoteCover = async (noteId: string) => {
+    try {
+      await removeCover('note', noteId);
+    } catch (err) {
+      showToast(coverErrorMessage(err).message, 'error');
+    }
+  };
+
+  /**
+   * The ⋮ on an in-room note row. Until now `Add cover` for a note existed only
+   * in the Library list and the note editor's header, so a student who lived in
+   * the room never met it. Same owner rule as the Library's note menu: the
+   * cover route refuses an editor, and a menu item that always 403s is worse
+   * than no item.
+   */
+  const renderNoteRowMenu = (note: StudyNote) => {
+    if (note.accessRole && note.accessRole !== 'owner') return null;
+    return (
+      <Menu
+        open={noteMenuId === note.id}
+        onOpenChange={(open) => setNoteMenuId(open ? note.id : null)}
+      >
+        <MenuTrigger
+          aria-label={`Note options for ${note.title || 'Untitled note'}`}
+          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-lantern-surface/90 p-1.5 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
+        >
+          <AppIcon name="ellipsis-vertical" size={16} />
+        </MenuTrigger>
+        <MenuContent align="end" className="w-48">
+          <CoverMenuItems
+            hasCover={Boolean(note.coverPath)}
+            onChoose={() => {
+              setNoteMenuId(null);
+              setCoverNote(note);
+            }}
+            onRemove={() => {
+              setNoteMenuId(null);
+              void handleRemoveNoteCover(note.id);
+            }}
+          />
+        </MenuContent>
+      </Menu>
+    );
   };
 
   const lectures = useMemo(() => notes.filter(isLectureNote), [notes]);
@@ -1627,7 +1675,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               }}
               onStart={(kind, noteId) => {
                 if (noteId) void openNote(noteId);
-                if (kind === 'read') go('read');
+                // The kind IS the chip. It used to be `read`, a path the room
+                // maps onto the Walkthrough chip, so Continue lit Walkthrough
+                // over "Select a note with a PDF or slides attached."; each
+                // kind now goes to its own route and the lit chip matches.
+                if (kind === 'notes') go('notes', noteId ? { noteId } : {});
+                else if (kind === 'walkthrough') go('walkthrough');
                 else if (kind === 'quiz') {
                   setQuizLive(true);
                   go('quiz');
@@ -1665,20 +1718,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                   </p>
                 ) : (
                   readingNotes.map((note) => (
-                    <button
+                    <NoteRoomRow
                       key={note.id}
-                      type="button"
-                      onClick={() => {
+                      title={note.title || 'Untitled note'}
+                      onOpen={() => {
                         void openNote(note.id);
                         setActivity('notes');
                       }}
-                      className="w-full flex items-center gap-3 p-3 rounded-xl border border-lantern-border text-left hover:bg-lantern-background-secondary"
-                    >
-                      <FeatureDisc feature="notes" icon={<AppIcon name="document-text" size={20} />} />
-                      <span className="text-body font-semibold truncate">
-                        {note.title || 'Untitled note'}
-                      </span>
-                    </button>
+                      menu={renderNoteRowMenu(note)}
+                    />
                   ))
                 )}
                 <div className="flex flex-wrap gap-2">
@@ -1826,6 +1874,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         )}
       </div>
 
+      {coverNote ? (
+        <CoverPickerDialog
+          open
+          kind="note"
+          id={coverNote.id}
+          hasCover={Boolean(coverNote.coverPath)}
+          onClose={() => setCoverNote(null)}
+        />
+      ) : null}
       {coverDeck ? (
         <CoverPickerDialog
           open

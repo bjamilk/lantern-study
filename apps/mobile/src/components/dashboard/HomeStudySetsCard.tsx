@@ -32,6 +32,7 @@ import { useNotesStore } from '../../stores/notesStore';
 import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { SetCoverSquare } from '../study/SetCoverSquare';
+import { SetTileArt } from '../study/StudySetCard';
 import {
   lastStudiedLabel,
   shouldRefetchSets,
@@ -175,18 +176,29 @@ export function HomeStudySetsCard({ onOpenSet, onOpenHub, onNewSet }: HomeStudyS
                 className="rounded-lantern-xl border border-lantern-border bg-lantern-surface p-3 active:opacity-80"
               >
                 {/* Home shows the set the way the hub and the room header show
-                    it: the picture if there is one, the pastel tile if not, in
-                    the same 32 square either way. */}
+                    it: the picture if there is one, the set's OWN pastel tile
+                    if not, in the same 32 square either way.
+
+                    It used to be `FeatureDisc` — the study-set feature's one
+                    mint layers disc, identical for every set. Four different
+                    sets, four identical icons, while the hub two taps away drew
+                    peach book / lilac flask / mint flask for the same four
+                    (SF4a device pass, check 3). The disc is right for the
+                    EMPTY state below, where there is no set to be the art of;
+                    it is wrong the moment a real set is on screen. */}
                 <SetCoverSquare
                   coverPath={set.coverPath}
                   size={32}
                   radius={Math.round(32 * TYPE_TILE.radiusFraction)}
                   accessibilityLabel={`${studySetLabel(set)} picture`}
                   fallback={
-                    <FeatureDisc
-                      feature={STUDY_SET_TILE.feature}
-                      icon={STUDY_SET_TILE.icon}
+                    <SetTileArt
+                      setId={set.id}
+                      title={studySetLabel(set)}
+                      tileHue={set.tileHue}
+                      tileGlyph={set.tileGlyph}
                       size={32}
+                      radius={Math.round(32 * TYPE_TILE.radiusFraction)}
                     />
                   }
                 />

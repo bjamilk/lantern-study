@@ -33,7 +33,8 @@ const HUE_FEATURE: Record<SetTileHue, FeatureKey> = {
   butter: 'recording',
 };
 
-const GLYPH_ICON: Record<SetTileGlyph, AppIconName> = {
+/** Exported so a settings screen's glyph buttons draw the SAME icons the tile does. */
+export const GLYPH_ICON: Record<SetTileGlyph, AppIconName> = {
   layers: 'layers',
   monitor: 'easel',
   lightbulb: 'bulb',
@@ -95,6 +96,12 @@ interface SetTileProps {
    * sitting beside it: the picture is the identity once a student chooses one.
    */
   coverPath?: string | null;
+  /**
+   * The art its owner picked, when they picked any. Either half may be absent
+   * and is then derived. A cover still wins over both.
+   */
+  tileHue?: string | null;
+  tileGlyph?: string | null;
   /** Rendered edge length in px. The glyph and the radius are sized off it. */
   size?: number;
   className?: string;
@@ -104,10 +111,12 @@ export const SetTile: React.FC<SetTileProps> = ({
   setId,
   title,
   coverPath,
+  tileHue,
+  tileGlyph,
   size = 40,
   className = '',
 }) => {
-  const art = setTileArt(setId, title);
+  const art = setTileArt(setId, title, { hue: tileHue, glyph: tileGlyph });
   if (coverPath) {
     return (
       <SetCoverSquare coverPath={coverPath} size={size} className={className} fallback={null} />

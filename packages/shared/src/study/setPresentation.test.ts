@@ -1,5 +1,7 @@
 import {
   SET_TILE_HUES,
+  isSetTileGlyph,
+  isSetTileHue,
   relativeStudiedLabel,
   setCountChips,
   setTileArt,
@@ -160,5 +162,63 @@ describe('the options the phone binds', () => {
     const opts = { absoluteAfterDays: 7, formatDate: formatShortDate };
     expect(relativeStudiedLabel('2026-09-10T10:00:00.000Z', now, opts)).toBe('3d ago');
     expect(relativeStudiedLabel('2026-09-02T10:00:00.000Z', now, opts)).toBe('2 Sep');
+  });
+});
+
+
+describe('setTileArt with an explicit pick', () => {
+  // One id whose DERIVED art is known, so every assertion below is about the
+  // override actually changing something rather than agreeing by accident.
+  const id = '8f1b0c2e-1111-4a2b-9c3d-000000000001';
+  const derived = setTileArt(id, 'Cell Biology');
+
+  it('lets a chosen hue and glyph beat the hash', () => {
+    const other = SET_TILE_HUES.find((hue) => hue !== derived.hue)!;
+    expect(setTileArt(id, 'Cell Biology', { hue: other, glyph: 'monitor' })).toEqual({
+      hue: other,
+      glyph: 'monitor',
+    });
+  });
+
+  it('overrides the two halves independently', () => {
+    // A settings screen has a row of hues and a row of glyphs, and picking in
+    // one must not silently freeze the other at whatever it happened to be.
+    const other = SET_TILE_HUES.find((hue) => hue !== derived.hue)!;
+    expect(setTileArt(id, 'Cell Biology', { hue: other })).toEqual({
+      hue: other,
+      glyph: derived.glyph,
+    });
+    expect(setTileArt(id, 'Cell Biology', { glyph: 'globe' })).toEqual({
+      hue: derived.hue,
+      glyph: 'globe',
+    });
+  });
+
+  it('treats null and an empty override as "derive it" — which is what Reset writes', () => {
+    expect(setTileArt(id, 'Cell Biology', null)).toEqual(derived);
+    expect(setTileArt(id, 'Cell Biology', {})).toEqual(derived);
+    expect(setTileArt(id, 'Cell Biology', { hue: null, glyph: null })).toEqual(derived);
+  });
+
+  it('ignores a value outside the six rather than drawing a hole', () => {
+    // These columns come off a row, not off a button, so an unknown string has
+    // to degrade to the derived tile instead of indexing a palette with a key
+    // it does not have.
+    expect(setTileArt(id, 'Cell Biology', { hue: 'chartreuse', glyph: 'rocket' })).toEqual(derived);
+  });
+
+  it('keeps a chosen glyph even when the title carries a subject cue', () => {
+    // 'Cell Biology' cues a flask. An explicit pick must still win, or the
+    // student's choice would evaporate the moment they renamed the set.
+    expect(setTileArt(id, 'Cell Biology', { glyph: 'book' }).glyph).toBe('book');
+  });
+
+  it('guards the two type predicates the API validates with', () => {
+    expect(isSetTileHue('mint')).toBe(true);
+    expect(isSetTileHue('chartreuse')).toBe(false);
+    expect(isSetTileHue(null)).toBe(false);
+    expect(isSetTileGlyph('flask')).toBe(true);
+    expect(isSetTileGlyph('rocket')).toBe(false);
+    expect(isSetTileGlyph(undefined)).toBe(false);
   });
 });

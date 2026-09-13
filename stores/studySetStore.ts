@@ -45,6 +45,9 @@ interface StudySetState {
       folderId?: string | null;
       visibility?: 'private' | 'public';
       mode?: 'cram' | 'standard' | 'comprehensive';
+      /** The tile pick; `null` resets that half to the derivation. */
+      tileHue?: string | null;
+      tileGlyph?: string | null;
     }
   ) => Promise<StudySet>;
   removeSet: (setId: string) => Promise<void>;

@@ -25,8 +25,20 @@ import {
   STUDY_SET_COVER_HINT,
 } from '../../components/ui/coverPickerModel';
 import { SetCoverSquare } from '../../components/study/SetCoverSquare';
-import { setTileArt } from '../../components/study/setPresentation';
+import {
+  SET_TILE_GLYPHS,
+  SET_TILE_HUES,
+  setTileArt,
+  type SetTileGlyph,
+  type SetTileHue,
+} from '../../components/study/setPresentation';
 import { setTileSkin } from '../../components/study/setTileColors';
+import {
+  SET_TILE_UNSUPPORTED_MESSAGE,
+  changedSetTilePick,
+  isSetTileUnsupportedMessage,
+  setTileSaveDropped,
+} from '@lantern/shared/study/setTileSave';
 import { TILE_ICONS } from '../../components/study/StudySetCard';
 import { useTheme } from '../../theme';
 import { appAlert, confirmAsync } from '../../components/ui/appDialog';
@@ -49,7 +61,7 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
   const setCoverPath = useStudySetStore((s) => s.setCoverPath);
   const showToast = useToastStore((s) => s.showToast);
   const tabBarClearance = useTabBarClearance(16);
-  const { isDark } = useTheme();
+  const { colors, isDark } = useTheme();
 
   /**
    * The set's picture, StudyFetch's way: ONE button into the system photo
@@ -75,17 +87,40 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
     }
   );
 
-  // The same art the hub card draws, so the preview IS the tile being replaced
-  // rather than a generic placeholder standing in for it.
-  const tileArt = setTileArt(studySetId, studySet?.title || '');
-  const tileSkin = setTileSkin(tileArt.hue, isDark);
-
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<Visibility>('private');
   const [mode, setMode] = useState<StudySetMode>('standard');
   const [folderId, setFolderId] = useState<string>('');
+  /**
+   * The tile pick, `null` for "derive it". Saved with the text fields rather
+   * than applied on tap, so Discard genuinely discards it — the picture is the
+   * exception because its upload is its own request.
+   */
+  const [tileHue, setTileHue] = useState<SetTileHue | null>(null);
+  const [tileGlyph, setTileGlyph] = useState<SetTileGlyph | null>(null);
   const [saving, setSaving] = useState(false);
+  /**
+   * Why the tile did not save, shown IN the tile block.
+   *
+   * Not a toast: a toast for a failure that belongs to one block is a sentence
+   * that scrolls away from the thing it is about, and the device pass watched
+   * three saves report `Study set updated.` in green while the pick was thrown
+   * away. When this is set the pick is left exactly as chosen and the footer
+   * still reads "You have unsaved changes.", because it IS unsaved.
+   */
+  const [tileError, setTileError] = useState<string | null>(null);
+
+  // The same art the hub card draws, so the preview IS the tile being replaced
+  // rather than a generic placeholder standing in for it — and it honours the
+  // pick in progress, which is what makes the swatch row a live preview rather
+  // than a set of labels. Declared after the state it reads: it used to sit
+  // above, and reading `tileHue` from there would be a use-before-declare.
+  const tileArt = setTileArt(studySetId, studySet?.title || '', {
+    hue: tileHue,
+    glyph: tileGlyph,
+  });
+  const tileSkin = setTileSkin(tileArt.hue, isDark);
   // The fields are seeded once per set, not on every render of `studySet`:
   // re-seeding from the store would wipe what is being typed the moment any
   // other screen refreshed the list.
@@ -103,6 +138,8 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
     setVisibility(studySet.visibility === 'public' ? 'public' : 'private');
     setMode((studySet.mode as StudySetMode) ?? 'standard');
     setFolderId(studySet.folderId ?? '');
+    setTileHue((studySet.tileHue as SetTileHue) ?? null);
+    setTileGlyph((studySet.tileGlyph as SetTileGlyph) ?? null);
     setSeededFor(studySet.id);
   }, [studySet, seededFor]);
 
@@ -113,9 +150,11 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
       (description.trim() || '') !== (studySet.description ?? '') ||
       visibility !== (studySet.visibility === 'public' ? 'public' : 'private') ||
       mode !== ((studySet.mode as StudySetMode) ?? 'standard') ||
-      folderId !== (studySet.folderId ?? '')
+      folderId !== (studySet.folderId ?? '') ||
+      tileHue !== ((studySet.tileHue as SetTileHue) ?? null) ||
+      tileGlyph !== ((studySet.tileGlyph as SetTileGlyph) ?? null)
     );
-  }, [studySet, title, description, visibility, mode, folderId]);
+  }, [studySet, title, description, visibility, mode, folderId, tileHue, tileGlyph]);
 
   /**
    * Leaving with unsaved edits used to lose them in silence: the device pass
@@ -160,19 +199,39 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
       return;
     }
     setSaving(true);
+    // Only the halves that MOVED. Save sends the whole form every time, so
+    // comparing all of it against the answer would report a dropped tile on a
+    // pre-migration api for a student who only renamed the set.
+    const askedTile = changedSetTilePick(studySet ?? null, { hue: tileHue, glyph: tileGlyph });
+    setTileError(null);
     try {
-      await updateSet(studySetId, {
+      const updated = await updateSet(studySetId, {
         title: next,
         description: description.trim() || null,
         visibility,
         mode,
         folderId: folderId || null,
+        tileHue,
+        tileGlyph,
       });
+      // An api OLDER than the 503 above strips keys it does not know and
+      // answers 200. It cannot be asked; it can be compared with.
+      if (setTileSaveDropped(askedTile, updated)) {
+        setTileError(SET_TILE_UNSUPPORTED_MESSAGE);
+        return;
+      }
       showToast('Study set updated.', 'success');
       leavingRef.current = true;
       navigation.goBack();
     } catch (error) {
-      showToast(error instanceof Error ? error.message : 'Could not update this set.', 'error');
+      const message = error instanceof Error ? error.message : 'Could not update this set.';
+      // The server's own 503 lands here. Same sentence, same place — a student
+      // should not have to tell two failures apart by where they appeared.
+      if (isSetTileUnsupportedMessage(message)) {
+        setTileError(SET_TILE_UNSUPPORTED_MESSAGE);
+        return;
+      }
+      showToast(message, 'error');
     } finally {
       setSaving(false);
     }
@@ -265,6 +324,112 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
             </View>
           </View>
           <CoverFailureLine failure={cover.failure} onDismiss={cover.dismissFailure} />
+        </Card>
+
+        {/* The tile, chosen rather than only derived — the web modal's block,
+            with this screen's own primitives. Selection is drawn against
+            `tileArt`, which is what the tile WOULD show, so a set nobody has
+            customised opens with its real colour marked instead of nothing.
+
+            Under a picture this still edits something real: remove the picture
+            and the tile is what shows again, which the hint says rather than
+            leaving the student to find out. */}
+        <Card className="mb-3">
+          <View className="flex-row items-center justify-between mb-2">
+            <T.Caption tone="secondary">Tile</T.Caption>
+            {tileHue || tileGlyph ? (
+              <Pressable
+                onPress={() => {
+                  setTileHue(null);
+                  setTileGlyph(null);
+                  setTileError(null);
+                }}
+                accessibilityRole="button"
+                accessibilityLabel="Reset tile"
+                hitSlop={8}
+              >
+                <T.Caption tone="secondary">Reset</T.Caption>
+              </Pressable>
+            ) : null}
+          </View>
+          <View className="flex-row flex-wrap gap-2" accessibilityLabel="Tile colour">
+            {SET_TILE_HUES.map((hue) => {
+              const skin = setTileSkin(hue, isDark);
+              const selected = tileArt.hue === hue;
+              return (
+                <Pressable
+                  key={hue}
+                  onPress={() => {
+                    setTileHue(hue);
+                    setTileError(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${hue} tile`}
+                  hitSlop={6}
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 10,
+                    backgroundColor: skin.tint,
+                    borderWidth: selected ? 2 : 1,
+                    borderColor: selected ? skin.ink : 'transparent',
+                  }}
+                />
+              );
+            })}
+          </View>
+          <View className="flex-row flex-wrap gap-2 mt-2" accessibilityLabel="Tile symbol">
+            {SET_TILE_GLYPHS.map((glyph) => {
+              const selected = tileArt.glyph === glyph;
+              return (
+                <Pressable
+                  key={glyph}
+                  onPress={() => {
+                    setTileGlyph(glyph);
+                    setTileError(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                  accessibilityLabel={`${glyph} symbol`}
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: selected ? tileSkin.tint : 'transparent',
+                    borderWidth: 1,
+                    borderColor: selected ? tileSkin.ink : colors.border,
+                  }}
+                >
+                  <AppIcon
+                    name={TILE_ICONS[glyph]}
+                    size={20}
+                    color={selected ? tileSkin.ink : colors.textSecondary}
+                  />
+                </Pressable>
+              );
+            })}
+          </View>
+          <T.Caption tone="tertiary" className="mt-2">
+            {studySet.coverPath
+              ? 'Shown wherever this set appears, once the picture is removed.'
+              : 'Shown wherever this set appears.'}
+          </T.Caption>
+          {/* The failure sits with the control that failed. `accessibilityLiveRegion`
+              so a screen reader hears it without moving focus off the picker
+              the student is still holding. The red is the one this screen
+              already uses for "Remove picture". */}
+          {tileError ? (
+            <T.Caption
+              className="mt-2 text-red-600 dark:text-red-300"
+              accessibilityLiveRegion="polite"
+              accessibilityRole="alert"
+            >
+              {tileError}
+            </T.Caption>
+          ) : null}
         </Card>
 
         <Card className="mb-3">

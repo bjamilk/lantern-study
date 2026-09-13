@@ -46,6 +46,33 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'home-card-tile-picker-grid-list-1-0-56',
+    title: 'Review a card from Home, pick each set’s tile, and switch materials between grid and list on the phone (1.0.56)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-13',
+    summary:
+      'When cards are due, web Home leads with one you can flip and grade with the session’s own grading path — free, no AI. Set settings gain a Tile block: six hues and six glyphs with a live preview and Reset; a cover still wins; Home, hub and room header all show the set’s own art. Inside a set on the phone, materials and lectures switch between grid and list with a sort and remember the choice; every set, even an empty one, reaches its calendar. The plan’s Continue opens the activity it named, and note rows inside a set carry the same menu as decks.',
+    details: [
+      'Web InlineReviewCard on Recent activities: first due card across decks, Show answer → Again/Hard/Good/Easy via handleUpdateSrsData (FSRS, offline queue, quests identical to a session); cloze/occlusion excluded; Study all N due link.',
+      'Tile picker: migration 20260913150000_study_set_tile.sql (tile_hue, tile_glyph with CHECKs); PATCH validates and null-resets; reads degrade to derived art when the columns are missing; a save on a host without the columns answers 503 naming the migration and both clients show it in the block and keep the pick unsaved; shared setTileArt precedence cover > override > hash.',
+      'Mobile ViewModeToggle/viewMode (same model and keys as web) on the room’s Materials and Lectures segments, persisted in AsyncStorage; StudyPlanPanel keeps Details on an empty plan so View schedule is reachable.',
+      'Web planTopicActivity returns notes | walkthrough | quiz | cards | lesson (never read) so Continue lands on the chip it lights; NoteRoomRow renders a sibling ⋮ with the cover menu.',
+      'Mobile HomeStudySetsCard and SetRoomHeader render the shared tile art.',
+    ],
+    howToUse: [
+      'Web Home: flip the card, grade it; Skip advances; Study all N due opens the session.',
+      'Set settings → Tile: pick a colour and glyph, Reset returns to the derived tile.',
+      'Set room → Materials or Lectures: the grid/list toggle and the sort sheet.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Migration 20260913150000_study_set_tile.sql is hand-applied; until then tile saves answer "Set tiles need a server update — try again later" and reads show derived art.',
+      'Still hand-applied: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+    ],
+    commits: ['299e8230'],
+  },
+  {
     id: 'study-plan-share-bars-covers-1-0-55',
     title: 'A study plan you can see, Share that tells the truth, bars that name where you are, and pictures that show (1.0.55)',
     area: 'platform',

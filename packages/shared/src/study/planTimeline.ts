@@ -91,6 +91,28 @@ export function planTopicState(
 }
 
 /**
+ * Every door `Continue` is allowed to open — each one an activity the room
+ * actually has a chip and a route for.
+ *
+ * `read` is deliberately NOT a member. It was, and it was the bug: `read` is a
+ * URL the room maps onto the WALKTHROUGH chip, so a topic whose note carried no
+ * PDF was sent to `/read`, lit `Walkthrough`, and landed on "Select a note with
+ * a PDF or slides attached." — a black `Continue` that opens an empty room. The
+ * rule now names the chip, and the caller navigates to that chip's own route,
+ * so the two cannot disagree again.
+ */
+export type PlanTopicActivity = 'notes' | 'walkthrough' | 'quiz' | 'cards' | 'lesson';
+
+/** What the caller knows about the topic's first source note. */
+export interface PlanTopicSource {
+  /**
+   * The source note carries a PDF or slides (`isWalkableAttachment`). Only then
+   * does the walkthrough have a document to page through.
+   */
+  hasWalkableSource?: boolean;
+}
+
+/**
  * Which door `Continue` should open for a topic.
  *
  * The room's rule, stated once: a topic you have never seen is something to
@@ -99,19 +121,35 @@ export function planTopicState(
  * material cannot be read, so it starts at the tutor instead of opening an
  * empty reader — the one case where the rule bends, and it bends towards a
  * screen that has something on it.
+ *
+ * Reading splits by what the source IS: a note with a PDF or slides is read in
+ * the walkthrough, page by page; a plain note is read in the notes studio. A
+ * caller that cannot tell gets the studio, because a note always opens there
+ * and the walkthrough only opens for some.
  */
 export function planTopicActivity(
-  topic: StudySetTopic
-): 'read' | 'quiz' | 'cards' | 'lesson' {
+  topic: StudySetTopic,
+  source?: PlanTopicSource
+): PlanTopicActivity {
   if (topic.status === 'mastered') return 'cards';
   if (topic.status === 'covered') return 'quiz';
-  return topic.sourceNoteIds.length > 0 ? 'read' : 'lesson';
+  if (topic.sourceNoteIds.length === 0) return 'lesson';
+  return source?.hasWalkableSource ? 'walkthrough' : 'notes';
 }
 
-/** The verb on the pill, so the panel and its test cannot drift apart. */
-export function planTopicActivityLabel(topic: StudySetTopic): string {
-  const kind = planTopicActivity(topic);
-  if (kind === 'read') return 'Read';
+/**
+ * The verb on the pill, so the panel and its test cannot drift apart.
+ *
+ * Both reading doors say `Read`: which one opens is a fact about the material,
+ * not a different promise to the student, and the pill stays stable when a PDF
+ * is attached to a note it already points at.
+ */
+export function planTopicActivityLabel(
+  topic: StudySetTopic,
+  source?: PlanTopicSource
+): string {
+  const kind = planTopicActivity(topic, source);
+  if (kind === 'notes' || kind === 'walkthrough') return 'Read';
   if (kind === 'quiz') return 'Quiz';
   if (kind === 'cards') return 'Cards';
   return 'Tutor';

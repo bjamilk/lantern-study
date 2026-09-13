@@ -5,6 +5,37 @@ import { PublicError } from '../utils/safeError';
 import type { SupabaseService } from './supabase';
 import { isUuid } from './academicCourses';
 import { normalizeCoverRef } from '@lantern/shared/utils/storageUrl';
+import {
+  SET_TILE_GLYPHS,
+  SET_TILE_HUES,
+  isSetTileGlyph,
+  isSetTileHue,
+} from '@lantern/shared/study/setPresentation';
+import {
+  SET_TILE_MIGRATION,
+  SET_TILE_UNSUPPORTED_MESSAGE,
+} from '@lantern/shared/study/setTileSave';
+
+/**
+ * A tile write that reached a database without `tile_hue`/`tile_glyph`.
+ *
+ * The read ladder degrades for a missing tile column on purpose — a set list
+ * must not 500 because one hand-applied migration is outstanding. A WRITE may
+ * not: degrading there answered 200 `Study set updated.` and dropped the pick,
+ * which is what the device pass hit three times in a row. The route turns this
+ * into 503 + the migration's filename, the same shape `CoverColumnMissingError`
+ * already has for 20260913120000.
+ */
+export class SetTileColumnMissingError extends Error {
+  readonly migration = SET_TILE_MIGRATION;
+
+  constructor() {
+    super(SET_TILE_UNSUPPORTED_MESSAGE);
+    this.name = 'SetTileColumnMissingError';
+  }
+}
+
+export { SET_TILE_MIGRATION };
 
 export interface StudySet {
   id: string;
@@ -14,6 +45,10 @@ export interface StudySet {
   courseId?: string | null;
   folderId?: string | null;
   coverPath?: string | null;
+  /** The owner's chosen tile pastel, or null to derive one from the set id. */
+  tileHue?: string | null;
+  /** The owner's chosen tile glyph, or null to derive one. */
+  tileGlyph?: string | null;
   visibility?: 'private' | 'public';
   mode?: 'cram' | 'standard' | 'comprehensive';
   /** "YYYY-MM-DD" — the set's own exam date, independent of any enrolment. */
@@ -55,23 +90,36 @@ const STUDY_SET_TITLE_MAX = 80;
 const STUDY_SET_DESCRIPTION_MAX = 280;
 
 const SET_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, exam_date, last_studied_at, created_at, updated_at, tile_hue, tile_glyph';
+/** Everything but the tile pick — 20260913150000_study_set_tile.sql is hand-applied. */
+const SET_NO_TILE_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, exam_date, last_studied_at, created_at, updated_at';
 /** Everything but `exam_date` — the 20260911140000 migration is hand-applied. */
 const SET_NO_EXAM_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, last_studied_at, created_at, updated_at, tile_hue, tile_glyph';
+/** Neither `exam_date` nor the tile pick. */
+const SET_NO_EXAM_NO_TILE_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, last_studied_at, created_at, updated_at';
 /** Everything but `cover_path` — 20260913120000_cover_images.sql is hand-applied too. */
 const SET_NO_COVER_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, visibility, mode, exam_date, last_studied_at, created_at, updated_at, tile_hue, tile_glyph';
+/** Neither `cover_path` nor the tile pick. */
+const SET_NO_COVER_NO_TILE_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, visibility, mode, exam_date, last_studied_at, created_at, updated_at';
-/** Neither of the two hand-applied columns. */
+/** Neither of the two older hand-applied columns; the tile pick is there. */
 const SET_NO_EXAM_NO_COVER_COLUMNS =
+  'id, user_id, title, description, course_id, folder_id, visibility, mode, last_studied_at, created_at, updated_at, tile_hue, tile_glyph';
+/** None of the three hand-applied additions. */
+const SET_NO_EXAM_NO_COVER_NO_TILE_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, visibility, mode, last_studied_at, created_at, updated_at';
 const SET_MIN_COLUMNS = 'id, user_id, title, course_id, created_at, updated_at';
 
 /**
  * The projections to try, widest first.
  *
- * Two columns on this table are added by migrations an operator applies by
- * hand (`exam_date`, `cover_path`), so either can be absent on a live
+ * Three columns on this table are added by migrations an operator applies by
+ * hand (`exam_date`, `cover_path`, and the `tile_hue`/`tile_glyph` pair added
+ * together by 20260913150000), so any of them can be absent on a live
  * database. PostgREST answers 42703/PGRST204 for the WHOLE statement when one
  * name is unknown, which means a set list would 500 outright rather than come
  * back without the column — the failure SF2's cover work would otherwise ship
@@ -85,9 +133,16 @@ const SET_MIN_COLUMNS = 'id, user_id, title, course_id, created_at, updated_at';
  */
 const SET_COLUMN_LADDER = [
   SET_COLUMNS,
+  // The tile pair is the NEWEST migration and so the likeliest to be missing;
+  // dropping it first is what keeps a database that has covers and exam dates
+  // from losing either of them to one unapplied migration.
+  SET_NO_TILE_COLUMNS,
   SET_NO_EXAM_COLUMNS,
+  SET_NO_EXAM_NO_TILE_COLUMNS,
   SET_NO_COVER_COLUMNS,
+  SET_NO_COVER_NO_TILE_COLUMNS,
   SET_NO_EXAM_NO_COVER_COLUMNS,
+  SET_NO_EXAM_NO_COVER_NO_TILE_COLUMNS,
 ] as const;
 
 /** Drop the keys a projection cannot name, so a write body matches its RETURNING. */
@@ -95,6 +150,10 @@ function omitUnsupported(patch: Record<string, unknown>, columns: string): Recor
   const next = { ...patch };
   if (!columns.includes('exam_date')) delete next.exam_date;
   if (!columns.includes('cover_path')) delete next.cover_path;
+  if (!columns.includes('tile_hue')) {
+    delete next.tile_hue;
+    delete next.tile_glyph;
+  }
   return next;
 }
 
@@ -137,6 +196,11 @@ function mapSet(row: Record<string, unknown>): StudySet {
     // client can sign it without a backfill.
     coverPath:
       typeof row.cover_path === 'string' ? normalizeCoverRef(row.cover_path) : null,
+    // The six-value CHECK is the database's job; anything else that reached
+    // the column is passed through as-is and `setTileArt` ignores it, which
+    // draws the derived tile rather than a hole.
+    tileHue: typeof row.tile_hue === 'string' ? row.tile_hue : null,
+    tileGlyph: typeof row.tile_glyph === 'string' ? row.tile_glyph : null,
     visibility: row.visibility === 'public' ? 'public' : 'private',
     mode:
       row.mode === 'cram' || row.mode === 'comprehensive' || row.mode === 'standard'
@@ -178,7 +242,12 @@ export class StudySetsService {
    */
   private async writeWithExamColumn(
     run: (columns: string) => PromiseLike<{ data: unknown; error: any }>
-  ): Promise<{ row: Record<string, unknown> | null; error: any; examMissing: boolean }> {
+  ): Promise<{
+    row: Record<string, unknown> | null;
+    error: any;
+    examMissing: boolean;
+    tileMissing: boolean;
+  }> {
     let lastError: any = null;
     for (const columns of SET_COLUMN_LADDER) {
       const attempt = await run(columns);
@@ -187,16 +256,22 @@ export class StudySetsService {
           row: attempt.data as Record<string, unknown>,
           error: null,
           examMissing: !columns.includes('exam_date'),
+          // Which rung answered IS the probe: every rung below the first two
+          // has already dropped `tile_hue`, so a caller that asked for a tile
+          // and landed here was written without it.
+          tileMissing: !columns.includes('tile_hue'),
         };
       }
       lastError = attempt.error;
       const retryable =
         isMissingColumnCode(attempt.error) ||
         isMissingColumn(attempt.error, 'exam_date') ||
-        isMissingColumn(attempt.error, 'cover_path');
+        isMissingColumn(attempt.error, 'cover_path') ||
+        isMissingColumn(attempt.error, 'tile_hue') ||
+        isMissingColumn(attempt.error, 'tile_glyph');
       if (!retryable) break;
     }
-    return { row: null, error: lastError, examMissing: false };
+    return { row: null, error: lastError, examMissing: false, tileMissing: false };
   }
 
   private async selectSets(userId: string, extra?: (query: any) => any) {
@@ -216,7 +291,9 @@ export class StudySetsService {
       first.error &&
       (isMissingColumnCode(first.error) ||
         isMissingColumn(first.error, 'exam_date') ||
-        isMissingColumn(first.error, 'cover_path'))
+        isMissingColumn(first.error, 'cover_path') ||
+        isMissingColumn(first.error, 'tile_hue') ||
+        isMissingColumn(first.error, 'tile_glyph'))
     ) {
       // Widest first: a database missing only `cover_path` keeps its exam
       // dates, and one missing only `exam_date` keeps its covers.
@@ -306,6 +383,8 @@ export class StudySetsService {
       visibility?: unknown;
       mode?: unknown;
       coverPath?: unknown;
+      tileHue?: unknown;
+      tileGlyph?: unknown;
       examDate?: unknown;
     }
   ): Promise<StudySet> {
@@ -353,6 +432,26 @@ export class StudySetsService {
             ? input.coverPath
             : fail('coverPath must be a string');
     }
+    // A tile pick, or `null` to go back to deriving it from the set id. The
+    // two halves are set independently: a student who picks a hue and leaves
+    // the glyph alone must not have the derived glyph frozen into the row
+    // behind their back, because Reset would then have nothing to undo.
+    if (input.tileHue !== undefined) {
+      patch.tile_hue =
+        input.tileHue === null || input.tileHue === ''
+          ? null
+          : isSetTileHue(input.tileHue)
+            ? input.tileHue
+            : fail(`tileHue must be one of ${SET_TILE_HUES.join(', ')} or null`);
+    }
+    if (input.tileGlyph !== undefined) {
+      patch.tile_glyph =
+        input.tileGlyph === null || input.tileGlyph === ''
+          ? null
+          : isSetTileGlyph(input.tileGlyph)
+            ? input.tileGlyph
+            : fail(`tileGlyph must be one of ${SET_TILE_GLYPHS.join(', ')} or null`);
+    }
     if (input.examDate !== undefined) {
       if (input.examDate === null || input.examDate === '') {
         patch.exam_date = null;
@@ -366,6 +465,11 @@ export class StudySetsService {
       return this.get(userId, setId);
     }
     const wantsExamDate = patch.exam_date !== undefined;
+    // A tile ASKED for. Unlike the exam date there is no honest degrade for
+    // it: `examDateUnsupported` can ride back on a 200 because the rest of the
+    // patch landed and the client shows the date as unset, whereas a dropped
+    // tile is indistinguishable from a tile that saved.
+    const wantsTile = patch.tile_hue !== undefined || patch.tile_glyph !== undefined;
     const writePatch = { ...patch };
     const updated = await this.writeWithExamColumn((columns) => {
       const body = omitUnsupported(writePatch, columns);
@@ -388,11 +492,15 @@ export class StudySetsService {
         .single();
     });
     if (!updated.error) {
+      if (wantsTile && updated.tileMissing) throw new SetTileColumnMissingError();
       const set = mapSet(updated.row as Record<string, unknown>);
       // Honest degrade: the rest of the patch landed, the date did not.
       return wantsExamDate && updated.examMissing ? { ...set, examDateUnsupported: true } : set;
     }
     if (updated.error && isMissingColumn(updated.error, 'description')) {
+      // This rung keeps only title and course: a tile asked for here would be
+      // dropped by the projection, so say so instead of writing the rest.
+      if (wantsTile) throw new SetTileColumnMissingError();
       const slim: Record<string, unknown> = {};
       if (patch.title !== undefined) slim.title = patch.title;
       if (patch.course_id !== undefined) slim.course_id = patch.course_id;

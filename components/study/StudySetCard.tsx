@@ -115,7 +115,13 @@ export const StudySetCard: React.FC<StudySetCardProps> = ({
 }) => {
   const [menuOpen, setMenuOpen] = useState(false);
   const title = studySetLabel(studySet);
-  const art = setTileArt(studySet.id, title);
+  // The owner's own pick beats the hash; a cover picture still beats both,
+  // which `SetCoverSquare` below decides. No new prop: the card already holds
+  // the whole set.
+  const art = setTileArt(studySet.id, title, {
+    hue: studySet.tileHue,
+    glyph: studySet.tileGlyph,
+  });
   const feature = HUE_FEATURE[art.hue];
   const chips = setCountChips(counts);
   const visible = chips.slice(0, MAX_VISIBLE_CHIPS);
