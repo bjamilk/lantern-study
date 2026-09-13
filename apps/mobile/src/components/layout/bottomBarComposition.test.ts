@@ -63,12 +63,19 @@ describe('the wiring the founder decision depends on', () => {
   const screen = read('components/layout/Screen.tsx');
   const row = read('components/layout/ContextualBar.tsx');
 
-  it('draws every tab through the presentation planner, pill and label alike', () => {
-    // A hardcoded pill (or a `active ? label : null`) in the JSX would pass
+  it('draws every tab through a planner, pill and label alike', () => {
+    // A hardcoded pill (or an `active ? label : null`) in the JSX would pass
     // every test above while shipping the old bar.
-    expect(bar).toContain('planTabPresentation({ active, segmentWidth })');
-    expect(bar).toContain('plan.showLabel ? (');
-    expect(bar).toContain('plan.pillWidth !== null');
+    //
+    // WHICH planner changed on 2026-09-13: the bar moved from the per-segment
+    // `planTabPresentation` above to the ROW planner in tabPillLayout.ts,
+    // because the founder's treatment — idle tabs icon-only, one pill hugging
+    // its word, the ends pinned and the middle sliding — is a fact about the
+    // whole row and cannot be decided one segment at a time. What this scan
+    // guards is unchanged: the JSX asks a tested planner rather than deciding.
+    expect(bar).toContain('planTabPillRow');
+    expect(bar).toContain('plan.label !== null');
+    expect(bar).toContain('plan.expanded');
     // The strip is the PAGE GROUND with a hairline, not a raised slab: the
     // elevation is what made the black pill fight a second white plane.
     expect(bar).toContain('backgroundColor: colors.background');
@@ -88,7 +95,7 @@ describe('the wiring the founder decision depends on', () => {
     expect(bar).not.toContain('replaceGlobalTabs');
     expect(bar).not.toContain('planBottomBarComposition');
     const rowAt = bar.indexOf('{above}');
-    const tabsAt = bar.indexOf('{tabs.map(tab => (');
+    const tabsAt = bar.indexOf('{tabs.map((tab, index) => (');
     expect(rowAt).toBeGreaterThan(-1);
     expect(tabsAt).toBeGreaterThan(rowAt);
   });

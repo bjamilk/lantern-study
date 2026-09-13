@@ -273,11 +273,14 @@ export function CoverThumb({
     <span
       className={`relative shrink-0 block aspect-[4/3] ${heightClass} overflow-hidden ${radiusClass} bg-lantern-background-secondary`}
     >
+      {/* The tile's own art is the fallback, so an unsignable or dead cover
+          degrades to today's UI instead of an empty grey box. */}
       <ResolvedStorageImg
         src={coverPath}
         variant="thumb"
         alt={alt}
         className="h-full w-full object-cover"
+        fallback={<span className="absolute inset-0 block">{fallback}</span>}
       />
       {badge ? (
         <span className="absolute bottom-0.5 right-0.5 inline-flex items-center justify-center rounded-md bg-lantern-surface/90 p-0.5 text-lantern-text">
@@ -292,10 +295,12 @@ export interface CoverBannerProps {
   coverPath?: string | null;
   alt?: string;
   className?: string;
+  /** Drawn inside the banner box when the cover cannot be signed. */
+  fallback?: React.ReactNode;
 }
 
 /** The wide 16:5 banner used by the deck header and the note editor header. */
-export function CoverBanner({ coverPath, alt = '', className = '' }: CoverBannerProps) {
+export function CoverBanner({ coverPath, alt = '', className = '', fallback }: CoverBannerProps) {
   if (!coverPath) return null;
   return (
     <div
@@ -306,6 +311,7 @@ export function CoverBanner({ coverPath, alt = '', className = '' }: CoverBanner
         variant="original"
         alt={alt}
         className="h-full w-full object-cover"
+        fallback={fallback ?? null}
       />
     </div>
   );

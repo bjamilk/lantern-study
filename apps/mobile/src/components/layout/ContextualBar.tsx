@@ -1,6 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVisibleSetParams } from '../../stores/setRoomUiStore';
-import { Animated, Keyboard, Platform, Pressable, Text, View } from 'react-native';
+import {
+  Animated,
+  Keyboard,
+  LayoutAnimation,
+  Platform,
+  Pressable,
+  Text,
+  View,
+} from 'react-native';
 import type { ThemePalette } from '@lantern/shared/design';
 import {
   activeItem,
@@ -29,6 +37,12 @@ import {
   planContextualRow,
   type ContextualPillPlan,
 } from './contextualBarPresentation';
+import {
+  TAB_PILL_LABEL_MAX_FONT_SCALE,
+  TAB_ROW_EDGE_PADDING,
+  tabPillTransitionMs,
+} from './tabPillLayout';
+import { TAB_PILL } from '../../theme/surfaceMetrics';
 
 /**
  * The contextual row (spec v3 §7.2, as amended by the founder 2026-09-08).
@@ -100,6 +114,17 @@ interface SegmentProps {
   colors: ThemePalette;
 }
 
+/**
+ * The hugging pill's geometry, borrowed whole from the global bar so the set
+ * row and the bar it stands in for are one object at two item lists. See
+ * tabPillLayout.ts for where each number was measured.
+ */
+const HUGGED_PILL = {
+  gap: 12,
+  paddingLeading: 15,
+  paddingTrailing: 18,
+} as const;
+
 function Segment({ item, plan, onPress, colors }: SegmentProps) {
   // A NAVIGATION SEGMENT IS A CONTROL, NOT A FEATURE (2026-09-12).
   //
@@ -132,7 +157,13 @@ function Segment({ item, plan, onPress, colors }: SegmentProps) {
       // — with five equal segments the promoted word has ~14 dp and ellipsises
       // to nothing. The shares are in contextualBarPresentation.ts, where the
       // worst real row is measured against the longest label.
-      style={{ flex: plan.flex, minHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
+      style={{
+        flex: plan.flex,
+        // A door that takes no flex share (the pill, and the two pinned ends
+        // of a `replace` row) still may not fall below a touch target.
+        minWidth: 44,
+        minHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
+      }}
       className="items-center justify-center px-1"
       accessibilityRole="tab"
       accessibilityState={{ selected: plan.selected }}
@@ -159,8 +190,31 @@ function Segment({ item, plan, onPress, colors }: SegmentProps) {
         // and inside the 44 dp row; `max-w-full` plus the word's own tail
         // ellipsis let a long label truncate rather than push the pill past it.
         <View
-          className="max-w-full items-center self-center rounded-full px-1.5 py-1"
-          style={{ backgroundColor: selectedFill }}
+          className={
+            plan.hugged
+              ? 'max-w-full flex-row items-center self-center rounded-full'
+              : 'max-w-full items-center self-center rounded-full px-1.5 py-1'
+          }
+          style={{
+            backgroundColor: selectedFill,
+            ...(plan.hugged
+              ? {
+                  // TAB_PILL.height, not the ROW's height: the set bar's pill
+                  // and the global bar's lit tab are one object, and the 44 dp
+                  // it stands on must come from one constant so a future change
+                  // to the row's strip cannot silently resize the pill. (They
+                  // are equal today; the device pass measured 113 px against
+                  // 116 only because the row's own bottom BORDER was eating a
+                  // dp out of the content box — see the hairline below.)
+                  height: TAB_PILL.height,
+                  paddingLeft: HUGGED_PILL.paddingLeading,
+                  paddingRight: HUGGED_PILL.paddingTrailing,
+                  // On Android an over-wide child draws over its neighbour
+                  // rather than clipping; the ceiling is the row planner's.
+                  ...(plan.maxWidth !== null ? { maxWidth: plan.maxWidth } : null),
+                }
+              : null),
+          }}
         >
           <AppIcon
             name={item.icon}
@@ -171,12 +225,21 @@ function Segment({ item, plan, onPress, colors }: SegmentProps) {
           <Text
             numberOfLines={CONTEXTUAL_PILL_LABEL.numberOfLines}
             ellipsizeMode={CONTEXTUAL_PILL_LABEL.ellipsizeMode}
-            maxFontSizeMultiplier={CONTEXTUAL_PILL_LABEL.maxFontSizeMultiplier}
-            // `text-label` (11 sp), the same step as every other word on this
-            // row and on the global bar — the pill's fill is what promotes it
-            // now, not a larger size the row cannot afford.
-            className="text-label text-center font-bold"
-            style={{ color: ink }}
+            maxFontSizeMultiplier={
+              plan.hugged
+                ? TAB_PILL_LABEL_MAX_FONT_SCALE
+                : CONTEXTUAL_PILL_LABEL.maxFontSizeMultiplier
+            }
+            // HUGGED (a `replace` row — the set bar): `text-body`, the 15 sp
+            // step, beside the glyph. That is the founder's 2026-09-13 ask and
+            // the same word the global bar's lit tab now draws; the set row is
+            // standing in that bar's slot, so it has the width for it.
+            // STACKED (an `above` row): `text-label` (11 sp), unchanged — it
+            // sits over a bar already drawing the bigger word.
+            className={
+              plan.hugged ? 'text-body font-semibold' : 'text-label text-center font-bold'
+            }
+            style={plan.hugged ? { color: ink, marginLeft: HUGGED_PILL.gap } : { color: ink }}
           >
             {plan.label}
           </Text>
@@ -208,9 +271,11 @@ function Segment({ item, plan, onPress, colors }: SegmentProps) {
           </Text>
         </View>
       ) : (
-        // The `iconOnly` variant, which no surface produces today: every door
-        // on every row is labelled. Kept as the honest fallback — the accessible
-        // name above still carries the word.
+        // `iconOnly` — every non-selected door of a `replace` row since the
+        // founder's 2026-09-13 direction. The word is not drawn; it is still
+        // announced, through `accessibilityLabel={plan.accessibleName}` on the
+        // Pressable above. That is the whole trade: a drawn word may go, a
+        // spoken one may not.
         <AppIcon
           name={item.icon}
           size={18}
@@ -264,6 +329,12 @@ export function ContextualBar({
   const createNote = useNotesStore((s) => s.createNote);
   const showToast = useToastStore((s) => s.showToast);
   const [openingRecorder, setOpeningRecorder] = useState(false);
+  /**
+   * The row's measured width, so a hugged pill's ceiling is a real number
+   * rather than a guess. Null until the first layout pass, which the planner
+   * reads as "no ceiling yet" rather than as a ceiling of zero.
+   */
+  const [barWidth, setBarWidth] = useState<number | null>(null);
 
   /**
    * Is the soft keyboard up? The row stands down while it is
@@ -299,6 +370,34 @@ export function ContextualBar({
   // instead is what turned the whole row grey the moment "+ New test" was
   // pressed.
   const current = activeItem(contextualRoute, contextualParams);
+
+  /**
+   * Re-flow the row when the SELECTED door changes, in the same ~180 ms the
+   * global bar uses (tabPillLayout.ts owns the duration and why 180).
+   *
+   * Queued during render, not in an effect: LayoutAnimation configures the
+   * NEXT commit, and an effect runs after that commit has already laid out. The
+   * Android experimental flag is turned on once at BottomTabBar.tsx's module
+   * load — both files are mounted by the same navigator, and setting it twice
+   * would be the only alternative.
+   *
+   * Only on a selection change, never on a spec change: the row's own
+   * appear/disappear is already an `Animated` height, and stacking a layout
+   * animation on top of it makes the strip flicker as it grows.
+   */
+  const lastSelected = useRef(current?.id ?? null);
+  if (lastSelected.current !== (current?.id ?? null)) {
+    lastSelected.current = current?.id ?? null;
+    const duration = tabPillTransitionMs(reduceMotion);
+    if (duration > 0) {
+      LayoutAnimation.configureNext({
+        duration,
+        create: { type: 'easeInEaseOut', property: 'opacity' },
+        update: { type: 'easeInEaseOut' },
+        delete: { type: 'easeInEaseOut', property: 'opacity' },
+      });
+    }
+  }
 
   // What is currently PAINTED, which lags `spec` by one animation on the way
   // out: the row has to still be on screen while its height animates to 0.
@@ -453,6 +552,10 @@ export function ContextualBar({
   const rowPlan = planContextualRow({
     items: rendered.items,
     selectedId: current?.id,
+    // A `replace` row IS the bottom bar while it is drawn, so it draws the
+    // bar's object: icon-only doors and one hugging pill.
+    mode: rendered.mode ?? 'above',
+    barWidth,
   });
   const planById = new Map(rowPlan.items.map((p) => [p.id, p]));
 
@@ -465,14 +568,16 @@ export function ContextualBar({
         }),
         opacity: progress,
         overflow: 'hidden',
-        borderBottomWidth: 1,
-        borderBottomColor: colors.tabBarBorder,
       }}
     >
       <View
         accessibilityRole="tablist"
-        className="flex-row"
-        style={{ height: CONTEXTUAL_BAR_CONTENT_HEIGHT }}
+        className="flex-row items-center"
+        style={{
+          height: CONTEXTUAL_BAR_CONTENT_HEIGHT,
+          paddingHorizontal: TAB_ROW_EDGE_PADDING,
+        }}
+        onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
       >
         {rendered.items.map((item) => {
           const plan = planById.get(item.id);
@@ -488,6 +593,29 @@ export function ContextualBar({
           );
         })}
       </View>
+      {/* THE HAIRLINE IS DRAWN, NOT BORDERED — SF3b device pass, item 2.
+          It used to be `borderBottomWidth: 1` on this very box, and React
+          Native's box model puts a border INSIDE the height: a 44 dp box with a
+          1 dp bottom border leaves a 43 dp content area, `overflow: 'hidden'`
+          clipped the 44 dp row inside it, and the set bar's pill measured
+          113 px against the global bar's 116 (43 dp vs 44 at 420 dpi). The two
+          bars draw the same object and must measure the same.
+          As an absolutely-positioned child the rule costs the content nothing,
+          so the row — and the pill in it — gets its full
+          CONTEXTUAL_BAR_CONTENT_HEIGHT, and every clearance sum that already
+          reserves exactly that height stays correct. */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: 1,
+          backgroundColor: colors.tabBarBorder,
+        }}
+        importantForAccessibility="no-hide-descendants"
+        pointerEvents="none"
+      />
     </Animated.View>
   );
 }

@@ -34,6 +34,7 @@ import {
 } from '../../components/ui';
 import { confirmAsync } from '../../components/ui/appDialog';
 import { StudySetCard } from '../../components/study/StudySetCard';
+import { shareStudySet } from '../../components/study/shareStudySet';
 import { relativeStudiedLabel } from '../../components/study/setPresentation';
 import { studySetProgress } from '../../components/dashboard/homeSections';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
@@ -198,6 +199,22 @@ export function StudyHubScreen({ navigation }: Props) {
             // Rename lives in the set's own settings screen — the one place
             // that validates a title — rather than in a second inline form.
             navigation.navigate('StudySetSettings', { studySetId: menuSet.id });
+          },
+        },
+        {
+          // Sharing a set started here on web (the hub card's kebab), so it
+          // starts here on mobile too. The sheet's text says what the link
+          // actually does today — see `components/study/shareStudySet.ts`.
+          label: 'Share',
+          icon: 'share',
+          onPress: () => {
+            const target = menuSet;
+            setMenuSetId(null);
+            void shareStudySet({
+              setId: target.id,
+              title: studySetLabel(target),
+              visibility: target.visibility,
+            });
           },
         },
         {

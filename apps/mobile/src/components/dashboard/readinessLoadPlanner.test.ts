@@ -1,5 +1,7 @@
 import {
   planReadinessLoad,
+  readinessCardBody,
+  READINESS_LOADING_TIMEOUT_MS,
   type ReadinessLoadInput,
   type ReadinessLoadTrigger,
 } from './readinessLoadPlanner';
@@ -19,7 +21,7 @@ describe('planReadinessLoad', () => {
   it('fetches on first render, before anything has been loaded', () => {
     expect(
       planReadinessLoad(input({ trigger: 'user-changed', status: 'loading', loadedForUserId: null }))
-    ).toEqual({ fetch: true, reset: false });
+    ).toEqual({ fetch: true, reset: false, settle: false });
   });
 
   // The reported defect: airplane mode off, and the card kept the failure
@@ -40,6 +42,7 @@ describe('planReadinessLoad', () => {
     expect(planReadinessLoad(input({ trigger: 'reconnected', status: 'ready' }))).toEqual({
       fetch: false,
       reset: false,
+      settle: true,
     });
   });
 
@@ -56,6 +59,7 @@ describe('planReadinessLoad', () => {
     expect(planReadinessLoad(input({ trigger: 'pull-to-refresh', status: 'failed' }))).toEqual({
       fetch: true,
       reset: false,
+      settle: false,
     });
   });
 
@@ -64,6 +68,7 @@ describe('planReadinessLoad', () => {
       expect(planReadinessLoad(input({ trigger, status: 'failed', inFlight: true }))).toEqual({
         fetch: false,
         reset: false,
+        settle: false,
       });
     }
   });
@@ -73,7 +78,7 @@ describe('planReadinessLoad', () => {
       planReadinessLoad(
         input({ trigger: 'user-changed', status: 'ready', loadedForUserId: 'someone-else' })
       )
-    ).toEqual({ fetch: true, reset: true });
+    ).toEqual({ fetch: true, reset: true, settle: false });
   });
 
   it('reloads for a new account even while the previous request is in the air', () => {
@@ -86,7 +91,7 @@ describe('planReadinessLoad', () => {
           loadedForUserId: 'someone-else',
         })
       )
-    ).toEqual({ fetch: true, reset: true });
+    ).toEqual({ fetch: true, reset: true, settle: false });
   });
 
   it('clears the card and fetches nothing when signed out', () => {
@@ -94,7 +99,52 @@ describe('planReadinessLoad', () => {
       expect(planReadinessLoad(input({ trigger, userId: null }))).toEqual({
         fetch: false,
         reset: true,
+        settle: true,
       });
     }
+  });
+
+  // The build-199 blank: a plan that starts no fetch must tell the card to
+  // stop waiting, or `loading` is permanent and Home's exam slot renders
+  // nothing at all.
+  it('settles the card whenever it decides not to fetch and nothing is in the air', () => {
+    for (const trigger of ['user-changed', ...RECOVERY_TRIGGERS] as ReadinessLoadTrigger[]) {
+      const plan = planReadinessLoad(input({ trigger, userId: null, status: 'loading' }));
+      expect(plan.fetch).toBe(false);
+      expect(plan.settle).toBe(true);
+    }
+  });
+
+  it('keeps waiting — does not settle — while a request is genuinely out', () => {
+    expect(
+      planReadinessLoad(input({ trigger: 'focus', status: 'loading', inFlight: true })).settle
+    ).toBe(false);
+  });
+
+  it('still reloads an empty card on every recovery trigger', () => {
+    for (const trigger of RECOVERY_TRIGGERS) {
+      expect(planReadinessLoad(input({ trigger, status: 'empty' })).fetch).toBe(true);
+    }
+  });
+});
+
+describe('readinessCardBody', () => {
+  it('draws a skeleton while loading — never nothing', () => {
+    expect(readinessCardBody('loading', 0)).toBe('skeleton');
+  });
+
+  it('draws the honest empty card when the load settled with no courses', () => {
+    expect(readinessCardBody('empty', 0)).toBe('empty');
+    expect(readinessCardBody('ready', 0)).toBe('empty');
+  });
+
+  it('draws rows when there are courses, and the failure line when it failed', () => {
+    expect(readinessCardBody('ready', 2)).toBe('rows');
+    expect(readinessCardBody('failed', 0)).toBe('failed');
+  });
+
+  it('gives up on the spinner in a few seconds, not never', () => {
+    expect(READINESS_LOADING_TIMEOUT_MS).toBeGreaterThan(2000);
+    expect(READINESS_LOADING_TIMEOUT_MS).toBeLessThanOrEqual(10000);
   });
 });

@@ -321,8 +321,12 @@ export function StudySetSettingsScreen({ navigation, route }: Props) {
             ))}
           </View>
           <T.Caption tone="tertiary" className="mt-2">
+            {/* Was "Anyone with the link can open this set." That is not true:
+                `visibility` is written to the row and never read — the SELECT
+                policy on study_sets is owner-only — so a public set is still
+                openable by nobody but its owner. */}
             {visibility === 'public'
-              ? 'Anyone with the link can open this set.'
+              ? 'Marked public, but set sharing is not built yet — only you can open it.'
               : 'Only you can open this set.'}
           </T.Caption>
         </Card>

@@ -30,10 +30,10 @@ import {
   newLectureNoteTitle,
   resolveLectureStudioNote,
   studySetLabel,
-  studySetPlanProgress,
+  resolveExamDate,
   testsFiledInCourse,
   testsFiledInStudySet,
-  topicsInUnit,
+  todayDateOnlyLocal,
   unitsForTopics,
   type StudySetTopic,
   type StudySetTopicStatus,
@@ -51,8 +51,10 @@ import { DOOR_TILE } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { StudySetTimer } from '../../components/study/StudySetTimer';
 import { SetRoomHeader } from '../../components/study/SetRoomHeader';
+import { shareStudySet } from '../../components/study/shareStudySet';
 import { SetRoomSegments } from '../../components/study/SetRoomSegments';
 import { SetRoomTile } from '../../components/study/SetRoomTile';
+import { StudyPlanPanel } from '../../components/study/StudyPlanPanel';
 import {
   SET_ROOM_TILE_LABELS,
   SET_ROOM_TILE_ORDER,
@@ -578,6 +580,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
         <SetRoomHeader
           title={label}
           coverPath={studySet?.coverPath}
+          onShare={
+            studySetId
+              ? () => void shareStudySet({ setId: studySetId, title: label, visibility: studySet?.visibility })
+              : undefined
+          }
           subtitle={
             studySetId
               ? undefined
@@ -731,6 +738,14 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                 studySetId,
               })
             }
+            onViewSchedule={() =>
+              navigation.navigate('StudyCalendar', {
+                courseId,
+                courseLabel: label,
+                studySetId,
+              })
+            }
+            examDate={resolveExamDate(studySet, enrolment)}
           />
         ) : null}
 
@@ -1162,6 +1177,8 @@ function SetHomeRecommended({
   onOpenActivity,
   onAddSyllabus,
   onAddExam,
+  onViewSchedule,
+  examDate,
 }: {
   /** Draw the topic band, the recommendation tiles and Show more. */
   showOverview: boolean;
@@ -1189,6 +1206,10 @@ function SetHomeRecommended({
   onOpenActivity: (id: WorkspaceActivityId) => void;
   onAddSyllabus: () => void;
   onAddExam: () => void;
+  /** The Details sheet's `View schedule` — the study calendar for this set. */
+  onViewSchedule: () => void;
+  /** `YYYY-MM-DD`, resolved off the set then its course. */
+  examDate: string | null;
 }) {
   const { width: screenWidth } = useWindowDimensions();
   const doorGutter = DOOR_TILE.gridGutter;
@@ -1198,8 +1219,6 @@ function SetHomeRecommended({
     pageMargin: 16,
     gutter: doorGutter,
   });
-  const [generating, setGenerating] = useState(false);
-  const [openUnitId, setOpenUnitId] = useState<string | null>(null);
 
   // The plan the SERVER holds is the plan. Topics derived from note titles are
   // a fallback for a set that has never had one saved — they used to be the
@@ -1209,9 +1228,14 @@ function SetHomeRecommended({
   const usingServerPlan = planTopics.length > 0;
   const allTopics = usingServerPlan ? planTopics : derived.topics;
   const units = usingServerPlan ? unitsForTopics(planUnits, planTopics) : [derived.unit];
+  // Both kinds of material, so a flat plan can name its units after the note or
+  // lecture each topic was read out of (studyPlanPresentation.planUnitsAndTopics).
+  const planMaterials = useMemo(
+    () => [...notes, ...lectures].map((note) => ({ id: note.id, title: note.title })),
+    [notes, lectures]
+  );
   const topics = allTopics.filter((topic) => !skippedTopicIds.includes(topic.id));
   const current = pickRecommendedTopic(topics, mode);
-  const progress = studySetPlanProgress(allTopics);
   const empty = notes.length === 0 && lectures.length === 0 && allTopics.length === 0;
   const cards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
 
@@ -1287,98 +1311,36 @@ function SetHomeRecommended({
       </>
       ) : null}
 
-      {/* The plan itself: units that open, topics that tick, and the tick
-          goes to the server. Web has had this since the set room shipped. */}
+      {/* The plan itself. The spine, the rings and the Details sheet live in
+          components/study/StudyPlanPanel.tsx — this screen only says which
+          topic a `Continue` opens and where the exam flow is. */}
       {showPlan ? (
-      <Card className="mt-3">
-        <View className="flex-row items-center justify-between mb-2">
-          <T.Caption tone="secondary">Study plan</T.Caption>
-          <T.Caption tone="tertiary">
-            {progress.topics} topics · {progress.covered} covered · {progress.mastered} mastered
-          </T.Caption>
-        </View>
-
-        {!usingServerPlan ? (
-          <View className="mb-3">
-            <T.Caption tone="secondary">
-              {planLoaded
-                ? 'These topics are read off your notes. Save them as a plan to tick them off on every device.'
-                : 'Showing topics read off your notes — your saved plan has not loaded yet.'}
-            </T.Caption>
-            {planLoaded ? (
-              <Button
-                size="sm"
-                className="mt-2"
-                disabled={generating || notes.length === 0}
-                onPress={() => {
-                  setGenerating(true);
-                  void onGeneratePlan().finally(() => setGenerating(false));
-                }}
-              >
-                {generating ? 'Building…' : 'Save as my study plan'}
-              </Button>
-            ) : null}
-          </View>
-        ) : null}
-
-        {units.map((unit, index) => {
-          const unitTopics = topicsInUnit(allTopics, unit.id);
-          const expanded = openUnitId === null ? index === 0 : openUnitId === unit.id;
-          return (
-            <View key={unit.id} className={index > 0 ? 'border-t border-lantern-border pt-2 mt-2' : ''}>
-              <Pressable
-                onPress={() => setOpenUnitId(expanded ? '' : unit.id)}
-                accessibilityRole="button"
-                accessibilityState={{ expanded }}
-                className="py-2"
-              >
-                <T.Body>{`${String(index + 1).padStart(2, '0')} ${unit.title}`}</T.Body>
-                <T.Caption tone="secondary">
-                  {unitTopics.length} topics · {expanded ? 'Hide' : 'Show'}
-                </T.Caption>
-              </Pressable>
-              {expanded
-                ? unitTopics.map((topic) => (
-                    <Pressable
-                      key={topic.id}
-                      onPress={() => {
-                        if (!usingServerPlan) return;
-                        const next: StudySetTopicStatus =
-                          topic.status === 'unseen'
-                            ? 'covered'
-                            : topic.status === 'covered'
-                              ? 'mastered'
-                              : 'unseen';
-                        onToggleTopic(topic.id, next);
-                      }}
-                      disabled={!usingServerPlan}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${topic.title}. ${topic.status}${
-                        usingServerPlan ? '. Tap to change' : ''
-                      }`}
-                      className="flex-row items-center gap-3 py-2 pl-2"
-                    >
-                      <View
-                        className={`h-5 w-5 rounded-md border items-center justify-center ${
-                          topic.status === 'unseen'
-                            ? 'border-lantern-border'
-                            : 'border-lantern-primary bg-lantern-primary-background'
-                        }`}
-                      >
-                        {topic.status === 'mastered' ? <T.Caption>★</T.Caption> : null}
-                        {topic.status === 'covered' ? <T.Caption>✓</T.Caption> : null}
-                      </View>
-                      <View className="flex-1">
-                        <T.Body numberOfLines={1}>{topic.title}</T.Body>
-                        <T.Caption tone="secondary">{topic.status}</T.Caption>
-                      </View>
-                    </Pressable>
-                  ))
-                : null}
-            </View>
-          );
-        })}
-      </Card>
+        <StudyPlanPanel
+          units={planUnits}
+          topics={allTopics}
+          materials={planMaterials}
+          mode={mode}
+          planLoaded={planLoaded}
+          usingServerPlan={usingServerPlan}
+          canBuildPlan={notes.length > 0}
+          onGeneratePlan={onGeneratePlan}
+          onToggleTopic={(topicId, next) => {
+            // A derived topic has no server row to tick, so the tap is a no-op
+            // rather than a write that fails — the panel still offers "Save as
+            // my study plan", which is the thing that makes ticking work.
+            if (!usingServerPlan) return;
+            onToggleTopic(topicId, next);
+          }}
+          onContinue={(topic) => {
+            if (topic.sourceNoteId) onRead(topic.sourceNoteId);
+            else onAsk();
+          }}
+          onAddSyllabus={onAddSyllabus}
+          onAddExam={onAddExam}
+          onViewSchedule={onViewSchedule}
+          examDate={examDate}
+          today={todayDateOnlyLocal()}
+        />
       ) : null}
     </View>
   );

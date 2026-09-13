@@ -462,18 +462,52 @@ export function Avatar({ name, size = 40 }: { name?: string; size?: number }) {
   );
 }
 
-export function Badge({ count }: { count: number }) {
+/**
+ * A count riding the top-right corner of whatever it is nested in.
+ *
+ * `anchor` moves it to an explicit `top`/`left` instead of the default
+ * right-edge nudge. The bottom tab bar passes one, and it has to: a
+ * right-anchored badge grows LEFTWARDS as its count widens, and on device the
+ * Study tab's "68" covered its glyph completely (SF3b device pass, item 5).
+ * `tabBadgeAnchor` in layout/tabPillLayout.ts is the pure model that decides
+ * where — and proves the glyph stays visible at any count. Everywhere else the
+ * default is unchanged.
+ */
+export function Badge({
+  count,
+  anchor,
+}: {
+  count: number;
+  anchor?: { top: number; left: number };
+}) {
   const { colors } = useTheme();
   if (!count || count <= 0) return null;
-  return (
+  const disc = (
     // `errorStrong`, not `error`: the fill has to carry a WHITE numeral, and
     // dark mode's `error` (#ef4444) is only 3.76:1 under white.
     <View
       style={{ backgroundColor: colors.errorStrong }}
-      className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full items-center justify-center"
+      className={
+        anchor
+          ? 'min-w-[18px] h-[18px] px-1 rounded-full items-center justify-center'
+          : 'absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full items-center justify-center'
+      }
     >
       {/* 11 sp is the floor; the badge was the app's other sub-floor string. */}
       <Text className="text-label font-bold tracking-normal text-white">{count > 99 ? '99+' : count}</Text>
+    </View>
+  );
+  if (!anchor) return disc;
+  // Anchored: an absolutely positioned child only gets the width its parent
+  // has LEFT of `left` (a 24 dp glyph box minus an 18 dp offset = 6 dp), so
+  // "68" was cut to "6" on device. The anchor therefore positions a WIDE,
+  // transparent slot and the disc sits at its start, free to grow outwards.
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', top: anchor.top, left: anchor.left, width: 48, alignItems: 'flex-start' }}
+    >
+      {disc}
     </View>
   );
 }

@@ -12,6 +12,7 @@ import { AuthenticatedRequest } from '../types';
 import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
+  CoverStorageUnavailableError,
   SupabaseService,
 } from '../services/supabase';
 import { getStudySetsService } from '../services/studySets';
@@ -251,8 +252,9 @@ router.post(
       // Throws a PublicError ("Study set not found") for a set this account
       // does not own — answered below before a byte is stored.
       await getStudySetsService(supabaseService).get(userId, setId);
-      // Store first, then persist: a failed column write leaves an orphan
-      // object (deleted below), the reverse would leave a dangling path.
+      // Probe the COLUMN before storing bytes: on a database without the
+      // migration this answers 503 without ever leaving an orphan object.
+      await supabaseService.assertCoverColumn?.('study-set');
       uploaded = await supabaseService.uploadCoverImage({
         userId,
         kind: 'study-set',
@@ -267,18 +269,28 @@ router.post(
         uploaded.path
       );
       await supabaseService.deleteCoverObject(previousPath);
-      res.json({
+      res.status(201).json({
         success: true,
         data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
       });
     } catch (error: unknown) {
       if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
       if (error instanceof CoverColumnMissingError) {
+        logger.error('[cover] set cover refused: column missing', {
+          kind: 'study-set', setId, userId, migration: COVER_IMAGE_MIGRATION,
+        });
         res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
         return;
       }
+      if (error instanceof CoverStorageUnavailableError) {
+        logger.error('[cover] set cover failed: storage', {
+          kind: 'study-set', setId, userId, detail: error.detail,
+        });
+        res.status(503).json({ success: false, error: error.message, detail: error.detail });
+        return;
+      }
       if (handlePublicError(error, res)) return;
-      logger.error('Failed to set study set cover', { setId, userId, error });
+      logger.error('[cover] set cover failed', { kind: 'study-set', setId, userId, error });
       res
         .status(500)
         .json({ success: false, error: clientErrorMessage(error, 'Failed to set cover image') });
@@ -302,10 +314,13 @@ router.delete(
       res.json({ success: true, data: { coverPath: null } });
     } catch (error: unknown) {
       if (error instanceof CoverColumnMissingError) {
+        logger.error('[cover] clear cover refused: column missing', {
+          kind: 'study-set', setId, userId, migration: COVER_IMAGE_MIGRATION,
+        });
         res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
         return;
       }
-      logger.error('Failed to clear study set cover', { setId, userId, error });
+      logger.error('[cover] clear cover failed', { kind: 'study-set', setId, userId, error });
       res
         .status(500)
         .json({ success: false, error: clientErrorMessage(error, 'Failed to clear cover image') });

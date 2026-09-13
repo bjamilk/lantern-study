@@ -13,9 +13,9 @@
  * signed at all — the caller's own tile is what renders, which is the rule
  * `coverTileSource` already states for every other cover in the app.
  */
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Image, View } from 'react-native';
-import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { useResolvedCoverUrl } from '../../hooks/useResolvedStorageUrl';
 import { coverTileSource } from '../ui/coverPickerModel';
 
 export interface SetCoverSquareProps {
@@ -41,8 +41,13 @@ export function SetCoverSquare({
 }: SetCoverSquareProps) {
   // `variant: 'thumb'` for the same reason deck rows use it: a hub of twenty
   // sets must not pull twenty full-size covers over a metered connection.
-  const resolved = useResolvedStorageUrl(pendingUri ? null : coverPath, { variant: 'thumb' });
-  const source = coverTileSource({ pendingUri, resolvedUri: resolved });
+  const resolved = useResolvedCoverUrl(pendingUri ? null : coverPath, { variant: 'thumb' });
+  // A URL that signs but will not LOAD (a deleted object, a thumb that was
+  // never generated) used to leave an empty box where the tile art had been.
+  // `failed` sends it back to the fallback: never a blank tile.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [pendingUri, resolved]);
+  const source = coverTileSource({ pendingUri, resolvedUri: failed ? null : resolved });
   if (source.kind === 'glyph') return <>{fallback}</>;
   return (
     <View
@@ -50,7 +55,12 @@ export function SetCoverSquare({
       className="bg-lantern-background-secondary"
       accessibilityLabel={accessibilityLabel || 'Set picture'}
     >
-      <Image source={{ uri: source.uri }} style={{ width: size, height: size }} resizeMode="cover" />
+      <Image
+        source={{ uri: source.uri }}
+        style={{ width: size, height: size }}
+        resizeMode="cover"
+        onError={() => setFailed(true)}
+      />
     </View>
   );
 }

@@ -62,10 +62,56 @@ export function parseStorageObjectUrl(
   }
 }
 
+/** The bucket every deck / note / study-set cover object lives in. */
+export const COVER_IMAGE_BUCKET = "cover-images";
+
+/** The three scopes `uploadCoverImage` writes under, i.e. path segment 2. */
+const COVER_SCOPES = new Set(["decks", "notes", "study-sets"]);
+
+/**
+ * Bucket-qualify a legacy cover reference.
+ *
+ * Covers uploaded before this fix were persisted as the bare object path
+ * `{ownerId}/{decks|notes|study-sets}/{id}/{ts}-name.webp` — no bucket segment
+ * — so `parseStoredStorageRef` returned null, the caller fell through to
+ * `normalizeStorageUrl`, and the RAW PATH reached an `<img>`/`<Image>`, which
+ * draws an empty box. That is the blank deck/note/set tile.
+ *
+ * Applied on READ (in the API's projections) so rows already on production
+ * render without a backfill. Anything already qualified, a full storage URL,
+ * or not cover-shaped is returned unchanged.
+ */
+export function normalizeCoverRef<T extends string | null | undefined>(
+  value: T,
+): T {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+  // Already a URL, a data/blob ref, or already bucket-qualified.
+  if (/^(https?:)?\/\//i.test(trimmed)) return value;
+  if (trimmed.startsWith("data:") || trimmed.startsWith("blob:")) return value;
+  if (trimmed.startsWith(`${COVER_IMAGE_BUCKET}/`)) return value;
+  if (
+    trimmed.includes("..") ||
+    trimmed.startsWith("/") ||
+    trimmed.includes("\\")
+  ) {
+    return value;
+  }
+  const parts = trimmed.split("/").filter(Boolean);
+  // {owner}/{scope}/{id}/{file} — anything else is not a cover object, and a
+  // ref already naming some OTHER bucket must not be rewritten.
+  if (parts.length < 4) return value;
+  if (isPrivateStorageBucket(parts[0]!)) return value;
+  if (!COVER_SCOPES.has(parts[1]!)) return value;
+  return `${COVER_IMAGE_BUCKET}/${trimmed}` as T;
+}
+
 /**
  * Parse a stored private-object reference for display or persist.
- * Accepts signed/unsigned storage URLs, `bucket/path`, and bare marketplace
- * object paths (`{userId}/temp|shop|listings/...`) written by older clients.
+ * Accepts signed/unsigned storage URLs, `bucket/path`, bare marketplace
+ * object paths (`{userId}/temp|shop|listings/...`) written by older clients,
+ * and bare cover paths (`{userId}/decks|notes|study-sets/...`).
  */
 export function parseStoredStorageRef(
   value: string,
@@ -93,6 +139,16 @@ export function parseStoredStorageRef(
   const kind = rest.split("/")[0];
   if (kind === "listings" || kind === "temp" || kind === "shop") {
     return { bucket: "marketplace-images", path: trimmed };
+  }
+
+  // Legacy bucket-less cover path, still stored in rows written before covers
+  // were persisted bucket-qualified.
+  const qualified = normalizeCoverRef(trimmed);
+  if (qualified !== trimmed) {
+    return {
+      bucket: COVER_IMAGE_BUCKET,
+      path: qualified.slice(COVER_IMAGE_BUCKET.length + 1),
+    };
   }
 
   return null;

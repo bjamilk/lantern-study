@@ -46,6 +46,37 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'study-plan-share-bars-covers-1-0-55',
+    title: 'A study plan you can see, Share that tells the truth, bars that name where you are, and pictures that show (1.0.55)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-13',
+    summary:
+      'Inside a set, Plan is a timeline: units with progress rings, topics inside, done ones struck through, one Continue, and a Details sheet with topics, covered, mastered, syllabus and exam dates; the same on web with a progress sidebar. Share works from the set header and cards and never claims a recipient can open a private set. Materials and lectures switch between grid and list with a sort. Covers on sets, decks and notes render on every card and header and survive a restart. The mobile bottom bars show icons; the tab you are on opens into a pill with its name beside the icon, and the set bar shows where you are. The set calendar plans the set and always draws a grid.',
+    details: [
+      'Study Plan: mobile StudyPlanPanel + studyPlanPresentation (pure, tested; contrast-safe ink fill on a lilac track); web StudyPlanTimeline on shared planTimeline (units from unitsFromSourceMaterials, next-topic rule, ring arcs). Sources chips omitted: no provenance data.',
+      'Share: shared shareLink builder; study-set sharing does not exist (visibility is written, never read), so the copy says the set is private; two older false claims corrected.',
+      'Covers: refs persisted bucket-qualified (cover-images/…) and legacy rows normalised on read (normalizeCoverRef); routes probe the column before uploading and answer 503 with the migration name or a storage message; deck mappers map coverPath on web and mobile; web deck menus gate on ownership, not sharing; mobile picker never overlaps a sliding sheet with the picker Activity.',
+      'Bars: tabPillLayout (pure): idle icon-only, active pill hugs icon + text-body semibold label, ends pinned, interior slides, 180 ms LayoutAnimation (snap under reduce motion); accessibilityRole tab + label + selected on every item; set bar in replace mode gets the same; badge anchored at the glyph corner in a wide slot so two-digit counts render.',
+      'Calendar: StudyCalendarScreen reads the set’s saved plan topics and always renders the month grid with today and an EXAM chip; setup is a card above it.',
+      'Home: CourseReadinessCard never returns null (skeleton, 8 s timeout, honest empty card with Add exam date). Web grid⇄list toggle + sort persisted per surface. Mobile setPresentation is a thin adapter over shared (fixed a web/phone tile-hue mismatch).',
+      'Fonts, icon sizes and button skins unchanged except the requested larger active-tab label (a type-scale step, not a raw size).',
+    ],
+    howToUse: [
+      'Open a set → Plan: expand a unit, tap Continue on the next topic, Details for progress, syllabus, exam dates and View schedule.',
+      'Set header → Share, or a set card ⋮ → Share.',
+      'Set room → Recent materials / Lectures: the grid⇄list toggle and the sort menu.',
+      'Bottom bar: tap a tab; its name appears beside the icon. Inside a set the bar shows Home · Materials · Flashcards · Tests · Record · Ask.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'Migration 20260913120000_cover_images.sql must be applied (it was on 2026-09-13); rows uploaded before this release carry bare paths and are normalised on read — no backfill needed.',
+      'Still hand-applied: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+      'Known: dark mode under a custom accent draws primary-button labels at ~3.7:1 (accent system, pre-existing). A 0-material set has no route to View schedule (no Details button).',
+    ],
+    commits: ['8e850152'],
+  },
+  {
     id: 'study-set-parity-covers-1-0-54',
     title: 'The set stays in one place, Home reads in two screens, and sets, decks and notes take a picture (1.0.54)',
     area: 'platform',

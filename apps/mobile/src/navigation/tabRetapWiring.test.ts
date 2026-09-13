@@ -96,8 +96,13 @@ describe('the wiring the duotone bar must not have broken', () => {
     // `color` beside it — build 185's device-pass finding.
     const icon = bar.slice(bar.indexOf('<AppIcon'), bar.indexOf('/>', bar.indexOf('<AppIcon')));
     expect(icon).toContain('tone="neutral"');
-    expect(icon).toContain('color={active ? onPillColor : inactiveColor}');
+    // `plan.expanded`, not a local `active`: which tab wears the pill is now the
+    // ROW planner's answer (tabPillLayout.ts), because it depends on the whole
+    // row rather than on one segment. The pairing it guards is unchanged — the
+    // glyph is the PILL'S FOREGROUND when lit, the muted tint when not.
+    expect(icon).toContain('color={plan.expanded ? onPillColor : inactiveColor}');
     expect(icon).not.toContain("tone={active ? 'active'");
+    expect(icon).not.toContain("tone={plan.expanded ? 'active'");
     expect(icon).not.toContain('feature=');
     expect(icon).not.toContain('onPress');
   });

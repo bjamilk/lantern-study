@@ -1775,6 +1775,11 @@ export const mapDeckFromApi = (d: any): Deck => ({
   // deck simply reads as "no topic" rather than breaking the picker.
   topicId: d.topicId !== undefined ? d.topicId : (d.topic_id ?? null),
   studyCount: d.studyCount ?? d.study_count ?? 0,
+  // Without this the cover a user just set vanished on the next load: the API
+  // projects `coverPath` (or omits it on a database where the cover migration
+  // is not applied yet), but this mapper dropped it, so every deck row in the
+  // store read as "no cover" and the menu always offered "Add cover".
+  coverPath: d.coverPath !== undefined ? d.coverPath : (d.cover_path ?? null),
 });
 
 /** Map raw API deck rows to client Deck objects, dropping malformed rows. */

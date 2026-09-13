@@ -91,10 +91,87 @@ describe('uploadCoverImage', () => {
     });
 
     expect(uploads[0].bucket).toBe(COVER_IMAGE_BUCKET);
-    expect(result.path).toMatch(/^user-1\/decks\/deck-9\/\d+-my_cover_\.webp$/);
+    // The OBJECT is stored bare under the bucket...
+    expect(uploads[0].path).toMatch(/^user-1\/decks\/deck-9\/\d+-my_cover_\.webp$/);
+    // ...but the REF handed back and persisted is bucket-qualified. A bare ref
+    // makes parseStoredStorageRef return null on every client, which hands the
+    // raw path to <img> and draws a blank tile.
+    expect(result.path).toMatch(
+      /^cover-images\/user-1\/decks\/deck-9\/\d+-my_cover_\.webp$/,
+    );
     // The durable value is a path; the signed URL is display-only (24h).
     expect(result.path).not.toMatch(/^https?:/);
     expect(result.url).toBe('https://signed.example/cover?token=abc');
+  });
+
+  it('creates the bucket on the first ever cover and retries the upload', async () => {
+    const service = makeService();
+    let attempts = 0;
+    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation(() => ({
+      // The sibling thumb uploads through the same mock; count only the
+      // cover object's own attempts.
+      upload: async (path: string) => {
+        if (path.includes('.thumb.')) return { data: { path }, error: null };
+        attempts += 1;
+        return attempts === 1
+          ? { data: null, error: { message: 'Bucket not found' } }
+          : { data: { path }, error: null };
+      },
+    }));
+    const createBucket = jest
+      .spyOn((service as any).supabase.storage, 'createBucket')
+      .mockResolvedValue({ data: { name: COVER_IMAGE_BUCKET }, error: null } as any);
+    jest.spyOn(service, 'createSignedStorageUrl').mockResolvedValue('https://signed/x');
+    jest.spyOn(service, 'createSignedStorageUrlWithVariant').mockResolvedValue('https://signed/x.thumb');
+
+    const result = await service.uploadCoverImage({
+      userId: 'user-1', kind: 'deck', id: 'deck-9',
+      fileName: 'c.png', base64Data: PNG_BASE64, contentType: 'image/png',
+    });
+
+    expect(createBucket).toHaveBeenCalledWith(COVER_IMAGE_BUCKET, expect.objectContaining({ public: false }));
+    expect(attempts).toBe(2);
+    expect(result.path).toContain('cover-images/user-1/decks/deck-9/');
+  });
+
+  it('surfaces a storage failure as its own error, not a blank one', async () => {
+    // The live 500 said only "Failed to set cover image". A bucket that cannot
+    // be created has to be nameable from the response and the logs.
+    const service = makeService();
+    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation(() => ({
+      upload: async () => ({ data: null, error: { message: 'Bucket not found' } }),
+    }));
+    jest
+      .spyOn((service as any).supabase.storage, 'createBucket')
+      .mockResolvedValue({ data: null, error: { message: 'new row violates row-level security policy' } } as any);
+
+    await expect(
+      service.uploadCoverImage({
+        userId: 'user-1', kind: 'note', id: 'note-1',
+        fileName: 'c.png', base64Data: PNG_BASE64, contentType: 'image/png',
+      })
+    ).rejects.toMatchObject({
+      name: 'CoverStorageUnavailableError',
+      message: 'Cover storage is not ready',
+      detail: expect.stringContaining('row-level security'),
+    });
+  });
+
+  it('reports an upload that fails for any other storage reason', async () => {
+    const service = makeService();
+    jest.spyOn((service as any).supabase.storage, 'from').mockImplementation(() => ({
+      upload: async () => ({ data: null, error: { message: 'mime type image/webp is not supported' } }),
+    }));
+
+    await expect(
+      service.uploadCoverImage({
+        userId: 'user-1', kind: 'deck', id: 'deck-1',
+        fileName: 'c.png', base64Data: PNG_BASE64, contentType: 'image/png',
+      })
+    ).rejects.toMatchObject({
+      name: 'CoverStorageUnavailableError',
+      detail: expect.stringContaining('mime type'),
+    });
   });
 });
 
@@ -115,9 +192,68 @@ describe('isMissingCoverPathColumn', () => {
     expect(isMissingCoverPathColumn(null)).toBe(false);
   });
 
-  it('names the migration a operator has to apply', () => {
-    expect(new CoverColumnMissingError().message).toContain(COVER_IMAGE_MIGRATION);
+  it('reads the column name out of details or hint too', () => {
+    // PostgREST does not always put the column in `message`; a detector that
+    // only reads `message` answers false and the route 500s.
+    expect(
+      isMissingCoverPathColumn({
+        code: 'PGRST204',
+        message: 'Bad Request',
+        details: "Could not find the 'cover_path' column of 'study_sets' in the schema cache",
+      })
+    ).toBe(true);
+    expect(
+      isMissingCoverPathColumn({
+        message: "Could not find the 'cover_path' column of 'notes' in the schema cache",
+      })
+    ).toBe(true);
+  });
+
+  it('tells the student to retry and the operator which migration to apply', () => {
+    // The student sees a plain sentence; the machine-readable migration name
+    // rides on its own field so the message never has to carry a filename.
+    const err = new CoverColumnMissingError();
+    expect(err.message).toBe('Covers need a server update — try again later');
+    expect(err.migration).toBe(COVER_IMAGE_MIGRATION);
     expect(COVER_IMAGE_MIGRATION).toBe('20260913120000_cover_images.sql');
+  });
+});
+
+describe('assertCoverColumn', () => {
+  function probing(result: any) {
+    const service = makeService();
+    const calls: Array<{ table: string; columns: string }> = [];
+    jest.spyOn((service as any).supabase, 'from').mockImplementation((table: any) => ({
+      select: (columns: string) => {
+        calls.push({ table, columns });
+        return { limit: async () => result };
+      },
+    }));
+    return { service, calls };
+  }
+
+  it('probes the right table for one cover_path row', async () => {
+    const { service, calls } = probing({ data: [], error: null });
+    await service.assertCoverColumn('study-set');
+    expect(calls).toEqual([{ table: 'study_sets', columns: 'cover_path' }]);
+    await service.assertCoverColumn('deck');
+    await service.assertCoverColumn('note');
+    expect(calls.map((c) => c.table)).toEqual(['study_sets', 'decks', 'notes']);
+  });
+
+  it('throws the migration error when the column is not there', async () => {
+    const { service } = probing({
+      data: null,
+      error: { code: '42703', message: 'column decks.cover_path does not exist' },
+    });
+    await expect(service.assertCoverColumn('deck')).rejects.toBeInstanceOf(CoverColumnMissingError);
+  });
+
+  it('does not refuse the upload for an unrelated read failure', async () => {
+    // A probe that fails for any other reason (RLS on an empty table, a blip)
+    // must not turn every cover upload into a 503.
+    const { service } = probing({ data: null, error: { code: '42501', message: 'permission denied' } });
+    await expect(service.assertCoverColumn('note')).resolves.toBeUndefined();
   });
 });
 
@@ -197,5 +333,79 @@ describe('canAccessStorageObject cover-images', () => {
     await expect(
       service.canAccessStorageObject('viewer', COVER_IMAGE_BUCKET, 'user-1/secrets/x.webp')
     ).resolves.toBe(false);
+  });
+});
+
+/**
+ * Rows written before covers were persisted bucket-qualified still hold a bare
+ * object path. They are qualified on READ, so production covers render with no
+ * backfill and no migration.
+ */
+describe('cover ref normalisation on read', () => {
+  it('qualifies a legacy deck cover path on the deck read projection', async () => {
+    const service = makeService();
+    (service as any).supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: {
+                id: 'deck-9',
+                name: 'Deck',
+                cover_path: 'user-1/decks/deck-9/1700000000-cover.webp',
+              },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    };
+
+    // fetchDeckRecord is the projection every deck read funnels through.
+    const deck = await (service as any).fetchDeckRecord('deck-9');
+    expect(deck.coverPath).toBe(
+      'cover-images/user-1/decks/deck-9/1700000000-cover.webp',
+    );
+  });
+
+  it('leaves an already-qualified path alone', async () => {
+    const service = makeService();
+    const qualified = 'cover-images/user-1/decks/deck-9/1-cover.webp';
+    (service as any).supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { id: 'deck-9', name: 'Deck', cover_path: qualified },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    };
+
+    // fetchDeckRecord is the projection every deck read funnels through.
+    const deck = await (service as any).fetchDeckRecord('deck-9');
+    expect(deck.coverPath).toBe(qualified);
+  });
+
+  it('reports a missing cover as null rather than a bare string', async () => {
+    const service = makeService();
+    (service as any).supabase = {
+      from: () => ({
+        select: () => ({
+          eq: () => ({
+            maybeSingle: async () => ({
+              data: { id: 'deck-9', name: 'Deck', cover_path: null },
+              error: null,
+            }),
+          }),
+        }),
+      }),
+    };
+
+    // fetchDeckRecord is the projection every deck read funnels through.
+    const deck = await (service as any).fetchDeckRecord('deck-9');
+    expect(deck.coverPath).toBeNull();
   });
 });

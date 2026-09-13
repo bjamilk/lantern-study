@@ -3,6 +3,7 @@ import {
   relativeStudiedLabel,
   setCountChips,
   setTileArt,
+  formatShortDate,
 } from './setPresentation';
 
 describe('setTileArt', () => {
@@ -87,5 +88,77 @@ describe('relativeStudiedLabel', () => {
     expect(relativeStudiedLabel(new Date(now.getTime() + 60_000).toISOString(), now)).toBe(
       'Just now'
     );
+  });
+});
+
+/**
+ * The distribution guard lifted from the phone's copy when the two
+ * implementations were deduped.
+ *
+ * This is the test that proves the mobile hash was the stronger one: the web
+ * copy's plain FNV-1a passed the 60-id `set-N` check above and still put 200
+ * UUID-shaped ids on three hues, because uuids share long prefixes and `% 6`
+ * reads only the low bits that FNV-1a leaves structure in.
+ */
+describe('setTileArt distribution on uuid-shaped ids', () => {
+  it('spreads 200 UUIDs over every hue and every glyph', () => {
+    const hues = new Set<string>();
+    const glyphs = new Set<string>();
+    for (let i = 0; i < 200; i += 1) {
+      const art = setTileArt(`9c0f7a${i}-8b2d-4e1f-9a3c-${String(i).padStart(12, '0')}`);
+      hues.add(art.hue);
+      glyphs.add(art.glyph);
+    }
+    // The defect this replaces was ONE hue and ONE glyph for every set.
+    expect(hues.size).toBe(6);
+    expect(glyphs.size).toBe(6);
+  });
+
+  it('does not move the art when a set is renamed to another unkeyed title', () => {
+    const id = 'aa11bb22-cc33-dd44-ee55-ff6677889900';
+    expect(setTileArt(id, 'Midterm review').hue).toBe(setTileArt(id, 'Week 4').hue);
+  });
+
+  it('survives an empty id', () => {
+    const art = setTileArt('');
+    expect(art.hue).toBeTruthy();
+    expect(art.glyph).toBeTruthy();
+  });
+
+  it('reads a computer-science title as a monitor and not a flask', () => {
+    // `science` is a flask cue and `comput` a monitor one; precedence decides.
+    expect(setTileArt('x', 'Intro to Computer Science').glyph).toBe('monitor');
+    // …and `geometry` is not geography: the globe cue is spelled `geog`, so a
+    // maths set falls through to the hash rather than being drawn as a globe.
+    expect(setTileArt('x', 'Geometry').glyph).not.toBe('globe');
+  });
+});
+
+describe('the options the phone binds', () => {
+  it('renders chips in sentence case when asked', () => {
+    const chips = setCountChips({ materials: 4, lectures: 1 }, { labelCase: 'sentence' });
+    expect(chips.map((c) => c.label)).toEqual(['4 materials', '1 lecture']);
+  });
+
+  it('reads notes as materials when materials is not given, and never draws both', () => {
+    expect(setCountChips({ notes: 3 })[0]).toEqual({
+      kind: 'materials',
+      count: 3,
+      label: '3 Materials',
+    });
+    expect(setCountChips({ materials: 5, notes: 3 }).map((c) => c.label)).toEqual(['5 Materials']);
+  });
+
+  it('can say nothing at all for a set that was never studied', () => {
+    const now = new Date('2026-09-13T12:00:00.000Z');
+    expect(relativeStudiedLabel(null, now, { emptyLabel: '' })).toBe('');
+    expect(relativeStudiedLabel('not a date', now, { emptyLabel: '' })).toBe('');
+  });
+
+  it('drops to a locale-free short date on the phone`s seven-day cutoff', () => {
+    const now = new Date('2026-09-13T12:00:00.000Z');
+    const opts = { absoluteAfterDays: 7, formatDate: formatShortDate };
+    expect(relativeStudiedLabel('2026-09-10T10:00:00.000Z', now, opts)).toBe('3d ago');
+    expect(relativeStudiedLabel('2026-09-02T10:00:00.000Z', now, opts)).toBe('2 Sep');
   });
 });

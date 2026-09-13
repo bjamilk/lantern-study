@@ -4,6 +4,7 @@
 import { PublicError } from '../utils/safeError';
 import type { SupabaseService } from './supabase';
 import { isUuid } from './academicCourses';
+import { normalizeCoverRef } from '@lantern/shared/utils/storageUrl';
 
 export interface StudySet {
   id: string;
@@ -132,7 +133,10 @@ function mapSet(row: Record<string, unknown>): StudySet {
     description: typeof row.description === 'string' ? row.description : null,
     courseId: typeof row.course_id === 'string' ? row.course_id : null,
     folderId: typeof row.folder_id === 'string' ? row.folder_id : null,
-    coverPath: typeof row.cover_path === 'string' ? row.cover_path : null,
+    // Legacy rows hold a bucket-less object path; qualify it on read so the
+    // client can sign it without a backfill.
+    coverPath:
+      typeof row.cover_path === 'string' ? normalizeCoverRef(row.cover_path) : null,
     visibility: row.visibility === 'public' ? 'public' : 'private',
     mode:
       row.mode === 'cram' || row.mode === 'comprehensive' || row.mode === 'standard'

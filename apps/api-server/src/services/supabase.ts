@@ -127,6 +127,7 @@ import { getCourseTopicsService } from "./courseTopics";
 import { stripListingModerationFields } from "./moderation";
 import {
   isPrivateStorageBucket,
+  normalizeCoverRef,
   parseStorageObjectUrl,
   parseStoredStorageRef,
   storageThumbPath,
@@ -482,20 +483,63 @@ export const COVER_IMAGE_MIGRATION = "20260913120000_cover_images.sql";
  * can say "not available yet" instead of "something broke".
  */
 export function isMissingCoverPathColumn(
-  error: { code?: string; message?: string } | null | undefined,
+  error:
+    | { code?: string; message?: string; details?: string; hint?: string }
+    | null
+    | undefined,
 ): boolean {
-  return isMissingColumnError(error) && /cover_path/i.test(error?.message || "");
+  if (!error) return false;
+  // PostgREST and Postgres describe the same absence two different ways, and
+  // the column name can arrive in `details`/`hint` rather than `message`:
+  //   - UPDATE through PostgREST: PGRST204 "Could not find the 'cover_path'
+  //     column of 'study_sets' in the schema cache" (NOT a Postgres code);
+  //   - SELECT that reaches Postgres: 42703 "column decks.cover_path does not
+  //     exist".
+  // Matching only one of them is how a missing migration became a blank 500.
+  const code = String((error as { code?: unknown }).code ?? "");
+  const text =
+    `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
+  if (!text.includes("cover_path")) return false;
+  return (
+    code === "PGRST204" ||
+    code === "42703" ||
+    text.includes("schema cache") ||
+    text.includes("does not exist")
+  );
 }
 
 export class CoverColumnMissingError extends Error {
   readonly migration = COVER_IMAGE_MIGRATION;
   constructor() {
-    super(
-      `Cover images are not available yet — apply migration ${COVER_IMAGE_MIGRATION}.`,
-    );
+    super("Covers need a server update — try again later");
     this.name = "CoverColumnMissingError";
   }
 }
+
+/**
+ * Storage could not take the bytes: the bucket is absent and could not be
+ * created, its policy refuses the write, or the object name collided. A
+ * distinct error so the route says "storage", not the blanket 500 that made
+ * a missing bucket and a missing column look identical from the client.
+ */
+export class CoverStorageUnavailableError extends Error {
+  readonly detail: string;
+  constructor(detail: string) {
+    super("Cover storage is not ready");
+    this.name = "CoverStorageUnavailableError";
+    this.detail = detail;
+  }
+}
+
+/** The table each cover kind writes its column on. */
+export const COVER_TABLE_BY_KIND: Record<
+  "deck" | "note" | "study-set",
+  "decks" | "notes" | "study_sets"
+> = {
+  deck: "decks",
+  note: "notes",
+  "study-set": "study_sets",
+};
 
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
 // Known listing kinds, mirroring the DB CHECK constraint on
@@ -4518,7 +4562,7 @@ export class SupabaseService {
       ...d,
       card_count: cardCountByDeck[d.id] || 0,
       // Raw storage path; the client re-signs it through /storage/signed-urls.
-      coverPath: (d as any).cover_path ?? null,
+      coverPath: normalizeCoverRef((d as any).cover_path ?? null),
     }));
 
     await cacheService.set(cacheKey, decksWithCounts, 1800); // 30 minutes
@@ -5047,6 +5091,42 @@ export class SupabaseService {
   }
 
   /**
+   * Cheap probe: is `cover_path` there at all?
+   *
+   * Called BEFORE any byte is uploaded. Storing first and discovering the
+   * missing column afterwards leaves an orphan object behind on every attempt
+   * — and the cleanup runs against the same storage that may itself be the
+   * thing that is broken. One `select ... limit 1` costs nothing and makes a
+   * missing migration a clean 503.
+   */
+  async assertCoverColumn(
+    kind: "deck" | "note" | "study-set",
+  ): Promise<void> {
+    const table = COVER_TABLE_BY_KIND[kind];
+    const { error } = await this.supabase
+      .from(table)
+      .select("cover_path")
+      .limit(1);
+    if (!error) return;
+    if (isMissingCoverPathColumn(error)) {
+      logger.error("[cover] cover_path column missing", {
+        table,
+        migration: COVER_IMAGE_MIGRATION,
+        code: (error as any)?.code,
+        message: error.message,
+      });
+      throw new CoverColumnMissingError();
+    }
+    // Anything else (RLS on an empty probe, a transient read) is not a reason
+    // to refuse the upload — the owner-scoped write below reports it properly.
+    logger.warn("[cover] column probe failed (continuing)", {
+      table,
+      code: (error as any)?.code,
+      message: error.message,
+    });
+  }
+
+  /**
    * Store a deck/note cover image.
    *
    * Mirrors uploadFlashcardImage: magic-byte validated, normalized to WebP
@@ -5106,15 +5186,31 @@ export class SupabaseService {
       uploadResult.error.message.toLowerCase().includes("bucket") &&
       uploadResult.error.message.toLowerCase().includes("not found")
     ) {
-      await this.supabase.storage.createBucket(bucket, { public: false });
+      const created = await this.supabase.storage.createBucket(bucket, {
+        public: false,
+        allowedMimeTypes: ["image/webp", "image/png", "image/jpeg", "image/gif"],
+        fileSizeLimit: 10 * 1024 * 1024,
+      });
+      // createBucket returns its error rather than throwing. Swallowing it is
+      // how "the bucket does not exist and cannot be made" became a blank 500.
+      if ((created as any)?.error) {
+        logger.error("[cover] bucket auto-create failed", {
+          bucket,
+          message: (created as any).error?.message,
+        });
+        throw new CoverStorageUnavailableError(
+          (created as any).error?.message || "bucket could not be created",
+        );
+      }
       uploadResult = await attemptUpload();
     }
     if (uploadResult.error) {
-      logger.error("Error uploading cover image:", {
-        error: uploadResult.error,
+      logger.error("[cover] upload failed", {
+        bucket,
         filePath,
+        message: uploadResult.error.message,
       });
-      throw new Error(uploadResult.error.message);
+      throw new CoverStorageUnavailableError(uploadResult.error.message);
     }
 
     await this.uploadSiblingThumb(bucket, filePath, thumb);
@@ -5132,7 +5228,10 @@ export class SupabaseService {
         thumbUrl = null;
       }
     }
-    return { path: filePath, url, thumbUrl };
+    // Bucket-qualified, so `parseStoredStorageRef` resolves it on every client
+    // without a cover-specific special case. A bare path parses as null there
+    // and is handed straight to <img>, which renders an empty box.
+    return { path: `${bucket}/${filePath}`, url, thumbUrl };
   }
 
   /** Best-effort removal of a cover object and its sibling thumb. Never throws. */
@@ -5761,7 +5860,10 @@ export class SupabaseService {
 
     if (error) throw error;
     if (!data) return null;
-    return { ...data, coverPath: (data as any).cover_path ?? null };
+    return {
+      ...data,
+      coverPath: normalizeCoverRef((data as any).cover_path ?? null),
+    };
   }
 
   async verifyDeckAccess(
@@ -15908,7 +16010,7 @@ export class SupabaseService {
       pinnedAt: row.pinned_at || undefined,
       // Raw storage path — the client re-signs it. Undefined (not null) before
       // the cover_path migration is applied, so nothing renders a broken image.
-      coverPath: row.cover_path ?? null,
+      coverPath: normalizeCoverRef(row.cover_path ?? null),
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       version:

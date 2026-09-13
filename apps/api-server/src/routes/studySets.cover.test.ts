@@ -26,7 +26,11 @@ jest.mock('../services/studySets', () => ({
   getStudySetsService: () => setsService,
 }));
 
-import { CoverColumnMissingError, COVER_IMAGE_MIGRATION } from '../services/supabase';
+import {
+  CoverColumnMissingError,
+  CoverStorageUnavailableError,
+  COVER_IMAGE_MIGRATION,
+} from '../services/supabase';
 import { PublicError } from '../utils/safeError';
 import router, { initializeStudySetRoutes, MAX_STUDY_SET_COVER_BYTES } from './studySets';
 
@@ -98,6 +102,7 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
     }));
     const deleteCoverObject = jest.fn(async () => {});
     initializeStudySetRoutes({
+      assertCoverColumn: jest.fn(async () => {}),
       uploadCoverImage,
       setStudySetCoverPath: jest.fn(async () => ({
         previousPath: 'user-1/study-sets/set/1-old.webp',
@@ -111,7 +116,7 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
       request({ base64Data: PNG_BASE64, fileName: 'c.png', contentType: 'image/png' }),
     );
 
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(201);
     expect(res.body.data).toEqual({
       coverPath: 'user-1/study-sets/set/2-c.webp',
       coverUrl: 'https://signed/c',
@@ -194,9 +199,39 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
     expect(uploadCoverImage).not.toHaveBeenCalled();
   });
 
-  it('answers 503 naming the migration when cover_path does not exist', async () => {
+  it('answers 503 naming the migration BEFORE any byte is stored', async () => {
+    // This is the live defect: the migration is unapplied, so the column probe
+    // must refuse the request up front instead of uploading, failing on the
+    // write, and answering a blank 500.
+    const uploadCoverImage = jest.fn();
+    initializeStudySetRoutes({
+      assertCoverColumn: jest.fn(async () => {
+        throw new CoverColumnMissingError();
+      }),
+      uploadCoverImage,
+      setStudySetCoverPath: jest.fn(),
+      deleteCoverObject: jest.fn(),
+    } as any);
+
+    const res = await runRoute(
+      'post',
+      '/:setId/cover',
+      request({ base64Data: PNG_BASE64, fileName: 'c.png', contentType: 'image/png' }),
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: 'Covers need a server update — try again later',
+      migration: COVER_IMAGE_MIGRATION,
+    });
+    expect(uploadCoverImage).not.toHaveBeenCalled();
+  });
+
+  it('still cleans up the object when the column write fails late', async () => {
     const deleteCoverObject = jest.fn(async () => {});
     initializeStudySetRoutes({
+      assertCoverColumn: jest.fn(async () => {}),
       uploadCoverImage: jest.fn(async () => ({
         path: 'user-1/study-sets/set/1-c.webp',
         url: 'u',
@@ -215,10 +250,32 @@ describe('POST /users/me/study-sets/:setId/cover', () => {
     );
 
     expect(res.statusCode).toBe(503);
-    expect(res.body).toMatchObject({ success: false, migration: COVER_IMAGE_MIGRATION });
-    expect(res.body.error).toContain(COVER_IMAGE_MIGRATION);
-    // The stored object must not survive a failed column write.
     expect(deleteCoverObject).toHaveBeenCalledWith('user-1/study-sets/set/1-c.webp');
+  });
+
+  it('names storage when the bucket is the thing that is broken', async () => {
+    initializeStudySetRoutes({
+      assertCoverColumn: jest.fn(async () => {}),
+      uploadCoverImage: jest.fn(async () => {
+        throw new CoverStorageUnavailableError('Bucket not found');
+      }),
+      setStudySetCoverPath: jest.fn(),
+      deleteCoverObject: jest.fn(),
+    } as any);
+
+    const res = await runRoute(
+      'post',
+      '/:setId/cover',
+      request({ base64Data: PNG_BASE64, fileName: 'c.png', contentType: 'image/png' }),
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: 'Cover storage is not ready',
+      detail: 'Bucket not found',
+    });
+    expect(res.body.migration).toBeUndefined();
   });
 });
 

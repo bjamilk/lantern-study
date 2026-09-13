@@ -105,6 +105,55 @@ describe('planContextualRow: a replace row with NO selection labels every door (
   });
 });
 
+describe('planContextualRow: a REPLACE row with no selection is icon-only (SF3b item 2)', () => {
+  // The set bar on a room's Overview and Plan: it stands IN the global bar's
+  // slot, but none of its six doors is the screen. On device it fell back to
+  // the labelled-icon branch and drew SIX WORDS — the pre-SF3 bar reappearing
+  // halfway through a section. It must be the same row minus its lit seat.
+  const setRow = (selectedId: string | null | undefined) =>
+    planContextualRow({ items: STUDY, selectedId, mode: 'replace', barWidth: 360 });
+
+  it('drops every drawn word, and the pill with it', () => {
+    for (const selectedId of [null, undefined, 'not-on-this-row']) {
+      const { items } = setRow(selectedId);
+      expect(items.every((p) => p.variant === 'iconOnly')).toBe(true);
+      expect(items.every((p) => !p.showLabel)).toBe(true);
+      expect(items.every((p) => !p.hugged)).toBe(true);
+      expect(items.some((p) => p.selected)).toBe(false);
+      expect(items.every((p) => p.maxWidth === null)).toBe(true);
+    }
+  });
+
+  it('keeps the geometry of the selected row, so the bar does not change shape', () => {
+    const withSelection = planContextualRow({
+      items: STUDY,
+      selectedId: 'tests',
+      mode: 'replace',
+      barWidth: 360,
+    }).items;
+    const without = setRow(null).items;
+    // Same pinned ends and the same flex shares on the doors that are not the
+    // pill: walking onto Overview must move a pill away, not re-lay the row.
+    expect(without.map((p) => p.pinned)).toEqual(withSelection.map((p) => p.pinned));
+    expect(without.map((p) => p.id)).toEqual(withSelection.map((p) => p.id));
+  });
+
+  it('still announces every door by name', () => {
+    // The half of decision 4 that was never negotiable. A row of six nameless
+    // glyphs to a screen reader would be a real regression, not a drawing one.
+    expect(setRow(null).items.map((p) => p.accessibleName)).toEqual(STUDY.map((i) => i.label));
+  });
+
+  it('does NOT change the above rows, which still label every icon', () => {
+    // The fix is gated on `mode`, and this is what keeps it gated: the deck,
+    // note, walk-through and community rows sit on top of a bar that is
+    // already drawing the big word, and they keep their own labels.
+    expect(planContextualRow({ items: ABOVE, selectedId: null }).items.every(
+      (p) => p.variant === 'labeledIcon',
+    )).toBe(true);
+  });
+});
+
 describe('planContextualRow: an above row labels EVERY icon (founder decision 3)', () => {
   it('draws a label under every item and never a selection', () => {
     const { items } = above(ABOVE);

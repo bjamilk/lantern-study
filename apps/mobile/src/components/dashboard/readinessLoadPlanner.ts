@@ -28,7 +28,31 @@ export type ReadinessLoadTrigger =
   /** NetInfo went from down to up. */
   | 'reconnected';
 
-export type ReadinessLoadStatus = 'loading' | 'ready' | 'failed';
+export type ReadinessLoadStatus = 'loading' | 'ready' | 'failed' | 'empty';
+
+/**
+ * How long the card is allowed to sit in `loading` before it settles into the
+ * honest empty state. Build 199's device pass found Home rendering SEVEN
+ * regions instead of eight: with no saved exam date the slot falls to this
+ * card, the card starts in `loading`, and `loading` used to render `null`. Any
+ * plan that never starts a fetch — or a fetch that never answers — left a
+ * silent blank where the exam slot goes, which is exactly what the card's own
+ * header comment promises never to do.
+ */
+export const READINESS_LOADING_TIMEOUT_MS = 8000;
+
+/** What the card draws for a given status. Never `null` — that was the bug. */
+export type ReadinessCardBody = 'skeleton' | 'failed' | 'empty' | 'rows';
+
+export function readinessCardBody(
+  status: ReadinessLoadStatus,
+  rowCount: number
+): ReadinessCardBody {
+  if (status === 'loading') return 'skeleton';
+  if (status === 'failed') return 'failed';
+  if (status === 'ready' && rowCount > 0) return 'rows';
+  return 'empty';
+}
 
 export interface ReadinessLoadInput {
   trigger: ReadinessLoadTrigger;
@@ -50,35 +74,43 @@ export interface ReadinessLoadPlan {
    * arrives, because it belongs to somebody else (or to nobody).
    */
   reset: boolean;
+  /**
+   * No fetch is coming and none is already out, so the card must NOT be left
+   * sitting in `loading` — it settles into the honest empty state instead.
+   * `loading` with nothing in the air is a permanent blank card.
+   */
+  settle: boolean;
 }
 
 export function planReadinessLoad(input: ReadinessLoadInput): ReadinessLoadPlan {
   const { trigger, status, inFlight, userId, loadedForUserId } = input;
 
   // Signed out. Whatever is on screen is another account's, so it goes, and
-  // there is nobody to fetch for.
-  if (!userId) return { fetch: false, reset: true };
+  // there is nobody to fetch for — which is why this settles rather than
+  // leaving the card waiting on an answer that can never arrive.
+  if (!userId) return { fetch: false, reset: true, settle: true };
 
   // A different account than the one on screen. This one always fetches, even
   // mid-flight: the answer still coming back is for the previous student and
   // the caller discards it by request token.
   if (loadedForUserId && loadedForUserId !== userId) {
-    return { fetch: true, reset: true };
+    return { fetch: true, reset: true, settle: false };
   }
 
   // One request at a time. Focus fires alongside the first mount effect, and
   // a student can pull while a fetch is already out; neither should double up.
-  if (inFlight) return { fetch: false, reset: false };
+  // A request IS out, so the card keeps waiting on it rather than settling.
+  if (inFlight) return { fetch: false, reset: false, settle: false };
 
   // Coming back into signal only refetches something that is broken or has
   // never answered. A card already showing courses is not stale merely because
   // the Wi-Fi blinked, and focus and pull-to-refresh cover freshness.
   if (trigger === 'reconnected' && status === 'ready') {
-    return { fetch: false, reset: false };
+    return { fetch: false, reset: false, settle: true };
   }
 
   // The failure is NOT cleared here on purpose. It stays on screen under the
   // refresh spinner until the new answer replaces it, so a refetch does not
   // blank the card for a beat — the fix is that the answer now arrives at all.
-  return { fetch: true, reset: false };
+  return { fetch: true, reset: false, settle: false };
 }

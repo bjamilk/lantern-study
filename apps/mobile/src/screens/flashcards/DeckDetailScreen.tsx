@@ -29,6 +29,7 @@ import {
   CoverBanner,
   CoverFailureLine,
   CoverPicker,
+  SHEET_DISMISS_MS,
   useCoverPicker,
 } from '../../components/ui/CoverPicker';
 import { readCoverPath } from '../../components/ui/coverPickerModel';
@@ -582,7 +583,9 @@ export function DeckDetailScreen({ navigation, route }: Props) {
       icon: 'image' as ActionSheetItem['icon'],
       hint: 'The banner at the top of this deck',
       // One sheet at a time: let the manage sheet dismiss before this opens.
-      onPress: () => setTimeout(() => coverPicker.open(), 50),
+      // The sheet's slide-out has to FINISH before the cover sheet opens;
+      // two overlapping modals is the window race behind the cover ANR.
+      onPress: () => setTimeout(() => coverPicker.open(), SHEET_DISMISS_MS),
     } as ActionSheetItem,
     {
       section: 'Deck',

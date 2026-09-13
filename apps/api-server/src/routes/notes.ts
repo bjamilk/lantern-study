@@ -67,6 +67,7 @@ import {
 import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
+  CoverStorageUnavailableError,
   isMissingCoverPathColumn,
   SupabaseService,
 } from '../services/supabase';
@@ -2729,9 +2730,13 @@ router.patch('/:noteId', requireNoteEdit('noteId'), validateNoteId, validateNote
     }
     // `coverPath: null` before the migration is applied: say so rather than 500.
     if (isMissingCoverPathColumn(error as any)) {
+      logger.error('[cover] note patch refused: column missing', {
+        noteId: req.params.noteId,
+        migration: COVER_IMAGE_MIGRATION,
+      });
       return res.status(503).json({
         success: false,
-        error: `Cover images are not available yet — apply migration ${COVER_IMAGE_MIGRATION}.`,
+        error: 'Covers need a server update — try again later',
         migration: COVER_IMAGE_MIGRATION,
       });
     }
@@ -2771,6 +2776,9 @@ router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handle
 
   let uploaded: { path: string; url: string; thumbUrl: string | null } | undefined;
   try {
+    // Probe the COLUMN before storing bytes: on a database without the
+    // migration this answers 503 without ever leaving an orphan object.
+    await supabaseService.assertCoverColumn?.('note');
     uploaded = await supabaseService.uploadCoverImage({
       userId,
       kind: 'note',
@@ -2782,7 +2790,7 @@ router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handle
     const { previousPath } = await supabaseService.setNoteCoverPath(noteId, userId, uploaded.path);
     await supabaseService.deleteCoverObject(previousPath);
     await cacheService.delete(`note:${noteId}`);
-    return res.json({
+    return res.status(201).json({
       success: true,
       data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
     });
@@ -2790,9 +2798,18 @@ router.post('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, handle
     // Never leave the stored object behind when the column write failed.
     if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
     if (error instanceof CoverColumnMissingError) {
+      logger.error('[cover] set cover refused: column missing', {
+        kind: 'note', noteId, userId, migration: COVER_IMAGE_MIGRATION,
+      });
       return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
     }
-    logger.error('Failed to set note cover', { noteId, userId, error });
+    if (error instanceof CoverStorageUnavailableError) {
+      logger.error('[cover] set cover failed: storage', {
+        kind: 'note', noteId, userId, detail: error.detail,
+      });
+      return res.status(503).json({ success: false, error: error.message, detail: error.detail });
+    }
+    logger.error('[cover] set cover failed', { kind: 'note', noteId, userId, error });
     return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to set cover image') });
   }
 }));
@@ -2809,9 +2826,12 @@ router.delete('/:noteId/cover', requireNoteOwner('noteId'), validateNoteId, hand
     return res.json({ success: true, data: { coverPath: null } });
   } catch (error: any) {
     if (error instanceof CoverColumnMissingError) {
+      logger.error('[cover] clear cover refused: column missing', {
+        kind: 'note', noteId, userId, migration: COVER_IMAGE_MIGRATION,
+      });
       return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
     }
-    logger.error('Failed to clear note cover', { noteId, userId, error });
+    logger.error('[cover] clear cover failed', { kind: 'note', noteId, userId, error });
     return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to clear cover image') });
   }
 }));

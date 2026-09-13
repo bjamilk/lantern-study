@@ -51,6 +51,7 @@ import {
   CoverFailureLine,
   CoverPicker,
   CoverThumb,
+  SHEET_DISMISS_MS,
   useCoverPicker,
 } from '../../components/ui/CoverPicker';
 import { readCoverPath } from '../../components/ui/coverPickerModel';
@@ -654,7 +655,7 @@ export function NotesScreen({ navigation, embedded = false, listQuery = '' }: Pr
             setTimeout(() => {
               setCoverNote(note);
               coverPicker.open();
-            }, 50);
+            }, SHEET_DISMISS_MS);
           },
         },
         {

@@ -37,6 +37,16 @@ export interface SetRoomHeaderProps {
   timer?: React.ReactNode;
   /** Back to the set list. Omitted on a course room, which has no set list. */
   onAllSets?: () => void;
+  /**
+   * Opens the OS share sheet for this set. Omitted where there is nothing to
+   * share (a course room has no set link).
+   *
+   * A GLYPH, not an overflow row: the reference puts share in the set's top
+   * bar, and on a phone the room's overflow is already a two-row card that
+   * costs a tap to open. The screen passes the handler because only it knows
+   * the set id — see `components/study/shareStudySet.ts`.
+   */
+  onShare?: () => void;
   /** Opens the set's overflow menu. Omitted where there is no menu. */
   onMore?: () => void;
   /** Drives the kebab's expanded state for a screen reader. */
@@ -49,6 +59,7 @@ export function SetRoomHeader({
   subtitle,
   timer,
   onAllSets,
+  onShare,
   onMore,
   moreExpanded = false,
 }: SetRoomHeaderProps) {
@@ -86,6 +97,17 @@ export function SetRoomHeader({
           </Pressable>
         ) : null}
         <View className="flex-1" />
+        {onShare ? (
+          <Pressable
+            onPress={onShare}
+            accessibilityRole="button"
+            accessibilityLabel="Share this set"
+            hitSlop={8}
+            className="h-9 w-9 items-center justify-center"
+          >
+            <AppIcon name="share" size={20} importantForAccessibility="no" />
+          </Pressable>
+        ) : null}
         {onMore ? (
           <Pressable
             onPress={onMore}

@@ -37,7 +37,7 @@ import {
 } from './ui';
 import { CoverMenuItems, CoverPickerDialog, CoverThumb } from './ui/CoverPicker';
 import { coverErrorMessage } from './ui/coverPickerModel';
-import { removeCover } from '../stores/coverActions';
+import { canEditCover, removeCover } from '../stores/coverActions';
 import { useToastStore } from '../stores/toastStore';
 
 interface FlashcardsScreenProps {
@@ -192,6 +192,9 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
       return next;
     });
   };
+
+  /** Covers are the owner's to set; a deck shared with me is not mine. */
+  const canSetDeckCover = (deck: Deck) => canEditCover(deck.userId, currentUserId);
 
   const handleRemoveCover = async (deck: Deck) => {
     try {
@@ -422,7 +425,7 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                         <AppIcon name="cloud-download" size={16} />
                       )}
                     </button>
-                    {onMoveDeckToCourse || !deck.isShared ? (
+                    {onMoveDeckToCourse || canSetDeckCover(deck) ? (
                       <Menu
                         open={deckMenuId === deck.id}
                         onOpenChange={(open) => setDeckMenuId(open ? deck.id : null)}
@@ -443,8 +446,11 @@ const FlashcardsScreen: React.FC<FlashcardsScreenProps> = ({
                           ) : null}
                           {/* Only the owner may restyle a deck — the route
                               refuses a collaborator, so offering it here would
-                              be a menu item that always 403s. */}
-                          {!deck.isShared ? (
+                              be a menu item that always 403s. Ownership is
+                              `userId`, NOT `isShared`: sharing my own deck does
+                              not stop it being mine, and gating on `isShared`
+                              hid this item from every shared-out deck I own. */}
+                          {canSetDeckCover(deck) ? (
                             <CoverMenuItems
                               hasCover={Boolean(deck.coverPath)}
                               onChoose={() => setCoverDeck(deck)}

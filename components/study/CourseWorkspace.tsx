@@ -49,13 +49,16 @@ import { pluralize } from '@lantern/shared/utils/plural';
 import type { CompanionAction, CompanionUserContext, Deck, StudyNote } from '../../types';
 import { AppMode } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
-import { Button, Card, FeatureDisc, ScreenHeader } from '../ui';
+import { Button, Card, FeatureDisc, ScreenHeader, Menu, MenuTrigger, MenuContent } from '../ui';
 import { FEATURE_INK_TEXT, FEATURE_TINT_BG } from '../ui/featureClasses';
 import AICompanionPanel from '../AICompanionPanel';
 import WalkthroughScreen from '../walkthrough/WalkthroughScreen';
 import { ManageOutlineModal } from '../academic/ManageOutlineModal';
 import ImportAndStudyModal from '../ImportAndStudyModal';
 import { ClassOfficialMaterials } from '../classes/ClassOfficialMaterials';
+import { CoverMenuItems, CoverPickerDialog } from '../ui/CoverPicker';
+import { coverErrorMessage } from '../ui/coverPickerModel';
+import { canEditCover, removeCover } from '../../stores/coverActions';
 import { NotesStudio } from './NotesStudio';
 import { AdaptiveQuiz } from './AdaptiveQuiz';
 import { LectureStudio } from './LectureStudio';
@@ -77,6 +80,9 @@ import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
 import { StudySetGuidedPrompts } from './StudySetGuidedPrompts';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
+import { MaterialSortMenu, ViewModeToggle, useMaterialSort, useViewMode } from './ViewModeToggle';
+import { sortMaterials } from './viewMode';
+import { formatShortDate } from '@lantern/shared/study/setPresentation';
 import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
 import { useStudyResumeStore } from '../../stores/studyResumeStore';
 import type { StudySetTopic } from '@lantern/shared';
@@ -190,6 +196,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   );
   const [createKind, setCreateKind] = useState<'recap' | 'lesson' | null>(null);
   const [quizLive, setQuizLive] = useState(false);
+  // The in-set deck tiles carry the same ⋮ as the Library deck cards: which
+  // tile's menu is open, and which deck the cover picker is editing (held
+  // here, not in the menu, which unmounts the moment an item is chosen).
+  const [deckMenuId, setDeckMenuId] = useState<string | null>(null);
+  const [coverDeck, setCoverDeck] = useState<Deck | null>(null);
   const recordActivity = useStudyResumeStore((s) => s.recordActivity);
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
@@ -377,6 +388,44 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     () => (studySetId ? materialsForStudySet(decks, studySetId) : materialsForCourse(decks, courseId)),
     [decks, courseId, studySetId]
   );
+  /**
+   * The ⋮ on an in-set deck tile. Same entries and same owner rule as the
+   * Library deck card: the cover route refuses anyone but the owner, and
+   * ownership is the deck's `userId` — a deck I shared out is still mine.
+   */
+  const renderDeckTileMenu = (deckId: string) => {
+    const deck = courseDecks.find((row) => row.id === deckId);
+    if (!deck || !canEditCover(deck.userId, currentUserId)) return null;
+    return (
+      <Menu
+        open={deckMenuId === deck.id}
+        onOpenChange={(open) => setDeckMenuId(open ? deck.id : null)}
+      >
+        <MenuTrigger
+          aria-label={`Deck options for ${deck.name}`}
+          className="inline-flex shrink-0 items-center justify-center rounded-lg bg-lantern-surface/90 p-1.5 text-lantern-text-secondary hover:bg-lantern-background-secondary hover:text-lantern-text"
+        >
+          <AppIcon name="ellipsis-vertical" size={16} />
+        </MenuTrigger>
+        <MenuContent align="end" className="w-48">
+          <CoverMenuItems
+            hasCover={Boolean(deck.coverPath)}
+            onChoose={() => setCoverDeck(deck)}
+            onRemove={() => void handleRemoveDeckCover(deck)}
+          />
+        </MenuContent>
+      </Menu>
+    );
+  };
+
+  const handleRemoveDeckCover = async (deck: Deck) => {
+    try {
+      await removeCover('deck', deck.id);
+    } catch (err) {
+      showToast(coverErrorMessage(err).message, 'error');
+    }
+  };
+
   const lectures = useMemo(() => notes.filter(isLectureNote), [notes]);
   const lessons = useMemo(() => notes.filter(isLessonNote), [notes]);
   const recaps = useMemo(() => notes.filter(isRecapNote), [notes]);
@@ -959,6 +1008,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             coverPath={studySet?.coverPath}
             progress={roomProgress}
             counts={roomCounts}
+            visibility={studySet?.visibility}
             onOpenSettings={() => setSettingsOpen(true)}
             menu={roomMenu}
             controls={
@@ -1133,20 +1183,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               />
             ) : null}
             {lectures.length > 0 ? (
-              <MaterialGroup
-                title={`Lectures · ${lectures.length}`}
-                empty="Record a lecture to file it here"
-                items={lectures.map((note) => ({
-                  id: note.id,
-                  label: note.title || 'Lecture',
-                  feature: 'recording' as const,
-                  icon: 'mic' as const,
-                  selected: selectedNote?.id === note.id,
-                  onClick: () => {
-                    void openNote(note.id);
-                    setActivity('lecture');
-                  },
-                }))}
+              <LecturesGroup
+                lectures={lectures}
+                selectedId={selectedNote?.id ?? null}
+                onOpen={(noteId) => {
+                  void openNote(noteId);
+                  setActivity('lecture');
+                }}
               />
             ) : null}
             {lessons.length > 0 ? (
@@ -1686,6 +1729,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                       const deck = courseDecks.find((row) => row.id === deckId);
                       if (deck) onSelectDeck(deck);
                     }}
+                    renderItemMenu={(item) => renderDeckTileMenu(item.id)}
                     items={courseDecks.map((deck) => ({
                       id: deck.id,
                       title: deck.name,
@@ -1782,6 +1826,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         )}
       </div>
 
+      {coverDeck ? (
+        <CoverPickerDialog
+          open
+          kind="deck"
+          id={coverDeck.id}
+          hasCover={Boolean(coverDeck.coverPath)}
+          onClose={() => setCoverDeck(null)}
+        />
+      ) : null}
       <ManageOutlineModal
         isOpen={outlineOpen}
         onClose={() => setOutlineOpen(false)}
@@ -1852,6 +1905,113 @@ function applyPlanPayload(
     : [];
   setUnits(units);
   setTopics(topics);
+}
+
+/** `2 Sep`, or nothing rather than `Invalid Date`. */
+function lectureAddedLabel(iso?: string | null): string {
+  const time = iso ? Date.parse(iso) : Number.NaN;
+  return Number.isFinite(time) ? formatShortDate(new Date(time)) : '';
+}
+
+/**
+ * The lectures group — the one material group that can be re-ordered and
+ * re-shaped.
+ *
+ * It is split out of `MaterialGroup` rather than folded into it because the six
+ * other groups genuinely are label-only lists and adding a toggle to each would
+ * put six identical controls down one narrow column. Lectures are the group
+ * that grows without bound — a term of recordings is fifty rows all called
+ * `Lecture 12` — so this is the one that needs a date to tell them apart and an
+ * order to find them in.
+ *
+ * The list is the default: it is the shape this group has always had, so the
+ * control costs nothing to anyone who ignores it.
+ */
+function LecturesGroup({
+  lectures,
+  selectedId,
+  onOpen,
+}: {
+  lectures: ReadonlyArray<{ id: string; title?: string | null; createdAt?: string | null }>;
+  selectedId: string | null;
+  onOpen: (noteId: string) => void;
+}) {
+  const [view, setView] = useViewMode('setRoomLectures', 'list');
+  const [sort, setSort] = useMaterialSort('setRoomLectures', 'newest');
+  const ordered = useMemo(() => sortMaterials(lectures, sort), [lectures, sort]);
+
+  return (
+    <div className="mb-4">
+      <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-label text-lantern-text-secondary">{`Lectures · ${lectures.length}`}</h3>
+        <div className="flex items-center gap-2">
+          <MaterialSortMenu value={sort} onChange={setSort} label="lectures" />
+          <ViewModeToggle value={view} onChange={setView} label="Lectures" />
+        </div>
+      </div>
+      {view === 'list' ? (
+        <ul className="space-y-0.5">
+          {ordered.map((item) => {
+            const added = lectureAddedLabel(item.createdAt);
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(item.id)}
+                  className={`w-full flex items-center gap-2 p-2 rounded-lg text-left ${
+                    item.id === selectedId
+                      ? 'bg-lantern-background-secondary'
+                      : 'hover:bg-lantern-background-secondary'
+                  }`}
+                >
+                  <FeatureDisc
+                    feature="recording"
+                    icon={<AppIcon name="mic" size={14} />}
+                    size={24}
+                  />
+                  <span className="text-body truncate flex-1 min-w-0">
+                    {item.title || 'Lecture'}
+                  </span>
+                  {added ? (
+                    <span className="shrink-0 text-caption text-lantern-text-tertiary">{added}</span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <ul className="grid grid-cols-2 gap-2">
+          {ordered.map((item) => {
+            const added = lectureAddedLabel(item.createdAt);
+            return (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => onOpen(item.id)}
+                  className={`flex h-full w-full flex-col items-start gap-1.5 rounded-lg border p-2 text-left ${
+                    item.id === selectedId
+                      ? 'border-lantern-text bg-lantern-background-secondary'
+                      : 'border-lantern-border hover:bg-lantern-background-secondary'
+                  }`}
+                >
+                  <FeatureDisc
+                    feature="recording"
+                    icon={<AppIcon name="mic" size={14} />}
+                    size={24}
+                  />
+                  <span className="text-body line-clamp-2 w-full">{item.title || 'Lecture'}</span>
+                  {added ? (
+                    <span className="text-caption text-lantern-text-tertiary">{added}</span>
+                  ) : null}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function MaterialGroup({

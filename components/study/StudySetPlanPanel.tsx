@@ -1,20 +1,30 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  initialOpenUnitId,
   pickRecommendedTopic,
+  planTimeline,
+  planTopicActivity,
   STUDY_SET_MODES,
   studySetPlanProgress,
-  topicIndexLabel,
+  studySetProgressPercent,
+  todayDateOnlyLocal,
+  topicUnitLabel,
   topicsFromReadingNotes,
-  topicsInUnit,
   unitsForTopics,
+  unitsFromSourceMaterials,
   type StudySetMode,
   type StudySetTopic,
   type StudySetUnit,
+  type UpcomingExam,
 } from '@lantern/shared';
-import type { StudyNote } from '../../types';
+import { AppMode, type StudyNote } from '../../types';
 import { Button, Card } from '../ui';
+import { AppIcon } from '../ui/AppIcon';
 import { ExamDateField } from './ExamDateField';
+import { StudyPlanTimeline } from './StudyPlanTimeline';
+import { isPastExam } from './SetRoomFooter';
 import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
 
@@ -22,18 +32,47 @@ interface StudySetPlanPanelProps {
   studySetId: string;
   notes: StudyNote[];
   mode: StudySetMode;
+  /** Exams read off the set's calendar notes. Past ones included. */
+  exams?: readonly UpcomingExam[];
   onModeChange: (mode: StudySetMode) => void;
   onStart: (kind: 'read' | 'quiz' | 'cards' | 'lesson', noteId?: string) => void;
+  /** Defaults to the set's own calendar route. */
+  onViewSchedule?: () => void;
+  /** Defaults to the set's own add-material route. */
+  onAddSyllabus?: () => void;
 }
 
+/**
+ * The Study Plan tab, drawn as a page rather than a list.
+ *
+ * WHAT WAS HERE. A stack of bordered boxes: mode chips, a recommendation card,
+ * a diagnostic, then units of checkboxes behind a hairline. Everything the
+ * reference puts on this screen existed as data and none of it was legible as a
+ * ROUTE — no rail, no per-unit progress, nothing struck through, no standing
+ * answer to "how far in am I".
+ *
+ * So the body is now the spine (`StudyPlanTimeline`) and a sidebar that carries
+ * the three standing facts: progress, the exam you are working towards, and the
+ * syllabus that would make the plan sharper. Every rule about what is next and
+ * what strikes through is in `@lantern/shared`'s `planTimeline`.
+ *
+ * DELIBERATELY ABSENT. The reference's `Sources:` chips (a topic carries note
+ * ids but no verified provenance, and a chip pointing at the wrong material is
+ * worse than no chip) and its `Sort By` control (the plan has one order, the
+ * one the units were built in — a sort menu with a single option is furniture).
+ */
 export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   studySetId,
   notes,
   mode,
+  exams = [],
   onModeChange,
   onStart,
+  onViewSchedule,
+  onAddSyllabus,
 }) => {
   const showToast = useToastStore((s) => s.showToast);
+  const { navigateTo } = useAppNavigation();
   // The exam date the plan is built from lives on the set. This tab is the
   // only place a set-scoped student can reach it — StudyCalendar, which used
   // to own the field, is never rendered for a set.
@@ -41,12 +80,23 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   const loadStudySets = useStudySetStore((s) => s.loadSets);
   const examDate = studySets.find((row) => row.id === studySetId)?.examDate ?? null;
   const fallback = useMemo(() => topicsFromReadingNotes(studySetId, notes), [notes, studySetId]);
-  const [units, setUnits] = useState<StudySetUnit[]>([fallback.unit]);
-  const [topics, setTopics] = useState<StudySetTopic[]>(fallback.topics);
+  const [storedUnits, setStoredUnits] = useState<StudySetUnit[]>([fallback.unit]);
+  const [storedTopics, setStoredTopics] = useState<StudySetTopic[]>(fallback.topics);
   const [generating, setGenerating] = useState(false);
   const [diagnosticIndex, setDiagnosticIndex] = useState<number | null>(null);
   const [openUnits, setOpenUnits] = useState<Record<string, boolean>>({});
-  const timelineUnits = unitsForTopics(units, topics);
+  const [seededUnitId, setSeededUnitId] = useState<string | null>(null);
+
+  // A local plan files every topic under one unit called "Your materials",
+  // which draws one node on a spine — no structure at all for a student with
+  // six lectures. Group by the material each topic came from, exactly as the
+  // set room's plan band does, so both surfaces name the same units.
+  const grouped = storedUnits.length > 1 ? null : unitsFromSourceMaterials(storedTopics, notes);
+  const topics = grouped && grouped.units.length > 1 ? grouped.topics : storedTopics;
+  const units = unitsForTopics(
+    grouped && grouped.units.length > 1 ? grouped.units : storedUnits,
+    topics
+  );
 
   // A set opened straight into the Plan tab may reach here before the sets
   // store has any row, which would show an empty field over a saved date.
@@ -66,8 +116,8 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
           ? (data as { topics: StudySetTopic[] }).topics
           : [];
         if (nextTopics.length > 0) {
-          setUnits(nextUnits);
-          setTopics(nextTopics);
+          setStoredUnits(nextUnits);
+          setStoredTopics(nextTopics);
         }
       })
       .catch(() => undefined);
@@ -77,7 +127,34 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
   }, [studySetId]);
 
   const progress = studySetPlanProgress(topics);
+  const percent = studySetProgressPercent(progress);
   const recommended = pickRecommendedTopic(topics, mode);
+  const timeline = planTimeline(units, topics, recommended?.id ?? null);
+
+  // Open the unit holding the recommendation once, when the plan first has one.
+  // Seeding by id rather than by a boolean means a student who shut that unit
+  // keeps it shut, and a plan that arrives from the server later still opens.
+  const seedUnitId = initialOpenUnitId(timeline);
+  useEffect(() => {
+    if (!seedUnitId || seedUnitId === seededUnitId) return;
+    setSeededUnitId(seedUnitId);
+    setOpenUnits((current) => ({ ...current, [seedUnitId]: true }));
+  }, [seedUnitId, seededUnitId]);
+
+  const setStatus = (topic: StudySetTopic, next: StudySetTopic['status']) => {
+    setStoredTopics((rows) =>
+      rows.map((row) => (row.id === topic.id ? { ...row, status: next } : row))
+    );
+    void updateStudySetTopicStatus(studySetId, topic.id, next).catch(() => undefined);
+  };
+
+  const startTopic = (topic: StudySetTopic) => {
+    onStart(planTopicActivity(topic), topic.sourceNoteIds[0]);
+  };
+
+  const goToSetActivity = (workspaceActivity: 'calendar' | 'add') => {
+    navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId, workspaceActivity });
+  };
 
   const generateFromNotes = async () => {
     setGenerating(true);
@@ -93,188 +170,272 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
           sourceNoteIds: topic.sourceNoteIds,
         })),
       });
-      setUnits((saved as { units: StudySetUnit[] }).units || [built.unit]);
-      setTopics((saved as { topics: StudySetTopic[] }).topics || built.topics);
+      setStoredUnits((saved as { units: StudySetUnit[] }).units || [built.unit]);
+      setStoredTopics((saved as { topics: StudySetTopic[] }).topics || built.topics);
       showToast('Study plan built from your materials.', 'success');
     } catch {
-      setUnits([fallback.unit]);
-      setTopics(fallback.topics);
+      setStoredUnits([fallback.unit]);
+      setStoredTopics(fallback.topics);
       showToast('Using a local plan from your notes until the server catches up.', 'info');
     } finally {
       setGenerating(false);
     }
   };
 
+  const today = todayDateOnlyLocal();
+  // The set's own date is the one `+ Add` writes, so it belongs in the list
+  // even when no calendar note mentions it. Deduped by date — a set whose exam
+  // is also a calendar note should appear once.
+  const examRows = [
+    ...(examDate ? [{ title: 'Exam', examDate }] : []),
+    ...exams.filter((exam) => exam.examDate !== examDate),
+  ].sort((a, b) => a.examDate.localeCompare(b.examDate));
+  const [addingExam, setAddingExam] = useState(false);
+
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
-      <ExamDateField
-        studySetId={studySetId}
-        value={examDate}
-        onSaved={() => undefined}
-      />
-      <div>
-        <h2 className="text-heading">Study plan</h2>
-        <p className="text-caption text-lantern-text-secondary mt-1">
-          {progress.topics} topics · {progress.covered} covered · {progress.mastered} mastered
-        </p>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {STUDY_SET_MODES.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            onClick={() => onModeChange(item.id)}
-            className={`min-h-[44px] rounded-full border px-3 text-caption ${
-              mode === item.id
-                ? 'border-transparent bg-lantern-primary-fill text-white'
-                : 'border-lantern-border text-lantern-text-secondary'
-            }`}
-            title={item.promise}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
-      {recommended ? (
-        <Card padding="md">
-          <p className="text-label uppercase text-lantern-text-secondary">Recommended from your study plan</p>
-          <p className="text-caption text-lantern-text-secondary mt-1">
-            {topicIndexLabel(topics, recommended)}
-          </p>
-          <h3 className="text-heading mt-1">{recommended.title}</h3>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <Button size="sm" onClick={() => onStart('lesson', recommended.sourceNoteIds[0])}>
-              Tutor
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => onStart('read', recommended.sourceNoteIds[0])}>
-              Read
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => onStart('quiz', recommended.sourceNoteIds[0])}>
-              Quiz
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => onStart('cards', recommended.sourceNoteIds[0])}>
-              Cards
-            </Button>
+    <div className="flex-1 min-h-0 overflow-y-auto pr-1">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+        <div className="min-w-0 space-y-4">
+          <div>
+            <h2 className="text-heading text-lantern-text">Study plan</h2>
+            <p className="text-caption text-lantern-text-secondary mt-1">
+              Customise it with the mode, then work down the spine.
+            </p>
           </div>
-        </Card>
-      ) : (
-        <Card padding="md">
-          <p className="text-body text-lantern-text-secondary">
-            Add materials, then generate topics. A diagnostic can mark what you already know.
-          </p>
-          <Button className="mt-3" onClick={() => void generateFromNotes()} disabled={generating || notes.length === 0}>
-            {generating ? 'Building…' : 'Generate topics from materials'}
-          </Button>
-        </Card>
-      )}
-      {topics.length > 0 && diagnosticIndex === null ? (
-        <Button
-          variant="secondary"
-          onClick={() => setDiagnosticIndex(0)}
-        >
-          See what you already know · 3 minutes
-        </Button>
-      ) : null}
-      {diagnosticIndex !== null && topics[diagnosticIndex] ? (
-        <Card padding="md">
-          <p className="text-label uppercase text-lantern-text-secondary">Diagnostic</p>
-          <p className="text-caption text-lantern-text-secondary mt-1">
-            Topic {diagnosticIndex + 1} of {topics.length}
-          </p>
-          <h3 className="text-heading mt-1">{topics[diagnosticIndex].title}</h3>
-          <p className="text-body text-lantern-text-secondary mt-2">
-            Do you already know this well enough to skip it?
-          </p>
-          <div className="flex flex-wrap gap-2 mt-3">
-            <Button
-              size="sm"
-              onClick={() => {
-                const topic = topics[diagnosticIndex];
-                const next = 'covered' as const;
-                setTopics((rows) =>
-                  rows.map((row) => (row.id === topic.id ? { ...row, status: next } : row))
-                );
-                void updateStudySetTopicStatus(studySetId, topic.id, next).catch(() => undefined);
-                setDiagnosticIndex(diagnosticIndex + 1 >= topics.length ? null : diagnosticIndex + 1);
-              }}
+
+          {/* `Mode:` is kept because the model has real modes that change which
+              topic is recommended. `Sort By` is not — see the file comment. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-caption text-lantern-text-secondary">Mode</span>
+            {STUDY_SET_MODES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => onModeChange(item.id)}
+                aria-pressed={mode === item.id}
+                className={`min-h-[40px] rounded-full border px-3 text-caption ${
+                  mode === item.id
+                    ? 'border-lantern-text font-semibold text-lantern-text'
+                    : 'border-lantern-border text-lantern-text-secondary hover:border-lantern-text-tertiary'
+                }`}
+                title={item.promise}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          {topics.length === 0 ? (
+            <Card padding="md">
+              <p className="text-body text-lantern-text-secondary">
+                Add materials, then generate topics. A quick check can mark what you already know.
+              </p>
+              <Button
+                className="mt-3"
+                onClick={() => void generateFromNotes()}
+                disabled={generating || notes.length === 0}
+              >
+                {generating ? 'Building…' : 'Generate topics from materials'}
+              </Button>
+            </Card>
+          ) : null}
+
+          {/* The reference's highlighted CTA row. Shown only while a real
+              pre-test exists to run — the self-rating pass below — and hidden
+              once it has been worked through, rather than sitting there for
+              ever offering three minutes that do nothing. */}
+          {topics.length > 0 && diagnosticIndex === null ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-lantern-border bg-lantern-feature-ai-tint/40 p-3">
+              <AppIcon name="sparkles" size={18} className="text-lantern-feature-ai-ink" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-body font-semibold text-lantern-text">
+                  See what you already know
+                </span>
+                <span className="block text-caption text-lantern-text-secondary">
+                  Takes about 3 minutes · marks topics covered so the plan skips them
+                </span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setDiagnosticIndex(0)}
+                className="shrink-0 min-h-[40px] rounded-full bg-lantern-text px-4 text-caption font-semibold text-lantern-surface"
+              >
+                Continue
+              </button>
+            </div>
+          ) : null}
+
+          {diagnosticIndex !== null && topics[diagnosticIndex] ? (
+            <Card padding="md">
+              <p className="text-label uppercase text-lantern-text-secondary">Quick check</p>
+              <p className="text-caption text-lantern-text-secondary mt-1">
+                {topicUnitLabel(topics, units, topics[diagnosticIndex])} ·{' '}
+                {diagnosticIndex + 1} of {topics.length}
+              </p>
+              <h3 className="text-heading text-lantern-text mt-1">{topics[diagnosticIndex].title}</h3>
+              <p className="text-body text-lantern-text-secondary mt-2">
+                Do you already know this well enough to skip it?
+              </p>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setStatus(topics[diagnosticIndex], 'covered');
+                    setDiagnosticIndex(
+                      diagnosticIndex + 1 >= topics.length ? null : diagnosticIndex + 1
+                    );
+                  }}
+                >
+                  I know this
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() =>
+                    setDiagnosticIndex(
+                      diagnosticIndex + 1 >= topics.length ? null : diagnosticIndex + 1
+                    )
+                  }
+                >
+                  Not yet
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setDiagnosticIndex(null)}>
+                  Stop the check
+                </Button>
+              </div>
+            </Card>
+          ) : null}
+
+          <StudyPlanTimeline
+            timeline={timeline}
+            openUnitIds={openUnits}
+            onToggleUnit={(unitId) =>
+              setOpenUnits((current) => ({ ...current, [unitId]: !(current[unitId] ?? false) }))
+            }
+            onCycleStatus={(topic) =>
+              setStatus(
+                topic,
+                topic.status === 'unseen' ? 'covered' : topic.status === 'covered' ? 'mastered' : 'unseen'
+              )
+            }
+            onStartTopic={startTopic}
+          />
+        </div>
+
+        <aside className="space-y-3">
+          <section className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
+            <div className="flex items-baseline justify-between gap-2">
+              <h3 className="text-heading text-lantern-text">Your progress</h3>
+              <span className="text-heading tabular-nums text-lantern-feature-ai-ink">
+                {percent}%
+              </span>
+            </div>
+            <div
+              className="mt-2 h-2 w-full overflow-hidden rounded-full bg-lantern-feature-ai-tint"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Study plan progress"
             >
-              I know this
-            </Button>
+              <span
+                className="block h-full rounded-full bg-lantern-feature-ai-ink"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+              {[
+                { label: 'Topics', value: progress.topics },
+                { label: 'Covered', value: progress.covered },
+                { label: 'Mastered', value: progress.mastered },
+              ].map((stat) => (
+                <div key={stat.label}>
+                  <dt className="text-caption text-lantern-text-secondary">{stat.label}</dt>
+                  <dd className="text-heading tabular-nums text-lantern-text">{stat.value}</dd>
+                </div>
+              ))}
+            </dl>
+            <p className="mt-3 text-caption text-lantern-text-secondary">
+              Reading a topic covers it. Proving it in a quiz or a card review masters it.
+            </p>
+          </section>
+
+          <section className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
+            <h3 className="text-heading text-lantern-text">Add your syllabus</h3>
+            <p className="mt-1 text-caption text-lantern-text-secondary">
+              Tailor this plan to your class schedule and priorities.
+            </p>
             <Button
               size="sm"
               variant="secondary"
-              onClick={() => {
-                setDiagnosticIndex(diagnosticIndex + 1 >= topics.length ? null : diagnosticIndex + 1);
-              }}
+              className="mt-3"
+              onClick={() => (onAddSyllabus ? onAddSyllabus() : goToSetActivity('add'))}
             >
-              Not yet
+              Add syllabus
             </Button>
-            <Button size="sm" variant="ghost" onClick={() => setDiagnosticIndex(null)}>
-              Skip diagnostic
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-      <div className="relative space-y-3 before:absolute before:left-[13px] before:top-3 before:bottom-3 before:w-px before:bg-lantern-border">
-        {timelineUnits.map((unit, index) => {
-          const unitTopics = topicsInUnit(topics, unit.id);
-          const expanded = openUnits[unit.id] ?? index === 0;
-          return (
-            <section key={unit.id} className="relative pl-8">
-              <span className="absolute left-1.5 top-3 h-3 w-3 rounded-full bg-lantern-primary-fill" />
+          </section>
+
+          <section className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="text-heading text-lantern-text">Exam dates</h3>
               <button
                 type="button"
-                onClick={() =>
-                  setOpenUnits((current) => ({ ...current, [unit.id]: !expanded }))
-                }
-                className="w-full min-h-[44px] rounded-xl border border-lantern-border bg-lantern-surface px-3 text-left"
+                onClick={() => setAddingExam((value) => !value)}
+                aria-expanded={addingExam}
+                className="inline-flex min-h-[40px] items-center gap-1 text-caption font-medium text-lantern-text hover:underline"
               >
-                <span className="block text-heading">
-                  {String(index + 1).padStart(2, '0')} {unit.title}
-                </span>
-                <span className="block text-caption text-lantern-text-secondary">
-                  {unitTopics.length} topics · {expanded ? 'Hide' : 'Show'}
-                </span>
+                <AppIcon name="add" size={16} />
+                Add
               </button>
-              {expanded ? (
-                <div className="space-y-2 mt-2">
-                  {unitTopics.map((topic) => (
-                    <label
-                      key={topic.id}
-                      className="flex items-center gap-3 rounded-xl border border-lantern-border p-3"
+            </div>
+
+            {examRows.length > 0 ? (
+              <ul className="mt-2 space-y-1">
+                {examRows.map((exam) => {
+                  const past = isPastExam(exam.examDate, today);
+                  return (
+                    <li
+                      key={`${exam.examDate}-${exam.title}`}
+                      className={`flex items-center justify-between gap-2 text-caption ${
+                        past ? 'text-lantern-text-tertiary line-through' : 'text-lantern-text'
+                      }`}
                     >
-                      <input
-                        type="checkbox"
-                        checked={topic.status !== 'unseen'}
-                        onChange={() => {
-                          const next =
-                            topic.status === 'unseen'
-                              ? 'covered'
-                              : topic.status === 'covered'
-                                ? 'mastered'
-                                : 'unseen';
-                          setTopics((rows) =>
-                            rows.map((row) => (row.id === topic.id ? { ...row, status: next } : row))
-                          );
-                          void updateStudySetTopicStatus(studySetId, topic.id, next).catch(() => undefined);
-                        }}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block text-body font-semibold truncate">{topic.title}</span>
-                        <span className="block text-caption text-lantern-text-secondary capitalize">
-                          {topic.status}
-                        </span>
-                      </span>
-                      <Button size="sm" variant="ghost" onClick={() => onStart('read', topic.sourceNoteIds[0])}>
-                        Open
-                      </Button>
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
+                      <span className="truncate">{exam.title}</span>
+                      <span className="shrink-0 tabular-nums">{exam.examDate}</span>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : (
+              <p className="mt-2 text-caption text-lantern-text-secondary">
+                Add an exam so the plan knows what it is working towards.
+              </p>
+            )}
+
+            {addingExam ? (
+              <div className="mt-3">
+                <ExamDateField
+                  studySetId={studySetId}
+                  value={examDate}
+                  onSaved={(outcome) => {
+                    // Left open on `unsupported`: the field prints why the date
+                    // did not stick, and closing would hide that sentence.
+                    if (outcome === 'saved') setAddingExam(false);
+                  }}
+                />
+              </div>
+            ) : null}
+
+            <Button
+              size="sm"
+              variant="secondary"
+              className="mt-3"
+              onClick={() => (onViewSchedule ? onViewSchedule() : goToSetActivity('calendar'))}
+            >
+              View schedule
+            </Button>
+          </section>
+        </aside>
       </div>
     </div>
   );

@@ -245,3 +245,20 @@ export function removeCover(kind: CoverTargetKind, id: string): Promise<void> {
   if (kind === 'study-set') return removeStudySetCover(id);
   return removeNoteCover(id);
 }
+
+/**
+ * May the signed-in user restyle this row's cover?
+ *
+ * The server gate is ownership (`requireDeckAccess(..., 'owner')`), so the only
+ * honest client gate is the owner id. `isShared` is NOT ownership — sharing my
+ * own deck with a classmate leaves it mine — and using it as a proxy hid the
+ * cover entries from every deck the owner had shared out. A row that carries no
+ * owner id (offline/optimistic rows) is treated as mine; the route still decides.
+ */
+export function canEditCover(
+  ownerId: string | null | undefined,
+  currentUserId: string | null | undefined
+): boolean {
+  if (!ownerId || !currentUserId) return true;
+  return ownerId === currentUserId;
+}

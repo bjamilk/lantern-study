@@ -6,6 +6,7 @@ import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FlashcardType, type Flashcard as SharedFlashcard, type OcclusionData } from '@lantern/shared';
 import { mapFlashcardFromApi, mapFlashcardsFromApi } from '@lantern/shared';
+import { coverPathFields } from '../components/ui/coverPickerModel';
 import { applyLocalFlashcardReview } from '@lantern/shared/utils/offlineReview';
 import * as api from '../services/api';
 import { syncService } from '../services/syncService';
@@ -114,6 +115,13 @@ function mapDeckFromApi(data: any): Deck | null {
     created_at: data.created_at,
     updated_at: data.updated_at,
     card_count: data.card_count ?? data.cardCount,
+    // Dropping THIS is why a deck cover never survived a refresh: the list
+    // endpoint returns it (`coverPath`, and `cover_path` from cache), the
+    // cover route returns it camelCase, and this mapper rebuilt the row
+    // without either — so every entry point read the deck as having no cover
+    // and offered "Add cover…" with no way to remove one. Same bug the web
+    // had in `mapDeckFromApi`.
+    ...coverPathFields(data),
   };
 }
 
@@ -672,13 +680,29 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   setDeckCoverPath: (deckId, coverPath) => {
     // Both spellings are written so a row that arrived snake_case and a row
     // that arrived camelCase cannot disagree about whether a cover exists.
+    const current = get().decks.find(d => d.id === deckId);
+    // No-op when nothing changes: a cover applied twice (an optimistic patch
+    // followed by the list refresh that now carries the same path) must not
+    // mint a new `decks` array and re-render every screen subscribed to it.
+    if (
+      current &&
+      (current.coverPath ?? null) === coverPath &&
+      (current.cover_path ?? null) === coverPath
+    ) {
+      return;
+    }
     const patch = { cover_path: coverPath, coverPath };
     set(state => ({
       decks: state.decks.map(d => (d.id === deckId ? { ...d, ...patch } : d)),
       currentDeck:
         state.currentDeck?.id === deckId ? { ...state.currentDeck, ...patch } : state.currentDeck,
     }));
-    void get().saveToStorage();
+    // DEBOUNCED, not immediate: `saveToStorage` JSON.stringifies every deck
+    // AND every flashcard in the account on the JS thread. Doing that in the
+    // same frame as the optimistic re-render is what put a ~15 s main-thread
+    // stall (Choreographer "Skipped 930 frames") immediately after a cover was
+    // applied. One path change does not need the whole library written twice.
+    scheduleSaveToStorage(() => get().saveToStorage());
   },
 
   deleteDeck: async (deckId: string, userId: string) => {

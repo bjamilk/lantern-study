@@ -5,7 +5,7 @@ import { fetchCourseReadiness } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import { useNetworkStatus } from '../../hooks';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
-import { Card, useFeatureAccent } from '../ui';
+import { Button, Card, Skeleton, useFeatureAccent } from '../ui';
 import { smallTextInk } from '../ui/FeatureDisc';
 import { AppIcon } from '../ui/AppIcon';
 import { useTheme } from '../../theme';
@@ -17,7 +17,12 @@ import {
   type ReadinessCourseInput,
   type ReadinessNavTarget,
 } from './readinessCardModel';
-import { planReadinessLoad, type ReadinessLoadTrigger } from './readinessLoadPlanner';
+import {
+  planReadinessLoad,
+  readinessCardBody,
+  READINESS_LOADING_TIMEOUT_MS,
+  type ReadinessLoadTrigger,
+} from './readinessLoadPlanner';
 
 import { toTab } from '../../navigation/nestedTab';
 
@@ -51,6 +56,9 @@ const openMastery = (courseId?: string) =>
     screen: 'MarketTab',
     params: toTab('Mastery', courseId ? { courseId } : undefined),
   });
+
+/** Exam dates are edited in Settings → Academic, on the root stack. */
+const openExamDates = () => navigateFromRoot('AcademicSettings');
 
 const openStudy = (screen: string, params?: Record<string, unknown>) =>
   navigateFromRoot('Main', {
@@ -86,8 +94,7 @@ export function runReadinessAction(target: ReadinessNavTarget): void {
       });
       return;
     case 'examDate':
-      // Exam dates are edited in Settings → Academic, on the root stack.
-      navigateFromRoot('AcademicSettings');
+      openExamDates();
       return;
   }
 }
@@ -95,7 +102,13 @@ export function runReadinessAction(target: ReadinessNavTarget): void {
 type LoadState =
   | { status: 'loading' }
   | { status: 'ready'; courses: ReadinessCourseInput[] }
-  | { status: 'failed' };
+  | { status: 'failed' }
+  /**
+   * Nothing to show and nothing still coming — signed out, no courses, or a
+   * fetch that never answered. An explicit state, because the alternative is
+   * `loading` forever and a blank where Home's exam slot goes.
+   */
+  | { status: 'empty' };
 
 export function CourseReadinessCard({
   /**
@@ -163,7 +176,12 @@ export function CourseReadinessCard({
         loadedForRef.current = null;
         apply({ status: 'loading' });
       }
-      if (!plan.fetch) return;
+      if (!plan.fetch) {
+        // Nothing is in the air. Settling here is what keeps the card off the
+        // permanent-`loading` path the planner's `settle` documents.
+        if (plan.settle && stateRef.current.status === 'loading') apply({ status: 'empty' });
+        return;
+      }
 
       const token = (requestRef.current += 1);
       const forUser = userId;
@@ -218,12 +236,22 @@ export function CourseReadinessCard({
     run('pull-to-refresh');
   }, [reloadToken, run]);
 
-  // Nothing is drawn for the beat before the first answer: a skeleton in the
-  // screen's only tint panel is a flash of colour that means nothing.
-  if (state.status === 'loading') return null;
+  // A request that never answers (no timeout on the transport, a socket that
+  // just hangs) is indistinguishable from a request that was never sent. The
+  // card gives up on the spinner and says the honest thing instead.
+  useEffect(() => {
+    if (state.status !== 'loading') return;
+    const timer = setTimeout(() => {
+      if (stateRef.current.status === 'loading') apply({ status: 'empty' });
+    }, READINESS_LOADING_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [state.status, apply]);
 
   const rows: ReadinessCardRow[] =
     state.status === 'ready' ? buildReadinessRows(state.courses, 3) : [];
+  // The card NEVER renders null. Build 199: `loading` returned null and the
+  // slot was simply missing from Home — seven regions instead of eight.
+  const body = readinessCardBody(state.status, rows.length);
 
   return (
     <Card
@@ -237,15 +265,40 @@ export function CourseReadinessCard({
       illustration="readiness-ring"
       className="mb-4"
     >
-      {state.status === 'failed' ? (
+      {body === 'skeleton' ? (
+        /* Same shell, same height as a one-course card, so the slot holds its
+           place instead of the screen jumping when the answer lands. */
+        <View accessibilityLabel="Loading your exam readiness">
+          <Skeleton className="h-3 w-1/2 mb-2" />
+          <Skeleton className="h-1.5 w-full mb-2" />
+          <Skeleton className="h-3 w-2/3 mb-3" />
+          <Skeleton className="h-8 w-32" />
+        </View>
+      ) : body === 'failed' ? (
         <Text className="text-caption text-lantern-text-secondary">
           We could not load your readiness just now. Your study still counts — pull down to
           refresh.
         </Text>
-      ) : rows.length === 0 ? (
-        <Text className="text-caption text-lantern-text-secondary">
-          Add your courses and exam dates and this becomes a per-course readiness score.
-        </Text>
+      ) : body === 'empty' ? (
+        <View>
+          <Text className="text-caption text-lantern-text-secondary">
+            Mastery unknown yet. Add a course and its exam date and this becomes a per-course
+            readiness score.
+          </Text>
+          {/* The same door the web's slot offers: one action, to the screen
+              that actually sets the date. */}
+          <View className="mt-3 self-start">
+            <Button
+              size="sm"
+              // The same destination `runReadinessAction`'s `examDate` case
+              // uses. Called directly because there is no course here to name.
+              onPress={openExamDates}
+              accessibilityLabel="Add an exam date in Academic settings"
+            >
+              Add exam date
+            </Button>
+          </View>
+        </View>
       ) : (
         rows.map((row) => (
           <View
@@ -355,7 +408,7 @@ export function CourseReadinessCard({
         ))
       )}
 
-      {rows.length > 0 ? (
+      {body === 'rows' ? (
         <Pressable
           onPress={() => openMastery()}
           hitSlop={8}

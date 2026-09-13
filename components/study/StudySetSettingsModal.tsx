@@ -8,11 +8,13 @@ import {
 } from '@lantern/shared';
 import type { StudySet } from '../../types';
 import { Button } from '../ui';
+import { AppIcon } from '../ui/AppIcon';
 import { Input } from '../ui/Input';
 import Modal from '../ui/Modal';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
 import { SetTile } from './SetRoomTile';
+import { shareStudySet } from './shareStudySet';
 import {
   COVER_ACCEPT_ATTR,
   coverErrorMessage,
@@ -147,15 +149,15 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
     }
   };
 
-  const share = async () => {
-    const url = `${window.location.origin}/study/sets/${encodeURIComponent(studySet.id)}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      showToast(visibility === 'public' ? 'Link copied.' : 'Link copied. The set is still private.', 'success');
-    } catch {
-      showToast(url, 'info');
-    }
-  };
+  /**
+   * Was a local copy-to-clipboard that toasted "Link copied." for a public
+   * set. That was false: `visibility = 'public'` is written to the row and
+   * never read — the SELECT policy is owner-only — so no recipient can open
+   * the link either way. It now goes through the one shared helper, which
+   * says so, and which the header pill and the card kebab also use.
+   */
+  const share = () =>
+    shareStudySet({ setId: studySet.id, title: studySet.title, visibility });
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} ariaLabelledBy="study-set-settings-title" maxWidthClass="max-w-md">
@@ -273,8 +275,12 @@ export const StudySetSettingsModal: React.FC<StudySetSettingsModalProps> = ({
             </button>
           ))}
         </div>
+        {/* Named for what it does. "Copy link" described the mechanism; the
+            student is looking for the word Share, which is also what the room
+            header and the hub card now say. */}
         <Button type="button" variant="secondary" onClick={() => void share()}>
-          Copy link
+          <AppIcon name="share" size={16} />
+          Share
         </Button>
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onClose}>

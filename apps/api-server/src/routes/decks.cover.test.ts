@@ -24,7 +24,11 @@ jest.mock('../services/idempotency', () => ({
   withIdempotency: async (_c: unknown, _u: string, _o: string, _k: unknown, fn: () => unknown) => fn(),
 }));
 
-import { CoverColumnMissingError, COVER_IMAGE_MIGRATION } from '../services/supabase';
+import {
+  CoverColumnMissingError,
+  CoverStorageUnavailableError,
+  COVER_IMAGE_MIGRATION,
+} from '../services/supabase';
 import { setIdempotencyClient } from '../middleware/idempotency';
 import router, { initializeDeckRoutes } from './decks';
 
@@ -106,9 +110,39 @@ describe('deck cover ownership', () => {
 });
 
 describe('POST /decks/:deckId/cover', () => {
-  it('answers 503 naming the migration when cover_path does not exist', async () => {
+  it('answers 503 naming the migration BEFORE any byte is stored', async () => {
+    // The probe runs first: a database without the migration never leaves an
+    // orphan object behind, and the client gets a retryable 503 rather than
+    // the blank 500 production actually returned.
+    const uploadCoverImage = jest.fn();
+    initWith({
+      assertCoverColumn: jest.fn(async () => {
+        throw new CoverColumnMissingError();
+      }),
+      uploadCoverImage,
+      setDeckCoverPath: jest.fn(),
+      deleteCoverObject: jest.fn(),
+    });
+
+    const res = await runRoute(
+      'post',
+      '/:deckId/cover',
+      request({ base64Data: PNG_BASE64, fileName: 'c.png', contentType: 'image/png' }),
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: 'Covers need a server update — try again later',
+      migration: COVER_IMAGE_MIGRATION,
+    });
+    expect(uploadCoverImage).not.toHaveBeenCalled();
+  });
+
+  it('still cleans up the object when the column write fails late', async () => {
     const deleteCoverObject = jest.fn(async () => {});
     initWith({
+      assertCoverColumn: jest.fn(async () => {}),
       uploadCoverImage: jest.fn(async () => ({ path: 'user-1/decks/d/1-c.webp', url: 'u', thumbUrl: null })),
       setDeckCoverPath: jest.fn(async () => {
         throw new CoverColumnMissingError();
@@ -123,10 +157,33 @@ describe('POST /decks/:deckId/cover', () => {
     );
 
     expect(res.statusCode).toBe(503);
-    expect(res.body).toMatchObject({ success: false, migration: COVER_IMAGE_MIGRATION });
-    expect(res.body.error).toContain(COVER_IMAGE_MIGRATION);
-    // The stored object must not survive a failed column write.
     expect(deleteCoverObject).toHaveBeenCalledWith('user-1/decks/d/1-c.webp');
+  });
+
+  it('names storage when the bucket is the thing that is broken', async () => {
+    initWith({
+      assertCoverColumn: jest.fn(async () => {}),
+      uploadCoverImage: jest.fn(async () => {
+        throw new CoverStorageUnavailableError('Bucket not found');
+      }),
+      setDeckCoverPath: jest.fn(),
+      deleteCoverObject: jest.fn(),
+    });
+
+    const res = await runRoute(
+      'post',
+      '/:deckId/cover',
+      request({ base64Data: PNG_BASE64, fileName: 'c.png', contentType: 'image/png' }),
+    );
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: 'Cover storage is not ready',
+      detail: 'Bucket not found',
+    });
+    // A storage failure is NOT a missing migration: no migration to apply.
+    expect(res.body.migration).toBeUndefined();
   });
 
   it('refuses a non-image content type before anything is uploaded', async () => {
@@ -170,6 +227,7 @@ describe('POST /decks/:deckId/cover', () => {
         url: 'https://signed/c',
         thumbUrl: 'https://signed/c.thumb',
       })),
+      assertCoverColumn: jest.fn(async () => {}),
       setDeckCoverPath: jest.fn(async () => ({ previousPath: 'user-1/decks/d/1-old.webp' })),
       deleteCoverObject,
     });
@@ -180,7 +238,7 @@ describe('POST /decks/:deckId/cover', () => {
       request({ base64Data: PNG_BASE64, fileName: 'c.png', contentType: 'image/png' }),
     );
 
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(201);
     expect(res.body.data).toEqual({
       coverPath: 'user-1/decks/d/2-c.webp',
       coverUrl: 'https://signed/c',

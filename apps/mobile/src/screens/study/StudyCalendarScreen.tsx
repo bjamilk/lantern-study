@@ -46,6 +46,8 @@ import {
   setMyCourseExamDate,
 } from '../../services/academic';
 import type { CourseTopic, UserCourse } from '@lantern/shared/types';
+import { calendarNoTopicsCopy, calendarTopicsFor } from './studyCalendarTopics';
+import { calendarViewFor } from './studyCalendarView';
 // The tertiary-ink token, not a hex: the `placeholderTextColor` literals in
 // these studios had drifted off the palette (one was still #94a3b8, which the
 // UI-02 pass retired for failing AA on the warm page ground). The prop takes a
@@ -81,6 +83,11 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   const studySets = useStudySetStore((s) => s.sets);
   const updateStudySet = useStudySetStore((s) => s.updateSet);
   const loadStudySets = useStudySetStore((s) => s.loadSets);
+  // The set's plan, as the SERVER holds it — the same one the room's Plan
+  // segment renders. A set-scoped calendar has no course outline to fall back
+  // on (a set need not belong to a course at all), so this is its syllabus.
+  const loadPlan = useStudySetStore((s) => s.loadPlan);
+  const savedSetPlan = useStudySetStore((s) => (studySetId ? s.plans[studySetId] : undefined));
   const studySet = studySetId ? studySets.find((row) => row.id === studySetId) ?? null : null;
 
   // Scope by the set first: a course-less set's materials report a null course
@@ -100,7 +107,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   );
 
   const [enrolment, setEnrolment] = useState<UserCourse | null>(null);
-  const [topics, setTopics] = useState<CourseTopic[]>([]);
+  const [courseTopics, setCourseTopics] = useState<CourseTopic[]>([]);
   const [plan, setPlan] = useState<StudyCalendarPlan | null>(null);
   const [planNoteId, setPlanNoteId] = useState<string | null>(null);
   const [hoursPerWeek, setHoursPerWeek] = useState(DEFAULT_HOURS_PER_WEEK);
@@ -121,7 +128,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   useEffect(() => {
     if (!courseId) {
       setEnrolment(null);
-      setTopics([]);
+      setCourseTopics([]);
       return;
     }
     void getMyActiveCourses().then((rows) => {
@@ -129,8 +136,8 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
       setEnrolment(row);
     });
     void getCourseTopics(courseId)
-      .then((rows) => setTopics(Array.isArray(rows) ? rows : []))
-      .catch(() => setTopics([]));
+      .then((rows) => setCourseTopics(Array.isArray(rows) ? rows : []))
+      .catch(() => setCourseTopics([]));
   }, [courseId]);
 
   useEffect(() => {
@@ -140,8 +147,10 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   // The screen can be entered directly (deep link, contextual bar), so the set
   // list is not guaranteed to be loaded yet.
   useEffect(() => {
-    if (studySetId) void loadStudySets().catch(() => undefined);
-  }, [loadStudySets, studySetId]);
+    if (!studySetId) return;
+    void loadStudySets().catch(() => undefined);
+    void loadPlan(studySetId).catch(() => undefined);
+  }, [loadPlan, loadStudySets, studySetId]);
 
   useEffect(() => {
     const decision = resolveCalendarStudioNote({
@@ -180,8 +189,29 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     [courseId, createNote, label, loadNote, saveNote, studySetId]
   );
 
+  const scope = scopeNoun(studySetId, courseId);
+  const topics = useMemo(
+    () =>
+      calendarTopicsFor({
+        studySetId,
+        courseId,
+        setPlanTopics: savedSetPlan?.topics,
+        courseTopics,
+      }),
+    [studySetId, courseId, savedSetPlan?.topics, courseTopics]
+  );
   const blocker = studyCalendarBlocker({ examDate, today, topics });
   const grid = calendarMonthGrid(view.year, view.month);
+  // The grid is unconditional: a set with a saved plan but no generated
+  // schedule used to land on the setup form alone, with its exam date nowhere
+  // on screen. `exam-only` still draws the month, today and the exam chip.
+  const calendarView = calendarViewFor({
+    hasSchedule: Boolean(plan),
+    examDates: [examDate],
+    today,
+  });
+  const chipFor = (date: string | null) =>
+    date ? calendarView.chips.find((chip) => chip.date === date) : undefined;
   const examChanged = plan ? calendarExamChanged(plan, examDate) : false;
   const daySessions = selectedDate && plan ? sessionsOnDate(plan, selectedDate) : [];
 
@@ -305,10 +335,14 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
       >
         <T.Heading>Plan</T.Heading>
         <T.Body tone="secondary">
-          A week from the exam date and this course’s outline. Sessions open cards or quiz. Exam
+          A week from the exam date and this {scope}’s outline. Sessions open cards or quiz. Exam
           reminders still fire from the date you save here.
         </T.Body>
 
+        {/* Setup is a compact card ABOVE the grid, never a replacement for it. */}
+        {calendarView.showSetupCard ? (
+        <View className="gap-2 rounded-2xl border border-lantern-border p-3">
+        <T.Label tone="secondary">SETUP</T.Label>
         <Button
           variant="secondary"
           onPress={() =>
@@ -359,7 +393,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
           <T.Body tone="secondary">This exam date has passed. Update it, then generate.</T.Body>
         ) : null}
         {blocker === 'no_topics' ? (
-          <T.Body tone="secondary">Add topics so this course has a syllabus to study against.</T.Body>
+          <T.Body tone="secondary">{calendarNoTopicsCopy(scope)}</T.Body>
         ) : null}
         {examChanged ? (
           <T.Caption tone="secondary">Exam date changed since this plan was built. Regenerate to match.</T.Caption>
@@ -374,9 +408,10 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
           </Button>
         ) : null}
         {plan?.acceptedAt ? <T.Caption tone="secondary">Plan accepted.</T.Caption> : null}
+        </View>
+        ) : null}
 
-        {plan ? (
-          <View className="gap-2">
+        <View className="gap-2">
             <View className="flex-row items-center justify-between">
               <Pressable
                 onPress={() => setView((current) => shiftMonth(current.year, current.month, -1))}
@@ -406,9 +441,9 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
             {Array.from({ length: 6 }, (_, week) => (
               <View key={week} className="flex-row">
                 {grid.slice(week * 7, week * 7 + 7).map((cell, index) => {
-                  const daySessions = cell.date ? sessionsOnDate(plan, cell.date) : [];
+                  const daySessions = plan && cell.date ? sessionsOnDate(plan, cell.date) : [];
                   const isToday = cell.date === today;
-                  const isExam = cell.date === examDate;
+                  const examChip = chipFor(cell.date);
                   const selected = cell.date === selectedDate;
                   return (
                     <Pressable
@@ -418,7 +453,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
                       className={`flex-1 min-h-[44px] items-center justify-center rounded-md ${
                         selected
                           ? 'bg-lantern-background-secondary'
-                          : isExam
+                          : examChip
                             ? 'bg-lantern-feature-tests-tint'
                             : isToday
                               ? 'border border-lantern-border'
@@ -428,6 +463,11 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
                       {cell.date ? (
                         <>
                           <T.Caption>{Number(cell.date.slice(8, 10))}</T.Caption>
+                          {examChip ? (
+                            <View className="mt-0.5 rounded-full border border-lantern-feature-tests-ink bg-lantern-feature-tests-tint px-1">
+                              <T.Label>{examChip.label}</T.Label>
+                            </View>
+                          ) : null}
                           {daySessions.length > 0 ? (
                             <View className="mt-0.5">
                               <FeatureDisc
@@ -447,7 +487,12 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
             {examDate ? (
               <T.Caption tone="secondary">
                 Exam {formatDisplayDate(examDate)}
-                {plan.acceptedAt ? ' · accepted' : ' · draft'}
+                {plan ? (plan.acceptedAt ? ' · accepted' : ' · draft') : ' · no schedule yet'}
+              </T.Caption>
+            ) : null}
+            {calendarView.gridMode === 'exam-only' ? (
+              <T.Caption tone="secondary">
+                No sessions on this calendar yet. Generate a plan above to fill the weeks.
               </T.Caption>
             ) : null}
             {selectedDate ? (
@@ -469,8 +514,7 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
                 )}
               </View>
             ) : null}
-          </View>
-        ) : null}
+        </View>
 
         {calendars.length > 1 ? (
           <View className="gap-2">

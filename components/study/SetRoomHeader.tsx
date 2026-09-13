@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { StudySetPlanProgress } from '@lantern/shared';
 import { AppIcon } from '../ui/AppIcon';
+import { Button } from '../ui';
 import { FEATURE_INK_BG, FEATURE_TINT_BG } from '../ui/featureClasses';
 import { SetTile } from './SetRoomTile';
+import { shareStudySet } from './shareStudySet';
 
 export interface SetRoomHeaderMenuItem {
   id: string;
@@ -23,6 +25,12 @@ interface SetRoomHeaderProps {
   progress: StudySetPlanProgress | null;
   /** The one-line fallback when there is no plan: "4 notes · 2 decks". */
   counts?: string;
+  /**
+   * The set's stored visibility, passed only so the `Share` toast can be
+   * specific. It does not gate the pill: the link is copyable either way, and
+   * `public` grants no access today (see `shareLink.ts`).
+   */
+  visibility?: 'private' | 'public' | string | null;
   /** Timer pill, switcher pill, chat — the room's own controls. */
   controls?: React.ReactNode;
   /** The gear. Kept OUT of the kebab: it is the one setting students look for. */
@@ -57,6 +65,7 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
   coverPath,
   progress,
   counts,
+  visibility,
   controls,
   onOpenSettings,
   menu,
@@ -91,6 +100,22 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
         <div className="flex min-w-0 items-center gap-3">
           <SetTile setId={setId} title={title} coverPath={coverPath} size={44} />
           <h1 className="text-title text-lantern-text truncate">{title}</h1>
+          {/* Share sits OUTSIDE the kebab and outside settings, where the
+              reference puts it: copying a set's link was buried three levels
+              deep (gear -> modal -> "Copy link"), which is why nobody found
+              it. The secondary skin is the app's own outline pill — a light
+              face and one hairline — so this does not compete with the room's
+              real primary actions. */}
+          <Button
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="shrink-0"
+            onClick={() => void shareStudySet({ setId, title, visibility })}
+          >
+            <AppIcon name="share" size={16} />
+            Share
+          </Button>
           <button
             type="button"
             onClick={onOpenSettings}

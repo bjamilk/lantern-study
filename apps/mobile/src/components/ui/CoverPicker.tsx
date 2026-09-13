@@ -26,15 +26,20 @@ import type { FeatureKey } from '@lantern/shared/design';
 import { ActionSheet, type ActionSheetItem } from './ActionSheet';
 import { AppIcon, type AppIconName } from './AppIcon';
 import { FeatureDisc, type FeatureDiscSize } from './FeatureDisc';
-import { useResolvedStorageUrl } from '../../hooks/useResolvedStorageUrl';
+import { useResolvedCoverUrl } from '../../hooks/useResolvedStorageUrl';
 import { TYPE_TILE, useTheme } from '../../theme';
 import {
+  SHEET_DISMISS_MS,
   coverMenuItems,
   coverTileBox,
   coverTileSource,
   describeCoverFailure,
   type CoverFailure,
 } from './coverPickerModel';
+
+// Re-exported: the screens that open this sheet from ANOTHER sheet need the
+// same delay, and they already import from this file.
+export { SHEET_DISMISS_MS };
 import {
   clearCover,
   pickCoverImage,
@@ -143,9 +148,18 @@ export function useCoverPicker(
     icon: item.icon as AppIconName,
     destructive: item.destructive,
     hint: item.hint,
-    // Deferred a tick so the sheet's dismiss animation is not fighting the
-    // picker Activity for the window.
-    onPress: () => setTimeout(() => void run(item.action), 50),
+    // Deferred past the sheet's dismiss ANIMATION, not merely a tick.
+    //
+    // `ActionSheet` calls `onClose()` and then the item's handler in the same
+    // frame, and its Modal takes ~300 ms to slide out. Launching the photo
+    // picker Activity (or opening a second sheet) inside that window leaves
+    // Android with two overlapping app windows, one of which is dismissing:
+    // when the picker Activity returns, the surviving window can stop
+    // consuming input entirely — "Input dispatching timed out … MotionEvent"
+    // with the process idle at ~1% CPU, which is exactly the ANR trace this
+    // flow produced on 2026-09-13. Waiting for the modal to be GONE first is
+    // what stops that race.
+    onPress: () => setTimeout(() => void run(item.action), SHEET_DISMISS_MS),
   }));
 
   return {
@@ -268,10 +282,15 @@ export function CoverThumb({
   // `variant: 'thumb'` is the point of the 4:3 tile: the batcher signs the
   // sibling thumbnail, so a list of twenty decks does not pull twenty
   // full-size covers over a metered connection.
-  const resolved = useResolvedStorageUrl(pendingUri ? null : coverPath, {
+  const resolved = useResolvedCoverUrl(pendingUri ? null : coverPath, {
     variant: 'thumb',
   });
-  const source = coverTileSource({ pendingUri, resolvedUri: resolved });
+  // A signed URL that will not LOAD is not a cover. Without this the row drew
+  // an empty 4:3 box with the badge on it and the pastel disc gone — strictly
+  // worse than having no cover at all.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [pendingUri, resolved]);
+  const source = coverTileSource({ pendingUri, resolvedUri: failed ? null : resolved });
 
   if (source.kind === 'glyph') {
     return <FeatureDisc feature={feature} icon={icon} size={size} accessibilityLabel={label} />;
@@ -285,7 +304,12 @@ export function CoverThumb({
       className="overflow-hidden bg-lantern-background-secondary"
       accessibilityLabel={label ? `${label} cover image` : 'Cover image'}
     >
-      <Image source={{ uri }} style={{ width, height }} resizeMode="cover" />
+      <Image
+        source={{ uri }}
+        style={{ width, height }}
+        resizeMode="cover"
+        onError={() => setFailed(true)}
+      />
       {/* The glyph still has to say what the row IS — a photo of a lecture
           slide does not. Demoted to a badge on a scrim so it survives a light
           picture, at the same 14 the row's other inline glyphs use. */}
@@ -318,10 +342,14 @@ export function CoverBanner({
   pendingUri?: string | null;
   accessibilityLabel?: string;
 }) {
-  const resolved = useResolvedStorageUrl(pendingUri ? null : coverPath, {
+  const resolved = useResolvedCoverUrl(pendingUri ? null : coverPath, {
     variant: 'original',
   });
-  const source = coverTileSource({ pendingUri, resolvedUri: resolved });
+  // A band that cannot load is no band: drawing an empty 16:5 rectangle above
+  // the title costs a fifth of the first screen and says nothing.
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [pendingUri, resolved]);
+  const source = coverTileSource({ pendingUri, resolvedUri: failed ? null : resolved });
   if (source.kind === 'glyph') return null;
   return (
     <View
@@ -335,6 +363,7 @@ export function CoverBanner({
         source={{ uri: source.uri }}
         style={{ width: '100%', aspectRatio: COVER_BANNER_ASPECT }}
         resizeMode="cover"
+        onError={() => setFailed(true)}
       />
     </View>
   );

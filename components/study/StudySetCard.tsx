@@ -14,6 +14,7 @@ import { FeatureDisc, Menu, MenuContent, MenuItem, MenuSeparator, MenuSubmenu } 
 import type { FeatureKey } from '../ui/featureClasses';
 import { MenuTrigger } from '../ui/Menu';
 import { SetCoverSquare } from './SetRoomTile';
+import { shareStudySet } from './shareStudySet';
 
 /**
  * Hue -> feature token. The six pastels the direction names are already in the
@@ -140,6 +141,22 @@ export const StudySetCard: React.FC<StudySetCardProps> = ({
           <MenuContent align="end">
             <MenuItem icon={<AppIcon name="pencil" size={16} />} onSelect={onEdit}>
               Edit
+            </MenuItem>
+            {/* Copying a set's link used to require opening its settings
+                modal. The card is where a student points at a set, so it is
+                where "send me that one" starts. The toast says what the link
+                actually does today — see `shareStudySet.ts`. */}
+            <MenuItem
+              icon={<AppIcon name="share" size={16} />}
+              onSelect={() =>
+                void shareStudySet({
+                  setId: studySet.id,
+                  title,
+                  visibility: studySet.visibility,
+                })
+              }
+            >
+              Share
             </MenuItem>
             {onMoveToFolder ? (
               <MenuSubmenu label="Move to folder" icon={<AppIcon name="folder" size={16} />}>

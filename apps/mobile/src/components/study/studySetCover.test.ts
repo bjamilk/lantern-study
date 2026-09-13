@@ -10,7 +10,7 @@
  * The rest is the contract the set's own block adds on top of the deck/note
  * cover work:
  *
- *  - it PROMISES 5 MB ("Recommended: 400x400px, max 5MB") and the server
+ *  - it PROMISES 5 MB ("Recommended: 400×400px, max 5MB") and the server
  *    enforces 5 MB, so the local gate must refuse at 5 MB too. A client still
  *    using the deck's 10 MB would push a 7 MB photo over a campus connection
  *    only to be refused on arrival;
@@ -30,7 +30,7 @@ import {
 describe('study set cover ceiling', () => {
   it('promises 5 MB and refuses at 5 MB', () => {
     expect(MAX_STUDY_SET_COVER_BYTES).toBe(5 * 1024 * 1024);
-    expect(STUDY_SET_COVER_HINT).toBe('Recommended: 400x400px, max 5MB');
+    expect(STUDY_SET_COVER_HINT).toBe('Recommended: 400×400px, max 5MB');
 
     const sevenMb = { fileSize: 7 * 1024 * 1024, mimeType: 'image/jpeg' };
     expect(validateCoverAsset(sevenMb, MAX_STUDY_SET_COVER_BYTES)).toContain('5 MB');

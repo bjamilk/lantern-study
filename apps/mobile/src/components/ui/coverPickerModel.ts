@@ -12,6 +12,19 @@
  * menu item that opens nothing is worse than a menu item that is absent.
  */
 
+/**
+ * How long `ActionSheet`'s Modal takes to slide out, plus a frame.
+ *
+ * Anything that opens a WINDOW after a sheet row is pressed — the photo
+ * picker Activity, a second sheet — has to wait this long. `ActionSheet`
+ * calls `onClose()` and the row's handler in the same frame, so a shorter
+ * delay leaves Android with two overlapping app windows, one of them
+ * dismissing; when the picker Activity returns, the survivor can stop
+ * consuming input altogether. That is the cover ANR: "Input dispatching timed
+ * out … Waited 16139ms for MotionEvent" with the process idle at ~1% CPU.
+ */
+export const SHEET_DISMISS_MS = 320;
+
 /** What a row in the cover sheet does. */
 export type CoverMenuAction = 'library' | 'camera' | 'remove';
 
@@ -38,14 +51,14 @@ export const MAX_COVER_BYTES = 10 * 1024 * 1024;
 /**
  * A study set's ceiling is 5 MB, not 10.
  *
- * StudyFetch's block prints "Recommended: 400x400px, max 5MB" and the server
+ * StudyFetch's block prints "Recommended: 400×400px, max 5MB" and the server
  * refuses anything larger on `/users/me/study-sets/:id/cover`. The number a
  * student reads and the number the server enforces have to be one number.
  */
 export const MAX_STUDY_SET_COVER_BYTES = 5 * 1024 * 1024;
 
 /** The helper line under the button, in the reference's own words. */
-export const STUDY_SET_COVER_HINT = 'Recommended: 400x400px, max 5MB';
+export const STUDY_SET_COVER_HINT = 'Recommended: 400×400px, max 5MB';
 
 /**
  * The rows, in order.
@@ -172,6 +185,22 @@ export function readCoverPath(
 ): string | null {
   if (!row) return null;
   return row.coverPath ?? row.cover_path ?? null;
+}
+
+/**
+ * The cover fields a row mapper must WRITE, in both spellings.
+ *
+ * `mapDeckFromApi` rebuilds a deck field by field and carried neither
+ * spelling, so an uploaded cover vanished on the next `fetchDecks` and every
+ * menu then offered "Add cover…" with no way to remove one. A mapper spreads
+ * this instead of hand-writing two lines it can forget again.
+ */
+export function coverPathFields(row?: {
+  coverPath?: string | null;
+  cover_path?: string | null;
+} | null): { coverPath: string | null; cover_path: string | null } {
+  const path = readCoverPath(row);
+  return { coverPath: path, cover_path: path };
 }
 
 /** The tile a card row draws: either the picture, or the pastel type glyph. */

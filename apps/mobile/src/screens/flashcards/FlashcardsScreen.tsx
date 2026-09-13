@@ -42,6 +42,7 @@ import {
   CoverFailureLine,
   CoverPicker,
   CoverThumb,
+  SHEET_DISMISS_MS,
   useCoverPicker,
 } from '../../components/ui/CoverPicker';
 import { readCoverPath } from '../../components/ui/coverPickerModel';
@@ -508,7 +509,7 @@ export function FlashcardsScreen({ navigation, embedded = false, listQuery = '' 
             setTimeout(() => {
               setCoverDeck(deck);
               coverPicker.open();
-            }, 50);
+            }, SHEET_DISMISS_MS);
           },
         },
         {

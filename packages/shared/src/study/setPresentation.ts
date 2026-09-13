@@ -10,11 +10,28 @@
  * them with Tailwind feature tokens, mobile with its own palette, and both must
  * agree on WHICH hue and glyph a given set gets — a set that is peach on the
  * phone and lilac in the browser is a different object to the student.
+ *
+ * THIS FILE IS THE ONLY COPY. `apps/mobile/src/components/study/setPresentation.ts`
+ * used to carry a second, hand-synced implementation of all three functions;
+ * it is now a thin adapter over this one. The two had already drifted — the
+ * phone's hash had an avalanche step the browser's lacked, so `setTileArt` gave
+ * the same set DIFFERENT hues on the two platforms, which is precisely the bug
+ * the module exists to prevent. The phone's stronger hash is the one kept below.
+ *
+ * WHAT IS SHARED AND WHAT IS A PARAMETER. The derivations — which hue, which
+ * glyph, which unit of time — are identical everywhere and take no options. The
+ * COPY does not: the web card renders `Last studied · {label}` around this
+ * string and so needs a label for the never-studied case, while the phone's
+ * card renders the line only `{studiedLabel ? ...}` and needs an empty string so
+ * it can draw nothing. One default cannot serve both, so the wording is an
+ * option with the web default and mobile binds its own.
  */
 
+/** The six StudyFetch pastels a set tile can take. */
 export type SetTileHue = 'mint' | 'peach' | 'lilac' | 'lime' | 'sky' | 'butter';
 
-export type SetTileGlyph = 'layers' | 'monitor' | 'lightbulb' | 'book' | 'flask' | 'globe';
+/** The six glyphs a set tile can carry. */
+export type SetTileGlyph = 'layers' | 'book' | 'flask' | 'globe' | 'monitor' | 'lightbulb';
 
 export const SET_TILE_HUES: readonly SetTileHue[] = [
   'mint',
@@ -27,11 +44,11 @@ export const SET_TILE_HUES: readonly SetTileHue[] = [
 
 export const SET_TILE_GLYPHS: readonly SetTileGlyph[] = [
   'layers',
-  'monitor',
-  'lightbulb',
   'book',
   'flask',
   'globe',
+  'monitor',
+  'lightbulb',
 ];
 
 /**
@@ -49,7 +66,20 @@ const GLYPH_CUES: ReadonlyArray<{ glyph: SetTileGlyph; words: readonly string[] 
   },
   {
     glyph: 'globe',
-    words: ['history', 'geog', 'world', 'politic', 'global', 'civic', 'language', 'culture'],
+    words: [
+      'history',
+      // `geog`, not `geo`: `geometry` is a maths set and belongs with the
+      // lightbulb, not with a globe.
+      'geog',
+      'world',
+      'politic',
+      'global',
+      'civic',
+      'language',
+      'culture',
+      'spanish',
+      'french',
+    ],
   },
   {
     glyph: 'flask',
@@ -57,29 +87,57 @@ const GLYPH_CUES: ReadonlyArray<{ glyph: SetTileGlyph; words: readonly string[] 
   },
   {
     glyph: 'book',
-    words: ['lit', 'english', 'writing', 'essay', 'law', 'philos', 'read', 'poet'],
+    words: ['lit', 'english', 'writing', 'essay', 'law', 'philos', 'read', 'poet', 'revision'],
   },
   {
     glyph: 'lightbulb',
-    words: ['psych', 'business', 'econ', 'market', 'design', 'idea', 'theor', 'math', 'stat'],
+    words: [
+      'psych',
+      'business',
+      'econ',
+      'market',
+      'design',
+      'idea',
+      'theor',
+      'concept',
+      'logic',
+      'math',
+      'stat',
+    ],
   },
 ];
 
 /**
- * A stable 32-bit hash. `setId` is a uuid, so any avalanche-y mix distributes;
- * what matters is that it is the SAME number on both platforms and across
- * sessions, which rules out `Math.random`, insertion order, and array index.
+ * FNV-1a, 32-bit, with murmur3's finaliser.
+ *
+ * `setId` is a uuid, so what matters is that this is the SAME number on both
+ * platforms and across sessions — which rules out `Math.random`, insertion
+ * order and array index. The finaliser is not decoration: plain FNV-1a leaves
+ * structure in its low bits and `% 6` reads only those, so without it 200
+ * UUID-shaped ids landed on three of the six hues instead of all six. UUIDs
+ * share long prefixes, which is exactly the input that exposes it.
  */
 function hash(value: string): number {
-  let h = 2166136261;
+  let h = 0x811c9dc5;
   for (let i = 0; i < value.length; i += 1) {
     h ^= value.charCodeAt(i);
-    h = Math.imul(h, 16777619);
+    // `Math.imul` because `h * 16777619` loses precision past 2^53.
+    h = Math.imul(h, 0x01000193);
   }
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
   return h >>> 0;
 }
 
-/** The pastel + glyph a set's tile is drawn with. Deterministic per set. */
+/**
+ * The pastel + glyph a set's tile is drawn with. Deterministic per set.
+ *
+ * `setId` alone decides the hue, so the art never moves when a set is renamed —
+ * a tile that changed colour on rename would stop being an identity.
+ */
 export function setTileArt(setId: string, title?: string): { hue: SetTileHue; glyph: SetTileGlyph } {
   const seed = hash(setId || title || 'set');
   // `?? ` is unreachable — both tables are non-empty consts and the index is a
@@ -93,11 +151,23 @@ export function setTileArt(setId: string, title?: string): { hue: SetTileHue; gl
       return { hue, glyph: cue.glyph };
     }
   }
-  // No subject cue: spread on a different bit of the same hash so hue and
+
+  // No subject cue: spread on a different slice of the same hash so hue and
   // glyph do not move in lockstep (which would give six tile designs, not 36).
-  const glyph =
-    SET_TILE_GLYPHS[Math.floor(seed / SET_TILE_HUES.length) % SET_TILE_GLYPHS.length] ?? 'layers';
+  const glyph = SET_TILE_GLYPHS[(seed >>> 8) % SET_TILE_GLYPHS.length] ?? 'layers';
   return { hue, glyph };
+}
+
+/* ------------------------------------------------------------- count chips */
+
+/** What a set holds. Every field optional: a caller counts what it can see. */
+export interface SetCounts {
+  materials?: number;
+  notes?: number;
+  lectures?: number;
+  decks?: number;
+  tests?: number;
+  quizzes?: number;
 }
 
 export interface SetCountChip {
@@ -107,9 +177,16 @@ export interface SetCountChip {
   label: string;
 }
 
+export interface SetCountChipOptions {
+  /**
+   * `title` → `4 Materials` (the web card's pills), `sentence` → `4 materials`
+   * (the phone's). Only the casing differs; the words and the order do not.
+   */
+  labelCase?: 'title' | 'sentence';
+}
+
 const CHIP_ORDER: ReadonlyArray<{ kind: string; singular: string; plural: string }> = [
   { kind: 'materials', singular: 'Material', plural: 'Materials' },
-  { kind: 'notes', singular: 'Note', plural: 'Notes' },
   { kind: 'lectures', singular: 'Lecture', plural: 'Lectures' },
   { kind: 'decks', singular: 'Deck', plural: 'Decks' },
   { kind: 'tests', singular: 'Test', plural: 'Tests' },
@@ -123,53 +200,104 @@ const CHIP_ORDER: ReadonlyArray<{ kind: string; singular: string; plural: string
  * is in here"; six chips of which four read `0` answers it worse than two that
  * read `4` and `2`. Callers cap the visible count and render the remainder as
  * a `+N` overflow chip.
+ *
+ * `notes` stands in for `materials` when a caller counts notes rather than
+ * materials, so the two never both appear — a set cannot hold "4 materials"
+ * AND "4 notes" when they are the same four objects counted twice.
  */
-export function setCountChips(counts: {
-  materials?: number;
-  notes?: number;
-  lectures?: number;
-  decks?: number;
-  tests?: number;
-  quizzes?: number;
-}): SetCountChip[] {
+export function setCountChips(counts: SetCounts, options: SetCountChipOptions = {}): SetCountChip[] {
+  const sentence = options.labelCase === 'sentence';
+  const resolved: SetCounts = { ...counts, materials: counts.materials ?? counts.notes ?? 0 };
   const chips: SetCountChip[] = [];
   for (const entry of CHIP_ORDER) {
-    const raw = counts[entry.kind as keyof typeof counts];
+    const raw = resolved[entry.kind as keyof SetCounts];
     const count = typeof raw === 'number' && Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
     if (count <= 0) continue;
+    const word = count === 1 ? entry.singular : entry.plural;
     chips.push({
       kind: entry.kind,
       count,
-      label: `${count} ${count === 1 ? entry.singular : entry.plural}`,
+      label: `${count} ${sentence ? word.toLowerCase() : word}`,
     });
   }
   return chips;
 }
 
+/* ------------------------------------------------------ last-studied label */
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
-const WEEK = 7 * DAY;
+
+const MONTHS = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+] as const;
+
+/** `2 Sep`. Locale-free, so it reads the same on a server, a phone and a test. */
+export function formatShortDate(date: Date): string {
+  return `${date.getDate()} ${MONTHS[date.getMonth()] ?? ''}`.trim();
+}
+
+export interface RelativeStudiedOptions {
+  /**
+   * What to return when there is no usable stamp.
+   *
+   * The web card wraps this in `Last studied · {label}` and so needs words;
+   * the phone's card renders the whole line only when the label is non-empty
+   * and so needs `''`. See the file header.
+   */
+  emptyLabel?: string;
+  /** Past this many days, an absolute date replaces the relative age. */
+  absoluteAfterDays?: number;
+  /** How that absolute date is written. */
+  formatDate?: (date: Date) => string;
+}
 
 /**
  * `23m ago` — the relative form, because "how long since I touched this" is the
  * question a set list answers, and `9/13/2026` makes the reader do the
- * subtraction. Beyond four weeks the relative form stops being informative and
- * the absolute date is shown instead.
+ * subtraction. Past `absoluteAfterDays` the relative form stops being
+ * informative and the date is shown instead.
+ *
+ * A stamp in the FUTURE (a phone clock behind the server's) reads `Just now`
+ * rather than a negative age.
  */
-export function relativeStudiedLabel(iso: string | null | undefined, now: Date = new Date()): string {
-  if (!iso) return 'Not studied yet';
-  const then = new Date(iso);
-  const time = then.getTime();
-  if (!Number.isFinite(time)) return 'Not studied yet';
+export function relativeStudiedLabel(
+  iso: string | null | undefined,
+  now: Date = new Date(),
+  options: RelativeStudiedOptions = {}
+): string {
+  const {
+    emptyLabel = 'Not studied yet',
+    absoluteAfterDays = 28,
+    formatDate = (date: Date) => date.toLocaleDateString(),
+  } = options;
+
+  const time = typeof iso === 'string' ? Date.parse(iso) : Number.NaN;
+  if (!Number.isFinite(time)) return emptyLabel;
 
   const delta = now.getTime() - time;
-  // A clock skew between device and server must not print "in 3 minutes".
   if (delta < MINUTE) return 'Just now';
   if (delta < HOUR) return `${Math.floor(delta / MINUTE)}m ago`;
   if (delta < DAY) return `${Math.floor(delta / HOUR)}h ago`;
   if (delta < 2 * DAY) return 'Yesterday';
-  if (delta < WEEK) return `${Math.floor(delta / DAY)}d ago`;
-  if (delta < 4 * WEEK) return `${Math.floor(delta / WEEK)}w ago`;
-  return then.toLocaleDateString();
+  if (delta < absoluteAfterDays * DAY) {
+    const days = Math.floor(delta / DAY);
+    // Weeks only once there are weeks to speak of, and only while the absolute
+    // date is still further off than they are.
+    if (days < 7) return `${days}d ago`;
+    return `${Math.floor(days / 7)}w ago`;
+  }
+  return formatDate(new Date(time));
 }

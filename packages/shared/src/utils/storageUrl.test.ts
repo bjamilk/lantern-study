@@ -1,4 +1,5 @@
 import {
+  normalizeCoverRef,
   normalizeStorageUrl,
   parseStorageObjectUrl,
   parseStoredStorageRef,
@@ -100,5 +101,81 @@ describe('toPersistedMarketplaceImageUrl', () => {
         supabaseUrl,
       }),
     ).toBeNull();
+  });
+});
+
+/**
+ * Covers were persisted WITHOUT their bucket segment, so every one of them
+ * parsed as null and reached an <img>/<Image> as a raw path — the blank deck /
+ * note / set tile seen on device. New uploads are bucket-qualified; rows
+ * already on production are qualified on read by `normalizeCoverRef`.
+ */
+describe('normalizeCoverRef', () => {
+  const owner = '1e547f81-77c8-437a-8154-c84e8cf2045e';
+
+  it('qualifies a legacy bucket-less cover path', () => {
+    for (const scope of ['decks', 'notes', 'study-sets']) {
+      const legacy = `${owner}/${scope}/abc-123/1700000000-cover.webp`;
+      expect(normalizeCoverRef(legacy)).toBe(`cover-images/${legacy}`);
+    }
+  });
+
+  it('leaves an already-qualified ref alone', () => {
+    const qualified = `cover-images/${owner}/decks/d1/1-cover.webp`;
+    expect(normalizeCoverRef(qualified)).toBe(qualified);
+  });
+
+  it('never double-qualifies, so read-normalising twice is safe', () => {
+    const legacy = `${owner}/notes/n1/1-cover.webp`;
+    expect(normalizeCoverRef(normalizeCoverRef(legacy))).toBe(
+      `cover-images/${legacy}`,
+    );
+  });
+
+  it('leaves non-cover values untouched', () => {
+    expect(normalizeCoverRef(null)).toBeNull();
+    expect(normalizeCoverRef(undefined)).toBeUndefined();
+    expect(normalizeCoverRef('')).toBe('');
+    // Another bucket's ref must not be rewritten into cover-images.
+    expect(normalizeCoverRef(`flashcard-images/${owner}/decks/x/a.webp`)).toBe(
+      `flashcard-images/${owner}/decks/x/a.webp`,
+    );
+    // Marketplace shape, not a cover.
+    expect(normalizeCoverRef(`${owner}/temp/cover.webp`)).toBe(
+      `${owner}/temp/cover.webp`,
+    );
+    // Too few segments to be {owner}/{scope}/{id}/{file}.
+    expect(normalizeCoverRef(`${owner}/decks/d1`)).toBe(`${owner}/decks/d1`);
+    // Traversal is refused rather than qualified.
+    expect(normalizeCoverRef(`${owner}/decks/../../etc/passwd`)).toBe(
+      `${owner}/decks/../../etc/passwd`,
+    );
+    const url = 'https://example.supabase.co/storage/v1/object/cover-images/a/b.webp';
+    expect(normalizeCoverRef(url)).toBe(url);
+    expect(normalizeCoverRef('data:image/png;base64,AAA')).toBe(
+      'data:image/png;base64,AAA',
+    );
+  });
+});
+
+describe('parseStoredStorageRef — covers', () => {
+  const owner = '1e547f81-77c8-437a-8154-c84e8cf2045e';
+
+  it('accepts the bucket-qualified form new uploads persist', () => {
+    expect(
+      parseStoredStorageRef(`cover-images/${owner}/decks/d1/1-cover.webp`),
+    ).toEqual({
+      bucket: 'cover-images',
+      path: `${owner}/decks/d1/1-cover.webp`,
+    });
+  });
+
+  it('still resolves a legacy bucket-less cover path', () => {
+    expect(
+      parseStoredStorageRef(`${owner}/study-sets/s1/1-cover.webp`),
+    ).toEqual({
+      bucket: 'cover-images',
+      path: `${owner}/study-sets/s1/1-cover.webp`,
+    });
   });
 });

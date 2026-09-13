@@ -22,6 +22,13 @@ interface StudySetArtifactLibraryProps {
   createLabel?: string;
   folders?: Array<{ id: string; title: string }>;
   onOpenFolder?: (id: string) => void;
+  /**
+   * Optional per-tile overflow menu (the ⋮ a deck tile needs for its cover).
+   * It is rendered BESIDE the tile's button, not inside it: a <button> may not
+   * contain another button, and nesting one makes the menu trigger unreachable
+   * for a keyboard and unclickable without also firing "open".
+   */
+  renderItemMenu?: (item: ArtifactCard) => React.ReactNode;
 }
 
 export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = ({
@@ -33,6 +40,7 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
   createLabel = '+ New',
   folders = [],
   onOpenFolder,
+  renderItemMenu,
 }) => {
   return (
     <div className="flex-1 min-h-0 overflow-y-auto space-y-3">
@@ -66,12 +74,13 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
         ))}
         {items.map((item) => {
           const preview = item.preview ? notePreviewText(item.preview, 140) : '';
+          const menu = renderItemMenu?.(item);
           return (
+            <div key={item.id} className="relative">
             <button
-              key={item.id}
               type="button"
               onClick={() => onOpen(item.id)}
-              className="min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary"
+              className="w-full min-h-[11rem] rounded-2xl border border-lantern-border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary"
             >
               {/* The panel is the item's OWN hue. It used to be a three-arm
                   ternary over `ai`/`tests`/everything-else, whose first arm
@@ -106,6 +115,8 @@ export const StudySetArtifactLibrary: React.FC<StudySetArtifactLibraryProps> = (
                 </span>
               </div>
             </button>
+            {menu ? <div className="absolute right-2 top-2">{menu}</div> : null}
+            </div>
           );
         })}
       </div>

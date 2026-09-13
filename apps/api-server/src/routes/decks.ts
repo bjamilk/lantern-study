@@ -23,6 +23,7 @@ import { clientErrorMessage, PublicError } from '../utils/safeError';
 import {
   COVER_IMAGE_MIGRATION,
   CoverColumnMissingError,
+  CoverStorageUnavailableError,
 } from '../services/supabase';
 
 const router = Router();
@@ -352,8 +353,9 @@ router.post(
 
     let uploaded: { path: string; url: string; thumbUrl: string | null } | undefined;
     try {
-      // Store first, then persist. A failed column write leaves an orphan
-      // object (cleaned below); the reverse would leave a dangling path.
+      // Probe the COLUMN before storing bytes: on a database without the
+      // migration this answers 503 without ever leaving an orphan object.
+      await supabaseService.assertCoverColumn?.('deck');
       uploaded = await supabaseService.uploadCoverImage({
         userId,
         kind: 'deck',
@@ -364,16 +366,25 @@ router.post(
       });
       const { previousPath } = await supabaseService.setDeckCoverPath(deckId, userId, uploaded.path);
       await supabaseService.deleteCoverObject(previousPath);
-      return res.json({
+      return res.status(201).json({
         success: true,
         data: { coverPath: uploaded.path, coverUrl: uploaded.url, coverThumbUrl: uploaded.thumbUrl },
       });
     } catch (error: any) {
       if (uploaded) await supabaseService.deleteCoverObject(uploaded.path);
       if (error instanceof CoverColumnMissingError) {
+        logger.error('[cover] set cover refused: column missing', {
+          kind: 'deck', deckId, userId, migration: COVER_IMAGE_MIGRATION,
+        });
         return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
       }
-      logger.error('Failed to set deck cover', { deckId, userId, error });
+      if (error instanceof CoverStorageUnavailableError) {
+        logger.error('[cover] set cover failed: storage', {
+          kind: 'deck', deckId, userId, detail: error.detail,
+        });
+        return res.status(503).json({ success: false, error: error.message, detail: error.detail });
+      }
+      logger.error('[cover] set cover failed', { kind: 'deck', deckId, userId, error });
       return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to set cover image') });
     }
   })
@@ -396,9 +407,12 @@ router.delete(
       return res.json({ success: true, data: { coverPath: null } });
     } catch (error: any) {
       if (error instanceof CoverColumnMissingError) {
+        logger.error('[cover] clear cover refused: column missing', {
+          kind: 'deck', deckId, userId, migration: COVER_IMAGE_MIGRATION,
+        });
         return res.status(503).json({ success: false, error: error.message, migration: COVER_IMAGE_MIGRATION });
       }
-      logger.error('Failed to clear deck cover', { deckId, userId, error });
+      logger.error('[cover] clear cover failed', { kind: 'deck', deckId, userId, error });
       return res.status(500).json({ success: false, error: clientErrorMessage(error, 'Failed to clear cover image') });
     }
   })

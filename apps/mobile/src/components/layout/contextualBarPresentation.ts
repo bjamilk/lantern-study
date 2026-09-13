@@ -50,7 +50,18 @@
  * shell over these numbers, the same bargain contextualBarLayout.ts already
  * makes — mobile jest runs on the node environment and cannot render the native
  * component, so the rules have to live here to be exercised.
+ *
+ * SINCE 2026-09-13 it has one import: `tabPillLayout.ts`, which plans the
+ * hugging-pill row the global bar now draws. The set row is the SAME object at
+ * a different item list — the founder asked for one treatment, not two that
+ * drift — so the pinning, the flex shares and the pill's width ceiling are
+ * borrowed rather than retyped. That module is itself pure.
  */
+import {
+  planTabPillRow,
+  tabPillActiveIndex,
+  type TabPillItemPlan,
+} from './tabPillLayout';
 
 /** The little each planner needs off an item: its id and its visible word. */
 export interface ContextualPillInput {
@@ -92,6 +103,27 @@ export interface ContextualPillPlan {
    */
   accessibleName: string;
   /**
+   * Anchored to its end of the row: the first and last doors, which stay put
+   * while the pill re-flows the middle. Only a `replace` row with a selection
+   * pins anything — every other row still divides its width equally.
+   */
+  pinned: boolean;
+  /**
+   * The pill HUGS its icon and word, side by side, rather than stacking them.
+   * True only for the selected door of a `replace` row — the set bar, which is
+   * the global bar's twin and draws the same object (founder direction
+   * 2026-09-13). The four `above` rows keep the stacked pill: they sit ABOVE a
+   * global bar that is already drawing a hugging pill, and two of them in a
+   * column read as one control wrapped.
+   */
+  hugged: boolean;
+  /**
+   * The ceiling on a hugged pill's width, so it cannot squeeze the doors
+   * beside it below a touch target. `null` on everything else, and on the
+   * first layout pass before the row's width is known.
+   */
+  maxWidth: number | null;
+  /**
    * The segment's flex share of the row ({@link CONTEXTUAL_SEGMENT_FLEX}).
    *
    * Only the SELECTED PILL takes the bigger share, and it is not a nicety: five
@@ -129,9 +161,21 @@ export interface ContextualRowPlan {
 export function planContextualRow({
   items,
   selectedId,
+  mode = 'above',
+  barWidth,
 }: {
   items: readonly ContextualPillInput[];
   selectedId: string | null | undefined;
+  /**
+   * Which row this is. A `replace` row STANDS IN the global bar's slot — today
+   * only the set row — so it is the bar for as long as it is on screen and it
+   * draws the bar's object: icon-only doors and one hugging pill. An `above`
+   * row sits on top of a global bar that is already drawing that pill, and
+   * keeps its own stacked treatment.
+   */
+  mode?: 'above' | 'replace';
+  /** The row's measured width, for the hugged pill's ceiling. */
+  barWidth?: number | null;
 }): ContextualRowPlan {
   // SELECTION ALONE decides the surface. There used to be a `mode` gate here
   // (`mode === 'replace' && …`), and with the replace mode removed it would
@@ -142,10 +186,46 @@ export function planContextualRow({
   // the pass-through rows (deck, note, walk-through, community) are unchanged.
   const selected = selectedId != null && items.some(item => item.id === selectedId);
 
+  if (!selected && mode === 'replace') {
+    // A `replace` row STANDING IN the bar's slot with NO door selected — a set
+    // room's Overview and Plan segments, whose screens are not any of the six
+    // doors.
+    //
+    // Until the SF3b device pass this fell through to the labelled-icon branch
+    // below, and the effect on device was that walking from Materials to
+    // Overview swapped the bar's whole anatomy: one hugging pill and five bare
+    // glyphs became SIX WORDS under six icons, the pre-SF3 look reappearing
+    // mid-section. The bar that is the bar must not change shape depending on
+    // which room you stand in, and the app this one is cut to match never shows
+    // six words down here at all.
+    //
+    // So: icon-only, every door, no pill and no drawn word — the same row minus
+    // its lit seat. The geometry still comes from the global bar's planner at
+    // `activeIndex: -1` (which is exactly what that planner's out-of-range
+    // contract already means), so the ends stay pinned and the interior doors
+    // keep their equal shares; only the pill is absent. Every word still
+    // reaches a screen reader through `accessibleName`, which is the one half
+    // of decision 4 that was never negotiable.
+    const row = planTabPillRow({ items, activeIndex: -1, barWidth });
+    return {
+      items: row.items.map((seat: TabPillItemPlan, index: number) => ({
+        id: seat.id,
+        label: items[index].label,
+        selected: false,
+        variant: 'iconOnly',
+        showLabel: false,
+        accessibleName: seat.accessibleName,
+        pinned: seat.pinned,
+        hugged: false,
+        maxWidth: null,
+        flex: seat.flex,
+      })),
+    };
+  }
+
   if (!selected) {
-    // An `above` row, or a `replace` row with no door selected: label every
-    // item, one code path. `above` never has a selection to begin with, so a
-    // stray selectedId on it is ignored here too.
+    // An `above` row with no door selected: label every item. `above` never has
+    // a selection to begin with, so a stray selectedId on it is ignored here.
     return {
       items: items.map(item => ({
         id: item.id,
@@ -154,6 +234,9 @@ export function planContextualRow({
         variant: 'labeledIcon',
         showLabel: true,
         accessibleName: item.label,
+        pinned: false,
+        hugged: false,
+        maxWidth: null,
         flex: CONTEXTUAL_SEGMENT_FLEX.unselected,
       })),
     };
@@ -176,6 +259,34 @@ export function planContextualRow({
   // The pill survives as the SHAPE that says "you are here"; only its
   // direction changed. Nothing about the accent logic moved: the pill is still
   // the selected door's own tint under its own ink.
+  if (mode === 'replace') {
+    // THE SET ROW, and the founder's 2026-09-13 direction: it is the bar while
+    // it is on screen, so it draws the bar's object exactly — every door its
+    // glyph alone, and the door you are standing in a pill hugging its glyph
+    // and its name at the 15 sp `body` step. The pinning, the shares and the
+    // width ceiling come from the global bar's own planner so the two cannot
+    // drift; the only thing this branch decides is which variant each door
+    // gets and that the word still reaches a screen reader.
+    const row = planTabPillRow({ items, activeIndex: tabPillActiveIndex(items, selectedId), barWidth });
+    return {
+      items: row.items.map((seat: TabPillItemPlan, index: number) => ({
+        id: seat.id,
+        label: items[index].label,
+        selected: seat.selected,
+        variant: seat.expanded ? 'selectedPill' : 'iconOnly',
+        // The word is DRAWN only on the pill. `accessibleName` below is what
+        // keeps every other door announced — the same trade the global bar
+        // makes, and the reason the `iconOnly` variant existed all along.
+        showLabel: seat.expanded,
+        accessibleName: seat.accessibleName,
+        pinned: seat.pinned,
+        hugged: seat.expanded,
+        maxWidth: seat.maxWidth,
+        flex: seat.flex,
+      })),
+    };
+  }
+
   return {
     items: items.map(item => {
       const isSelected = item.id === selectedId;
@@ -186,6 +297,9 @@ export function planContextualRow({
         variant: isSelected ? 'selectedPill' : 'labeledIcon',
         showLabel: true,
         accessibleName: item.label,
+        pinned: false,
+        hugged: false,
+        maxWidth: null,
         flex: isSelected ? CONTEXTUAL_SEGMENT_FLEX.selected : CONTEXTUAL_SEGMENT_FLEX.unselected,
       };
     }),
