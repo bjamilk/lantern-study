@@ -164,7 +164,15 @@ export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
 export const WORKSPACE_LATER_COPY =
   'This activity ships in a later wave. Notes, walkthrough, cards, quiz, tests, lecture, lesson, recap, play, plan and essay are ready now.';
 
-export type TurnIntoTargetId = 'cards' | 'test' | 'lesson' | 'recap' | 'essay' | 'play';
+export type TurnIntoTargetId =
+  | 'cards'
+  | 'quiz'
+  | 'test'
+  | 'notes'
+  | 'lesson'
+  | 'recap'
+  | 'essay'
+  | 'play';
 
 export interface TurnIntoTarget {
   id: TurnIntoTargetId;
@@ -183,11 +191,25 @@ export const TURN_INTO_TARGETS: readonly TurnIntoTarget[] = [
     feature: 'flashcards',
   },
   {
+    id: 'quiz',
+    label: 'Quiz',
+    promise: 'An adaptive quiz from this material',
+    icon: 'help-circle',
+    feature: 'tests',
+  },
+  {
     id: 'test',
     label: 'Practice test',
     promise: 'A saved test you can sit again',
     icon: 'clipboard-check',
     feature: 'tests',
+  },
+  {
+    id: 'notes',
+    label: 'Notes',
+    promise: 'Open this material in the notes room',
+    icon: 'document-text',
+    feature: 'notes',
   },
   {
     id: 'lesson',
@@ -223,13 +245,16 @@ export const TURN_INTO_TARGETS: readonly TurnIntoTarget[] = [
  * What each Turn-into destination costs, so a pill never promises a free
  * action that bills, or bills for one that never calls a model.
  *
- * `cards` and `test` run a generation job. `lesson`, `recap` and `essay` open
- * a studio whose first request sits behind `aiRateLimitForFeature`, which
- * charges exactly one AI use. `play` only shuffles cards you already have.
+ * `cards`, `quiz` and `test` run a generation job. `lesson`, `recap` and
+ * `essay` open a studio whose first request sits behind
+ * `aiRateLimitForFeature`, which charges exactly one AI use. `notes` and
+ * `play` do not call a model from the menu.
  */
 export const TURN_INTO_COST: Record<TurnIntoTargetId, number> = {
   cards: AI_CREDIT_COSTS.generate_flashcards,
+  quiz: AI_CREDIT_COSTS.generate_questions,
   test: AI_CREDIT_COSTS.generate_questions,
+  notes: 0,
   lesson: AI_FEATURE_CREDIT_COST,
   recap: AI_FEATURE_CREDIT_COST,
   essay: AI_FEATURE_CREDIT_COST,

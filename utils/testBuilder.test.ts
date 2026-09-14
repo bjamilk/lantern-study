@@ -7,6 +7,7 @@ import {
   attemptKindFromConfig,
   isNavigationSource,
   primaryActionLabel,
+  applyTestSittingPreset,
   testConfigForPlan,
   summarizeTestPlan,
   validateTestPlan,
@@ -31,6 +32,16 @@ describe('defaultTestPlan', () => {
       source: null,
       attemptKind: 'practice',
       timerMinutes: 0,
+    });
+  });
+});
+
+describe('applyTestSittingPreset', () => {
+  it('turns timed into an exam with a clock', () => {
+    expect(applyTestSittingPreset(plan(), 'timed')).toMatchObject({
+      sittingPreset: 'timed',
+      attemptKind: 'exam',
+      timerMinutes: 30,
     });
   });
 });
@@ -151,25 +162,35 @@ describe('isNavigationSource', () => {
 describe('testConfigForPlan', () => {
   it('sends practice through as a study-mode attempt with no clock', () => {
     expect(testConfigForPlan(plan({ source: 'deck', attemptKind: 'practice', timerMinutes: 15 })))
-      .toEqual({ attemptKind: 'practice', mode: 'study' });
+      .toEqual({ attemptKind: 'practice', mode: 'study', studyDoor: 'test' });
   });
 
   it('carries an exam timer through as seconds', () => {
     expect(testConfigForPlan(plan({ source: 'note', attemptKind: 'exam', timerMinutes: 15 })))
-      .toEqual({ attemptKind: 'exam', mode: 'test', timerDuration: 900 });
+      .toEqual({ attemptKind: 'exam', mode: 'test', timerDuration: 900, studyDoor: 'test' });
   });
 
   it('omits the timer entirely on an untimed exam rather than sending 0', () => {
     const config = testConfigForPlan(plan({ source: 'note', attemptKind: 'exam', timerMinutes: 0 }));
-    expect(config).toEqual({ attemptKind: 'exam', mode: 'test' });
+    expect(config).toEqual({ attemptKind: 'exam', mode: 'test', studyDoor: 'test' });
     expect('timerDuration' in config).toBe(false);
   });
 
   it('ignores a nonsense timer instead of arming a clock with NaN seconds', () => {
     expect(testConfigForPlan(plan({ attemptKind: 'exam', timerMinutes: Number.NaN })))
-      .toEqual({ attemptKind: 'exam', mode: 'test' });
+      .toEqual({ attemptKind: 'exam', mode: 'test', studyDoor: 'test' });
     expect(testConfigForPlan(plan({ attemptKind: 'exam', timerMinutes: -30 })))
-      .toEqual({ attemptKind: 'exam', mode: 'test' });
+      .toEqual({ attemptKind: 'exam', mode: 'test', studyDoor: 'test' });
+  });
+
+  it('stamps a sitting preset onto the saved test', () => {
+    expect(
+      testConfigForPlan(plan({ attemptKind: 'exam', sittingPreset: 'calculator_off', calculatorAllowed: false }))
+    ).toMatchObject({
+      studyDoor: 'test',
+      sittingPreset: 'calculator_off',
+      calculatorAllowed: false,
+    });
   });
 });
 

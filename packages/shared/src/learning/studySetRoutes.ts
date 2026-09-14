@@ -99,8 +99,28 @@ export function buildStudySetPath(input: StudySetPath): string {
     return `${root}/test`;
   }
   if (input.activity === 'play') {
+    if (input.createNew) return `${root}/play/new`;
     if (input.playSession === 'match') return `${root}/play/match`;
     return `${root}/play`;
+  }
+  if (
+    input.createNew &&
+    (input.activity === 'lesson' ||
+      input.activity === 'recap' ||
+      input.activity === 'lecture' ||
+      input.activity === 'essay' ||
+      input.activity === 'notes')
+  ) {
+    return `${root}/${input.activity}/new`;
+  }
+  if (
+    input.noteId &&
+    (input.activity === 'lesson' ||
+      input.activity === 'recap' ||
+      input.activity === 'lecture' ||
+      input.activity === 'essay')
+  ) {
+    return `${root}/${input.activity}/${encodeURIComponent(input.noteId)}`;
   }
   return `${root}/${input.activity}`;
 }
@@ -125,6 +145,7 @@ export function parseStudySetPath(pathname: string): StudySetPath | null {
   }
   const rest = parts.slice(4);
   if (activityRaw === 'notes') {
+    if (rest[0] === 'new') return { studySetId, activity: 'notes', createNew: true };
     return {
       studySetId,
       activity: 'notes',
@@ -154,8 +175,19 @@ export function parseStudySetPath(pathname: string): StudySetPath | null {
     return { studySetId, activity: 'test' };
   }
   if (activityRaw === 'play') {
+    if (rest[0] === 'new') return { studySetId, activity: 'play', createNew: true };
     if (rest[0] === 'match') return { studySetId, activity: 'play', playSession: 'match' };
     return { studySetId, activity: 'play' };
+  }
+  if (
+    activityRaw === 'lesson' ||
+    activityRaw === 'recap' ||
+    activityRaw === 'lecture' ||
+    activityRaw === 'essay'
+  ) {
+    if (rest[0] === 'new') return { studySetId, activity: activityRaw, createNew: true };
+    if (rest[0]) return { studySetId, activity: activityRaw, noteId: decodeSegment(rest[0]) };
+    return { studySetId, activity: activityRaw };
   }
   return { studySetId, activity: activityRaw };
 }

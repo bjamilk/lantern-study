@@ -110,6 +110,8 @@ export const StudySetSwitcher: React.FC<StudySetSwitcherProps> = ({
             setId={current.id}
             title={studySetLabel(current)}
             coverPath={current.coverPath}
+            tileHue={current.tileHue}
+            tileGlyph={current.tileGlyph}
             size={28}
           />
         ) : null}
@@ -155,7 +157,14 @@ export const StudySetSwitcher: React.FC<StudySetSwitcherProps> = ({
                       active ? 'bg-lantern-background-secondary' : ''
                     }`}
                   >
-                    <SetTile setId={set.id} title={studySetLabel(set)} coverPath={set.coverPath} size={28} />
+                    <SetTile
+                      setId={set.id}
+                      title={studySetLabel(set)}
+                      coverPath={set.coverPath}
+                      tileHue={set.tileHue}
+                      tileGlyph={set.tileGlyph}
+                      size={28}
+                    />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-caption font-semibold text-lantern-text">
                         {studySetLabel(set)}

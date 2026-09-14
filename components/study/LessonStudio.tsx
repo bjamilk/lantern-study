@@ -52,6 +52,7 @@ interface LessonStudioProps {
   onTurnInto: (target: TurnIntoTargetId) => void;
   onOpenQuiz: (items: ReturnType<typeof quizItemsFromLesson>) => void;
   onNoteReady: (noteId: string) => Promise<void>;
+  initialMode?: LessonMode;
 }
 
 function sessionFromGenerated(
@@ -100,6 +101,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
   onTurnInto,
   onOpenQuiz,
   onNoteReady,
+  initialMode,
 }) => {
   const createNote = useNotesStore((s) => s.createNote);
   const saveNote = useNotesStore((s) => s.saveNote);
@@ -112,7 +114,7 @@ export const LessonStudio: React.FC<LessonStudioProps> = ({
 
   const resumed =
     selectedNote && isLessonNote(selectedNote) ? parseLessonNoteBody(selectedNote.body) : null;
-  const [mode, setMode] = useState<LessonMode>(resumed?.mode || 'explore');
+  const [mode, setMode] = useState<LessonMode>(resumed?.mode || initialMode || 'explore');
   const [sourceId, setSourceId] = useState<string>(sources[0]?.id || '');
   const [session, setSession] = useState<LessonSession | null>(resumed);
   const [lessonNoteId, setLessonNoteId] = useState<string | null>(

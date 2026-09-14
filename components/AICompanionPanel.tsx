@@ -36,6 +36,13 @@ import { messageToNoteDraft } from '@lantern/shared';
 import { TurnIntoMenu } from './study/TurnIntoMenu';
 import { CompanionHistory } from './companion/CompanionHistory';
 import { CompanionPrompts } from './companion/CompanionPrompts';
+import { GuidedPicker } from './companion/GuidedPicker';
+import {
+  buildGuidedGoals,
+  GUIDED_MODE_PROMISE,
+  type GuidedGoal,
+  type GuidedNextTopic,
+} from '@lantern/shared/api';
 import { MessageActions } from './companion/MessageActions';
 import {
   EXPLAIN_SIMPLY_PROMPT,
@@ -165,6 +172,20 @@ interface AICompanionPanelProps {
     draft: MessageNoteDraft,
     message: CompanionMessage
   ) => void | Promise<void>;
+  /**
+   * The topic this set's plan says comes next, when the host has one.
+   *
+   * Optional, and honestly so: with nothing here the Guided picker offers
+   * `Start learning:` rows only. A `Continue learning:` row that is not backed
+   * by a real stored checkpoint would claim progress the student never made.
+   *
+   * A bare string is the topic title; the object form names the unit too, which
+   * reaches the first guided turn as context rather than as a second line on
+   * the row.
+   */
+  guidedNextTopic?: string | GuidedNextTopic | null;
+  /** Topics the Guided picker may offer to start — from the plan or units. */
+  guidedTopics?: readonly string[];
 }
 
 const MIN_DICTATION_MS = 800;
@@ -232,6 +253,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   onTurnInto,
   turnIntoExisting,
   onTurnIntoMessage,
+  guidedNextTopic,
+  guidedTopics,
 }) => {
   const {
     isOpen, close, messages, isLoading, isLoadingHistory, historyLoaded, isStreaming, error,
@@ -272,9 +295,16 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     [conversations, activeConversationId]
   );
   const [promptsExpanded, setPromptsExpanded] = useState(false);
+  /**
+   * Guided is per-thread UI state, never an account setting: a new chat starts
+   * in normal mode, and the pill stays reachable mid-lesson so the student can
+   * drop back to ordinary chat without losing the thread.
+   */
+  const [guided, setGuided] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollBarTimerRef = useRef<number | undefined>(undefined);
   const [noteSearch, setNoteSearch] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -436,6 +466,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     const el = scrollRef.current;
     if (!el) return;
     setIsAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight <= AT_BOTTOM_SLACK_PX);
+    el.classList.add('is-scrolling');
+    if (scrollBarTimerRef.current !== undefined) window.clearTimeout(scrollBarTimerRef.current);
+    scrollBarTimerRef.current = window.setTimeout(() => {
+      el.classList.remove('is-scrolling');
+      scrollBarTimerRef.current = undefined;
+    }, 800);
   }, []);
 
   const jumpToLatest = useCallback(() => {
@@ -456,6 +492,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     if (!isAtBottom) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isLoading, isStreaming, isAtBottom]);
+
+  useEffect(() => () => {
+    if (scrollBarTimerRef.current !== undefined) window.clearTimeout(scrollBarTimerRef.current);
+  }, []);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -686,7 +726,24 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const enrichedContext: CompanionUserContext = useMemo(() => ({
     userName: currentUser?.firstName || currentUser?.name || 'Student',
     ...context,
-  }), [currentUser?.firstName, currentUser?.name, context]);
+    // Every send in this thread carries the mode while Guided is on — the
+    // server keeps nothing, so a turn that omitted it would silently drop back
+    // to `explain` mid-lesson. Off, the host's own mode (if any) stands.
+    ...(guided ? { mode: 'guided' as const } : {}),
+  }), [currentUser?.firstName, currentUser?.name, context, guided]);
+
+  /**
+   * The picker's rows, from material the client already holds. Pure and local:
+   * drawing the picker costs nothing, only the row that is tapped sends a turn.
+   */
+  const guidedGoals = useMemo(
+    () =>
+      buildGuidedGoals({
+        nextTopic: guidedNextTopic,
+        topics: [...(guidedTopics ?? []), activeNoteContext?.title],
+      }),
+    [guidedNextTopic, guidedTopics, activeNoteContext?.title]
+  );
 
   /**
    * The header's name for this thread. Derived from the messages rather than
@@ -876,7 +933,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               {chatTitle}
             </p>
             <p className={`text-xs truncate ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-              {context?.currentScreen ? `On: ${context.currentScreen}` : 'Your AI study companion'}
+              {guided
+                ? 'Guided'
+                : context?.currentScreen
+                  ? `On: ${context.currentScreen}`
+                  : 'Your AI study companion'}
             </p>
           </div>
           <div className="flex items-center gap-0.5">
@@ -965,7 +1026,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         <div
           ref={scrollRef}
           onScroll={handleMessagesScroll}
-          className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden px-4 py-3 space-y-4"
+          className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden scrollbar-autohide px-4 py-3 space-y-4"
         >
           {isLoadingHistory && (
             <div className="flex items-center justify-center gap-2 py-8 text-sm text-lantern-text-secondary">
@@ -981,6 +1042,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               promptsExpanded={promptsExpanded}
               onTogglePrompts={() => setPromptsExpanded((v) => !v)}
               disabled={isBusy || dictationBusy}
+              guided={guided}
+              guidedGoals={guidedGoals}
+              onPickGuidedGoal={(goal) => void handleSend(goal.prompt)}
+              onGuidedSomethingElse={() => inputRef.current?.focus()}
             />
           )}
 
@@ -1049,8 +1114,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
 
         {/* Input area — pad above home indicator; stays above bottom nav when that is visible */}
         {!showHistoryList && (
-        <div className={`px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] border-t flex-shrink-0 min-w-0 overflow-x-hidden
-          ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
+        <div className={`px-4 pt-3 border-t flex-shrink-0 min-w-0 overflow-x-hidden ${
+          variant === 'rail'
+            ? 'pb-3'
+            : 'pb-[max(0.75rem,env(safe-area-inset-bottom,0px))]'
+        } ${theme === 'dark' ? 'border-lantern-border bg-lantern-surface' : 'border-lantern-border bg-lantern-background'}`}>
           {activeNoteContext && (
             <div className="mb-2 flex items-center gap-2">
               <SourceChip
@@ -1147,6 +1215,33 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             className="hidden"
             onChange={(e) => void handlePickImage(e.target.files?.[0])}
           />
+          {/* The Guided pill sits in the composer row, where the mode it
+              changes is — not in a settings menu. It is a toggle, so it carries
+              its state in `aria-pressed` rather than only in its fill, and it
+              stays live mid-lesson so normal chat is one tap away. */}
+          <div className="mb-1.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setGuided((v) => !v)}
+              aria-pressed={guided}
+              aria-label={
+                guided
+                  ? 'Guided mode on. Turn off to go back to normal chat.'
+                  : 'Guided mode off. Turn on to be taught one step at a time.'
+              }
+              title={guided ? 'Back to normal chat' : GUIDED_MODE_PROMISE}
+              className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-full border px-3 text-label font-medium transition-colors
+                ${guided
+                  ? 'border-lantern-primary bg-lantern-primary-background text-lantern-primary dark:bg-lantern-primary/20'
+                  : theme === 'dark'
+                    ? 'border-lantern-border text-lantern-text-tertiary hover:text-lantern-primary'
+                    : 'border-lantern-border text-lantern-text-secondary hover:text-lantern-primary'
+                }`}
+            >
+              <AppIcon name="school" size={14} />
+              Guided
+            </button>
+          </div>
           <div className={`flex items-end gap-2 rounded-xl border px-3 py-2
             ${theme === 'dark' ? 'bg-lantern-surface-secondary border-lantern-border' : 'bg-lantern-surface border-lantern-border'}`}>
             <button
@@ -1491,7 +1586,21 @@ const EmptyState: React.FC<{
   promptsExpanded: boolean;
   onTogglePrompts: () => void;
   disabled?: boolean;
-}> = ({ theme, onQuickPrompt, promptsExpanded, onTogglePrompts, disabled }) => (
+  guided: boolean;
+  guidedGoals: readonly GuidedGoal[];
+  onPickGuidedGoal: (goal: GuidedGoal) => void;
+  onGuidedSomethingElse: () => void;
+}> = ({
+  theme,
+  onQuickPrompt,
+  promptsExpanded,
+  onTogglePrompts,
+  disabled,
+  guided,
+  guidedGoals,
+  onPickGuidedGoal,
+  onGuidedSomethingElse,
+}) => (
   <div className="flex flex-col items-center gap-4 py-6 text-center">
     {/* The AI empty state's spot illustration (§5.6). It replaces a plain
         indigo disc: the disc was a container with a glyph in it, and this is
@@ -1501,15 +1610,25 @@ const EmptyState: React.FC<{
     <div>
       <p className={`font-semibold text-base ${theme === 'dark' ? 'text-white' : 'text-lantern-text'}`}>Hi, I'm Lantern!</p>
       <p className={`text-sm mt-1 ${theme === 'dark' ? 'text-lantern-text-tertiary' : 'text-lantern-text-secondary'}`}>
-        Your personal AI study companion. Ask me anything.
+        {guided ? GUIDED_MODE_PROMISE : 'Your personal AI study companion. Ask me anything.'}
       </p>
     </div>
-    <CompanionPrompts
-      expanded={promptsExpanded}
-      onToggleExpanded={onTogglePrompts}
-      onAsk={onQuickPrompt}
-      disabled={disabled}
-    />
+    {guided ? (
+      <GuidedPicker
+        theme={theme}
+        goals={guidedGoals}
+        onPick={onPickGuidedGoal}
+        onSomethingElse={onGuidedSomethingElse}
+        disabled={disabled}
+      />
+    ) : (
+      <CompanionPrompts
+        expanded={promptsExpanded}
+        onToggleExpanded={onTogglePrompts}
+        onAsk={onQuickPrompt}
+        disabled={disabled}
+      />
+    )}
   </div>
 );
 

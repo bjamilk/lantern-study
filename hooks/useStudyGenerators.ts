@@ -201,13 +201,16 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
       incoming: NoteWithAttachments,
       onStage: StudyGeneratorStageReporter = () => {},
       /** From the AI job runner: the id the deck save is keyed on. */
-      hooks?: AiJobHooks
+      hooks?: AiJobHooks,
+      options?: { depth?: import('@lantern/shared/utils/smartNotes').SmartNotesDepth; extractImages?: boolean }
     ): Promise<ImportAndStudyResult> => {
       onStage('extract');
       const note = await refreshNoteAfterOcr(incoming);
       const walkable = note.attachments?.find(isWalkableAttachment);
       if (walkable?.id) {
-        void fetchNoteAttachmentPages(note.id, walkable.id, { images: true }).catch(() => undefined);
+        void fetchNoteAttachmentPages(note.id, walkable.id, {
+          images: options?.extractImages !== false,
+        }).catch(() => undefined);
       }
       const studyInput = {
         sourceType: note.sourceType,
@@ -240,7 +243,9 @@ export function useStudyGenerators({ generateCards, generateQuiz }: UseStudyGene
       if (hasUsableContent) {
         onStage('summary');
         try {
-          const { summary, note: updated } = await notesApi.summarizeNote(note.id);
+          const { summary, note: updated } = await notesApi.summarizeNote(note.id, {
+            depth: options?.depth,
+          });
           summarized =
             Boolean(summary?.trim()) && (summary?.trim().length || 0) >= MIN_NOTE_STUDY_CONTENT_CHARS;
           const notesState = useNotesStore.getState();

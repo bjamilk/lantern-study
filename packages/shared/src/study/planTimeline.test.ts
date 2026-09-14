@@ -9,6 +9,7 @@ import {
   planTopicActivity,
   planTopicActivityLabel,
   planTopicState,
+  guidedNextTopicFromPlan,
 } from './planTimeline';
 
 function unit(id: string, position: number, title = id): StudySetUnit {
@@ -141,5 +142,38 @@ describe('planTimeline', () => {
     expect(initialOpenUnitId(planTimeline(units, topics, 't3'))).toBe('u2');
     expect(initialOpenUnitId(planTimeline(units, topics, null))).toBe('u1');
     expect(initialOpenUnitId([])).toBeNull();
+  });
+});
+
+/**
+ * The shape the Guided picker's `Continue learning:` row is built from.
+ *
+ * The failure this pins is the dishonest one: a finished plan whose recommender
+ * hands back a mastered topic (both spines fall back to a row rather than to
+ * none) must NOT become a row telling a student to continue something they
+ * already proved.
+ */
+describe('guidedNextTopicFromPlan', () => {
+  it('carries the topic and the unit it is filed under', () => {
+    expect(
+      guidedNextTopicFromPlan({ title: '  Narrow vs. General AI ', status: 'unseen' }, ' Unit 1 ')
+    ).toEqual({ title: 'Narrow vs. General AI', unit: 'Unit 1' });
+  });
+
+  it('is null when there is nothing to continue', () => {
+    expect(guidedNextTopicFromPlan(null, 'Unit 1')).toBeNull();
+    expect(guidedNextTopicFromPlan(undefined)).toBeNull();
+    expect(guidedNextTopicFromPlan({ title: '   ', status: 'covered' }, 'Unit 1')).toBeNull();
+  });
+
+  it('refuses a mastered pick — a finished plan has no next step', () => {
+    expect(guidedNextTopicFromPlan({ title: 'Osmosis', status: 'mastered' }, 'Unit 1')).toBeNull();
+  });
+
+  it('keeps the unit null rather than blank when the caller has no unit', () => {
+    expect(guidedNextTopicFromPlan({ title: 'Osmosis', status: 'covered' })).toEqual({
+      title: 'Osmosis',
+      unit: null,
+    });
   });
 });

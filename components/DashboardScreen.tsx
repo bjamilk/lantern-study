@@ -473,6 +473,8 @@ export default function DashboardScreen({
 
             <RecentActivities
               {...activityInput}
+              dueTotal={homeDueTotal}
+              onStudyAllDue={onReviewDueCards}
               onOpen={(activity) => {
                 // The companion has no URL of its own — it is a docked panel —
                 // so its rows open the panel rather than navigating to a route

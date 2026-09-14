@@ -15,7 +15,10 @@ import type {
 // Subpath, not the bare package: mobile's jest maps '@lantern/shared/*' to the
 // package source but has no mapping for the bare specifier, so a VALUE import
 // from it (unlike the erased type imports above) fails every store test.
-import { normalizeCompanionCitation } from '@lantern/shared/api/companion';
+import {
+  normalizeCompanionCitation,
+  type GuidedNextTopic,
+} from '@lantern/shared/api/companion';
 import {
   companionSendMessage,
   companionSendMessageStream,
@@ -25,6 +28,7 @@ import {
   uploadCompanionImage,
 } from '../services/ai';
 import { describeImageAttachFailure } from '../components/companion/imageAttach';
+import { guidedNextTopicForSet } from '../components/companion/guidedNextTopicForSet';
 
 export type CompanionNoteContext = {
   id: string;
@@ -76,6 +80,20 @@ async function persistNoteContext(ctx: CompanionNoteContext | null) {
  * A bare-string value is a pre-scope record: it is honoured once, with a null
  * scope, so an in-progress thread is not thrown away by the upgrade.
  */
+/**
+ * What a caller says an open is about.
+ *
+ * `guidedNextTopic` is additive and optional: the phone mounts ONE panel at the
+ * root with no props, so a room that knows its plan has no other way to hand
+ * the Guided picker the topic the plan says comes next. Absent means the picker
+ * offers `Start learning:` rows only — never an invented `Continue`.
+ */
+export type CompanionRequestedScope = {
+  scopeId: string | null;
+  label?: string | null;
+  guidedNextTopic?: GuidedNextTopic | null;
+};
+
 export type PersistedConversation = { scopeId: string | null; conversationId: string };
 
 async function readPersistedConversation(): Promise<PersistedConversation | null> {
@@ -206,9 +224,41 @@ interface CompanionState {
    * anything, so a stale attachment or thread can never survive into the new
    * room.
    */
-  openForScope: (scope: { scopeId: string | null; label?: string | null }) => void;
+  openForScope: (scope: CompanionRequestedScope) => void;
+  /**
+   * Derive the `Continue learning:` topic for whatever room the panel is
+   * STANDING IN, whichever door opened it.
+   *
+   * `openForScope` is not the only door: the top bar's credits chip opens the
+   * sheet with `open()`/`toggle()`, which state no scope at all — and the panel
+   * then resolves the room from the live route (`resetForScope`). Deriving only
+   * inside `openForScope` is why that door drew a picker with no Continue row
+   * on the very same set where the bar's `Ask` drew one. So the derivation is
+   * attached to the pair that actually describes the situation — the sheet is
+   * open, and a set scope is current — rather than to one caller.
+   *
+   * Idempotent and cheap: it is a no-op unless the sheet is open, a set scope
+   * is known, and nobody (host or an earlier derivation) has already stated a
+   * topic. An explicit host value, including an explicit `null`, always wins.
+   */
+  ensureGuidedNextTopic: () => void;
+  /**
+   * Fill in the `Continue learning:` topic from the scoped set's SAVED PLAN
+   * when the door that opened the sheet did not state one.
+   *
+   * Every door goes through `openForScope`; only one of them (the set room)
+   * ever knew the plan, so the row existed through one door and was missing
+   * from the bar's `Ask`, the room tile, the credits chip and the header. The
+   * store is the one place all of them already pass through, so the
+   * derivation lives here rather than being copied into each host.
+   *
+   * A host that states its own topic always wins — it may know more than the
+   * saved plan does — and a set with no plan is left stating nothing, which is
+   * what makes the picker offer `Start learning:` only.
+   */
+  hydrateGuidedNextTopic: (scopeId: string) => Promise<void>;
   /** What the caller said this open is about. Consumed by the panel on open. */
-  requestedScope: { scopeId: string | null; label?: string | null } | null;
+  requestedScope: CompanionRequestedScope | null;
 
   activeConversationId: string | null;
   pendingNewConversation: boolean;
@@ -372,7 +422,12 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   clearPendingImages: () => set({ pendingImages: [], imageError: null, imageErrorDetail: null }),
   clearImageError: () => set({ imageError: null, imageErrorDetail: null }),
 
-  open: () => set({ isOpen: true, requestedScope: null }),
+  open: () => {
+    set({ isOpen: true, requestedScope: null });
+    // The scope-less doors (the top bar's credits chip, the header's Ask) still
+    // come up over a room. Whether there is one is `activeScopeId`'s answer.
+    get().ensureGuidedNextTopic();
+  },
   /**
    * A queued send belongs to the open that queued it. Leaving `pendingMessage`
    * set on close meant the next open auto-fired it the moment history was
@@ -381,12 +436,15 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
    */
   close: () =>
     set({ isOpen: false, pendingMessage: null, pendingMessageContext: null, requestedScope: null }),
-  toggle: () =>
+  toggle: () => {
+    const wasOpen = get().isOpen;
     set((s) =>
       s.isOpen
         ? { isOpen: false, pendingMessage: null, pendingMessageContext: null }
         : { isOpen: true }
-    ),
+    );
+    if (!wasOpen) get().ensureGuidedNextTopic();
+  },
   clearError: () => set({ error: null }),
   failedMessage: null,
   consumeFailedMessage: () => {
@@ -455,13 +513,83 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
 
   openForScope: (scope) => {
     set({ isOpen: true, requestedScope: scope });
+    // `resetForScope` ends in `ensureGuidedNextTopic`, which is what derives the
+    // topic when this caller stated none. `undefined` is "nobody said", which
+    // is the case the store answers; an explicit `null` is a host stating there
+    // is no topic, and is obeyed.
     get().resetForScope(scope.scopeId);
+    if (!scope.scopeId) get().ensureGuidedNextTopic();
+  },
+
+  ensureGuidedNextTopic: () => {
+    const state = get();
+    if (!state.isOpen) return;
+    // A stated scope beats the standing one: a door that named its room is
+    // more authoritative than whichever room the panel was last reset to.
+    const scopeId = state.requestedScope?.scopeId ?? state.activeScopeId;
+    if (!scopeId) return;
+    if (state.requestedScope && state.requestedScope.guidedNextTopic !== undefined) return;
+    void get().hydrateGuidedNextTopic(scopeId);
+  },
+
+  hydrateGuidedNextTopic: async (scopeId) => {
+    // Late, and only onto the open this was started for: the sheet may have
+    // been closed or moved to another room while the plan was fetched, and a
+    // Continue row for a set the student has left is worse than no row.
+    const apply = (topic: GuidedNextTopic | null) => {
+      if (!topic) return;
+      const state = get();
+      const current = state.requestedScope;
+      // A scope-less door (credits chip, header Ask) has no `requestedScope` to
+      // land on, so the topic is recorded as one — scope id only, no label, so
+      // the header keeps reading the route's own name. Still guarded by the
+      // room: the sheet may have been closed or walked to another set while the
+      // plan was being read, and a Continue row for a set the student has left
+      // is worse than no row.
+      if (!current) {
+        if (!state.isOpen || state.activeScopeId !== scopeId) return;
+        set({ requestedScope: { scopeId, guidedNextTopic: topic } });
+        return;
+      }
+      if (current.scopeId !== scopeId) return;
+      if (current.guidedNextTopic !== undefined) return;
+      set({ requestedScope: { ...current, guidedNextTopic: topic } });
+    };
+    try {
+      // Loaded on demand, not at module scope: the set store reaches the
+      // network layer, and a companion store that dragged it in at import time
+      // would make every companion test mock the academic service to talk
+      // about a chat. A store that cannot be loaded simply states no topic.
+      const { useStudySetStore } = await import('./studySetStore');
+      const study = useStudySetStore.getState();
+      const mode = study.resolveSet(scopeId)?.mode as
+        | 'cram'
+        | 'standard'
+        | 'comprehensive'
+        | undefined;
+      const cached = study.plans[scopeId];
+      if (cached?.loaded) {
+        apply(guidedNextTopicForSet(cached, mode));
+        return;
+      }
+      apply(guidedNextTopicForSet(await study.loadPlan(scopeId), mode));
+    } catch {
+      // A plan that cannot be read is not a plan that says "start over": the
+      // picker simply offers its cold starts.
+    }
   },
 
   resetForScope: (scopeId) => {
     if (!scopeId) return;
     const previousScope = get().activeScopeId;
     if (previousScope !== scopeId) set({ activeScopeId: scopeId });
+
+    // Moving rooms retires the request the previous room left behind — its
+    // label and its `Continue learning:` topic both describe a set the student
+    // is no longer in. The new room's topic is then derived from its own plan.
+    const requested = get().requestedScope;
+    if (requested && requested.scopeId !== scopeId) set({ requestedScope: null });
+    get().ensureGuidedNextTopic();
 
     const current = get().activeNoteContext;
     /**

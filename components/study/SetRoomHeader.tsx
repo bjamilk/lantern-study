@@ -21,6 +21,14 @@ interface SetRoomHeaderProps {
    * today's pastel tile rather than failing to compile.
    */
   coverPath?: string | null;
+  /**
+   * The set's saved tile pick. Without these the header derived its art from
+   * the id hash, so a student who chose a hue and a glyph saw the choice on
+   * the hub card and nowhere else — the room they actually study in still
+   * showed the old pastel. Optional for the same reason `coverPath` is.
+   */
+  tileHue?: string | null;
+  tileGlyph?: string | null;
   /** Null while the set has no plan and no materials to derive one from. */
   progress: StudySetPlanProgress | null;
   /** The one-line fallback when there is no plan: "4 notes · 2 decks". */
@@ -49,10 +57,10 @@ interface SetRoomHeaderProps {
  * coloured identity tile and a bordered chip strip, and Lantern's said "you are
  * on a page".
  *
- * So: tile + serif title + gear on the first row; a bordered strip of
- * `📖 N Topics · ✓ N Covered · ✓ N Mastered` chips with the progress bar and the
- * kebab on the second. The room's own controls (timer, switcher) sit opposite
- * the title, where they were.
+ * So: tile + serif title + gear, then the timer and set switcher on the same
+ * left-hand row; a bordered strip of `📖 N Topics · ✓ N Covered · ✓ N Mastered`
+ * chips with the progress bar sitting next to them, not stretched to the
+ * right edge. The kebab stays at the end of the strip.
  *
  * The progress bar is drawn in the AI feature's violet-on-lilac pair (which is
  * literally StudyFetch's #f5d5ff track), not in the app's ink: this is the one
@@ -63,6 +71,8 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
   setId,
   title,
   coverPath,
+  tileHue,
+  tileGlyph,
   progress,
   counts,
   visibility,
@@ -95,10 +105,17 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
       : null;
 
   return (
-    <header className="mb-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <header className="mb-3">
+      <div className="flex flex-wrap items-center gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <SetTile setId={setId} title={title} coverPath={coverPath} size={44} />
+          <SetTile
+            setId={setId}
+            title={title}
+            coverPath={coverPath}
+            tileHue={tileHue}
+            tileGlyph={tileGlyph}
+            size={44}
+          />
           <h1 className="text-title text-lantern-text truncate">{title}</h1>
           {/* Share sits OUTSIDE the kebab and outside settings, where the
               reference puts it: copying a set's link was buried three levels
@@ -150,9 +167,9 @@ export const SetRoomHeader: React.FC<SetRoomHeaderProps> = ({
           )}
 
           {percent === null ? null : (
-            <span className="flex min-w-[6rem] flex-1 items-center gap-2">
+            <span className="flex w-40 shrink-0 items-center gap-2">
               <span
-                className={`h-1.5 flex-1 overflow-hidden rounded-full ${FEATURE_TINT_BG.ai}`}
+                className={`h-1.5 min-w-0 flex-1 overflow-hidden rounded-full ${FEATURE_TINT_BG.ai}`}
                 role="progressbar"
                 aria-valuenow={percent}
                 aria-valuemin={0}

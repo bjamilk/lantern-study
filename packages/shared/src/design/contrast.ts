@@ -91,7 +91,7 @@ export const LARGE_TEXT_ONLY: Record<string, string> = {};
  * silently skipped.
  */
 const NON_TEXT_ROLES: Record<string, string> = {
-  primaryFill: 'fill only; gated below by WHITE on it, not by it as text',
+  primaryFill: 'fill only; gated below by `textInverse` on it, not by it as text',
   primaryLight: 'gradient/hover fill only; text uses `primaryText`',
   primaryDark: 'pressed-state fill and gradient stop only',
   textInverse: 'always paired with a saturated fill, checked at the fill',
@@ -313,6 +313,79 @@ export function ensureFillContrast(
     if (contrastRatio(candidate, on) >= ratio) return candidate;
   }
   return towardWhite ? '#ffffff' : '#000000';
+}
+
+/** A fill and the label ink that is actually painted on it. */
+export interface AaPair {
+  fill: string;
+  ink: string;
+}
+
+/**
+ * How far a FILL must travel before `ink` reaches `ratio` on it: the mix
+ * fraction toward white or black, 0 when the raw hue already holds the ink and
+ * 1 when even the extreme does not. It is the "how much of the chosen colour
+ * survives" number `ensureAaPair` compares inks by.
+ */
+function fillMixFor(
+  fill: string,
+  ink: string,
+  ratio: number
+): { fill: string; t: number } {
+  if (contrastRatio(fill, ink) >= ratio) return { fill, t: 0 };
+  const towardWhite = relativeLuminance(ink) < 0.5;
+  const [r, g, b] = parseHex(fill);
+  const [tr, tg, tb] = towardWhite ? [255, 255, 255] : [0, 0, 0];
+  for (let i = 1; i <= 20; i += 1) {
+    const t = i / 20;
+    const candidate = hexFromRgb(r + (tr - r) * t, g + (tg - g) * t, b + (tb - b) * t);
+    if (contrastRatio(candidate, ink) >= ratio) return { fill: candidate, t };
+  }
+  return { fill: towardWhite ? '#ffffff' : '#000000', t: 1 };
+}
+
+/**
+ * How much of the picked hue may be mixed away before another ink is better.
+ * Half: past that the swatch a student chose is more white/black than colour.
+ */
+const HUE_BUDGET = 0.5;
+
+/**
+ * Pair a FILL with the label ink that sits on it, so the pair clears `ratio`.
+ *
+ * `ensureFillContrast` alone answers "can THIS ink read on the fill"; it
+ * cannot answer "which ink". Hardcoding one is the 2026-09-13 bug: the accent
+ * rewrite darkened every custom fill for a WHITE label while dark mode paints
+ * `textInverse` = #191919 on it, so every primary button, the lit tab word and
+ * the active pills measured 3.65-3.79:1 — over the 3:1 non-text bar, under AA.
+ *
+ * `candidates` is ordered by PREFERENCE and `candidates[0]` is the theme's own
+ * `textInverse`, which keeps the ink students already see. The preferred ink
+ * is abandoned only when holding it would spend more than `HUE_BUDGET` of the
+ * chosen colour and another candidate costs less — otherwise "pick the ink
+ * with the most contrast" would silently flip light mode's white button labels
+ * to near-black the first time a bright accent read better under black.
+ *
+ * The hue family is preserved either way: a fill that already holds its ink is
+ * returned byte-identical, and one that does not is mixed step by step toward
+ * white or black, never replaced by a different colour.
+ */
+export function ensureAaPair(
+  fill: string,
+  candidates: string[],
+  ratio = AA_NORMAL
+): AaPair {
+  const first = candidates[0];
+  if (first === undefined) return { fill, ink: '#ffffff' };
+  const preferred = fillMixFor(fill, first, ratio);
+  if (preferred.t <= HUE_BUDGET) return { fill: preferred.fill, ink: first };
+
+  let best = { fill: preferred.fill, ink: first, t: preferred.t };
+  for (const ink of candidates.slice(1)) {
+    const alt = fillMixFor(fill, ink, ratio);
+    if (alt.t < best.t) best = { fill: alt.fill, ink, t: alt.t };
+  }
+  return { fill: best.fill, ink: best.ink };
 }
 
 /**

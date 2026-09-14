@@ -9,7 +9,7 @@ const render = (node: Parameters<typeof renderToStaticMarkup>[0]) => renderToSta
 describe('TurnIntoMenu', () => {
   it('offers every Turn into target with its price', () => {
     const html = render(<TurnIntoMenu onSelect={() => undefined} />);
-    expect(TURN_INTO_TARGETS).toHaveLength(6);
+    expect(TURN_INTO_TARGETS).toHaveLength(8);
     for (const target of TURN_INTO_TARGETS) {
       expect(html).toContain(`aria-label="${target.label} — ${formatTurnIntoCost(target.id)}"`);
     }

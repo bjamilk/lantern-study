@@ -10,6 +10,7 @@ const QUEUE_FOR_JOB: Record<JobName, QueueName> = {
   "ai.generate.lesson": "ai-generation",
   "ai.generate.recap": "ai-generation",
   "ai.generate.essay": "ai-generation",
+  "ai.generate.topic": "ai-generation",
   "ai.explain.answer": "ai-generation",
   "ai.study.recommendations": "ai-generation",
   "ai.ask.tutor": "ai-generation",

@@ -249,6 +249,8 @@ const SetRail: React.FC<SetRailProps> = ({
           setId={studySetId}
           title={model.setTitle || ''}
           coverPath={set?.coverPath}
+          tileHue={set?.tileHue}
+          tileGlyph={set?.tileGlyph}
           size={expanded ? 24 : 22}
           className="flex-shrink-0"
         />
@@ -300,6 +302,8 @@ const SetRail: React.FC<SetRailProps> = ({
                     setId={row.id}
                     title={studySetLabel(row)}
                     coverPath={row.coverPath}
+                    tileHue={row.tileHue}
+                    tileGlyph={row.tileGlyph}
                     size={26}
                     className="flex-shrink-0"
                   />

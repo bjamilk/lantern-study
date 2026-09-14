@@ -103,3 +103,39 @@ export function inlineReviewCurrent(
 ): InlineDueCard | null {
   return queue[state.index] ?? null;
 }
+
+/**
+ * Where the card's `Study all N due` link goes.
+ *
+ * `home` is the only correct answer once Home is the one rendering the card:
+ * Home builds the cross-deck `dueReviewPlan` and enters the session with it,
+ * which is what the link promises. The other two are the standalone fallback
+ * for a caller that has no plan — and `hub` in particular is what shipped by
+ * accident, landing the student on the flashcards deck list rather than in a
+ * review whenever the due pile spanned more than one deck.
+ */
+export type InlineStudyAllTarget =
+  | { kind: 'home' }
+  | { kind: 'deck'; deckId: string }
+  | { kind: 'hub' };
+
+export function inlineStudyAllTarget(
+  queue: InlineDueCard[],
+  hasHomeHandler: boolean,
+): InlineStudyAllTarget {
+  if (hasHomeHandler) return { kind: 'home' };
+  const deckIds = new Set(queue.map((card) => card.deckId));
+  const [onlyDeckId] = [...deckIds];
+  return deckIds.size === 1 && onlyDeckId ? { kind: 'deck', deckId: onlyDeckId } : { kind: 'hub' };
+}
+
+/**
+ * The number the card is allowed to say. Home's plan total wins whenever Home
+ * supplied one: the inline queue drops cloze/occlusion cards and cards with an
+ * empty face, so counting it made the card say 62 under a hub saying 67.
+ */
+export function inlineDueLabelCount(dueTotal: number | null | undefined, queueLength: number): number {
+  return typeof dueTotal === 'number' && Number.isFinite(dueTotal)
+    ? Math.max(0, Math.trunc(dueTotal))
+    : queueLength;
+}

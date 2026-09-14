@@ -48,10 +48,12 @@ describe('course workspace helpers', () => {
     ]);
   });
 
-  it('offers six Turn into targets that all land on a real activity', () => {
+  it('offers eight Turn into targets that all land on a real activity', () => {
     expect(TURN_INTO_TARGETS.map((t) => t.id)).toEqual([
       'cards',
+      'quiz',
       'test',
+      'notes',
       'lesson',
       'recap',
       'essay',

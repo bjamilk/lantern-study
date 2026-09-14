@@ -12,18 +12,19 @@ import { TURN_INTO_TARGETS } from './courseWorkspace';
 const NOW = new Date('2026-09-12T10:30:00.000Z');
 
 describe('message turn-into targets', () => {
-  it('offers every one of the six, so the menu matches the note menu', () => {
+  it('offers every Turn-into target, so the menu matches the note menu', () => {
     expect(MESSAGE_TURN_INTO_TARGETS).toBe(TURN_INTO_TARGETS);
     expect(Object.keys(MESSAGE_TURN_INTO_KIND).sort()).toEqual(
       TURN_INTO_TARGETS.map((t) => t.id).sort()
     );
   });
 
-  it('treats only cards and test as generated straight from the text', () => {
-    expect([...MESSAGE_GENERATE_TARGETS]).toEqual(['cards', 'test']);
+  it('treats cards, quiz and test as generated straight from the text', () => {
+    expect([...MESSAGE_GENERATE_TARGETS]).toEqual(['cards', 'quiz', 'test']);
     expect(messageTurnIntoKind('cards')).toBe('generate');
+    expect(messageTurnIntoKind('quiz')).toBe('generate');
     expect(messageTurnIntoKind('test')).toBe('generate');
-    for (const id of ['lesson', 'recap', 'essay', 'play'] as const) {
+    for (const id of ['notes', 'lesson', 'recap', 'essay', 'play'] as const) {
       expect(messageTurnIntoKind(id)).toBe('studio');
     }
   });

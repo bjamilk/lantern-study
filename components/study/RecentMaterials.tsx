@@ -50,6 +50,17 @@ interface RecentMaterialsProps {
   onOpenDeck?: (deckId: string) => void;
   /** Opens the Library, filtered to this set. */
   onViewAll: () => void;
+  /**
+   * The ⋮ for one note — `Add cover…` and the rest — or `null` when the note
+   * is not the viewer's to change.
+   *
+   * This section is where a student inside a set actually meets their notes,
+   * and it shipped with no menu on either view: the room's only ⋮ lived on the
+   * `Notes` activity list, which is a different screen. So a note could be
+   * given a cover from the Library but not from the room that displays it.
+   * Both the grid tile and the list row now carry the same trigger.
+   */
+  renderNoteMenu?: (note: StudyNote) => React.ReactNode;
 }
 
 /**
@@ -82,6 +93,7 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
   onOpenNote,
   onOpenDeck,
   onViewAll,
+  renderNoteMenu,
 }) => {
   const [filter, setFilter] = useState<MaterialFilter>('all');
   const [view, setView] = useViewMode('setRoomMaterials', 'grid');
@@ -135,7 +147,12 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
       {view === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {shown.map((note) => (
-            <StudySetMaterialTile key={note.id} note={note} onClick={() => onOpenNote(note.id)} />
+            <StudySetMaterialTile
+              key={note.id}
+              note={note}
+              onClick={() => onOpenNote(note.id)}
+              menu={renderNoteMenu?.(note)}
+            />
           ))}
           {shownDecks.map((deck) => (
             <button
@@ -167,12 +184,13 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
           {shown.map((note) => {
             const lecture = isLectureNote(note);
             const added = addedLabel(note.createdAt);
+            const menu = renderNoteMenu?.(note);
             return (
-              <li key={note.id}>
+              <li key={note.id} className="flex items-center">
                 <button
                   type="button"
                   onClick={() => onOpenNote(note.id)}
-                  className="flex min-h-[44px] w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-lantern-background-secondary"
+                  className="flex min-h-[44px] min-w-0 flex-1 items-center gap-3 px-3 py-2.5 text-left hover:bg-lantern-background-secondary"
                 >
                   <AppIcon
                     name={lecture ? 'mic' : 'document-text'}
@@ -187,6 +205,9 @@ export const RecentMaterials: React.FC<RecentMaterialsProps> = ({
                     <span className="shrink-0 text-caption text-lantern-text-tertiary">{added}</span>
                   ) : null}
                 </button>
+                {/* Beside the row button, not inside it — same rule the Notes
+                    activity row holds in `NoteRoomRow`. */}
+                {menu ? <div className="shrink-0 pr-2">{menu}</div> : null}
               </li>
             );
           })}

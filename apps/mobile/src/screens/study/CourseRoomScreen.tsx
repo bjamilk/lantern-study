@@ -44,7 +44,17 @@ import {
 } from '@lantern/shared';
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 import type { StudyStackParamList } from '../../navigation/types';
-import { Button, Card, DoorTile, doorTileColumnWidth, FeatureDisc, T } from '../../components/ui';
+import {
+  ActionSheet,
+  type ActionSheetItem,
+  Button,
+  Card,
+  DoorTile,
+  doorTileColumnWidth,
+  FeatureDisc,
+  T,
+} from '../../components/ui';
+import { setRoomMenuRows } from '../../components/study/setRoomMenu';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
 import { DOOR_TILE, useTheme } from '../../theme';
@@ -63,6 +73,7 @@ import {
 } from '../../components/study/ViewModeToggle';
 import { sortMaterials } from '../../components/study/viewMode';
 import { formatShortDate } from '@lantern/shared/study/setPresentation';
+import { guidedNextTopicFromPlan } from '@lantern/shared/study/planTimeline';
 import {
   SET_ROOM_TILE_LABELS,
   SET_ROOM_TILE_ORDER,
@@ -95,6 +106,7 @@ import { useStudySetStore } from '../../stores/studySetStore';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { useLectureRecordingStore } from '../../stores/lectureRecordingStore';
 import { useCompanionStore } from '../../stores/companionStore';
+import { buildStudyPlanModel } from '../../components/study/studyPlanPresentation';
 import { touchWorkspaceRecent } from '../../utils/workspaceRecents';
 import type { UserCourse } from '@lantern/shared/types';
 import type { StudyNote } from '../../services/notes';
@@ -305,6 +317,38 @@ export function CourseRoomScreen({ navigation, route }: Props) {
     [decks, courseId, studySetId]
   );
   const lectures = useMemo(() => courseNotes.filter(isLectureNote), [courseNotes]);
+
+  /**
+   * The topic this set's plan says comes next, handed to the companion when
+   * `Ask` opens from this room.
+   *
+   * Same rule, same module as the plan spine's `Continue` pill
+   * (`buildStudyPlanModel`), so the Guided picker and the spine can never name
+   * different topics for the same set. Null — no set, no topics, or a plan
+   * whose every topic is mastered — means the picker offers `Start learning:`
+   * rows only, rather than claiming progress that was never made.
+   */
+  const guidedNextTopic = useMemo(() => {
+    if (!studySetId) return null;
+    const planTopics = plan?.topics ?? [];
+    const derived = planTopics.length > 0 ? null : topicsFromReadingNotes(studySetId, studyNotes);
+    const topics = derived ? derived.topics : planTopics;
+    if (topics.length === 0) return null;
+    const model = buildStudyPlanModel({
+      units: derived ? [derived.unit] : plan?.units ?? [],
+      topics,
+      materials: [...studyNotes, ...lectures].map((note) => ({
+        id: note.id,
+        title: note.title,
+      })),
+      mode: (studySet?.mode as 'cram' | 'standard' | 'comprehensive') ?? 'standard',
+    });
+    // The spine's own pick, then the shared guard and trim web uses.
+    return guidedNextTopicFromPlan(
+      model.nextTopic,
+      model.units.find((row) => row.holdsNext)?.title
+    );
+  }, [studySetId, plan?.topics, plan?.units, studyNotes, lectures, studySet?.mode]);
   // Grid or list, and the order, for the room's two browsable shelves. Grid is
   // the materials default and list the lectures default because that is the
   // shape each had before the toggle existed — a remembered control must not
@@ -343,6 +387,58 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       ? testsFiledInStudySet(rows, studySetId, noteIds, deckIds)
       : testsFiledInCourse(rows, courseId, noteIds, deckIds);
   }, [tests, courseId, studySetId, noteIds, deckIds]);
+
+  /**
+   * The kebab's rows, bound to this room's set.
+   *
+   * Built from `setRoomMenuRows()` so the identity and the order of the menu
+   * are testable, and handed to the shared `ActionSheet` so the room's menu is
+   * the same object as the hub card's — the one that has always worked.
+   */
+  const setRoomMenuItems: ActionSheetItem[] = useMemo(() => {
+    if (!studySetId) return [];
+    const run = (action: string) => {
+      switch (action) {
+        case 'settings':
+          navigation.navigate('StudySetSettings', { studySetId });
+          return;
+        case 'add-materials':
+          navigation.navigate('StudySetUpload', { studySetId, courseId, courseLabel: label });
+          return;
+        case 'library':
+          navigation.navigate('StudySetLibrary', { studySetId, courseId, courseLabel: label });
+          return;
+        case 'delete':
+          void (async () => {
+            const ok = await confirmAsync(
+              'Delete this set?',
+              'Your notes, decks and tests stay — they are just no longer filed here.',
+              { confirmLabel: 'Delete', destructive: true }
+            );
+            if (!ok) return;
+            try {
+              await removeSet(studySetId);
+              showToast('Study set deleted.', 'success');
+              navigation.navigate('StudyHub');
+            } catch (error) {
+              showToast(
+                error instanceof Error ? error.message : 'Could not delete this set.',
+                'error'
+              );
+            }
+          })();
+          return;
+        default:
+          return;
+      }
+    };
+    return setRoomMenuRows().map((row) => ({
+      label: row.label,
+      icon: row.icon as AppIconName,
+      destructive: row.destructive,
+      onPress: () => run(row.action),
+    }));
+  }, [studySetId, courseId, label, navigation, removeSet, showToast]);
 
   // Every count on a tile comes from what this room has already loaded — no
   // new fetch, and nothing claimed that is not on screen somewhere below.
@@ -561,6 +657,22 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       case 'play':
         navigation.navigate('PlayStudio', { courseId, courseLabel: label, studySetId });
         return;
+      case 'notes':
+        navigation.navigate('NotesStudio', {
+          courseId,
+          courseLabel: label,
+          noteId: note.id,
+          studySetId,
+        });
+        return;
+      case 'quiz':
+        navigation.navigate('AdaptiveQuiz', {
+          courseId,
+          courseLabel: label,
+          noteId: note.id,
+          studySetId,
+        });
+        return;
       default:
         break;
     }
@@ -642,66 +754,19 @@ export function CourseRoomScreen({ navigation, route }: Props) {
 
         {studySetId ? <SetRoomSegments value={section} onChange={onSelectSection} /> : null}
 
-        {studySetId && overflowOpen ? (
-          <Card className="mb-3">
-            <Pressable
-              onPress={() => {
-                setOverflowOpen(false);
-                navigation.navigate('StudySetSettings', { studySetId });
-              }}
-              accessibilityRole="button"
-              className="py-3"
-            >
-              <T.Body>Set settings</T.Body>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setOverflowOpen(false);
-                navigation.navigate('StudySetUpload', { studySetId, courseId, courseLabel: label });
-              }}
-              accessibilityRole="button"
-              className="py-3 border-t border-lantern-border"
-            >
-              <T.Body>Add materials</T.Body>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setOverflowOpen(false);
-                navigation.navigate('StudySetLibrary', { studySetId, courseId, courseLabel: label });
-              }}
-              accessibilityRole="button"
-              className="py-3 border-t border-lantern-border"
-            >
-              <T.Body>Everything in this set</T.Body>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                setOverflowOpen(false);
-                void (async () => {
-                  const ok = await confirmAsync(
-                    'Delete this set?',
-                    'Your notes, decks and tests stay — they are just no longer filed here.',
-                    { confirmLabel: 'Delete', destructive: true }
-                  );
-                  if (!ok) return;
-                  try {
-                    await removeSet(studySetId);
-                    showToast('Study set deleted.', 'success');
-                    navigation.navigate('StudyHub');
-                  } catch (error) {
-                    showToast(
-                      error instanceof Error ? error.message : 'Could not delete this set.',
-                      'error'
-                    );
-                  }
-                })();
-              }}
-              accessibilityRole="button"
-              className="py-3 border-t border-lantern-border"
-            >
-              <T.Body className="text-lantern-error">Delete set</T.Body>
-            </Pressable>
-          </Card>
+        {studySetId ? (
+          // The SAME sheet the hub card's kebab opens. It used to be an inline
+          // Card rendered into this ScrollView, below the segment row, and on
+          // device every touch inside it dismissed the menu without running
+          // the row — `Set settings` 6/6 (SF5a, check 4). A Modal sits above
+          // every overlay and outside every scroll container, and it is the
+          // path the hub has been proving works all along. See setRoomMenu.ts.
+          <ActionSheet
+            visible={overflowOpen}
+            title={label}
+            items={setRoomMenuItems}
+            onClose={() => setOverflowOpen(false)}
+          />
         ) : null}
 
         {studySetId && (show('recommendedTiles') || show('planBand') || show('setupCards')) ? (
@@ -743,7 +808,15 @@ export function CourseRoomScreen({ navigation, route }: Props) {
             showMore={showMoreRecommended}
             onShowMore={() => setShowMoreRecommended((value) => !value)}
             onSkip={(topicId) => setSkippedTopicIds((ids) => [...ids, topicId])}
-            onAsk={() => useCompanionStore.getState().openForScope({ scopeId: studySetId ?? courseId ?? null, label })}
+            onAsk={() =>
+              useCompanionStore.getState().openForScope({
+                scopeId: studySetId ?? courseId ?? null,
+                label,
+                // Guided opens on `Continue learning: <topic>` rather than a
+                // list of cold starts, because this room knows its plan.
+                guidedNextTopic,
+              })
+            }
             onRead={(noteId) => {
               selectNote(noteId);
               navigation.navigate('NotesStudio', {
@@ -818,9 +891,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                       return;
                     }
                     if (tileId === 'ask') {
-                      useCompanionStore
-                        .getState()
-                        .openForScope({ scopeId: studySetId ?? courseId ?? null, label });
+                      useCompanionStore.getState().openForScope({
+                        scopeId: studySetId ?? courseId ?? null,
+                        label,
+                        guidedNextTopic,
+                      });
                       return;
                     }
                     if (tool.activity) handleActivity(tool.activity, 'ready');

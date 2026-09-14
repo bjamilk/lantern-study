@@ -1,4 +1,5 @@
 import {
+  ACCENT_PRESET_HEXES,
   DEFAULT_ACCENT_COLOR,
   isDefaultAccentColor,
 } from '@lantern/shared/settings';
@@ -15,14 +16,9 @@ export interface AccentPreset {
  * and selecting it persists the ink — which `applyAccentToColors` reads as
  * "leave the palette alone".
  */
-export const ACCENT_PRESETS: readonly AccentPreset[] = [
-  { hex: DEFAULT_ACCENT_COLOR, label: 'Default' },
-  { hex: '#0ea5e9' },
-  { hex: '#10b981' },
-  { hex: '#f59e0b' },
-  { hex: '#ec4899' },
-  { hex: '#8b5cf6' },
-];
+export const ACCENT_PRESETS: readonly AccentPreset[] = ACCENT_PRESET_HEXES.map((hex) =>
+  hex === DEFAULT_ACCENT_COLOR ? { hex, label: 'Default' } : { hex }
+);
 
 /**
  * Whether `stored` selects `preset`. The default swatch also owns the legacy

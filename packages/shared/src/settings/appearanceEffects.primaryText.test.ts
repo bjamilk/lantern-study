@@ -121,12 +121,11 @@ describe('applyAccentToColors', () => {
   it.each(accents)('keeps the inverse label legible on the fill: %s', (accent) => {
     for (const theme of [lightTheme, darkTheme] as ThemePalette[]) {
       const out = applyAccentToColors({ ...theme } as Record<string, string>, accent);
-      // A DERIVED fill (accent !== default) is darkened for a WHITE label; the
-      // palette's own fill is the theme ink and carries `textInverse`. Which
-      // one applies is exactly `accent === DEFAULT_ACCENT_COLOR`.
-      const label =
-        out.primaryFill === theme.primaryFill ? theme.textInverse : '#ffffff';
-      expect(contrastRatio(label, out.primaryFill)).toBeGreaterThanOrEqual(AA);
+      // The label is ALWAYS `textInverse`, derived or not. Asserting a white
+      // label on a derived fill is what hid the 2026-09-13 dark shortfall: the
+      // fill was darkened for a white that dark mode never paints, so the real
+      // pair (#191919 on it) sat at 3.65-3.79:1 while this test passed.
+      expect(contrastRatio(out.textInverse, out.primaryFill)).toBeGreaterThanOrEqual(AA);
     }
   });
 

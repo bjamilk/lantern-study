@@ -7,11 +7,169 @@ import type {
   CompanionCitation,
   CompanionConversation,
   CompanionImageAttachment,
+  CompanionMode,
   CompanionUserContext,
 } from '../types';
 import type { AIClientConfig } from './ai';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
 import { JobStillRunningError, createJobClient } from '../jobs/jobClient';
+
+/**
+ * The modes a client may ask for, in the server's own order. Kept next to the
+ * request builder because this list is what goes ON THE WIRE — the server
+ * re-validates it, and an unknown value there falls back to `explain` rather
+ * than reaching the system prompt.
+ */
+export const COMPANION_MODES: readonly CompanionMode[] = [
+  'explain',
+  'quiz_me',
+  'socratic',
+  'guided',
+];
+
+export const DEFAULT_COMPANION_MODE: CompanionMode = 'explain';
+
+/** Student-facing labels — web and mobile must show the same words. */
+export const COMPANION_MODE_LABELS: Record<CompanionMode, string> = {
+  explain: 'Explain',
+  quiz_me: 'Quiz me',
+  socratic: 'Socratic',
+  guided: 'Guided',
+};
+
+export function isCompanionMode(value: unknown): value is CompanionMode {
+  return typeof value === 'string' && (COMPANION_MODES as readonly string[]).includes(value);
+}
+
+/** Anything unknown becomes `explain`, the same fallback the server applies. */
+export function normalizeCompanionMode(value: unknown): CompanionMode {
+  return isCompanionMode(value) ? value : DEFAULT_COMPANION_MODE;
+}
+
+/**
+ * What Guided promises, in one line, on both surfaces.
+ *
+ * Deliberately NOT "walks you around the app". Guided is chat-only: it teaches
+ * one step at a time and suggests what to do next. Claiming it navigates for
+ * you would be a product-control promise the implementation cannot keep.
+ */
+export const GUIDED_MODE_PROMISE =
+  'Lantern teaches one step at a time and checks you have got it before moving on.';
+
+/** The picker's heading — a goal, not a blank box. */
+export const GUIDED_PICKER_TITLE = 'What would you like me to guide you through?';
+
+/**
+ * Guided costs exactly what a normal message costs. Said out loud because
+ * "Start a guided session" invites the assumption that a session is billed
+ * separately, and because one step per turn means MORE turns, not cheaper ones.
+ */
+export const GUIDED_COST_NOTE = 'Same cost as a normal message — one turn, one use.';
+
+export interface GuidedGoal {
+  /** Stable key for React/RN lists. */
+  id: string;
+  /** `continue` only ever appears for a topic with real saved progress. */
+  kind: 'continue' | 'start';
+  /** The bare topic, for the accessibility label. */
+  topic: string;
+  /** What the row reads: `Continue learning: <topic>`. */
+  label: string;
+  /** The unit the plan files this topic under, when the host knows it. */
+  unit?: string | null;
+  /** The first guided turn this row sends. */
+  prompt: string;
+}
+
+/**
+ * The plan's next topic as a host states it.
+ *
+ * The unit rides along because the lesson reads differently inside its stretch
+ * of the course — it goes into the PROMPT, not the row, so the label stays the
+ * one line the picker promises (`Continue learning: <topic>`).
+ */
+export interface GuidedNextTopic {
+  title: string;
+  unit?: string | null;
+}
+
+export interface GuidedGoalsInput {
+  /**
+   * The topic the set's plan says comes next, when the host actually has one.
+   * Absent (or blank) means NO `Continue learning:` row — an invented continue
+   * is worse than none, because it claims progress that was never stored.
+   *
+   * A bare string is the title on its own; the object form adds the unit.
+   */
+  nextTopic?: string | GuidedNextTopic | null;
+  /** Topics the student could start, from the plan / units / attached note. */
+  topics?: readonly (string | null | undefined)[];
+  /** How many rows the picker draws, `nextTopic` included. */
+  limit?: number;
+}
+
+const GUIDED_GOALS_LIMIT = 6;
+
+function cleanTopic(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.replace(/\s+/g, ' ').trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
+ * The rows the Guided picker draws, from material the client already has.
+ *
+ * Pure and model-free: building the picker spends no credits, so it is a local
+ * render, never a companion call. `Continue learning:` is gated on a real
+ * `nextTopic` — with none, the picker offers `Start learning:` rows only.
+ */
+export function buildGuidedGoals(input: GuidedGoalsInput = {}): GuidedGoal[] {
+  const limit = Math.max(1, input.limit ?? GUIDED_GOALS_LIMIT);
+  const goals: GuidedGoal[] = [];
+  const seen = new Set<string>();
+
+  const rawNext = input.nextTopic;
+  const next = cleanTopic(typeof rawNext === 'string' ? rawNext : rawNext?.title);
+  const nextUnit =
+    typeof rawNext === 'string' || !rawNext ? null : cleanTopic(rawNext.unit);
+  if (next) {
+    seen.add(next.toLowerCase());
+    goals.push({
+      id: `continue:${next}`,
+      kind: 'continue',
+      topic: next,
+      label: `Continue learning: ${next}`,
+      unit: nextUnit,
+      prompt: `Continue guiding me through ${next}${
+        nextUnit ? `, from ${nextUnit} in my study plan` : ''
+      }. Pick up from the next step and check I have got it before moving on.`,
+    });
+  }
+
+  for (const raw of input.topics ?? []) {
+    if (goals.length >= limit) break;
+    const topic = cleanTopic(raw);
+    if (!topic) continue;
+    const key = topic.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    goals.push({
+      id: `start:${topic}`,
+      kind: 'start',
+      topic,
+      label: `Start learning: ${topic}`,
+      prompt: `Guide me through ${topic}, one step at a time. Start with the first step and check I have got it before moving on.`,
+    });
+  }
+
+  return goals.slice(0, limit);
+}
+
+/** What the free-text row sends once the student has typed their own goal. */
+export function guidedFreeTextPrompt(text: string): string {
+  const goal = cleanTopic(text) || '';
+  return `Guide me through ${goal}, one step at a time. Start with the first step and check I have got it before moving on.`;
+}
 
 /**
  * Read a citation off a wire payload. Anything malformed becomes null: a

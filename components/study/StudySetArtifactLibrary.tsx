@@ -9,8 +9,8 @@ export interface ArtifactCard {
   title: string;
   preview?: string | null;
   meta?: string;
-  feature: 'tests' | 'flashcards' | 'ai';
-  icon: 'clipboard' | 'layers' | 'headphones' | 'school';
+  feature: 'tests' | 'flashcards' | 'ai' | 'notes';
+  icon: 'clipboard' | 'layers' | 'headphones' | 'school' | 'mic' | 'document' | 'game-controller' | 'document-text' | 'help-circle';
 }
 
 interface StudySetArtifactLibraryProps {

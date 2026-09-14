@@ -1368,7 +1368,7 @@ export const App: React.FC = () => {
             return;
         }
         showToast('Answer saved as a note.', 'success');
-        if (target === 'cards' || target === 'test') {
+        if (target === 'cards' || target === 'test' || target === 'quiz') {
             // Deferred, not immediate: the note handlers close over the note
             // selected at RENDER time, so running in this tick would generate
             // from whatever note was open before this one.
@@ -1402,7 +1402,11 @@ export const App: React.FC = () => {
                         );
                     }
                 } else {
-                    const session = await noteHandlers.handleStartNoteQuiz();
+                    const session = await noteHandlers.handleStartNoteQuiz(
+                        undefined,
+                        undefined,
+                        { studyDoor: target === 'quiz' ? 'quiz' : 'test' }
+                    );
                     if (session?.questions?.length) {
                         showToast(`Quiz ready — ${session.questions.length} questions below`, 'success');
                     }

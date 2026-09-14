@@ -197,3 +197,28 @@ export function initialOpenUnitId(
   const withNext = timeline.find((entry) => entry.rows.some((row) => row.state === 'next'));
   return (withNext ?? timeline[0])?.unit.id ?? null;
 }
+
+/**
+ * The plan's next topic, as the Guided picker needs it.
+ *
+ * Deliberately takes the topic the CALLER already picked rather than picking
+ * one itself: web's spine recommends with `pickRecommendedTopic` and mobile's
+ * with `buildStudyPlanModel`, and a helper that chose for them would make the
+ * picker name a different topic from the `Continue` pill sitting right next to
+ * it. What is shared is everything after the choice — the honesty guard, the
+ * trim, and the shape the picker reads.
+ *
+ * Null means NO `Continue learning:` row: nothing was picked, the title is
+ * blank, or the pick came back `mastered`, which is what a recommender returns
+ * when a plan is finished and there is nothing left to continue.
+ */
+export function guidedNextTopicFromPlan(
+  next: { title?: string | null; status?: StudySetTopic['status'] } | null | undefined,
+  unitTitle?: string | null
+): { title: string; unit: string | null } | null {
+  if (!next || next.status === 'mastered') return null;
+  const title = (next.title || '').trim();
+  if (!title) return null;
+  const unit = (unitTitle || '').trim();
+  return { title, unit: unit || null };
+}

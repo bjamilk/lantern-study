@@ -69,6 +69,7 @@ interface PlayStudioProps {
   onReviewMissed: (deck: Deck, cardIds: string[]) => void;
   /** Which container the student is standing in, so the copy names it. */
   scope?: WorkspaceScope;
+  onCreateNew?: () => void;
 }
 
 export function PlayStudio({
@@ -77,6 +78,7 @@ export function PlayStudio({
   onStartMatch,
   onReviewMissed,
   scope = 'course',
+  onCreateNew,
 }: PlayStudioProps) {
   const [deckId, setDeckId] = useState(decks[0]?.id || '');
   const [session, setSession] = useState<PlaySession | null>(null);
@@ -189,11 +191,18 @@ export function PlayStudio({
 
   return (
     <div className="flex-1 min-h-0 overflow-y-auto rounded-lantern-xl border border-lantern-border bg-lantern-surface p-4 space-y-4">
-      <div>
-        <h2 className="text-heading">Play</h2>
-        <p className="text-body text-lantern-text-secondary mt-1">
-          {playTaglineCopy(scope)}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-heading">Play</h2>
+          <p className="text-body text-lantern-text-secondary mt-1">
+            {playTaglineCopy(scope)}
+          </p>
+        </div>
+        {onCreateNew ? (
+          <Button variant="secondary" onClick={onCreateNew}>
+            + New
+          </Button>
+        ) : null}
       </div>
       {hubBlocker ? (
         <p className="text-body text-lantern-text-secondary">{playBlockerCopy(hubBlocker, scope)}</p>

@@ -80,7 +80,7 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/GroupInviteLinkPanel.tsx': 5,
   'components/GroupListItem.tsx': 3,
   'components/GroupPerformanceChart.tsx': 1,
-  'components/ImportAndStudyModal.tsx': 16,
+  'components/ImportAndStudyModal.tsx': 1,
   'components/InvestModal.tsx': 33,
   'components/InviteFriendsScreen.tsx': 17,
   'components/InviteJoinScreen.tsx': 8,

@@ -35,6 +35,7 @@ interface EssayStudioProps {
   selectedNote: StudyNote | null;
   onNoteReady: (noteId: string) => Promise<void>;
   onImportPhoto?: () => void;
+  initialRubric?: string;
 }
 
 export function EssayStudio({
@@ -44,6 +45,7 @@ export function EssayStudio({
   selectedNote,
   onNoteReady,
   onImportPhoto,
+  initialRubric,
 }: EssayStudioProps) {
   const createNote = useNotesStore((s) => s.createNote);
   const saveNote = useNotesStore((s) => s.saveNote);
@@ -184,7 +186,7 @@ export function EssayStudio({
     }
   };
 
-  const open = session ?? startEssaySession({});
+  const open = session ?? startEssaySession({ rubricText: initialRubric });
   const attempt = currentEssayAttempt(open);
 
   return (

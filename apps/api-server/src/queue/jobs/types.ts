@@ -76,6 +76,7 @@ export type AIJobName =
   | "ai.generate.lesson"
   | "ai.generate.recap"
   | "ai.generate.essay"
+  | "ai.generate.topic"
   | "ai.explain.answer"
   | "ai.study.recommendations"
   | "ai.ask.tutor"

@@ -32,6 +32,19 @@ export {
 export {
   createCompanionClient,
   normalizeCompanionCitation,
+  COMPANION_MODES,
+  DEFAULT_COMPANION_MODE,
+  COMPANION_MODE_LABELS,
+  isCompanionMode,
+  normalizeCompanionMode,
+  GUIDED_MODE_PROMISE,
+  GUIDED_PICKER_TITLE,
+  GUIDED_COST_NOTE,
+  buildGuidedGoals,
+  guidedFreeTextPrompt,
+  type GuidedGoal,
+  type GuidedGoalsInput,
+  type GuidedNextTopic,
   type LanternCompanionClient,
 } from './companion';
 export {

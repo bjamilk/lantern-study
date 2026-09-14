@@ -366,7 +366,11 @@ export function useNoteHandlers(currentUserId?: string) {
     async (
       editorState?: { title?: string; body?: string },
       hooks?: AiJobHooks,
-      options?: { replace?: boolean }
+      options?: {
+        replace?: boolean;
+        studyDoor?: 'quiz' | 'test';
+        sittingPreset?: 'timed' | 'calculator_off' | 'passage';
+      }
     ) => {
       if (!selectedNote) return null;
       cancelAutoSave();
@@ -413,6 +417,12 @@ export function useNoteHandlers(currentUserId?: string) {
           config: {
             sourceNoteId: note.id,
             sourceNoteTitle: note.title,
+            studyDoor: options?.studyDoor ?? 'quiz',
+            attemptKind: options?.studyDoor === 'test' || options?.sittingPreset === 'timed' ? 'exam' : 'practice',
+            ...(options?.sittingPreset ? { sittingPreset: options.sittingPreset } : {}),
+            ...(options?.sittingPreset === 'timed' ? { timerDuration: 30 * 60 } : {}),
+            ...(options?.sittingPreset === 'calculator_off' ? { calculatorAllowed: false } : {}),
+            ...(options?.sittingPreset === 'passage' ? { passageStem: true } : {}),
           },
           questions,
           courseId: note.courseId,

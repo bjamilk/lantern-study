@@ -493,6 +493,32 @@ body {
   display: none;
 }
 
+/* Visible only while the scroller is moving (class toggled in JS). */
+.scrollbar-autohide {
+  scrollbar-width: none;
+}
+.scrollbar-autohide::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+.scrollbar-autohide.is-scrolling {
+  scrollbar-width: thin;
+  scrollbar-color: #94a3b8 transparent;
+}
+.scrollbar-autohide.is-scrolling::-webkit-scrollbar {
+  width: 6px;
+}
+.scrollbar-autohide.is-scrolling::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 3px;
+}
+.dark .scrollbar-autohide.is-scrolling {
+  scrollbar-color: #64748b transparent;
+}
+.dark .scrollbar-autohide.is-scrolling::-webkit-scrollbar-thumb {
+  background: #64748b;
+}
+
 /* Thin styled scrollbar for chat & content areas */
 .scrollbar-thin {
   scrollbar-width: thin;

@@ -18,8 +18,10 @@
  *   pill glyph  colors.textInverse   on colors.primaryFill  (same pair)
  *   idle glyph  colors.tabBarInactive on colors.background   (the four others)
  *
- * One of the six pairs does NOT clear AA and is recorded rather than relaxed:
- * see the dark-accent note below. It predates this bar.
+ * All six pairs clear AA. Until 2026-09-13 the dark-accent one did not (3.65-
+ * 3.79:1) and was recorded here at the floor it held; the cause was in the
+ * accent rewrite, not in this bar, and is fixed there — see
+ * `packages/shared/src/settings/appearanceEffects.ts`.
  *
  * The idle glyph is gated at AA LARGE, not AA normal: it is an 18 dp icon, not
  * a string — the icon-contrast threshold (3:1, WCAG 1.4.11 non-text contrast)
@@ -99,26 +101,20 @@ describe('the lit tab’s word reads', () => {
   });
 
   /**
-   * A KNOWN SHORTFALL, recorded rather than relaxed away — and NOT introduced
-   * by this bar.
+   * WAS a known shortfall, FIXED 2026-09-13 in the accent rewrite.
    *
-   * In DARK mode a custom accent rewrites `primaryFill` to a mid-tone
-   * (#0b7caf, #0b825a, #9f6707, #c93d82, #8457ea) while `textInverse` stays
-   * the near-black #191919. That pair measures 3.65–3.79:1 — over the 3:1
-   * non-text threshold, under the 4.5:1 AA_NORMAL one, and 15 sp semibold is
+   * In dark mode a custom accent rewrote `primaryFill` to a mid-tone darkened
+   * for a WHITE label (#0b7caf, #0b825a, #9f6707, #c93d82, #8457ea) while the
+   * label actually painted is `textInverse` = #191919. That pair measured
+   * 3.65-3.79:1 — over the 3:1 non-text bar, under AA, and 15 sp semibold is
    * not WCAG "large text" (which starts at 18.66 px bold).
    *
-   * It predates the hugging pill: the lit tab already drew an 11 sp bold word
-   * in exactly this pair, as does EVERY primary button in the app, so the fix
-   * belongs in the accent rewrite (packages/shared/src/settings) where one
-   * change reaches all of them — not in this bar, which would only paper over
-   * its own instance. The default palette and the default accent are unaffected
-   * (17.58:1 light, 16.13:1 dark), as is high contrast.
-   *
-   * Asserted at the floor it actually holds, so the day someone darkens an
-   * accent further this fails instead of shipping quietly.
+   * `applyAccentToColors` now derives the fill against the ink that sits on
+   * it, so each preset keeps its stored hue in dark and the pair reads
+   * 4.86-8.19:1. Asserted at AA, where it belongs: the floor-holding
+   * assertion this replaces is exactly how the shortfall survived a release.
    */
-  it('records the dark-accent shortfall at the floor it really holds', () => {
+  it('clears AA in DARK under every accent a student can pick', () => {
     for (const accent of ACCENT_PRESETS) {
       const ratio = pillRatio(applyAccentToColors(darkTheme, accent) as BarInks);
       expect(report(`dark · ${accent}`, 'pill label on primaryFill', ratio)).toEqual({
@@ -126,7 +122,7 @@ describe('the lit tab’s word reads', () => {
         what: 'pill label on primaryFill',
         ratio: expect.any(Number),
       });
-      expect(ratio).toBeGreaterThanOrEqual(AA_LARGE);
+      expect(ratio).toBeGreaterThanOrEqual(AA_NORMAL);
     }
   });
 });

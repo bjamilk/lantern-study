@@ -1,6 +1,6 @@
 import {
   AA_LARGE,
-  ensureFillContrast,
+  ensureAaPair,
   ensureTextContrastOn,
   relativeLuminance,
 } from '../design/contrast';
@@ -40,6 +40,25 @@ export interface AppearanceEffectFlags {
  */
 export const LEGACY_DEFAULT_ACCENT_COLOR = '#6366f1';
 export const DEFAULT_ACCENT_COLOR = '#191919';
+
+/**
+ * The accent swatches a student can pick, in swatch order — the canonical list.
+ *
+ * It lives here, beside the sentinels, so the contrast gates and the mobile
+ * settings grid (`apps/mobile/src/screens/settings/accentPresets.ts`) cannot
+ * disagree about WHICH hues ship: a preset added there but not gated here is
+ * exactly how the dark-mode AA shortfall reached five presets unnoticed.
+ * These are stored values — never retint one to fix contrast; derive the fill
+ * and its ink instead (`applyAccentToColors`).
+ */
+export const ACCENT_PRESET_HEXES: readonly string[] = [
+  DEFAULT_ACCENT_COLOR,
+  '#0ea5e9',
+  '#10b981',
+  '#f59e0b',
+  '#ec4899',
+  '#8b5cf6',
+];
 
 /**
  * True when the stored accent means "leave the palette alone" — the ink default,
@@ -112,9 +131,9 @@ export function applyAccentToColors<T extends Record<string, string>>(
   }
   // ONE accent, TWO derived roles — the build-153 split.
   //
-  //   primaryFill  the accent darkened just enough that a WHITE label on it
-  //                reaches AA. A mid-tone preset is ~4.5:1 under white, so
-  //                even a default-weight accent needs one step.
+  //   primaryFill  the accent paired with the label ink actually painted on
+  //                it (`textInverse`), moved only if that ink cannot read on
+  //                the raw hue. See `ensureAaPair`.
   //   primaryText  the accent adjusted until it clears AA on the surface AND
   //                on the `primaryBackground` tint composited over it. Only
   //                the surface used to be checked, which is why dark's
@@ -128,12 +147,30 @@ export function applyAccentToColors<T extends Record<string, string>>(
   const tint = colors.primaryBackground || ground;
   const isDarkGround = relativeLuminance(ground) < 0.5;
 
-  const primaryFill = ensureFillContrast(accentColor, '#ffffff');
+  // The label on the fill is `textInverse`, which INVERTS with the theme:
+  // white in light, #191919 in dark. Deriving the fill against a hardcoded
+  // white therefore darkened every custom accent in DARK mode for a label that
+  // is near-black — 3.65-3.79:1 for every primary button, the lit tab word and
+  // the active pills (recorded 2026-09-13 in the mobile tabPillContrast test).
+  //
+  // So derive the pair, not the fill: the theme's own inverse ink is preferred
+  // and the fill moves only as far as that ink needs, with the opposite
+  // canonical ink as the fallback if the hue would have to collapse. In dark
+  // every shipped preset already holds #191919 on its RAW hue, so the fill
+  // stops being darkened at all and the student gets the colour they picked;
+  // light is unchanged, its white label still setting the fill.
+  const { fill: primaryFill, ink: primaryFillInk } = ensureAaPair(accentColor, [
+    colors.textInverse || '#ffffff',
+    relativeLuminance(colors.textInverse || '#ffffff') > 0.5 ? '#191919' : '#f5f5f5',
+  ]);
   const primaryText = ensureTextContrastOn(accentColor, [ground, tint]);
 
   return {
     ...colors,
     primaryFill,
+    // Paired with the fill above. Every call site that paints a label on a
+    // filled control reads this token, so one rewrite reaches all of them.
+    textInverse: primaryFillInk,
     primaryText,
     primary: isDarkGround ? primaryText : primaryFill,
     // Chrome, not text: the tab bar's active icon+label is always paired with

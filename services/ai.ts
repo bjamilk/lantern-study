@@ -374,6 +374,18 @@ export async function aiGenerateLesson(
   return aiRequest('/generate-lesson', { notes, ...options });
 }
 
+export async function aiGenerateFromTopic(
+  topic: string,
+  options?: {
+    subject?: string;
+    level?: 'intro' | 'intermediate' | 'exam';
+    count?: number;
+    studySetId?: string;
+  }
+): Promise<{ notes: Array<{ title: string; body: string }>; provider: string }> {
+  return aiRequest('/generate-from-topic', { topic, ...options });
+}
+
 export async function aiGenerateRecap(
   notes: string,
   options?: {

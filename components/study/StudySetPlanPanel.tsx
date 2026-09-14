@@ -170,29 +170,62 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
     navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId, workspaceActivity });
   };
 
+  const [planDraft, setPlanDraft] = useState(false);
+
   const generateFromNotes = async () => {
     setGenerating(true);
     try {
       const built = topicsFromReadingNotes(studySetId, notes);
+      setStoredUnits([built.unit]);
+      setStoredTopics(built.topics);
+      setPlanDraft(true);
+      showToast('Draft plan ready — accept it onto this set, regenerate, or decline.', 'success');
+    } catch {
+      setStoredUnits([fallback.unit]);
+      setStoredTopics(fallback.topics);
+      setPlanDraft(true);
+      showToast('Using a local plan from your notes.', 'info');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const acceptPlan = async () => {
+    setGenerating(true);
+    try {
       const saved = await replaceStudySetPlan(studySetId, {
-        units: [{ title: built.unit.title, position: built.unit.position }],
-        topics: built.topics.map((topic) => ({
-          unitIndex: 0,
+        units: units.map((unit, index) => ({ title: unit.title, position: unit.position ?? index })),
+        topics: topics.map((topic) => ({
+          unitIndex: Math.max(
+            0,
+            units.findIndex((unit) => unit.id === topic.unitId)
+          ),
           title: topic.title,
           position: topic.position,
           status: topic.status,
           sourceNoteIds: topic.sourceNoteIds,
         })),
       });
-      setStoredUnits((saved as { units: StudySetUnit[] }).units || [built.unit]);
-      setStoredTopics((saved as { topics: StudySetTopic[] }).topics || built.topics);
-      showToast('Study plan built from your materials.', 'success');
+      setStoredUnits((saved as { units: StudySetUnit[] }).units || units);
+      setStoredTopics((saved as { topics: StudySetTopic[] }).topics || topics);
+      setPlanDraft(false);
+      showToast('Study plan accepted onto this set.', 'success');
     } catch {
-      setStoredUnits([fallback.unit]);
-      setStoredTopics(fallback.topics);
-      showToast('Using a local plan from your notes until the server catches up.', 'info');
+      showToast('Could not save that plan. It is still on this screen.', 'error');
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const declinePlan = async () => {
+    setStoredUnits([]);
+    setStoredTopics([]);
+    setPlanDraft(false);
+    try {
+      await replaceStudySetPlan(studySetId, { units: [], topics: [] });
+      showToast('Plan declined.', 'info');
+    } catch {
+      showToast('Cleared the draft plan on this screen.', 'info');
     }
   };
 
@@ -252,7 +285,25 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
                 {generating ? 'Building…' : 'Generate topics from materials'}
               </Button>
             </Card>
-          ) : null}
+          ) : (
+            <div className="flex flex-wrap gap-2">
+              {planDraft ? (
+                <Button onClick={() => void acceptPlan()} disabled={generating}>
+                  Accept plan
+                </Button>
+              ) : null}
+              <Button
+                variant="secondary"
+                onClick={() => void generateFromNotes()}
+                disabled={generating || notes.length === 0}
+              >
+                {generating ? 'Building…' : 'Regenerate'}
+              </Button>
+              <Button variant="ghost" onClick={() => void declinePlan()} disabled={generating}>
+                Decline
+              </Button>
+            </div>
+          )}
 
           {/* The reference's highlighted CTA row. Shown only while a real
               pre-test exists to run — the self-rating pass below — and hidden

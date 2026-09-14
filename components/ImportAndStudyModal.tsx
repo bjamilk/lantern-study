@@ -18,6 +18,19 @@ import { runAiJob } from '../stores/aiJobRunner';
 import { useAiJobUserId } from '../hooks/useAiJobs';
 import { SMART_NOTES_CREDIT_COST, AI_CREDIT_COSTS } from '@lantern/shared/utils/aiCredits';
 import type { NoteAttachment, StudyNote } from '../types';
+import { NOTES_STUDIO_DEPTHS } from '@lantern/shared/learning';
+import type { SmartNotesDepth } from '@lantern/shared/utils/smartNotes';
+import {
+  TOPIC_SKILL_LEVELS,
+  normalizeTopicBrief,
+  splitNoteBodyByChapters,
+  topicBriefError,
+  type StudyUploadSource,
+  type TopicBrief,
+  type TopicSkillLevel,
+} from '@lantern/shared';
+import { createDeckWithCards } from '../services/apiEndpoints';
+import { parseCardExport } from './study/CreateFromSource';
 
 export type { ImportAndStudyResult } from '../hooks/useStudyGenerators';
 
@@ -32,7 +45,11 @@ interface ImportAndStudyModalProps {
   /** File the imported note into a study set. Course remains optional. */
   studySetId?: string | null;
   /** Focus the matching file control when a set-home chip opened this modal. */
-  source?: 'pdf' | 'ppt' | 'audio' | 'video' | 'youtube' | 'paste' | null;
+  source?: StudyUploadSource | null;
+  /** Record lecture lives in Lecture studio, not this modal. */
+  onRecordLecture?: () => void;
+  /** Empty-set starter notes from a topic, subject and level. */
+  onGenerateFromTopic?: (brief: TopicBrief) => Promise<void> | void;
 }
 
 type Step = 'input' | 'processing' | 'done';
@@ -46,6 +63,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   courseId,
   studySetId,
   source = null,
+  onRecordLecture,
+  onGenerateFromTopic,
 }) => {
   const [step, setStep] = useState<Step>('input');
   const [textContent, setTextContent] = useState('');
@@ -54,6 +73,15 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
   const [generateCards, setGenerateCards] = useState(true);
   const [generateQuiz, setGenerateQuiz] = useState(true);
   const [handwritingOcrOff, setHandwritingOcrOff] = useState(false);
+  const [youtubeUrl, setYoutubeUrl] = useState('');
+  const [ankiText, setAnkiText] = useState('');
+  const [noteDepth, setNoteDepth] = useState<SmartNotesDepth>('standard');
+  const [extractImages, setExtractImages] = useState(true);
+  const [chapterSplit, setChapterSplit] = useState(false);
+  const [topicTitle, setTopicTitle] = useState('');
+  const [topicSubject, setTopicSubject] = useState('');
+  const [topicLevel, setTopicLevel] = useState<TopicSkillLevel>('intermediate');
+  const [topicBusy, setTopicBusy] = useState(false);
   const setImportProgress = useUIStore((s) => s.setImportProgress);
   const loadNote = useNotesStore((s) => s.loadNote);
   const aiUserId = useAiJobUserId();
@@ -78,6 +106,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     setTextContent('');
     setError(null);
     setResult(null);
+    setYoutubeUrl('');
+    setAnkiText('');
+    setTopicTitle('');
+    setTopicSubject('');
   };
 
   const handleClose = () => {
@@ -101,7 +133,10 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       if (!aiUserId) {
         // Signed out: fall back to the plain path rather than filing a job
         // against nobody, which no panel would ever show.
-        const res = await runGenerators(note);
+        const res = await runGenerators(note, undefined, undefined, {
+          depth: noteDepth,
+          extractImages,
+        });
         setResult(res);
         setStep('done');
         onComplete(res);
@@ -146,7 +181,8 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             },
             // The job id is the deck save's idempotency key, so a retried save
             // replays the first write instead of making a second deck.
-            hooks
+            hooks,
+            { depth: noteDepth, extractImages }
           )
       );
 
@@ -156,7 +192,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       }
       onComplete(res);
     },
-    [runGenerators, onComplete, aiUserId, generateCards, generateQuiz]
+    [runGenerators, onComplete, aiUserId, generateCards, generateQuiz, noteDepth, extractImages]
   );
 
   const fileImportedNote = useCallback(
@@ -187,21 +223,27 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       setStep('processing');
       setError(null);
       try {
-        const created = await notesApi.createNote({
-          title,
-          body,
-          sourceType: sourceType as StudyNote['sourceType'],
-          ...(courseId ? { courseId } : {}),
-          ...(studySetId ? { studySetId } : {}),
-        });
-        const note = await fileImportedNote(created);
-        await runStudyGenerators(note);
+        const parts = chapterSplit ? splitNoteBodyByChapters(title, body) : [{ title, body }];
+        let first: StudyNote | null = null;
+        for (const part of parts) {
+          const created = await notesApi.createNote({
+            title: part.title,
+            body: part.body,
+            sourceType: sourceType as StudyNote['sourceType'],
+            ...(courseId ? { courseId } : {}),
+            ...(studySetId ? { studySetId } : {}),
+          });
+          const filed = await fileImportedNote(created);
+          if (!first) first = filed;
+        }
+        if (!first) throw new Error('Import failed');
+        await runStudyGenerators(first);
       } catch (e: unknown) {
         setError(e instanceof Error ? e.message : 'Import failed');
         setStep('input');
       }
     },
-    [runStudyGenerators, fileImportedNote, courseId, studySetId]
+    [runStudyGenerators, fileImportedNote, courseId, studySetId, chapterSplit]
   );
 
   const handlePdf = async (file: File) => {
@@ -291,6 +333,99 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
     void processContent(textContent.trim(), 'Imported Notes', 'typed');
   };
 
+  const handleYoutube = async () => {
+    if (!youtubeUrl.trim()) return;
+    setStep('processing');
+    setError(null);
+    try {
+      const created = await notesApi.createNoteFromYoutube(youtubeUrl.trim());
+      const note = created.note;
+      if (!note?.id) throw new Error('Could not file that video.');
+      const filed = await fileImportedNote(note);
+      await loadNote(filed.id);
+      await runStudyGenerators(filed);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'YouTube import failed');
+      setStep('input');
+    }
+  };
+
+  const handleBlank = async () => {
+    setStep('processing');
+    setError(null);
+    try {
+      const created = await notesApi.createNote({
+        title: 'Untitled note',
+        body: '',
+        sourceType: 'typed',
+        ...(courseId ? { courseId } : {}),
+        ...(studySetId ? { studySetId } : {}),
+      });
+      const filed = await fileImportedNote(created);
+      onOpenNote(filed.id);
+      handleClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not create a blank note');
+      setStep('input');
+    }
+  };
+
+  const handleAnki = async () => {
+    const cards = parseCardExport(ankiText);
+    if (cards.length === 0) {
+      setError('Paste Anki or Quizlet text: one card per line, front and back separated by a tab.');
+      return;
+    }
+    setStep('processing');
+    setError(null);
+    try {
+      await createDeckWithCards({
+        name: 'Imported cards',
+        studySetId: studySetId || undefined,
+        cards: cards.map((card) => ({ type: 'BASIC' as const, front: card.front, back: card.back })),
+      });
+      const res = {
+        noteId: '',
+        noteTitle: 'Imported cards',
+        summarized: false,
+        flashcardCount: cards.length,
+        quizQuestionCount: 0,
+        deckName: 'Imported cards',
+      };
+      setResult(res);
+      setStep('done');
+      onComplete(res);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Card import failed');
+      setStep('input');
+    }
+  };
+
+  const handleTopic = async () => {
+    if (!onGenerateFromTopic) return;
+    const brief = normalizeTopicBrief({ title: topicTitle, subject: topicSubject, level: topicLevel });
+    if (!brief) {
+      setError(topicBriefError(topicTitle) || 'Name the topic first.');
+      return;
+    }
+    setTopicBusy(true);
+    setError(null);
+    try {
+      await onGenerateFromTopic(brief);
+      handleClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Could not generate from that topic.');
+    } finally {
+      setTopicBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && source === 'lecture' && onRecordLecture) {
+      onRecordLecture();
+    }
+  }, [isOpen, source, onRecordLecture]);
+
   if (!isOpen) return null;
 
   const isBusy = step === 'processing';
@@ -306,7 +441,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
       panelClassName="!p-0 overflow-hidden"
     >
         <div className="flex items-center justify-between p-4 border-b border-lantern-border">
-          <h2 id="import-study-title" className="text-lg font-bold flex items-center gap-2 text-lantern-text">
+          <h2 id="import-study-title" className="text-heading font-bold flex items-center gap-2 text-lantern-text">
             <AppIcon name="sparkles" size={20} className="text-lantern-primary" aria-hidden />
             Import & Study
           </h2>
@@ -324,53 +459,115 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
         <div className="p-4 space-y-4 bg-lantern-surface">
           {step === 'input' && (
             <>
-              <p className="text-sm text-lantern-text-secondary">
+              <p className="text-body text-lantern-text-secondary">
                 Drop content in once — get a note plus optional flashcards and quiz.
               </p>
 
-              <p className="text-xs text-lantern-text-muted">
+              <p className="text-caption text-lantern-text-muted">
                 {formatMaxNoteUploadLabel()}
               </p>
 
               {handwritingOcrOff ? (
                 <p
                   role="status"
-                  className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2"
+                  className="text-caption text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2"
                 >
                   {HANDWRITING_OCR_OFF_MESSAGE}
                 </p>
               ) : null}
 
-              <div className="flex flex-wrap gap-3">
-                {(!source || source === 'pdf' || source === 'audio' || source === 'video') ? (
-                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <AppIcon name="document-upload" size={32} className="text-lantern-primary" aria-hidden />
-                  <span className="text-sm font-medium text-lantern-text">Upload PDF</span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {(!source || source === 'pdf') ? (
+                <label className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <AppIcon name="document-upload" size={24} className="text-lantern-primary" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">PDF</span>
                   <input type="file" accept=".pdf,application/pdf" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePdf(f); e.target.value = ''; }} />
                 </label>
                 ) : null}
                 {(!source || source === 'ppt') ? (
-                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <AppIcon name="document-upload" size={32} className="text-lantern-accent" aria-hidden />
-                  <span className="text-sm font-medium text-lantern-text">PowerPoint</span>
+                <label className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <AppIcon name="document-upload" size={24} className="text-lantern-accent" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">PowerPoint</span>
                   <input type="file" accept=".pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void handlePresentation(f); e.target.value = ''; }} />
                 </label>
                 ) : null}
-                {(!source || source === 'audio' || source === 'video') ? (
-                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <AppIcon name="image" size={32} className="text-lantern-primary" aria-hidden />
-                  <span className="text-sm font-medium text-lantern-text">Photos</span>
+                {(!source || source === 'photo' || source === 'audio' || source === 'video') ? (
+                <label className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <AppIcon name="image" size={24} className="text-lantern-primary" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">{source === 'photo' ? 'Photo / handwriting' : 'Images'}</span>
                   <input type="file" accept="image/*" multiple className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
                 ) : null}
-                {!source ? (
-                <label className="flex-1 min-w-[120px] flex flex-col items-center gap-2 p-4 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
-                  <AppIcon name="image" size={32} className="text-lantern-accent" aria-hidden />
-                  <span className="text-sm font-medium text-lantern-text">Camera</span>
+                {(!source || source === 'photo') ? (
+                <label className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed cursor-pointer hover:border-lantern-primary border-lantern-border min-h-[44px]">
+                  <AppIcon name="image" size={24} className="text-lantern-accent" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">Camera</span>
                   <input type="file" accept="image/*" capture="environment" className="hidden" onChange={(e) => { const files = Array.from(e.target.files || []); if (files.length) void handlePhotos(files); e.target.value = ''; }} />
                 </label>
                 ) : null}
+                {(!source || source === 'blank') ? (
+                <button
+                  type="button"
+                  onClick={() => void handleBlank()}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed hover:border-lantern-primary border-lantern-border min-h-[44px]"
+                >
+                  <AppIcon name="document-text" size={24} className="text-lantern-primary" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">Blank note</span>
+                </button>
+                ) : null}
+                {onRecordLecture && (!source || source === 'audio' || source === 'lecture') ? (
+                <button
+                  type="button"
+                  onClick={onRecordLecture}
+                  className="flex flex-col items-center gap-2 p-3 rounded-xl border-2 border-dashed hover:border-lantern-primary border-lantern-border min-h-[44px]"
+                >
+                  <AppIcon name="mic" size={24} className="text-lantern-primary" aria-hidden />
+                  <span className="text-body font-medium text-lantern-text">Record lecture</span>
+                </button>
+                ) : null}
               </div>
+
+              {(!source || source === 'youtube' || source === 'video') ? (
+                <div className="space-y-2">
+                  <label className="block text-body font-medium text-lantern-text" htmlFor="import-youtube">
+                    YouTube
+                  </label>
+                  <input
+                    id="import-youtube"
+                    type="url"
+                    value={youtubeUrl}
+                    onChange={(e) => setYoutubeUrl(e.target.value)}
+                    placeholder="https://www.youtube.com/watch?v="
+                    className="w-full px-3 py-2 rounded-lg border text-body border-lantern-border bg-lantern-surface text-lantern-text"
+                  />
+                  {youtubeUrl.trim() ? (
+                    <Button onClick={() => void handleYoutube()} className="w-full">
+                      Add video
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+
+              {(!source || source === 'anki') ? (
+                <div className="space-y-2">
+                  <label className="block text-body font-medium text-lantern-text" htmlFor="import-anki">
+                    Anki / Quizlet
+                  </label>
+                  <textarea
+                    id="import-anki"
+                    value={ankiText}
+                    onChange={(e) => setAnkiText(e.target.value)}
+                    rows={4}
+                    placeholder="One card per line, term and definition separated by a tab"
+                    className="w-full px-3 py-2 rounded-lg border text-body resize-none border-lantern-border bg-lantern-surface text-lantern-text"
+                  />
+                  {ankiText.trim() ? (
+                    <Button onClick={() => void handleAnki()} className="w-full">
+                      Import cards
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
 
               <textarea
                 placeholder="Or paste lecture notes / text..."
@@ -378,10 +575,79 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 onChange={(e) => setTextContent(e.target.value)}
                 rows={4}
                 aria-label="Paste notes or text to import"
-                className="w-full px-3 py-2 rounded-lg border text-sm resize-none border-lantern-border bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
+                className="w-full px-3 py-2 rounded-lg border text-body resize-none border-lantern-border bg-lantern-surface text-lantern-text focus:ring-2 focus:ring-lantern-primary focus:border-transparent"
               />
 
-              <div className="flex gap-4 text-sm">
+              <div>
+                <p className="text-caption text-lantern-text-muted mb-2">Notes depth on ingest</p>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Notes depth">
+                  {NOTES_STUDIO_DEPTHS.map((option) => (
+                    <button
+                      key={option.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={noteDepth === option.id}
+                      onClick={() => setNoteDepth(option.id)}
+                      className={`min-h-[36px] rounded-full border px-3 text-caption ${
+                        noteDepth === option.id
+                          ? 'border-lantern-text font-semibold'
+                          : 'border-lantern-border text-lantern-text-secondary'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <label className="flex items-center gap-2 text-body cursor-pointer">
+                <input type="checkbox" checked={extractImages} onChange={(e) => setExtractImages(e.target.checked)} />
+                Extract images from PDFs and slides
+              </label>
+              <label className="flex items-center gap-2 text-body cursor-pointer">
+                <input type="checkbox" checked={chapterSplit} onChange={(e) => setChapterSplit(e.target.checked)} />
+                Split pasted text on chapter or section headings
+              </label>
+
+              {onGenerateFromTopic && (!source || source === 'paste') ? (
+                <div className="rounded-xl border border-lantern-border p-3 space-y-2">
+                  <p className="text-body font-medium text-lantern-text">Generate 3–8 notes from a topic</p>
+                  <input
+                    value={topicTitle}
+                    onChange={(e) => setTopicTitle(e.target.value)}
+                    placeholder="Topic"
+                    className="w-full px-3 py-2 rounded-lg border text-body border-lantern-border bg-lantern-surface"
+                  />
+                  <input
+                    value={topicSubject}
+                    onChange={(e) => setTopicSubject(e.target.value)}
+                    placeholder="Subject (optional)"
+                    className="w-full px-3 py-2 rounded-lg border text-body border-lantern-border bg-lantern-surface"
+                  />
+                  <div className="flex flex-wrap gap-2">
+                    {TOPIC_SKILL_LEVELS.map((level) => (
+                      <button
+                        key={level.id}
+                        type="button"
+                        aria-pressed={topicLevel === level.id}
+                        onClick={() => setTopicLevel(level.id)}
+                        className={`min-h-[36px] rounded-full border px-3 text-caption ${
+                          topicLevel === level.id
+                            ? 'border-lantern-text font-semibold'
+                            : 'border-lantern-border text-lantern-text-secondary'
+                        }`}
+                      >
+                        {level.label}
+                      </button>
+                    ))}
+                  </div>
+                  <Button disabled={topicBusy} onClick={() => void handleTopic()} className="w-full">
+                    {topicBusy ? 'Generating…' : 'Generate starter notes'}
+                  </Button>
+                </div>
+              ) : null}
+
+              <div className="flex gap-4 text-body">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" checked={generateCards} onChange={(e) => setGenerateCards(e.target.checked)} />
                   Generate flashcards
@@ -396,7 +662,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 <Button onClick={handleTextSubmit} className="w-full">Import text</Button>
               )}
 
-              {error && <p className="text-sm text-lantern-error">{error}</p>}
+              {error && <p className="text-body text-lantern-error">{error}</p>}
             </>
           )}
 
@@ -404,7 +670,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
             <div className="py-8 text-center">
               <div className="animate-spin w-10 h-10 border-4 border-lantern-primary border-t-transparent rounded-full mx-auto mb-4" aria-hidden />
               <p className="font-medium text-lantern-text">Creating your study materials...</p>
-              <p className="text-sm text-lantern-text-muted mt-1">Summary + flashcards + quiz</p>
+              <p className="text-body text-lantern-text-muted mt-1">Summary + flashcards + quiz</p>
               <button
                 type="button"
                 onClick={handleClose}
@@ -421,7 +687,7 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
               <p className="font-semibold text-lantern-text">
                 {result.warnings?.length ? `${result.noteTitle} imported` : `${result.noteTitle} ready!`}
               </p>
-              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-sm text-lantern-text-muted">
+              <div className="flex flex-wrap justify-center gap-x-4 gap-y-1 text-body text-lantern-text-muted">
                 {result.summarized ? <span>AI summary saved</span> : null}
                 {result.flashcardCount ? (
                   <span>{result.flashcardCount} flashcards saved</span>
@@ -432,20 +698,26 @@ export const ImportAndStudyModal: React.FC<ImportAndStudyModalProps> = ({
                 ) : null}
               </div>
               {result.flashcardCount && result.deckName ? (
-                <p className="text-sm text-lantern-text-secondary">
+                <p className="text-body text-lantern-text-secondary">
                   Cards saved to deck <span className="font-semibold text-lantern-text">“{result.deckName}”</span> — find it in your Library.
                 </p>
               ) : null}
               {result.warnings?.length ? (
-                <div role="status" aria-live="polite" className="text-left text-sm text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 space-y-1">
+                <div role="status" aria-live="polite" className="text-left text-body text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 space-y-1">
                   {result.warnings.map((w) => (
                     <p key={w}>{w}</p>
                   ))}
                 </div>
               ) : null}
-              <Button onClick={() => { onOpenNote(result.noteId); handleClose(); }} className="w-full">
-                Open note
-              </Button>
+              {result.noteId ? (
+                <Button onClick={() => { onOpenNote(result.noteId); handleClose(); }} className="w-full">
+                  Open note
+                </Button>
+              ) : (
+                <Button onClick={handleClose} className="w-full">
+                  Done
+                </Button>
+              )}
               {onTurnIntoStudyProduct ? (
                 <Button
                   variant="secondary"

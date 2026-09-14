@@ -33,6 +33,11 @@ import {
   type RecapLength,
   type RecapStyle,
 } from '@lantern/shared/learning';
+import {
+  normalizeTopicBrief,
+  normalizeTopicNoteDrafts,
+  starterNoteCountForLevel,
+} from '@lantern/shared/study/createFromSource';
 export { SMART_NOTES_GUIDANCE_MAX_CHARS };
 export type { SmartNotesDepth };
 export type { ExamFormat };
@@ -1459,6 +1464,65 @@ ${options.subject ? `Subject: ${options.subject}.` : ''}`;
   );
 }
 
+export async function generateTopicMaterials(
+  topic: string,
+  options: {
+    subject?: string;
+    level?: 'intro' | 'intermediate' | 'exam';
+    count?: number;
+  } = {}
+): Promise<{
+  notes: Array<{ title: string; body: string }>;
+  provider: string;
+  usage?: AiUsage;
+}> {
+  const brief = normalizeTopicBrief({
+    title: topic,
+    subject: options.subject,
+    level: options.level,
+  });
+  if (!brief) {
+    throw new ApiError('Name a topic in at least two characters.', 400);
+  }
+  const count = starterNoteCountForLevel(brief.level);
+  const wanted = Math.min(8, Math.max(3, options.count ?? count));
+  const levelLine =
+    brief.level === 'intro'
+      ? 'Introductory: define terms and first principles.'
+      : brief.level === 'exam'
+        ? 'Exam-ready: what a paper is likely to ask, with worked distinctions.'
+        : 'Intermediate: connections, examples, and common mistakes.';
+  const subjectLine = brief.subject ? `Subject: ${brief.subject}.` : '';
+
+  return withAiResponseCache(
+    'generate_from_topic',
+    brief.title,
+    { subject: brief.subject, level: brief.level, count: wanted },
+    async () => {
+      const systemPrompt = `You write starter study notes for a student who has no materials yet.
+Return ONLY valid JSON: {"notes":[{"title":"...","body":"markdown, 180-400 words"}]}
+
+Rules:
+- Write exactly ${wanted} notes.
+- Each body is self-contained markdown a student can study from: headings, short paragraphs, one list when it helps.
+- Do not invent citations or page numbers.
+- ${levelLine}
+${subjectLine}`;
+      const { text, provider, usage } = await chatCompletion(
+        systemPrompt,
+        `Topic: ${brief.title}`,
+        { temperature: 0.6, jsonOutput: true }
+      );
+      const parsed = extractJSON(text);
+      const notes = normalizeTopicNoteDrafts(parsed, brief.title, wanted);
+      if (notes.length < 3) {
+        throw new Error('Topic generation produced too few notes');
+      }
+      return { provider, usage, notes };
+    }
+  );
+}
+
 export async function generateRecapFromNotes(
   notes: string,
   options: {
@@ -1990,13 +2054,21 @@ export interface CompanionAction {
 }
 
 /**
- * How the companion teaches this turn. Three modes, not a personality gallery:
+ * How the companion teaches this turn. Four modes, not a personality gallery:
  * each one changes what the assistant is allowed to do, so the difference is
  * visible in every reply instead of being a change of tone.
+ *
+ * Must stay in step with `CompanionMode` in `@lantern/shared/types` — that is
+ * what a client is allowed to send; this is what the server will honour.
  */
-export type CompanionMode = 'explain' | 'quiz_me' | 'socratic';
+export type CompanionMode = 'explain' | 'quiz_me' | 'socratic' | 'guided';
 
-export const COMPANION_MODES: readonly CompanionMode[] = ['explain', 'quiz_me', 'socratic'];
+export const COMPANION_MODES: readonly CompanionMode[] = [
+  'explain',
+  'quiz_me',
+  'socratic',
+  'guided',
+];
 
 export const DEFAULT_COMPANION_MODE: CompanionMode = 'explain';
 
@@ -2005,6 +2077,7 @@ export const COMPANION_MODE_LABELS: Record<CompanionMode, string> = {
   explain: 'Explain',
   quiz_me: 'Quiz me',
   socratic: 'Socratic',
+  guided: 'Guided',
 };
 
 export function isCompanionMode(value: unknown): value is CompanionMode {
@@ -2033,6 +2106,14 @@ const COMPANION_MODE_PROMPTS: Record<CompanionMode, string> = {
 - If they are stuck, narrow the question or give the smallest possible hint — not the answer.
 - Confirm warmly the moment they get it, then state the full answer once to lock it in.
 - If they say "just tell me" twice, give the answer: refusing help is not teaching.`,
+  guided: `Study mode: GUIDED.
+You are running a lesson through one topic, step by step, from the attached set or note.
+- ONE step per reply. Teach exactly one idea, in a few short lines. Never a multi-section wall, never "here are all seven concepts", never the whole topic at once.
+- CHECK before advancing. End every teaching reply with ONE short check question, then STOP and wait. Do not teach the next step in the same reply as the check.
+- REACT to the answer. Correct: say so in one line, then take the next step. Wrong or partial: do NOT advance — re-teach that same step a DIFFERENT way (a new angle, a smaller piece, or a concrete example), then re-check.
+- OFFER the next thing when a step is done: either the next step, or ONE concrete activity this set actually has — take a quiz on it, review these flashcards, read the source note — and let the student choose.
+- You cannot open, launch or navigate anything yourself. Suggest the activity in words; never say you are opening it, starting it, or taking them there.
+- A passed check is one question answered, not mastery. Never tell the student they "know" or have "mastered" a topic, never congratulate them for finishing something that was not actually assessed, and never invent progress or steps that are not in the material below.`,
 };
 
 /** Where the answer came from — reported honestly, never guessed at by the UI. */

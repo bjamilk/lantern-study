@@ -4,6 +4,9 @@ import {
   TAB_BAR_BOTTOM_INSET_FLOOR,
   TAB_BAR_CONTENT_HEIGHT,
   TAB_BAR_GAP,
+  TAB_BAR_ROW_PADDING_TOP,
+  bottomTabBarHeight,
+  bottomTabBarPadding,
   fallbackInsets,
   resolveBottomClearance,
   resolveEdgePadding,
@@ -12,6 +15,8 @@ import {
   tabBarClearance,
   type ScreenEdgeInsets,
 } from './screenInsets';
+import { CONTEXTUAL_BAR_CONTENT_HEIGHT, contextualBarClearance } from './contextualBarLayout';
+import { TAB_PILL } from '../../theme/surfaceMetrics';
 
 const insets = (top: number, bottom: number, left = 0, right = 0): ScreenEdgeInsets => ({
   top,
@@ -179,5 +184,75 @@ describe('scrollDeltaToRevealInput', () => {
   it('returns 0 for unmeasurable geometry instead of jumping the list', () => {
     expect(scrollDeltaToRevealInput({ inputBottomY: Number.NaN, keyboardTopY: 500 })).toBe(0);
     expect(scrollDeltaToRevealInput({ inputBottomY: 560, keyboardTopY: Number.NaN })).toBe(0);
+  });
+});
+
+/**
+ * Every bottom inset a real device reports: gesture nav (0-8), the floor, a
+ * notch-less phone, and Android 3-button navigation.
+ */
+const DEVICE_BOTTOM_INSETS = [0, 8, 16, 20, 24, 34, 48];
+
+describe('bottomTabBarHeight', () => {
+  it('is what BottomTabBar draws: content + floored inset + gap', () => {
+    expect(bottomTabBarHeight(48)).toBe(TAB_BAR_CONTENT_HEIGHT + 48 + TAB_BAR_GAP);
+    expect(bottomTabBarHeight(0)).toBe(
+      TAB_BAR_CONTENT_HEIGHT + TAB_BAR_BOTTOM_INSET_FLOOR + TAB_BAR_GAP
+    );
+    expect(bottomTabBarPadding(0)).toBe(TAB_BAR_BOTTOM_INSET_FLOOR + TAB_BAR_GAP);
+  });
+
+  it('holds the pill row the bar actually draws', () => {
+    // The declared content height is what every screen clears; the drawn row is
+    // `pt-2` plus the pill. A taller pill with no matching content height would
+    // bury the last row of every tab root, which is exactly the Profile
+    // `Settings` report this test exists to prevent recurring.
+    expect(TAB_BAR_ROW_PADDING_TOP + TAB_PILL.height).toBeLessThanOrEqual(TAB_BAR_CONTENT_HEIGHT);
+  });
+});
+
+/**
+ * The five tab ROOTS (Home, Study, Chat, Campus, Profile) all pay this number,
+ * through `useScreenBottomPadding({ bottom: 'auto' })` or `useTabBarClearance()`.
+ * Modelled here as pure arithmetic so the invariant is testable in the node
+ * environment: MeScreen and its peers are a shell over it.
+ */
+function tabRootBottomInset(bottomInset: number, contextualRow = false): number {
+  return contextualBarClearance({
+    base: resolveBottomClearance({ mode: 'auto', bottomInset, tabBarPresent: true }),
+    contentHeight: CONTEXTUAL_BAR_CONTENT_HEIGHT,
+    present: contextualRow,
+  });
+}
+
+describe('tab-root bottom clearance (Profile/Me root and its four peers)', () => {
+  it('clears the bar on every device inset: inset >= bar height + system inset', () => {
+    for (const bottomInset of DEVICE_BOTTOM_INSETS) {
+      expect(tabRootBottomInset(bottomInset)).toBeGreaterThanOrEqual(
+        bottomTabBarHeight(bottomInset)
+      );
+    }
+  });
+
+  it('leaves a visible gap, not a flush edge, above the bar', () => {
+    for (const bottomInset of DEVICE_BOTTOM_INSETS) {
+      expect(tabRootBottomInset(bottomInset) - bottomTabBarHeight(bottomInset)).toBe(
+        DEFAULT_BOTTOM_EXTRA
+      );
+    }
+  });
+
+  it('still clears both strips where a contextual row sits above the bar', () => {
+    for (const bottomInset of DEVICE_BOTTOM_INSETS) {
+      expect(tabRootBottomInset(bottomInset, true)).toBeGreaterThanOrEqual(
+        bottomTabBarHeight(bottomInset) + CONTEXTUAL_BAR_CONTENT_HEIGHT
+      );
+    }
+  });
+
+  it('is never the plain safe-area inset, which the bar would swallow', () => {
+    for (const bottomInset of DEVICE_BOTTOM_INSETS) {
+      expect(tabRootBottomInset(bottomInset)).toBeGreaterThan(safeBottomClearance(bottomInset));
+    }
   });
 });

@@ -29,6 +29,7 @@ import {
   generateFlashcardsFromNotes,
   generateLessonFromNotes,
   generateRecapFromNotes,
+  generateTopicMaterials,
   gradeEssayFromDraft,
   explainAnswer,
   getStudyRecommendations,
@@ -191,6 +192,37 @@ router.post('/generate-lesson', aiRateLimitForFeature('lesson'), async (req: Aut
   } catch (error: any) {
     console.error('AI generate lesson error:', error.message);
     res.status(503).json({ error: clientErrorMessage(error, 'Failed to generate a lesson.') });
+  }
+});
+
+router.post('/generate-from-topic', aiRateLimitForFeature('generate_questions'), async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { topic, subject, level, count, studySetId } = req.body;
+    if (!topic || typeof topic !== 'string') {
+      res.status(400).json({ error: 'Name a topic in at least two characters.' });
+      return;
+    }
+    const outcome = await runSyncOrEnqueue(
+      'ai.generate.topic',
+      { topic, subject, level, count, studySetId },
+      userId,
+      async () => {
+        const generated = await generateTopicMaterials(topic, { subject, level, count });
+        await recordInference(req, 'generate-from-topic', generated);
+        return generated;
+      },
+      aiChargeFromRes(res)
+    );
+    if (outcome.mode === 'async') {
+      sendAsyncJobAccepted(res, outcome.jobId);
+      return;
+    }
+    res.json(outcome.result);
+  } catch (error: any) {
+    const status = typeof error?.statusCode === 'number' ? error.statusCode : 503;
+    console.error('AI generate from topic error:', error.message);
+    res.status(status).json({ error: clientErrorMessage(error, 'Failed to generate notes from that topic.') });
   }
 });
 

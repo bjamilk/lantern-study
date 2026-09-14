@@ -69,6 +69,15 @@ import {
   scopeSubtitle,
   type CompanionRouteScope,
 } from './companion/companionScope';
+import { GuidedPicker } from './companion/GuidedPicker';
+import { companionEmptyState } from './companion/companionEmptyStateModel';
+import { companionHeaderModel } from './companion/companionHeaderModel';
+import {
+  buildGuidedGoals,
+  GUIDED_MODE_PROMISE,
+  type GuidedGoal,
+  type GuidedNextTopic,
+} from '@lantern/shared/api/companion';
 import {
   TURN_INTO_TARGETS,
   formatTurnIntoCost,
@@ -348,6 +357,13 @@ export function AICompanionPanel({ context }: Props) {
   const [showHistoryList, setShowHistoryList] = useState(false);
   const [noteSearch, setNoteSearch] = useState('');
   const [promptsExpanded, setPromptsExpanded] = useState(false);
+  /**
+   * Guided is per-thread UI state, never a saved setting — a new chat starts in
+   * normal mode, and the "+" row stays reachable mid-lesson so ordinary chat is
+   * one tap away.
+   */
+  const [guided, setGuided] = useState(false);
+  const composerRef = useRef<TextInput>(null);
   /** Which message is being read aloud, so only one stop button is armed. */
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   /**
@@ -375,6 +391,19 @@ export function AICompanionPanel({ context }: Props) {
     activity: null,
     scopeId: null,
   });
+  /**
+   * The topic the scoped set's plan says comes next — stated by the caller
+   * that opened the sheet, or derived by the store from the saved plan when no
+   * caller stated one (`hydrateGuidedNextTopic`).
+   *
+   * SUBSCRIBED, not sampled on open. It used to be copied into local state in
+   * the `isOpen` effect, which is fine for a value a host hands over
+   * synchronously and useless for one the store has to fetch a plan to know:
+   * the derived topic landed a tick after the sample and the picker never saw
+   * it. `requestedScope` is nulled by `open()` and `close()`, so a door that
+   * names no room still shows no `Continue learning:` row.
+   */
+  const guidedNextTopic = useCompanionStore((s) => s.requestedScope?.guidedNextTopic ?? null);
   const hasLoaded = useRef(false);
   const didAutoAttachRef = useRef(false);
   const listRef = useRef<FlatList>(null);
@@ -406,8 +435,12 @@ export function AICompanionPanel({ context }: Props) {
     () => ({
       userName,
       ...context,
+      // Every send in this thread carries the mode while Guided is on. The
+      // server persists nothing, so a turn that omitted it would silently drop
+      // back to `explain` mid-lesson.
+      ...(guided ? { mode: 'guided' as const } : {}),
     }),
-    [userName, context]
+    [userName, context, guided]
   );
 
   useEffect(() => {
@@ -820,6 +853,45 @@ export function AICompanionPanel({ context }: Props) {
     [activeNoteContext?.title, routeScope.scopeName, routeScope.screenName]
   );
 
+  /**
+   * The Guided picker's rows, from material this screen already holds — the
+   * attached note and the set the thread is scoped to. Pure and local: drawing
+   * the picker costs nothing, only the row that is tapped sends a turn.
+   *
+   * `nextTopic` arrives from whichever host opened the sheet, or from the
+   * store's own reading of the scoped set's saved plan when the host named
+   * none. With neither there is no `Continue learning:` row at all — one that
+   * is not backed by a real plan position would claim progress the student
+   * never made.
+   */
+  const guidedGoals = useMemo(
+    () =>
+      buildGuidedGoals({
+        nextTopic: guidedNextTopic,
+        topics: [companionScope.noteTitle, companionScope.scopeName],
+      }),
+    [guidedNextTopic, companionScope.noteTitle, companionScope.scopeName]
+  );
+
+  /** The header's strings, as one testable value. See companionHeaderModel.ts. */
+  const headerModel = useMemo(
+    () =>
+      companionHeaderModel({
+        mode: guided ? 'guided' : 'chat',
+        subtitle: scopeSubtitle(companionScope),
+      }),
+    [guided, companionScope]
+  );
+
+  /**
+   * What the empty thread offers — the picker or the chips, never both.
+   * Pure, and pinned by companionEmptyStateModel.test.ts.
+   */
+  const emptyState = useMemo(
+    () => companionEmptyState({ guided, isLoadingHistory }),
+    [guided, isLoadingHistory]
+  );
+
   const isBusy = isLoading || isStreaming || isLoadingHistory;
   /** "+" reads as filled while anything is actually attached to this turn. */
   const attachActive =
@@ -1030,13 +1102,28 @@ export function AICompanionPanel({ context }: Props) {
               "On: …" the phone gave no way to tell whether a question was
               about the note you had open or about nothing in particular. */}
           <View style={{ flex: 1, marginLeft: 8 }}>
-            <T.Heading style={{ fontWeight: '700' }}>Lantern AI</T.Heading>
+            <View className="flex-row items-center gap-2">
+              <T.Heading style={{ fontWeight: '700' }}>{headerModel.title}</T.Heading>
+              {/* The mode rides BESIDE the name, never replaces it: a student
+                  mid-lesson had nothing on screen saying which mode they were
+                  paying for, and the mode is per thread, so there is nowhere
+                  else to look it up. Same pill skin as the attachment chip
+                  below — no new shape, no new type step. */}
+              {headerModel.modeLabel ? (
+                <View
+                  className="rounded-full bg-lantern-background-secondary dark:bg-lantern-surface-secondary px-2 py-0.5"
+                  accessibilityLabel={headerModel.modeAccessibilityLabel ?? undefined}
+                >
+                  <T.Label>{headerModel.modeLabel}</T.Label>
+                </View>
+              ) : null}
+            </View>
             <T.Caption
               tone="tertiary"
               numberOfLines={1}
               accessibilityLabel={scopeAccessibilityLabel(companionScope) ?? undefined}
             >
-              {scopeSubtitle(companionScope)}
+              {headerModel.subtitle}
             </T.Caption>
           </View>
           <Pressable onPress={handleOpenHistory} className="p-2" accessibilityLabel="Past chats">
@@ -1080,8 +1167,12 @@ export function AICompanionPanel({ context }: Props) {
           className="flex-1 px-4"
           contentContainerStyle={{ paddingVertical: 16, gap: 12 }}
           onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
+          /* One offer, never two: `emptyState` decides between the Guided
+             picker and the intent chips (see companionEmptyStateModel.ts).
+             Drawing both put a `Give me a study tip` pill over the picker's
+             cost line on the Home door. */
           ListEmptyComponent={
-            isLoadingHistory ? (
+            emptyState.showLoading ? (
               <View className="py-8 items-center gap-2">
                 <ActivityIndicator color={colors.primary} />
                 <Text className="text-lantern-text-secondary text-center">
@@ -1090,7 +1181,21 @@ export function AICompanionPanel({ context }: Props) {
               </View>
             ) : (
             <View className="py-6 gap-5">
-              <CompanionEmptyState />
+              {emptyState.showGreeting ? <CompanionEmptyState /> : null}
+              {emptyState.showGuidedPicker ? (
+                <View className="gap-2">
+                  <T.Caption tone="secondary" style={{ textAlign: 'center' }}>
+                    {GUIDED_MODE_PROMISE}
+                  </T.Caption>
+                  <GuidedPicker
+                    goals={guidedGoals}
+                    onPick={(goal: GuidedGoal) => void handleSend(goal.prompt)}
+                    onSomethingElse={() => composerRef.current?.focus()}
+                    disabled={isBusy || dictationBusy}
+                  />
+                </View>
+              ) : null}
+              {emptyState.showIntentChips ? (
               <ScopedPrompts
                 activity={routeScope.activity}
                 scopeName={companionScope.noteTitle ?? routeScope.scopeName}
@@ -1099,6 +1204,7 @@ export function AICompanionPanel({ context }: Props) {
                 onAsk={(message) => void handleSend(message)}
                 disabled={isBusy || dictationBusy}
               />
+              ) : null}
             </View>
             )
           }
@@ -1468,6 +1574,22 @@ export function AICompanionPanel({ context }: Props) {
                 accessibilityLabel: 'Attach a note as context',
                 onPress: () => setShowNotePicker(true),
               },
+              {
+                section: 'How Lantern teaches',
+                label: 'Guided mode',
+                // The check IS the icon: this row toggles a state, and a
+                // sheet row that only changes its words leaves the state
+                // resting on the label alone.
+                icon: guided ? 'checkmark-circle' : 'school',
+                iconFilled: guided,
+                hint: guided
+                  ? 'On — one step at a time, with a check before moving on'
+                  : GUIDED_MODE_PROMISE,
+                accessibilityLabel: guided
+                  ? 'Guided mode on. Turn off to go back to normal chat.'
+                  : 'Guided mode off. Turn on to be taught one step at a time.',
+                onPress: () => setGuided((v) => !v),
+              },
             ]}
           />
 
@@ -1566,6 +1688,7 @@ export function AICompanionPanel({ context }: Props) {
               />
             </Pressable>
             <TextInput
+              ref={composerRef}
               value={input}
               onChangeText={setInput}
               placeholder={

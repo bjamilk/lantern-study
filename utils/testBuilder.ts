@@ -8,6 +8,7 @@
  */
 
 import type { TestAttemptKind, TestSessionKind } from '../types';
+import type { TestSittingPresetId } from '@lantern/shared';
 
 export type TestSourceKind = 'deck' | 'note' | 'group';
 
@@ -75,6 +76,9 @@ export interface TestPlanDraft {
    * it is filed.
    */
   studySetId?: string | null;
+  sittingPreset?: TestSittingPresetId | null;
+  calculatorAllowed?: boolean;
+  passageStem?: boolean;
 }
 
 export function defaultTestPlan(): TestPlanDraft {
@@ -85,6 +89,7 @@ export function defaultTestPlan(): TestPlanDraft {
     questionCount: 10,
     attemptKind: 'practice',
     timerMinutes: 0,
+    sittingPreset: null,
   };
 }
 
@@ -157,10 +162,44 @@ export function summarizeTestPlan(plan: TestPlanDraft): string {
       ? ' from a deck'
       : ' from a note';
   const noun = plan.questionCount === 1 ? 'question' : 'questions';
+  const sitting =
+    plan.sittingPreset === 'timed'
+      ? 'timed'
+      : plan.sittingPreset === 'calculator_off'
+        ? 'no calculator'
+        : plan.sittingPreset === 'passage'
+          ? 'passage'
+          : null;
   if (plan.attemptKind === 'practice') {
-    return `${plan.questionCount} ${noun}${from} · practice · answers revealed as you go.`;
+    return `${plan.questionCount} ${noun}${from} · practice · answers revealed as you go.${sitting ? ` · ${sitting}` : ''}`;
   }
-  return `${plan.questionCount} ${noun}${from} · exam · ${timerPhrase(plan.timerMinutes)} · scored at the end.`;
+  return `${plan.questionCount} ${noun}${from} · exam · ${timerPhrase(plan.timerMinutes)} · scored at the end.${sitting ? ` · ${sitting}` : ''}`;
+}
+
+export function applyTestSittingPreset(
+  plan: TestPlanDraft,
+  preset: TestSittingPresetId | null
+): TestPlanDraft {
+  if (!preset) {
+    return {
+      ...plan,
+      sittingPreset: null,
+      calculatorAllowed: undefined,
+      passageStem: undefined,
+    };
+  }
+  if (preset === 'timed') {
+    return {
+      ...plan,
+      sittingPreset: preset,
+      attemptKind: 'exam',
+      timerMinutes: plan.timerMinutes > 0 ? plan.timerMinutes : 30,
+    };
+  }
+  if (preset === 'calculator_off') {
+    return { ...plan, sittingPreset: preset, calculatorAllowed: false };
+  }
+  return { ...plan, sittingPreset: preset, passageStem: true };
 }
 
 /** Label for the footer's primary action — it changes with the source. */
@@ -198,6 +237,10 @@ export type GeneratedTestConfig = {
    * says. Absent when the test belongs to no set.
    */
   studySetId?: string;
+  studyDoor?: 'quiz' | 'test';
+  sittingPreset?: TestSittingPresetId;
+  calculatorAllowed?: boolean;
+  passageStem?: boolean;
 };
 
 export function testConfigForPlan(plan: TestPlanDraft): GeneratedTestConfig {
@@ -205,10 +248,16 @@ export function testConfigForPlan(plan: TestPlanDraft): GeneratedTestConfig {
     typeof plan.studySetId === 'string' && plan.studySetId.trim()
       ? { studySetId: plan.studySetId.trim() }
       : {};
+  const sitting = {
+    studyDoor: 'test' as const,
+    ...(plan.sittingPreset ? { sittingPreset: plan.sittingPreset } : {}),
+    ...(plan.calculatorAllowed === false ? { calculatorAllowed: false } : {}),
+    ...(plan.passageStem ? { passageStem: true } : {}),
+  };
   // Practice is untimed by definition: the screen stops after every question to
   // show the answer, so a clock would be measuring the explanations.
   if (plan.attemptKind === 'practice') {
-    return { attemptKind: 'practice', mode: 'study', ...room };
+    return { attemptKind: 'practice', mode: 'study', ...room, ...sitting };
   }
   const minutes = Number.isFinite(plan.timerMinutes) ? Math.floor(plan.timerMinutes) : 0;
   return {
@@ -216,6 +265,7 @@ export function testConfigForPlan(plan: TestPlanDraft): GeneratedTestConfig {
     mode: 'test',
     ...(minutes > 0 ? { timerDuration: minutes * 60 } : {}),
     ...room,
+    ...sitting,
   };
 }
 

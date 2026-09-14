@@ -10,12 +10,33 @@ import { FeatureDisc } from '../ui/FeatureDisc';
 import {
   INITIAL_INLINE_REVIEW_STATE,
   inlineReviewCurrent,
+  inlineDueLabelCount,
   inlineReviewReduce,
+  inlineStudyAllTarget,
   selectInlineDueCards,
   type InlineDueCard,
 } from './inlineReview';
 
 const GRADES: readonly FlashcardGradeId[] = ['again', 'hard', 'good', 'easy'];
+
+export interface InlineReviewCardProps {
+  /**
+   * Home's own due tally — `dueReviewPlan().totalDue`, the number the greeting
+   * button says and the number the session actually deals. The inline queue is
+   * NOT that number: it drops cloze and occlusion cards and cards with an empty
+   * face, because it can only render a plain two-sided prompt. Live those two
+   * disagreed on the same screen ("Study all 62 due" under a hub saying 67), so
+   * the link now reads the plan total and only the card's own prompt comes from
+   * the inline queue.
+   */
+  dueTotal?: number | null;
+  /**
+   * Start the same cross-deck session Home's `Study all N due` button starts
+   * (`handleFlashcardStudy`). Without it the link fell back to navigating to
+   * the flashcards hub, which is a deck list, not a review.
+   */
+  onStudyAllDue?: () => void;
+}
 
 /**
  * The inline review card — Home's first "Recent activities" row when the
@@ -32,7 +53,7 @@ const GRADES: readonly FlashcardGradeId[] = ['again', 'hard', 'good', 'easy'];
  *
  * `Skip` advances without grading — a skipped card stays due and comes back.
  */
-export const InlineReviewCard: React.FC = () => {
+export const InlineReviewCard: React.FC<InlineReviewCardProps> = ({ dueTotal, onStudyAllDue }) => {
   const flashcards = useFlashcardStore((s) => s.flashcards);
   const decks = useFlashcardStore((s) => s.decks);
   const { handleUpdateSrsData, handleStartReview } = useFlashcardHandlers();
@@ -54,7 +75,10 @@ export const InlineReviewCard: React.FC = () => {
   }, [liveQueue]);
 
   const current = inlineReviewCurrent(queue, state);
-  const dueCount = liveQueue.length;
+  // The label is Home's plan total when Home handed one over, so the link and
+  // the hub cannot say different numbers about the same pile. The inline queue
+  // length is only the fallback for a caller that has no plan.
+  const dueCount = inlineDueLabelCount(dueTotal, liveQueue.length);
 
   const advance = useCallback(() => {
     touched.current = true;
@@ -70,18 +94,18 @@ export const InlineReviewCard: React.FC = () => {
   );
 
   const studyAll = useCallback(() => {
-    // The session is per-deck. When everything due lives in one deck, open
-    // that deck's session directly; when it is spread across decks, the
-    // flashcards screen is where the student picks which one to run.
-    const deckIds = new Set(liveQueue.map((card) => card.deckId));
-    const onlyDeckId = deckIds.size === 1 ? [...deckIds][0] : null;
-    const deck = onlyDeckId ? decks.find((d) => d.id === onlyDeckId) : undefined;
+    const target = inlineStudyAllTarget(liveQueue, Boolean(onStudyAllDue));
+    if (target.kind === 'home') {
+      onStudyAllDue?.();
+      return;
+    }
+    const deck = target.kind === 'deck' ? decks.find((d) => d.id === target.deckId) : undefined;
     if (deck) {
       handleStartReview(deck);
       return;
     }
     navigateForAppMode(AppMode.FLASHCARDS);
-  }, [decks, handleStartReview, liveQueue]);
+  }, [decks, handleStartReview, liveQueue, onStudyAllDue]);
 
   if (!current) return null;
 

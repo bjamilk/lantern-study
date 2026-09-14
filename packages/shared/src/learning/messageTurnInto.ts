@@ -28,7 +28,9 @@ export type MessageTurnIntoKind = 'generate' | 'studio';
 
 export const MESSAGE_TURN_INTO_KIND: Record<TurnIntoTargetId, MessageTurnIntoKind> = {
   cards: 'generate',
+  quiz: 'generate',
   test: 'generate',
+  notes: 'studio',
   lesson: 'studio',
   recap: 'studio',
   essay: 'studio',
@@ -45,7 +47,7 @@ export function messageTurnIntoKind(id: TurnIntoTargetId): MessageTurnIntoKind {
 }
 
 /**
- * What the row under the six pills promises for one target.
+ * What the row under the pills promises for one target.
  *
  * A studio target says both steps out loud. A pill that reads "Lesson" and
  * then silently files a note the student never asked for is the kind of

@@ -198,6 +198,7 @@ export async function cookieAuthFetch(
   return fetch(`${base}/api/v1/auth${path}`, {
     ...init,
     credentials: 'include',
+    signal: init.signal ?? AbortSignal.timeout(8000),
     headers: {
       'Content-Type': 'application/json',
       'X-Requested-With': 'LanternStudy',

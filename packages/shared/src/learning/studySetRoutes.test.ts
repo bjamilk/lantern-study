@@ -43,6 +43,14 @@ describe('study set nested paths', () => {
       activity: 'notes',
       noteId: 'n1',
     });
+    expect(parseStudySetPath('/study/sets/set-a/lesson/new')).toEqual({
+      studySetId: 'set-a',
+      activity: 'lesson',
+      createNew: true,
+    });
+    expect(buildStudySetPath({ studySetId: 'set-a', activity: 'recap', createNew: true })).toBe(
+      '/study/sets/set-a/recap/new'
+    );
   });
 
   it('maps path activities onto workspace studios', () => {

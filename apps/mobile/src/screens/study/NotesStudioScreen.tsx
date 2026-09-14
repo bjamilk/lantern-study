@@ -194,6 +194,16 @@ export function NotesStudioScreen({ navigation, route }: Props) {
         case 'play':
           navigation.navigate('PlayStudio', { courseId, courseLabel, studySetId });
           return;
+        case 'notes':
+          return;
+        case 'quiz':
+          navigation.navigate('AdaptiveQuiz', {
+            courseId,
+            courseLabel,
+            noteId: current.id,
+            studySetId,
+          });
+          return;
         default:
           break;
       }

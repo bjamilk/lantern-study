@@ -51,11 +51,17 @@ export interface RecentActivitiesProps extends RecentActivitiesInput {
   onOpen: (activity: RecentActivity) => void;
   /** Fixed "now" for tests; defaults to the real clock. */
   now?: Date;
+  /** Home's plan total, forwarded to the inline card so both say one number. */
+  dueTotal?: number | null;
+  /** Home's own due-review session, forwarded to the inline card's link. */
+  onStudyAllDue?: () => void;
 }
 
 export const RecentActivities: React.FC<RecentActivitiesProps> = ({
   onOpen,
   now,
+  dueTotal,
+  onStudyAllDue,
   ...input
 }) => {
   const rows = recentActivities(input);
@@ -71,7 +77,7 @@ export const RecentActivities: React.FC<RecentActivitiesProps> = ({
         front of a real flashcard, gradeable in place. It renders nothing when
         nothing is due, which leaves the plain rows exactly as they were.
       */}
-      <InlineReviewCard />
+      <InlineReviewCard dueTotal={dueTotal} onStudyAllDue={onStudyAllDue} />
       <ul className="rounded-2xl border border-lantern-border bg-lantern-surface divide-y divide-lantern-border overflow-hidden">
         {rows.map((row) => {
           const age = relativeActivityTime(row.at, now);

@@ -46,6 +46,32 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'guided-mode-dark-accents-1-0-57',
+    title: 'Guided mode in Lantern AI, readable dark accents, and small things that land where they say (1.0.57)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-13',
+    summary:
+      'Turn on Guided from the composer (web) or the "+" sheet (phone) and pick a goal: continue the plan’s next topic, start a topic, or something else. Lantern teaches one step, asks one check question, re-teaches on a miss, and suggests what to do next — same cost per turn, and it never claims to open anything. Every accent colour’s buttons and lit tabs now clear AA in dark mode. The tile you picked shows on the room header, switcher, rail and Home. Study all from the Home card opens the review session with Home’s own count. Note rows in a set carry the same menu as decks, including Add cover.',
+    details: [
+      'Shared CompanionUserContext gains mode (the server’s modes were unreachable before); COMPANION_MODE_PROMPTS.guided: one step per reply, one check, never advance on a wrong answer, re-teach differently, then offer the next step or one activity the set has; states it cannot open or navigate anything; validation falls back to explain.',
+      'Goal picker: Continue learning: <next topic> derived from the set’s saved plan (same rule as the plan spine’s Continue) on every door — bar, room tile, credits chip — with a host value winning; no next topic → no row. Guided pill in the header; chips and picker are mutually exclusive by model.',
+      'Dark accents: ensureAaPair pairs primaryFill with the real textInverse (was derived for a white label): sky 3.78→6.34, emerald 3.65→6.93, amber 3.70→8.19, pink 3.75→4.98, violet 3.79→4.86; light byte-identical; presets unchanged.',
+      'Web: tile override forwarded to SetRoomHeader, SetRail, StudySetSwitcher and Home cards; InlineReviewCard uses Home’s due total and session handler; RecentMaterials note tiles/rows get the cover menu; planTopicActivity never returns read so Continue lights the chip it opens.',
+      'Mobile: set room kebab moved to the shared ActionSheet (Set settings was untappable inline); bar height and screen clearance derive from one tested helper.',
+      'Founder’s Cursor edits included: adaptive-quiz question mapping, turn-into, set routes, import-and-study modal (off-scale sizes migrated to steps, allowlist lowered 16→1).',
+    ],
+    howToUse: [
+      'Ask Lantern → Guided (web composer pill; phone "+" sheet row) → pick a goal → answer each check question.',
+      'Settings → Appearance: any accent now reads in dark mode.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'No new migration. Still hand-applied from earlier: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+    ],
+    commits: ['496eca09'],
+  },
+  {
     id: 'home-card-tile-picker-grid-list-1-0-56',
     title: 'Review a card from Home, pick each set’s tile, and switch materials between grid and list on the phone (1.0.56)',
     area: 'platform',

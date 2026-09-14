@@ -14,8 +14,10 @@ import {
   validateTestPlan,
   type TestAttemptKind,
   type TestPlanDraft,
+  applyTestSittingPreset,
   type TestSourceKind,
 } from '../utils/testBuilder';
+import { TEST_SITTING_PRESETS } from '@lantern/shared';
 
 export interface TestBuilderDeckOption {
   id: string;
@@ -333,6 +335,40 @@ export const TestBuilderScreen: React.FC<TestBuilderScreenProps> = ({
                         <span className="block text-caption text-lantern-text-secondary">
                           {option.description}
                         </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              <section aria-labelledby="test-sitting-heading" className="space-y-2">
+                <h2 id="test-sitting-heading" className="text-heading font-semibold text-lantern-text">
+                  Sitting
+                </h2>
+                <p className="text-caption text-lantern-text-secondary">
+                  Optional exam-format presets — generic, not a licensed paper.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {TEST_SITTING_PRESETS.map((preset) => {
+                    const isSelected = plan.sittingPreset === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        title={preset.promise}
+                        onClick={() =>
+                          setPlan((prev) =>
+                            applyTestSittingPreset(prev, isSelected ? null : preset.id)
+                          )
+                        }
+                        className={`min-h-[44px] rounded-full border px-3 text-caption ${
+                          isSelected
+                            ? 'border-lantern-feature-tests-ink bg-lantern-feature-tests-tint font-semibold'
+                            : 'border-lantern-border text-lantern-text-secondary'
+                        }`}
+                      >
+                        {preset.label}
                       </button>
                     );
                   })}

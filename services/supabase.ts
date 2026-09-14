@@ -506,7 +506,7 @@ export async function resolveClientSession(): Promise<SessionResolveResult> {
     return restored;
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
+  const session = await getSessionWithTimeout(4000);
   if (session?.user) {
     if (session.access_token) {
       setCachedAuthToken(session.access_token, session.user.id);

@@ -76,9 +76,44 @@ export const SAFE_BOTTOM_INSET_FLOOR = 12;
 /** Default gap added on top of whichever clearance applies. */
 export const DEFAULT_BOTTOM_EXTRA = 16;
 
+/**
+ * The padding above the pill row inside the bar (BottomTabBar's `pt-2`).
+ *
+ * Here so a test can assert that what the bar DRAWS — this padding plus the
+ * pill's own height (theme/surfaceMetrics `TAB_PILL.height`) — still fits
+ * inside {@link TAB_BAR_CONTENT_HEIGHT}, which is the number every screen's
+ * clearance is computed from. The two are set in different files and nothing
+ * but that assertion stops a taller pill from silently burying the last row of
+ * every tab root.
+ */
+export const TAB_BAR_ROW_PADDING_TOP = 8;
+
 /** Non-finite / negative inputs are treated as 0 rather than poisoning layout. */
 function px(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+/**
+ * The bar's own bottom padding: the floored system inset plus the gap.
+ *
+ * BottomTabBar pays exactly this below the pill row, and {@link tabBarClearance}
+ * pays it above the bar, so the two are one expression rather than two copies
+ * of `Math.max(insets.bottom, 20) + 10`.
+ */
+export function bottomTabBarPadding(bottomInset: number): number {
+  return Math.max(px(bottomInset), TAB_BAR_BOTTOM_INSET_FLOOR) + TAB_BAR_GAP;
+}
+
+/**
+ * How tall the bottom tab bar actually is on this device, from its hairline to
+ * the bottom of the window: content + floored inset + gap.
+ *
+ * This is the number a screen's bottom clearance must be at least as large as —
+ * a clearance below it is a last row the student cannot tap. Exported so the
+ * invariant can be asserted rather than assumed (screenInsets.test.ts).
+ */
+export function bottomTabBarHeight(bottomInset: number): number {
+  return TAB_BAR_CONTENT_HEIGHT + bottomTabBarPadding(bottomInset);
 }
 
 /**
@@ -90,12 +125,7 @@ function px(value: number): number {
  * primitives cannot drift apart.
  */
 export function tabBarClearance(bottomInset: number, extra: number = DEFAULT_BOTTOM_EXTRA): number {
-  return (
-    TAB_BAR_CONTENT_HEIGHT +
-    Math.max(px(bottomInset), TAB_BAR_BOTTOM_INSET_FLOOR) +
-    TAB_BAR_GAP +
-    px(extra)
-  );
+  return bottomTabBarHeight(bottomInset) + px(extra);
 }
 
 /**

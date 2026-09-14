@@ -49,6 +49,8 @@ interface RecapStudioProps {
   turnIntoExisting?: (noteId: string) => Partial<Record<TurnIntoTargetId, boolean>>;
   onTurnInto: (target: TurnIntoTargetId) => void;
   onNoteReady: (noteId: string) => Promise<void>;
+  initialStyle?: RecapStyle;
+  initialLength?: RecapLength;
 }
 
 function sessionFromGenerated(
@@ -72,6 +74,8 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
   turnIntoExisting,
   onTurnInto,
   onNoteReady,
+  initialStyle,
+  initialLength,
 }) => {
   const createNote = useNotesStore((s) => s.createNote);
   const saveNote = useNotesStore((s) => s.saveNote);
@@ -83,8 +87,8 @@ export const RecapStudio: React.FC<RecapStudioProps> = ({
 
   const resumed =
     selectedNote && isRecapNote(selectedNote) ? parseRecapNoteBody(selectedNote.body) : null;
-  const [style, setStyle] = useState<RecapStyle>(resumed?.style || 'podcast');
-  const [length, setLength] = useState<RecapLength>(resumed?.length || 'medium');
+  const [style, setStyle] = useState<RecapStyle>(resumed?.style || initialStyle || 'podcast');
+  const [length, setLength] = useState<RecapLength>(resumed?.length || initialLength || 'medium');
   const [sourceId, setSourceId] = useState<string>(
     selectedNote && sources.some((note) => note.id === selectedNote.id)
       ? selectedNote.id

@@ -52,6 +52,7 @@ describe('messageTurnIntoStudioRoute', () => {
     });
     expect(messageTurnIntoStudioRoute('recap', scope, 'note-9')?.screen).toBe('RecapStudio');
     expect(messageTurnIntoStudioRoute('essay', scope, 'note-9')?.screen).toBe('EssayStudio');
+    expect(messageTurnIntoStudioRoute('notes', scope, 'note-9')?.screen).toBe('NotesStudio');
   });
 
   it('sends play to the room, which is where its cards are', () => {
@@ -62,6 +63,7 @@ describe('messageTurnIntoStudioRoute', () => {
 
   it('returns nothing for the two targets that run a job instead', () => {
     expect(messageTurnIntoStudioRoute('cards', scope, 'note-9')).toBeNull();
+    expect(messageTurnIntoStudioRoute('quiz', scope, 'note-9')).toBeNull();
     expect(messageTurnIntoStudioRoute('test', scope, 'note-9')).toBeNull();
   });
 

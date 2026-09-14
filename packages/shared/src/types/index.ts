@@ -951,6 +951,18 @@ export interface TestConfig {
    * only knows about session kinds does not have to learn the builder's words.
    */
   mode?: TestSessionKind;
+  /**
+   * Which Study door filed this personal test. Quiz and Test used to read the
+   * same `/tests` rows; new writes stamp `quiz` or `test` so the two lists
+   * stop duplicating. Absent on older rows — `studyTestDoor` infers.
+   */
+  studyDoor?: 'quiz' | 'test';
+  /** Generic sitting preset from the Test door — not a licensed exam skin. */
+  sittingPreset?: 'timed' | 'calculator_off' | 'passage';
+  /** False when the sitting is "no calculator". Absent means unrestricted. */
+  calculatorAllowed?: boolean;
+  /** True when stems should quote a passage from the material. */
+  passageStem?: boolean;
 }
 
 export type UserAnswerRecord = {
@@ -1988,6 +2000,16 @@ export interface CompanionConversation {
   updatedAt: string;
 }
 
+/**
+ * How the companion teaches a turn. Not a personality gallery: each mode
+ * changes what the assistant is ALLOWED to do, so the difference shows up in
+ * every reply instead of being a change of tone.
+ *
+ * Mirrors the server's own union in `aiService.ts` — the server is still the
+ * authority (it re-validates every value), this is what the clients may send.
+ */
+export type CompanionMode = 'explain' | 'quiz_me' | 'socratic' | 'guided';
+
 export interface CompanionUserContext {
   userName?: string;
   groups?: string[];
@@ -2029,6 +2051,15 @@ export interface CompanionUserContext {
   /** Course the student is in — generated decks should file here. */
   courseId?: string;
   studyGoal?: StudyGoalMode;
+  /**
+   * How the companion should teach THIS turn.
+   *
+   * The one context field the client legitimately owns — it is a UI choice,
+   * not a claim about the student's data — so the server still runs it through
+   * its allowlist and falls back to `explain` on anything unknown. Nothing is
+   * persisted: a mode rides with the send and is re-sent on the next one.
+   */
+  mode?: CompanionMode;
   /** Active companion thread; omit / null + newConversation to start fresh. */
   conversationId?: string;
   /** When true, create a new thread instead of continuing the latest for this note scope. */

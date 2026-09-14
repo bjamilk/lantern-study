@@ -350,10 +350,14 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
         </button>
       </div>
 
-      <div className={`flex-1 min-h-0 grid ${hasSource ? 'lg:grid-cols-2' : 'grid-cols-1'}`}>
-        {hasSource ? (
-          <div className="min-h-0 overflow-y-auto border-b lg:border-b-0 lg:border-r border-lantern-border p-3 space-y-3">
+      <div className="flex-1 min-h-0 grid lg:grid-cols-[minmax(14rem,22rem)_minmax(0,1fr)]">
+        <div className="min-h-0 overflow-y-auto border-b lg:border-b-0 lg:border-r border-lantern-border p-3 space-y-3">
             <h2 className="text-label uppercase text-lantern-text-secondary">Source</h2>
+            {!hasSource ? (
+              <p className="text-body text-lantern-text-secondary">
+                No attachment on this note. Import a PDF, slides, or photos from Upload — they land here.
+              </p>
+            ) : null}
             {documentAttachment ? (
               <NotePdfViewer noteId={note.id} attachment={documentAttachment} theme={theme} />
             ) : null}
@@ -390,8 +394,7 @@ export const NotesStudio: React.FC<NotesStudioProps> = ({
                 </div>
               </div>
             ) : null}
-          </div>
-        ) : null}
+        </div>
 
         <div className="min-h-0 flex flex-col p-3">
           <input

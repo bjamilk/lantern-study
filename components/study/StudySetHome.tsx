@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAutohideScrollbar } from '../../hooks/useAutohideScrollbar';
 import {
   STUDY_SET_RECOMMENDED_CARDS,
   pickRecommendedTopic,
@@ -12,12 +13,18 @@ import {
   type StudySetTopic,
   type StudySetUnit,
   type UpcomingExam,
+  TOPIC_SKILL_LEVELS,
+  normalizeTopicBrief,
+  topicBriefError,
+  type TopicBrief,
+  type TopicSkillLevel,
 } from '@lantern/shared';
 import type { Deck, StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 import { Button, Card } from '../ui';
 import { Headline } from '../ui/Headline';
-import { OwnWayGrid } from './OwnWayGrid';
+import { OverflowChipScroller } from './OverflowChipScroller';
+import { OwnWayGrid, OwnWayShowAll } from './OwnWayGrid';
 import { RecentMaterials } from './RecentMaterials';
 import { RoomRecommendationCard } from './RoomRecommendationCard';
 import { RoomTopicRing } from './RoomTopicRing';
@@ -63,6 +70,10 @@ interface StudySetHomeProps {
   onOpenCalendar?: () => void;
   onOpenLibrary?: () => void;
   onAddSyllabus?: () => void;
+  /** The ⋮ for one note, forwarded to the materials grid and list. */
+  renderNoteMenu?: (note: StudyNote) => React.ReactNode;
+  /** Empty-set starter notes from a topic, subject and skill level. */
+  onGenerateFromTopic?: (brief: TopicBrief) => void;
 }
 
 export const StudySetHome: React.FC<StudySetHomeProps> = ({
@@ -85,6 +96,8 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   onOpenCalendar,
   onOpenLibrary,
   onAddSyllabus,
+  renderNoteMenu,
+  onGenerateFromTopic,
 }) => {
   const hasMaterials = notes.length > 0 || deckCount > 0 || testCount > 0;
   const derived = studySet ? topicsFromReadingNotes(studySet.id, notes) : null;
@@ -106,6 +119,10 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   const nextTopic = pickRecommendedTopic(topics, studySet?.mode || 'standard');
   const [unitId, setUnitId] = useState<string | null>(null);
   const [showMore, setShowMore] = useState(false);
+  const [topicTitle, setTopicTitle] = useState('');
+  const [topicSubject, setTopicSubject] = useState('');
+  const [topicLevel, setTopicLevel] = useState<TopicSkillLevel>('intermediate');
+  const [topicError, setTopicError] = useState<string | null>(null);
   const activeUnitId =
     unitId && units.some((unit) => unit.id === unitId) ? unitId : nextTopic?.unitId || units[0]?.id;
   const unitTopics = activeUnitId ? topicsInUnit(topics, activeUnitId) : topics;
@@ -115,9 +132,10 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
     unitTopics[0] ||
     nextTopic;
   const recommendedCards = STUDY_SET_RECOMMENDED_CARDS.filter((card) => showMore || card.primary);
+  const homeScrollRef = useAutohideScrollbar<HTMLDivElement>();
 
   return (
-    <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pr-1">
+    <div ref={homeScrollRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-autohide space-y-6 pr-1">
       {planGenerating ? (
         <Card padding="lg">
           <p className="text-heading">Generating your study plan…</p>
@@ -149,7 +167,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
               a student which stretch of the course they are standing in, which
               is the whole thing the flattened band was missing. */}
           {units.length > 0 ? (
-            <div className="flex gap-2 overflow-x-auto pb-2 mb-3">
+            <OverflowChipScroller aria-label="Study plan units" className="mb-3">
               {units.map((unit, index) => {
                 const active = unit.id === activeUnitId;
                 return (
@@ -169,7 +187,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                   </button>
                 );
               })}
-            </div>
+            </OverflowChipScroller>
           ) : null}
 
           <div className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">
@@ -251,11 +269,72 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
       ) : null}
 
       <section>
-        <Headline accent="your own way" feature="sets" className="mb-4">
-          Start learning your own way
-        </Headline>
+        <div className="mb-4 flex flex-wrap items-center gap-3">
+          <Headline accent="your own way" feature="sets">
+            Start learning your own way
+          </Headline>
+          <OwnWayShowAll onTool={onTool} />
+        </div>
         <OwnWayGrid onTool={onTool} />
       </section>
+
+      {!hasMaterials && onGenerateFromTopic ? (
+        <Card padding="lg">
+          <h3 className="text-heading text-lantern-text">Generate starter materials</h3>
+          <p className="text-body text-lantern-text-secondary mt-1">
+            Name a topic and we file 3–8 notes in this set, then you can turn them into a quiz, cards, or a lesson.
+          </p>
+          <input
+            value={topicTitle}
+            onChange={(event) => setTopicTitle(event.target.value)}
+            placeholder="Topic — e.g. renal physiology"
+            className="mt-3 w-full rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-body"
+          />
+          <input
+            value={topicSubject}
+            onChange={(event) => setTopicSubject(event.target.value)}
+            placeholder="Subject (optional)"
+            className="mt-2 w-full rounded-xl border border-lantern-border bg-lantern-surface px-3 py-2 text-body"
+          />
+          <div className="mt-2 flex flex-wrap gap-2">
+            {TOPIC_SKILL_LEVELS.map((level) => (
+              <button
+                key={level.id}
+                type="button"
+                aria-pressed={topicLevel === level.id}
+                title={level.promise}
+                onClick={() => setTopicLevel(level.id)}
+                className={`min-h-[40px] rounded-full border px-3 text-caption ${
+                  topicLevel === level.id
+                    ? 'border-lantern-text font-semibold'
+                    : 'border-lantern-border text-lantern-text-secondary'
+                }`}
+              >
+                {level.label}
+              </button>
+            ))}
+          </div>
+          {topicError ? <p className="mt-2 text-caption text-lantern-error">{topicError}</p> : null}
+          <Button
+            className="mt-3"
+            onClick={() => {
+              const brief = normalizeTopicBrief({
+                title: topicTitle,
+                subject: topicSubject,
+                level: topicLevel,
+              });
+              if (!brief) {
+                setTopicError(topicBriefError(topicTitle) || 'Name the topic first.');
+                return;
+              }
+              setTopicError(null);
+              onGenerateFromTopic(brief);
+            }}
+          >
+            Generate 3–8 notes
+          </Button>
+        </Card>
+      ) : null}
 
       {hasMaterials ? (
         <RecentMaterials
@@ -264,6 +343,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
           onOpenNote={onOpenNote}
           onOpenDeck={onOpenDeck}
           onViewAll={() => onOpenLibrary?.()}
+          renderNoteMenu={renderNoteMenu}
         />
       ) : null}
 

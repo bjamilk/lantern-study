@@ -57,7 +57,7 @@ export function messageNotePayload(
 }
 
 export interface StudioRoute {
-  screen: 'LessonStudio' | 'RecapStudio' | 'EssayStudio' | 'PlayStudio';
+  screen: 'LessonStudio' | 'RecapStudio' | 'EssayStudio' | 'PlayStudio' | 'NotesStudio';
   params: Record<string, string | undefined>;
 }
 
@@ -66,6 +66,7 @@ const STUDIO_SCREENS: Partial<Record<TurnIntoTargetId, StudioRoute['screen']>> =
   recap: 'RecapStudio',
   essay: 'EssayStudio',
   play: 'PlayStudio',
+  notes: 'NotesStudio',
 };
 
 /**

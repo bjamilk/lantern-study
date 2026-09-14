@@ -400,6 +400,23 @@ export function createAIClient(config: AIClientConfig) {
       }>('/generate-lesson', { notes, ...rest }, 'POST', onJobUpdate);
     },
 
+    aiGenerateFromTopic: (
+      topic: string,
+      options?: {
+        subject?: string;
+        level?: 'intro' | 'intermediate' | 'exam';
+        count?: number;
+        studySetId?: string;
+        onJobUpdate?: JobUpdateHandler;
+      }
+    ) => {
+      const { onJobUpdate, ...rest } = options ?? {};
+      return aiRequest<{
+        notes: Array<{ title: string; body: string }>;
+        provider: string;
+      }>('/generate-from-topic', { topic, ...rest }, 'POST', onJobUpdate);
+    },
+
     aiGenerateRecap: (
       notes: string,
       options?: {

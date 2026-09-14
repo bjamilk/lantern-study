@@ -8,6 +8,7 @@ import {
   generateFlashcardsFromNotes,
   generateLessonFromNotes,
   generateRecapFromNotes,
+  generateTopicMaterials,
   gradeEssayFromDraft,
   explainAnswer,
   getStudyRecommendations,
@@ -191,6 +192,13 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         subject,
       });
       await recordInference(userId, "generate-recap", result);
+      return result;
+    }
+    case "ai.generate.topic": {
+      const { topic, subject, level, count } = job.data;
+      await progress.stage("generating");
+      const result = await generateTopicMaterials(topic, { subject, level, count });
+      await recordInference(userId, "generate-from-topic", result);
       return result;
     }
     case "ai.generate.essay": {

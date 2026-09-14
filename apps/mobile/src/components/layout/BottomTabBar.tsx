@@ -11,7 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Badge } from '../ui';
 import { useTheme } from '../../theme';
-import { TAB_BAR_CONTENT_HEIGHT, tabBarClearance } from './screenInsets';
+import { TAB_BAR_CONTENT_HEIGHT, bottomTabBarPadding, tabBarClearance } from './screenInsets';
 import { useChrome } from './ChromeContext';
 import { CONTEXTUAL_BAR_CONTENT_HEIGHT, contextualBarClearance } from './contextualBarLayout';
 import {
@@ -346,7 +346,9 @@ export function BottomTabBar({
 }: Props) {
   const { colors, reduceMotion } = useTheme();
   const insets = useSafeAreaInsets();
-  const bottomPad = Math.max(insets.bottom, 20) + 10;
+  // The same expression the clearance pays above the bar (screenInsets), so
+  // the bar's height and every screen's bottom padding cannot drift apart.
+  const bottomPad = bottomTabBarPadding(insets.bottom);
   /**
    * How wide the row of tabs actually is, so the planner can say how much the
    * hugging pill may take before its neighbours drop below a touch target.

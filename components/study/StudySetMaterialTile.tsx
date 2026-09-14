@@ -21,21 +21,33 @@ interface StudySetMaterialTileProps {
   note: StudySetMaterialTileNote;
   onClick: () => void;
   selected?: boolean;
+  /**
+   * The tile's ⋮, when the viewer owns the material. It is rendered as a
+   * SIBLING of the tile button, never inside it: a <button> in a <button> is
+   * invalid markup the keyboard cannot reach, and every click of the menu
+   * would also open the note. Same arrangement `StudySetArtifactLibrary` uses
+   * for a deck tile.
+   */
+  menu?: React.ReactNode;
 }
 
 export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
   note,
   onClick,
   selected,
+  menu,
 }) => {
   const lecture = isLectureNote(note);
   const preview = notePreviewText(note.body);
-  return (
+  const tile = (
     <button
       type="button"
       onClick={onClick}
       aria-pressed={selected}
-      className={`min-h-[11rem] rounded-2xl border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary ${
+      // `w-full` matters once the tile is wrapped for its menu: as a bare grid
+      // child the button stretched to the column, but inside the relative
+      // wrapper it is an inline-block that would otherwise shrink to its text.
+      className={`min-h-[11rem] w-full rounded-2xl border bg-lantern-surface text-left overflow-hidden hover:bg-lantern-background-secondary ${
         selected ? 'border-lantern-text' : 'border-lantern-border'
       }`}
     >
@@ -80,6 +92,13 @@ export const StudySetMaterialTile: React.FC<StudySetMaterialTileProps> = ({
         <span className="text-body font-semibold truncate">{note.title || 'Untitled note'}</span>
       </div>
     </button>
+  );
+  if (!menu) return tile;
+  return (
+    <div className="relative">
+      {tile}
+      <div className="absolute right-2 top-2">{menu}</div>
+    </div>
   );
 };
 

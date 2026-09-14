@@ -16,7 +16,7 @@ import { useFlashcardStore } from '../../stores/flashcardStore';
 import { useStudySetStore } from '../../stores/studySetStore';
 import { useToastStore } from '../../stores/toastStore';
 import CreateStudySetModal from '../study/CreateStudySetModal';
-import { SetCoverSquare } from '../study/SetRoomTile';
+import { SetTile } from '../study/SetRoomTile';
 
 interface HomeStudySetsProps {
   onOpenStudySet?: (studySetId: string) => void;
@@ -99,15 +99,16 @@ export const HomeStudySets: React.FC<HomeStudySetsProps> = ({
               >
                 {/* Home draws the set with the SAME square the hub card and
                     the room header draw it with, so a set a student gave a
-                    picture is recognisable on the first screen they see. */}
-                <SetCoverSquare
+                    picture — or a hue and a glyph — is recognisable on the
+                    first screen they see. It used to draw a CONSTANT mint disc
+                    for every set, which meant Home showed neither the owner's
+                    pick nor even the derived art. */}
+                <SetTile
+                  setId={set.id}
+                  title={studySetLabel(set)}
                   coverPath={set.coverPath}
-                  fallback={
-                    <FeatureDisc
-                      feature={STUDY_SET_TILE.feature}
-                      icon={<AppIcon name={STUDY_SET_TILE.icon} size={20} />}
-                    />
-                  }
+                  tileHue={set.tileHue}
+                  tileGlyph={set.tileGlyph}
                 />
                 <p className="mt-4 text-body font-semibold text-lantern-text truncate">
                   {studySetLabel(set)}

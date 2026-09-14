@@ -83,6 +83,36 @@ export function normalizeAdaptiveKind(value: string | null | undefined): Adaptiv
   return KIND_ALIASES[value] ?? null;
 }
 
+/** Map a generate-questions payload onto the adaptive quiz item shape. */
+export function questionsToAdaptiveItems(
+  questions: ReadonlyArray<{
+    text?: string;
+    type?: string;
+    options?: string[];
+    correctAnswer?: string;
+    explanation?: string;
+    topic?: string;
+  }>
+): AdaptiveQuizItem[] {
+  return questions.flatMap((question, index) => {
+    const stem = (question.text || '').trim();
+    const correctAnswer = (question.correctAnswer || '').trim();
+    if (!stem || !correctAnswer) return [];
+    const kind = normalizeAdaptiveKind(question.type) ?? 'multiple_choice';
+    return [
+      {
+        id: `gen-${index + 1}`,
+        stem,
+        kind,
+        options: Array.isArray(question.options) ? question.options.map(String) : undefined,
+        correctAnswer,
+        explanation: question.explanation?.trim() || undefined,
+        topic: question.topic?.trim() || undefined,
+      },
+    ];
+  });
+}
+
 function stripAnswerPrefix(value: string): string {
   return value.trim().replace(/^[A-Da-d][.)]\s*/, '').trim();
 }

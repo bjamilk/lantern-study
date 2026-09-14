@@ -154,6 +154,8 @@ export const aiGetStudyRecommendations: typeof ai.aiGetStudyRecommendations = (.
 export const aiAskTutor: typeof ai.aiAskTutor = (...args) => settleJob(() => ai.aiAskTutor(...args));
 export const aiGenerateLesson: typeof ai.aiGenerateLesson = (...args) =>
   settleJob(() => ai.aiGenerateLesson(...args));
+export const aiGenerateFromTopic: typeof ai.aiGenerateFromTopic = (...args) =>
+  settleJob(() => ai.aiGenerateFromTopic(...args));
 export const aiGenerateRecap: typeof ai.aiGenerateRecap = (...args) =>
   settleJob(() => ai.aiGenerateRecap(...args));
 export const aiGradeEssay: typeof ai.aiGradeEssay = (...args) =>

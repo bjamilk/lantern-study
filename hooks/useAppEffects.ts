@@ -380,7 +380,12 @@ export function useAppEffects({
 
         const syncSessionInBackground = async (hadFastBoot: boolean) => {
             try {
-                const resolved = await resolveClientSession();
+                const resolved = await Promise.race([
+                    resolveClientSession(),
+                    new Promise<never>((_, reject) => {
+                        window.setTimeout(() => reject(new Error('session restore timed out')), 6000);
+                    }),
+                ]);
                 if (!isMounted) return;
 
                 if (!resolved.ok) {
@@ -560,7 +565,13 @@ export function useAppEffects({
         };
 
         const hadFastBoot = applyFastBoot();
-        if (!hadFastBoot) setAuthTokenReady(false);
+        if (hadFastBoot) {
+            // Don't keep the boot spinner up while /session or getSession hangs.
+            // The background sync still validates; this is what "fast boot" is for.
+            setAuthLoading(false);
+        } else {
+            setAuthTokenReady(false);
+        }
         void syncSessionInBackground(hadFastBoot);
 
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
