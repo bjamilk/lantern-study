@@ -1,8 +1,6 @@
-import { LOW_DATA_MODE_HINT } from '../settings/userSettings';
 import { buildMeSections, meProfileBlockOrder, meRowIds } from './meRows';
 
-const sections = (darkMode = false, lowDataMode = false, includeAdmin = false) =>
-  buildMeSections({ darkMode, lowDataMode, includeAdmin });
+const sections = (includeAdmin = false) => buildMeSections({ includeAdmin });
 
 describe('the Profile menu', () => {
   it('carries the shared rows in order', () => {
@@ -14,15 +12,13 @@ describe('the Profile menu', () => {
       'credits',
       'teach',
       'invite',
-      'darkMode',
-      'lowData',
       'settings',
       'logout',
     ]);
   });
 
   it('puts Admin console last-but-one when the account is an admin', () => {
-    expect(meRowIds(sections(false, false, true))).toEqual([
+    expect(meRowIds(sections(true))).toEqual([
       'academic',
       'joinClass',
       'budget',
@@ -30,8 +26,6 @@ describe('the Profile menu', () => {
       'credits',
       'teach',
       'invite',
-      'darkMode',
-      'lowData',
       'settings',
       'admin',
       'logout',
@@ -45,16 +39,11 @@ describe('the Profile menu', () => {
     expect(last.kind).toBe('destructive');
   });
 
-  it('describes Low-data mode with the one shared sentence', () => {
+  it('leaves the two mode switches to Settings, so neither is duplicated here', () => {
     const flat = sections().flatMap((section) => section.rows);
-    expect(flat.find((row) => row.id === 'lowData')?.hint).toBe(LOW_DATA_MODE_HINT);
-  });
-
-  it('keeps Dark mode and Low-data mode as switches', () => {
-    const flat = sections().flatMap((section) => section.rows);
-    const modes = flat.filter((row) => row.id === 'darkMode' || row.id === 'lowData');
-    expect(modes).toHaveLength(2);
-    for (const row of modes) expect(row.kind).toBe('switch');
+    expect(flat.some((row) => row.kind === 'switch')).toBe(false);
+    expect(flat.map((row) => row.label)).not.toContain('Dark mode');
+    expect(flat.map((row) => row.label)).not.toContain('Low-data mode');
   });
 
   it('accents exactly Downloads and AI uses', () => {
@@ -80,7 +69,6 @@ describe('the Profile section order', () => {
       'identity',
       'account',
       'mine',
-      'preferences',
       'app',
       'session',
     ]);

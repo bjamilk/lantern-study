@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { overflowChipDirections } from './overflowChipScroller';
+import { overflowChipDirections } from './chipRowOverflow';
 
 describe('overflowChipDirections', () => {
   it('hides both arrows when every chip fits', () => {

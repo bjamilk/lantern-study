@@ -109,8 +109,8 @@ export function useRouteSync() {
 
     void hydrateAppRoute(parsed).then((result) => {
       settled = true;
-      if (cancelled) return;
       hydratingRef.current = false;
+      if (cancelled) return;
       setRouteHydrating(false);
 
       if (result.redirect) {
@@ -138,8 +138,9 @@ export function useRouteSync() {
 
     return () => {
       cancelled = true;
+      hydratingRef.current = false;
     };
   }, [location.pathname, currentUserId, navigate]);
 
-  return { routeHydrating: routeHydrating || hydratingRef.current };
+  return { routeHydrating };
 }

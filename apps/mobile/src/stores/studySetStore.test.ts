@@ -19,11 +19,15 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 const fetchMyStudySets = jest.fn();
+const fetchStudySetFolders = jest.fn();
+const createStudySetFolder = jest.fn();
 jest.mock('../services/academic', () => ({
   fetchMyStudySets: (...args: unknown[]) => fetchMyStudySets(...args),
   createStudySet: jest.fn(),
   updateStudySet: jest.fn(),
   deleteStudySet: jest.fn(),
+  fetchStudySetFolders: (...args: unknown[]) => fetchStudySetFolders(...args),
+  createStudySetFolder: (...args: unknown[]) => createStudySetFolder(...args),
 }));
 
 jest.mock('./authStore', () => ({
@@ -161,5 +165,51 @@ describe('looksOffline', () => {
     expect(looksOffline(new Error('Request timed out'))).toBe(true);
     expect(looksOffline(new Error('Forbidden'))).toBe(false);
     expect(looksOffline(new Error('Study set not found'))).toBe(false);
+  });
+});
+
+/**
+ * The folder half of the store, which the Study hub's chip row reads.
+ *
+ * `loadFolders` swallows its failure (the hub simply draws no chips) while
+ * `createFolder` must NOT — the student typed a name and pressed a button, and
+ * a silent failure there is a chip row that never grows for no stated reason.
+ */
+describe('folders', () => {
+  const FOLDER = { id: 'f1', userId: 'user-1', title: 'Finals', createdAt: '2026-09-01' };
+
+  beforeEach(() => {
+    fetchStudySetFolders.mockReset();
+    createStudySetFolder.mockReset();
+    useStudySetStore.setState({ folders: [], folderFilter: 'all' });
+  });
+
+  it('keeps the folders it already has when the list fails', async () => {
+    useStudySetStore.setState({ folders: [FOLDER] });
+    fetchStudySetFolders.mockRejectedValueOnce(new Error('Network request failed'));
+    await expect(useStudySetStore.getState().loadFolders()).resolves.toEqual([FOLDER]);
+    expect(useStudySetStore.getState().folders).toEqual([FOLDER]);
+  });
+
+  it('puts a new folder at the head of the row without duplicating it', async () => {
+    createStudySetFolder.mockResolvedValue(FOLDER);
+    await useStudySetStore.getState().createFolder('Finals');
+    await useStudySetStore.getState().createFolder('Finals');
+    expect(useStudySetStore.getState().folders).toEqual([FOLDER]);
+  });
+
+  it('rethrows a refused create so the screen can say so', async () => {
+    createStudySetFolder.mockRejectedValueOnce(new Error('Folder limit reached'));
+    await expect(useStudySetStore.getState().createFolder('Finals')).rejects.toThrow(
+      'Folder limit reached'
+    );
+    expect(useStudySetStore.getState().folders).toEqual([]);
+  });
+
+  it('remembers the chip, and treats a blank selection as All', () => {
+    useStudySetStore.getState().setFolderFilter('f1');
+    expect(useStudySetStore.getState().folderFilter).toBe('f1');
+    useStudySetStore.getState().setFolderFilter('');
+    expect(useStudySetStore.getState().folderFilter).toBe('all');
   });
 });

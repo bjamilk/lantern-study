@@ -5,10 +5,7 @@
 import './utils/storageFallback';
 import './env-bootstrap';
 import { initSentry } from './services/sentry';
-import { clearChunkReloadFlag } from './utils/lazyWithRetry';
-
 initSentry();
-clearChunkReloadFlag();
 
 import React from 'react';
 import ReactDOM from 'react-dom/client';

@@ -2,14 +2,14 @@
  * What lives on the Profile menu, in order.
  *
  * Profile is the account half of the fifth destination: who I am, the personal
- * ledgers, the two switches, Settings and Log out. Progress is the other
- * peer section — it is not a row here.
+ * ledgers, Settings and Log out. Dark mode and Low-data mode are switches,
+ * so they live once, in Settings → Appearance, not here. Progress is the
+ * other peer section — it is not a row here.
  *
  * Pure so web, the phone and jest share one list. Icon names are the subset
  * both AppIcon maps already ship.
  */
 import type { FeatureKey } from '../design';
-import { LOW_DATA_MODE_HINT } from '../settings/userSettings';
 
 export type MeRowId =
   | 'academic'
@@ -19,8 +19,6 @@ export type MeRowId =
   | 'credits'
   | 'teach'
   | 'invite'
-  | 'darkMode'
-  | 'lowData'
   | 'settings'
   | 'admin'
   | 'logout';
@@ -59,18 +57,16 @@ export interface MeRow {
 }
 
 export interface MeSection {
-  id: 'account' | 'mine' | 'preferences' | 'app' | 'session';
+  id: 'account' | 'mine' | 'app' | 'session';
   rows: MeRow[];
 }
 
 export interface MeState {
-  darkMode: boolean;
-  lowDataMode: boolean;
   /** Web-only: the admin console sits with Log out, last. */
   includeAdmin?: boolean;
 }
 
-export function buildMeSections({ darkMode, lowDataMode, includeAdmin = false }: MeState): MeSection[] {
+export function buildMeSections({ includeAdmin = false }: MeState = {}): MeSection[] {
   const sessionRows: MeRow[] = [];
   if (includeAdmin) {
     sessionRows.push({
@@ -155,28 +151,6 @@ export function buildMeSections({ darkMode, lowDataMode, includeAdmin = false }:
           icon: 'gift',
           kind: 'link',
           accessibilityLabel: 'Invite friends',
-        },
-      ],
-    },
-    {
-      id: 'preferences',
-      rows: [
-        {
-          id: 'darkMode',
-          label: 'Dark mode',
-          icon: 'moon',
-          kind: 'switch',
-          value: darkMode,
-          accessibilityLabel: 'Dark mode',
-        },
-        {
-          id: 'lowData',
-          label: 'Low-data mode',
-          hint: LOW_DATA_MODE_HINT,
-          icon: 'cellular',
-          kind: 'switch',
-          value: lowDataMode,
-          accessibilityLabel: 'Low-data mode',
         },
       ],
     },

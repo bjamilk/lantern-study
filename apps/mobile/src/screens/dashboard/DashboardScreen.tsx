@@ -430,24 +430,34 @@ export function DashboardScreen({ navigation }: Props) {
 
   const reviewDeck = reviewPlan.first;
 
+  /**
+   * The due-review session itself, lifted out of `handlePrimaryAction` so the
+   * greeting button and the inline card's "Study all N due" are literally one
+   * function. Two call sites that each built their own `toTab('FlashcardReview'
+   * …)` is how a link that promises N ends up dealing one deck's worth.
+   */
+  const startDueReview = useCallback(() => {
+    // Nothing actually due (a stale count, or cards not loaded yet): the
+    // list is the honest fallback, never a review screen with no cards.
+    if (!reviewDeck) {
+      parent?.navigate('StudyTab', toTab('FlashcardsList'));
+      return;
+    }
+    parent?.navigate(
+      'StudyTab',
+      toTab('FlashcardReview', {
+        deckId: reviewDeck.deckId,
+        deckName: reviewDeck.deckName ?? undefined,
+        // The whole queue, so the session continues into the next deck when
+        // this one ends and the button's N is the N actually dealt.
+        queueDeckIds: reviewPlan.legs.map((leg) => leg.deckId),
+      })
+    );
+  }, [parent, reviewDeck, reviewPlan]);
+
   const handlePrimaryAction = useCallback(() => {
     if (primaryAction.kind === 'review') {
-      // Nothing actually due (a stale count, or cards not loaded yet): the
-      // list is the honest fallback, never a review screen with no cards.
-      if (!reviewDeck) {
-        parent?.navigate('StudyTab', toTab('FlashcardsList'));
-        return;
-      }
-      parent?.navigate(
-        'StudyTab',
-        toTab('FlashcardReview', {
-          deckId: reviewDeck.deckId,
-          deckName: reviewDeck.deckName ?? undefined,
-          // The whole queue, so the session continues into the next deck when
-          // this one ends and the button's N is the N actually dealt.
-          queueDeckIds: reviewPlan.legs.map((leg) => leg.deckId),
-        })
-      );
+      startDueReview();
       return;
     }
     if (primaryAction.kind === 'continue') {
@@ -455,7 +465,7 @@ export function DashboardScreen({ navigation }: Props) {
       return;
     }
     setImportOpen(true);
-  }, [primaryAction, parent, openResumeHref, reviewDeck, reviewPlan]);
+  }, [primaryAction, openResumeHref, startDueReview]);
 
   /**
    * The set a "last set's …" door opens. The set most recently opened, else
@@ -721,7 +731,16 @@ export function DashboardScreen({ navigation }: Props) {
           </Card>
         ) : null}
 
-        <HomeRecentActivities activities={activities} onOpen={openActivity} />
+        {/* 4 — RECENT ACTIVITIES, led by a live due card when there is one.
+            The card's figure and its "Study all N due" are the hero's own:
+            the same plan total and the same session handler, so Home cannot
+            print two numbers or open two different reviews. */}
+        <HomeRecentActivities
+          activities={activities}
+          onOpen={openActivity}
+          dueTotal={reviewPlan.totalDue}
+          onStudyAllDue={startDueReview}
+        />
 
         {/* 5 — UPCOMING EXAM. A set knows its own exam date, so that is what
             Home says. Only when no set names one does the readiness panel take

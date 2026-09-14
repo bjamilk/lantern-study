@@ -42,6 +42,7 @@ import {
   Card,
   CourseChip,
   FeatureDisc,
+  IconButton,
   ScreenHeader,
   Segmented,
   useSegmentSkin,
@@ -213,6 +214,7 @@ function NoteCard({
   selectMode?: boolean;
   selected?: boolean;
 }) {
+  const { colors } = useTheme();
   const isShared = note.accessRole && note.accessRole !== 'owner';
   const mark = noteRowMark(note.sourceType);
   return (
@@ -257,6 +259,20 @@ function NoteCard({
                 </Text>
               </View>
               <CourseChip code={courseCode} />
+              {/* The row's actions were long-press only, which is a gesture
+                  with no affordance: nothing on screen said the menu existed.
+                  The overflow opens the SAME sheet, and long-press still
+                  works for anyone who already knows it. */}
+              {onLongPress && !selectMode ? (
+                <IconButton
+                  icon="ellipsis-vertical"
+                  size={18}
+                  padding={4}
+                  color={colors.textSecondary}
+                  onPress={onLongPress}
+                  accessibilityLabel={`More actions for ${note.title}`}
+                />
+              ) : null}
             </View>
             {isShared ? (
               <View className="flex-row items-center gap-1 mt-1">

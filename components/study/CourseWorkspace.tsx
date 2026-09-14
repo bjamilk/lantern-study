@@ -86,7 +86,6 @@ import { StudySetPlanPanel } from './StudySetPlanPanel';
 import { StudySetSwitcher } from './StudySetSwitcher';
 import { SetRoomHeader, type SetRoomHeaderMenuItem } from './SetRoomHeader';
 import { StudySetArtifactLibrary } from './StudySetArtifactLibrary';
-import { StudySetGuidedPrompts } from './StudySetGuidedPrompts';
 import { StudyWorkspaceBar } from './StudyWorkspaceBar';
 import { MaterialSortMenu, ViewModeToggle, useMaterialSort, useViewMode } from './ViewModeToggle';
 import { sortMaterials } from './viewMode';
@@ -169,6 +168,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const folders = useStudySetStore((s) => s.folders);
   const loadFolders = useStudySetStore((s) => s.loadFolders);
   const sets = useStudySetStore((s) => s.sets);
+  const setsLoaded = useStudySetStore((s) => s.loaded);
+  const setsLoadError = useStudySetStore((s) => s.loadError);
   const studySet = useStudySetStore((s) => (studySetId ? s.resolveSet(studySetId) : null));
   const courseId = studySet?.courseId || courseIdProp || '';
   type RoomActivity = WorkspaceActivityId | 'home' | 'add';
@@ -1304,6 +1305,52 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     activity === 'notes' &&
     Boolean(studioNote && noteInRoom(studioNote) && !isCalendarNote(studioNote) && !isEssayNote(studioNote) && !isLectureNote(studioNote) && !isLessonNote(studioNote) && !isRecapNote(studioNote));
 
+  const setMissing = Boolean(studySetId && !studySet);
+  const setOpening = setMissing && !setsLoaded && !setsLoadError;
+  const setUnavailable = setMissing && (Boolean(setsLoadError) || setsLoaded);
+
+  if (setOpening || setUnavailable) {
+    return (
+      <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
+        <StudyWorkspaceBar
+          active="study"
+          onSelect={(section) => {
+            if (section === 'library') onOpenLibrary();
+          }}
+        />
+        <div className="flex flex-1 min-h-0 flex-col items-center justify-center px-6 text-center">
+          {setOpening ? (
+            <div role="status" aria-label="Opening this set">
+              <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-lantern-primary/30 border-t-lantern-primary" />
+              <span className="sr-only">Opening this set…</span>
+            </div>
+          ) : (
+            <>
+              <p className="text-heading text-lantern-text">Could not open this set</p>
+              <p className="mt-1 max-w-md text-body text-lantern-text-secondary">
+                {/too many requests/i.test(setsLoadError ?? '')
+                  ? 'The app asked for your sets too quickly. Wait a moment and try again.'
+                  : 'This set is not in your library, or it failed to load.'}
+              </p>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                <Button
+                  onClick={() => {
+                    void loadSets({ force: true }).catch(() => undefined);
+                  }}
+                >
+                  Try again
+                </Button>
+                <Button variant="secondary" onClick={() => navigateTo(AppMode.STUDY_HUB)}>
+                  Back to Study
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
       <StudyWorkspaceBar
@@ -2095,16 +2142,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         {companionRail ? (
         <aside className="flex w-full lg:w-96 xl:w-[28rem] 2xl:w-[32rem] min-h-0 flex-1 lg:flex-none self-stretch">
           <div className="flex flex-1 min-h-0 flex-col overflow-hidden border-t border-lantern-border lg:border-t-0 lg:border-l">
-            {studySetId ? (
-              <StudySetGuidedPrompts
-                activity={
-                  (routePath?.activity ??
-                    (activity === 'add' || activity === 'home' ? activity : activity)) as StudySetPathActivity
-                }
-                onAsk={(message) => openSetChat(message)}
-                onGo={(next) => go(next)}
-              />
-            ) : null}
             <div className="flex-1 min-h-0">
               <AICompanionPanel
                 variant="rail"

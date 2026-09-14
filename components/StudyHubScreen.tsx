@@ -126,6 +126,7 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   const touchOpened = useStudySetStore((s) => s.touchOpened);
   const sets = useStudySetStore((s) => s.sets);
   const setsLoaded = useStudySetStore((s) => s.loaded);
+  const setsLoadError = useStudySetStore((s) => s.loadError);
   const showToast = useToastStore((s) => s.showToast);
   const [createOpen, setCreateOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -166,8 +167,11 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
     STUDY_SET_SORTS.find((item) => item.id === sort)?.label ?? STUDY_SET_SORTS[0]?.label ?? 'Sort';
 
   // `loaded` is the only honest signal that "you have no sets" is true.
+  // A failed list request used to leave `loaded` false, so this tab stayed
+  // on the skeleton after a 429 or a dropped proxy — "stuck on refresh".
   const showEmptyState = setsLoaded && sets.length === 0;
-  const showSkeleton = !setsLoaded && sets.length === 0;
+  const showLoadError = Boolean(setsLoadError) && sets.length === 0 && !setsLoaded;
+  const showSkeleton = !setsLoaded && sets.length === 0 && !setsLoadError;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
@@ -212,6 +216,27 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
 
         {showSkeleton ? (
           <StudyHubSkeleton />
+        ) : showLoadError ? (
+          <div className="rounded-2xl border border-dashed border-lantern-border px-6 py-12 text-center">
+            <span className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-lantern-background-secondary text-lantern-text">
+              <AppIcon name="refresh" size={24} />
+            </span>
+            <p className="text-heading text-lantern-text">Could not load your study sets</p>
+            <p className="mt-1 text-body text-lantern-text-secondary">
+              {/too many requests/i.test(setsLoadError ?? '')
+                ? 'The app asked for them too quickly. Wait a moment and try again.'
+                : 'Check your connection and try again.'}
+            </p>
+            <div className="mt-4 flex justify-center">
+              <Button
+                onClick={() => {
+                  void loadSets({ force: true }).catch(() => undefined);
+                }}
+              >
+                Try again
+              </Button>
+            </div>
+          </div>
         ) : showEmptyState ? (
           <div className="rounded-2xl border border-dashed border-lantern-border px-6 py-12 text-center">
             <span className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-lantern-background-secondary text-lantern-text">

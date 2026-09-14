@@ -19,7 +19,10 @@ export function lazyWithRetry<T extends ComponentType<unknown>>(
   factory: () => Promise<ModuleWithDefault<T>>
 ): LazyExoticComponent<T> {
   return lazy(() =>
-    factory().catch((err: unknown) => {
+    factory().then((mod) => {
+      clearChunkReloadFlag();
+      return mod;
+    }).catch((err: unknown) => {
       let reloaded = false;
       try {
         reloaded = sessionStorage.getItem(CHUNK_RELOAD_KEY) === '1';

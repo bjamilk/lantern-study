@@ -22,6 +22,7 @@ import type { FeatureKey } from '@lantern/shared/design';
 import { FeatureDisc } from '../ui/FeatureDisc';
 import { T } from '../ui';
 import type { AppIconName } from '../ui/AppIcon';
+import { InlineReviewCard } from './InlineReviewCard';
 import { relativeActivityTime, type RecentActivity, type RecentActivityKind } from './homeSections';
 
 export interface HomeRecentActivitiesProps {
@@ -30,6 +31,13 @@ export interface HomeRecentActivitiesProps {
   onOpen: (activity: RecentActivity) => void;
   /** Injected in tests so the relative times are not wall-clock dependent. */
   now?: Date;
+  /**
+   * Home's plan total, forwarded to the inline card so the card's link and
+   * the greeting button cannot say two numbers about one pile.
+   */
+  dueTotal?: number | null;
+  /** Home's own due-review session, forwarded to the inline card's link. */
+  onStudyAllDue?: () => void;
 }
 
 /**
@@ -46,7 +54,13 @@ const KIND_PRESENTATION: Record<RecentActivityKind, { feature: FeatureKey; icon:
   companion: { feature: 'ai', icon: 'sparkles' },
 };
 
-export function HomeRecentActivities({ activities, onOpen, now }: HomeRecentActivitiesProps) {
+export function HomeRecentActivities({
+  activities,
+  onOpen,
+  now,
+  dueTotal,
+  onStudyAllDue,
+}: HomeRecentActivitiesProps) {
   // No heading over nothing.
   if (activities.length === 0) return null;
 
@@ -55,6 +69,13 @@ export function HomeRecentActivities({ activities, onOpen, now }: HomeRecentActi
       <T.Caption tone="secondary" className="mb-2">
         Recent activities
       </T.Caption>
+      {/*
+        The first thing under the heading is a LIVE card when something is
+        already due: the real front of a real flashcard, gradeable in place
+        through the review screen's own action. It renders nothing when nothing
+        is due, which leaves the plain rows exactly as they were.
+      */}
+      <InlineReviewCard dueTotal={dueTotal} onStudyAllDue={onStudyAllDue} />
       <View className="rounded-lantern-xl border border-lantern-border bg-lantern-surface overflow-hidden">
         {activities.map((activity, index) => {
           const { feature, icon } = KIND_PRESENTATION[activity.kind];

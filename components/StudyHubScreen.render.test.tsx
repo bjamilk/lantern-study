@@ -19,6 +19,7 @@ const studySetState = {
   sets: [] as unknown[],
   folders: [] as unknown[],
   loaded: false,
+  loadError: null as string | null,
   lastOpenedId: null as string | null,
   loadSets: async () => [],
   loadFolders: async () => [],
@@ -66,6 +67,7 @@ describe('StudyHubScreen first paint', () => {
     studySetState.sets = [];
     studySetState.folders = [];
     studySetState.loaded = false;
+    studySetState.loadError = null;
   });
 
   it('does not claim the user has nothing while the sets query is still in flight', () => {
@@ -73,6 +75,15 @@ describe('StudyHubScreen first paint', () => {
     expect(html).toContain('aria-busy="true"');
     expect(visibleText(html)).toContain('Loading your study sets');
     // The empty state's own sentence — the one the bug painted over four real sets.
+    expect(visibleText(html)).not.toContain('Name a set to organize your materials');
+  });
+
+  it('shows a retry state when the list request fails with no cached sets', () => {
+    studySetState.loadError = 'Too Many Requests';
+    const html = render();
+    expect(html).not.toContain('aria-busy="true"');
+    expect(visibleText(html)).toContain('Could not load your study sets');
+    expect(visibleText(html)).toContain('asked for them too quickly');
     expect(visibleText(html)).not.toContain('Name a set to organize your materials');
   });
 

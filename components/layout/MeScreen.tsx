@@ -21,8 +21,6 @@ export interface MeScreenProps {
   section: MeAreaSection;
   onSelectSection: (section: MeAreaSection) => void;
   currentUser: User;
-  theme: 'light' | 'dark';
-  onToggleTheme: () => void;
   onNavigate: (mode: AppMode) => void;
   onOpenTeach: () => void;
   onOpenSettings: (tab?: SettingsDeepLink) => void;
@@ -114,8 +112,6 @@ const MeScreen: React.FC<MeScreenProps> = ({
   section,
   onSelectSection,
   currentUser,
-  theme,
-  onToggleTheme,
   onNavigate,
   onOpenTeach,
   onOpenSettings,
@@ -123,7 +119,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
   pendingSyncCount = 0,
   progress,
 }) => {
-  const { lowDataMode, toggleLowDataMode } = useLowDataModeToggle();
+  const { lowDataMode } = useLowDataModeToggle();
   const isPlatformAdmin = usePlatformAdmin();
   const [joinOpen, setJoinOpen] = useState(false);
 
@@ -135,11 +131,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
     .filter(Boolean)
     .join(' · ');
 
-  const sections = buildMeSections({
-    darkMode: theme === 'dark',
-    lowDataMode,
-    includeAdmin: isPlatformAdmin,
-  });
+  const sections = buildMeSections({ includeAdmin: isPlatformAdmin });
 
   const onRow = (id: MeRowId) => {
     switch (id) {
@@ -163,12 +155,6 @@ const MeScreen: React.FC<MeScreenProps> = ({
         return;
       case 'invite':
         onNavigate(AppMode.INVITE_FRIENDS);
-        return;
-      case 'darkMode':
-        onToggleTheme();
-        return;
-      case 'lowData':
-        toggleLowDataMode();
         return;
       case 'settings':
         onOpenSettings();
@@ -228,7 +214,7 @@ const MeScreen: React.FC<MeScreenProps> = ({
                   <SwitchRow
                     key={row.id}
                     row={row}
-                    checked={row.id === 'darkMode' ? theme === 'dark' : lowDataMode}
+                    checked={row.value === true}
                     onToggle={() => onRow(row.id)}
                   />
                 ) : (

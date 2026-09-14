@@ -481,7 +481,7 @@ export function GroupPerformanceChartCard({ groups, testResults }: GroupPerforma
           {lowDataMode ? (
             <View className="py-3 px-2 rounded-xl bg-lantern-background-secondary">
               <Text className="text-body font-medium text-lantern-text-secondary text-center mb-1">
-                Chart hidden in Low-Data Mode
+                Chart hidden in Low-data mode
               </Text>
               {selectedSeries.map((s) => (
                 <Text key={s.id} className="text-caption text-lantern-text-tertiary text-center">

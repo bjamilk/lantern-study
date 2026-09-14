@@ -3578,8 +3578,6 @@ export const App: React.FC = () => {
                         navigateToPath(next === 'progress' ? ME_PROGRESS_PATH : ME_PATH);
                     }}
                     currentUser={currentUser}
-                    theme={theme}
-                    onToggleTheme={toggleTheme}
                     onNavigate={(mode) => navigateTo(mode)}
                     onOpenTeach={() => navigateToPath('/teach')}
                     onOpenSettings={(tab) => {

@@ -925,7 +925,7 @@ export default function SettingsScreen() {
               colors={colors}
               icon="cellular"
               iconColor="#0ea5e9"
-              title="Low-Data Mode"
+              title="Low-data mode"
               subtitle={LOW_DATA_MODE_HINT}
               rightElement={
                 <Switch

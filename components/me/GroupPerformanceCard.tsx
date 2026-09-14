@@ -418,7 +418,7 @@ export const GroupPerformanceCard: React.FC<GroupPerformanceCardProps> = ({
           <div className="p-4">
             {lowDataMode ? (
               <div className="py-4 text-center text-body text-lantern-text-secondary bg-lantern-background-secondary rounded-lantern space-y-1">
-                <p className="font-medium">Chart hidden in Low-Data Mode</p>
+                <p className="font-medium">Chart hidden in Low-data mode</p>
                 {selectedGroupPerformance.map((group) => (
                   <p key={group.id} className="text-caption">
                     {group.name}: {group.averageScore.toFixed(1)}% avg across {group.testCount}{' '}

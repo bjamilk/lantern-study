@@ -20,6 +20,7 @@ import {
 import { useAuthStore, useFlashcardStore, type Flashcard } from '../../stores';
 import { Button } from '../../components/ui';
 import { useFeatureAccent } from '../../components/ui/FeatureDisc';
+import { flashcardGradeSkin } from '../../design/flashcardGradeSkin';
 import { Screen, useScreenBottomPadding } from '../../components/layout';
 import { SwipeableFlashcard } from '../../components/SwipeableFlashcard';
 import { useConfirmBeforeExit } from '../../hooks/useConfirmBeforeExit';
@@ -641,18 +642,11 @@ export function FlashcardReviewScreen({ navigation, route }: Props) {
   const { front, back } = getCardDisplayText(currentCard);
   const isImageOcclusion = currentCard.type === FlashcardType.IMAGE_OCCLUSION;
 
-  const gradeChipSkin = (rating: PerformanceRating) => {
-    switch (rating) {
-      case 'again':
-        return { backgroundColor: colors.errorBackground, color: colors.error };
-      case 'hard':
-        return { backgroundColor: colors.surface, color: colors.text };
-      case 'good':
-        return { backgroundColor: colors.successBackground, color: colors.success };
-      case 'easy':
-        return { backgroundColor: flashcardsAccent.tint, color: flashcardsAccent.ink };
-    }
-  };
+  // The shared skin (src/design/flashcardGradeSkin.ts), so this screen and
+  // Home's inline card paint a grade identically — and so the "Again" pairing
+  // is AA in one place rather than two.
+  const gradeChipSkin = (rating: PerformanceRating) =>
+    flashcardGradeSkin(rating, colors, flashcardsAccent);
 
   const renderGradeButton = ({
     rating,

@@ -266,7 +266,7 @@ const OfflineModeScreen: React.FC<OfflineModeScreenProps> = ({
 
       {lowDataMode && (
         <div className="mb-4 flex items-start gap-3 p-3 bg-lantern-accent-background border border-amber-200 dark:border-amber-700 rounded-lantern text-sm text-amber-800 dark:text-amber-300">
-          <span className="font-semibold whitespace-nowrap">Low-Data Mode</span>
+          <span className="font-semibold whitespace-nowrap">Low-data mode</span>
           <span>Download bundles below to study offline. {syncCopy.savedLocally}</span>
         </div>
       )}

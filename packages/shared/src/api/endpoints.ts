@@ -756,7 +756,7 @@ export function createApiEndpoints(client: ApiClient) {
      * thumbnail in the switcher.
      *
      * The ceiling here is 5 MB, not the 10 MB decks and notes take: that is
-     * the number printed under the button ("Recommended: 400x400px, max
+     * the number printed under the button ("Recommended: 400×400px, max
      * 5MB"), and the server refuses anything larger.
      */
     uploadStudySetCover: (

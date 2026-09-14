@@ -23,7 +23,7 @@ import type { Deck, StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 import { Button, Card } from '../ui';
 import { Headline } from '../ui/Headline';
-import { OverflowChipScroller } from './OverflowChipScroller';
+import { ChipRowScroller } from './ChipRowScroller';
 import { OwnWayGrid, OwnWayShowAll } from './OwnWayGrid';
 import { RecentMaterials } from './RecentMaterials';
 import { RoomRecommendationCard } from './RoomRecommendationCard';
@@ -167,7 +167,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
               a student which stretch of the course they are standing in, which
               is the whole thing the flattened band was missing. */}
           {units.length > 0 ? (
-            <OverflowChipScroller aria-label="Study plan units" className="mb-3">
+            <ChipRowScroller aria-label="Study plan units" className="mb-3">
               {units.map((unit, index) => {
                 const active = unit.id === activeUnitId;
                 return (
@@ -187,7 +187,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                   </button>
                 );
               })}
-            </OverflowChipScroller>
+            </ChipRowScroller>
           ) : null}
 
           <div className="rounded-2xl border border-lantern-border bg-lantern-surface p-4">

@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AppIcon } from '../ui/AppIcon';
-import { OVERFLOW_CHIP_SCROLL_PX, overflowChipDirections } from './overflowChipScroller';
+import { OVERFLOW_CHIP_SCROLL_PX, overflowChipDirections } from './chipRowOverflow';
 
-interface OverflowChipScrollerProps {
+interface ChipRowScrollerProps {
   children: React.ReactNode;
   /** Exposed to the pills, e.g. "Study plan units". */
   'aria-label'?: string;
@@ -13,7 +13,7 @@ interface OverflowChipScrollerProps {
  * A chip row that keeps the native horizontal bar hidden and uses left/right
  * arrows to say "there are still pills off-screen".
  */
-export const OverflowChipScroller: React.FC<OverflowChipScrollerProps> = ({
+export const ChipRowScroller: React.FC<ChipRowScrollerProps> = ({
   children,
   'aria-label': ariaLabel,
   className = '',
@@ -41,7 +41,7 @@ export const OverflowChipScroller: React.FC<OverflowChipScrollerProps> = ({
       el.removeEventListener('scroll', update);
       observer.disconnect();
     };
-  }, [children, update]);
+  }, [update]);
 
   const scrollBy = (delta: number) => {
     scrollerRef.current?.scrollBy({ left: delta, behavior: 'smooth' });
@@ -84,5 +84,3 @@ export const OverflowChipScroller: React.FC<OverflowChipScrollerProps> = ({
     </div>
   );
 };
-
-export default OverflowChipScroller;

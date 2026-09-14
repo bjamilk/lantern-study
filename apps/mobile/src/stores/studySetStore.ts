@@ -12,6 +12,7 @@ import {
   replaceStudySetPlan,
   updateStudySetTopicStatus,
   fetchStudySetFolders,
+  createStudySetFolder as apiCreateFolder,
 } from '../services/academic';
 import { useAuthStore } from './authStore';
 
@@ -143,6 +144,20 @@ interface StudySetState {
   ) => Promise<StudySetPlan>;
   setTopicStatus: (setId: string, topicId: string, status: StudySetTopicStatus) => Promise<void>;
   loadFolders: () => Promise<StudySetFolder[]>;
+  createFolder: (title: string) => Promise<StudySetFolder>;
+  /**
+   * Which folder chip the Study hub is standing on (`ALL_FOLDERS`, or an id).
+   *
+   * It lives in the store rather than in the screen's `useState` so it survives
+   * the hub unmounting: on a tab navigator, walking into a set room and back
+   * remounts the screen, and a filter that resets on the way back means every
+   * return trip dumps the student back into the full list they had just
+   * narrowed. Session-scoped on purpose — not written to AsyncStorage, so a
+   * cold start opens on All and nobody is ever confronted by a short list they
+   * do not remember asking for.
+   */
+  folderFilter: string;
+  setFolderFilter: (selection: string) => void;
   openPicker: () => void;
   closePicker: () => void;
 }
@@ -190,6 +205,7 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
   picker: false,
   plans: {} as Record<string, StudySetPlan>,
   folders: [] as StudySetFolder[],
+  folderFilter: 'all',
 
   loadSets: async (options) => {
     if (get().loaded && !options?.force) return get().sets;
@@ -416,6 +432,23 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
       return get().folders;
     }
   },
+
+  /**
+   * Make a folder, exactly as web's store does.
+   *
+   * Loud on failure — unlike `loadFolders`, which can fall back to what it is
+   * already holding, there is nothing to fall back to here: the student typed
+   * a name and pressed a button, and a silent catch would leave them looking
+   * at a chip row that never grew with no idea why. The screen catches and
+   * toasts.
+   */
+  createFolder: async (title) => {
+    const created = (await apiCreateFolder({ title })) as StudySetFolder;
+    set({ folders: [created, ...get().folders.filter((row) => row.id !== created.id)] });
+    return created;
+  },
+
+  setFolderFilter: (selection) => set({ folderFilter: selection || 'all' }),
 
   openPicker: () => set({ picker: true }),
   closePicker: () => set({ picker: false }),

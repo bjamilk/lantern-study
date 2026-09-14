@@ -7,10 +7,8 @@ import {
   useScreenBottomPadding,
 } from '../../components/layout';
 import { ResolvedAvatar } from '../../components/ResolvedAvatar';
-import { useAppTheme, useTheme } from '../../theme';
+import { useTheme } from '../../theme';
 import { useAuthStore } from '../../stores/authStore';
-import { useSettingsStore } from '../../stores/settingsStore';
-import { useLowDataMode } from '../../hooks/useLowDataMode';
 import { navigate as navigateFromRoot } from '../../navigation/navigationRef';
 import { buildMeSections, type MeRow, type MeRowId } from './meRows';
 import { AppIcon } from '../../components/ui/AppIcon';
@@ -32,15 +30,10 @@ const TEACH_URL = 'https://lanternstudy.com/teach';
  */
 export function MeScreen({ navigation }: Props) {
   const { colors } = useTheme();
-  const theme = useAppTheme();
   const { profileName, profileAvatarUri, profileEmail } = useChrome();
   const academicProfile = useAuthStore((s) => s.academicProfile);
   const signOut = useAuthStore((s) => s.signOut);
-  const updateSettings = useSettingsStore((s) => s.updateSettings);
-  const { lowDataMode, toggleLowDataMode } = useLowDataMode();
   const bottomPadding = useScreenBottomPadding({ bottom: 'auto' });
-
-  const darkMode = theme === 'dark';
 
   const academicLine = [
     academicProfile?.institution?.name || null,
@@ -49,10 +42,6 @@ export function MeScreen({ navigation }: Props) {
   ]
     .filter(Boolean)
     .join(' · ');
-
-  const toggleTheme = useCallback(() => {
-    void updateSettings('appearance', { theme: darkMode ? 'light' : 'dark' });
-  }, [darkMode, updateSettings]);
 
   const onRow = useCallback(
     (id: MeRowId) => {
@@ -78,12 +67,6 @@ export function MeScreen({ navigation }: Props) {
         case 'invite':
           navigateFromRoot('InviteFriends');
           return;
-        case 'darkMode':
-          toggleTheme();
-          return;
-        case 'lowData':
-          toggleLowDataMode();
-          return;
         case 'settings':
           navigateFromRoot('Settings');
           return;
@@ -94,10 +77,10 @@ export function MeScreen({ navigation }: Props) {
           return;
       }
     },
-    [navigation, signOut, toggleLowDataMode, toggleTheme]
+    [navigation, signOut]
   );
 
-  const sections = buildMeSections({ darkMode, lowDataMode });
+  const sections = buildMeSections();
 
   const renderRow = (row: MeRow) => {
     const destructive = row.kind === 'destructive';

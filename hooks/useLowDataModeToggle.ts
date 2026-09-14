@@ -60,7 +60,7 @@ export function useLowDataModeToggle() {
                 useAuthStore.getState().setCurrentUser({ ...latest, settings: previousSettings });
             }
             setLowDataMode(!newValue);
-            useToastStore.getState().showToast('Could not save the Low-Data Mode change.', 'error');
+            useToastStore.getState().showToast('Could not save the Low-data mode change.', 'error');
         }
     }, [lowDataMode, currentUser, theme, setLowDataMode]);
 

@@ -90,7 +90,6 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/components/dashboard/DashboardHeroCard.tsx': 9,
   'src/components/dashboard/DashboardInsights.tsx': 7,
   'src/components/dashboard/DashboardQuickLinks.tsx': 1,
-  'src/components/dashboard/GettingStartedChecklist.tsx': 3,
   'src/components/featureTips/FeatureTipSheet.tsx': 5,
   'src/components/jobs/InterviewCalendarActions.tsx': 1,
   'src/components/jobs/JobApplicantNotes.tsx': 9,

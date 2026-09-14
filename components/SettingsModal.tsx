@@ -494,7 +494,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({
                             <option value="dark">Dark</option>
                         </select>
                     </div>
-                    <ToggleSwitch enabled={lowDataMode} onChange={handleLowDataToggle} label="Low-Data Mode" description="Smaller pages, local avatars, and lighter charts." />
+                    <ToggleSwitch enabled={lowDataMode} onChange={handleLowDataToggle} label="Low-data mode" description="Smaller pages, local avatars, and lighter charts." />
                     <div>
                         <label className="block text-sm font-medium text-lantern-text mb-1">Accent color</label>
                         <input type="color" value={appearance.accentColor}

@@ -173,6 +173,22 @@ function armCookieRefreshTimer(expiresAt: number | null | undefined): void {
   }
 }
 
+
+/**
+ * A timeout signal that also works where `AbortSignal.timeout` is missing
+ * (Safari before 16, and the DOM test environment): fall back to an
+ * AbortController armed by a timer, or to no signal at all.
+ */
+function timeoutSignal(ms: number): AbortSignal | undefined {
+  if (typeof AbortSignal !== 'undefined' && typeof (AbortSignal as any).timeout === 'function') {
+    return (AbortSignal as any).timeout(ms);
+  }
+  if (typeof AbortController === 'undefined') return undefined;
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
 async function refreshAndPropagate(): Promise<void> {
   const session = await refreshCookieSession(); // re-arms the timer via applyMemorySession
   if (!session?.access_token) return;
@@ -198,7 +214,7 @@ export async function cookieAuthFetch(
   return fetch(`${base}/api/v1/auth${path}`, {
     ...init,
     credentials: 'include',
-    signal: init.signal ?? AbortSignal.timeout(8000),
+    signal: init.signal ?? timeoutSignal(8000),
     headers: {
       'Content-Type': 'application/json',
       'X-Requested-With': 'LanternStudy',

@@ -34,6 +34,16 @@ import {
 } from '../../components/ui';
 import { confirmAsync } from '../../components/ui/appDialog';
 import { StudySetCard } from '../../components/study/StudySetCard';
+import { FolderChips } from '../../components/study/FolderChips';
+import {
+  ALL_FOLDERS,
+  emptyFolderLine,
+  filterByFolder,
+  movedMessage,
+  moveTargets,
+  resolveFolderSelection,
+  selectionAfterMove,
+} from '../../components/study/folderFilter';
 import { shareStudySet } from '../../components/study/shareStudySet';
 import { relativeStudiedLabel } from '../../components/study/setPresentation';
 import { studySetProgress } from '../../components/dashboard/homeSections';
@@ -79,6 +89,12 @@ export function StudyHubScreen({ navigation }: Props) {
   const loadSets = useStudySetStore((s) => s.loadSets);
   const createSet = useStudySetStore((s) => s.createSet);
   const removeSet = useStudySetStore((s) => s.removeSet);
+  const updateSet = useStudySetStore((s) => s.updateSet);
+  const folders = useStudySetStore((s) => s.folders);
+  const loadFolders = useStudySetStore((s) => s.loadFolders);
+  const createFolder = useStudySetStore((s) => s.createFolder);
+  const folderFilter = useStudySetStore((s) => s.folderFilter);
+  const setFolderFilter = useStudySetStore((s) => s.setFolderFilter);
   const sets = useStudySetStore((s) => s.sets);
   const plans = useStudySetStore((s) => s.plans);
   const lastOpenedId = useStudySetStore((s) => s.lastOpenedId);
@@ -94,6 +110,7 @@ export function StudyHubScreen({ navigation }: Props) {
   const [sort, setSort] = useState<StudySetSortId>('lastAccessed');
   const [sortOpen, setSortOpen] = useState(false);
   const [menuSetId, setMenuSetId] = useState<string | null>(null);
+  const [moveSetId, setMoveSetId] = useState<string | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -108,13 +125,17 @@ export function StudyHubScreen({ navigation }: Props) {
         // Load the list and STOP. No `pickOpenStudySetId`, no navigate: see
         // the note at the top of the file.
         await loadSets({ force: true }).catch(() => undefined);
+        // The chips come from the server too. Quiet on failure: a hub with no
+        // folder row is the hub as it shipped, which is a far better outcome
+        // than a list that will not draw because the folders did not.
+        void loadFolders().catch(() => undefined);
         const rows = await getMyActiveCourses().catch(() => [] as UserCourse[]);
         if (!cancelled) setCourses(rows);
       })();
       return () => {
         cancelled = true;
       };
-    }, [userId, fetchTests, fetchAttempts, loadSets])
+    }, [userId, fetchTests, fetchAttempts, loadSets, loadFolders])
   );
 
   const openSet = (setId: string, title?: string) => {
@@ -169,11 +190,21 @@ export function StudyHubScreen({ navigation }: Props) {
     });
   }, [sets, notes, decks, tests, plans]);
 
+  /** The chip actually in force — a chip whose folder is gone means `All`. */
+  const activeFolder = resolveFolderSelection(folderFilter, folders);
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    const filtered = needle
+    const searched = needle
       ? rows.filter((row) => studySetLabel(row.set).toLowerCase().includes(needle))
       : rows;
+    // Folder narrows AND search narrows: a student inside "Finals" who then
+    // searches is searching Finals, which is what the chip being lit says.
+    const filtered = filterByFolder(
+      searched.map((row) => ({ ...row, folderId: row.set.folderId })),
+      activeFolder,
+      folders
+    );
     // The shared comparator, so a set's place in the list is the same on the
     // phone and in the browser.
     const ordered = sortStudySets(
@@ -183,7 +214,7 @@ export function StudyHubScreen({ navigation }: Props) {
     );
     const byId = new Map(filtered.map((row) => [row.set.id, row]));
     return ordered.map((set) => byId.get(set.id)!).filter(Boolean);
-  }, [rows, query, sort, lastOpenedId]);
+  }, [rows, query, sort, lastOpenedId, activeFolder, folders]);
 
   const sortLabel =
     STUDY_SET_SORTS.find((option) => option.id === sort)?.label ?? 'Last accessed';
@@ -218,6 +249,18 @@ export function StudyHubScreen({ navigation }: Props) {
           },
         },
         {
+          // Filing, from the row you are looking at. The sheet it opens lists
+          // the folders plus `No folder`, so this is also how a set comes back
+          // OUT of a folder — there is no other way to unfile one on the phone.
+          label: 'Move to folder…',
+          icon: 'folder',
+          onPress: () => {
+            const target = menuSet;
+            setMenuSetId(null);
+            setMoveSetId(target.id);
+          },
+        },
+        {
           label: 'Delete',
           icon: 'trash',
           destructive: true,
@@ -246,6 +289,36 @@ export function StudyHubScreen({ navigation }: Props) {
           },
         },
       ]
+    : [];
+
+  const moveSet = moveSetId ? sets.find((row) => row.id === moveSetId) ?? null : null;
+  const moveItems: ActionSheetItem[] = moveSet
+    ? moveTargets(folders, moveSet.folderId).map((target) => ({
+        label: target.label,
+        // A tick, not a hidden row: the sheet says where the set lives as well
+        // as where it could go.
+        icon: target.current ? ('checkmark' as const) : ('folder' as const),
+        onPress: () => {
+          const set = moveSet;
+          setMoveSetId(null);
+          if (target.current) return;
+          void (async () => {
+            try {
+              await updateSet(set.id, { folderId: target.folderId });
+              // Follow the set. Otherwise moving it out of the folder you are
+              // standing in makes it vanish under your thumb, which reads as a
+              // delete rather than a move.
+              setFolderFilter(selectionAfterMove(activeFolder, target));
+              showToast(movedMessage(target), 'success');
+            } catch (error) {
+              showToast(
+                error instanceof Error ? error.message : 'Could not move that study set.',
+                'error'
+              );
+            }
+          })();
+        },
+      }))
     : [];
 
   const submitCreate = async () => {
@@ -340,10 +413,39 @@ export function StudyHubScreen({ navigation }: Props) {
           </Button>
         </View>
 
+        <FolderChips
+          folders={folders}
+          selection={activeFolder}
+          onSelect={setFolderFilter}
+          onCreate={async (title) => {
+            try {
+              const created = await createFolder(title);
+              // Land in the folder you just made, so the next move has an
+              // obvious destination and the chip is proven to work.
+              setFolderFilter(created.id);
+              showToast('Folder created.', 'success');
+            } catch (error) {
+              showToast(
+                error instanceof Error ? error.message : 'Could not create that folder.',
+                'error'
+              );
+              throw error;
+            }
+          }}
+        />
+
         {visible.length === 0 ? (
           query.trim() ? (
             <T.Body tone="secondary" className="mt-2">
               {`No study set matches "${query.trim()}".`}
+            </T.Body>
+          ) : activeFolder !== ALL_FOLDERS && status === 'ready' ? (
+            // An empty FOLDER is not an empty library. Inviting a student with
+            // twelve sets to "create your first set" because they tapped a
+            // folder they had not filled yet is the same lie the offline card
+            // used to tell.
+            <T.Body tone="secondary" className="mt-2">
+              {emptyFolderLine(folders, activeFolder)}
             </T.Body>
           ) : status === 'ready' ? (
             // The empty state is the create control, not a sentence about one.
@@ -416,6 +518,13 @@ export function StudyHubScreen({ navigation }: Props) {
         title={menuSet ? studySetLabel(menuSet) : undefined}
         onClose={() => setMenuSetId(null)}
         items={menuItems}
+      />
+
+      <ActionSheet
+        visible={Boolean(moveSet)}
+        title={moveSet ? `Move ${studySetLabel(moveSet)} to…` : undefined}
+        onClose={() => setMoveSetId(null)}
+        items={moveItems}
       />
 
       {/* The one sheet shell (components/ui/SheetShell.tsx): grabber, 23 dp

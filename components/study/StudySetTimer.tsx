@@ -232,6 +232,12 @@ export const StudySetTimer: React.FC<StudySetTimerProps> = ({ setId = '' }) => {
               Reset to 25 minutes
             </button>
           ) : null}
+          {/* The reference's `View stats` goes somewhere; ours would not, so
+              the popover says why in one line instead of shipping a dead
+              link. */}
+          <p className="mt-3 text-caption text-lantern-text-tertiary">
+            Study time stats are coming; the timer does not record sessions yet.
+          </p>
         </div>
       ) : null}
     </div>
