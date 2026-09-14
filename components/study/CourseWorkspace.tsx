@@ -92,6 +92,7 @@ import { MaterialSortMenu, ViewModeToggle, useMaterialSort, useViewMode } from '
 import { sortMaterials } from './viewMode';
 import { formatShortDate } from '@lantern/shared/study/setPresentation';
 import { guidedNextTopicFromPlan } from '@lantern/shared/study/planTimeline';
+import type { GuidedStartTopic } from '@lantern/shared/api';
 import { fetchStudySetPlan, replaceStudySetPlan, updateStudySetTopicStatus } from '../../services/academic';
 import { useStudyResumeStore } from '../../stores/studyResumeStore';
 import type { StudySetTopic } from '@lantern/shared';
@@ -564,6 +565,31 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       sourceNoteId ? notes.find((row) => row.id === sourceNoteId)?.title : null
     );
   }, [planTopics, planUnits, readingNotes, studySetId, studySet?.mode, notes]);
+
+  /**
+   * The topics the Guided picker may offer as COLD STARTS.
+   *
+   * This used to go unpassed, so the picker's only row was `Continue
+   * learning:` and a set with more than one topic offered no way to start any
+   * of the others (AH release smoke 1.0.58). The rows go over as plan rows —
+   * the picker itself drops the `Continue` topic and anything MASTERED, and
+   * keeps covered topics, which a student may well want walked again.
+   */
+  const guidedTopics = useMemo<GuidedStartTopic[]>(() => {
+    if (!studySetId) return [];
+    const rows =
+      planTopics.length > 0 ? planTopics : topicsFromReadingNotes(studySetId, readingNotes).topics;
+    return rows.map((topic) => {
+      const sourceNoteId = topic.sourceNoteIds?.find(Boolean) ?? null;
+      return {
+        title: topic.title,
+        status: topic.status,
+        unit: planUnits.find((row) => row.id === topic.unitId)?.title ?? null,
+        sourceNoteId,
+        sourceTitle: sourceNoteId ? notes.find((row) => row.id === sourceNoteId)?.title ?? null : null,
+      };
+    });
+  }, [planTopics, planUnits, readingNotes, studySetId, notes]);
   const steeredToLecture = useRef(false);
   useEffect(() => {
     steeredToLecture.current = false;
@@ -2184,6 +2210,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 // The set's own next topic, so Guided opens on `Continue
                 // learning: <topic>` instead of a list of cold starts.
                 guidedNextTopic={guidedNextTopic}
+                // The rest of the plan, so the picker can offer a cold start
+                // on any topic that is not the Continue row.
+                guidedTopics={guidedTopics}
               />
             </div>
           </div>
@@ -2199,6 +2228,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             onTurnIntoMessage={(target, draft) => void handleTurnIntoMessage(target, draft)}
             turnIntoExisting={companionNote ? turnIntoExisting(companionNote.id) : undefined}
             guidedNextTopic={guidedNextTopic}
+            guidedTopics={guidedTopics}
           />
         )}
       </div>

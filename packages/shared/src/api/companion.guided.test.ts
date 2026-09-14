@@ -195,3 +195,63 @@ describe('the guided picker above the composer', () => {
     ).toBe(false);
   });
 });
+
+/**
+ * The 1.0.58 smoke: a set with TWO topics, one of them already covered, drew a
+ * picker with a `Continue learning:` row and nothing else — no way to start
+ * the other topic, and no way to walk the covered one again. The rule is the
+ * narrow one: a topic is offered unless it IS the Continue row or the plan
+ * says `mastered`.
+ */
+describe('the guided picker over plan rows', () => {
+  const topics = [
+    { title: 'Narrow vs. General AI', status: 'covered' as const },
+    { title: 'Symbolic AI', status: 'unseen' as const },
+  ];
+
+  it('offers a Start row for every topic that is not the Continue row', () => {
+    const goals = buildGuidedGoals({ nextTopic: 'Symbolic AI', topics });
+
+    expect(goals.map((g) => g.label)).toEqual([
+      'Continue learning: Symbolic AI',
+      // Covered, and still startable: seen once is not done with.
+      'Start learning: Narrow vs. General AI',
+    ]);
+  });
+
+  it('keeps covered topics and drops only mastered ones', () => {
+    const goals = buildGuidedGoals({
+      topics: [
+        { title: 'Osmosis', status: 'covered' },
+        { title: 'Diffusion', status: 'mastered' },
+        { title: 'Active transport', status: 'unseen' },
+        { title: 'Tonicity' },
+      ],
+    });
+
+    expect(goals.map((g) => g.topic)).toEqual(['Osmosis', 'Active transport', 'Tonicity']);
+    expect(goals.every((g) => g.kind === 'start')).toBe(true);
+  });
+
+  it('carries the row’s own source into the turn it sends, as Continue does', () => {
+    const [goal] = buildGuidedGoals({
+      topics: [
+        {
+          title: 'Osmosis',
+          status: 'covered',
+          unit: '02 Transport',
+          sourceNoteId: 'note-9',
+          sourceTitle: 'Membranes lecture',
+        },
+      ],
+    });
+
+    expect(goal.sourceNoteId).toBe('note-9');
+    expect(goal.prompt).toContain('Guide me through "Osmosis" from "Membranes lecture" in 02 Transport');
+  });
+
+  it('still takes bare titles, and still ignores blanks', () => {
+    const goals = buildGuidedGoals({ topics: ['Symbolic AI', { title: '  ' }, null] });
+    expect(goals.map((g) => g.topic)).toEqual(['Symbolic AI']);
+  });
+});

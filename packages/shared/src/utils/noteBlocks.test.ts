@@ -209,3 +209,40 @@ describe('noteTypedPreview', () => {
     expect(noteTypedPreview(null)).toBeNull();
   });
 });
+
+/**
+ * Home's "Recent materials" tiles were fed a SERVER-SIDE `body.slice(0, 120)`,
+ * so a mastery note arrived as an opening brace and 100 characters of plan
+ * JSON — the fence never closed, nothing parsed, and the tile printed the
+ * braces. The slice is fixed at source; this is the guard for every prefix
+ * already handed out, and it must not swallow prose to get there.
+ */
+describe('noteTypedPreview on a truncated body', () => {
+  const full =
+    'Cell transport · Mastery\n\n```lantern-lesson\n' +
+    JSON.stringify({ mode: 'mastery', pages: [{ id: 'p1' }, { id: 'p2' }] }) +
+    '\n```\n';
+
+  it('types the whole body as the plan it is', () => {
+    expect(noteTypedPreview(full)).toBe('Mastery plan · 2 steps');
+    expect(notePlainPreview(full, 120)).toBe('Mastery plan · 2 steps');
+  });
+
+  it('still refuses to print the JSON when only a prefix survives', () => {
+    // What a 120-character server slice leaves of a REAL plan, whose snapshot
+    // runs to thousands of characters: an opened fence that never closes.
+    const sliced = full.slice(0, 60);
+    expect(sliced).toContain('{"mode"');
+    expect(sliced).not.toContain('```\n');
+    expect(noteTypedPreview(sliced)).toBe('Structured note');
+    expect(notePlainPreview(sliced)).toBe('Structured note');
+    // Nothing of the snapshot itself reaches the screen.
+    expect(notePlainPreview(sliced)).not.toContain('{');
+  });
+
+  it('types a truncated bare-JSON body too, and leaves prose alone', () => {
+    expect(noteTypedPreview('{"mode":"mastery","pages":[{"id":"p1"')).toBe('Structured note');
+    expect(noteTypedPreview('{this is not json} and the rest of the note')).toBeNull();
+    expect(noteTypedPreview('Osmosis is the movement of water {see fig 2')).toBeNull();
+  });
+});

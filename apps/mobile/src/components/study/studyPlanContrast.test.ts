@@ -88,4 +88,13 @@ describe('study plan contrast', () => {
     // off the surface — there is no shadow anywhere in this app.
     expect(contrastRatio(accent.tint, colors.surface)).toBeGreaterThanOrEqual(1.05);
   });
+
+  it.each(PALETTES)('$name: the self-rating card reads on its lilac', ({ accent, colors }) => {
+    // The one card in the panel drawn ON the tint rather than beside it, so
+    // both of its lines and its glyph are measured against the tint and not
+    // against the surface they would sit on anywhere else.
+    expect(contrastRatio(colors.text, accent.tint)).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(contrastRatio(colors.textSecondary, accent.tint)).toBeGreaterThanOrEqual(AA_NORMAL);
+    expect(contrastRatio(accent.ink, accent.tint)).toBeGreaterThanOrEqual(NON_TEXT);
+  });
 });

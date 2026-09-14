@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { AppIcon, type AppIconName } from '../ui/AppIcon';
 import { Illustration, type IllustrationName } from '../ui/Illustration';
+import { TileScene, type TileSceneName } from '../ui/TileScene';
 import {
   FEATURE_PANEL_INK_OVERRIDE,
   FEATURE_PANEL_INK_TEXT,
@@ -12,6 +13,13 @@ interface RoomRecommendationCardProps {
   feature: FeatureKey;
   icon: AppIconName;
   illustration?: IllustrationName;
+  /**
+   * The landscape scene for this door, where the art set has one. It wins
+   * over `illustration` and over the glyph: the scene was drawn FOR this
+   * pastel band, where a square spot drawing is a picture parked in the
+   * middle of a landscape panel and a 40px glyph is a label.
+   */
+  scene?: TileSceneName;
   /** "Recommended", "Catch up quickly", "Most used". */
   eyebrow: string;
   label: string;
@@ -41,6 +49,7 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
   feature,
   icon,
   illustration,
+  scene,
   eyebrow,
   label,
   about,
@@ -58,7 +67,11 @@ export const RoomRecommendationCard: React.FC<RoomRecommendationCardProps> = ({
         <div
           className={`flex h-32 items-center justify-center ${FEATURE_TINT_BG[feature]} ${FEATURE_PANEL_INK_TEXT[feature]}`}
         >
-          {illustration ? (
+          {scene ? (
+            // The band is 128px tall; 104 leaves the scene a margin without
+            // making it a stamp in the middle of the panel.
+            <TileScene scene={scene} feature={feature} height={104} />
+          ) : illustration ? (
             <Illustration
               name={illustration}
               feature={feature}

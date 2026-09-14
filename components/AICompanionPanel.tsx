@@ -43,6 +43,7 @@ import {
   GUIDED_MODE_PROMISE,
   type GuidedGoal,
   type GuidedNextTopic,
+  type GuidedStartTopic,
 } from '@lantern/shared/api';
 import { MessageActions } from './companion/MessageActions';
 import {
@@ -185,8 +186,14 @@ interface AICompanionPanelProps {
    * the row.
    */
   guidedNextTopic?: string | GuidedNextTopic | null;
-  /** Topics the Guided picker may offer to start — from the plan or units. */
-  guidedTopics?: readonly string[];
+  /**
+   * Topics the Guided picker may offer to start — from the plan or units.
+   *
+   * Plan rows, not bare titles, so the picker can tell a MASTERED topic (which
+   * it drops) from a COVERED one (which it still offers: seen once is not
+   * done). A host that has only titles may still pass strings.
+   */
+  guidedTopics?: readonly (string | GuidedStartTopic)[];
 }
 
 const MIN_DICTATION_MS = 800;

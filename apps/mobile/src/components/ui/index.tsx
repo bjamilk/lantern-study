@@ -678,6 +678,13 @@ export {
   type IllustrationSize,
   type IllustrationVariant,
 } from './Illustration';
+// The twelve landscape room-tile scenes, rendered. A tile's pastel panel only.
+export {
+  TileScene,
+  tileSceneFills,
+  tileSceneSvgProps,
+  type TileSceneName,
+} from './TileScene';
 // The six type steps, for screens built out of StyleSheet rather than classes.
 export {
   T,

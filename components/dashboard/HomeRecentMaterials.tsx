@@ -57,7 +57,11 @@ export const HomeRecentMaterials: React.FC<HomeRecentMaterialsProps> = ({
         {materials.map((item) => {
           const note = notes.find((row) => row.id === item.id);
           const lecture = item.kind === 'lecture' || (note ? isLectureNote(note) : false);
-          const preview = notePreviewText(item.preview || note?.body);
+          // The LOCAL body first: the server's `preview` is a short field and
+          // a stale one may still be a raw slice of a lesson note's JSON. The
+          // full body types correctly ("Mastery plan · 6 steps"); the server
+          // field is the fallback for a material this client has not loaded.
+          const preview = notePreviewText(note?.body || item.preview);
           return (
             <button
               key={item.id}

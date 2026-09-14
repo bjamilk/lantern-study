@@ -20,16 +20,24 @@
  */
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import type { FeatureKey } from '@lantern/shared/design';
+import type { FeatureKey, TileSceneName } from '@lantern/shared/design';
 import { useTheme } from '../../theme';
 import { AppIcon, type AppIconName, doorTileLayout, T } from '../ui';
 import { smallTextInk, useFeatureAccent } from '../ui/FeatureDisc';
+import { TileScene } from '../ui/TileScene';
 
 export interface SetRoomTileProps {
   feature: FeatureKey;
   /** The noun. One line. */
   title: string;
   icon: AppIconName;
+  /**
+   * The landscape drawing for this door's panel, where the art set has one.
+   * Without it the panel keeps the single centred glyph it has always drawn —
+   * a fallback, not a downgrade: a door with no scene is a door nobody has
+   * drawn yet, and a glyph says that honestly.
+   */
+  scene?: TileSceneName;
   /** How many of this thing the set holds. `undefined` draws no pill. */
   count?: number;
   /** The column width the grid handed this tile. */
@@ -43,6 +51,7 @@ export function SetRoomTile({
   feature,
   title,
   icon,
+  scene,
   count,
   width,
   onPress,
@@ -85,13 +94,30 @@ export function SetRoomTile({
       >
         {/* On the pastel the drawing is the darkest thing in the tile: the
             page's own ink in light, the feature's light ink in dark, where a
-            near-black on a deep tint would be invisible. */}
-        <AppIcon
-          name={icon}
-          size={Math.round(layout.illustrationSize * 0.62)}
-          color={colors.text}
-          importantForAccessibility="no"
-        />
+            near-black on a deep tint would be invisible.
+
+            The SCENE, where the door has one, is a landscape picture that
+            fills the panel — which is what the panel is FOR. The glyph it
+            replaces was a 40-odd-pixel mark floating in a 2:1 band, and the
+            same mark again in the footer a few pixels below it: three tiles
+            side by side drew six copies of three glyphs. The footer glyph,
+            the label and the count pill are untouched; only the thing in the
+            middle of the pastel changed. */}
+        {scene ? (
+          <TileScene
+            scene={scene}
+            feature={feature}
+            boxWidth={layout.width}
+            boxHeight={layout.illustrationSize}
+          />
+        ) : (
+          <AppIcon
+            name={icon}
+            size={Math.round(layout.illustrationSize * 0.62)}
+            color={colors.text}
+            importantForAccessibility="no"
+          />
+        )}
       </View>
       <View
         style={{

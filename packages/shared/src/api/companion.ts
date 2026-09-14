@@ -139,6 +139,26 @@ export interface GuidedNextTopic {
   sourceTitle?: string | null;
 }
 
+/**
+ * A topic the picker may offer as a cold start.
+ *
+ * `status` carries the plan's own word for it. Only `mastered` removes a row:
+ * a COVERED topic is one the student has been through once, which is exactly
+ * the thing they most often want to be walked through again — and dropping it
+ * left a set with two topics, one of them covered, offering no `Start
+ * learning:` row at all (AH release smoke 1.0.58, turn-2 observation).
+ */
+export interface GuidedStartTopic {
+  title: string;
+  status?: 'unseen' | 'covered' | 'mastered' | null;
+  /** The unit the plan files it under — named in the prompt, not the row. */
+  unit?: string | null;
+  /** The topic's first source note, when the plan recorded one. */
+  sourceNoteId?: string | null;
+  /** That note's title, when the host could resolve one. */
+  sourceTitle?: string | null;
+}
+
 export interface GuidedGoalsInput {
   /**
    * The topic the set's plan says comes next, when the host actually has one.
@@ -148,8 +168,13 @@ export interface GuidedGoalsInput {
    * A bare string is the title on its own; the object form adds the unit.
    */
   nextTopic?: string | GuidedNextTopic | null;
-  /** Topics the student could start, from the plan / units / attached note. */
-  topics?: readonly (string | null | undefined)[];
+  /**
+   * Topics the student could start, from the plan / units / attached note.
+   *
+   * A bare string is a title with no status attached; the object form is a
+   * plan row, and its `status` is the ONLY thing that can remove a row.
+   */
+  topics?: readonly (string | GuidedStartTopic | null | undefined)[];
   /** How many rows the picker draws, `nextTopic` included. */
   limit?: number;
 }
@@ -198,19 +223,31 @@ export function buildGuidedGoals(input: GuidedGoalsInput = {}): GuidedGoal[] {
 
   for (const raw of input.topics ?? []) {
     if (goals.length >= limit) break;
-    const topic = cleanTopic(raw);
+    const row: GuidedStartTopic | null =
+      typeof raw === 'string' ? { title: raw } : raw && typeof raw === 'object' ? raw : null;
+    // Mastered is the only status that removes a row. Covered topics stay
+    // startable: "I have seen this once" is not "I never want it again".
+    if (!row || row.status === 'mastered') continue;
+    const topic = cleanTopic(row.title);
     if (!topic) continue;
     const key = topic.toLowerCase();
+    // The Continue row already claims this topic — one row per topic.
     if (seen.has(key)) continue;
     seen.add(key);
+    const unit = cleanTopic(row.unit);
+    const sourceNoteId = cleanTopic(row.sourceNoteId);
+    const sourceTitle = cleanTopic(row.sourceTitle);
     goals.push({
       id: `start:${topic}`,
       kind: 'start',
       topic,
       label: `Start learning: ${topic}`,
-      sourceNoteId: null,
-      sourceTitle: null,
-      prompt: guidedSeedPrompt({ topic }),
+      unit,
+      sourceNoteId,
+      sourceTitle,
+      // Same seed shape the Continue row sends: the source rides in the
+      // sentence so turn 1 teaches instead of asking which material to use.
+      prompt: guidedSeedPrompt({ topic, source: sourceTitle, unit }),
     });
   }
 

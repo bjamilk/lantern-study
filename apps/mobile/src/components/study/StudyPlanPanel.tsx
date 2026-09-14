@@ -49,9 +49,13 @@ import {
   defaultOpenUnitId,
   nextTopicStatus,
   planExamRows,
+  planSelfRatingRows,
+  shouldOfferSelfRating,
+  type PlanSelfRatingRow,
   type PlanTopicRow,
   type PlanUnitRow,
 } from './studyPlanPresentation';
+import { PlanSelfRatingSheet } from './PlanSelfRatingSheet';
 
 /** The rail's width and the disc it threads through. One place, three users. */
 const RAIL_WIDTH = 2;
@@ -380,6 +384,12 @@ export function StudyPlanPanel({
   const [generating, setGenerating] = useState(false);
   const openId = openUnitId ?? defaultOpenUnitId(model);
   const exams = planExamRows(examDate, today);
+  // The self-rating walk. `rows` is snapshotted on open rather than derived,
+  // because rating a topic removes it from `planSelfRatingRows` — see the
+  // header of PlanSelfRatingSheet.tsx.
+  const [ratingRows, setRatingRows] = useState<readonly PlanSelfRatingRow[]>([]);
+  const [ratingIndex, setRatingIndex] = useState(0);
+  const offerSelfRating = shouldOfferSelfRating(model, usingServerPlan);
 
   // NO EARLY RETURN ON AN EMPTY PLAN. The panel used to disappear entirely for
   // a set with no topics, and it took `Details` with it — which is the only
@@ -436,6 +446,37 @@ export function StudyPlanPanel({
         </Card>
       ) : null}
 
+      {/* The plan-entry self-rating, the web panel's highlighted card. It sits
+          ABOVE the spine because its whole job is to strike topics off before
+          the student starts walking one — offered only while the plan still has
+          un-rated topics, so it stops appearing once it has been worked
+          through rather than standing there for ever offering three minutes
+          that would change nothing. */}
+      {offerSelfRating ? (
+        <View
+          className="flex-row items-center gap-3 rounded-2xl p-3 mb-3"
+          style={{ backgroundColor: accent.tint }}
+        >
+          <AppIcon name="sparkles" size={18} color={accent.ink} />
+          <View className="flex-1">
+            <T.Body>See what you already know</T.Body>
+            <T.Caption tone="secondary" className="mt-1">
+              Takes about 3 minutes · marks topics covered so the plan skips them
+            </T.Caption>
+          </View>
+          <Button
+            size="sm"
+            onPress={() => {
+              setRatingRows(planSelfRatingRows(model));
+              setRatingIndex(0);
+            }}
+            accessibilityLabel="See what you already know. Takes about 3 minutes"
+          >
+            Continue
+          </Button>
+        </View>
+      ) : null}
+
       {/* The spine's head. Its rail segment runs DOWN only, so the line starts
           at the disc rather than above the first thing on the screen. */}
       <SpineRow
@@ -471,6 +512,18 @@ export function StudyPlanPanel({
       ))}
       </>
       )}
+
+      <PlanSelfRatingSheet
+        visible={ratingRows.length > 0}
+        rows={ratingRows}
+        index={ratingIndex}
+        onIndexChange={setRatingIndex}
+        onRate={onToggleTopic}
+        onClose={() => {
+          setRatingRows([]);
+          setRatingIndex(0);
+        }}
+      />
 
       <SheetShell
         visible={detailsOpen}

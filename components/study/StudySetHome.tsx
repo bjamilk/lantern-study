@@ -18,6 +18,7 @@ import {
   type TopicBrief,
   type TopicSkillLevel,
 } from '@lantern/shared';
+import { tileSceneForTool } from '@lantern/shared/design';
 import type { Deck, StudyNote, StudySet } from '../../types';
 import { AppIcon } from '../ui/AppIcon';
 import { Button, Card } from '../ui';
@@ -202,11 +203,11 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               {recommendedCards.map((card) =>
-                // The flashcards card is the one that carries art: a fan of
-                // cards says "flashcards" at a glance in a row of otherwise
-                // glyph-only tiles, and it is the surface the drawing was
-                // authored for. Written as a literal so the placement ledger in
-                // `Illustration.test.tsx` can see it.
+                // The flashcards card keeps the SPOT illustration it was
+                // authored for. Every other card takes the landscape SCENE the
+                // art lane drew for that door (`tileSceneForTool`), and a card
+                // with neither — `read` — keeps its glyph. Written as a literal
+                // so the placement ledger in `Illustration.test.tsx` can see it.
                 card.id === 'cards' ? (
                   <RoomRecommendationCard
                     key={card.id}
@@ -223,6 +224,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
                     key={card.id}
                     feature={card.feature}
                     icon={card.icon}
+                    scene={tileSceneForTool(card.id)}
                     eyebrow={card.eyebrow}
                     label={card.label}
                     about={RECOMMENDATION_ABOUT[card.id]}

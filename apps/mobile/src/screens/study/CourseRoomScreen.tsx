@@ -57,6 +57,7 @@ import {
 import { setRoomMenuRows } from '../../components/study/setRoomMenu';
 import { AppIcon, type AppIconName } from '../../components/ui/AppIcon';
 import { useTabBarClearance } from '../../components/layout/BottomTabBar';
+import { tileSceneForTool } from '@lantern/shared/design';
 import { DOOR_TILE, useTheme } from '../../theme';
 import ImportAndStudyModal from '../../components/ImportAndStudyModal';
 import { StudySetTimer } from '../../components/study/StudySetTimer';
@@ -879,6 +880,11 @@ export function CourseRoomScreen({ navigation, route }: Props) {
                   key={tileId}
                   feature={tool.feature}
                   icon={tool.icon as AppIconName}
+                  // The door's own drawing, where the art set has one. All
+                  // eleven tiles do; the lookup stays a lookup rather than a
+                  // cast so a renamed tile id fails the coverage test instead
+                  // of silently falling back to the glyph.
+                  scene={tileSceneForTool(tileId)}
                   title={tileLabel}
                   count={setTileCounts[tileId]}
                   width={doorWidth}
@@ -1497,6 +1503,12 @@ function SetHomeRecommended({
             key={card.id}
             feature={card.feature}
             icon={card.icon as AppIconName}
+            // The same drawing the Practice tiles below use for the same
+            // tool. `read` has no scene in the approved art set (web's `notes`
+            // door has none either), so it keeps its glyph — the lookup stays
+            // a lookup rather than a cast, so a renamed card id fails the
+            // mapping test instead of silently losing its picture.
+            scene={tileSceneForTool(card.id)}
             title={card.label}
             width={doorWidth}
             accessibilityLabel={[card.eyebrow, card.label].filter(Boolean).join('. ')}

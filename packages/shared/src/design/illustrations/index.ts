@@ -309,3 +309,11 @@ export function illustrationViewBox(name: IllustrationName): string {
   const m = ILLUSTRATION_FRAME_MARGIN;
   return `${x - m} ${y - m} ${side + m * 2} ${side + m * 2}`;
 }
+
+/**
+ * The room tile SCENES, which are a different asset kind on a different
+ * viewBox with per-path fills. Re-exported from here because `./tileScenes`
+ * is where illustration-shaped things live and this is where callers look; the
+ * file itself explains why it is not an eleventh entry in `ILLUSTRATIONS`.
+ */
+export * from './tileScenes';

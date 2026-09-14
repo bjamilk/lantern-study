@@ -151,6 +151,22 @@ export const InlineReviewCard: React.FC<InlineReviewCardProps> = ({ dueTotal, on
                 </button>
               ))}
             </div>
+            {/* Skip lives on BOTH faces, as it does on the phone. It used to
+                disappear the moment the card turned over, so a student who
+                revealed an answer they could not grade honestly had no way
+                past it except grading — which writes a review they did not
+                mean. The back's Skip is the SAME `advance()` as the front's:
+                ungraded, so the card stays due and comes back. */}
+            <div className="mt-2 flex">
+              <button
+                type="button"
+                onClick={advance}
+                data-testid="home-inline-review-skip"
+                className="rounded-xl px-3 py-2 text-body text-lantern-text-secondary transition-colors hover:text-lantern-text"
+              >
+                Skip
+              </button>
+            </div>
           </>
         ) : (
           <div className="mt-3 flex items-center gap-2">
@@ -164,6 +180,7 @@ export const InlineReviewCard: React.FC<InlineReviewCardProps> = ({ dueTotal, on
             <button
               type="button"
               onClick={advance}
+              data-testid="home-inline-review-skip"
               className="rounded-xl px-3 py-2 text-body text-lantern-text-secondary transition-colors hover:text-lantern-text"
             >
               Skip

@@ -46,6 +46,32 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'tile-scenes-self-check-guided-material-1-0-59',
+    title: 'Tiles with a picture, a quick self-check before the plan, and a Guided that stays on the material (1.0.59)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-14',
+    summary:
+      'The set’s tiles carry a small drawn scene in one flat two-tone style on web and phone, with labels, counts and sizes unchanged. Before the plan, a quick check on the phone asks topic by topic whether you already know it; it is your own estimate and marks topics covered so the plan can skip them, through the same API as web. Guided teaches only from your material, never the app, and no longer offers to open screens; its goal picker lists every startable topic. Skip is on both faces of the web Home card, and plan JSON can no longer leak into any preview.',
+    details: [
+      'packages/shared/src/design/illustrations/tileScenes.ts: TILE_SCENES (12 scenes, ≤40 path commands each, --tile-fill / --tile-shade), tileSceneForTool; web + mobile TileScene components; mobile SetRoomTile + DoorTile take scene; web RoomRecommendationCard takes scene; read keeps its glyph; the Lectures record block stays a plain button; own-way grid stays icon rows.',
+      'Mobile PlanSelfRatingSheet: the web card’s copy verbatim; “I know this” writes covered (never mastered) via PATCH /users/me/study-sets/:id/topics/:topicId; gated on a saved server plan.',
+      'Guided: prompt rule TEACH THE MATERIAL NOT THE APP; filterCompanionActions drops navigate_to_notes/dashboard/flashcards and open_create_flashcard in guided mode and malformed actions in every mode; web host passes guidedTopics so Start learning rows list non-mastered topics.',
+      'Web InlineReviewCard: Skip on the answer face. Server studySets preview uses notePlainPreview instead of body.slice, so lesson/mastery notes never expose their JSON on Home or the lists.',
+    ],
+    howToUse: [
+      'Open a set: the Practice and Overview tiles show their scenes.',
+      'Set → Plan → See what you already know → Continue: answer I know this / Not yet per topic.',
+      'Ask Lantern → Guided: the reply stays on your notes; app questions get one sentence and a return to the step.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'No new migration. Still hand-applied from earlier: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+      'Remaining audit item: Sources provenance on plan topics (needs a migration and a design call).',
+    ],
+    commits: ['7eba58c1'],
+  },
+  {
     id: 'guided-teaches-first-home-card-folders-1-0-58',
     title: 'Guided teaches from the first turn, a card on the phone’s Home, folders on the phone, and a tidier Me screen (1.0.58)',
     area: 'platform',

@@ -2053,6 +2053,67 @@ export interface CompanionAction {
   payload?: Record<string, string>;
 }
 
+/** Every action type a client knows how to run. Anything else is invented. */
+export const COMPANION_ACTION_TYPES: readonly CompanionAction['type'][] = [
+  'navigate_to_flashcards',
+  'open_test_config',
+  'open_create_flashcard',
+  'navigate_to_dashboard',
+  'auto_generate_flashcards',
+  'navigate_to_notes',
+  'open_note_learn',
+];
+
+/**
+ * The only chips a GUIDED reply may carry.
+ *
+ * Guided is a lesson through ONE topic in the material the student attached.
+ * Live (AH smoke 1.0.58) turn 2 left the material entirely, taught the app —
+ * a "cloud icon" that does not exist — and closed with `→ Open Notes Library`,
+ * which walks the student OUT of the lesson they are mid-way through.
+ *
+ * So the rule is by destination, not by wording: an action that studies the
+ * material stays (start a quiz on it, generate cards from it, open Learn on
+ * the note being taught); an action whose whole job is to move around the app
+ * — the notes library, the deck list, the dashboard, the manual card creator —
+ * goes. The other modes are untouched: `explain` suggesting the deck list is
+ * a fair suggestion, because it is not in the middle of teaching a step.
+ */
+export const GUIDED_ACTION_TYPES: readonly CompanionAction['type'][] = [
+  'open_test_config',
+  'auto_generate_flashcards',
+  'open_note_learn',
+];
+
+/**
+ * The model's proposed actions, reduced to the ones this mode may show.
+ *
+ * Also the only place a malformed or invented action is dropped: the block is
+ * free-form JSON from a language model, so a row with no known `type` reaches
+ * a client that has no handler for it and renders a chip that does nothing.
+ */
+export function filterCompanionActions(mode: CompanionMode, raw: unknown): CompanionAction[] {
+  if (!Array.isArray(raw)) return [];
+  const allowed = mode === 'guided' ? GUIDED_ACTION_TYPES : COMPANION_ACTION_TYPES;
+  return raw.flatMap((row) => {
+    if (!row || typeof row !== 'object') return [];
+    const action = row as { type?: unknown; label?: unknown; payload?: unknown };
+    if (typeof action.type !== 'string') return [];
+    if (!(allowed as readonly string[]).includes(action.type)) return [];
+    const label = typeof action.label === 'string' ? action.label.trim() : '';
+    if (!label) return [];
+    return [
+      {
+        type: action.type as CompanionAction['type'],
+        label,
+        ...(action.payload && typeof action.payload === 'object'
+          ? { payload: action.payload as Record<string, string> }
+          : {}),
+      },
+    ];
+  });
+}
+
 /**
  * How the companion teaches this turn. Four modes, not a personality gallery:
  * each one changes what the assistant is allowed to do, so the difference is
@@ -2114,6 +2175,8 @@ You are running a lesson through one topic, step by step, from the attached set 
 - REACT to the answer. Correct: say so in one line, then take the next step. Wrong or partial: do NOT advance — re-teach that same step a DIFFERENT way (a new angle, a smaller piece, or a concrete example), then re-check.
 - OFFER the next thing when a step is done: either the next step, or ONE concrete activity this set actually has — take a quiz on it, review these flashcards, read the source note — and let the student choose.
 - You cannot open, launch or navigate anything yourself. Suggest the activity in words; never say you are opening it, starting it, or taking them there.
+- TEACH THE MATERIAL, NOT THE APP. Everything you say comes from the attached set or note. Never describe the Lantern interface, never name a button, icon, menu, tab or screen, and never tell the student where to tap or click — you cannot see their screen, so any such direction is invented.
+- If the student asks something about the app itself, answer in ONE sentence, say they can ask support if it is not that simple, and go straight back to the step you were on. Do not turn the lesson into a tour of the app.
 - A passed check is one question answered, not mastery. Never tell the student they "know" or have "mastered" a topic, never congratulate them for finishing something that was not actually assessed, and never invent progress or steps that are not in the material below.`,
 };
 
@@ -2408,7 +2471,12 @@ Available action types and when to use them:
 - auto_generate_flashcards — AUTO-GENERATE and SAVE flashcards for specific topics (no manual work needed). Use this when the student asks to create flashcards for weak areas, deficient topics, or topics they got wrong in a test. Include a "topics" key in the payload with a comma-separated list of the topics. Example: {"type":"auto_generate_flashcards","label":"Auto-generate flashcards for weak topics","payload":{"topics":"Photosynthesis, Cell Division","deckName":"Weak Areas Review"}}
 - navigate_to_notes — open the Notes library
 - open_note_learn — open Learn tools for the active note
-Only include ACTIONS when genuinely useful, not on every reply. Never include ACTIONS on a clarifying-question reply.`;
+Only include ACTIONS when genuinely useful, not on every reply. Never include ACTIONS on a clarifying-question reply.${
+    mode === 'guided'
+      ? `
+In GUIDED mode the only actions allowed are study activities on the material at hand: ${GUIDED_ACTION_TYPES.join(', ')}. Never suggest an action that only moves around the app (the notes library, the deck list, the dashboard) — those are dropped before the student sees them.`
+      : ''
+  }`;
 
   const recentHistory = history.slice(-20);
   const historyText = recentHistory.map(m => `${m.role === 'user' ? userName : 'Lantern'}: ${m.content}`).join('\n');
@@ -2421,7 +2489,7 @@ Only include ACTIONS when genuinely useful, not on every reply. Never include AC
   let reply = text;
   if (actionsMatch) {
     try {
-      actions = JSON.parse(actionsMatch[1]);
+      actions = filterCompanionActions(mode, JSON.parse(actionsMatch[1]));
     } catch { /* ignore malformed actions */ }
     reply = text.slice(0, actionsMatch.index).trimEnd();
   }

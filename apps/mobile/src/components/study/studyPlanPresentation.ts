@@ -246,3 +246,58 @@ export function planExamRows(
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return [];
   return [{ date, label: formatPlanExamDate(date), past: date < today }];
 }
+
+/* ------------------------------------------------------------------------- *
+ * The plan-entry self-rating (the web panel's "See what you already know").
+ * ------------------------------------------------------------------------- */
+
+export interface PlanSelfRatingRow {
+  id: string;
+  title: string;
+  /** `01 Lecture 3` — the unit head the topic sits under, as the spine draws it. */
+  unitLabel: string;
+  /** `2 of 7`. The WALK's position, not the plan's — see below. */
+  positionLabel: string;
+}
+
+/**
+ * The topics a self-rating still has to ask about, in plan order.
+ *
+ * Only `unseen` ones. The web panel walks every topic from index 0 every time
+ * the card is tapped, which re-asks a student about work they already ticked —
+ * its own comment says the row should be "hidden once it has been worked
+ * through", and the condition it ships (`diagnosticIndex === null`) does not do
+ * that. The rule here is the one that comment describes: a topic that already
+ * carries a status is not un-rated, so it is not in the walk and it is not
+ * counted in `2 of 7`. Both surfaces write the same statuses through the same
+ * endpoint, so a set rated on the phone offers nothing left to rate on the web.
+ */
+export function planSelfRatingRows(model: StudyPlanModel): PlanSelfRatingRow[] {
+  const pending = model.units.flatMap((unit) =>
+    unit.topics
+      .filter((row) => row.status === 'unseen')
+      .map((row) => ({ row, unitLabel: unit.label }))
+  );
+  return pending.map((entry, index) => ({
+    id: entry.row.id,
+    title: entry.row.title,
+    unitLabel: entry.unitLabel,
+    positionLabel: `${index + 1} of ${pending.length}`,
+  }));
+}
+
+/**
+ * Whether the highlighted card sits above the spine.
+ *
+ * `usingServerPlan` is in the condition because a plan read off note titles has
+ * no server row to tick: the panel's own `onToggleTopic` is a no-op in that
+ * state, so offering three minutes of rating there would collect answers and
+ * throw them away. The student is offered "Save as my study plan" instead,
+ * which is the thing that makes the ratings stick.
+ */
+export function shouldOfferSelfRating(
+  model: StudyPlanModel,
+  usingServerPlan: boolean
+): boolean {
+  return usingServerPlan && !model.empty && planSelfRatingRows(model).length > 0;
+}

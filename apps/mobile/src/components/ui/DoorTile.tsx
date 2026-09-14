@@ -35,13 +35,14 @@
  */
 import React from 'react';
 import { Pressable, View } from 'react-native';
-import type { FeatureKey, IllustrationName } from '@lantern/shared/design';
+import type { FeatureKey, IllustrationName, TileSceneName } from '@lantern/shared/design';
 import { useTheme } from '../../theme';
 import { AppIcon, type AppIconName } from './AppIcon';
 import { useFeatureAccent } from './FeatureDisc';
 import { Illustration } from './Illustration';
 import { ILLUSTRATION_SIZES, type IllustrationSize } from './illustrationFills';
 import { doorTileLayout } from './doorTileLayout';
+import { TileScene } from './TileScene';
 import { Body } from './Text';
 
 export { doorTileColumnWidth, doorTileLayout, type DoorTileLayout } from './doorTileLayout';
@@ -78,6 +79,19 @@ export interface DoorTileProps {
    * asset for a door that does not have one yet.
    */
   illustration?: IllustrationName;
+  /**
+   * The panel's landscape DRAWING, where the art set has one for this door.
+   *
+   * Takes precedence over `illustration` and over the glyph, and is the same
+   * asset the set room's tiles draw (`SetRoomTile`) — the recommendation tiles
+   * in the set room's Overview are doors onto the very same tools, so drawing
+   * them as one enlarged glyph while the Practice tiles below drew a picture
+   * read as two products stacked. Omitted, the door falls back exactly as it
+   * did: `illustration` if given, otherwise the large glyph. A door with no
+   * scene is a door nobody has drawn yet (`read` is one, matching web), and a
+   * glyph says that honestly.
+   */
+  scene?: TileSceneName;
   /** The column width the grid handed this door. Everything else follows. */
   width: number;
   onPress: () => void;
@@ -91,6 +105,7 @@ export function DoorTile({
   title,
   icon,
   illustration,
+  scene,
   width,
   onPress,
   accessibilityLabel,
@@ -152,7 +167,17 @@ export function DoorTile({
             justifyContent: 'flex-start',
           }}
         >
-          {illustration ? (
+          {scene ? (
+            // Fills the panel, which is what the panel is for. Sized from the
+            // same boxes the glyph was — `doorTileLayout` is unchanged, so the
+            // tile, its footer and its label keep their exact geometry.
+            <TileScene
+              scene={scene}
+              feature={feature}
+              boxWidth={layout.width - layout.shadowOffset}
+              boxHeight={layout.illustrationSize}
+            />
+          ) : illustration ? (
             <Illustration
               name={illustration}
               feature={feature}

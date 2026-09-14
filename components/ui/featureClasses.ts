@@ -1,4 +1,4 @@
-import type { FeatureKey } from '@lantern/shared/design';
+import { TILE_SHADE_INK_MIX, type FeatureKey } from '@lantern/shared/design';
 
 /**
  * Tailwind cannot build a class name at runtime — `text-lantern-feature-${key}-ink`
@@ -112,4 +112,51 @@ export const FEATURE_PANEL_INK_OVERRIDE: Record<FeatureKey, string> = {
   campus: '!text-lantern-ink dark:!text-lantern-feature-campus-ink',
   budget: '!text-lantern-ink dark:!text-lantern-feature-budget-ink',
   sets: '!text-lantern-ink dark:!text-lantern-feature-sets-ink',
+};
+
+/**
+ * The two CSS variables a `TileScene` is painted with, per feature.
+ *
+ * These are CUSTOM PROPERTIES, not Tailwind utilities, so they are set as an
+ * inline style rather than a class — which is also why building them at
+ * runtime would be safe here. They are spelled out anyway, for the same reason
+ * every table above is: a grep for a feature's name has to find every place
+ * its colour is decided.
+ *
+ * `--tile-fill` is the SURFACE, never the tile's own pastel: a white sheet on
+ * a pastel ground is the whole look, and a sheet filled with the ground's own
+ * hue is invisible. `--color-surface` already inverts under `.dark`, so the
+ * dark panel gets the dark card colour with no second table.
+ *
+ * `--tile-shade` is the cast shadow: the feature's tint carried
+ * `TILE_SHADE_INK_MIX` of the way toward its own ink, so the shadow keeps the
+ * tile's hue instead of going grey. It is `color-mix` rather than a token
+ * because a token would have to be authored twice per feature per theme —
+ * eighteen new values for a colour that is entirely derivable. Mobile derives
+ * the same colour arithmetically through `tileSceneFills`, and `color-mix` in
+ * sRGB is the same channel average, so the two platforms agree.
+ *
+ * Both variables are re-derived by the browser when `.dark` flips, because
+ * both sides of the mix are theme variables. Nothing here is theme-specific.
+ */
+const TILE_SHADE_TINT_PERCENT = Math.round((1 - TILE_SHADE_INK_MIX) * 100);
+const TILE_SHADE_INK_PERCENT = 100 - TILE_SHADE_TINT_PERCENT;
+
+function tileSceneVars(key: FeatureKey): Record<string, string> {
+  return {
+    '--tile-fill': 'rgb(var(--color-surface))',
+    '--tile-shade': `color-mix(in srgb, rgb(var(--color-feature-${key}-tint)) ${TILE_SHADE_TINT_PERCENT}%, rgb(var(--color-feature-${key}-ink)) ${TILE_SHADE_INK_PERCENT}%)`,
+  };
+}
+
+export const FEATURE_TILE_SCENE_VARS: Record<FeatureKey, Record<string, string>> = {
+  notes: tileSceneVars('notes'),
+  flashcards: tileSceneVars('flashcards'),
+  tests: tileSceneVars('tests'),
+  recording: tileSceneVars('recording'),
+  ai: tileSceneVars('ai'),
+  groups: tileSceneVars('groups'),
+  campus: tileSceneVars('campus'),
+  budget: tileSceneVars('budget'),
+  sets: tileSceneVars('sets'),
 };

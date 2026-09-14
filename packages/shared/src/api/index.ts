@@ -47,6 +47,7 @@ export {
   type GuidedGoal,
   type GuidedGoalsInput,
   type GuidedNextTopic,
+  type GuidedStartTopic,
   type LanternCompanionClient,
 } from './companion';
 export {

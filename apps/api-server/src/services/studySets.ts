@@ -5,6 +5,7 @@ import { PublicError } from '../utils/safeError';
 import type { SupabaseService } from './supabase';
 import { isUuid } from './academicCourses';
 import { normalizeCoverRef } from '@lantern/shared/utils/storageUrl';
+import { notePlainPreview } from '@lantern/shared/utils/noteBlocks';
 import {
   SET_TILE_GLYPHS,
   SET_TILE_HUES,
@@ -774,7 +775,12 @@ export class StudySetsService {
           studySetId,
           kind: kind as 'note' | 'lecture',
           href: `/study/sets/${encodeURIComponent(studySetId)}/notes/${encodeURIComponent(String(row.id))}`,
-          preview: typeof row.body === 'string' ? row.body.slice(0, 120) : undefined,
+          // The preview is BUILT here, not sliced here. A raw `slice(0, 120)`
+          // of a lesson/mastery note is 120 characters of the JSON snapshot —
+          // which is what Home's material tiles were printing, answers and
+          // all (AH smoke 1.0.58). `notePlainPreview` types such a body
+          // ("Mastery plan · 6 steps") and only strips markdown for prose.
+          preview: notePlainPreview(row.body as string | null, 120) || undefined,
           updatedAt: String(row.updated_at || ''),
         },
       ];

@@ -100,6 +100,7 @@ export function stripNoteMarkers(body: string | null | undefined): string {
  * `noteBlocks` is still what renders a note.
  */
 /** The lesson fence again, this time keeping what is inside it. */
+const LESSON_FENCE_NAME = 'lantern-lesson';
 const LESSON_FENCE_CAPTURE = /```lantern-lesson\s*([\s\S]*?)```/;
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
@@ -128,6 +129,28 @@ function parseJsonObject(raw: string): Record<string, unknown> | null {
  * caller falls through to the normal stripper. Never returns any fragment of
  * the data itself.
  */
+/**
+ * Does this text open machine data it never closes — i.e. is it a TRUNCATED
+ * snapshot rather than prose?
+ *
+ * Deliberately narrow, because the fallback it overrides is the prose
+ * stripper: only an UNCLOSED lesson fence (the caller has already failed to
+ * match a closed one) or a body that opens with a JSON key and does not
+ * parse. Prose that merely starts with a brace — `{this is not json} and the
+ * rest of the note` — is prose, and still reads as itself.
+ */
+function isTruncatedMachineData(body: string): boolean {
+  const text = body.trim();
+  if (text.includes('```' + LESSON_FENCE_NAME)) return true;
+  if (!/^\{\s*"|^\[\s*\{/.test(text)) return false;
+  try {
+    JSON.parse(text);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 export function noteTypedPreview(body: string | null | undefined): string | null {
   if (!body) return null;
   const fenced = body.match(LESSON_FENCE_CAPTURE)?.[1];
@@ -135,7 +158,15 @@ export function noteTypedPreview(body: string | null | undefined): string | null
   if (!snapshot) {
     // A fence that is present but unparseable is still machine data; saying
     // so beats printing the half-JSON that survived.
-    return fenced !== undefined && fenced.trim() ? 'Structured note' : null;
+    if (fenced !== undefined && fenced.trim()) return 'Structured note';
+    // So is a body that OPENS as JSON and fails to parse — which is what a
+    // TRUNCATED snapshot looks like. Home's "Recent materials" tiles were
+    // built from a server-side `body.slice(0, 120)`, so a mastery note's
+    // fence never closed, nothing parsed, and the tile printed the raw
+    // braces of the plan (AH smoke 1.0.58). The slice is fixed at source;
+    // this is the guard for every prefix that was already handed out.
+    if (isTruncatedMachineData(body)) return 'Structured note';
+    return null;
   }
   const pages = Array.isArray(snapshot.pages) ? snapshot.pages.length : 0;
   const isPlan = pages > 0 && (snapshot.mode === 'mastery' || snapshot.mode === 'explore');
