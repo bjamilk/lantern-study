@@ -70,6 +70,24 @@ describe('guided mode', () => {
     expect(prompt).toContain('OFFER the next thing');
   });
 
+  /**
+   * The first Guided turn spent a credit asking "which imported note would you
+   * like to continue with?" and only taught on turn 2 (AH release smoke 1.0.57,
+   * observation B). The seed now names the topic and its source; this is the
+   * half that stops the model asking anyway.
+   */
+  it('orders it to teach step 1 rather than ask which material to use', async () => {
+    mockGroq('Step one.');
+
+    await companionChat('Guide me through osmosis', [], { mode: 'guided' });
+    const prompt = systemPrompts[0];
+
+    expect(prompt).toContain('TEACH FIRST');
+    expect(prompt).toContain('begin teaching step 1 immediately');
+    expect(prompt).toContain('never ask which material to use');
+    expect(prompt).toContain('Ask a clarifying question only when no topic or source is given');
+  });
+
   it('forbids claiming it can open or navigate anything', async () => {
     mockGroq('Step one.');
 

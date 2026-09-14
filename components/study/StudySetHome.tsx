@@ -12,7 +12,6 @@ import {
   type StudySetRecommendedKind,
   type StudySetTopic,
   type StudySetUnit,
-  type UpcomingExam,
   TOPIC_SKILL_LEVELS,
   normalizeTopicBrief,
   topicBriefError,
@@ -28,7 +27,6 @@ import { OwnWayGrid, OwnWayShowAll } from './OwnWayGrid';
 import { RecentMaterials } from './RecentMaterials';
 import { RoomRecommendationCard } from './RoomRecommendationCard';
 import { RoomTopicRing } from './RoomTopicRing';
-import { SetRoomFooter } from './SetRoomFooter';
 
 /**
  * `About ⓘ` — why this door is the one being offered, in one sentence.
@@ -59,7 +57,6 @@ interface StudySetHomeProps {
   studySet?: StudySet | null;
   planTopics?: StudySetTopic[];
   planUnits?: StudySetUnit[];
-  exams?: UpcomingExam[];
   planGenerating?: boolean;
   onTool: (tool: StudySetHomeTool) => void;
   onOpenNote: (noteId: string) => void;
@@ -67,9 +64,7 @@ interface StudySetHomeProps {
   onOpenRecommended: (kind: StudySetRecommendedKind) => void;
   onSkipTopic?: (topicId: string) => void;
   onOpenPlan?: () => void;
-  onOpenCalendar?: () => void;
   onOpenLibrary?: () => void;
-  onAddSyllabus?: () => void;
   /** The ⋮ for one note, forwarded to the materials grid and list. */
   renderNoteMenu?: (note: StudyNote) => React.ReactNode;
   /** Empty-set starter notes from a topic, subject and skill level. */
@@ -85,7 +80,6 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   studySet,
   planTopics,
   planUnits = [],
-  exams = [],
   planGenerating,
   onTool,
   onOpenNote,
@@ -93,9 +87,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   onOpenRecommended,
   onSkipTopic,
   onOpenPlan,
-  onOpenCalendar,
   onOpenLibrary,
-  onAddSyllabus,
   renderNoteMenu,
   onGenerateFromTopic,
 }) => {
@@ -135,7 +127,7 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
   const homeScrollRef = useAutohideScrollbar<HTMLDivElement>();
 
   return (
-    <div ref={homeScrollRef} className="flex-1 min-h-0 overflow-y-auto scrollbar-autohide space-y-6 pr-1">
+    <div ref={homeScrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain scrollbar-autohide space-y-6 pr-1 pb-2">
       {planGenerating ? (
         <Card padding="lg">
           <p className="text-heading">Generating your study plan…</p>
@@ -344,16 +336,6 @@ export const StudySetHome: React.FC<StudySetHomeProps> = ({
           onOpenDeck={onOpenDeck}
           onViewAll={() => onOpenLibrary?.()}
           renderNoteMenu={renderNoteMenu}
-        />
-      ) : null}
-
-      {studySet ? (
-        <SetRoomFooter
-          studySetId={studySet.id}
-          examDate={studySet.examDate ?? null}
-          exams={exams}
-          onViewSchedule={() => onOpenCalendar?.()}
-          onAddSyllabus={() => onAddSyllabus?.()}
         />
       ) : null}
     </div>

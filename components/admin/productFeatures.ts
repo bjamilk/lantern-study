@@ -46,6 +46,33 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'guided-teaches-first-home-card-folders-1-0-58',
+    title: 'Guided teaches from the first turn, a card on the phone’s Home, folders on the phone, and a tidier Me screen (1.0.58)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-13',
+    summary:
+      'Continue learning now names the exact topic and its source note, so Guided’s first turn is step one plus a check question instead of a question back; toggling Guided mid-chat shows the goal picker above the composer. The phone’s Home leads with a due flashcard graded through the review screen’s own action. The Study hub on the phone filters by folder, creates one inline and moves a set from its menu. The Again grade chip clears contrast. Dark mode and Low-data mode live once in Settings; note rows show a menu button; lesson notes no longer leak their plan JSON into the notes list. Sign-in restore no longer depends on AbortSignal.timeout.',
+    details: [
+      'Guided: guidedNextTopicFromPlan carries the topic’s source note; the seed is “Guide me through <topic> from <source> in <unit>. Start with step 1 now…” with the note attached to the turn; prompt rule TEACH FIRST forbids the “which material?” reply; composer picker card on toggle with history (companionComposerPicker).',
+      'Mobile InlineReviewCard on Home reuses useFlashcardStore.reviewFlashcard + trackStudyActivity; Skip on both faces; Study all uses Home’s reviewPlan.totalDue; cloze/occlusion excluded. Shared flashcardGradeSkin: Again 4.23→14.39 light / 4.45→15.38 dark.',
+      'Mobile folders: FolderChips + folderFilter on the existing /users/me/study-sets/folders endpoints; selection follows a moved set (No folder → All); session-scoped.',
+      'Housekeeping: dead mobile GettingStartedChecklist removed; Me root Dark/Low-data duplicates removed (Settings → Appearance is the single home); NoteCard ⋮ opens the long-press sheet; 400×400 helper; timer popover honesty line; noteTypedPreview renders “Mastery plan · N steps” instead of lesson JSON on both clients.',
+      'services/authCookieSession timeoutSignal(): AbortSignal.timeout with an AbortController fallback (Safari < 16, jsdom).',
+      'Founder’s 349f482a rode in before this commit (Study opens again, set list survives API flakes, full rail).',
+    ],
+    howToUse: [
+      'Ask Lantern → Guided → Continue learning: the first reply teaches step one and asks one check.',
+      'Phone Home: flip and grade the card; Skip on either face; Study all N due opens the session.',
+      'Phone Study hub: folder chips, Create folder, a set’s ⋮ → Move to folder….',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'No new migration. Still hand-applied from earlier: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+    ],
+    commits: ['349f482a'],
+  },
+  {
     id: 'guided-mode-dark-accents-1-0-57',
     title: 'Guided mode in Lantern AI, readable dark accents, and small things that land where they say (1.0.57)',
     area: 'platform',

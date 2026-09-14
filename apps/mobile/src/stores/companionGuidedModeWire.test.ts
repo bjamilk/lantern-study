@@ -254,6 +254,49 @@ describe('openForScope derives the next topic from the set\'s saved plan', () =>
     expect(useCompanionStore.getState().requestedScope?.guidedNextTopic).toEqual({
       title: 'Gas exchange',
       unit: 'Imported Notes',
+      // This fixture's topic names no source note, and an invented one would
+      // attach the wrong document to the first taught step.
+      sourceNoteId: null,
+      sourceTitle: null,
+    });
+  });
+
+  /**
+   * The seed sentence can only name the material if the derivation carries it.
+   * Seeding with the UNIT alone made the first guided reply a menu of the notes
+   * filed under it — a credit spent asking (AH release smoke 1.0.57).
+   */
+  it('carries the topic\'s source note so the first turn can be grounded', async () => {
+    useStudySetStore.setState({
+      plans: {
+        'set-a': {
+          loaded: true,
+          units: [{ id: 'u1', studySetId: 'set-a', title: 'Imported Notes', position: 1 }],
+          topics: [
+            {
+              id: 't1',
+              studySetId: 'set-a',
+              unitId: 'u1',
+              title: 'Gas exchange',
+              position: 1,
+              status: 'covered',
+              sourceNoteIds: ['note-7'],
+            },
+          ],
+        },
+      },
+    } as never);
+
+    useCompanionStore.getState().openForScope({ scopeId: 'set-a', label: 'Wave1 pass set' });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(useCompanionStore.getState().requestedScope?.guidedNextTopic).toEqual({
+      title: 'Gas exchange',
+      unit: 'Imported Notes',
+      sourceNoteId: 'note-7',
+      // The store holds no note list, so the TITLE stays null here — the room,
+      // which does, passes its own topic and wins.
+      sourceTitle: null,
     });
   });
 
@@ -394,6 +437,10 @@ describe('the scope-less doors still derive the room\'s next topic', () => {
     expect(useCompanionStore.getState().requestedScope?.guidedNextTopic).toEqual({
       title: 'Gas exchange',
       unit: 'Imported Notes',
+      // This fixture's topic names no source note, and an invented one would
+      // attach the wrong document to the first taught step.
+      sourceNoteId: null,
+      sourceTitle: null,
     });
   });
 

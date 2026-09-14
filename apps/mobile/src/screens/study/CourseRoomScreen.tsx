@@ -344,9 +344,16 @@ export function CourseRoomScreen({ navigation, route }: Props) {
       mode: (studySet?.mode as 'cram' | 'standard' | 'comprehensive') ?? 'standard',
     });
     // The spine's own pick, then the shared guard and trim web uses.
+    // The source NOTE's title travels too: the unit is a grouping, and a first
+    // guided turn seeded with the grouping made the model reply with a menu of
+    // the notes under it rather than teaching a step.
+    const sourceNoteId = model.nextTopic?.sourceNoteId ?? null;
     return guidedNextTopicFromPlan(
       model.nextTopic,
-      model.units.find((row) => row.holdsNext)?.title
+      model.units.find((row) => row.holdsNext)?.title,
+      sourceNoteId
+        ? [...studyNotes, ...lectures].find((note) => note.id === sourceNoteId)?.title
+        : null
     );
   }, [studySetId, plan?.topics, plan?.units, studyNotes, lectures, studySet?.mode]);
   // Grid or list, and the order, for the room's two browsable shelves. Grid is

@@ -5,6 +5,7 @@ import {
   noteDepthFromIndent,
   noteInlineRuns,
   notePlainPreview,
+  noteTypedPreview,
   stripNoteMarkers,
   type NoteBlock,
 } from './noteBlocks';
@@ -161,5 +162,50 @@ describe('notePlainPreview', () => {
     expect(notePlainPreview('a'.repeat(200), 10)).toBe(`${'a'.repeat(10)}\u2026`);
     expect(notePlainPreview('')).toBe('');
     expect(notePlainPreview(null)).toBe('');
+  });
+
+  it('never leaks a lesson snapshot — not the JSON, not the check answers', () => {
+    const body =
+      'Pancreatitis PPT Student \u00b7 Mastery\n\n```lantern-lesson\n' +
+      JSON.stringify({
+        mode: 'mastery',
+        sourceTitle: 'Pancreatitis PPT Student',
+        plan: { topics: [] },
+        pages: [
+          { title: 'Causes', body: 'Gallstones', check: { answer: 'Gallstones' } },
+          { title: 'Signs', body: 'Epigastric pain', check: { answer: 'Cullen sign' } },
+        ],
+      }) +
+      '\n```\n';
+    const preview = notePlainPreview(body);
+    expect(preview).toBe('Mastery plan \u00b7 2 steps');
+    expect(preview).not.toContain('{');
+    expect(preview).not.toContain('Cullen');
+    expect(preview).not.toContain('check');
+  });
+});
+
+describe('noteTypedPreview', () => {
+  const lesson = (mode: string, pages: number) =>
+    '```lantern-lesson\n' +
+    JSON.stringify({ mode, pages: Array.from({ length: pages }, () => ({ title: 't' })) }) +
+    '\n```';
+
+  it('names the plan and counts its steps, singular included', () => {
+    expect(noteTypedPreview(lesson('mastery', 7))).toBe('Mastery plan \u00b7 7 steps');
+    expect(noteTypedPreview(lesson('explore', 1))).toBe('Explore plan \u00b7 1 step');
+  });
+
+  it('calls a bare JSON body a structured note', () => {
+    expect(noteTypedPreview('{"secret":"answer"}')).toBe('Structured note');
+    expect(noteTypedPreview('  [1, 2, 3]  ')).toBe('Structured note');
+    expect(noteTypedPreview('```lantern-lesson\n{not json\n```')).toBe('Structured note');
+  });
+
+  it('leaves prose alone, including prose that merely starts with a brace', () => {
+    expect(noteTypedPreview('## Overview\nPancreatitis')).toBeNull();
+    expect(noteTypedPreview('{this is not json} and the rest of the note')).toBeNull();
+    expect(noteTypedPreview('')).toBeNull();
+    expect(noteTypedPreview(null)).toBeNull();
   });
 });

@@ -39,6 +39,7 @@ import { CompanionPrompts } from './companion/CompanionPrompts';
 import { GuidedPicker } from './companion/GuidedPicker';
 import {
   buildGuidedGoals,
+  showGuidedComposerPicker,
   GUIDED_MODE_PROMISE,
   type GuidedGoal,
   type GuidedNextTopic,
@@ -301,6 +302,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
    * drop back to ordinary chat without losing the thread.
    */
   const [guided, setGuided] = useState(false);
+  /**
+   * The student shut the picker card that sits above the composer. Per thread
+   * and per toggle: turning Guided off and on again is a fresh intent to pick
+   * a goal, so the card comes back rather than staying dismissed forever.
+   */
+  const [guidedPickerDismissed, setGuidedPickerDismissed] = useState(false);
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -474,10 +481,16 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     }, 800);
   }, []);
 
-  const jumpToLatest = useCallback(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    setIsAtBottom(true);
+  const scrollMessagesToEnd = useCallback((behavior: ScrollBehavior = 'auto') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
+
+  const jumpToLatest = useCallback(() => {
+    scrollMessagesToEnd('smooth');
+    setIsAtBottom(true);
+  }, [scrollMessagesToEnd]);
 
   /**
    * Follow the stream — but only while the student is already at the bottom.
@@ -490,8 +503,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
    */
   useEffect(() => {
     if (!isAtBottom) return;
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isLoading, isStreaming, isAtBottom]);
+    scrollMessagesToEnd('auto');
+  }, [messages, isLoading, isStreaming, isAtBottom, scrollMessagesToEnd]);
 
   useEffect(() => () => {
     if (scrollBarTimerRef.current !== undefined) window.clearTimeout(scrollBarTimerRef.current);
@@ -767,7 +780,16 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
    */
   const sendInFlightRef = useRef(false);
 
-  const handleSend = useCallback(async (text?: string) => {
+  const handleSend = useCallback(async (
+    text?: string,
+    /**
+     * Extra context for THIS turn only. The Guided seed uses it to name the
+     * source note the plan topic came from, so the first reply teaches from
+     * the note's text instead of asking which material to use. It is not an
+     * attachment: nothing is stapled to the thread and no history is reloaded.
+     */
+    turnContext?: Partial<CompanionUserContext>
+  ) => {
     const msg = (text ?? input).trim();
     if (!msg || isBusy || dictationBusy || sendInFlightRef.current) return;
     sendInFlightRef.current = true;
@@ -779,13 +801,41 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     inputValueRef.current = '';
     requestAnimationFrame(resizeInput);
     try {
-      await sendMessageStreaming(msg, enrichedContext);
+      await sendMessageStreaming(
+        msg,
+        turnContext ? { ...enrichedContext, ...turnContext } : enrichedContext
+      );
     } finally {
       sendInFlightRef.current = false;
     }
     trackAIAnalyticsEvent('companion_message_sent', { screen: context?.currentScreen });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [input, isBusy, dictationBusy, sendMessageStreaming, enrichedContext, resizeInput]);
+
+  /**
+   * Send a picker row's first guided turn.
+   *
+   * When the goal knows the note its topic was built from, that note rides
+   * along as THIS TURN's context — the model then has the text in front of it
+   * and can teach step 1, instead of spending the credit asking which of the
+   * unit's notes to use. It is deliberately not an attachment: attaching
+   * clears the thread and reloads history, and the card above the composer
+   * exists precisely so a student can pick a goal mid-conversation.
+   */
+  const handlePickGuidedGoal = useCallback(
+    (goal: GuidedGoal) => {
+      setGuidedPickerDismissed(true);
+      const sourceNoteId = goal.sourceNoteId?.trim();
+      void handleSend(
+        goal.prompt,
+        sourceNoteId && !activeNoteContext
+          ? { noteId: sourceNoteId, noteTitle: goal.sourceTitle || undefined }
+          : undefined
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [handleSend, activeNoteContext]
+  );
 
   const handleCopyMessage = useCallback(
     (content: string) => {
@@ -1044,7 +1094,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
               disabled={isBusy || dictationBusy}
               guided={guided}
               guidedGoals={guidedGoals}
-              onPickGuidedGoal={(goal) => void handleSend(goal.prompt)}
+              onPickGuidedGoal={handlePickGuidedGoal}
               onGuidedSomethingElse={() => inputRef.current?.focus()}
             />
           )}
@@ -1215,6 +1265,43 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             className="hidden"
             onChange={(e) => void handlePickImage(e.target.files?.[0])}
           />
+          {/* Guided on inside a thread that already has turns used to show the
+              badge and nothing else — the mode with no way to name a target
+              except free text. The picker now follows the mode: above the
+              composer, so the lesson so far stays readable, and dismissable,
+              because a student who is already mid-lesson does not need it. The
+              empty thread still draws its own picker in the empty state, and
+              `showGuidedComposerPicker` is what stops both appearing at once. */}
+          {showGuidedComposerPicker({
+            guided,
+            hasMessages: messages.length > 0,
+            dismissed: guidedPickerDismissed,
+            isLoadingHistory,
+          }) && (
+            <div className="mb-2">
+              <div className="mb-1 flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setGuidedPickerDismissed(true)}
+                  aria-label="Hide the guided goal picker"
+                  className="inline-flex min-h-[32px] items-center gap-1 rounded-lg px-2 text-caption font-medium text-lantern-text-secondary hover:text-lantern-text dark:text-lantern-text-tertiary"
+                >
+                  <AppIcon name="close" size={14} />
+                  Hide
+                </button>
+              </div>
+              <GuidedPicker
+                theme={theme}
+                goals={guidedGoals}
+                onPick={handlePickGuidedGoal}
+                onSomethingElse={() => {
+                  setGuidedPickerDismissed(true);
+                  inputRef.current?.focus();
+                }}
+                disabled={isBusy || dictationBusy}
+              />
+            </div>
+          )}
           {/* The Guided pill sits in the composer row, where the mode it
               changes is — not in a settings menu. It is a toggle, so it carries
               its state in `aria-pressed` rather than only in its fill, and it
@@ -1222,7 +1309,15 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
           <div className="mb-1.5 flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setGuided((v) => !v)}
+              onClick={() =>
+                setGuided((v) => {
+                  // Turning Guided ON is a fresh intent to pick a goal, so the
+                  // card above the composer comes back even if it was shut
+                  // earlier in this thread.
+                  setGuidedPickerDismissed(false);
+                  return !v;
+                })
+              }
               aria-pressed={guided}
               aria-label={
                 guided
@@ -1354,7 +1449,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   if (variant === 'rail') {
     return (
       <aside
-        className={`h-full min-h-0 min-w-0 overflow-x-hidden flex flex-col ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
+        className={`h-full min-h-0 min-w-0 overflow-hidden flex flex-col ${theme === 'dark' ? 'bg-lantern-background text-white' : 'bg-lantern-surface text-lantern-text'}`}
         aria-labelledby="ai-companion-title"
       >
         {body}

@@ -14,6 +14,7 @@
  * without changing this function, and `companionEmptyStateModel.test.ts`
  * pins that.
  */
+import { showGuidedComposerPicker } from '@lantern/shared/api/companion';
 
 export interface CompanionEmptyStateInput {
   /** Is Guided mode on for this thread? */
@@ -72,5 +73,18 @@ export function companionEmptyState({
     showLoading: false,
   };
 }
+
+/**
+ * The OTHER place the picker is drawn: a card above the composer, once the
+ * thread has turns in it.
+ *
+ * Toggling Guided on mid-conversation flipped the header badge and offered
+ * nothing — the mode with no way to name a target except free text (AH release
+ * smoke 1.0.57). The rule lives in `@lantern/shared` so the phone and the web
+ * rail cannot drift on when the card appears; this re-export keeps it beside
+ * the empty-state rule it is the twin of, since the two together are what
+ * guarantee exactly ONE picker on screen at a time.
+ */
+export const companionComposerPicker = showGuidedComposerPicker;
 
 export default companionEmptyState;

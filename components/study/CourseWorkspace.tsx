@@ -75,6 +75,7 @@ import { RecapStudio } from './RecapStudio';
 import { StudyCalendar } from './StudyCalendar';
 import { EssayStudio } from './EssayStudio';
 import { PlayStudio } from './PlayStudio';
+import { SetRoomFooter } from './SetRoomFooter';
 import { StudySetHome } from './StudySetHome';
 import CreateStudySetModal from './CreateStudySetModal';
 import { StudySetSettingsModal } from './StudySetSettingsModal';
@@ -552,11 +553,17 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     // The pick is the spine's own; everything after it — the mastered guard,
     // the trim, the unit lookup — is shared with mobile.
     const next = pickRecommendedTopic(rows, studySet?.mode || 'standard');
+    // The SOURCE note's own title, not the unit's. A unit is a grouping
+    // ("Imported Notes"), and a first guided turn that named only the grouping
+    // made the model answer with a menu of the notes inside it instead of
+    // teaching (AH release smoke 1.0.57, observation B).
+    const sourceNoteId = next?.sourceNoteIds?.find(Boolean) ?? null;
     return guidedNextTopicFromPlan(
       next,
-      next ? planUnits.find((row) => row.id === next.unitId)?.title : null
+      next ? planUnits.find((row) => row.id === next.unitId)?.title : null,
+      sourceNoteId ? notes.find((row) => row.id === sourceNoteId)?.title : null
     );
-  }, [planTopics, planUnits, readingNotes, studySetId, studySet?.mode]);
+  }, [planTopics, planUnits, readingNotes, studySetId, studySet?.mode, notes]);
   const steeredToLecture = useRef(false);
   useEffect(() => {
     steeredToLecture.current = false;
@@ -1360,7 +1367,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         }}
       />
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
-        <div className="flex flex-1 min-w-0 min-h-0 flex-col px-4 md:px-6 pt-4">
+        <div className="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 pt-4">
         <div className="shrink-0">
         {studySetId ? (
           // The set room's header is the SET AS AN OBJECT — identity tile,
@@ -1450,7 +1457,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         ) : null}
         </div>
 
-        <div className="flex flex-1 min-h-0 gap-4 min-w-0 flex-col lg:flex-row">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
         {!(studySetId && activity === 'home') && !notesRoomOpen ? (
         <aside className="w-full lg:w-72 shrink-0 flex flex-col min-h-0 lg:max-w-xs max-h-[min(62vh,36rem)] lg:max-h-none">
           <Card padding="md" className="flex-1 min-h-0 overflow-y-auto">
@@ -1621,7 +1629,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </aside>
         ) : null}
 
-        <section className="flex flex-1 min-w-0 min-h-0">
+        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {activity === 'add' && studySetId ? (
             <StudySetUpload
               studySetId={studySetId}
@@ -1647,7 +1655,6 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               studySet={studySet}
               planTopics={planTopics}
               planUnits={planUnits}
-              exams={exams}
               planGenerating={planGenerating}
               renderNoteMenu={renderNoteRowMenu}
               onTool={handleHomeTool}
@@ -1709,13 +1716,7 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
                 if (deck) onSelectDeck(deck);
               }}
               onOpenPlan={() => go('plan')}
-              onOpenCalendar={() => go('calendar')}
               onOpenLibrary={onOpenLibrary}
-              onAddSyllabus={() => {
-                go('add');
-                setImportSource(null);
-                setImportOpen(true);
-              }}
               onGenerateFromTopic={(brief) => void handleCreateFromTopic(brief, 'materials')}
             />
           ) : activity === 'notes' && routePath?.createNew && studySetId ? (
@@ -2137,12 +2138,28 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           )}
         </section>
         </div>
+        {studySetId && activity === 'home' && studySet ? (
+          <div className="shrink-0 pb-4 pt-3">
+            <SetRoomFooter
+              studySetId={studySet.id}
+              examDate={studySet.examDate ?? null}
+              exams={exams}
+              onViewSchedule={() => go('calendar')}
+              onAddSyllabus={() => {
+                go('add');
+                setImportSource(null);
+                setImportOpen(true);
+              }}
+            />
+          </div>
+        ) : null}
+        </div>
         </div>
 
         {companionRail ? (
         <aside className="flex w-full lg:w-96 xl:w-[28rem] 2xl:w-[32rem] min-h-0 flex-1 lg:flex-none self-stretch">
           <div className="flex flex-1 min-h-0 flex-col overflow-hidden border-t border-lantern-border lg:border-t-0 lg:border-l">
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 overflow-hidden">
               <AICompanionPanel
                 variant="rail"
                 context={companionContext}

@@ -42,6 +42,8 @@ export {
   GUIDED_COST_NOTE,
   buildGuidedGoals,
   guidedFreeTextPrompt,
+  guidedSeedPrompt,
+  showGuidedComposerPicker,
   type GuidedGoal,
   type GuidedGoalsInput,
   type GuidedNextTopic,

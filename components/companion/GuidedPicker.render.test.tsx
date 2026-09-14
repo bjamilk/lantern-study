@@ -78,4 +78,28 @@ describe('the guided picker', () => {
     // Three rows: two goals and the free-text way out.
     expect(html.match(/disabled=""/g)).toHaveLength(3);
   });
+
+  /**
+   * The seed sentence names the topic AND the source note it came from, so the
+   * first reply teaches instead of asking which material to use. None of that
+   * belongs on the row: the picker promises one line per goal, and the source
+   * title would push the topic out of a truncated row.
+   */
+  it('keeps the row to the topic even when the seed names a source note', () => {
+    const html = render({
+      goals: buildGuidedGoals({
+        nextTopic: {
+          title: 'RSV transmission',
+          unit: 'Imported Notes',
+          sourceNoteId: 'note-7',
+          sourceTitle: 'The RSV overview',
+        },
+      }),
+    });
+
+    expect(html).toContain('Continue learning: RSV transmission');
+    expect(html).toContain('aria-label="Continue learning RSV transmission"');
+    expect(html).not.toContain('The RSV overview');
+    expect(html).not.toContain('Imported Notes');
+  });
 });

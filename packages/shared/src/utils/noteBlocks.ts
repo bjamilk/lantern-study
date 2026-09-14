@@ -99,7 +99,54 @@ export function stripNoteMarkers(body: string | null | undefined): string {
  * carry from the rich-text editor that preceded markdown. Previews only —
  * `noteBlocks` is still what renders a note.
  */
+/** The lesson fence again, this time keeping what is inside it. */
+const LESSON_FENCE_CAPTURE = /```lantern-lesson\s*([\s\S]*?)```/;
+
+function parseJsonObject(raw: string): Record<string, unknown> | null {
+  const text = raw.trim();
+  if (!text || !/^[[{]/.test(text)) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (Array.isArray(parsed)) return { pages: parsed };
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The preview for a note whose body is MACHINE DATA rather than prose.
+ *
+ * A lesson-studio note stores its whole session — pages, transcript and the
+ * `check` questions WITH THEIR ANSWERS — as JSON (`composeLessonNoteBody`).
+ * `markdownToPreviewText` keeps the contents of a fence and only drops the
+ * ``` lines, so the notes list on both clients was printing that JSON as the
+ * row preview: a wall of braces, and every answer the lesson was about to ask
+ * for, spoiled in the list and read aloud by the screen reader.
+ *
+ * Returns a typed line for such bodies, and null for ordinary prose — the
+ * caller falls through to the normal stripper. Never returns any fragment of
+ * the data itself.
+ */
+export function noteTypedPreview(body: string | null | undefined): string | null {
+  if (!body) return null;
+  const fenced = body.match(LESSON_FENCE_CAPTURE)?.[1];
+  const snapshot = fenced !== undefined ? parseJsonObject(fenced) : parseJsonObject(body);
+  if (!snapshot) {
+    // A fence that is present but unparseable is still machine data; saying
+    // so beats printing the half-JSON that survived.
+    return fenced !== undefined && fenced.trim() ? 'Structured note' : null;
+  }
+  const pages = Array.isArray(snapshot.pages) ? snapshot.pages.length : 0;
+  const isPlan = pages > 0 && (snapshot.mode === 'mastery' || snapshot.mode === 'explore');
+  if (!isPlan) return 'Structured note';
+  const kind = snapshot.mode === 'mastery' ? 'Mastery plan' : 'Explore plan';
+  return `${kind} · ${pages} ${pages === 1 ? 'step' : 'steps'}`;
+}
+
 export function notePlainPreview(body: string | null | undefined, max = 160): string {
+  const typed = noteTypedPreview(body);
+  if (typed) return typed;
   const stripped = stripNoteMarkers(body).replace(/<[^>]+>/g, ' ');
   const plain = markdownToPreviewText(stripped).replace(/\s+/g, ' ').trim();
   if (!plain) return '';

@@ -203,10 +203,20 @@ describe('selectionAfterMove', () => {
     );
   });
 
-  it('leaves All alone — nothing vanished', () => {
+  it('follows the set out of All too — the move has to be visible', () => {
+    // On device this returned All, so filing a set from the unfiltered list
+    // looked like nothing happened. The chip now moves to the destination.
     expect(
       selectionAfterMove(ALL_FOLDERS, { folderId: 'f2', label: 'Finals', current: false })
-    ).toBe(ALL_FOLDERS);
+    ).toBe('f2');
+  });
+
+  it('sends No folder to All, the only chip that shows unfiled sets', () => {
+    for (const from of [ALL_FOLDERS, 'f1', '', null, undefined]) {
+      expect(selectionAfterMove(from, { folderId: null, label: 'No folder', current: false })).toBe(
+        ALL_FOLDERS
+      );
+    }
   });
 });
 

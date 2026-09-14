@@ -325,11 +325,24 @@ function mergeThreadContext(
   const conversationId = get().activeConversationId;
   const pendingNew = get().pendingNewConversation;
   const images = get().pendingImages;
+  /**
+   * A turn may name its OWN source note when nothing is stapled to the thread.
+   * The Guided seed does: the plan topic knows which note it was built from, so
+   * the first taught step is grounded in that note's text without the picker
+   * having to attach it — an attachment clears the thread and reloads history,
+   * which would throw away the conversation the student is mid-way through.
+   *
+   * A real attachment still wins; this is only the empty slot's fallback.
+   */
+  const turnNoteId =
+    typeof context?.noteId === 'string' && context.noteId.trim() ? context.noteId.trim() : null;
   return {
     ...context,
     ...(noteCtx
       ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
-      : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
+      : turnNoteId
+        ? { noteId: turnNoteId, noteTitle: context?.noteTitle, noteContext: undefined }
+        : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
     ...(conversationId ? { conversationId } : { conversationId: undefined }),
     ...(pendingNew && !conversationId ? { newConversation: true } : {}),
     // The server trusts only the ids in here; the text rides along for the chip.

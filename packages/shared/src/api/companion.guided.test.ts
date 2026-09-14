@@ -12,6 +12,8 @@ import {
   DEFAULT_COMPANION_MODE,
   buildGuidedGoals,
   guidedFreeTextPrompt,
+  guidedSeedPrompt,
+  showGuidedComposerPicker,
   isCompanionMode,
   normalizeCompanionMode,
 } from './companion';
@@ -84,7 +86,7 @@ describe('the guided goal picker', () => {
     // The unit is context for the lesson, not a second line on the row.
     expect(goal.label).toBe('Continue learning: Narrow vs. General AI');
     expect(goal.unit).toBe('01 AI Foundations');
-    expect(goal.prompt).toContain('from 01 AI Foundations in my study plan');
+    expect(goal.prompt).toContain('in 01 AI Foundations');
   });
 
   it('drops a blank unit rather than sending an empty one to the model', () => {
@@ -92,7 +94,55 @@ describe('the guided goal picker', () => {
 
     expect(goal.label).toBe('Continue learning: Osmosis');
     expect(goal.unit).toBeNull();
-    expect(goal.prompt).not.toContain('in my study plan');
+    expect(goal.prompt).toBe(
+      'Guide me through "Osmosis". Start with step 1 now — teach that one step,' +
+        ' then check I have got it before moving on. Do not ask me which material to use.'
+    );
+  });
+
+  /**
+   * Observation B of the 1.0.57 release smoke: picking `Continue learning:
+   * Imported Notes` spent a credit on "which imported note would you like to
+   * continue with?" and taught nothing until turn 2. The seed named the UNIT,
+   * so the model had a folder and no document. It now names the topic and the
+   * source note the plan built it from.
+   */
+  it('names the topic and its source note, not the unit, in the turn it sends', () => {
+    const [goal] = buildGuidedGoals({
+      nextTopic: {
+        title: 'RSV transmission',
+        unit: 'Imported Notes',
+        sourceNoteId: 'note-7',
+        sourceTitle: 'The RSV overview',
+      },
+    });
+
+    expect(goal.label).toBe('Continue learning: RSV transmission');
+    expect(goal.sourceNoteId).toBe('note-7');
+    expect(goal.prompt).toBe(
+      'Guide me through "RSV transmission" from "The RSV overview" in Imported Notes.' +
+        ' Start with step 1 now — teach that one step, then check I have got it' +
+        ' before moving on. Do not ask me which material to use.'
+    );
+  });
+
+  it('sends a teaching order even when no source is known', () => {
+    const [goal] = buildGuidedGoals({
+      nextTopic: { title: 'RSV transmission', unit: 'Imported Notes' },
+    });
+
+    expect(goal.sourceNoteId).toBeNull();
+    expect(goal.sourceTitle).toBeNull();
+    expect(goal.prompt).not.toContain(' from "');
+    expect(goal.prompt).toContain('Start with step 1 now');
+    expect(goal.prompt).toContain('Do not ask me which material to use');
+  });
+
+  it('builds the same sentence for a bare topic, blanks trimmed away', () => {
+    expect(guidedSeedPrompt({ topic: '  Osmosis  ', source: '  ', unit: null })).toBe(
+      'Guide me through "Osmosis". Start with step 1 now — teach that one step,' +
+        ' then check I have got it before moving on. Do not ask me which material to use.'
+    );
   });
 
   it('offers no continue row for an object with no real title', () => {
@@ -112,8 +162,36 @@ describe('the guided goal picker', () => {
     const [goal] = buildGuidedGoals({ topics: ['Osmosis'] });
 
     expect(goal.prompt).toContain('Osmosis');
-    expect(goal.prompt).toContain('one step at a time');
+    expect(goal.prompt).toContain('Start with step 1 now');
     expect(guidedFreeTextPrompt('  the  Krebs cycle ')).toContain('the Krebs cycle');
     expect(guidedFreeTextPrompt('Osmosis')).toContain('one step at a time');
+  });
+});
+
+/**
+ * Toggling Guided on inside a thread that already had turns flipped the header
+ * badge and offered nothing — the mode with no way to name a target except free
+ * text (AH release smoke 1.0.57). The picker now follows the mode, drawn above
+ * the composer once the thread has history; an empty thread already draws it in
+ * the empty state, and two cost lines on one screen is not an improvement.
+ */
+describe('the guided picker above the composer', () => {
+  it('appears when Guided is on inside a thread with history', () => {
+    expect(showGuidedComposerPicker({ guided: true, hasMessages: true })).toBe(true);
+  });
+
+  it('stays out of an empty thread, where the empty state already offers it', () => {
+    expect(showGuidedComposerPicker({ guided: true, hasMessages: false })).toBe(false);
+    expect(showGuidedComposerPicker({ guided: true })).toBe(false);
+  });
+
+  it('is never drawn with Guided off, once dismissed, or while history loads', () => {
+    expect(showGuidedComposerPicker({ guided: false, hasMessages: true })).toBe(false);
+    expect(showGuidedComposerPicker({ guided: true, hasMessages: true, dismissed: true })).toBe(
+      false
+    );
+    expect(
+      showGuidedComposerPicker({ guided: true, hasMessages: true, isLoadingHistory: true })
+    ).toBe(false);
   });
 });

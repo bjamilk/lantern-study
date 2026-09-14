@@ -194,16 +194,24 @@ export function movedMessage(target: MoveTarget): string {
  *
  * Moving a set OUT of the folder you are looking at makes it vanish from the
  * list under your thumb, which reads as a delete. So the filter follows the
- * set: after a move, the selection becomes the destination (or `All`, when the
- * set was unfiled) — the student keeps looking at the thing they just moved.
- * Only when they were on `All` does nothing change, because nothing needs to.
+ * set, unconditionally: after a move the selection becomes the destination,
+ * and `No folder` — which has no chip of its own — lands on `All`, the one
+ * chip that shows unfiled sets.
+ *
+ * This used to exempt `All`, on the theory that nothing vanishes there. On a
+ * phone that reads as the move doing nothing: the list is unchanged, no chip
+ * moved, and the set is somewhere in a long scroll. Following the destination
+ * from `All` too puts the set the student just filed back under their thumb,
+ * and the chip row shows where it went.
+ *
+ * The selection is returned unresolved; the hub resolves it against the live
+ * folder list (`resolveFolderSelection`) as it does every other selection.
  */
 export function selectionAfterMove(
   selection: FolderSelection | null | undefined,
   target: MoveTarget
 ): FolderSelection {
-  const active = (selection ?? ALL_FOLDERS).trim() || ALL_FOLDERS;
-  if (active === ALL_FOLDERS) return ALL_FOLDERS;
+  void selection;
   return target.folderId ?? ALL_FOLDERS;
 }
 

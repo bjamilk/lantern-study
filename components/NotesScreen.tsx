@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReportContentModal from './moderation/ReportContentModal';
-import { markdownToPreviewText } from '@lantern/shared/utils/markdownPreview';
+import { notePlainPreview } from '@lantern/shared/utils/noteBlocks';
 import { formatMaxNoteUploadLabel } from '@lantern/shared/utils/noteUpload';
 import { parseYoutubeVideoId } from '@lantern/shared/utils/youtube';
 import {
@@ -1188,7 +1188,7 @@ const NotesScreen: React.FC<NotesScreenProps> = ({
                           ) : null}
                         </span>
                         <span className="mt-0.5 block text-caption text-lantern-text-secondary line-clamp-2">
-                          {markdownToPreviewText(note.summary || note.body) || 'Empty note'}
+                          {notePlainPreview(note.summary || note.body) || 'Empty note'}
                         </span>
                         <span className="mt-1 block text-caption text-lantern-text-tertiary">
                           {course?.code ? `${course.code} · ` : ''}

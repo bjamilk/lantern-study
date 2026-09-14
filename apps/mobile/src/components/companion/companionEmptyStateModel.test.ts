@@ -6,7 +6,10 @@
  * costs one turn. Both offers being reachable at once is the defect, so what is
  * pinned here is exclusivity, not pixels.
  */
-import { companionEmptyState } from './companionEmptyStateModel';
+import {
+  companionComposerPicker,
+  companionEmptyState,
+} from './companionEmptyStateModel';
 
 describe('companion empty state offers one thing at a time', () => {
   it('offers the intent chips in normal chat', () => {
@@ -48,5 +51,34 @@ describe('companion empty state offers one thing at a time', () => {
     expect(model.offer).toBe('none');
     expect(model.showGuidedPicker).toBe(false);
     expect(model.showIntentChips).toBe(false);
+  });
+});
+
+/**
+ * And the other half of "exactly one picker on screen": once the thread HAS
+ * turns, the empty state is gone and the card above the composer takes over.
+ * Before this, turning Guided on mid-conversation offered nothing at all.
+ */
+describe('the guided picker above the composer', () => {
+  it('takes over exactly where the empty state stops offering', () => {
+    const withHistory = { guided: true, hasMessages: true };
+    expect(companionEmptyState(withHistory).showGuidedPicker).toBe(false);
+    expect(companionComposerPicker(withHistory)).toBe(true);
+  });
+
+  it('never draws two pickers at once in an empty guided thread', () => {
+    const empty = { guided: true, hasMessages: false };
+    expect(companionEmptyState(empty).showGuidedPicker).toBe(true);
+    expect(companionComposerPicker(empty)).toBe(false);
+  });
+
+  it('is gone with Guided off, once dismissed, and while history loads', () => {
+    expect(companionComposerPicker({ guided: false, hasMessages: true })).toBe(false);
+    expect(companionComposerPicker({ guided: true, hasMessages: true, dismissed: true })).toBe(
+      false
+    );
+    expect(
+      companionComposerPicker({ guided: true, hasMessages: true, isLoadingHistory: true })
+    ).toBe(false);
   });
 });

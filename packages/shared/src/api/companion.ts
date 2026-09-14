@@ -77,8 +77,50 @@ export interface GuidedGoal {
   label: string;
   /** The unit the plan files this topic under, when the host knows it. */
   unit?: string | null;
+  /**
+   * The note this topic was built from, when the plan recorded one.
+   *
+   * The client attaches it as THIS TURN's note context so the model has the
+   * text in front of it on turn 1. Without it the first reply can only ask
+   * which material to use — which is what it did.
+   */
+  sourceNoteId?: string | null;
+  /** That note's title, when the host could resolve one. Named in the prompt. */
+  sourceTitle?: string | null;
   /** The first guided turn this row sends. */
   prompt: string;
+}
+
+/**
+ * The sentence a picker row sends as its first guided turn.
+ *
+ * Every clause is load-bearing, and each one answers a way the first turn was
+ * observed to go wrong:
+ *
+ * - The TOPIC in quotes, not the unit. Seeding with the unit ("Imported Notes")
+ *   made the model reply with a menu of the notes under it and stop.
+ * - The SOURCE in quotes when one is known, so "which material?" is already
+ *   answered in the question.
+ * - "Start with step 1 now" — an instruction to teach, not to plan.
+ * - "Do not ask me which material to use" — the same rule the server prompt
+ *   carries, restated here because the seed reaches production the moment a
+ *   client ships, while the prompt waits on an API deploy.
+ */
+export function guidedSeedPrompt(input: {
+  topic: string;
+  source?: string | null;
+  unit?: string | null;
+}): string {
+  const topic = cleanTopic(input.topic) || '';
+  const source = cleanTopic(input.source);
+  const unit = cleanTopic(input.unit);
+  return (
+    `Guide me through "${topic}"` +
+    (source ? ` from "${source}"` : '') +
+    (unit ? ` in ${unit}` : '') +
+    '. Start with step 1 now — teach that one step, then check I have got it' +
+    ' before moving on. Do not ask me which material to use.'
+  );
 }
 
 /**
@@ -91,6 +133,10 @@ export interface GuidedGoal {
 export interface GuidedNextTopic {
   title: string;
   unit?: string | null;
+  /** The plan topic's first source note, when the plan recorded one. */
+  sourceNoteId?: string | null;
+  /** That note's title, when the host could resolve one. */
+  sourceTitle?: string | null;
 }
 
 export interface GuidedGoalsInput {
@@ -130,8 +176,10 @@ export function buildGuidedGoals(input: GuidedGoalsInput = {}): GuidedGoal[] {
 
   const rawNext = input.nextTopic;
   const next = cleanTopic(typeof rawNext === 'string' ? rawNext : rawNext?.title);
-  const nextUnit =
-    typeof rawNext === 'string' || !rawNext ? null : cleanTopic(rawNext.unit);
+  const nextObject = typeof rawNext === 'string' || !rawNext ? null : rawNext;
+  const nextUnit = cleanTopic(nextObject?.unit);
+  const nextSourceTitle = cleanTopic(nextObject?.sourceTitle);
+  const nextSourceNoteId = cleanTopic(nextObject?.sourceNoteId);
   if (next) {
     seen.add(next.toLowerCase());
     goals.push({
@@ -140,9 +188,11 @@ export function buildGuidedGoals(input: GuidedGoalsInput = {}): GuidedGoal[] {
       topic: next,
       label: `Continue learning: ${next}`,
       unit: nextUnit,
-      prompt: `Continue guiding me through ${next}${
-        nextUnit ? `, from ${nextUnit} in my study plan` : ''
-      }. Pick up from the next step and check I have got it before moving on.`,
+      sourceNoteId: nextSourceNoteId,
+      sourceTitle: nextSourceTitle,
+      // The row still reads `Continue learning: <topic>`; only the sentence it
+      // SENDS names the source, so the picker stays one line per goal.
+      prompt: guidedSeedPrompt({ topic: next, source: nextSourceTitle, unit: nextUnit }),
     });
   }
 
@@ -158,11 +208,38 @@ export function buildGuidedGoals(input: GuidedGoalsInput = {}): GuidedGoal[] {
       kind: 'start',
       topic,
       label: `Start learning: ${topic}`,
-      prompt: `Guide me through ${topic}, one step at a time. Start with the first step and check I have got it before moving on.`,
+      sourceNoteId: null,
+      sourceTitle: null,
+      prompt: guidedSeedPrompt({ topic }),
     });
   }
 
   return goals.slice(0, limit);
+}
+
+/**
+ * Should the picker be drawn as a card ABOVE the composer?
+ *
+ * Guided used to offer the picker only in an EMPTY thread, so turning Guided
+ * on mid-conversation flipped the header badge and offered nothing — the mode
+ * with no way to name a target except free text (AH release smoke 1.0.57).
+ * StudyFetch replaces the composer with the picker on toggle; Lantern puts it
+ * just above, so the thread stays readable and the composer stays reachable.
+ *
+ * `hasMessages` is the whole rule: an empty thread already draws the picker in
+ * its empty state, and drawing it twice is two cost lines on one screen. The
+ * empty state's picker-OR-chips exclusivity is untouched by this.
+ */
+export function showGuidedComposerPicker(input: {
+  guided: boolean;
+  hasMessages?: boolean;
+  /** The student shut the card for this thread. */
+  dismissed?: boolean;
+  /** History still coming back — offer nothing until it lands. */
+  isLoadingHistory?: boolean;
+}): boolean {
+  if (!input.guided || input.dismissed || input.isLoadingHistory) return false;
+  return input.hasMessages === true;
 }
 
 /** What the free-text row sends once the student has typed their own goal. */

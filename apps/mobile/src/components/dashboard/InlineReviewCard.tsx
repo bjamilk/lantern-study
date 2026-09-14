@@ -217,6 +217,17 @@ export function InlineReviewCard({ dueTotal, onStudyAllDue }: InlineReviewCardPr
               );
             })}
           </View>
+          {/* Skip lives on BOTH faces. It used to disappear the moment the
+              card turned over, so a student who revealed an answer they could
+              not grade honestly had no way past the card except grading it —
+              which writes a review they did not mean. Skipping from the back
+              advances ungraded exactly as it does from the front: the card
+              stays due and comes back. */}
+          <View className="mt-2 flex-row">
+            <Button variant="ghost" onPress={advance} testID="home-inline-review-skip">
+              Skip
+            </Button>
+          </View>
         </>
       ) : (
         <View className="mt-3 flex-row items-center gap-2">

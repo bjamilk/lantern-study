@@ -136,6 +136,16 @@ describe('inlineReviewReduce', () => {
     });
   });
 
+  it('Skip from the ANSWER state advances ungraded, exactly like the front', () => {
+    // The card used to drop Skip once it turned over, leaving grading as the
+    // only way forward. Both faces advance the same way, and neither one
+    // grades: advancing is a pure cursor move, so a skipped card stays due.
+    const front = INITIAL_INLINE_REVIEW_STATE;
+    const back = inlineReviewReduce(front, 'reveal');
+    expect(inlineReviewReduce(back, 'advance')).toEqual(inlineReviewReduce(front, 'advance'));
+    expect(inlineReviewReduce(back, 'advance').phase).toBe('front');
+  });
+
   it('never wraps around, so a just-graded card is not asked again', () => {
     const queue = selectInlineDueCards([due('a', 2), due('b', 1)], decks);
     let state = INITIAL_INLINE_REVIEW_STATE;

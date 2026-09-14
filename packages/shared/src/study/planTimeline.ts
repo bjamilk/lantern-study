@@ -211,14 +211,51 @@ export function initialOpenUnitId(
  * Null means NO `Continue learning:` row: nothing was picked, the title is
  * blank, or the pick came back `mastered`, which is what a recommender returns
  * when a plan is finished and there is nothing left to continue.
+ *
+ * THE SOURCE RIDES ALONG. The unit is a GROUPING ("Imported Notes"), not a
+ * document, and a first guided turn that named only the unit made the model
+ * answer "which imported note would you like to continue with?" — a credit
+ * spent asking instead of teaching (AH release smoke 1.0.57, observation B).
+ * So the topic's first source note comes back too: its id, so the client can
+ * attach the note as this turn's context, and its title when the caller can
+ * resolve one, so the seed sentence can name the actual material.
  */
 export function guidedNextTopicFromPlan(
-  next: { title?: string | null; status?: StudySetTopic['status'] } | null | undefined,
-  unitTitle?: string | null
-): { title: string; unit: string | null } | null {
+  /**
+   * Either shape a recommender hands back: a raw `StudySetTopic`, which carries
+   * every source as `sourceNoteIds`, or a presentation row that has already
+   * picked the first one as `sourceNoteId`. Reading both is what lets web's
+   * spine and the phone's plan model feed the same helper.
+   */
+  next:
+    | {
+        title?: string | null;
+        status?: StudySetTopic['status'];
+        sourceNoteIds?: readonly string[] | null;
+        sourceNoteId?: string | null;
+      }
+    | null
+    | undefined,
+  unitTitle?: string | null,
+  sourceTitle?: string | null
+): {
+  title: string;
+  unit: string | null;
+  sourceNoteId: string | null;
+  sourceTitle: string | null;
+} | null {
   if (!next || next.status === 'mastered') return null;
   const title = (next.title || '').trim();
   if (!title) return null;
   const unit = (unitTitle || '').trim();
-  return { title, unit: unit || null };
+  const sourceNoteId = [...(next.sourceNoteIds ?? []), next.sourceNoteId]
+    .map((id) => (id || '').trim())
+    .find(Boolean);
+  const source = (sourceTitle || '').trim();
+  return {
+    title,
+    unit: unit || null,
+    sourceNoteId: sourceNoteId || null,
+    sourceTitle: source || null,
+  };
 }

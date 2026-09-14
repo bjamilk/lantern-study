@@ -70,7 +70,10 @@ import {
   type CompanionRouteScope,
 } from './companion/companionScope';
 import { GuidedPicker } from './companion/GuidedPicker';
-import { companionEmptyState } from './companion/companionEmptyStateModel';
+import {
+  companionComposerPicker,
+  companionEmptyState,
+} from './companion/companionEmptyStateModel';
 import { companionHeaderModel } from './companion/companionHeaderModel';
 import {
   buildGuidedGoals,
@@ -363,6 +366,11 @@ export function AICompanionPanel({ context }: Props) {
    * one tap away.
    */
   const [guided, setGuided] = useState(false);
+  /**
+   * The student shut the picker card above the composer. Per thread and per
+   * toggle: turning Guided off and on again is a fresh intent to pick a goal.
+   */
+  const [guidedPickerDismissed, setGuidedPickerDismissed] = useState(false);
   const composerRef = useRef<TextInput>(null);
   /** Which message is being read aloud, so only one stop button is armed. */
   const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
@@ -818,7 +826,16 @@ export function AICompanionPanel({ context }: Props) {
   }, [discardDictation]);
 
   const handleSend = useCallback(
-    async (text?: string) => {
+    async (
+      text?: string,
+      /**
+       * Extra context for THIS turn only — the Guided seed uses it to name the
+       * source note its topic was built from, so the first reply teaches from
+       * that note instead of asking which material to use. Not an attachment:
+       * nothing is stapled to the thread and no history is reloaded.
+       */
+      turnContext?: Partial<CompanionUserContext>
+    ) => {
       const msg = (text ?? input).trim();
       if (!msg || isLoading || isStreaming || isRecording || isTranscribing) return;
       // `isStreaming` is a render snapshot, so two taps inside one frame both
@@ -831,13 +848,39 @@ export function AICompanionPanel({ context }: Props) {
       setInput('');
       inputValueRef.current = '';
       try {
-        await sendMessageStreaming(msg, enrichedContext);
+        await sendMessageStreaming(
+          msg,
+          turnContext ? { ...enrichedContext, ...turnContext } : enrichedContext
+        );
       } finally {
         sendInFlightRef.current = false;
       }
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     },
     [input, isLoading, isStreaming, isRecording, isTranscribing, sendMessageStreaming, enrichedContext]
+  );
+
+  /**
+   * Send a picker row's first guided turn.
+   *
+   * When the goal knows the note its topic was built from, that note rides
+   * along as this turn's context, so the model can teach step 1 rather than
+   * spend the credit asking which of the unit's notes to use. Deliberately
+   * not an attachment: attaching clears the thread and reloads history, and
+   * the card above the composer exists so a goal can be picked mid-lesson.
+   */
+  const handlePickGuidedGoal = useCallback(
+    (goal: GuidedGoal) => {
+      setGuidedPickerDismissed(true);
+      const sourceNoteId = goal.sourceNoteId?.trim();
+      void handleSend(
+        goal.prompt,
+        sourceNoteId && !activeNoteContext
+          ? { noteId: sourceNoteId, noteTitle: goal.sourceTitle || undefined }
+          : undefined
+      );
+    },
+    [handleSend, activeNoteContext]
   );
 
   /**
@@ -1189,7 +1232,7 @@ export function AICompanionPanel({ context }: Props) {
                   </T.Caption>
                   <GuidedPicker
                     goals={guidedGoals}
-                    onPick={(goal: GuidedGoal) => void handleSend(goal.prompt)}
+                    onPick={handlePickGuidedGoal}
                     onSomethingElse={() => composerRef.current?.focus()}
                     disabled={isBusy || dictationBusy}
                   />
@@ -1588,7 +1631,10 @@ export function AICompanionPanel({ context }: Props) {
                 accessibilityLabel: guided
                   ? 'Guided mode on. Turn off to go back to normal chat.'
                   : 'Guided mode off. Turn on to be taught one step at a time.',
-                onPress: () => setGuided((v) => !v),
+                onPress: () => {
+                  setGuidedPickerDismissed(false);
+                  setGuided((v) => !v);
+                },
               },
             ]}
           />
@@ -1647,6 +1693,42 @@ export function AICompanionPanel({ context }: Props) {
                   {imageErrorDetail}
                 </Text>
               ) : null}
+            </View>
+          ) : null}
+
+          {/* Guided on inside a thread with turns in it showed the badge and
+              nothing else — the mode with no way to name a target except free
+              text. The picker now follows the mode: above the composer, so the
+              lesson so far stays readable, and dismissable, because a student
+              already mid-lesson does not need it. An empty thread still draws
+              its own picker in the empty state, and `companionComposerPicker`
+              is what stops both appearing at once. */}
+          {companionComposerPicker({
+            guided,
+            hasMessages: messages.length > 0,
+            dismissed: guidedPickerDismissed,
+            isLoadingHistory,
+          }) ? (
+            <View className="mb-2 gap-1">
+              <Pressable
+                onPress={() => setGuidedPickerDismissed(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Hide the guided goal picker"
+                style={{ minHeight: 44 }}
+                className="flex-row items-center justify-end gap-1 px-1"
+              >
+                <AppIcon name="close" size={14} color={colors.textSecondary} />
+                <T.Caption tone="secondary">Hide</T.Caption>
+              </Pressable>
+              <GuidedPicker
+                goals={guidedGoals}
+                onPick={handlePickGuidedGoal}
+                onSomethingElse={() => {
+                  setGuidedPickerDismissed(true);
+                  composerRef.current?.focus();
+                }}
+                disabled={isBusy || dictationBusy}
+              />
             </View>
           ) : null}
 

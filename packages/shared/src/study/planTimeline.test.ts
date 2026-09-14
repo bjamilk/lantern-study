@@ -157,7 +157,39 @@ describe('guidedNextTopicFromPlan', () => {
   it('carries the topic and the unit it is filed under', () => {
     expect(
       guidedNextTopicFromPlan({ title: '  Narrow vs. General AI ', status: 'unseen' }, ' Unit 1 ')
-    ).toEqual({ title: 'Narrow vs. General AI', unit: 'Unit 1' });
+    ).toEqual({
+      title: 'Narrow vs. General AI',
+      unit: 'Unit 1',
+      sourceNoteId: null,
+      sourceTitle: null,
+    });
+  });
+
+  /**
+   * The unit is a GROUPING, not a document. Seeding the first guided turn with
+   * "Imported Notes" made the model reply with a menu of the notes under it,
+   * so the topic's own source note travels with the pick: the id, so the
+   * client can attach the note to the turn, and the title the caller resolved.
+   */
+  it('carries the topic\'s first source note so the seed can name the material', () => {
+    expect(
+      guidedNextTopicFromPlan(
+        { title: 'Osmosis', status: 'unseen', sourceNoteIds: ['  ', 'note-7', 'note-9'] },
+        'Imported Notes',
+        '  The RSV overview '
+      )
+    ).toEqual({
+      title: 'Osmosis',
+      unit: 'Imported Notes',
+      sourceNoteId: 'note-7',
+      sourceTitle: 'The RSV overview',
+    });
+  });
+
+  it('keeps the source null when the plan recorded none', () => {
+    expect(
+      guidedNextTopicFromPlan({ title: 'Osmosis', status: 'unseen', sourceNoteIds: [] }, 'Unit 1')
+    ).toEqual({ title: 'Osmosis', unit: 'Unit 1', sourceNoteId: null, sourceTitle: null });
   });
 
   it('is null when there is nothing to continue', () => {
@@ -174,6 +206,8 @@ describe('guidedNextTopicFromPlan', () => {
     expect(guidedNextTopicFromPlan({ title: 'Osmosis', status: 'covered' })).toEqual({
       title: 'Osmosis',
       unit: null,
+      sourceNoteId: null,
+      sourceTitle: null,
     });
   });
 });
