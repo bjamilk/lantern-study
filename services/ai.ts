@@ -496,6 +496,8 @@ export async function companionSendMessage(
   provider: string;
   citations?: CompanionCitation | null;
   conversationId?: string;
+  /** Guided only: the step the lesson is on AFTER this reply. */
+  guidedStep?: number | null;
 }> {
   return companionRequest('/message', 'POST', { message, context }, { trackUsage: false });
 }
@@ -544,6 +546,12 @@ export async function fetchCompanionHistory(
     role: 'user' | 'assistant';
     content: string;
     actions?: CompanionAction[];
+    /**
+     * Which note excerpts the answer was read out of. Declared `unknown` and
+     * normalised by the caller, exactly as the shared client declares it: a
+     * persisted chip that points nowhere is worse than no chip.
+     */
+    citations?: unknown;
     feedback?: 'up' | 'down' | null;
     created_at: string;
   }>;
@@ -588,6 +596,8 @@ export type CompanionStreamDone = {
   messageId?: string;
   userMessageId?: string;
   conversationId?: string;
+  /** Guided only: the step the lesson is on AFTER this reply. */
+  guidedStep?: number | null;
 };
 
 /**
@@ -717,6 +727,7 @@ export async function companionSendMessageStream(
               userMessageId: typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
               conversationId:
                 typeof data.conversationId === 'string' ? data.conversationId : undefined,
+              guidedStep: typeof data.guidedStep === 'number' ? data.guidedStep : null,
             });
           }
         } catch { /* malformed chunk — skip */ }

@@ -323,7 +323,7 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       }>;
       const trimmed = String(message).trim();
       await progress.stage("generating");
-      const { reply, actions, provider, citations } = await companionChat(
+      const { reply, actions, provider, citations, guidedStep } = await companionChat(
         trimmed,
         history,
         { ...trustedContext, noteId: effectiveNoteId || undefined },
@@ -364,6 +364,9 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
         provider,
         citations: citations ?? null,
         conversationId: conversation.id,
+        // Guided only. This is the path EVERY mobile send takes, so a lesson
+        // that advanced here and nowhere else would still restart on the phone.
+        guidedStep: guidedStep ?? null,
       };
     }
     case "notes.ai.summarize": {

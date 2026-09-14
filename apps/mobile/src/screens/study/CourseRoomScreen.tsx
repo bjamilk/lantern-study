@@ -1421,8 +1421,15 @@ function SetHomeRecommended({
   const units = usingServerPlan ? unitsForTopics(planUnits, planTopics) : [derived.unit];
   // Both kinds of material, so a flat plan can name its units after the note or
   // lecture each topic was read out of (studyPlanPresentation.planUnitsAndTopics).
+  // `sourceType` rides along so a `Sources:` chip can draw the material's own
+  // glyph rather than calling every material a note.
   const planMaterials = useMemo(
-    () => [...notes, ...lectures].map((note) => ({ id: note.id, title: note.title })),
+    () =>
+      [...notes, ...lectures].map((note) => ({
+        id: note.id,
+        title: note.title,
+        sourceType: note.sourceType ?? null,
+      })),
     [notes, lectures]
   );
   const topics = allTopics.filter((topic) => !skippedTopicIds.includes(topic.id));
@@ -1561,6 +1568,10 @@ function SetHomeRecommended({
             if (topic.sourceNoteId) onRead(topic.sourceNoteId);
             else onAsk();
           }}
+          // A chip opens its material in the studio, the same door `Continue`
+          // opens for reading. The chip only exists for a material this screen
+          // resolved, so there is no missing-note branch to write.
+          onOpenSource={(source) => onRead(source.id)}
           onAddSyllabus={onAddSyllabus}
           onAddExam={onAddExam}
           onViewSchedule={onViewSchedule}

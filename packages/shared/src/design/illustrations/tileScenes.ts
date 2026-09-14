@@ -245,7 +245,7 @@ export const TILE_SCENES: Record<TileSceneName, TileScene> = {
     paths: [
       { d: 'M53 98 a27 6 0 1 0 54 0 a27 6 0 1 0 -54 0 Z', fill: 'shade', stroke: false },
       { d: 'M73 16 A11 11 0 0 1 84 27 V43 A11 11 0 0 1 73 54 A11 11 0 0 1 62 43 V27 A11 11 0 0 1 73 16 Z', fill: 'fill' },
-      { d: 'M57 86 a16 5 0 1 0 32 0 a16 5 0 1 0 -32 0 Z', fill: 'fill' },
+      { d: 'M57 86 a16 5 0 1 0 32 0 a16 5 0 1 0 -32 0 Z', fill: 'shade' },
       { d: 'M112 34 a10 10 0 1 0 20 0 a10 10 0 1 0 -20 0 Z', fill: 'shade' },
       { d: 'M66 26 h14', fill: 'none' },
       { d: 'M66 34 h14', fill: 'none' },

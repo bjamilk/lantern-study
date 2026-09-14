@@ -85,6 +85,10 @@ describe('queued companion message result shape', () => {
       provider: 'anthropic',
       citations,
       conversationId: 'conv-1',
+      // Guided's lesson step. This exact-shape assertion is the point of the
+      // file: BullMQ answers the JSON route mobile uses, so a key missing here
+      // is a key the phone never sees.
+      guidedStep: null,
     });
   });
 

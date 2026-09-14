@@ -214,6 +214,8 @@ export function AICompanionPanel({ context }: Props) {
     clearImageError,
     attachImage,
     removeImage,
+    startGuided,
+    clearGuided,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
   const notesLoading = useNotesStore((s) => s.isLoading);
@@ -873,6 +875,17 @@ export function AICompanionPanel({ context }: Props) {
     (goal: GuidedGoal) => {
       setGuidedPickerDismissed(true);
       const sourceNoteId = goal.sourceNoteId?.trim();
+      /**
+       * Open the lesson BEFORE the seed goes out, so the first turn and every
+       * turn after it carry the topic, the source and the step. The seed
+       * sentence used to be the only place the topic appeared, and it fell out
+       * of the model's attention within two turns.
+       */
+      startGuided({
+        topic: goal.topic,
+        sourceNoteId: sourceNoteId || activeNoteContext?.id || null,
+        sourceTitle: goal.sourceTitle || activeNoteContext?.title || null,
+      });
       void handleSend(
         goal.prompt,
         sourceNoteId && !activeNoteContext
@@ -880,7 +893,7 @@ export function AICompanionPanel({ context }: Props) {
           : undefined
       );
     },
-    [handleSend, activeNoteContext]
+    [handleSend, activeNoteContext, startGuided]
   );
 
   /**
@@ -1633,7 +1646,13 @@ export function AICompanionPanel({ context }: Props) {
                   : 'Guided mode off. Turn on to be taught one step at a time.',
                 onPress: () => {
                   setGuidedPickerDismissed(false);
-                  setGuided((v) => !v);
+                  setGuided((v) => {
+                    // Leaving Guided ends the lesson. Without this, switching
+                    // the row back on later would resume a topic from a
+                    // conversation the student had moved on from.
+                    if (v) clearGuided();
+                    return !v;
+                  });
                 },
               },
             ]}

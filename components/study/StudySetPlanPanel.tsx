@@ -166,6 +166,19 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
     onStart(planTopicActivity(topic, { hasWalkableSource }), noteId);
   };
 
+  /**
+   * A `Sources:` chip opens its material — the same two doors `Continue` uses
+   * for reading, chosen the same way: a note carrying a PDF or slides opens in
+   * the walkthrough, a plain note in the studio. The chip only ever exists for
+   * a material this list resolved (`unitSources` drops the rest), so the note
+   * lookup here cannot miss.
+   */
+  const openSource = (source: { id: string }) => {
+    const note = notes.find((row) => row.id === source.id);
+    const walkable = Boolean(note?.attachments?.some(isWalkableAttachment));
+    onStart(walkable ? 'walkthrough' : 'notes', source.id);
+  };
+
   const goToSetActivity = (workspaceActivity: 'calendar' | 'add') => {
     navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId, workspaceActivity });
   };
@@ -384,6 +397,8 @@ export const StudySetPlanPanel: React.FC<StudySetPlanPanelProps> = ({
               )
             }
             onStartTopic={startTopic}
+            materials={notes}
+            onOpenSource={openSource}
           />
         </div>
 

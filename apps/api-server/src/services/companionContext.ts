@@ -3,7 +3,11 @@
  */
 import { isCardDue } from '@lantern/shared/utils/srs';
 import type { SupabaseService } from './supabase';
-import { normalizeCompanionMode, type CompanionContext } from './aiService';
+import {
+  normalizeCompanionMode,
+  normalizeGuidedSessionContext,
+  type CompanionContext,
+} from './aiService';
 import {
   WEAK_TOPIC_SESSION_LIMIT,
   buildTagBreakdown,
@@ -151,6 +155,13 @@ export async function buildTrustedCompanionContext(
     // through the allowlist, so an unknown value falls back to 'explain'
     // instead of being pasted into the system prompt.
     mode: normalizeCompanionMode(clientContext.mode),
+    // Where the Guided lesson got to. Like `mode` this is UI state the client
+    // legitimately owns — a claim about its own screen, not about the
+    // student's data — so it is allowed through, but only after the same kind
+    // of allowlisting: shape-checked, length-capped, step clamped, and dropped
+    // entirely when malformed. A dropped session costs one block of prompt,
+    // not a wrong answer.
+    guided: normalizeGuidedSessionContext(clientContext.guided),
   };
 
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

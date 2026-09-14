@@ -5,12 +5,17 @@
  * note_context_id so history can list general + note-linked chats.
  */
 import { create } from 'zustand';
-import { normalizeCompanionCitation } from '@lantern/shared/api';
+import {
+  advanceGuidedSession,
+  normalizeCompanionCitation,
+  startGuidedSession,
+} from '@lantern/shared/api';
 import {
   CompanionConversation,
   CompanionImageAttachment,
   CompanionMessage,
   CompanionUserContext,
+  GuidedSession,
 } from '../types';
 import {
   companionSendMessage,
@@ -153,6 +158,24 @@ interface CompanionState {
   setMessageFeedback: (messageId: string, rating: 'up' | 'down' | null) => void;
   sendMessage: (text: string, context?: CompanionUserContext) => Promise<void>;
   sendMessageStreaming: (text: string, context?: CompanionUserContext) => Promise<void>;
+
+  /**
+   * The Guided lesson this thread is in the middle of, or null.
+   *
+   * It lives in the store rather than the panel because the store is what
+   * builds the context for EVERY send. When it was panel state, only the seed
+   * turn carried the topic: turn 2 sent `mode: 'guided'` and nothing else, and
+   * the model restarted the lesson at step 1 on an answer that was correct.
+   */
+  guidedSession: GuidedSession | null;
+  /** Open a lesson. Called when a picker row (or free-text goal) is sent. */
+  startGuided: (input: {
+    topic: string;
+    sourceNoteId?: string | null;
+    sourceTitle?: string | null;
+  }) => void;
+  /** Close it — turning Guided off, a new chat, or switching conversations. */
+  clearGuided: () => void;
   clearHistory: () => Promise<void>;
   /** Delete one conversation from Past chats (the API always supported this;
       the UI only offered deleting the active chat). */
@@ -179,13 +202,30 @@ function mergeThreadContext(
    */
   const turnNoteId =
     typeof context?.noteId === 'string' && context.noteId.trim() ? context.noteId.trim() : null;
+  /**
+   * The lesson rides on EVERY guided turn, along with the note it came from.
+   *
+   * `sourceNoteId` is folded into the turn's note id below, so a lesson whose
+   * material was named once on the seed still has that material in front of
+   * the model on turn 6 — the thing whose absence produced a reply about where
+   * to find the notes library.
+   */
+  const guided = get().guidedSession;
+  const guidedNoteId = guided?.sourceNoteId?.trim() || null;
   return {
     ...context,
+    ...(guided ? { guided, mode: 'guided' as const } : {}),
     ...(noteCtx
       ? { noteId: noteCtx.id, noteTitle: noteCtx.title, noteContext: undefined }
       : turnNoteId
         ? { noteId: turnNoteId, noteTitle: context?.noteTitle, noteContext: undefined }
-        : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
+        : guidedNoteId
+          ? {
+              noteId: guidedNoteId,
+              noteTitle: guided?.sourceTitle || undefined,
+              noteContext: undefined,
+            }
+          : { noteId: undefined, noteTitle: undefined, noteContext: undefined }),
     ...(conversationId ? { conversationId } : { conversationId: undefined }),
     ...(pendingNew && !conversationId ? { newConversation: true } : {}),
     // The server only reads the ids out of these; the text rides along for the
@@ -197,6 +237,12 @@ function mergeThreadContext(
 
 export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isOpen: false,
+
+  guidedSession: null,
+  startGuided: (input) => set({ guidedSession: startGuidedSession(input) }),
+  /** A lesson belongs to one thread. Nothing here is persisted: reloading the
+      page ends the lesson rather than resuming one the student cannot see. */
+  clearGuided: () => set({ guidedSession: null }),
   messages: [],
   isLoading: false,
   isLoadingHistory: false,
@@ -312,6 +358,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       messages: [],
       historyLoaded: true,
       error: null,
+      guidedSession: null,
     });
   },
 
@@ -363,6 +410,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         messages: [],
         historyLoaded: false,
         error: null,
+        // The lesson belonged to the thread being left.
+        guidedSession: null,
       });
     } else {
       // Opening a general chat clears note attach so sends stay on that thread.
@@ -376,6 +425,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         messages: [],
         historyLoaded: false,
         error: null,
+        guidedSession: null,
       });
     }
     await get().loadHistory();
@@ -393,6 +443,8 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       messages: [],
       historyLoaded: true,
       error: null,
+      // A lesson belongs to the thread it was started in.
+      guidedSession: null,
     });
   },
 
@@ -480,7 +532,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }));
 
     try {
-      const { reply, actions, citations, conversationId } = await companionSendMessage(text, mergedContext);
+      const { reply, actions, citations, conversationId, guidedStep } = await companionSendMessage(text, mergedContext);
       if (conversationId) {
         persistConversationId(conversationId);
       }
@@ -495,6 +547,11 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       set(s => ({
         messages: [...s.messages, assistantMsg],
         isLoading: false,
+        // The lesson moves on from what the reply actually said: the server's
+        // step when the model tagged one, otherwise a NEW check question.
+        guidedSession: s.guidedSession
+          ? advanceGuidedSession(s.guidedSession, { reply, guidedStep })
+          : null,
         activeConversationId: conversationId || s.activeConversationId,
         pendingNewConversation: false,
         // The attachment belonged to that question. Keeping it would silently
@@ -547,7 +604,7 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           ),
         }));
       },
-      ({ actions, citations, messageId, userMessageId, conversationId }) => {
+      ({ actions, citations, messageId, userMessageId, conversationId, guidedStep }) => {
         if (conversationId) {
           persistConversationId(conversationId);
         }
@@ -567,6 +624,14 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
             return m;
           }),
           isStreaming: false,
+          // The streamed reply is only ever in the bubble, so the check
+          // question is read back out of it — the same text the student sees.
+          guidedSession: s.guidedSession
+            ? advanceGuidedSession(s.guidedSession, {
+                reply: s.messages.find((m) => m.id === tempAiId)?.content || '',
+                guidedStep,
+              })
+            : null,
           activeConversationId: conversationId || s.activeConversationId,
           pendingNewConversation: false,
           // One question, one attachment — see sendMessage.

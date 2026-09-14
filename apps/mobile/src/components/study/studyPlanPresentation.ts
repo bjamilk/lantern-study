@@ -32,6 +32,7 @@ import {
   type StudySetTopicStatus,
   type StudySetUnit,
 } from '@lantern/shared/learning';
+import { unitSources, type UnitSource, type UnitSourceMaterial } from '@lantern/shared/study';
 
 export interface PlanTopicRow {
   id: string;
@@ -64,6 +65,16 @@ export interface PlanUnitRow {
   progressLabel: string;
   /** True when this unit holds the next topic. */
   holdsNext: boolean;
+  /**
+   * The materials this unit's topics were generated from — the `Sources:`
+   * chips. EMPTY IS THE COMMON CASE and it means "draw nothing": an id that no
+   * longer resolves against `materials` is dropped rather than named, and a
+   * unit derived from a single material is suppressed because its chip would
+   * repeat the unit's own heading. The rule is `unitSources` in
+   * `@lantern/shared/study`, shared with web so the two surfaces cannot
+   * disagree about where a unit came from.
+   */
+  sources: UnitSource[];
 }
 
 export interface StudyPlanModel {
@@ -136,7 +147,7 @@ function findNextTopicId(ordered: readonly StudySetTopic[]): string | null {
 export function buildStudyPlanModel(input: {
   units: readonly StudySetUnit[];
   topics: readonly StudySetTopic[];
-  materials: readonly { id: string; title?: string | null }[];
+  materials: readonly UnitSourceMaterial[];
   mode?: StudySetMode;
 }): StudyPlanModel {
   const grouped = planUnitsAndTopics(input);
@@ -176,6 +187,7 @@ export function buildStudyPlanModel(input: {
       ring,
       progressLabel: `${covered} of ${rows.length} covered`,
       holdsNext: rows.some((row) => row.next),
+      sources: unitSources(unit, topicsInUnit(grouped.topics, unit.id), input.materials),
     };
   });
 

@@ -11,7 +11,12 @@ import {
   COMPANION_MODE_LABELS,
   DEFAULT_COMPANION_MODE,
   buildGuidedGoals,
+  GUIDED_FIRST_STEP,
+  advanceGuidedSession,
+  extractGuidedCheck,
   guidedFreeTextPrompt,
+  normalizeGuidedSession,
+  startGuidedSession,
   guidedSeedPrompt,
   showGuidedComposerPicker,
   isCompanionMode,
@@ -253,5 +258,209 @@ describe('the guided picker over plan rows', () => {
   it('still takes bare titles, and still ignores blanks', () => {
     const goals = buildGuidedGoals({ topics: ['Symbolic AI', { title: '  ' }, null] });
     expect(goals.map((g) => g.topic)).toEqual(['Symbolic AI']);
+  });
+});
+
+/**
+ * The guided SESSION — what turn 2 knows about turn 1.
+ *
+ * The seed sentence named the topic once. Every turn after it sent `mode:
+ * 'guided'` and nothing else, so the model re-read the thread, found the words
+ * "Imported Notes" in the seed, and taught the student how to find their notes
+ * — from step 1, on a turn they had just answered correctly (production
+ * faeaf324). These are the rules that stop that: the session is carried, the
+ * step only moves forward, and a re-check of the SAME question does not count
+ * as progress.
+ */
+describe('guided session', () => {
+  it('opens a lesson at step 1 with its topic and source', () => {
+    const session = startGuidedSession({
+      topic: '  Osmosis  and   diffusion ',
+      sourceNoteId: 'note-1',
+      sourceTitle: 'Cell transport',
+    });
+
+    expect(session).toEqual({
+      topic: 'Osmosis and diffusion',
+      sourceNoteId: 'note-1',
+      sourceTitle: 'Cell transport',
+      step: GUIDED_FIRST_STEP,
+      lastCheck: null,
+    });
+  });
+
+  it('refuses a session with no real topic — an empty one would reach the prompt', () => {
+    expect(startGuidedSession({ topic: '   ' })).toBeNull();
+    expect(startGuidedSession({ topic: '' })).toBeNull();
+  });
+
+  it('reads the check question the reply ended on', () => {
+    expect(
+      extractGuidedCheck('Water moves to the saltier side.\n\nCheck: which way does water move?')
+    ).toBe('which way does water move?');
+    // The model writes **Check:** about as often as it writes Check:.
+    expect(extractGuidedCheck('Taught it.\n\n**Check:** name the solute.')).toBe('name the solute.');
+  });
+
+  it('takes the LAST check, so a re-teach does not resurrect the old one', () => {
+    const reply = [
+      'Not quite — earlier I asked',
+      'Check: what is osmosis?',
+      'and the answer is water.',
+      '',
+      'Check: which side does water move toward?',
+    ].join('\n');
+
+    expect(extractGuidedCheck(reply)).toBe('which side does water move toward?');
+  });
+
+  it('returns null when the reply asked no check at all', () => {
+    expect(extractGuidedCheck('Here is a definition and nothing else.')).toBeNull();
+    expect(extractGuidedCheck('')).toBeNull();
+  });
+
+  it('advances a step when the reply asks a NEW check question', () => {
+    const session = {
+      topic: 'Osmosis',
+      step: 1,
+      lastCheck: 'which way does water move?',
+    };
+
+    const next = advanceGuidedSession(session, {
+      reply: 'Correct.\n\nStep 2: tonicity.\n\nCheck: what is a hypertonic solution?',
+    });
+
+    expect(next.step).toBe(2);
+    expect(next.lastCheck).toBe('what is a hypertonic solution?');
+    expect(next.topic).toBe('Osmosis');
+  });
+
+  it('does NOT advance when the same check comes back — that is a re-teach', () => {
+    const session = { topic: 'Osmosis', step: 3, lastCheck: 'which way does water move?' };
+
+    const next = advanceGuidedSession(session, {
+      reply: 'Not quite. Think of it as chasing salt.\n\nCheck: which way does water move?',
+    });
+
+    expect(next.step).toBe(3);
+    expect(next.lastCheck).toBe('which way does water move?');
+  });
+
+  it('prefers the server step, which is the only thing that judged the answer', () => {
+    const session = { topic: 'Osmosis', step: 4, lastCheck: 'a?' };
+
+    expect(advanceGuidedSession(session, { reply: 'No check here.', guidedStep: 5 }).step).toBe(5);
+  });
+
+  it('never rewinds, and never restarts at step 1', () => {
+    const session = { topic: 'Osmosis', step: 6, lastCheck: 'a?' };
+
+    expect(advanceGuidedSession(session, { guidedStep: 1 }).step).toBe(6);
+    expect(
+      advanceGuidedSession(session, { reply: 'Step 1 – Locate your Imported Notes' }).step
+    ).toBe(6);
+  });
+
+  it('keeps the standing question when a reply carries no check', () => {
+    const session = { topic: 'Osmosis', step: 2, lastCheck: 'which way does water move?' };
+
+    expect(advanceGuidedSession(session, { reply: 'Yes, Lantern is free.' }).lastCheck).toBe(
+      'which way does water move?'
+    );
+  });
+});
+
+/**
+ * The server's read of that session.
+ *
+ * `guided` is client-declared metadata, like `mode`: the student's own app is
+ * the usual author, but nothing stops a forged body. Anything malformed must
+ * become null — which costs one block of prompt, not a wrong answer.
+ */
+describe('normalizeGuidedSession (server side)', () => {
+  it('accepts a well-formed session', () => {
+    expect(
+      normalizeGuidedSession({
+        topic: 'Osmosis',
+        sourceNoteId: 'note-1',
+        sourceTitle: 'Cell transport',
+        step: 3,
+        lastCheck: 'which way does water move?',
+      })
+    ).toEqual({
+      topic: 'Osmosis',
+      sourceNoteId: 'note-1',
+      sourceTitle: 'Cell transport',
+      step: 3,
+      lastCheck: 'which way does water move?',
+    });
+  });
+
+  it('drops anything that is not a session object', () => {
+    for (const bad of [null, undefined, 'guided', 42, [], [{ topic: 'x' }], true]) {
+      expect(normalizeGuidedSession(bad)).toBeNull();
+    }
+  });
+
+  it('drops a session with no topic — the block would name nothing', () => {
+    expect(normalizeGuidedSession({ step: 4, lastCheck: 'a?' })).toBeNull();
+    expect(normalizeGuidedSession({ topic: '   ', step: 4 })).toBeNull();
+    expect(normalizeGuidedSession({ topic: 12, step: 4 })).toBeNull();
+  });
+
+  it('clamps a forged step instead of pasting it into the prompt', () => {
+    expect(normalizeGuidedSession({ topic: 'x', step: 1e9 })?.step).toBe(99);
+    expect(normalizeGuidedSession({ topic: 'x', step: -4 })?.step).toBe(1);
+    expect(normalizeGuidedSession({ topic: 'x', step: 'seven' })?.step).toBe(1);
+    expect(normalizeGuidedSession({ topic: 'x' })?.step).toBe(1);
+  });
+
+  it('caps lengths and strips control characters', () => {
+    const long = normalizeGuidedSession({
+      topic: 'a'.repeat(500),
+      lastCheck: 'b'.repeat(900),
+      step: 2,
+    });
+
+    expect(long?.topic.length).toBe(160);
+    expect(long?.lastCheck?.length).toBe(400);
+    expect(normalizeGuidedSession({ topic: 'osmo\nsis', step: 1 })?.topic).toBe('osmo sis');
+  });
+
+  it('keeps non-string ids out rather than guessing at them', () => {
+    const session = normalizeGuidedSession({ topic: 'x', sourceNoteId: { id: 1 }, step: 1 });
+    expect(session?.sourceNoteId).toBeNull();
+  });
+});
+
+/**
+ * The seed turn is the one that exposed this rule.
+ *
+ * The seed reply teaches step 1 and ends with step 1's check. Counting that
+ * first check as progress put the student on step 2 before they had answered
+ * anything, so the next reply skipped a step they had never been taught.
+ */
+describe('the first check does not move the lesson', () => {
+  it('stays on step 1 when the seed reply asks its first check', () => {
+    const session = startGuidedSession({ topic: 'Osmosis' })!;
+
+    const next = advanceGuidedSession(session, {
+      reply: 'Step 1: water follows salt.\n\nCheck: which way does water move?',
+    });
+
+    expect(next.step).toBe(1);
+    expect(next.lastCheck).toBe('which way does water move?');
+  });
+
+  it('then advances on the answer, once a check is on file', () => {
+    const seeded = advanceGuidedSession(startGuidedSession({ topic: 'Osmosis' })!, {
+      reply: 'Step 1.\n\nCheck: which way does water move?',
+    });
+
+    const next = advanceGuidedSession(seeded, {
+      reply: 'Correct.\n\nStep 2.\n\nCheck: what is hypertonic?',
+    });
+
+    expect(next.step).toBe(2);
   });
 });

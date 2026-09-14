@@ -590,7 +590,7 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           role: 'user' | 'assistant';
           content: string;
         }>;
-        const { reply, actions, provider, citations } = await companionChat(
+        const { reply, actions, provider, citations, guidedStep } = await companionChat(
           message.trim(),
           history,
           { ...trustedContext, noteId: effectiveNoteId || undefined }
@@ -628,6 +628,10 @@ router.post('/message', validateAICompanionMessage, handleValidationErrors, asyn
           // instead of stranding "(Excerpt 1)" in the prose.
           citations: citations ?? null,
           conversationId: conversation.id,
+          // Guided only: the step the lesson is on after this reply, so the
+          // client's session advances from what the model actually said rather
+          // than from a guess about the student's answer.
+          guidedStep: guidedStep ?? null,
         };
       }
     ,
@@ -716,7 +720,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       role: 'user' | 'assistant';
       content: string;
     }>;
-    const { reply, actions, citations } = await companionChat(message.trim(), history, {
+    const { reply, actions, citations, guidedStep } = await companionChat(message.trim(), history, {
       ...trustedContext,
       noteId: effectiveNoteId || undefined,
     });
@@ -752,6 +756,7 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
       messageId: assistantMessageId,
       userMessageId,
       conversationId: conversation.id,
+      guidedStep: guidedStep ?? null,
     });
     res.end();
   } catch (err: any) {

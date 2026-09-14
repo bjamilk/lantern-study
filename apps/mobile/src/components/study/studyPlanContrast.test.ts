@@ -98,3 +98,15 @@ describe('study plan contrast', () => {
     expect(contrastRatio(accent.ink, accent.tint)).toBeGreaterThanOrEqual(NON_TEXT);
   });
 });
+
+describe('sources chip contrast', () => {
+  it.each(PALETTES)('$name: a Sources chip’s title and glyph read on their tint', ({ accent }) => {
+    // The chip is the `ai` pair again — ink on tint — and its title sits at the
+    // caption step, so the NORMAL text floor applies, not the large one.
+    expect(contrastRatio(accent.ink, accent.tint)).toBeGreaterThanOrEqual(AA_NORMAL);
+  });
+
+  it.each(PALETTES)('$name: a Sources chip separates from the card behind it', ({ accent, colors }) => {
+    expect(contrastRatio(accent.tint, colors.surface)).toBeGreaterThanOrEqual(1.05);
+  });
+});

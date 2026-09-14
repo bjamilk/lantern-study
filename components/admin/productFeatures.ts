@@ -46,6 +46,31 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'sources-chips-guided-session-1-0-60',
+    title: 'Sources on each plan unit, and a Guided that remembers where you are (1.0.60)',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-14',
+    summary:
+      'Under a plan unit, chips name the notes and materials its topics came from; tap one to open it. They appear only where the plan recorded a topic’s source, never guessed, and a single source named like the unit is not repeated. Every Guided turn carries the topic, its source and the step you are on, so a right answer advances to the next step instead of restarting, and the lesson stays on your material.',
+    details: [
+      'packages/shared/src/study/unitSources.ts: resolve-or-drop against the caller’s materials, dedupe, suppress one same-title source; provenance comes from study_set_topics.source_note_ids, which topicsFromReadingNotes stamps 1:1 — no migration, no backfill (the 1.0.55 note claiming no provenance data was wrong).',
+      'Web StudyPlanTimeline and mobile StudyPlanPanel chip rows (type glyph + title, existing chip skin; tap opens walkthrough for a walkable note, else the studio/note route).',
+      'Guided session: CompanionUserContext.guided { topic, sourceNoteId, sourceTitle, step, lastCheck } attached with noteId on every guided send (mergeThreadContext, both clients); server sanitises and renders buildGuidedSessionBlock (judge the answer to the last check; right → step+1, wrong → re-teach; never restart, never change topic, never describe the app); GUIDED_STEP:<n> clamped to [N, N+1]; the seed’s own check is not progress; startNewChat clears the session.',
+      'Record tile scene: mic base ellipse toned to the shade like the other scenes.',
+    ],
+    howToUse: [
+      'Set → Plan: expand a unit; the Sources row lists where its topics came from.',
+      'Ask Lantern → Guided → Continue learning; answer each check — “Correct” advances you.',
+    ],
+    surfaces: ['web', 'mobile'],
+    adminNotes: [
+      'No new migration. Still hand-applied from earlier: 20260912090000_companion_message_citations.sql, 20260912200000_community_kind_backfill.sql.',
+      'The Sources positive case (a unit built from several notes) has no data on the founder account; covered by unit tests.',
+    ],
+    commits: ['faeaf324'],
+  },
+  {
     id: 'tile-scenes-self-check-guided-material-1-0-59',
     title: 'Tiles with a picture, a quick self-check before the plan, and a Guided that stays on the material (1.0.59)',
     area: 'platform',
@@ -160,7 +185,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     summary:
       'Inside a set, Plan is a timeline: units with progress rings, topics inside, done ones struck through, one Continue, and a Details sheet with topics, covered, mastered, syllabus and exam dates; the same on web with a progress sidebar. Share works from the set header and cards and never claims a recipient can open a private set. Materials and lectures switch between grid and list with a sort. Covers on sets, decks and notes render on every card and header and survive a restart. The mobile bottom bars show icons; the tab you are on opens into a pill with its name beside the icon, and the set bar shows where you are. The set calendar plans the set and always draws a grid.',
     details: [
-      'Study Plan: mobile StudyPlanPanel + studyPlanPresentation (pure, tested; contrast-safe ink fill on a lilac track); web StudyPlanTimeline on shared planTimeline (units from unitsFromSourceMaterials, next-topic rule, ring arcs). Sources chips omitted: no provenance data.',
+      'Study Plan: mobile StudyPlanPanel + studyPlanPresentation (pure, tested; contrast-safe ink fill on a lilac track); web StudyPlanTimeline on shared planTimeline (units from unitsFromSourceMaterials, next-topic rule, ring arcs). Sources chips not drawn in this release: provenance IS recorded per topic (study_set_topics.source_note_ids, stamped at generation), and the chips ship in 1.0.60.',
       'Share: shared shareLink builder; study-set sharing does not exist (visibility is written, never read), so the copy says the set is private; two older false claims corrected.',
       'Covers: refs persisted bucket-qualified (cover-images/…) and legacy rows normalised on read (normalizeCoverRef); routes probe the column before uploading and answer 503 with the migration name or a storage message; deck mappers map coverPath on web and mobile; web deck menus gate on ownership, not sharing; mobile picker never overlaps a sliding sheet with the picker Activity.',
       'Bars: tabPillLayout (pure): idle icon-only, active pill hugs icon + text-body semibold label, ends pinned, interior slides, 180 ms LayoutAnimation (snap under reduce motion); accessibilityRole tab + label + selected on every item; set bar in replace mode gets the same; badge anchored at the glyph corner in a wide slot so two-digit counts render.',

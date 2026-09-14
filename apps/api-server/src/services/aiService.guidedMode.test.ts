@@ -193,3 +193,188 @@ describe('guided mode teaches the material, not the app', () => {
     expect(result.actions).toEqual([{ type: 'open_note_learn', label: 'Learn this note' }]);
   });
 });
+
+/**
+ * The GUIDED SESSION block — the half of Guided that makes turn 2 possible.
+ *
+ * Turn 1 taught step 1 from the note. Turn 2 carried `mode: 'guided'` and
+ * nothing else: no topic, no source, no step, no standing question. The model
+ * re-read the thread, found the seed's words ("Imported Notes"), and replied
+ * "Step 1 – Locate your Imported Notes … Check: Where would you go first to
+ * find the list of your imported notes?" — off the material, about the app,
+ * and back at step 1 after a CORRECT answer (production faeaf324).
+ *
+ * What is pinned here is that the lesson's state reaches the prompt, that it
+ * says which way to move, and that a forged or malformed block reaches nothing.
+ */
+describe('guided session block', () => {
+  const session = {
+    topic: 'Osmosis and diffusion',
+    sourceNoteId: 'note-1',
+    sourceTitle: 'Cell transport',
+    step: 3,
+    lastCheck: 'Which way does water move across the membrane?',
+  };
+
+  it('names the topic, the source and the step the student is on', async () => {
+    mockGroq('Correct.');
+
+    await companionChat('water moves toward the salt', [], { mode: 'guided', guided: session });
+    const prompt = systemPrompts[0];
+
+    expect(prompt).toContain('GUIDED SESSION');
+    expect(prompt).toContain('"Osmosis and diffusion"');
+    expect(prompt).toContain('from "Cell transport"');
+    expect(prompt).toContain('The student is on step 3.');
+  });
+
+  it('puts the standing check question in front of the model', async () => {
+    mockGroq('Correct.');
+
+    await companionChat('water moves toward the salt', [], { mode: 'guided', guided: session });
+    const prompt = systemPrompts[0];
+
+    expect(prompt).toContain('Which way does water move across the membrane?');
+    // The whole point: the latest message is an ANSWER, not a new request.
+    expect(prompt).toMatch(/latest message as their answer/i);
+  });
+
+  it('says which way to move: on for right, same step for wrong', async () => {
+    mockGroq('Correct.');
+
+    await companionChat('water moves toward the saltier side', [], {
+      mode: 'guided',
+      guided: session,
+    });
+    const prompt = systemPrompts[0];
+
+    expect(prompt).toContain('advance to step 4');
+    expect(prompt).toContain('stay on step 3');
+  });
+
+  it('forbids the two things the live reply actually did', async () => {
+    mockGroq('Correct.');
+
+    await companionChat('water moves toward the saltier side', [], {
+      mode: 'guided',
+      guided: session,
+    });
+    const prompt = systemPrompts[0];
+
+    expect(prompt).toMatch(/NEVER restart at step 1/i);
+    expect(prompt).toMatch(/NEVER describe the app/i);
+  });
+
+  it('asks for step 1 to be taught when no check has been asked yet', async () => {
+    mockGroq('Step one.');
+
+    await companionChat('Guide me through osmosis', [], {
+      mode: 'guided',
+      guided: { topic: 'Osmosis', step: 1 },
+    });
+
+    expect(systemPrompts[0]).toContain('You have not asked a check question yet');
+    expect(systemPrompts[0]).toContain('Topic: "Osmosis"\n');
+  });
+
+  it('ignores a guided block on a non-guided turn', async () => {
+    mockGroq('Sure.');
+
+    await companionChat('What is osmosis?', [], { mode: 'explain', guided: session });
+
+    expect(systemPrompts[0]).not.toContain('GUIDED SESSION');
+  });
+
+  it('ignores malformed metadata rather than pasting it into the prompt', async () => {
+    for (const bad of [null, 'guided', 42, { step: 3 }, { topic: '   ' }]) {
+      mockGroq('Step one.');
+      await companionChat('Guide me', [], { mode: 'guided', guided: bad as never });
+      expect(systemPrompts[0]).not.toContain('GUIDED SESSION');
+    }
+  });
+
+  it('caps a forged topic and clamps a forged step', async () => {
+    mockGroq('Step one.');
+
+    await companionChat('Guide me', [], {
+      mode: 'guided',
+      guided: { topic: 'z'.repeat(900), step: 100000 } as never,
+    });
+    const prompt = systemPrompts[0];
+
+    expect(prompt).toContain('The student is on step 99.');
+    expect(prompt).not.toContain('z'.repeat(200));
+  });
+});
+
+/**
+ * GUIDED_STEP — the model's own word for where the lesson got to.
+ *
+ * It is a control line like SOURCE: stripped before the student sees it, and
+ * clamped so a model that decides to skip to step 40 cannot take the lesson
+ * with it.
+ */
+describe('guided step tag', () => {
+  const session = { topic: 'Osmosis', step: 2, lastCheck: 'which way?' };
+
+  it('reports the step and keeps the tag out of the reply', async () => {
+    mockGroq('Correct. Step 3: tonicity.\n\nCheck: what is hypertonic?\nGUIDED_STEP:3');
+
+    const result = await companionChat('toward the salt', [], { mode: 'guided', guided: session });
+
+    expect(result.guidedStep).toBe(3);
+    expect(result.reply).not.toContain('GUIDED_STEP');
+    expect(result.reply).toContain('Check: what is hypertonic?');
+  });
+
+  it('reports the same step when the student has not passed yet', async () => {
+    mockGroq('Not quite — try again.\n\nCheck: which way?\nGUIDED_STEP:2');
+
+    const result = await companionChat('away from salt', [], { mode: 'guided', guided: session });
+
+    expect(result.guidedStep).toBe(2);
+  });
+
+  it('clamps a skip-ahead and refuses a rewind', async () => {
+    mockGroq('Onward.\nGUIDED_STEP:40');
+    expect(
+      (await companionChat('water moves toward the salt', [], { mode: 'guided', guided: session }))
+        .guidedStep
+    ).toBe(3);
+
+    mockGroq('Back to basics.\nGUIDED_STEP:1');
+    expect(
+      (await companionChat('water moves toward the salt', [], { mode: 'guided', guided: session }))
+        .guidedStep
+    ).toBe(2);
+  });
+
+  it('still strips the tag when there is no session to apply it to', async () => {
+    mockGroq('An answer.\nGUIDED_STEP:2');
+
+    const result = await companionChat('What is osmosis?', [], { mode: 'explain' });
+
+    expect(result.reply).not.toContain('GUIDED_STEP');
+    expect(result.guidedStep).toBeNull();
+  });
+
+  it('leaves the step null when the model omits the tag', async () => {
+    mockGroq('Correct.\n\nCheck: what is hypertonic?');
+
+    const result = await companionChat('toward the salt', [], { mode: 'guided', guided: session });
+
+    expect(result.guidedStep).toBeNull();
+  });
+
+  it('does not hide the grounding line behind the tag', async () => {
+    mockGroq('From your note.\nGUIDED_STEP:3\nSOURCE:general');
+
+    const result = await companionChat('water moves toward the salt', [], {
+      mode: 'guided',
+      guided: session,
+    });
+
+    expect(result.reply).not.toContain('SOURCE');
+    expect(result.reply).not.toContain('GUIDED_STEP');
+  });
+});

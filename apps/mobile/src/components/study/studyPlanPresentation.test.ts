@@ -184,3 +184,61 @@ describe('planExamRows', () => {
     expect(planExamRows('next friday', '2026-09-13')).toEqual([]);
   });
 });
+
+describe('buildStudyPlanModel — Sources chips', () => {
+  const materials = [
+    { id: 'n1', title: 'Enzymes' },
+    { id: 'n2', title: 'Glycolysis' },
+  ];
+
+  it('suppresses the chip on a unit derived from — and named after — one material', () => {
+    // `unitsFromSourceMaterials` names each derived unit after its note, so a
+    // chip there would repeat the heading verbatim.
+    const model = buildStudyPlanModel({
+      units: [],
+      topics: [topic('1', 'u1', 10, 'unseen', ['n1']), topic('2', 'u1', 20, 'unseen', ['n2'])],
+      materials,
+    });
+    expect(model.units).toHaveLength(2);
+    expect(model.units.flatMap((row) => row.sources)).toEqual([]);
+  });
+
+  it('names both materials on a stored unit fed by two', () => {
+    const model = buildStudyPlanModel({
+      units: [unit('u1', 'Week 1', 10), unit('u2', 'Week 2', 20)],
+      topics: [
+        topic('1', 'u1', 10, 'unseen', ['n1']),
+        topic('2', 'u1', 20, 'unseen', ['n2']),
+        topic('3', 'u2', 30, 'unseen', []),
+      ],
+      materials,
+    });
+    expect(model.units[0].sources.map((row) => row.title)).toEqual(['Enzymes', 'Glycolysis']);
+    // A unit whose topics carry no provenance says nothing at all.
+    expect(model.units[1].sources).toEqual([]);
+  });
+
+  it('drops a source that no longer resolves rather than naming a deleted note', () => {
+    const model = buildStudyPlanModel({
+      units: [unit('u1', 'Week 1', 10), unit('u2', 'Week 2', 20)],
+      topics: [
+        topic('1', 'u1', 10, 'unseen', ['gone', 'n1']),
+        topic('2', 'u2', 20, 'unseen', []),
+      ],
+      materials,
+    });
+    expect(model.units[0].sources.map((row) => row.id)).toEqual(['n1']);
+  });
+
+  it('draws the material’s own glyph kind', () => {
+    const model = buildStudyPlanModel({
+      units: [unit('u1', 'Week 1', 10), unit('u2', 'Week 2', 20)],
+      topics: [
+        topic('1', 'u1', 10, 'unseen', ['n3']),
+        topic('2', 'u2', 20, 'unseen', []),
+      ],
+      materials: [{ id: 'n3', title: 'Week one', sourceType: 'audio' }],
+    });
+    expect(model.units[0].sources[0].kind).toBe('lecture');
+  });
+});

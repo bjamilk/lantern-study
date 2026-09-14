@@ -24,9 +24,16 @@
  *   - a `Details` pill opening a sheet with the counts, the bar, the syllabus
  *     card, the exam dates and `View schedule`.
  *
- * WHAT IS DELIBERATELY NOT HERE. `Sources` chips — StudyFetch names the
- * material under each unit, and Lantern's derived units ARE the materials, so
- * the chip would repeat the unit's own title. A `Mode`/`Sort` selector — the
+ * SOURCES CHIPS, AND WHEN THEY ARE NOT DRAWN. StudyFetch names the material
+ * under each unit; Lantern now does too, from the provenance every topic
+ * already carries (`source_note_ids`). The insight that used to justify
+ * omitting them is now a RULE IN CODE instead: a unit derived from a single
+ * material is named after it, so a chip there would repeat the heading and
+ * `unitSources` suppresses it. An id that no longer resolves against this
+ * screen's materials is dropped rather than named. What is left is a row that
+ * only ever appears where it says something the heading does not.
+ *
+ * WHAT IS DELIBERATELY NOT HERE. A `Mode`/`Sort` selector — the
  * mode is the SET's, changed in its settings; the chip here reports it and does
  * not pretend to set it.
  *
@@ -34,13 +41,14 @@
  * count, a fraction or "which one is next".
  */
 import React, { useMemo, useState } from 'react';
-import { Pressable, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 import {
   featureAccentsDark,
   featureAccentsLight,
 } from '@lantern/shared/design';
 import type { StudySetTopic, StudySetTopicStatus, StudySetUnit } from '@lantern/shared/learning';
+import { unitSourceLabel, type UnitSource, type UnitSourceKind, type UnitSourceMaterial } from '@lantern/shared/study';
 import { Button, Card, SheetShell, T } from '../ui';
 import { AppIcon } from '../ui/AppIcon';
 import { useTheme } from '../../theme';
@@ -282,18 +290,76 @@ function TopicRow({
   );
 }
 
+/** A chip's glyph is the material's own, so chip and materials list agree. */
+const SOURCE_GLYPH: Record<UnitSourceKind, 'document' | 'document-text' | 'mic'> = {
+  note: 'document',
+  pdf: 'document-text',
+  lecture: 'mic',
+};
+
+/**
+ * `Sources: [Lecture 3] [Enzymes]` — the materials a unit was built from.
+ *
+ * Draws NOTHING when the model hands back no sources: no label, no placeholder,
+ * no reserved space. The decision about which ids are worth naming is not made
+ * here — it is `unitSources`, shared with web.
+ *
+ * Scrolls sideways rather than wrapping, because a unit card is one band of a
+ * spine and a wrapping row would push the topics off the screen.
+ */
+function UnitSourcesRow({
+  sources,
+  onOpenSource,
+}: {
+  sources: readonly UnitSource[];
+  onOpenSource: (source: UnitSource) => void;
+}) {
+  const accent = useAiAccent();
+  if (sources.length === 0) return null;
+  return (
+    <View className="mt-2 flex-row items-center gap-2">
+      <T.Caption tone="tertiary">Sources:</T.Caption>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerClassName="flex-row items-center gap-2 pr-2"
+      >
+        {sources.map((source) => (
+          <Pressable
+            key={source.id}
+            onPress={() => onOpenSource(source)}
+            accessibilityRole="button"
+            accessibilityLabel={unitSourceLabel(source)}
+            // 40pt minimum target, which is why the row has padding rather
+            // than the caption inside it carrying the height.
+            className="min-h-[40px] flex-row items-center gap-1.5 rounded-full px-3 py-2"
+            style={{ backgroundColor: accent.tint }}
+          >
+            <AppIcon name={SOURCE_GLYPH[source.kind]} size={14} color={accent.ink} />
+            <T.Caption numberOfLines={1} style={{ color: accent.ink, maxWidth: 160 }}>
+              {source.title}
+            </T.Caption>
+          </Pressable>
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
 function UnitCard({
   unit,
   expanded,
   onToggleUnit,
   onToggleTopic,
   onContinue,
+  onOpenSource,
 }: {
   unit: PlanUnitRow;
   expanded: boolean;
   onToggleUnit: () => void;
   onToggleTopic: (topicId: string, next: StudySetTopicStatus) => void;
   onContinue: (row: PlanTopicRow) => void;
+  onOpenSource?: (source: UnitSource) => void;
 }) {
   const accent = useAiAccent();
   return (
@@ -312,6 +378,9 @@ function UnitCard({
           <T.Caption tone="tertiary">{unit.progressLabel}</T.Caption>
         </View>
       </Pressable>
+      {onOpenSource ? (
+        <UnitSourcesRow sources={unit.sources} onOpenSource={onOpenSource} />
+      ) : null}
       {expanded ? (
         <View className="mt-3">
           {unit.topics.map((row, index) => (
@@ -333,8 +402,12 @@ function UnitCard({
 export interface StudyPlanPanelProps {
   units: readonly StudySetUnit[];
   topics: readonly StudySetTopic[];
-  /** Notes and lectures, so a flat plan can borrow their titles for its units. */
-  materials: readonly { id: string; title?: string | null }[];
+  /**
+   * Notes and lectures, so a flat plan can borrow their titles for its units —
+   * and so the `Sources:` chips can resolve the material each unit came from.
+   * A source id absent from THIS list draws no chip.
+   */
+  materials: readonly UnitSourceMaterial[];
   mode?: 'cram' | 'standard' | 'comprehensive';
   /** True only once the server has answered — "no plan" is not "not asked". */
   planLoaded: boolean;
@@ -346,6 +419,11 @@ export interface StudyPlanPanelProps {
   onToggleTopic: (topicId: string, next: StudySetTopicStatus) => void;
   /** Opens the topic's material, or the companion when it has none. */
   onContinue: (topic: PlanTopicRow) => void;
+  /**
+   * Opens a `Sources:` chip's material. Omitted draws no chips at all: a chip
+   * that cannot be opened is a label pretending to be a door.
+   */
+  onOpenSource?: (source: UnitSource) => void;
   onAddSyllabus: () => void;
   onAddExam: () => void;
   onViewSchedule: () => void;
@@ -365,6 +443,7 @@ export function StudyPlanPanel({
   onGeneratePlan,
   onToggleTopic,
   onContinue,
+  onOpenSource,
   onAddSyllabus,
   onAddExam,
   onViewSchedule,
@@ -508,6 +587,7 @@ export function StudyPlanPanel({
           onToggleUnit={() => setOpenUnitId(openId === unit.id ? '' : unit.id)}
           onToggleTopic={onToggleTopic}
           onContinue={onContinue}
+          onOpenSource={onOpenSource}
         />
       ))}
       </>

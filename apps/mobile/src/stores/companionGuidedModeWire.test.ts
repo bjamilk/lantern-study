@@ -523,3 +523,152 @@ describe('the scope-less doors still derive the room\'s next topic', () => {
     expect(useCompanionStore.getState().requestedScope?.guidedNextTopic).toBeUndefined();
   });
 });
+
+/**
+ * The Guided lesson, on the wire.
+ *
+ * Guided's first turn always worked — the seed sentence named the topic and
+ * the note. Every turn after it sent `mode: 'guided'` and nothing else: no
+ * topic, no source, no step, no standing question. On a CORRECT answer to step
+ * 1 the model re-read the thread, found the seed's words ("Imported Notes"),
+ * and replied "Step 1 – Locate your Imported Notes …" — off the material,
+ * about the app, and back at step 1 (production faeaf324).
+ *
+ * The lesson now lives in the STORE, which is what builds the context for
+ * every send. What is pinned here is the body that actually leaves the phone.
+ */
+describe('the guided session reaches every turn', () => {
+  const send = () => useCompanionStore.getState();
+  const bodyOf = (n = 0) => JSON.parse(fetchMock.mock.calls[n][1].body);
+
+  function replyWith(reply: string, guidedStep: number | null = null) {
+    fetchMock.mockImplementation(async () => ({
+      ok: true,
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({ reply, actions: [], citations: null, conversationId: 'conv-1', guidedStep }),
+    }));
+  }
+
+  beforeEach(() => {
+    fetchMock.mockReset();
+    replyWith('Step 1: water follows salt.\n\nCheck: which way does water move?');
+    useCompanionStore.setState({
+      messages: [],
+      activeNoteContext: null,
+      activeConversationId: null,
+      pendingNewConversation: true,
+      pendingMessageContext: null,
+      guidedSession: null,
+      error: null,
+      isLoading: false,
+      isStreaming: false,
+      pendingImages: [],
+      isUploadingImage: false,
+      imageError: null,
+    });
+  });
+
+  it('opens the lesson at step 1 with its topic and source', () => {
+    send().startGuided({ topic: 'Osmosis', sourceNoteId: 'note-1', sourceTitle: 'Cell transport' });
+
+    expect(useCompanionStore.getState().guidedSession).toEqual({
+      topic: 'Osmosis',
+      sourceNoteId: 'note-1',
+      sourceTitle: 'Cell transport',
+      step: 1,
+      lastCheck: null,
+    });
+  });
+
+  it('carries the session AND the material on the seed turn', async () => {
+    send().startGuided({ topic: 'Osmosis', sourceNoteId: 'note-1', sourceTitle: 'Cell transport' });
+
+    await send().sendMessageStreaming('Guide me through "Osmosis"');
+
+    expect(bodyOf().context?.mode).toBe('guided');
+    expect(bodyOf().context?.guided).toMatchObject({ topic: 'Osmosis', step: 1 });
+    expect(bodyOf().context?.noteId).toBe('note-1');
+  });
+
+  it('carries them again on the NEXT turn — the one that used to arrive bare', async () => {
+    send().startGuided({ topic: 'Osmosis', sourceNoteId: 'note-1', sourceTitle: 'Cell transport' });
+    await send().sendMessageStreaming('Guide me through "Osmosis"');
+
+    replyWith('Correct.\n\nStep 2: tonicity.\n\nCheck: what is hypertonic?');
+    await send().sendMessageStreaming('water moves toward the saltier side');
+
+    // The whole defect, in three assertions.
+    expect(bodyOf(1).context?.mode).toBe('guided');
+    expect(bodyOf(1).context?.guided).toMatchObject({
+      topic: 'Osmosis',
+      step: 1,
+      lastCheck: 'which way does water move?',
+    });
+    expect(bodyOf(1).context?.noteId).toBe('note-1');
+  });
+
+  it('advances the step when a new check replaces the standing one', async () => {
+    send().startGuided({ topic: 'Osmosis', sourceNoteId: 'note-1' });
+    await send().sendMessageStreaming('Guide me through "Osmosis"');
+    // The seed's own check is step 1's question, not progress past it.
+    expect(useCompanionStore.getState().guidedSession?.step).toBe(1);
+
+    replyWith('Correct.\n\nStep 2: tonicity.\n\nCheck: what is hypertonic?');
+    await send().sendMessageStreaming('toward the saltier side');
+
+    expect(useCompanionStore.getState().guidedSession).toMatchObject({
+      step: 2,
+      lastCheck: 'what is hypertonic?',
+    });
+  });
+
+  it('stays put when the same check comes back — that is a re-teach', async () => {
+    send().startGuided({ topic: 'Osmosis' });
+    await send().sendMessageStreaming('Guide me through "Osmosis"');
+
+    replyWith('Not quite. Think of it as chasing salt.\n\nCheck: which way does water move?');
+    await send().sendMessageStreaming('away from the salt');
+
+    expect(useCompanionStore.getState().guidedSession?.step).toBe(1);
+  });
+
+  it('takes the server step over its own guess', async () => {
+    send().startGuided({ topic: 'Osmosis' });
+    await send().sendMessageStreaming('Guide me through "Osmosis"');
+
+    replyWith('Correct.\n\nCheck: what is hypertonic?', 4);
+    await send().sendMessageStreaming('toward the saltier side');
+
+    expect(useCompanionStore.getState().guidedSession?.step).toBe(4);
+  });
+
+  it('lets a real attachment outrank the lesson note, as it always did', async () => {
+    useCompanionStore.setState({
+      activeNoteContext: { id: 'attached-note', title: 'Lecture 4' },
+    });
+    send().startGuided({ topic: 'Osmosis', sourceNoteId: 'note-1' });
+
+    await send().sendMessageStreaming('Guide me through "Osmosis"');
+
+    expect(bodyOf().context?.noteId).toBe('attached-note');
+  });
+
+  it('sends no guided metadata once the lesson is cleared', async () => {
+    send().startGuided({ topic: 'Osmosis', sourceNoteId: 'note-1' });
+    send().clearGuided();
+
+    await send().sendMessageStreaming('What is osmosis?');
+
+    expect(bodyOf().context?.guided).toBeUndefined();
+    expect(bodyOf().context?.mode).toBeUndefined();
+    expect(bodyOf().context?.noteId).toBeUndefined();
+  });
+
+  it('does not carry one thread’s lesson into a new chat', () => {
+    send().startGuided({ topic: 'Osmosis' });
+    send().startNewChat();
+
+    expect(useCompanionStore.getState().guidedSession).toBeNull();
+  });
+});

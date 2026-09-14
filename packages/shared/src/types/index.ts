@@ -2010,6 +2010,32 @@ export interface CompanionConversation {
  */
 export type CompanionMode = 'explain' | 'quiz_me' | 'socratic' | 'guided';
 
+/**
+ * Where a Guided lesson has got to, carried by the client on every turn.
+ *
+ * The companion stores no per-thread lesson state of its own, so this is the
+ * only thing that tells turn 5 what turn 1 was teaching. It rides in
+ * `CompanionUserContext.guided` and is treated as untrusted metadata by the
+ * server — see the field's comment there.
+ */
+export interface GuidedSession {
+  /** The lesson's subject, as the picker row named it. Never the unit. */
+  topic: string;
+  /** The note the topic was built from, re-attached on every turn. */
+  sourceNoteId?: string | null;
+  /** That note's title, for the prompt's "from <source>" clause. */
+  sourceTitle?: string | null;
+  /** 1-based step the student is on. Only the lesson advances it. */
+  step: number;
+  /**
+   * The check question the last reply ended on — what the student's next
+   * message is an answer TO. Without it the model re-reads the whole thread
+   * and picks whichever question it likes, which is how a correct answer got
+   * marked as the start of step 1 again.
+   */
+  lastCheck?: string | null;
+}
+
 export interface CompanionUserContext {
   userName?: string;
   groups?: string[];
@@ -2060,6 +2086,21 @@ export interface CompanionUserContext {
    * persisted: a mode rides with the send and is re-sent on the next one.
    */
   mode?: CompanionMode;
+  /**
+   * The lesson this Guided thread is in the middle of.
+   *
+   * Guided used to send nothing but `mode: 'guided'` after the seed turn, so
+   * every reply past the first had no topic, no source and no step in front of
+   * it. The model fell back to the only goal it could still see — the words in
+   * the seed, "Imported Notes" — and taught the student how to find their
+   * notes, from step 1, on a turn they had just answered correctly.
+   *
+   * Like `mode`, this is client-declared metadata: a claim about where the
+   * conversation got to, not about the student's data. The server sanitizes it
+   * (allowlisted shape, length caps, step clamped) and drops anything
+   * malformed rather than pasting it into the prompt.
+   */
+  guided?: GuidedSession;
   /** Active companion thread; omit / null + newConversation to start fresh. */
   conversationId?: string;
   /** When true, create a new thread instead of continuing the latest for this note scope. */

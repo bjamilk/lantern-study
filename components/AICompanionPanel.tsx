@@ -274,6 +274,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     activeConversationId, conversations, isLoadingConversations,
     loadConversations, openConversation, startNewChat,
     pendingImages, isUploadingImage, imageError, attachImage, removeImage,
+    startGuided, clearGuided,
   } = useCompanionStore();
   const notes = useNotesStore((s) => s.notes);
   const notesLoading = useNotesStore((s) => s.isLoading);
@@ -833,6 +834,17 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     (goal: GuidedGoal) => {
       setGuidedPickerDismissed(true);
       const sourceNoteId = goal.sourceNoteId?.trim();
+      /**
+       * Open the lesson BEFORE the seed is sent, so the very first turn — and
+       * every turn after it — carries the topic, the source and the step. The
+       * seed sentence alone used to be the only place the topic appeared, and
+       * it scrolled out of the model's attention within two turns.
+       */
+      startGuided({
+        topic: goal.topic,
+        sourceNoteId: sourceNoteId || activeNoteContext?.id || null,
+        sourceTitle: goal.sourceTitle || activeNoteContext?.title || null,
+      });
       void handleSend(
         goal.prompt,
         sourceNoteId && !activeNoteContext
@@ -841,7 +853,7 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [handleSend, activeNoteContext]
+    [handleSend, activeNoteContext, startGuided]
   );
 
   const handleCopyMessage = useCallback(
@@ -1322,6 +1334,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
                   // card above the composer comes back even if it was shut
                   // earlier in this thread.
                   setGuidedPickerDismissed(false);
+                  // Leaving Guided ends the lesson. Without this, turning the
+                  // pill back on later would resume a topic from a
+                  // conversation the student had moved on from.
+                  if (v) clearGuided();
                   return !v;
                 })
               }

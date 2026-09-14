@@ -9,6 +9,7 @@ import type {
   CompanionImageAttachment,
   CompanionMode,
   CompanionUserContext,
+  GuidedSession,
 } from '../types';
 import type { AIClientConfig } from './ai';
 import { parseGlobalAIUsageFromHeaders } from './usageHeaders';
@@ -279,6 +280,143 @@ export function showGuidedComposerPicker(input: {
   return input.hasMessages === true;
 }
 
+// ===========================================
+// Guided session — what turn 2 knows about turn 1
+// ===========================================
+
+/** Topic/source caps. Long enough for a real chapter title, short enough that
+ *  a forged value cannot become a paragraph of prompt. */
+const GUIDED_TOPIC_MAX = 160;
+/** A check question is one sentence. Anything longer is not a check. */
+const GUIDED_CHECK_MAX = 400;
+/** A lesson with a hundred steps is a forged step, not a lesson. */
+const GUIDED_MAX_STEP = 99;
+
+/** The step a lesson starts on: the seed turn teaches step 1. */
+export const GUIDED_FIRST_STEP = 1;
+
+/**
+ * Open a lesson from the goal the student picked.
+ *
+ * Returns null when there is no real topic — an empty session is worse than
+ * none, because it would put `GUIDED SESSION: topic "" from ""` in the prompt.
+ */
+export function startGuidedSession(input: {
+  topic: string;
+  sourceNoteId?: string | null;
+  sourceTitle?: string | null;
+}): GuidedSession | null {
+  const topic = cleanTopic(input.topic);
+  if (!topic) return null;
+  return {
+    topic: topic.slice(0, GUIDED_TOPIC_MAX),
+    sourceNoteId: cleanTopic(input.sourceNoteId)?.slice(0, GUIDED_TOPIC_MAX) ?? null,
+    sourceTitle: cleanTopic(input.sourceTitle)?.slice(0, GUIDED_TOPIC_MAX) ?? null,
+    step: GUIDED_FIRST_STEP,
+    lastCheck: null,
+  };
+}
+
+/**
+ * Read a guided session off a wire payload, as the SERVER must.
+ *
+ * This is client-declared metadata: the student's own app is the usual author,
+ * but nothing stops a forged body claiming `step: 1e9` or a topic carrying its
+ * own instructions. Everything here is shape-checked, control characters are
+ * stripped, lengths are capped and the step is clamped; anything that fails
+ * becomes null, and a null session simply means the prompt gets no GUIDED
+ * SESSION block — the same place the feature was before this fix.
+ */
+export function normalizeGuidedSession(raw: unknown): GuidedSession | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const g = raw as Record<string, unknown>;
+  const strip = (value: unknown, max: number): string | null => {
+    if (typeof value !== 'string') return null;
+    const text = value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '').replace(/\s+/g, ' ').trim();
+    return text ? text.slice(0, max) : null;
+  };
+  const topic = strip(g.topic, GUIDED_TOPIC_MAX);
+  if (!topic) return null;
+  const rawStep = Number(g.step);
+  const step =
+    Number.isFinite(rawStep) && rawStep >= 1
+      ? Math.min(GUIDED_MAX_STEP, Math.floor(rawStep))
+      : GUIDED_FIRST_STEP;
+  return {
+    topic,
+    sourceNoteId: strip(g.sourceNoteId, GUIDED_TOPIC_MAX),
+    sourceTitle: strip(g.sourceTitle, GUIDED_TOPIC_MAX),
+    step,
+    lastCheck: strip(g.lastCheck, GUIDED_CHECK_MAX),
+  };
+}
+
+/**
+ * The check question a guided reply ended on.
+ *
+ * The prompt tells the model to end a teaching reply with one `Check:` line,
+ * so reading it back off the reply costs nothing and needs no second call. The
+ * LAST match wins: a reply that re-teaches and re-checks mentions the old
+ * check first. Markdown emphasis around the label is tolerated because the
+ * model writes `**Check:**` about as often as it writes `Check:`.
+ */
+export function extractGuidedCheck(reply: string): string | null {
+  if (typeof reply !== 'string' || !reply.trim()) return null;
+  const line = /^[\s>*_-]*(?:\*\*|__)?\s*check(?:\s+question)?\s*(?:\*\*|__)?\s*[:：]\s*(.+?)\s*$/gim;
+  let found: string | null = null;
+  for (const match of reply.matchAll(line)) {
+    const text = (match[1] ?? '').replace(/(\*\*|__)/g, '').replace(/\s+/g, ' ').trim();
+    if (text) found = text.slice(0, GUIDED_CHECK_MAX);
+  }
+  return found;
+}
+
+/**
+ * Move the lesson on, from what the reply actually said.
+ *
+ * Two sources, in order of authority:
+ *
+ * 1. `guidedStep` — the server's own number, from the tag the model emits. It
+ *    is the model saying "we are now on step N", which is the only thing that
+ *    knows whether the answer was right.
+ * 2. A NEW check question REPLACING an existing one. The prompt forbids
+ *    advancing without re-checking, so a check that is not the one already on
+ *    file means the lesson moved. Two cases do NOT count:
+ *    - an identical check, which is the same step re-taught a different way —
+ *      the model's way of saying "not yet";
+ *    - the FIRST check of the lesson, which is step 1's own question. The seed
+ *      reply teaches step 1 and checks step 1; treating that as progress put
+ *      the student on step 2 before they had answered anything.
+ *
+ * Never goes backwards and never resets to 1: restarting a lesson is
+ * `clearGuidedSession` + a new pick, not a silently rewound step.
+ */
+export function advanceGuidedSession(
+  session: GuidedSession,
+  outcome: { reply?: string | null; guidedStep?: number | null } = {}
+): GuidedSession {
+  const current = Math.max(GUIDED_FIRST_STEP, Math.min(GUIDED_MAX_STEP, Math.floor(session.step) || GUIDED_FIRST_STEP));
+  const nextCheck = extractGuidedCheck(outcome.reply || '');
+  const declared = Number(outcome.guidedStep);
+  const fromServer =
+    Number.isFinite(declared) && declared >= 1 ? Math.min(GUIDED_MAX_STEP, Math.floor(declared)) : null;
+
+  let step = current;
+  if (fromServer !== null) {
+    step = Math.max(current, fromServer);
+  } else if (session.lastCheck && nextCheck && nextCheck !== session.lastCheck) {
+    step = Math.min(GUIDED_MAX_STEP, current + 1);
+  }
+
+  return {
+    ...session,
+    step,
+    // A reply with no check (the student asked something off-lesson) leaves
+    // the standing question in place — it is still what they owe an answer to.
+    lastCheck: nextCheck ?? session.lastCheck ?? null,
+  };
+}
+
 /** What the free-text row sends once the student has typed their own goal. */
 export function guidedFreeTextPrompt(text: string): string {
   const goal = cleanTopic(text) || '';
@@ -427,6 +565,8 @@ export function createCompanionClient(config: AIClientConfig) {
         provider: string;
         citations?: CompanionCitation | null;
         conversationId?: string;
+        /** Guided only: the step the lesson is on AFTER this reply. */
+        guidedStep?: number | null;
       }>('/message', 'POST', { message, context }),
 
     /**
@@ -519,6 +659,8 @@ export function createCompanionClient(config: AIClientConfig) {
         messageId?: string;
         userMessageId?: string;
         conversationId?: string;
+        /** Guided only: the step the lesson is on AFTER this reply. */
+        guidedStep?: number | null;
       }) => void,
       onError: (err: Error) => void
     ): Promise<void> => {
@@ -536,6 +678,7 @@ export function createCompanionClient(config: AIClientConfig) {
             messageId?: string;
             userMessageId?: string;
             conversationId?: string;
+            guidedStep?: number | null;
           }>('/message', 'POST', { message, context });
           if (result.reply) onToken(result.reply);
           onDone({
@@ -548,6 +691,7 @@ export function createCompanionClient(config: AIClientConfig) {
             messageId: result.messageId,
             userMessageId: result.userMessageId,
             conversationId: result.conversationId,
+            guidedStep: typeof result.guidedStep === 'number' ? result.guidedStep : null,
           });
         } catch (e: unknown) {
           onError(e instanceof Error ? e : new Error('Failed to reach Lantern.'));
@@ -635,6 +779,7 @@ export function createCompanionClient(config: AIClientConfig) {
                     typeof data.userMessageId === 'string' ? data.userMessageId : undefined,
                   conversationId:
                     typeof data.conversationId === 'string' ? data.conversationId : undefined,
+                  guidedStep: typeof data.guidedStep === 'number' ? data.guidedStep : null,
                 });
               }
             } catch {

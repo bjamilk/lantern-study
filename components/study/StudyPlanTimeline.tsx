@@ -1,10 +1,15 @@
 import React from 'react';
 import {
   planTopicActivityLabel,
+  unitSourceLabel,
+  unitSources,
   type PlanRing,
   type PlanTimelineUnit,
   type PlanTopicRow,
   type StudySetTopic,
+  type UnitSource,
+  type UnitSourceKind,
+  type UnitSourceMaterial,
 } from '@lantern/shared';
 import { AppIcon } from '../ui/AppIcon';
 
@@ -53,6 +58,66 @@ export const PlanUnitRing: React.FC<{ ring: PlanRing; size?: number }> = ({ ring
         />
       ) : null}
     </svg>
+  );
+};
+
+/** A chip's glyph is the material's own, so chip and materials list agree. */
+const SOURCE_GLYPH: Record<UnitSourceKind, 'document-text' | 'mic' | 'document'> = {
+  note: 'document',
+  pdf: 'document-text',
+  lecture: 'mic',
+};
+
+/** How many chips before the row folds. Four fits a card at a glance. */
+const SOURCE_CHIP_LIMIT = 4;
+
+/**
+ * `Sources: [Lecture 3] [Enzymes]` — which materials this unit was built from.
+ *
+ * Renders NOTHING when there is nothing to say: no label, no placeholder, no
+ * reserved space. Which ids are worth drawing — and which are dropped because
+ * they no longer resolve — is decided once, in `@lantern/shared`'s
+ * `unitSources`, so this surface and the phone's cannot disagree.
+ *
+ * The word is `Sources:`, deliberately. A caller may hold a filtered materials
+ * list, so a real source can resolve to nothing and vanish; the row is honest
+ * about what it names and claims no completeness.
+ */
+const UnitSourcesRow: React.FC<{
+  sources: readonly UnitSource[];
+  onOpenSource: (source: UnitSource) => void;
+}> = ({ sources, onOpenSource }) => {
+  const [showAll, setShowAll] = React.useState(false);
+  if (sources.length === 0) return null;
+  const shown = showAll ? sources : sources.slice(0, SOURCE_CHIP_LIMIT);
+  const hidden = sources.length - shown.length;
+
+  return (
+    <div className="flex flex-wrap items-center gap-1.5 px-3 pb-3">
+      <span className="text-caption text-lantern-text-secondary">Sources:</span>
+      {shown.map((source) => (
+        <button
+          key={source.id}
+          type="button"
+          onClick={() => onOpenSource(source)}
+          aria-label={unitSourceLabel(source)}
+          title={source.title}
+          className="inline-flex min-h-[40px] max-w-full items-center gap-1.5 rounded-full border border-lantern-feature-ai-ink/30 bg-lantern-feature-ai-tint px-2.5 py-1 text-caption font-medium text-lantern-feature-ai-ink hover:underline"
+        >
+          <AppIcon name={SOURCE_GLYPH[source.kind]} size={14} className="flex-shrink-0" />
+          <span className="truncate">{source.title}</span>
+        </button>
+      ))}
+      {hidden > 0 ? (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="min-h-[40px] rounded-full px-2 text-caption font-medium text-lantern-text-secondary hover:text-lantern-text hover:underline"
+        >
+          +{hidden} more
+        </button>
+      ) : null}
+    </div>
   );
 };
 
@@ -141,6 +206,14 @@ interface StudyPlanTimelineProps {
   onToggleUnit: (unitId: string) => void;
   onCycleStatus: (topic: StudySetTopic) => void;
   onStartTopic: (topic: StudySetTopic) => void;
+  /**
+   * The materials the caller holds, for the `Sources:` chips. An id that does
+   * not resolve against THIS list is dropped rather than drawn — see
+   * `unitSources`. Omitted means no chip row anywhere.
+   */
+  materials?: readonly UnitSourceMaterial[];
+  /** Opens a chip's material. Without it the chips are not drawn at all. */
+  onOpenSource?: (source: UnitSource) => void;
 }
 
 /**
@@ -166,6 +239,8 @@ export const StudyPlanTimeline: React.FC<StudyPlanTimelineProps> = ({
   onToggleUnit,
   onCycleStatus,
   onStartTopic,
+  materials,
+  onOpenSource,
 }) => {
   if (timeline.length === 0) return null;
 
@@ -195,6 +270,12 @@ export const StudyPlanTimeline: React.FC<StudyPlanTimelineProps> = ({
           const { unit, ring, rows } = entry;
           const expanded = openUnitIds[unit.id] ?? false;
           const panelId = `plan-unit-${unit.id}`;
+          // The chips sit under the heading whether or not the unit is open:
+          // "what is this unit made of" is the question a shut drawer raises.
+          const sources =
+            materials && onOpenSource
+              ? unitSources(unit, rows.map((row) => row.topic), materials)
+              : [];
           return (
             <section key={unit.id} className="relative pl-10">
               <span
@@ -232,6 +313,10 @@ export const StudyPlanTimeline: React.FC<StudyPlanTimelineProps> = ({
                     className="shrink-0 text-lantern-text-secondary"
                   />
                 </button>
+
+                {onOpenSource ? (
+                  <UnitSourcesRow sources={sources} onOpenSource={onOpenSource} />
+                ) : null}
 
                 {expanded ? (
                   <div id={panelId} className="border-t border-lantern-border p-2">
