@@ -44,18 +44,12 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          # F-02 calls the API server with a JWT minted by VITE_SUPABASE_URL.
-          # If this is unset the PoC has no host to call, and a fallback to the
-          # production URL would 401 every call and read as "attack blocked" —
-          # a pass that proves nothing. Required, like the rest.
-          VITE_SUPABASE_API_BASE_URL: ${{ secrets.VITE_SUPABASE_API_BASE_URL }}
         shell: bash
         run: |
           missing=""
           [ -z "$VITE_SUPABASE_URL" ] && missing="$missing VITE_SUPABASE_URL"
           [ -z "$VITE_SUPABASE_ANON_KEY" ] && missing="$missing VITE_SUPABASE_ANON_KEY"
           [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] && missing="$missing SUPABASE_SERVICE_ROLE_KEY"
-          [ -z "$VITE_SUPABASE_API_BASE_URL" ] && missing="$missing VITE_SUPABASE_API_BASE_URL"
           if [ -n "$missing" ]; then
             echo "::error::security-regression cannot run. Missing repository secrets:$missing"
             echo "Point these at a STAGING Supabase project, never production — the service-role key bypasses RLS,"
@@ -81,6 +75,14 @@ jobs:
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f01-marketplace-offers.ps1
 
+      # F-02 is the only PoC that calls the API server: it mints a JWT against
+      # VITE_SUPABASE_URL and asks $VITE_API_BASE_URL to sign someone else's
+      # private avatar. That host must serve the SAME Supabase project, so it
+      # cannot be defaulted — a JWT from one project against another host 401s,
+      # and the attacker probe would read as "blocked" while nothing was
+      # blocked. Without the VITE_SUPABASE_API_BASE_URL secret this one step
+      # fails with that message, and the five PoCs that talk only to PostgREST
+      # still run and still prove what they prove.
       - name: F-02 profile avatar IDOR PoC
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f02-profile-avatar-idor.ps1
