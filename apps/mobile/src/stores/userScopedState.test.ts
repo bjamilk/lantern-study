@@ -36,19 +36,29 @@ function mockDeepStub(): any {
   });
 }
 
-jest.mock('react-native', () => mockDeepStub(), { virtual: true });
-jest.mock('react-native-url-polyfill/auto', () => ({}), { virtual: true });
-jest.mock('expo-secure-store', () => mockDeepStub(), { virtual: true });
-jest.mock('expo-crypto', () => mockDeepStub(), { virtual: true });
-jest.mock('expo-constants', () => mockDeepStub(), { virtual: true });
-jest.mock('expo-web-browser', () => mockDeepStub(), { virtual: true });
-jest.mock('expo-auth-session', () => mockDeepStub(), { virtual: true });
-jest.mock('expo-auth-session/build/QueryParams', () => mockDeepStub(), { virtual: true });
-jest.mock('expo-apple-authentication', () => mockDeepStub(), { virtual: true });
+// `virtual: true` ONLY on specifiers that genuinely do not resolve. A virtual
+// mock of a module that DOES exist is registered in jest's process-wide virtual
+// registry under a synthetic path, and the resolver keeps that decision for the
+// rest of the worker — so the NEXT suite in the same process that mocks the
+// same real module normally registers under the real path, the two keys never
+// meet, and the real file is required instead. That is how `expo-crypto`'s ESM
+// build reached messagesCacheBound.test.ts as "Cannot use import statement
+// outside a module", failing in a full run and passing in isolation.
+jest.mock('react-native', () => mockDeepStub());
+jest.mock('react-native-url-polyfill/auto', () => ({}));
+jest.mock('expo-secure-store', () => mockDeepStub());
+jest.mock('expo-crypto', () => mockDeepStub());
+jest.mock('expo-constants', () => mockDeepStub());
+jest.mock('expo-web-browser', () => mockDeepStub());
+jest.mock('expo-auth-session', () => mockDeepStub());
+jest.mock('expo-auth-session/build/QueryParams', () => mockDeepStub());
+jest.mock('expo-apple-authentication', () => mockDeepStub());
+jest.mock('@react-native-community/netinfo', () => mockDeepStub());
+// These two do not resolve from here at all, so they stay virtual:
+// expo-file-system exposes no '/legacy' subpath in its exports map, and mobile's
+// jest maps '@lantern/shared/*' to the package source but has NO mapping for the
+// bare specifier (see the note in companionStore).
 jest.mock('expo-file-system/legacy', () => mockDeepStub(), { virtual: true });
-jest.mock('@react-native-community/netinfo', () => mockDeepStub(), { virtual: true });
-// Mobile's jest maps '@lantern/shared/*' to the package source but has NO
-// mapping for the bare specifier (see the note in companionStore).
 jest.mock('@lantern/shared', () => mockDeepStub(), { virtual: true });
 jest.mock('../services/supabase', () => mockDeepStub());
 jest.mock('../services/syncService', () => mockDeepStub());

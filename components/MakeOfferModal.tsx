@@ -102,7 +102,7 @@ const MakeOfferModal: React.FC<MakeOfferModalProps> = ({ isOpen, onClose, listin
                 className="w-full min-h-[44px] pl-8 pr-4 py-3 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary focus:border-transparent bg-lantern-surface text-lantern-text text-lg font-semibold"
               />
             </div>
-            {listing.price && percentage > 0 && (
+            {(listing.price ?? 0) > 0 && percentage > 0 && (
               <p className={`text-xs mt-1.5 ${
                 percentage >= 80 ? 'text-lantern-accent' : percentage >= 60 ? 'text-amber-600' : 'text-lantern-error'
               }`}>

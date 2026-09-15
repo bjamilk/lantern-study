@@ -1116,8 +1116,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   gated off above; mirror the reserved treatment and leave chat open. */}
               {!isOwner &&
                 listing.status !== 'reserved' &&
-                listing.price &&
-                listing.price > 0 &&
+                (listing.price ?? 0) > 0 &&
                 !(isDigital && digitalOwned) &&
                 isSoldOut && (
                 <div className="p-3 rounded-xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/40 space-y-2">
@@ -1200,7 +1199,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   Contact Seller
                 </button>
               )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && listing.quantity != null && listing.quantity > 0 && (
+              {!isOwner && listing.status !== 'reserved' && (listing.price ?? 0) > 0 && listing.quantity != null && listing.quantity > 0 && (
                 <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border">
                   <div>
                     <p className="text-xs font-semibold text-lantern-text-secondary">Quantity</p>
@@ -1233,7 +1232,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
                   </div>
                 </div>
               )}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
+              {!isOwner && listing.status !== 'reserved' && (listing.price ?? 0) > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
                 <div className="p-3 rounded-xl bg-lantern-background-secondary/50 border border-lantern-border space-y-2">
                   <p className="text-xs font-semibold text-lantern-text-secondary">Have a coupon?</p>
                   <div className="flex gap-2">
@@ -1276,7 +1275,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
               {/* Purchase actions, strongest first: Buy Now is the one path with
                   buyer protection, so it leads; cart and offer are secondary;
                   chat is the fallback, not the headline. */}
-              {!isOwner && listing.status !== 'reserved' && listing.price && listing.price > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
+              {!isOwner && listing.status !== 'reserved' && (listing.price ?? 0) > 0 && !(isDigital && digitalOwned) && !isSoldOut && (
                 <>
                   {(() => {
                     const chips = fulfillmentChipLabels(listing, sellerFulfillment ? {
