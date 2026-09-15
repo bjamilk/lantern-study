@@ -35,6 +35,45 @@ export function createOptimisticClientMessageId(createId: () => string = () => c
 }
 
 /**
+ * The value to put ON THE WIRE as `clientMessageId`.
+ *
+ * FIXED: `createOptimisticClientMessageId` returns `temp-<uuid>` so every local
+ * merge path can recognise an in-flight row by `isTempMessageId`. That same
+ * value was also being POSTed as `clientMessageId`, which the API validates as
+ * a STRICT UUID (`body('clientMessageId').optional().isUUID()` in
+ * apps/api-server/src/middleware/validation.ts) — so every group send returned
+ * 400 INVALID_CLIENT_MESSAGE_ID. The local id keeps its prefix; only the wire
+ * value is stripped back to the bare UUID the server dedupes on.
+ *
+ * Idempotent: a bare id passes through unchanged, so calling it twice (or on an
+ * id that was never prefixed) is safe, and a `retryUncertainDelivery` replay
+ * still sends byte-identical bytes.
+ */
+export function toWireClientMessageId(localId: string): string {
+  if (!localId.startsWith('temp-')) return localId;
+  const bare = localId.slice('temp-'.length);
+  // `temp-` with nothing after it is not an id; never collapse it to ''.
+  return bare || localId;
+}
+
+/**
+ * True when a server row's `client_message_id` echo identifies the local row
+ * `localId`.
+ *
+ * The echo is the WIRE id (bare UUID) while the optimistic row still carries
+ * the local `temp-` id, so a plain `===` misses and the optimistic bubble
+ * duplicates. Compares both sides normalised.
+ */
+export function matchesClientMessageId(
+  localId: string,
+  clientMessageId: string | null | undefined
+): boolean {
+  if (!localId || typeof clientMessageId !== 'string' || !clientMessageId) return false;
+  if (localId === clientMessageId) return true;
+  return toWireClientMessageId(localId) === toWireClientMessageId(clientMessageId);
+}
+
+/**
  * Merge `incoming` into `existing` by id.
  * - Same id: prefer incoming fields, keep richer existing question/sender fields when incoming is sparse
  * - Incoming with clientMessageId matching an existing temp id: replace that temp row
@@ -48,8 +87,14 @@ export function mergeChatMessagesById<T extends MergeableChatMessage>(
   if (!incoming.length) return existing.slice();
 
   const byId = new Map<string, T>();
+  // Local temp rows indexed by their WIRE id, so a server echo carrying the bare
+  // UUID still finds the `temp-<uuid>` row it belongs to.
+  const tempKeyByWireId = new Map<string, string>();
   for (const message of existing) {
     byId.set(message.id, message);
+    if (isTempMessageId(message.id)) {
+      tempKeyByWireId.set(toWireClientMessageId(message.id), message.id);
+    }
   }
 
   for (const next of incoming) {
@@ -58,9 +103,16 @@ export function mergeChatMessagesById<T extends MergeableChatMessage>(
         ? next.clientMessageId
         : undefined;
 
-    if (clientMessageId && clientMessageId !== next.id && byId.has(clientMessageId)) {
-      const prev = byId.get(clientMessageId)!;
-      byId.delete(clientMessageId);
+    const optimisticKey = clientMessageId
+      ? byId.has(clientMessageId)
+        ? clientMessageId
+        : tempKeyByWireId.get(toWireClientMessageId(clientMessageId))
+      : undefined;
+
+    if (optimisticKey && optimisticKey !== next.id) {
+      const prev = byId.get(optimisticKey)!;
+      byId.delete(optimisticKey);
+      tempKeyByWireId.delete(toWireClientMessageId(optimisticKey));
       byId.set(next.id, { ...prev, ...next, id: next.id });
       continue;
     }
@@ -73,7 +125,7 @@ export function mergeChatMessagesById<T extends MergeableChatMessage>(
   for (const [id, message] of [...byId.entries()]) {
     if (!isTempMessageId(id)) continue;
     const matched = incoming.some(
-      (item) => item.clientMessageId === id || item.id === id
+      (item) => matchesClientMessageId(id, item.clientMessageId) || item.id === id
     );
     if (matched) byId.delete(id);
     else {
@@ -141,14 +193,20 @@ export function mergeServerRefresh<T extends MergeableCachedChatMessage>(
   for (const row of serverRows) {
     serverIds.add(row.id);
     const clientMessageId = clientIdOf(row);
-    if (clientMessageId) reconciledClientIds.add(clientMessageId);
+    // Normalised: the server echoes the WIRE id (bare UUID) while the cached
+    // optimistic row still carries `temp-<uuid>`.
+    if (clientMessageId) reconciledClientIds.add(toWireClientMessageId(clientMessageId));
     const ms = messageTimeMs(row);
     if (ms < oldestServerMs) oldestServerMs = ms;
     if (ms > newestServerMs) newestServerMs = ms;
   }
 
   const cachedById = new Map<string, T>();
-  for (const row of cachedRows) cachedById.set(row.id, row);
+  const cachedTempByWireId = new Map<string, T>();
+  for (const row of cachedRows) {
+    cachedById.set(row.id, row);
+    if (isTempMessageId(row.id)) cachedTempByWireId.set(toWireClientMessageId(row.id), row);
+  }
 
   const byId = new Map<string, T>();
   for (const row of serverRows) {
@@ -156,7 +214,8 @@ export function mergeServerRefresh<T extends MergeableCachedChatMessage>(
     const prev =
       cachedById.get(row.id) ||
       (clientMessageId && clientMessageId !== row.id
-        ? cachedById.get(clientMessageId)
+        ? cachedById.get(clientMessageId) ||
+          cachedTempByWireId.get(toWireClientMessageId(clientMessageId))
         : undefined);
     if (!prev) {
       byId.set(row.id, row);
@@ -173,9 +232,9 @@ export function mergeServerRefresh<T extends MergeableCachedChatMessage>(
   for (const row of cachedRows) {
     if (serverIds.has(row.id) || byId.has(row.id)) continue;
     // A temp row the server has already reconciled under a real id is gone.
-    if (reconciledClientIds.has(row.id)) continue;
+    if (reconciledClientIds.has(toWireClientMessageId(row.id))) continue;
     const clientMessageId = clientIdOf(row);
-    if (clientMessageId && reconciledClientIds.has(clientMessageId)) continue;
+    if (clientMessageId && reconciledClientIds.has(toWireClientMessageId(clientMessageId))) continue;
 
     const isLocalOnly =
       row.deliveryState === 'pending' ||
