@@ -1427,6 +1427,13 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             // mergeChatMessagesById kept them, and a lost or raced send confirmation left
             // a PERMANENT duplicate. See the matching paging fix in
             // handleLoadMoreMessages, which now filters with isTempMessageId.
+            //
+            // The `temp-` prefix is LOCAL ONLY. `sendMessage` (services/supabase.ts)
+            // normalises it with `toWireClientMessageId` before it hits the wire,
+            // because the API validates `clientMessageId` as a strict UUID and was
+            // rejecting every send with 400 INVALID_CLIENT_MESSAGE_ID. The server
+            // echoes back the bare UUID, so every reconcile path compares with
+            // `matchesClientMessageId` rather than `===`.
             const optimisticId = groupDeliveryIntents.resolve(
                 deliveryScope,
                 deliveryFingerprint,

@@ -87,7 +87,7 @@ import {
   parseRetryAfterMs,
   RateLimitError,
 } from '@lantern/shared'
-import { normalizeTestResultSession, retryUncertainDelivery } from '@lantern/shared/utils'
+import { normalizeTestResultSession, retryUncertainDelivery, toWireClientMessageId } from '@lantern/shared/utils'
 import { isQuestionStatEligible } from '@lantern/shared/api'
 import {
   createSignedUrlBatcher,
@@ -1305,7 +1305,12 @@ export const sendMessage = async (
   const body = JSON.stringify({
     content,
     userId,
-    clientMessageId,
+    // The caller's id is the LOCAL optimistic id (`temp-<uuid>`), which the API
+    // rejects with 400 INVALID_CLIENT_MESSAGE_ID because it validates a strict
+    // UUID. Strip the prefix here — one chokepoint for every send path — so the
+    // wire value is the bare UUID the server dedupes on while the optimistic row
+    // keeps the `temp-` id that `isTempMessageId` recognises.
+    clientMessageId: clientMessageId ? toWireClientMessageId(clientMessageId) : clientMessageId,
     replyToMessageId: options?.replyToMessageId,
     mentionedUserIds: options?.mentionedUserIds,
     ...(options?.postKind ? { postKind: options.postKind } : {}),
@@ -6713,8 +6718,11 @@ export const sendDirectMessage = async (
   console.log('Sending direct message from:', senderId, 'to:', recipientId);
   const body = JSON.stringify({
     content,
+    // Same normalisation as `sendMessage`: local id stays `temp-<uuid>`, the wire
+    // value is the bare UUID. The DM route does not run the strict-UUID validator
+    // today, so this is consistency (and future-proofing) rather than a live 400.
     recipientId,
-    clientMessageId,
+    clientMessageId: clientMessageId ? toWireClientMessageId(clientMessageId) : clientMessageId,
     replyToMessageId: options?.replyToMessageId,
   });
   const request = async () => {
