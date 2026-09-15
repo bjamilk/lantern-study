@@ -82,7 +82,7 @@ import {
     normalizeUserSettings,
     getNotificationSettings,
 } from '@lantern/shared/settings';
-import { mapMessageFromApi, computeStudyStreak, getCardsDue, mergeChatMessagesById } from '@lantern/shared/utils';
+import { mapMessageFromApi, computeStudyStreak, getCardsDue, mergeChatMessagesById, matchesClientMessageId } from '@lantern/shared/utils';
 import { mapUserStatsFromApi, normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
 import { applyUserSettingsToDom } from '../utils/applyUserSettingsToDom';
 import { shouldOpenAcademicSetup, readAcademicSetupDismissed } from '../utils/academicSetup';
@@ -1575,11 +1575,16 @@ export function useAppEffects({
                     };
                 }
                 if (existing.some(m => m.id === message.id)) return prev;
-                if (raw.client_message_id && existing.some(m => m.id === raw.client_message_id)) {
+                // `matchesClientMessageId`, not `===`: the echo is the WIRE id (bare
+                // UUID) while the optimistic row's id is `temp-<uuid>`.
+                if (
+                    raw.client_message_id &&
+                    existing.some(m => matchesClientMessageId(m.id, raw.client_message_id))
+                ) {
                     return {
                         ...prev,
                         [threadId]: existing.map(m =>
-                            m.id === raw.client_message_id
+                            matchesClientMessageId(m.id, raw.client_message_id)
                                 ? { ...m, ...message, id: message.id }
                                 : m
                         ),
@@ -1795,11 +1800,16 @@ export function useAppEffects({
                 }
                 if (raw.sender_id === currentUser.id) {
                     const clientMessageId = raw.client_message_id;
-                    if (clientMessageId && existing.some((m) => m.id === clientMessageId)) {
+                    // `matchesClientMessageId`, not `===`: the echo is the WIRE id
+                    // (bare UUID) while the optimistic row's id is `temp-<uuid>`.
+                    if (
+                        clientMessageId &&
+                        existing.some((m) => matchesClientMessageId(m.id, clientMessageId))
+                    ) {
                         return {
                             ...prev,
                             [groupId]: existing.map((m) =>
-                                m.id === clientMessageId
+                                matchesClientMessageId(m.id, clientMessageId)
                                     ? {
                                         ...m,
                                         ...mapped,
