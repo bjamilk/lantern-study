@@ -261,8 +261,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   // Payouts screen with an earnings ledger; Your Listings becomes the seller's
   // home with a "Needs you" strip; Buy Again; order rows with status pills;
   // and the buy/sell tools that lived behind a "..." menu are all visible.
-  // Shop moves to the top bar, Jobs to the profile drawer; both are pilot-only.
-  version: '1.0.60',
+  // Shop moves to the top bar, Jobs to the profile drawer (open to every student since 1.0.61).
+  version: '1.0.61',
   orientation: 'portrait',
   icon: './assets/icon.png',
   userInterfaceStyle: 'automatic',

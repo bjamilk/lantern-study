@@ -46,6 +46,33 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'team-readiness-1-0-61',
+    title: 'Mobile 1.0.61 — team-readiness release: hardened auth, money and offline paths, open Campus and Shop',
+    area: 'platform',
+    status: 'shipped',
+    shippedAt: '2026-09-15',
+    summary:
+      'The release that carries the team-readiness stream: the security hotfixes and the fix round from the code review and security audit, the pipeline with reviewable pull requests, code comments and documentation for a second engineer, the first five refactor stages, and Campus, Shop and the jobs board open to every student.',
+    details: [
+      'Sessions: every session-minting route runs the revocation gate (ban only; a suspended student stays signed in to read the notice). A Redis blip no longer answers as "session revoked" — it answers 503 and the clients retry silently, which was the root cause of the random web sign-outs. The presence heartbeat can never sign anyone out.',
+      'Android keeps the session encrypted at rest (AES-256-GCM, key in the Keystore, three-state custody that never mints a new key on a slow boot). Deep links that set a session or join a group ask first; the app accepts only its own scheme.',
+      'Money: payout claims are compare-and-swap with transfer tracking on the order row, refunds take a claim that excludes payouts, reversed transfers unwind paid_out, idempotency keys are stable per user intent on web and mobile, and the two idempotency 409s carry machine-readable codes.',
+      'Offline work is never purged on sign-in or sign-out on either platform; foreign work is preserved and reclaimable; results carry an idempotency key from the moment they are queued.',
+      'Account deletion purges storage recursively across every bucket, including uploaded CVs, and reports partial failures honestly.',
+      'Campus, Shop, the marketplace and the jobs board are open to every signed-in student; the founder-only pilot allowlist is deleted.',
+    ],
+    howToUse: [
+      'Nothing new to learn for students; the same screens behave the same, with the private-pilot wall gone from Campus and Shop.',
+      'For the team: docs/CONTRIBUTING.md and docs/PIPELINE.md describe branches, pull requests, the nine CI jobs and how a change reaches production.',
+    ],
+    surfaces: ['web', 'mobile', 'api', 'database'],
+    adminNotes: [
+      'Migrations to hand-apply before or with this deploy: 20260915100000 (RLS ownership hardening), 20260915110000 (two-phase webhook), 20260915113000 (order payout tracking), 20260915140000 (payout attempt + refund claim), plus the older 20260912090000 and 20260912200000. The code degrades safely when a column is missing, but the fixes are inert until the migrations land.',
+      'AI_DAILY_BUDGET_CREDITS is unset (unlimited); set a number on Render to cap platform-wide AI spend (503 AI_BUDGET_EXHAUSTED when reached).',
+      'OTA updates are disabled in app.config.ts; ship full builds.',
+    ],
+  },
+  {
     id: 'open-campus-marketplace',
     title: 'Campus and the Marketplace are open to every student',
     area: 'marketplace',

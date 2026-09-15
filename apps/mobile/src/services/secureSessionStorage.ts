@@ -41,9 +41,20 @@
  *            the null is NOT cached, and the read is retried on the next access
  *            with a longer budget (and once in the background after boot).
  *
- * While custody is `unknown`, `setItem` keeps the value in memory only and
- * `removeItem` defers the disk delete (it is replayed once custody resolves), so
- * an unavailable Keystore can never be the reason a session is destroyed.
+ * `absent` is confirmed by a second read before anything destructive happens.
+ *
+ * THE DELETE RULE — A REMOVE MUST NOT ECHO OUR OWN "NO SESSION".
+ * auth-js calls `removeItem` as part of giving up on a session, so the
+ * `getItem` that answers "none" because custody was `unknown` is followed
+ * within milliseconds by a `removeItem` for a session that is intact on disk.
+ * A first cut of this file deferred that delete and replayed it once custody
+ * resolved, which destroyed the session a beat later instead of at once — the
+ * 1.0.61 smoke ("signed out on first launch and every launch after"). A delete
+ * is therefore honoured only for an entry whose value this process actually saw
+ * (`observedEntries`): a read-back session or one handed to `setItem` means the
+ * student really was signed in here, so a later removal is a real sign-out.
+ * Nothing else may delete. `setItem` with no key likewise keeps the value in
+ * memory only and leaves the disk untouched.
  *
  * The cipher is AES-256-GCM from `@noble/ciphers` — pure JS and audited, so it
  * needs no native module, no rebuild and stays OTA-safe (React Native has no
@@ -264,12 +275,34 @@ let resolvedCustody: KeyCustody | null = null;
 let custodyPromise: Promise<KeyCustody> | null = null;
 let custodyAttempts = 0;
 let backgroundRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
 /**
- * Entries whose delete was deferred because custody was `unknown` at the time.
- * Replayed as soon as custody resolves, so an explicit sign-out still sticks
- * without an unavailable Keystore ever being the reason a session is destroyed.
+ * Entries whose VALUE this process has actually seen — read back non-null, or
+ * handed to us by `setItem`.
+ *
+ * This is the whole of the delete rule, and it is load-bearing. auth-js calls
+ * `removeItem` as part of giving up on a session, so a `getItem` that answered
+ * "none" only because the Keystore was slow is immediately followed by a
+ * `removeItem` for a session that is perfectly intact on disk. A delete is
+ * therefore honoured ONLY for an entry this process has proof of: reading or
+ * writing a value means the student really was signed in here, so a later
+ * removal is a real sign-out. A removal for an entry we never saw is dropped —
+ * it can only be the echo of our own "no session" answer.
  */
-const deferredRemovals = new Set<string>();
+const observedEntries = new Set<string>();
+
+/** One line per storage key per process, so a release build is not silent. */
+const diagnosed = new Set<string>();
+
+/**
+ * Release builds keep `console.warn` (verified in the 1.0.61 logcat), so this
+ * is the one trace that survives to a device smoke. It fires once per key.
+ */
+function diagnose(key: string, outcome: string): void {
+  if (diagnosed.has(key)) return;
+  diagnosed.add(key);
+  console.warn(`[sessionStorage] first read of ${key}: ${outcome}`);
+}
 
 /** A single read. Never mints — minting is `mintSessionKey`, and only on `absent`. */
 async function readKeyCustody(timeoutMs: number): Promise<KeyCustody> {
@@ -298,16 +331,25 @@ function sessionKeyCustody(): Promise<KeyCustody> {
 
   const timeoutMs = custodyAttempts === 0 ? SECURE_STORE_TIMEOUT_MS : SECURE_STORE_RETRY_TIMEOUT_MS;
   custodyAttempts += 1;
-  const attempt = readKeyCustody(timeoutMs).then((custody) => {
-    custodyPromise = null;
-    if (custody.status === 'unknown') {
-      scheduleBackgroundKeyRetry();
+  const attempt = readKeyCustody(timeoutMs)
+    .then(async (first) => {
+      // `absent` is the only answer that authorises minting a key or clearing a
+      // stored session, so it is never taken on one reading. The confirmation
+      // keeps the short budget: a Keystore that just answered is answering, and
+      // boot must still be bounded (worst case 2 × 1.5 s, and a confirm that
+      // does not come back leaves custody `unknown`, which destroys nothing).
+      if (first.status !== 'absent') return first;
+      return readKeyCustody(SECURE_STORE_TIMEOUT_MS);
+    })
+    .then((custody) => {
+      custodyPromise = null;
+      if (custody.status === 'unknown') {
+        scheduleBackgroundKeyRetry();
+        return custody;
+      }
+      resolvedCustody = custody;
       return custody;
-    }
-    resolvedCustody = custody;
-    void flushDeferredRemovals();
-    return custody;
-  });
+    });
   custodyPromise = attempt;
   return attempt;
 }
@@ -326,20 +368,6 @@ function scheduleBackgroundKeyRetry(): void {
   }, BACKGROUND_KEY_RETRY_MS);
   // Never hold a node/jest process open for this.
   (backgroundRetryTimer as unknown as { unref?: () => void }).unref?.();
-}
-
-/** Deletes that were held back while custody was `unknown`. */
-async function flushDeferredRemovals(): Promise<void> {
-  if (deferredRemovals.size === 0) return;
-  const pending = [...deferredRemovals];
-  deferredRemovals.clear();
-  for (const key of pending) {
-    try {
-      await AsyncStorage.removeItem(key);
-    } catch (err) {
-      console.warn('[sessionStorage] could not clear the stored session', err);
-    }
-  }
 }
 
 /**
@@ -370,7 +398,6 @@ async function mintSessionKey(): Promise<string | null> {
     return null;
   }
   resolvedCustody = { status: 'present', keyHex: fresh };
-  void flushDeferredRemovals();
   return fresh;
 }
 
@@ -454,6 +481,7 @@ export const EncryptedSessionStorageAdapter = {
       return null;
     }
     if (!raw) {
+      diagnose(key, 'nothing stored');
       memoryCache.set(key, null);
       return null;
     }
@@ -469,12 +497,16 @@ export const EncryptedSessionStorageAdapter = {
       if (keyHex) {
         try {
           await AsyncStorage.setItem(key, await wrap(raw, keyHex, key));
+          diagnose(key, 'legacy plaintext session, migrated to ciphertext');
         } catch (err) {
+          diagnose(key, 'legacy plaintext session, migration write failed');
           console.warn('[sessionStorage] could not migrate the plaintext session', err);
         }
       } else {
+        diagnose(key, 'legacy plaintext session, kept as-is (no key yet)');
         console.warn('[sessionStorage] no key available; the stored session stays in plaintext for now');
       }
+      observedEntries.add(key);
       memoryCache.set(key, raw);
       return raw;
     }
@@ -485,11 +517,9 @@ export const EncryptedSessionStorageAdapter = {
     // release build would load a session with no key and no AAD check, and the
     // builds that could have written one never shipped (M6).
     if (envelope.alg !== activeCipher.alg) {
-      console.warn(
-        `[sessionStorage] stored session uses ${envelope.alg}; this build cannot read it — clearing the entry`
-      );
+      diagnose(key, `envelope uses ${envelope.alg}, which this build cannot read`);
+      console.warn(`[sessionStorage] stored session uses ${envelope.alg}; this build cannot read it`);
       memoryCache.set(key, null);
-      await AsyncStorage.removeItem(key).catch(() => {});
       return null;
     }
 
@@ -499,7 +529,10 @@ export const EncryptedSessionStorageAdapter = {
       // The Keystore hung or refused — we do NOT know there is no key. Report
       // "no session" so boot is never blocked, leave the ciphertext exactly
       // where it is, and do NOT cache this miss: the next access re-asks with a
-      // longer budget, and a background retry is already scheduled.
+      // longer budget, and a background retry is already scheduled. `key` is
+      // deliberately NOT added to `observedEntries`, so the `removeItem` auth-js
+      // fires on the back of this answer cannot delete the session.
+      diagnose(key, 'key state unknown; reporting no session and keeping the ciphertext');
       console.warn(
         '[sessionStorage] the session key could not be read; reporting no session for now and keeping the stored session intact'
       );
@@ -507,9 +540,11 @@ export const EncryptedSessionStorageAdapter = {
     }
 
     if (custody.status === 'absent') {
-      // SecureStore positively answered "no key". The envelope on disk can
-      // never be decrypted again (a restored backup, or a cleared keystore), so
-      // it is dead weight rather than a session.
+      // SecureStore positively answered "no key", twice (the answer is
+      // confirmed before anything destructive happens). The envelope on disk can
+      // never be decrypted again — a restored backup, a cleared keystore, or an
+      // APK signed with a different key — so it is dead weight, not a session.
+      diagnose(key, 'key confirmed absent; the stored ciphertext is unopenable and is being cleared');
       console.warn(
         '[sessionStorage] the session key is gone from SecureStore (restored backup or cleared keystore); the stored session can never be decrypted and is being cleared'
       );
@@ -526,14 +561,18 @@ export const EncryptedSessionStorageAdapter = {
       plaintext = null;
     }
 
+    diagnose(key, plaintext === null ? 'envelope did not authenticate' : 'session decrypted');
+    if (plaintext !== null) observedEntries.add(key);
     memoryCache.set(key, plaintext);
     return plaintext;
   },
 
   setItem: async (key: string, value: string): Promise<void> => {
     memoryCache.set(key, value);
-    // A write means this entry is wanted; it supersedes any deferred delete.
-    deferredRemovals.delete(key);
+    // A value handed to us is proof the student is signed in here, so a later
+    // `removeItem` for this entry is a real sign-out rather than the echo of a
+    // Keystore non-answer.
+    observedEntries.add(key);
     const keyHex = await writableSessionKey();
     if (!keyHex) {
       // Without a key we will not write a session we could never open again —
@@ -555,14 +594,17 @@ export const EncryptedSessionStorageAdapter = {
 
   removeItem: async (key: string): Promise<void> => {
     memoryCache.set(key, null);
-    // auth-js calls removeItem whenever a getItem comes back empty, so a
-    // Keystore non-answer would otherwise delete a session it could not read.
-    // Defer instead: the delete is replayed the moment custody resolves.
-    if (!resolvedCustody) {
-      deferredRemovals.add(key);
-      void sessionKeyCustody();
+    // THE DELETE RULE. auth-js calls `removeItem` as part of giving up on a
+    // session — including immediately after the `getItem` that answered "none"
+    // because the Keystore had not come back yet. Deleting there wipes a session
+    // that is perfectly intact on disk, and the student is signed out on this
+    // launch and every launch after. So a delete is honoured only for an entry
+    // whose value this process actually saw. Anything else is our own "no
+    // session" answer coming back at us, and is dropped: the entry is treated as
+    // gone for this run (the memory cache above) and left untouched on disk.
+    if (!observedEntries.has(key)) {
       console.warn(
-        '[sessionStorage] the session key state is unknown; deferring the delete until it resolves'
+        '[sessionStorage] ignoring a delete for a session this process never read; the stored session is left on disk'
       );
       return;
     }
@@ -581,7 +623,8 @@ export function __resetSessionStorageForTests(): void {
   custodyAttempts = 0;
   if (backgroundRetryTimer) clearTimeout(backgroundRetryTimer);
   backgroundRetryTimer = null;
-  deferredRemovals.clear();
+  observedEntries.clear();
+  diagnosed.clear();
   memoryCache.clear();
   activeCipher = AES_GCM_CIPHER;
 }

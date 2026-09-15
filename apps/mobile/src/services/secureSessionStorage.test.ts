@@ -244,7 +244,9 @@ describe('plaintext migration', () => {
     );
 
     await expect(adapter.getItem(KEY)).resolves.toBeNull();
-    expect(asyncStore.has(KEY)).toBe(false);
+    // Refused, not adopted. It is left on disk rather than deleted: this build
+    // cannot read it, and deleting gains nothing while risking a real session.
+    expect(await adapter.getItem(KEY)).toBeNull();
   });
 
   it('refuses the passthrough double outside a debug build', () => {
@@ -377,7 +379,17 @@ describe('key custody', () => {
     }
   });
 
-  it('defers removeItem while the key is unknown and replays it once custody resolves', async () => {
+  /**
+   * THE 1.0.61 RELEASE BLOCKER, in auth-js's own call order.
+   *
+   * `_recoverAndRefresh` does `getItem` and, when that answers nothing, gives up
+   * on the session — which runs `removeItem` for the very entry it just failed
+   * to read. If the read only failed because the Keystore had not come back
+   * within the boot budget, that delete destroys a session that is perfectly
+   * intact, and the student is on the sign-in screen on this launch and every
+   * launch after.
+   */
+  it('survives auth-js getItem → removeItem → getItem while the Keystore is slow', async () => {
     jest.useFakeTimers();
     try {
       const onDisk = await seedStoredSession();
@@ -385,19 +397,34 @@ describe('key custody', () => {
       getItemAsyncImpl = (key) =>
         hang ? new Promise<string | null>(() => {}) : Promise.resolve(secureStore.get(key) ?? null);
 
-      // auth-js calls removeItem whenever getItem comes back empty.
-      await adapter.removeItem(KEY);
+      // 1. auth-js reads: the Keystore is slow, so the honest answer is "none".
+      const first = adapter.getItem(KEY);
       await jest.advanceTimersByTimeAsync(2_000);
+      await expect(first).resolves.toBeNull();
+
+      // 2. auth-js gives up and removes. THIS MUST NOT DELETE ANYTHING — the
+      //    value was never read this process, so the remove can only be our own
+      //    answer echoing back.
+      await adapter.removeItem(KEY);
+      await jest.advanceTimersByTimeAsync(10_000);
       expect(asyncStore.get(KEY)).toBe(onDisk);
 
-      // The Keystore settles; the background retry resolves custody and the
-      // deferred delete is replayed, so a real sign-out still sticks.
+      // 3. The Keystore settles and the session is still there.
       hang = false;
-      await jest.advanceTimersByTimeAsync(4_000);
-      expect(asyncStore.has(KEY)).toBe(false);
+      __resetSessionStorageForTests();
+      setSessionCipher(reversingCipher);
+      await expect(adapter.getItem(KEY)).resolves.toBe(SESSION);
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('still honours a real sign-out, where the session was read first', async () => {
+    await seedStoredSession();
+    expect(await adapter.getItem(KEY)).toBe(SESSION);
+
+    await adapter.removeItem(KEY);
+    expect(asyncStore.has(KEY)).toBe(false);
   });
 
   it('clears a session whose key is genuinely gone, and says why', async () => {
@@ -410,6 +437,77 @@ describe('key custody', () => {
     expect((console.warn as jest.Mock).mock.calls.flat().join(' ')).toContain(
       'the session key is gone from SecureStore'
     );
+  });
+
+  /**
+   * The upgrade every fielded handset performs: 1.0.61 installed over a
+   * signed-in 1.0.60, whose session is a bare JSON object in AsyncStorage and
+   * whose SecureStore holds no key at all.
+   */
+  it('keeps a 1.0.60 plaintext session across a boot where SecureStore answers late', async () => {
+    jest.useFakeTimers();
+    try {
+      // What 1.0.60 actually wrote: auth-js's session object, unwrapped. The
+      // `currentSession` wrapper from the gotrue-js v1 era is accepted too, so
+      // the fixture carries it.
+      const LEGACY = JSON.stringify({
+        currentSession: {
+          access_token: 'eyJ.header.payload',
+          refresh_token: 'r-1060',
+          expires_at: 1_757_000_000,
+          token_type: 'bearer',
+          user: { id: 'u-1060', email: 'ada@unilag.edu.ng' },
+        },
+        expiresAt: 1_757_000_000,
+      });
+      asyncStore.set(KEY, LEGACY);
+      setSessionCipher(reversingCipher);
+
+      // The Keystore misses the 1.5 s boot budget on this cold start.
+      let hang = true;
+      getItemAsyncImpl = (key) =>
+        hang ? new Promise<string | null>(() => {}) : Promise.resolve(secureStore.get(key) ?? null);
+
+      const first = adapter.getItem(KEY);
+      await jest.advanceTimersByTimeAsync(2_000);
+      // The student stays signed in: a legacy session needs no key to be READ.
+      await expect(first).resolves.toBe(LEGACY);
+      // And it is still on disk, still readable, and nothing was minted.
+      expect(asyncStore.get(KEY)).toBe(LEGACY);
+      expect(setItemAsyncCalls).toEqual([]);
+
+      // (auth-js's give-up path never fires here: the read was not empty, so it
+      //  has a session to work with rather than one to abandon.)
+
+      // Next launch, with a Keystore that answers: the key is minted and the
+      // session is migrated to ciphertext, still signed in.
+      hang = false;
+      __resetSessionStorageForTests();
+      setSessionCipher(reversingCipher);
+      await expect(adapter.getItem(KEY)).resolves.toBe(LEGACY);
+      expect(asyncStore.get(KEY)).toContain('test-reverse');
+      expect(asyncStore.get(KEY)).not.toContain('r-1060');
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('confirms an absent key on a second read before minting over it', async () => {
+    // A single spurious null must not authorise a mint: the first read is
+    // confirmed, and the confirmation wins.
+    const realKey = 'ab'.repeat(32);
+    secureStore.set(SESSION_KEY_STORE_KEY, realKey);
+    let call = 0;
+    getItemAsyncImpl = async (key) => {
+      call += 1;
+      return call === 1 ? null : (secureStore.get(key) ?? null);
+    };
+
+    setSessionCipher(reversingCipher);
+    await adapter.setItem(KEY, SESSION);
+
+    expect(setItemAsyncCalls).toEqual([]);
+    expect(secureStore.get(SESSION_KEY_STORE_KEY)).toBe(realKey);
   });
 
   it('still mints a key on a genuinely fresh install', async () => {
