@@ -28,8 +28,14 @@ function Invoke-Supabase {
     [switch]$PreferMinimal
   )
   $uri = "$SupabaseUrl$Path"
-  $params = @{ Method = $Method; Uri = $uri; Headers = $Headers; UseBasicParsing = $true }
-  if ($PreferMinimal) { $params.Headers['Prefer'] = 'return=minimal' }
+  # Copy the caller's headers. Writing Prefer straight into $Headers mutated the
+  # shared $script:AdminHeaders hashtable, so one -PreferMinimal call left
+  # 'return=minimal' stuck on every later admin request — including the GETs
+  # whose bodies these assertions read.
+  $requestHeaders = @{}
+  foreach ($key in $Headers.Keys) { $requestHeaders[$key] = $Headers[$key] }
+  $params = @{ Method = $Method; Uri = $uri; Headers = $requestHeaders; UseBasicParsing = $true }
+  if ($PreferMinimal) { $requestHeaders['Prefer'] = 'return=minimal' }
   if ($null -ne $Body) {
     $params.ContentType = 'application/json'
     $params.Body = ($Body | ConvertTo-Json -Compress -Depth 10)
@@ -40,15 +46,49 @@ function Invoke-Supabase {
   } catch {
     $status = 0
     $body = $null
-    if ($_.Exception.Response) {
-      $status = [int]$_.Exception.Response.StatusCode
+    $resp = $_.Exception.Response
+    if ($resp) {
+      try { $status = [int]$resp.StatusCode } catch { $status = 0 }
+    }
+    # Body capture, in the order that actually works on each host.
+    #
+    # PowerShell 7 (the ubuntu-latest CI runner) hands back a
+    # System.Net.Http.HttpResponseMessage, which has NO GetResponseStream() —
+    # the old code called it inside a swallowing `catch {}`, so every PoC
+    # failure printed a bare status with an empty body and told you nothing.
+    # PS7 puts the payload on $_.ErrorDetails.Message; Windows PowerShell 5.1
+    # still needs the stream read. Try both, never swallow silently.
+    if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+      $body = $_.ErrorDetails.Message
+    } elseif ($resp -and $resp.PSObject.Properties['Content'] -and $resp.Content) {
+      try { $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult() } catch {}
+    } elseif ($resp -and $resp.PSObject.Methods['GetResponseStream']) {
       try {
-        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+        $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
         $body = $reader.ReadToEnd()
       } catch {}
     }
+    if (-not $body) { $body = "(no response body; exception: $($_.Exception.Message))" }
     return @{ ok = $false; status = $status; body = $body }
   }
+}
+
+# marketplace_listings.campus_id became NOT NULL in
+# 20260723221532_nationwide_marketplace_access.sql. A seed listing without one
+# is rejected by Postgres with 23502 before this script can prove anything, so
+# every listing seed resolves a real active campus first.
+function Get-SeedCampusId {
+  $resp = Invoke-Supabase -Method GET `
+    -Path '/rest/v1/marketplace_campuses?select=id&active=eq.true&order=slug.asc&limit=1' `
+    -Headers $script:AdminHeaders
+  if ($resp.status -ge 400 -or -not $resp.body) {
+    throw "campus lookup failed: $($resp.status) $($resp.body)"
+  }
+  $rows = @($resp.body | ConvertFrom-Json)
+  if ($rows.Count -lt 1) {
+    throw 'No active row in marketplace_campuses. The PoC target project is missing the marketplace seed data (supabase/migrations/20260705120000_marketplace_location.sql) — apply the migrations to the staging project, do not relax this check.'
+  }
+  return $rows[0].id
 }
 
 function Get-UserJwt([string]$Email, [string]$Password) {
@@ -110,9 +150,14 @@ try {
   foreach ($u in @($buyer, $seller)) {
     $upsertHeaders = $script:AdminHeaders.Clone()
     $upsertHeaders['Prefer'] = 'resolution=merge-duplicates'
-    Invoke-Supabase -Method POST -Path '/rest/v1/profiles' -Headers $upsertHeaders `
-      -Body @{ id = $u.id; username = "a2$($u.id.Substring(0,8))"; name = $u.user_metadata.name } | Out-Null
+    $profileUpsert = Invoke-Supabase -Method POST -Path '/rest/v1/profiles' -Headers $upsertHeaders `
+      -Body @{ id = $u.id; username = "a2$($u.id.Substring(0,8))"; name = $u.user_metadata.name }
+    if ($profileUpsert.status -ge 400) {
+      throw "profile seed failed for $($u.id): $($profileUpsert.status) $($profileUpsert.body)"
+    }
   }
+
+  $campusId = Get-SeedCampusId
 
   $listingCreate = Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_listings' -Headers $script:AdminHeaders -Body @{
     id = $listingId
@@ -120,8 +165,11 @@ try {
     title = "Auth02 PoC Listing $ts"
     description = 'ephemeral security test listing'
     price = 1000
-    category = 'books'
+    category = 'textbook_exchange'
     status = 'active'
+    campus_id = $campusId
+    country_code = 'NG'
+    currency = 'NGN'
     images = @()
   } -PreferMinimal
   if ($listingCreate.status -ge 400) {

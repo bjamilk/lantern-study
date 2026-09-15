@@ -59,6 +59,7 @@ jobs:
           echo "All PoC credentials present."
 
       - name: Write ephemeral .env for PoC scripts
+        id: write_env
         shell: bash
         run: |
           cat > .env <<EOF
@@ -72,26 +73,40 @@ jobs:
           EOF
 
       - name: F-01 marketplace offers PoC
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f01-marketplace-offers.ps1
 
+      # F-02 is the only PoC that calls the API server: it mints a JWT against
+      # VITE_SUPABASE_URL and asks $VITE_API_BASE_URL to sign someone else's
+      # private avatar. That host must serve the SAME Supabase project, so it
+      # cannot be defaulted — a JWT from one project against another host 401s,
+      # and the attacker probe would read as "blocked" while nothing was
+      # blocked. Without the VITE_SUPABASE_API_BASE_URL secret this one step
+      # fails with that message, and the five PoCs that talk only to PostgREST
+      # still run and still prove what they prove.
       - name: F-02 profile avatar IDOR PoC
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f02-profile-avatar-idor.ps1
 
       - name: Auth-02 marketplace inquiries PoC
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-auth02-marketplace-inquiries.ps1
 
       - name: RLS privilege battery
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify-rls-privileges.ps1
 
       - name: SEC-01/02/03 Phase 0 RLS PoC
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-sec01-03-rls-phase0.ps1
 
       - name: Phase 3 DEFINER EXECUTE PoC
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-phase3-definer-execute.ps1
 

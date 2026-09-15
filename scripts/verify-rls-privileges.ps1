@@ -28,8 +28,14 @@ function Invoke-Supabase {
     [switch]$PreferMinimal
   )
   $uri = "$SupabaseUrl$Path"
-  $params = @{ Method = $Method; Uri = $uri; Headers = $Headers; UseBasicParsing = $true }
-  if ($PreferMinimal) { $params.Headers['Prefer'] = 'return=minimal' }
+  # Copy the caller's headers. Writing Prefer straight into $Headers mutated the
+  # shared $script:AdminHeaders hashtable, so one -PreferMinimal call left
+  # 'return=minimal' stuck on every later admin request — including the GETs
+  # whose bodies these assertions read.
+  $requestHeaders = @{}
+  foreach ($key in $Headers.Keys) { $requestHeaders[$key] = $Headers[$key] }
+  $params = @{ Method = $Method; Uri = $uri; Headers = $requestHeaders; UseBasicParsing = $true }
+  if ($PreferMinimal) { $requestHeaders['Prefer'] = 'return=minimal' }
   if ($null -ne $Body) {
     $params.ContentType = 'application/json'
     $params.Body = ($Body | ConvertTo-Json -Compress -Depth 10)
@@ -40,15 +46,49 @@ function Invoke-Supabase {
   } catch {
     $status = 0
     $body = $null
-    if ($_.Exception.Response) {
-      $status = [int]$_.Exception.Response.StatusCode
+    $resp = $_.Exception.Response
+    if ($resp) {
+      try { $status = [int]$resp.StatusCode } catch { $status = 0 }
+    }
+    # Body capture, in the order that actually works on each host.
+    #
+    # PowerShell 7 (the ubuntu-latest CI runner) hands back a
+    # System.Net.Http.HttpResponseMessage, which has NO GetResponseStream() —
+    # the old code called it inside a swallowing `catch {}`, so every PoC
+    # failure printed a bare status with an empty body and told you nothing.
+    # PS7 puts the payload on $_.ErrorDetails.Message; Windows PowerShell 5.1
+    # still needs the stream read. Try both, never swallow silently.
+    if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+      $body = $_.ErrorDetails.Message
+    } elseif ($resp -and $resp.PSObject.Properties['Content'] -and $resp.Content) {
+      try { $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult() } catch {}
+    } elseif ($resp -and $resp.PSObject.Methods['GetResponseStream']) {
       try {
-        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+        $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
         $body = $reader.ReadToEnd()
       } catch {}
     }
+    if (-not $body) { $body = "(no response body; exception: $($_.Exception.Message))" }
     return @{ ok = $false; status = $status; body = $body }
   }
+}
+
+# marketplace_listings.campus_id became NOT NULL in
+# 20260723221532_nationwide_marketplace_access.sql. A seed listing without one
+# is rejected by Postgres with 23502 before this script can prove anything, so
+# every listing seed resolves a real active campus first.
+function Get-SeedCampusId {
+  $resp = Invoke-Supabase -Method GET `
+    -Path '/rest/v1/marketplace_campuses?select=id&active=eq.true&order=slug.asc&limit=1' `
+    -Headers $script:AdminHeaders
+  if ($resp.status -ge 400 -or -not $resp.body) {
+    throw "campus lookup failed: $($resp.status) $($resp.body)"
+  }
+  $rows = @($resp.body | ConvertFrom-Json)
+  if ($rows.Count -lt 1) {
+    throw 'No active row in marketplace_campuses. The PoC target project is missing the marketplace seed data (supabase/migrations/20260705120000_marketplace_location.sql) — apply the migrations to the staging project, do not relax this check.'
+  }
+  return $rows[0].id
 }
 
 function Get-UserJwt([string]$Email, [string]$Password) {
@@ -114,8 +154,11 @@ try {
   foreach ($u in @($userA, $userB, $userC)) {
     $upsertHeaders = $script:AdminHeaders.Clone()
     $upsertHeaders['Prefer'] = 'resolution=merge-duplicates'
-    Invoke-Supabase -Method POST -Path '/rest/v1/profiles' -Headers $upsertHeaders `
-      -Body @{ id = $u.id; username = "rls$($u.id.Substring(0,8))"; name = $u.user_metadata.name } | Out-Null
+    $profileUpsert = Invoke-Supabase -Method POST -Path '/rest/v1/profiles' -Headers $upsertHeaders `
+      -Body @{ id = $u.id; username = "rls$($u.id.Substring(0,8))"; name = $u.user_metadata.name }
+    if ($profileUpsert.status -ge 400) {
+      throw "profile seed failed for $($u.id): $($profileUpsert.status) $($profileUpsert.body)"
+    }
   }
 
   # 1) profiles.settings escalation stripped
@@ -207,25 +250,37 @@ try {
   $inquiryId = [guid]::NewGuid().ToString()
   $inquiryThreadId = (@($userA.id, $userB.id) | Sort-Object) -join '-'
   $inquiryThreadId = (@($userA.id, $userB.id) | Sort-Object) -join '-'
-  Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_listings' -Headers $script:AdminHeaders -Body @{
+  $inquiryCampusId = Get-SeedCampusId
+  # Seeds are asserted, not fire-and-forget: a silently failed seed turns the
+  # exploit assertions below into "blocked" for the wrong reason.
+  $inquiryListingCreate = Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_listings' -Headers $script:AdminHeaders -Body @{
     id = $inquiryListingId
     user_id = $userB.id
     title = "RLS verify inquiry $ts"
     description = 'ephemeral'
     price = 500
-    category = 'books'
+    category = 'textbook_exchange'
     status = 'active'
+    campus_id = $inquiryCampusId
+    country_code = 'NG'
+    currency = 'NGN'
     images = @()
-  } -PreferMinimal | Out-Null
-  Invoke-Supabase -Method POST -Path '/rest/v1/dm_threads' -Headers $script:AdminHeaders -Body @{
+  } -PreferMinimal
+  if ($inquiryListingCreate.status -ge 400) {
+    throw "inquiry listing seed failed: $($inquiryListingCreate.status) $($inquiryListingCreate.body)"
+  }
+  $inquiryThreadCreate = Invoke-Supabase -Method POST -Path '/rest/v1/dm_threads' -Headers $script:AdminHeaders -Body @{
     id = $inquiryThreadId
     participant_ids = @($userA.id, $userB.id)
     participants = @(
       @{ id = $userA.id; name = $userA.user_metadata.name },
       @{ id = $userB.id; name = $userB.user_metadata.name }
     )
-  } -PreferMinimal | Out-Null
-  Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_inquiries' -Headers $script:AdminHeaders -Body @{
+  } -PreferMinimal
+  if ($inquiryThreadCreate.status -ge 400) {
+    throw "inquiry dm thread seed failed: $($inquiryThreadCreate.status) $($inquiryThreadCreate.body)"
+  }
+  $inquirySeed = Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_inquiries' -Headers $script:AdminHeaders -Body @{
     id = $inquiryId
     listing_id = $inquiryListingId
     buyer_id = $userA.id
@@ -233,7 +288,10 @@ try {
     dm_thread_id = $inquiryThreadId
     status = 'open'
     initial_message = 'seed'
-  } -PreferMinimal | Out-Null
+  } -PreferMinimal
+  if ($inquirySeed.status -ge 400) {
+    throw "inquiry seed failed: $($inquirySeed.status) $($inquirySeed.body)"
+  }
   $inquiryInsert = Invoke-Supabase -Method POST -Path '/rest/v1/marketplace_inquiries' -Headers $headersA -Body @{
     listing_id = $inquiryListingId
     buyer_id = $userA.id
