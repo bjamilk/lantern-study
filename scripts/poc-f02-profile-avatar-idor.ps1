@@ -46,10 +46,18 @@ if (-not $SupabaseUrl) { $SupabaseUrl = $rootEnv['VITE_SUPABASE_URL'] }
 if (-not $AnonKey) { $AnonKey = $rootEnv['VITE_SUPABASE_ANON_KEY'] }
 if (-not $ServiceRoleKey) { $ServiceRoleKey = $apiEnv['SUPABASE_SERVICE_ROLE_KEY'] }
 if (-not $ApiBaseUrl) { $ApiBaseUrl = $rootEnv['VITE_API_BASE_URL'] }
-if (-not $ApiBaseUrl) { $ApiBaseUrl = 'https://lantern-study-api.onrender.com' }
 
 if (-not $SupabaseUrl -or -not $AnonKey -or -not $ServiceRoleKey) {
   throw 'Missing Supabase URL, anon key, or service role key (.env / apps/api-server/.env).'
+}
+
+# No production fallback. This PoC signs in against $SupabaseUrl and then calls
+# $ApiBaseUrl with that JWT. If the two point at different projects — which is
+# exactly what a silent fallback to the production API URL produces when the
+# base URL is unset — every call 401s, the attacker probe reads as "blocked"
+# for the wrong reason, and the step proves nothing. Fail loudly instead.
+if (-not $ApiBaseUrl) {
+  throw 'Missing VITE_API_BASE_URL (.env). In CI it comes from the VITE_SUPABASE_API_BASE_URL repository secret; point it at the API server that serves the SAME Supabase project as VITE_SUPABASE_URL.'
 }
 
 $script:AdminHeaders = @{
@@ -100,6 +108,7 @@ try {
 
   $signBlocked = $false
   $signStatus = 0
+  $signBody = $null
   try {
     Invoke-RestMethod -Method POST -Uri "$ApiBaseUrl/api/v1/storage/signed-url" -Headers $apiHeaders `
       -Body (@{ bucket = 'profile-avatars'; path = $avatarPath } | ConvertTo-Json) | Out-Null
@@ -108,6 +117,9 @@ try {
       $signStatus = [int]$_.Exception.Response.StatusCode
       $signBlocked = $signStatus -in 401, 403
     }
+    # PowerShell 7 carries the response body here; print it so a failing step
+    # says WHY it failed instead of just showing a status.
+    $signBody = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
   }
 
   $victimJwt = Get-UserJwt -Email $victim.email -Password $password
@@ -118,16 +130,25 @@ try {
     'User-Agent' = 'lantern-f02-poc/1.0'
   }
   $ownerAllowed = $false
+  $ownerStatus = 0
+  $ownerBody = $null
   try {
     $ownerResp = Invoke-WebRequest -Method POST -Uri "$ApiBaseUrl/api/v1/storage/signed-url" -Headers $victimHeaders `
       -Body (@{ bucket = 'profile-avatars'; path = $avatarPath } | ConvertTo-Json) -UseBasicParsing
-    $ownerAllowed = $ownerResp.StatusCode -eq 200
+    $ownerStatus = [int]$ownerResp.StatusCode
+    $ownerAllowed = $ownerStatus -eq 200
   } catch {
     $ownerAllowed = $false
+    if ($_.Exception.Response) {
+      try { $ownerStatus = [int]$_.Exception.Response.StatusCode } catch {}
+    }
+    $ownerBody = if ($_.ErrorDetails -and $_.ErrorDetails.Message) { $_.ErrorDetails.Message } else { $_.Exception.Message }
   }
 
   Write-Host "attacker sign private avatar blocked: $signBlocked (expect True) status=$signStatus"
-  Write-Host "owner sign own avatar allowed: $ownerAllowed (expect True)"
+  if ($signBody) { Write-Host "  attacker response body: $signBody" }
+  Write-Host "owner sign own avatar allowed: $ownerAllowed (expect True) status=$ownerStatus"
+  if ($ownerBody) { Write-Host "  owner response body: $ownerBody" }
 
   $passed = $signBlocked -and $ownerAllowed
   $result = [ordered]@{

@@ -39,13 +39,29 @@ function Invoke-Supabase {
   } catch {
     $status = 0
     $body = $null
-    if ($_.Exception.Response) {
-      $status = [int]$_.Exception.Response.StatusCode
+    $resp = $_.Exception.Response
+    if ($resp) {
+      try { $status = [int]$resp.StatusCode } catch { $status = 0 }
+    }
+    # Body capture, in the order that actually works on each host.
+    #
+    # PowerShell 7 (the ubuntu-latest CI runner) hands back a
+    # System.Net.Http.HttpResponseMessage, which has NO GetResponseStream() —
+    # the old code called it inside a swallowing `catch {}`, so every PoC
+    # failure printed a bare status with an empty body and told you nothing.
+    # PS7 puts the payload on $_.ErrorDetails.Message; Windows PowerShell 5.1
+    # still needs the stream read. Try both, never swallow silently.
+    if ($_.ErrorDetails -and $_.ErrorDetails.Message) {
+      $body = $_.ErrorDetails.Message
+    } elseif ($resp -and $resp.PSObject.Properties['Content'] -and $resp.Content) {
+      try { $body = $resp.Content.ReadAsStringAsync().GetAwaiter().GetResult() } catch {}
+    } elseif ($resp -and $resp.PSObject.Methods['GetResponseStream']) {
       try {
-        $reader = New-Object System.IO.StreamReader($_.Exception.Response.GetResponseStream())
+        $reader = New-Object System.IO.StreamReader($resp.GetResponseStream())
         $body = $reader.ReadToEnd()
       } catch {}
     }
+    if (-not $body) { $body = "(no response body; exception: $($_.Exception.Message))" }
     return @{ ok = $false; status = $status; body = $body }
   }
 }

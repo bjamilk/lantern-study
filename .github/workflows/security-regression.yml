@@ -44,12 +44,18 @@ jobs:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          # F-02 calls the API server with a JWT minted by VITE_SUPABASE_URL.
+          # If this is unset the PoC has no host to call, and a fallback to the
+          # production URL would 401 every call and read as "attack blocked" —
+          # a pass that proves nothing. Required, like the rest.
+          VITE_SUPABASE_API_BASE_URL: ${{ secrets.VITE_SUPABASE_API_BASE_URL }}
         shell: bash
         run: |
           missing=""
           [ -z "$VITE_SUPABASE_URL" ] && missing="$missing VITE_SUPABASE_URL"
           [ -z "$VITE_SUPABASE_ANON_KEY" ] && missing="$missing VITE_SUPABASE_ANON_KEY"
           [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] && missing="$missing SUPABASE_SERVICE_ROLE_KEY"
+          [ -z "$VITE_SUPABASE_API_BASE_URL" ] && missing="$missing VITE_SUPABASE_API_BASE_URL"
           if [ -n "$missing" ]; then
             echo "::error::security-regression cannot run. Missing repository secrets:$missing"
             echo "Point these at a STAGING Supabase project, never production — the service-role key bypasses RLS,"

@@ -335,13 +335,22 @@ and fails on a diff would close that.
 | Name | Wanted by | Consequence today |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | `security-regression.yml`, `admin-smoke.yml` | Both are inert. The regression job now fails loudly instead of passing green. |
-| `VITE_SUPABASE_API_BASE_URL` | `security-regression.yml` | Same. |
+| `VITE_SUPABASE_API_BASE_URL` | `security-regression.yml` | Same, and now checked by the job's first step. F-02 mints a JWT against `VITE_SUPABASE_URL` and calls this host with it, so it must be the API server for **that same project** — a mismatch 401s every call and makes the IDOR probe read as "blocked" when nothing was blocked. |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | `admin-smoke.yml` | Same. |
 
 **Point these at a staging Supabase project, never production.** The
 service-role key bypasses RLS, and `security-regression.yml` runs on
 `pull_request` — a compromised Action, or a malicious dependency in a Dependabot
 PR, would reach production data with it.
+
+**That staging project must have every migration in `supabase/migrations`
+applied.** The PoCs seed real rows (listings, offers, inquiries, groups, notes)
+through PostgREST, so they fail on a project whose schema lags: a missing table
+surfaces as `PGRST205`, a missing column as `PGRST204`, and a column that became
+`NOT NULL` later — `marketplace_listings.campus_id`, for one — as `23502`. The
+seed listings also resolve a real `marketplace_campuses` row at run time, so the
+marketplace location seed data must be present too. A failure like that is a
+schema gap to close on the project, not a script to loosen.
 
 ### Elsewhere
 
