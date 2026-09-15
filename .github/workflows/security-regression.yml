@@ -67,10 +67,62 @@ jobs:
           VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_BASE_URL=${{ secrets.VITE_SUPABASE_API_BASE_URL }}
           EOF
+          if [ -n "${{ secrets.VITE_SUPABASE_API_BASE_URL }}" ]; then
+            echo "has_api_base=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_api_base=false" >> "$GITHUB_OUTPUT"
+          fi
           mkdir -p apps/api-server
           cat > apps/api-server/.env <<EOF
           SUPABASE_SERVICE_ROLE_KEY=${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           EOF
+
+      # A wrong VITE_SUPABASE_URL is the failure mode that costs the most time:
+      # the Supabase *dashboard* URL (https://supabase.com/dashboard/project/<ref>)
+      # answers every /rest/v1 and /auth/v1 call with a 200 HTML page, so all six
+      # PoCs die deep inside with "You cannot call a method on a null-valued
+      # expression" or "expected denial, got status=200" -- which reads like a
+      # real security failure and is not one. Diagnose it once, up front.
+      - name: Preflight - VITE_SUPABASE_URL is a Supabase project API URL
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+        run: |
+          url="${SUPABASE_URL%/}"
+          case "$url" in
+            */dashboard*|https://supabase.com*|https://www.supabase.com*)
+              echo "::error::VITE_SUPABASE_URL is the Supabase dashboard URL, not the project API URL."
+              echo "Use Settings > API > Project URL: https://<project-ref>.supabase.co"
+              exit 1
+              ;;
+          esac
+          # PostgREST answers the root with JSON (OpenAPI) and an application/json
+          # content type. Anything else -- HTML, a redirect to a login page -- means
+          # this host is not the project's API.
+          code=$(curl -sS -o /tmp/preflight.body -w '%{http_code}' \
+            -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
+            "$url/rest/v1/" || echo 000)
+          head -c 1 /tmp/preflight.body > /tmp/preflight.first || true
+          first=$(cat /tmp/preflight.first 2>/dev/null || echo '')
+          if [ "$first" != "{" ] && [ "$first" != "[" ]; then
+            echo "::error::VITE_SUPABASE_URL does not serve PostgREST. GET <url>/rest/v1/ returned HTTP $code with a non-JSON body."
+            echo "First 300 bytes of the response (the URL itself is masked as a secret):"
+            head -c 300 /tmp/preflight.body || true
+            echo ""
+            echo "Set VITE_SUPABASE_URL to the STAGING project's API URL: https://<project-ref>.supabase.co"
+            exit 1
+          fi
+          # A JSON body means we did reach PostgREST. A non-200 then means the
+          # anon key does not belong to this project, which is its own bug and
+          # would make every PoC's "blocked" result meaningless.
+          if [ "$code" != "200" ]; then
+            echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned HTTP $code. VITE_SUPABASE_ANON_KEY probably does not belong to the project in VITE_SUPABASE_URL."
+            head -c 300 /tmp/preflight.body || true
+            echo ""
+            exit 1
+          fi
+          echo "Preflight OK: the target speaks PostgREST."
 
       - name: F-01 marketplace offers PoC
         if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
@@ -82,13 +134,34 @@ jobs:
       # private avatar. That host must serve the SAME Supabase project, so it
       # cannot be defaulted — a JWT from one project against another host 401s,
       # and the attacker probe would read as "blocked" while nothing was
-      # blocked. Without the VITE_SUPABASE_API_BASE_URL secret this one step
-      # fails with that message, and the five PoCs that talk only to PostgREST
-      # still run and still prove what they prove.
+      # blocked.
+      #
+      # So when VITE_SUPABASE_API_BASE_URL is absent this step is SKIPPED, not
+      # faked: it prints a ::warning:: annotation and writes a line into the job
+      # summary saying, in as many words, that the avatar IDOR is NOT covered by
+      # this run. It is never a silent pass. Set the secret and the step runs and
+      # enforces again, with no other change. The five PoCs that talk only to
+      # PostgREST run either way and still prove what they prove.
       - name: F-02 profile avatar IDOR PoC
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.write_env.outputs.has_api_base == 'true' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f02-profile-avatar-idor.ps1
+
+      - name: F-02 profile avatar IDOR PoC (SKIPPED - no API target)
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.write_env.outputs.has_api_base != 'true' }}
+        shell: bash
+        run: |
+          echo "::warning title=F-02 avatar IDOR PoC SKIPPED::VITE_SUPABASE_API_BASE_URL is not set, so the profile-avatar IDOR proof did NOT run. This job being green does not mean F-02 is fixed."
+          {
+            echo "### :warning: F-02 profile avatar IDOR PoC was SKIPPED"
+            echo ""
+            echo "\`VITE_SUPABASE_API_BASE_URL\` is not configured, so this run did **not** test the"
+            echo "private-avatar IDOR. It is the only PoC that needs a running API server; the other"
+            echo "five talk to PostgREST directly and did run."
+            echo ""
+            echo "To restore coverage, set the \`VITE_SUPABASE_API_BASE_URL\` repository secret to an API"
+            echo "server that serves the **same** Supabase project as \`VITE_SUPABASE_URL\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Auth-02 marketplace inquiries PoC
         if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}

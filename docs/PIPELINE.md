@@ -335,7 +335,7 @@ and fails on a diff would close that.
 | Name | Wanted by | Consequence today |
 |---|---|---|
 | `SUPABASE_SERVICE_ROLE_KEY` | `security-regression.yml`, `admin-smoke.yml` | Both are inert. The regression job now fails loudly instead of passing green. |
-| `VITE_SUPABASE_API_BASE_URL` | `security-regression.yml` | Still unset as of the first real run. Only the F-02 step needs it, so that step now fails by name while the five PostgREST-only PoCs run; it no longer falls back to the production API URL. F-02 mints a JWT against `VITE_SUPABASE_URL` and calls this host with it, so it must be the API server for **that same project** — a mismatch 401s every call and makes the IDOR probe read as "blocked" when nothing was blocked. |
+| `VITE_SUPABASE_API_BASE_URL` | `security-regression.yml` | Deliberately unset for now. Only the F-02 step needs it, so when it is empty that step is **skipped with a `::warning::` annotation and a job-summary line** saying the avatar IDOR was not covered — never a silent pass — while the five PostgREST-only PoCs run and enforce. Set the secret and F-02 runs and enforces again with no other change. It never falls back to the production API URL. F-02 mints a JWT against `VITE_SUPABASE_URL` and calls this host with it, so it must be the API server for **that same project** — a mismatch 401s every call and makes the IDOR probe read as "blocked" when nothing was blocked. |
 | `SUPABASE_URL`, `SUPABASE_ANON_KEY` | `admin-smoke.yml` | Same. |
 
 **Point these at a staging Supabase project, never production.** The
