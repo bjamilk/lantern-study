@@ -1,3 +1,13 @@
+/**
+ * Budget stack -> FinancialToolkit. Three offline tools behind one segmented
+ * header: static money tips, a percentage allocation simulator, and a compound
+ * savings calculator.
+ *
+ * Exports: FinancialToolkitScreen (default).
+ * Touches: budgetStore monthlyIncome / monthlyExpenses for the two summary
+ * tiles; @react-native-community/slider. Nothing here writes to the store or
+ * the API, and no figure entered in the simulator or calculator is saved.
+ */
 import React, { useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
 import { useNavigation } from '@react-navigation/native';

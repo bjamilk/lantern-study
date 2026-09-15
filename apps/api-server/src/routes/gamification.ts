@@ -296,7 +296,6 @@ router.get(
 router.get(
   '/stats',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -449,7 +448,6 @@ router.post(
 router.get(
   '/levels',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -560,7 +558,6 @@ async function ensureDailyQuests(userId: string, questDate: string) {
 router.post(
   '/streak/record',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -592,7 +589,6 @@ router.post(
 router.post(
   '/me/sync-progress',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -621,7 +617,6 @@ router.post(
 router.post(
   '/activity/record',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -740,7 +735,6 @@ router.post(
 router.get(
   '/activity',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const viewerId = requireAuthUserId(req, res);
     if (!viewerId) return;
@@ -770,7 +764,6 @@ router.get(
 router.get(
   '/streak',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -786,7 +779,6 @@ router.get(
 router.post(
   '/streak/freeze',
   authMiddleware,
-  handleValidationErrors,
   idempotencyMiddleware({ operation: 'streak_freeze_use' }),
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -827,7 +819,6 @@ router.post(
 router.post(
   '/streak/freeze/purchase',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -918,7 +909,6 @@ router.post(
 router.get(
   '/quests/daily',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -933,7 +923,6 @@ router.get(
 router.post(
   '/quests/progress',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;

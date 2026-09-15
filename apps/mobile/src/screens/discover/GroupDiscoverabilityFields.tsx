@@ -1,3 +1,15 @@
+/**
+ * The "Discover" block of the group create/edit forms: whether a group is
+ * listed, and to whom (anyone, or one of the creator's communities).
+ *
+ * Exports: GroupDiscoverabilityFields and the GroupDiscoveryValue type.
+ * Touches: services/api fetchMyCommunities for the community choices;
+ * resolveGroupDiscovery and COMMUNITY_COPY from @lantern/shared/network keep
+ * the visibility/community pairing legal.
+ * Note: listing is off by default, and with lockedCommunity set (a channel
+ * created from inside a community) the block is one read-only line that never
+ * calls onChange and skips the fetch.
+ */
 import React, { useEffect, useState } from 'react';
 import { Pressable, Switch, Text, View } from 'react-native';
 import { COMMUNITY_COPY, resolveGroupDiscovery, type MyCommunity } from '@lantern/shared/network';

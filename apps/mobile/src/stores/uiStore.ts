@@ -1,3 +1,19 @@
+/**
+ * Cross-screen UI chrome that is not owned by any one screen: the Library tab
+ * and course filter, the Library tree's open state, which dashboard sections
+ * are collapsed, and the "auth server unreachable" flag.
+ *
+ * Main exports: `useUIStore`, `LibraryCourseFilter`, `LibraryTab`.
+ *
+ * Touches: AsyncStorage via zustand `persist` under `lantern-mobile-ui`.
+ * `authOffline` is written by services/api.ts. No API calls of its own.
+ *
+ * Gotchas: `partialize` persists only `libraryTab`, `libraryTreeOpen` and
+ * `collapsedDashboardSections` — the course filter and `authOffline` are
+ * session-only by design, because a stale value of either would look like
+ * missing content or a false offline state after relaunch. The store is not
+ * keyed by user, so persisted chrome carries across an account switch.
+ */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';

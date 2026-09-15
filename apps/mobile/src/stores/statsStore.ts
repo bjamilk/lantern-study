@@ -1,6 +1,29 @@
 // ===========================================
 // Lantern Study Mobile - Stats Store
 // ===========================================
+//
+// The dashboard snapshot: one `DashboardStats` for the selected period, built
+// by fanning out over several remote sources and merging them with what is
+// already held. The honesty rule is the point — a refresh that could not reach
+// Lantern sets `syncFailed` and KEEPS the previous numbers rather than
+// presenting zeros as data (see `mergeStatsRefresh`, `isUnreachableFailure`,
+// `tallySource`).
+//
+// Main exports: `useStatsStore` (`hydrateFromCache`, `fetchStats`,
+// `setSelectedPeriod`), plus re-exports of the dashboard-stats types,
+// `calculateUserLevel` and `LEVEL_THRESHOLDS`.
+//
+// Touches: services/api (profile, question stats, test results),
+// services/gamification (login streak, study activity), services/dashboardCache
+// (AsyncStorage-backed per-user cache), groupStore and flashcardStore for local
+// context, and a lazily imported ../utils/buildDashboardStats.
+//
+// Gotchas: `DEMO_MODE` is a module constant — flipping it to true replaces the
+// whole dashboard with generated mock data. `fetchStats` is single-flighted on
+// module-level `inflightStatsKey`/`inflightStatsPromise` keyed `userId:period`,
+// so a call for a different period or user does not join the in-flight one.
+// `recordLoginStreak` deliberately rethrows instead of returning a zero
+// streak, because zero is indistinguishable from a real answer.
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';

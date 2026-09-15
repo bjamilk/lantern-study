@@ -1,3 +1,18 @@
+/**
+ * Modal that publishes a prepared study pack (built from a deck, a note or an
+ * AI draft) to the marketplace: title, description, price, campus, course and
+ * topic anchor, rights attestation and cited sources.
+ *
+ * Exports: PublishStudyPackModal.
+ * Touches: services/api publishStudyPack and fetchMarketplaceCampuses; shared
+ * rules from @lantern/shared/marketplace (course anchor, count summary, the
+ * default creator fee) and /moderation (attestation text, source
+ * normalisation); CampusPicker, CoursePicker, TopicPicker.
+ * Notes: the caller owns the content -- this modal only counts it, and the
+ * server freezes the snapshot on publish. Every field is reset each time the
+ * modal becomes visible, including the attestation, which the API requires as
+ * `attestation: true`.
+ */
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useMemo, useState } from 'react';
 import {

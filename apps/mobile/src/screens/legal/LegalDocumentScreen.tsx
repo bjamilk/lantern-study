@@ -1,3 +1,12 @@
+/**
+ * Root stack -> LegalDocument. Renders one legal document (terms, privacy and
+ * the rest) as markdown, chosen by the `document` route param.
+ *
+ * Exports: LegalDocumentScreen (default), plus a re-export of the
+ * LegalDocumentId type.
+ * Touches: @lantern/shared LEGAL_DOCUMENT_TITLES / getLegalDocumentContent and
+ * MarkdownRenderer, so web and mobile show the same text. No network, no store.
+ */
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';

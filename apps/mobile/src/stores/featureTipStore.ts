@@ -1,6 +1,23 @@
 /**
  * Mobile feature-tip progress — AsyncStorage cache + sync into profile.settings.featureTips.
  * "Got it" is session-only (in-memory); Don't show again / Skip all persist until Replay.
+ *
+ * Main export: `useFeatureTipStore` — `hydrate`, `syncFromUserSettings`,
+ * `setTipReady`/`setTipAllowed` (a tip shows only when the screen that owns it
+ * reports ready AND allowed), `dismiss`, `skipAll`, `dontShowAgain`, `replay`,
+ * and the getting-started checklist actions.
+ *
+ * Touches: AsyncStorage under FEATURE_TIPS_LOCAL_KEY, the shared
+ * @lantern/shared/featureTips rules, and settingsStore for the
+ * profile.settings.featureTips round trip.
+ *
+ * Gotchas: the local cache is the fast path and the profile is the source of
+ * truth; `syncFromUserSettings` merges rather than replaces, so a stale local
+ * copy cannot un-dismiss a tip. `activeTipId` is derived — recompute it after
+ * changing tips, ready or allowed rather than setting it directly. The profile
+ * write is debounced on ONE module-level timer shared by every action, so
+ * rapid actions collapse into a single push; the durable hide flags are
+ * monotonic and only `replay` (allowRegress) may turn them back off.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';

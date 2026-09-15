@@ -8,6 +8,39 @@ function parseSampleRate(raw: string | undefined, fallback: number): number {
   return Number.isFinite(value) && value >= 0 && value <= 1 ? value : fallback;
 }
 
+/**
+ * `lantern-api@<package version>+<commit>`.
+ *
+ * FIXED (SW): the release read `lantern-api@1.0.0` — the bare package version,
+ * identical on every deploy, so an issue could not be tied to the build that
+ * produced it. The commit comes from the same environment variables
+ * `/health`'s commit marker uses (apps/api-server/src/routes/health.ts), so the
+ * two always agree and a Sentry release can be checked against a live /health.
+ */
+export function resolveApiRelease(): string | undefined {
+  // An operator-set release that already names a build (`…+<sha>`) wins; the
+  // deployed value today is a bare `lantern-api@1.0.0`, which is exactly the
+  // uninformative form this function exists to replace, so a `+`-less override
+  // is treated as the NAME and still gets the commit appended.
+  const override = process.env.SENTRY_RELEASE;
+  if (override && override.includes('+')) return override;
+  let version = '0.0.0';
+  try {
+
+    version = require('../../package.json').version || version;
+  } catch {
+    // packaged without the manifest — the commit alone still identifies it
+  }
+  const commit = (
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.GIT_COMMIT ||
+    process.env.SOURCE_VERSION ||
+    ''
+  ).slice(0, 7);
+  const base = override || `lantern-api@${version}`;
+  return `${base}+${commit || 'unknown'}`;
+}
+
 export function initSentry(): void {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) return;
@@ -18,7 +51,7 @@ export function initSentry(): void {
     Sentry.init({
       dsn,
       environment: process.env.NODE_ENV || 'development',
-      release: process.env.SENTRY_RELEASE || undefined,
+      release: resolveApiRelease(),
       tracesSampleRate: parseSampleRate(
         process.env.SENTRY_TRACES_SAMPLE_RATE,
         process.env.NODE_ENV === 'production' ? 0.01 : 0.1

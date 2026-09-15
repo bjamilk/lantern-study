@@ -7,6 +7,26 @@
  *
  * The notes list mirrors this filter through NotesScreen (notesStore keeps its
  * own `courseFilterId` so other note surfaces can still load every note).
+ *
+ * Exports: `useLibraryStore` — the filter pair `courseFilterId` /
+ * `topicFilterId` (+ `topicFilterLabel`), the cached `overview` with its
+ * `overviewLoading` / `overviewError` / `overviewStale` flags, and
+ * `pendingOfflineBundleId`. Actions: `setCourseFilter`, `setTopicFilter`,
+ * `loadOverview`, `invalidateOverview`, `setPendingOfflineBundleId`, `reset`.
+ *
+ * Touches: services/library (`GET /library/overview`) and
+ * utils/libraryArchive's `UNFILED_COURSE_ID`. Nothing is persisted — the filter
+ * resets to "everything" on each page load.
+ *
+ * Gotchas:
+ *  - The filter is a three-way value, not a uuid-or-null: a uuid, the API's
+ *    literal string `'null'` for unfiled, or `null` for all. Comparing it with
+ *    `!courseId` conflates the last two.
+ *  - `inflight` is module-level and only `reset()` clears it, so sign-out must
+ *    call `reset()`.
+ *  - `loadOverview` resolves with the STALE overview when the request fails
+ *    (and sets `overviewError`); an empty library and a failed fetch are only
+ *    distinguishable by checking `overviewError`.
  */
 import { create } from 'zustand';
 import type { LibraryOverview } from '../types';

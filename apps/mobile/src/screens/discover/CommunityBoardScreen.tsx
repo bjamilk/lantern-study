@@ -1,3 +1,29 @@
+/**
+ * A community BOARD: the post-card surface behind the `CommunityChannel`
+ * route (the file and route names are kept so deep links keep working).
+ * Composes posts of a kind (discussion, question, announcement) with optional
+ * subject and photo, and carries the card actions: react, star, bookmark,
+ * repost, share, pin, edit/delete, moderator removal, accept/clear answer,
+ * report, and the board's mute controls.
+ *
+ * Exports: CommunityBoardScreen, BoardNavigation type.
+ * Touches: groupStore (messagesCache, pagination, edit/remove/retry, leave,
+ * hydrate, markGroupAsRead), boardStore (posts, pins, bookmarks, reposts),
+ * communityStore, authStore, toastStore; services/api (reactions, mute status,
+ * markCommunityPostAnswered, removeCommunityPost), chatImageUpload,
+ * bookmarkImport; AsyncStorage for device-local stars; expo-clipboard, Share,
+ * ReportContentSheet, useLowDataMode, usePlatformAdmin, useProfileIdentity.
+ * Gotchas: there is deliberately NO community gate here -- group membership is
+ * the authorisation. Board state is subscribed as arrays and booleans, never
+ * as a freshly built object, because such a selector re-renders forever.
+ * bookmarksSupported is optimistic (`!== false`) for the control, while the
+ * one-time local-bookmark import waits for a confirmed `true` so it never
+ * fires against a database without the migration. A pin is dropped when the
+ * freshest copy of its post is removed, since the removal RPC never cleared
+ * pinned_at. Realtime arrivals raise a pill; the board never auto-jumps. Who
+ * may post what comes from the shared rules, and a board's own admins are not
+ * the community's moderators.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,

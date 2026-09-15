@@ -1,3 +1,13 @@
+/**
+ * Body of the Budget screen's "Study wallet" segment: the Lantern-coin balance
+ * and a static list of ways to earn. Rendered inside BudgetScreen, so it draws
+ * no header and owns no navigation.
+ *
+ * Exports: StudyWalletPanel (default).
+ * Touches: budgetStore walletBalance / loadWalletBalance; authStore for the
+ * user id; react-native AppState (the balance is refetched whenever the app
+ * returns to the foreground). The EARN_WAYS table is hard-coded copy.
+ */
 import React, { useEffect } from 'react';
 import { View, Text, AppState } from 'react-native';
 import { useAuthStore } from '../../stores/authStore';

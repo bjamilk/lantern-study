@@ -1,3 +1,26 @@
+/**
+ * The app-wide confirm dialog — one on screen at a time, with a FIFO queue
+ * behind it, replacing `window.confirm`.
+ *
+ * Exports: `confirmDialog(options)` (the imperative entry point every caller
+ * should use), `useConfirmStore` (what the dialog component renders from), and
+ * the `ConfirmOptions` type.
+ *
+ * Touches: nothing outside itself — no network, no storage, no globals. Purely
+ * in-memory UI state.
+ *
+ * Gotchas:
+ *  - A second `confirm()` while one is open is QUEUED, never allowed to
+ *    overwrite the live `resolve`: overwriting strands the first promise
+ *    forever, and any re-entrancy guard awaiting it stays stuck.
+ *  - `settleAndAdvance` is the only place a promise is resolved, and it swallows
+ *    an answer that arrives within `DRAINED_IGNORE_MS` of a drain (double-click
+ *    spillover). Swallowing leaves the dialog open — it never invents or drops
+ *    an answer. The negative-elapsed check guards a wall-clock jump; removing it
+ *    can wedge a dialog permanently unanswerable.
+ *  - Nothing here is persisted or cleared on sign-out; an unanswered dialog
+ *    simply dies with the page.
+ */
 import { create } from 'zustand';
 
 export interface ConfirmOptions {

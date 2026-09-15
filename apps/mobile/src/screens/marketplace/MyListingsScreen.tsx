@@ -1,3 +1,25 @@
+/**
+ * `MyListings` route ("Your Listings"): the seller's home — the needs-you
+ * strip, performance KPIs, active/sold/inactive tabs, the per-row action
+ * sheet, and the seller tool modals.
+ *
+ * Exports: MyListingsScreen (named and default).
+ * Touches: useMarketplaceStore (myListings, sellerStats, fetchMyListings,
+ * fetchSellerStats, fetchShopSummary, updateListing, deleteListing);
+ * fetchSellerAnalytics, fetchSellerOnboarding and fetchSellerPreferences in
+ * ../../services/api; useShopBadges; AsyncStorage for the onboarding dismissal;
+ * the SellerOnboarding/Coupons/Bundle/Campaign/Insights modals.
+ *
+ * Gotchas: the row menu is an ActionSheet, not Alert.alert — Android caps a
+ * native dialog at three buttons and silently drops the rest. Which status
+ * moves appear comes from canSellerSetListingStatus, so the sheet and the API
+ * cannot disagree. Moderated listings are read-only: they sit on the Inactive
+ * shelf with a takedown notice and no edit, relist or delete. The onboarding
+ * dismissal key is scoped per user id, because the server keeps reporting
+ * needsOnboarding and the modal would otherwise return on every focus. Tab
+ * counts come from sellerStats, not from the loaded rows, so they can differ
+ * from what the list shows.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,

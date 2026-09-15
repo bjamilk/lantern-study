@@ -7,6 +7,7 @@
  * boost. quantity/listing_kind/bundle_items were also unvalidated on update.
  */
 import { SupabaseService } from './supabase';
+import { PublicError, clientErrorMessage } from '../utils/safeError';
 
 function makeInsertCapture() {
   const inserts: Array<Record<string, any>> = [];
@@ -132,5 +133,33 @@ describe('updateMarketplaceListing mass-assignment guard', () => {
     await updateCall(selfWithListing(db), { title: 'renamed', listing_kind: 'question_bank' });
     expect(updates[updates.length - 1].listing_kind).toBeUndefined();
     expect(updates[updates.length - 1].title).toBe('renamed');
+  });
+});
+
+/**
+ * G3 · H0c: a missing campus/city is the SELLER's mistake, not a server fault.
+ *
+ * R5a removed the `isPlainValidation` heuristic that used to surface any bare
+ * `new Error(msg)` from a marketplace service as a 400 with its message. This
+ * site was missed, so publishing a listing without campus metadata answered a
+ * generic 500 "Something went wrong" — no way for the seller to fix it, and
+ * their bad input paged 5xx alerting.
+ */
+describe('createMarketplaceListing campus requirement', () => {
+  it('rejects a listing with no campus as a client error carrying its message', async () => {
+    const { db } = makeInsertCapture();
+    const rejection = await createCall({ supabase: db }, {
+      category: 'textbooks',
+      title: 'Anatomy notes',
+    }).then(
+      () => null,
+      (err: unknown) => err,
+    );
+
+    expect(rejection).toBeInstanceOf(PublicError);
+    expect((rejection as Error).message).toMatch(/campus or city/i);
+    // PublicError is what ./routes/marketplace/errors classifies as 4xx, and
+    // what makes the message survive clientErrorMessage in production.
+    expect(clientErrorMessage(rejection, 'Something went wrong')).toMatch(/campus or city/i);
   });
 });

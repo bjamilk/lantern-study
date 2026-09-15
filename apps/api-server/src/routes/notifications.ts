@@ -77,7 +77,6 @@ router.get(
 router.get(
   '/stats',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -105,7 +104,6 @@ router.get(
 router.get(
   '/:notificationId',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -188,7 +186,6 @@ router.post(
 router.put(
   '/:notificationId/read',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -229,7 +226,6 @@ router.put(
 router.put(
   '/read-all',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -253,7 +249,6 @@ router.put(
 router.delete(
   '/:notificationId',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -301,7 +296,6 @@ router.delete(
 router.delete(
   '/',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -325,7 +319,6 @@ router.delete(
 router.post(
   '/bulk',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const requestingUserId = requireAuthUserId(req, res);
     if (!requestingUserId) return;

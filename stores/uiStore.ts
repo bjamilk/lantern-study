@@ -1,6 +1,36 @@
 /**
  * Web UI Store
  * Manages UI state including modals, app mode, theme, sidebar
+ *
+ * Exports: `useUIStore` plus the `ActiveCommunity`, `CommunityPresenceState`
+ * and `StudyRoomJoin` types. It holds the app's chrome and navigation
+ * intent — `appMode` and `selectedChat`, `theme`, the sidebar / chats-section /
+ * Library-rail disclosure flags, the `modals` record and `settingsTab`, the
+ * "what is being edited or viewed" ids (deck, flashcard, test result,
+ * marketplace listing/order/seller, job, company, study room, challenge
+ * opponent), the active community + its presence, `isOnline`, `lowDataMode`,
+ * `importProgress`, and the `libraryTab` / `budgetTab` selections.
+ *
+ * Touches: zustand `persist`, localStorage key `ui-storage`. Only six fields
+ * are persisted (`theme`, `isSidebarExpanded`, `isChatsSectionExpanded`,
+ * `lowDataMode`, `libraryTab`, `isLibraryRailCollapsed`) — everything else is
+ * per-page-load. It also writes the `dark` class on `document.documentElement`
+ * and registers window `online`/`offline` listeners at module scope.
+ *
+ * Gotchas:
+ *  - Toggling the `dark` class IS the whole theme switch; the colour tokens
+ *    live only in `index.css` `:root` / `.dark`. Never define a colour's only
+ *    value in JS, and never inline a palette onto `<html>` — that outranks
+ *    every stylesheet rule and killed dark mode once.
+ *  - `setAppMode` NAVIGATES for a routable mode and does not touch state; the
+ *    URL is the source of truth and route sync calls `setAppModeDirect` back.
+ *    Calling `setAppModeDirect` for a routable mode desynchronises the URL.
+ *  - The key is not user-scoped, but the persisted fields are device
+ *    preferences rather than user data. Everything account-shaped here
+ *    (selected ids, active community, modals) is in-memory and must be cleared
+ *    by the sign-out path.
+ *  - `isLibraryRailOpen` (small-screen panel) and `isLibraryRailCollapsed`
+ *    (desktop icon strip) are separate on purpose; only the latter persists.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';

@@ -1,3 +1,21 @@
+/**
+ * `Orders` route: the order list for either side — "Your Orders", "Orders to
+ * Hand Over", or the Buy Again shelf — with one primary action per row.
+ *
+ * Exports: OrdersScreen.
+ * Touches: fetchMarketplaceOrders and resumeMarketplaceOrderCheckout in
+ * ../../services/api; BUYER_ACTION_ORDER_STATUSES and orderNeedsSeller from
+ * the marketplace store (the same predicates that count the You badge);
+ * expo-web-browser for Paystack; OrderStatusPill and orderRowMeta.
+ *
+ * Gotchas: `view: 'buy_again'` forces the buyer role and hides the role pills
+ * whatever role the caller passed. Rows that need you are sorted to the top by
+ * a stable sort, so the server's newest-first order survives within a group.
+ * useFocusEffect reloads and force-refreshes the TTL-cached shop summary on
+ * every focus; without that an action taken on OrderDetail would not show
+ * here. Anything needing a form (proof upload, pickup, hand-over) only opens
+ * OrderDetail — this screen never mutates an order except via Pay now.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,

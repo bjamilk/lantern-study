@@ -3,6 +3,7 @@ import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { useAuthStore } from '../../stores/authStore';
+import { useToastStore } from '../../stores/toastStore';
 import { isAppleSignInAvailable } from '../../services/socialAuth';
 import { brand } from '../../theme';
 
@@ -50,25 +51,29 @@ export function SocialAuthButtons({ disabled = false }: Props) {
   const busy = disabled || isLoading;
   const loading = (provider: SocialProvider) => activeProvider === provider && isLoading;
 
-  const runGoogle = async () => {
+  /**
+   * The store rethrows anything that is not a cancellation, and these are
+   * fire-and-forget `onPress` handlers — so without this catch every provider
+   * failure became an UNHANDLED PROMISE REJECTION with nothing on screen
+   * (Sentry LANTERN-STUDY-MOBILE-7). The student gets a toast; the error is
+   * already in the store for the form to render.
+   */
+  const run = async (provider: SocialProvider, start: () => Promise<void>) => {
     if (busy) return;
-    setActiveProvider('google');
+    setActiveProvider(provider);
     try {
-      await signInWithGoogle();
+      await start();
+    } catch (error: unknown) {
+      const fallback = provider === 'google' ? 'Google sign-in failed.' : 'Apple sign-in failed.';
+      const message = error instanceof Error && error.message ? error.message : fallback;
+      useToastStore.getState().showToast(message, 'error');
     } finally {
       setActiveProvider(null);
     }
   };
 
-  const runApple = async () => {
-    if (busy) return;
-    setActiveProvider('apple');
-    try {
-      await signInWithApple();
-    } finally {
-      setActiveProvider(null);
-    }
-  };
+  const runGoogle = () => run('google', signInWithGoogle);
+  const runApple = () => run('apple', signInWithApple);
 
   return (
     <View className="mt-6">

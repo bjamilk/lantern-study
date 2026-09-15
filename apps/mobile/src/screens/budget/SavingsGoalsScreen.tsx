@@ -1,3 +1,14 @@
+/**
+ * Budget stack -> SavingsGoals. Create goals (icon, name, target, optional
+ * deadline), contribute to them, and review completed ones.
+ *
+ * Exports: SavingsGoalsScreen (default).
+ * Touches: budgetStore savingsGoals + loadSavingsGoals / addSavingsGoal /
+ * contributeToGoal / removeSavingsGoal; authStore for the user id;
+ * BudgetDatePicker.
+ * Note: deleting a goal discards everything saved toward it, so it goes
+ * through confirmAsync naming the goal and the amount at stake.
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Pressable, TextInput, TouchableOpacity } from 'react-native';
 import { appAlert, confirmAsync } from '../../components/ui/appDialog';

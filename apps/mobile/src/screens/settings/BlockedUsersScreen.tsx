@@ -1,3 +1,15 @@
+/**
+ * Root stack -> BlockedUsers. Lists everyone the signed-in student has blocked
+ * and unblocks them (with a confirm), so blocking from a DM is reversible from
+ * one place.
+ *
+ * Exports: BlockedUsersScreen (named and default).
+ * Touches: services/api listBlockedUsers, fetchUserProfile, unblockUser;
+ * authStore for the viewer id.
+ * Note: the endpoint returns ids only, so each row is hydrated separately and
+ * a profile that fails to load still gets a row -- otherwise that person could
+ * never be unblocked.
+ */
 // ===========================================
 // Lantern Study Mobile - Blocked Users
 // ===========================================

@@ -1,3 +1,28 @@
+/**
+ * Cloudflare Turnstile server-side verification.
+ *
+ * Exports `verifyTurnstileToken` (the siteverify call), `isTurnstileEnforced`,
+ * and `turnstileConfigStatus` for the /health payload. Calls Cloudflare's
+ * siteverify endpoint with `TURNSTILE_SECRET`; `TURNSTILE_HOSTNAMES` is the
+ * allowlist a token must have been solved on. No database, no other service.
+ *
+ * Coverage and configuration, not the verification logic — the checks below are
+ * correct and fail closed on every uncertainty.
+ *
+ * FIXED (F10), the configuration half: `validateProductionSecrets` now says so
+ * at boot. A production start with Turnstile unset logs one WARN naming the two
+ * variables and the fact that the contact form is unprotected; a HALF-configured
+ * start (one variable set, the other not) logs a louder line, because that is a
+ * deployment that believes it has bot protection and does not. It is a warning
+ * rather than a fatal because Turnstile is genuinely optional here — making it
+ * required would turn a missing nice-to-have into a failed deploy.
+ *
+ * KNOWN ISSUE (tracked, deferred F10: product decision — challenging login,
+ * signup and password reset means shipping the widget in the web and mobile
+ * sign-in screens and accepting the drop-off that adds to the funnel, which is
+ * the founder's call, not a middleware change): the only caller is
+ * `routes/contact.ts`. No auth endpoint carries bot protection.
+ */
 import { logger } from '../utils/logger';
 
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
@@ -68,6 +93,8 @@ export async function verifyTurnstileToken(params: {
 }): Promise<{ ok: boolean; reason?: string }> {
   const { token, expectedAction, clientIp } = params;
 
+  // Fails OPEN when unconfigured — see the header. Everything past this line
+  // fails closed.
   if (!isTurnstileEnforced()) return { ok: true };
 
   const hostnames = expectedHostnames();

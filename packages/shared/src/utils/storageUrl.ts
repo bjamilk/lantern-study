@@ -1,3 +1,43 @@
+// ===========================================
+// Lantern Study - Storage URLs and refs
+// ===========================================
+//
+// PURPOSE
+//   Everything about turning a Supabase Storage object into something a client
+//   can render, and back. Which buckets are private, how a stored reference is
+//   parsed, how a thumbnail path is derived, and how a legacy absolute URL is
+//   normalised to a bucket+path pair.
+//
+// CONSUMERS
+//   web    — `services/supabase.ts` and the image components.
+//   mobile — `src/services/storageUrls.ts` (the batching signer) and
+//            `src/services/noteAttachmentUrl.ts`.
+//   api    — `apps/api-server/src/services/supabase.ts`, which is the ONLY
+//            place that actually mints signed URLs (service role).
+//
+// THE RULE: SIGN ON READ, NEVER STORE A SIGNED URL
+//   Every bucket in PRIVATE_STORAGE_BUCKETS is private, and a signed URL
+//   expires (capped by STORAGE_SIGNED_URL_MAX_TTL, 24h). Chat and board photos
+//   once died after a day because a signed URL had been frozen into a database
+//   row and was never re-signed. So: rows store a bucket + path REF; a display
+//   URL is minted at render time and thrown away. If you find yourself
+//   persisting a URL with a token in it, stop.
+//
+// DENY BY DEFAULT
+//   The signed-URL gate refuses any bucket not in PRIVATE_STORAGE_BUCKETS. A
+//   new bucket that is not listed here has every request denied, with a
+//   permission error that does not mention the list — check this array first.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
+
 import { getSupabaseUrl } from "../config";
 
 export const PRIVATE_STORAGE_BUCKETS = [
@@ -23,6 +63,13 @@ export function isPrivateStorageBucket(
 }
 
 /** Rewrite legacy localhost:54321 storage URLs to the configured Supabase URL. */
+// ---------------------------------------------------------------------------
+// Normalising legacy absolute URLs
+// ---------------------------------------------------------------------------
+// Older rows hold full public URLs from when these buckets were public. These
+// strip them back to a usable object path so the same row works now that the
+// buckets are private.
+
 export function normalizeStorageUrl(url: string, supabaseUrl?: string): string {
   if (!url || url.startsWith("data:")) return url;
   // Avoid calling getConfig() for normal cloud URLs (Expo OTA may not inline env vars).
@@ -63,6 +110,12 @@ export function parseStorageObjectUrl(
 }
 
 /** The bucket every deck / note / study-set cover object lives in. */
+// ---------------------------------------------------------------------------
+// Cover images
+// ---------------------------------------------------------------------------
+// Deck and note covers. The bucket is created by the service role on first
+// upload rather than in a migration, which is why it must be listed above.
+
 export const COVER_IMAGE_BUCKET = "cover-images";
 
 /** The three scopes `uploadCoverImage` writes under, i.e. path segment 2. */
@@ -113,6 +166,14 @@ export function normalizeCoverRef<T extends string | null | undefined>(
  * object paths (`{userId}/temp|shop|listings/...`) written by older clients,
  * and bare cover paths (`{userId}/decks|notes|study-sets/...`).
  */
+// ---------------------------------------------------------------------------
+// Refs, paths and thumbnails
+// ---------------------------------------------------------------------------
+// The canonical `bucket/path` reference form that rows hold, plus the derived
+// `.thumb.webp` sibling. The signer prefers the thumb and falls back to the
+// original, so a missing thumbnail degrades to a full-size image rather than
+// to a broken one.
+
 export function parseStoredStorageRef(
   value: string,
 ): { bucket: string; path: string } | null {

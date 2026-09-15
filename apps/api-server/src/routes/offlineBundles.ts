@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
-import { handleValidationErrors } from '../middleware/validation';
 import { authMiddleware } from '../middleware/auth';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { AuthenticatedRequest } from '../types';
@@ -22,7 +21,6 @@ export const initializeOfflineBundlesRoutes = (supabase: SupabaseService, cache:
 router.get(
   '/',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -40,7 +38,6 @@ router.get(
 router.post(
   '/',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -74,7 +71,6 @@ router.post(
 router.delete(
   '/',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;

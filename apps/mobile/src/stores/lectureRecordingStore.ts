@@ -1,3 +1,31 @@
+/**
+ * The one lecture recording in flight, app-wide: capture, pause/resume, the
+ * naming step, upload and transcription into a note.
+ *
+ * A single global session on purpose — the clock, the audio file and the
+ * foreground service must outlive the screen that started them, and two
+ * concurrent recordings would fight over the microphone.
+ *
+ * Main exports: `useLectureRecordingStore` (`start`, `pauseRecording`,
+ * `resumeRecording`, `stopForTitle`, `confirmTitleAndTranscribe`,
+ * `retryTranscription`, `discard`, `cancelTranscription`,
+ * `refreshMicPermission`, `isActiveForNote`) and `LectureRecordingStatus`.
+ *
+ * Touches: expo-av (Audio.Recording, imported lazily), expo-file-system/legacy
+ * for the audio file, expo-keep-awake, the native lecture-recording-service
+ * (Android foreground service + notification), react-native AppState,
+ * services/notes (`transcribeAudioForNote`), services/liveSpeech for live
+ * captions, services/ai (`fetchAIUsage`), plus notesStore and toastStore.
+ *
+ * Gotchas: the status machine is load-bearing. `naming` is the only point
+ * where nothing has been spent yet, and `failed` HOLDS the audio file so
+ * `retryTranscription` can reuse it — only `discard` deletes it. `pendingUri`
+ * (waiting for a title) and `failedUri` (held after a failure) are separate
+ * refs so a double tap cannot start two uploads. Resume reopens the SAME file,
+ * so a lecture is one recording; paused time is tracked in `pausedTotalMs` and
+ * never billed. Mutable handles live in a module-level `SessionRefs` object
+ * rather than in store state, so they are process-global and not user-scoped.
+ */
 import { create } from 'zustand';
 import { AppState, type AppStateStatus } from 'react-native';
 import * as FileSystem from 'expo-file-system/legacy';

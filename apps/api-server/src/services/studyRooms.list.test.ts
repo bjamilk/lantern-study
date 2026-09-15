@@ -12,6 +12,22 @@ jest.mock('../utils/logger', () => ({
   logger: { debug: jest.fn(), info: jest.fn(), warn: jest.fn(), error: jest.fn() },
 }));
 
+// The community-access guard resolves the viewer's standing before scoping.
+// These cases are about the SCOPE filters, so the viewer is simply a member;
+// studyRooms.communityAccess.test.ts covers the guard itself.
+const resolveActor = jest.fn(async (userId: string, communityId: string) => ({
+  userId,
+  communityId,
+  isMember: true,
+  role: 'member',
+  isPlatformAdmin: false,
+  mutedUntil: null,
+  createdBy: null,
+}));
+jest.mock('./communityModeration', () => ({
+  getCommunityModerationService: () => ({ resolveActor }),
+}));
+
 import { StudyRoomsService } from './studyRooms';
 
 const USER = '11111111-1111-4111-8111-111111111111';

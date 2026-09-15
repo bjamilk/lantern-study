@@ -1,3 +1,21 @@
+/**
+ * `SellerProfile` route: a seller's public shop page — cover, name, rating,
+ * badges, stats and their listing grid. The owner also gets an edit sheet.
+ *
+ * Exports: SellerProfileScreen.
+ * Touches: useMarketplaceStore (sellerProfile, fetchSellerProfile,
+ * updateMyShop); api.fetchSellerProfile and api.fetchMarketplaceListings;
+ * ReportContentSheet for reporting the user; RN Share for the shop link.
+ *
+ * Gotchas: the profile response is read under both camelCase and snake_case
+ * (`recentListings` / `recent_listings`) because the shape is not settled. When
+ * that field is empty the screen falls back to fetching ALL listings and
+ * filtering by user id client-side, which is expensive and silently partial.
+ * An unrecognised status is coerced to 'active' only after
+ * isMarketplaceListingStatus rejects it, so moderated rows stay visible as
+ * themselves to the shop filter. Owners also see reserved listings; everyone
+ * else sees active only.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,

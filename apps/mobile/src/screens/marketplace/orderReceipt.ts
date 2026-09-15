@@ -1,3 +1,15 @@
+/**
+ * Builds the plain-text receipt the buyer or seller shares from an order.
+ *
+ * Exports: buildOrderReceiptText.
+ * Touches: the MarketplaceOrder type from @lantern/shared/types and
+ * formatPrice from ./marketplaceHelpers. No network or storage.
+ *
+ * Gotchas: `amount` is the total, so the unit-price line is derived by
+ * dividing by quantity and is only shown when quantity is above one. Under
+ * the buyer-pays-list fee model the amount is what the buyer paid, which
+ * already contains the hand-over fee.
+ */
 import type { MarketplaceOrder } from '@lantern/shared/types';
 import { formatPrice } from './marketplaceHelpers';
 

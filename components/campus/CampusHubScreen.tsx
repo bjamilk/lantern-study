@@ -10,10 +10,10 @@ import { AppIcon, type AppIconName } from '../ui/AppIcon';
  * your own studying. The segments are the only chrome this screen adds; each
  * one renders the screen that already existed, unchanged, underneath.
  *
- * A closed segment is HIDDEN, never shown-and-empty. Communities is
- * platform-admin-only until campus rooms ship and Shop is a private pilot, so
- * an ordinary account would otherwise meet two tabs that lead to an apology.
- * Jobs is open to everyone, which is why there is always at least one segment.
+ * A closed segment is HIDDEN, never shown-and-empty. Shop and Jobs are open to
+ * every student (2026-09-15 — the private-pilot allowlist is gone), so the only
+ * segment that can be closed is Communities, which needs an institution and a
+ * programme on the profile. There is therefore always at least one segment.
  */
 export interface CampusHubScreenProps {
   segment: CampusSegment;
@@ -25,13 +25,6 @@ export interface CampusHubScreenProps {
   onSelectSegment: (segment: CampusSegment, options?: { replace?: boolean }) => void;
   /** Communities is open to this viewer (the Discover hub gate). */
   communitiesOpen: boolean;
-  /**
-   * Shop is open to this viewer (marketplace private pilot). `null` while the
-   * access probe is still out — the tab stays up and the screen underneath says
-   * "checking", because hiding a tab and then putting it back is worse than a
-   * moment of honesty.
-   */
-  shopOpen: boolean | null;
   children: React.ReactNode;
 }
 
@@ -49,25 +42,21 @@ const SEGMENT_ICONS: Record<CampusSegment, AppIconName> = {
 
 export function visibleCampusSegments(input: {
   communitiesOpen: boolean;
-  shopOpen: boolean | null;
 }): CampusSegment[] {
-  return CAMPUS_SEGMENTS.filter((segment) => {
-    if (segment === 'communities') return input.communitiesOpen;
-    if (segment === 'shop') return input.shopOpen !== false;
-    return true;
-  });
+  return CAMPUS_SEGMENTS.filter((segment) =>
+    segment === 'communities' ? input.communitiesOpen : true,
+  );
 }
 
 const CampusHubScreen: React.FC<CampusHubScreenProps> = ({
   segment,
   onSelectSegment,
   communitiesOpen,
-  shopOpen,
   children,
 }) => {
   const segments = useMemo(
-    () => visibleCampusSegments({ communitiesOpen, shopOpen }),
-    [communitiesOpen, shopOpen],
+    () => visibleCampusSegments({ communitiesOpen }),
+    [communitiesOpen],
   );
   const active = segments.includes(segment) ? segment : (segments[0] ?? segment);
 

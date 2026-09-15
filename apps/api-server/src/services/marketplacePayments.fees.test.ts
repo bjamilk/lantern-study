@@ -9,6 +9,8 @@
  */
 jest.mock('./paystack', () => ({
   isPaystackConfigured: () => true,
+  paystackMode: () => 'test',
+  assertPaystackLiveKeyInProduction: () => {},
   createPaystackReference: () => 'ref_test',
   initializePaystackTransaction: jest.fn(async () => ({
     authorizationUrl: 'https://checkout.paystack.com/x',

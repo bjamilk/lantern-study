@@ -1,3 +1,28 @@
+/**
+ * The note-import progress tray: one record per PDF / slide deck / photo batch
+ * / YouTube import, held outside the component that started it so navigating
+ * away does not hide an upload that is still running.
+ *
+ * Exports: `useNoteUploadStore` (`jobs` plus `startJob`, `updateJob`,
+ * `completeJob`, `failJob`, `dismissJob`, `dismissAllFinished`), the pure
+ * selectors `getActiveUploadJob` / `getVisibleUploadJobs`, and the
+ * `NoteUploadJob` / `NoteUploadKind` / `NoteUploadJobStatus` types.
+ *
+ * Touches: zustand `persist`, localStorage key `lantern-note-upload-jobs`.
+ * Only `jobs` is persisted. No network calls — the actual upload lives in the
+ * caller, which reports progress in through `updateJob`.
+ *
+ * Gotchas:
+ *  - The key is NOT user-scoped and there is no reset action, so a sign-out in
+ *    the same browser leaves the previous student's file names in the tray.
+ *  - An upload cannot resume across a reload (the request died with the page),
+ *    so `onRehydrateStorage` marks anything still 'uploading'/'processing' and
+ *    older than two minutes as failed. That means a genuinely slow import whose
+ *    tab was reloaded reads as "Upload interrupted" even if the server finished.
+ *  - `getActiveUploadJob` / `getVisibleUploadJobs` are deliberately free
+ *    functions, not store getters: they allocate per call and must be used with
+ *    `jobs` + `useMemo`, not inside `useNoteUploadStore(...)`.
+ */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 

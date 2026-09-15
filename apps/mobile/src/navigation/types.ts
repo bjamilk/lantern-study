@@ -1,3 +1,31 @@
+/**
+ * Every route name in the app and the params it takes — the one place a screen,
+ * a deep link and a contextual-bar item can agree on what a route is called.
+ *
+ * Main exports: the per-stack param lists (`RootStackParamList`,
+ * `AuthStackParamList`, `HomeStackParamList`, `StudyStackParamList`,
+ * `ChatStackParamList`, `CampusStackParamList`, `MeStackParamList`,
+ * `MainTabParamList`), the `RouteName` union over all of them, and the
+ * immersive-route list (`IMMERSIVE_ROUTE_NAMES`, `shouldHideTabBar`).
+ *
+ * Touches: types only, plus two tiny runtime values (the immersive list and
+ * its predicate). No imports that survive compilation, so pure modules —
+ * ./contextualBars, and mobile jest's node environment — can read it.
+ *
+ * `MarketStackParamList`, `JobsStackParamList` and `BudgetStackParamList` are
+ * no longer stacks of their own: they are intersected into `CampusStackParamList`
+ * and `MeStackParamList`. They are kept as named groups because the screens
+ * they list still exist and are still navigated to by name.
+ *
+ * Gotcha (one-way params): these declarations are the CONTRACT for what a
+ * navigate may carry into a route. Route params are the source of truth the
+ * chrome reads (./contextualBars keys off the focused route's name and params);
+ * a screen adopts them and, as a rule, does not write its view state back into
+ * them. See ./segmentParamSync.ts for the loop that rule exists to prevent, and
+ * screens/campus/CampusScreen.tsx for the one place that does publish back,
+ * under a guard (`shouldPublishCampusSegment`) that keeps a single writer per
+ * event.
+ */
 export type RootStackParamList = {
   // Auth hosts a nested stack; deep links target e.g. { screen: 'ResetPassword' }.
   Auth:

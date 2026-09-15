@@ -2,6 +2,32 @@
 // Lantern Study Mobile - Enhanced Test Taking Screen
 // Supports all 7 question types + Test/Study modes
 // ===========================================
+/**
+ * The `TestTaking` route (a fullScreenModal): sitting one session. Renders all
+ * seven question types, runs the countdown, collects confidence on practice
+ * attempts, enforces the exam lock, and hands off to TestResults on submit.
+ *
+ * Main exports: the default `TestTakingScreen`. The per-type input components
+ * (MCQ single/multiple, true-false, fill-in-blank, matching, diagram labeling,
+ * open ended) are module-local.
+ * Touches: testStore (the whole session — `answerQuestion`, `revealAnswer`,
+ * `goToQuestion`, `submitTest`, `exitStudyMode`, `updateTimeRemaining`),
+ * authStore, settingsStore (`showExplanationsImmediately`), the presence
+ * heartbeat's study intent, and `pendingQuestionBankScores` for marketplace
+ * bundles. Native: RN AppState/BackHandler and expo-haptics via utils/haptics.
+ *
+ * Gotchas: exam lock is `!isStudyMode && activeTest.lockAnswered === true` —
+ * `lockAnswered` is tri-state and must stay `undefined` where no toggle exists,
+ * because an explicit `false` would override a global lock-on. `lockedQuestionIds`
+ * is derived by the store on resume rather than persisted, so `goToQuestion`
+ * must remain the single navigation choke point. Confidence lives in screen
+ * state, not the store, and rides to the results screen as a route param; it is
+ * collected on practice attempts only (untimed), and changing an answer before
+ * the reveal retracts it. Leaving is never a plain `goBack()` — `planTestExit`
+ * decides pop vs reset, and with a `returnTo` the tab switch is deferred until
+ * the exit confirmation resolves. The timer only ticks while focused and with
+ * the app active, so it cannot auto-submit a zero behind the reader's back.
+ */
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
@@ -991,6 +1017,11 @@ export default function TestTakingScreen() {
           : {}),
       });
     } catch {
+      // FIXED (F2): releasing the guard still re-opens submit — which is
+      // correct, a student whose submit failed must be able to try again — but
+      // `submitTest` now carries an idempotency key derived from the ATTEMPT
+      // id (testStore `attemptIdempotencyKey`), so the second press replays the
+      // first write instead of creating a second session and result.
       submittingRef.current = false;
       setIsSubmitting(false);
     }

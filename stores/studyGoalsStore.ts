@@ -1,3 +1,27 @@
+/**
+ * The study-goal preference and the single in-progress daily quiz.
+ *
+ * Exports: `useStudyGoalsStore` (`studyGoal`, `dailyQuiz`, `dailyQuizProgress`;
+ * actions `setStudyGoal`, `setDailyQuiz`, `answerDailyQuestion`,
+ * `completeDailyQuiz`, `getDailyQuizForToday`, `getQuizForNote`, `reset`) and
+ * the helper `buildDailyQuizQuestions`.
+ *
+ * Touches: zustand `persist`, localStorage key `lantern-study-goals` (the whole
+ * slice, unfiltered); `notesApi.updateNoteQuiz` to mirror answers/completion to
+ * the server for a note-backed quiz; `trackStudyActivity('daily_quiz')` on
+ * completion.
+ *
+ * Gotchas:
+ *  - Exactly ONE quiz is held at a time. Calling `setDailyQuiz` for note B
+ *    silently discards an unfinished quiz for note A, and `getQuizForNote`
+ *    returns null for A afterwards.
+ *  - The key is not user-scoped and `reset()` is the only purge, so sign-out
+ *    must call it or the next account inherits the quiz and the goal mode.
+ *  - `getDailyQuizForToday` compares against a LOCAL-timezone date string, so
+ *    crossing midnight (or moving timezone) retires the quiz.
+ *  - The server mirror is fire-and-forget with an empty catch: an answer that
+ *    fails to sync is still shown as answered locally.
+ */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { DailyQuizQuestion, DailyQuizSession, StudyGoalMode } from '../types';

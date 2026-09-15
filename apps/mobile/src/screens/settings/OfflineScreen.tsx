@@ -1,3 +1,25 @@
+/**
+ * Downloads: everything saved for offline use (test bundles and offline decks)
+ * plus the Pending tab of work waiting to upload. Starts a downloaded bundle
+ * in test or study mode, deletes or restores downloads, publishes a bundle as
+ * a question bank, and drains the sync queues.
+ *
+ * Exports: OfflineScreen (default).
+ * Touches: offlineStore (downloads, pendingResults, storage, sync),
+ * flashcardStore (offline decks), testStore.startQuestionSet, settingsStore
+ * (lowDataMode), authStore; syncService.syncNow,
+ * flushPendingQuestionBankScores, services/api restoreQuestionBanks;
+ * useNetworkStatus / usePendingWork; ChromeContext.
+ * Gotchas: mounted BOTH as the Offline tab and as a root-stack modal opened
+ * from the Library tree with a course filter, so navigation goes through
+ * 'Main' -- an unnested navigate is dropped in release builds. connectionStatus
+ * and the pending counts must be computed AFTER the store hook (an earlier
+ * read was a TDZ crash). The queued question-bank scores are flushed and
+ * AWAITED before the results replay, so the detached flush inside
+ * syncPendingResults cannot post the same score twice. A bundle whose
+ * questions have no readable options is refused or trimmed before the session
+ * opens, never mid-test.
+ */
 // ===========================================
 // Lantern Study Mobile - Downloads Screen
 // ===========================================

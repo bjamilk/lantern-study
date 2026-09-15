@@ -46,6 +46,33 @@ export const PRODUCT_FEATURE_AREAS: { id: ProductFeatureArea | 'all'; label: str
 
 export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
   {
+    id: 'open-campus-marketplace',
+    title: 'Campus and the Marketplace are open to every student',
+    area: 'marketplace',
+    status: 'shipped',
+    shippedAt: '2026-09-15',
+    summary:
+      'The founder-only private pilot is over. Every signed-in student can browse, search, buy and sell in the Shop, open the jobs board, and reach Campus and its segments on web and on the phone. Nothing about selling changed: a seller still needs a payout profile before money can be collected, and the rights attestation and moderation rules are untouched.',
+    details: [
+      'Removed middleware/marketplaceAccess.ts entirely — the hardcoded founder UUID, the MARKETPLACE_ALLOWED_USER_IDS / MARKETPLACE_PUBLIC env vars, marketplaceAccessGate on /api/v1/marketplace and jobsBoardAccessGate on /api/v1/jobs-board. There is no flag left defaulting to open; re-closing the surface would be a code change.',
+      'GET /marketplace/access is KEPT and always answers enabled: true. Every shipped mobile build up to 1.0.60 probes it at boot and renders a wall over all 30 commerce screens when it cannot get an answer, so a true answer is what opens those installed builds without an update.',
+      'Sitemaps list listing and job-posting URLs again (routes/sitemap.ts): while the pilot was on, every one of those URLs answered with a wall, so only the section landing page was published.',
+      'Web: the MarketplacePrivatePilot wall, the boot probe in App.tsx and fetchMarketplaceAccess in services/supabase.ts are deleted; the public /marketplace path renders the guest shell again; Campus lands on Communities, else Shop.',
+      'Mobile: withMarketplaceGate is deleted and the 30 wrapped commerce and jobs screens render directly; the Campus segment bar always carries Shop and Jobs; the Shop feature tip no longer waits on an access answer.',
+      'Unchanged and still gated: everything under /api/v1/admin (platform-admin only), community moderation, the seller payout-profile gate on every checkout path (assertSellerCanReceivePayout), the rights attestation and content filter on listing writes, and the public unauthenticated SEO campus pages, which still expose no authed data.',
+    ],
+    howToUse: [
+      'Web: Campus in the sidebar — Communities · Shop · Jobs. Shop needs no allowlist now.',
+      'Mobile: the Campus tab; Shop and Jobs are always present, Communities appears once the profile names an institution and a programme.',
+    ],
+    surfaces: ['web', 'mobile', 'api'],
+    adminNotes: [
+      'No migration. MARKETPLACE_PUBLIC and MARKETPLACE_ALLOWED_USER_IDS are no longer read by any code — they can be deleted from the Render service at leisure; leaving them set does nothing.',
+      'Communities is NOT admin-gated and has not been since 2026-09-07: canAccessDiscoverHub admits any student whose profile names an institution and a programme. Older registry entries saying "platform admins only" describe their own release, not today.',
+      'Admin-only moderation and the admin console are untouched: /api/v1/admin still requires authMiddleware + requirePlatformAdmin.',
+    ],
+  },
+  {
     id: 'sources-chips-guided-session-1-0-60',
     title: 'Sources on each plan unit, and a Guided that remembers where you are (1.0.60)',
     area: 'platform',
@@ -346,7 +373,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     surfaces: ['mobile', 'api'],
     adminNotes: [
-      'Jobs board is now behind the same private-pilot allowlist as the marketplace (JOBS_PRIVATE 403); MARKETPLACE_PUBLIC=true opens both. Sitemaps serve only section landing pages while the pilot is on.',
+      'Historical: the jobs board was put behind the same private-pilot allowlist as the marketplace here (JOBS_PRIVATE 403) and the sitemaps served section landing pages only. Both were opened to every account on 2026-09-15 — see the open-campus-marketplace entry.',
       'Emulator/dev trap: a foreground Bash timeout while a workflow runs interrupts its subagents; worktree isolation needs the session cwd to be a repo — see memory notes.',
     ],
     commits: ['352dbec', '611705e', '4113e05', 'f7adecd', '6119e36', '3d63c57', '854ff8a'],
@@ -377,7 +404,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     adminNotes: [
       'Requires migration 20260901090000_backfill_taxonomy_node_ids.sql. It rewrites the 41 legacy node ids whose replacement is a leaf and REMOVES the rest rather than writing them to a group — a group id would hide the listing twice over, since leaf browse matches only leaves and the unfiled rule matches only NULL. Also adds the partial index the browse filter reads on every drill-down.',
       'Groups, People and the leftover Rooms tab are HIDDEN, not deleted: flip DISCOVER_SECTION_ENABLED in packages/shared/src/marketplace/discoverSections.ts to restore them. Rooms still live on each community page. Web and mobile both read it.',
-      'The marketplace stays a private pilot; the allowlist is unchanged (founder id only, in middleware/marketplaceAccess.ts). MARKETPLACE_PUBLIC=true opens it to everyone with no code change.',
+      'Historical: at this release the marketplace was still a founder-only private pilot. The allowlist was removed on 2026-09-15 — see the open-campus-marketplace entry.',
     ],
     commits: ['2e28859', 'cafbded', '215ea50', '7b3e045'],
   },
@@ -1263,10 +1290,10 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     ],
     surfaces: ['mobile', 'web', 'api'],
     adminNotes: [
-      'Still behind canAccessDiscoverHub (platform admins only). Everyone else sees Coming soon.',
+      'Historical: at this release communities were platform-admin-only. Since 2026-09-07 canAccessDiscoverHub admits every signed-in student whose profile names an institution and a programme.',
       'Security gap closed on the way: group create/update now refuse a community listing from a non-member, so nobody can file a group into a community they are not in.',
       'No new tables and no migration; the pre-existing communities.lounge_group_id migration is applied in production.',
-      'Presence topics are not membership-gated yet \u2014 acceptable while admin-only, to be hardened with Realtime RLS before the gate opens.',
+      'Presence topics are not membership-gated yet \u2014 tolerated while the surface was admin-only; now that Campus is open to every student this wants Realtime RLS.',
       'Verified with two accounts on 2026-09-02: presence, cross-account unread and Owner badges all confirmed live.',
     ],
     commits: ['821697c', '16f1ff2', 'c9a6eb6', 'd0b0747'],
@@ -1381,7 +1408,7 @@ export const PRODUCT_FEATURES: ProductFeatureEntry[] = [
     howToUse: ['Profile menu \u2192 Community \u2192 a community \u2192 General, a board, or + to start a board / study group / room.'],
     surfaces: ['mobile', 'web', 'api'],
     adminNotes: [
-      'Still behind canAccessDiscoverHub (platform admins only).',
+      'Historical: at this release communities were platform-admin-only; canAccessDiscoverHub has admitted every student with an academic profile since 2026-09-07.',
       'Migration 20260903120000 was hand-applied in production before the merge; the API degrades with an explicit 503 if it is ever missing.',
       'A community can no longer end up with a second, empty lounge: openLounge adopts an existing lounge before minting, and the group-delete route refuses a lounge outright. A lounge WAS deleted outside the app on 2026-09-03 and its messages were lost; the cause was never identified.',
     ],

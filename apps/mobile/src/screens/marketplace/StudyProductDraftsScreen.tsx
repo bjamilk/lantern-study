@@ -1,3 +1,18 @@
+/**
+ * `StudyProductDrafts` route: the seller's AI-generated study-pack drafts —
+ * their generation status, and the review-and-publish step.
+ *
+ * Exports: StudyProductDraftsScreen (named and default).
+ * Touches: fetchStudyPackDrafts, fetchStudyPackDraft, createStudyPackDraft and
+ * deleteStudyPackDraft in ../../services/api; waitForNoteOcr in
+ * ../../services/notes; PublishStudyPackModal from ../settings.
+ *
+ * Gotchas: arriving with a `source` param creates a draft as a side effect of
+ * mounting; `createdRef` plus clearing the param is what stops it firing twice,
+ * and each run spends STUDY_PACK_DRAFT_CREDITS. While any draft is queued or
+ * generating the screen polls every POLL_MS (4s). Delete is optimistic and only
+ * reconciled by a reload if the call fails.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

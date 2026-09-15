@@ -1,3 +1,16 @@
+/**
+ * Root stack -> EditProfile. Display name, phone, avatar (pick, upload or
+ * remove) and a change-password section.
+ *
+ * Exports: EditProfileScreen (default).
+ * Touches: services/api fetchUserProfile / updateUserProfile /
+ * uploadProfileAvatar, supabase.auth.updateUser (auth metadata is kept in step
+ * with the profile row for name and avatar), authStore for the user;
+ * expo-image-picker plus utils/prepareImage.
+ * Gotcha: changing the password first re-authenticates with
+ * signInWithPassword to verify the current one, then calls updateUser -- so a
+ * wrong current password is rejected before anything changes.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,

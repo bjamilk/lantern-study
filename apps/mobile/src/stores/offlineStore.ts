@@ -1,6 +1,37 @@
 // ===========================================
 // Lantern Study Mobile - Offline Store
 // ===========================================
+//
+// Purpose: downloadable test bundles and the results taken while offline.
+// Holds the bundles this handset can run without a network, and the queue of
+// finished results waiting to be uploaded.
+//
+// Main exports: `useOfflineStore` (zustand), and the types `OfflineTest`,
+// `OfflineQuestion`, `PendingResult`, `DownloadOptions`.
+//
+// Touches:
+// - AsyncStorage keys `@lantern_offline_data` (bundles) and the per-user
+//   pending-results keys built by ./pendingResultsScope (plus the legacy
+//   unkeyed key, migrated once per account on load).
+// - services/api: fetchOfflineBundles / saveOfflineBundle /
+//   deleteOfflineBundle / fetchMessages / saveTestResult / submitTestResult.
+// - utils/offlineQuestionShape + utils/questionHelpers for the one question
+//   mapper both bundle paths share.
+// - utils/pendingQuestionBankScores, imported lazily during a sync.
+// - Read by testStore.submitTest (offline submissions land in
+//   `savePendingResult`).
+//
+// Gotchas:
+// - `lockAnswered` is TRI-STATE. `undefined` means "no toggle in this flow",
+//   and must stay undefined so the global study setting still applies; an
+//   explicit `false` in a cloud bundle's config overrides a global lock-ON
+//   after sync.
+// - Bundle questions are shared storage between web and mobile and arrive in
+//   two shapes (web's Message shape and mobile's own); every read goes through
+//   `mapMessageToOfflineQuestion`.
+// - Pending results are per user. Nothing may be uploaded under a user id that
+//   does not own it, and an unowned legacy entry is adopted only by the
+//   signed-in account.
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -18,6 +49,10 @@ import {
   resultsOwnedBy,
   stampOwner,
 } from './pendingResultsScope';
+import {
+  ensureResultIdempotencyKey,
+  resultIdempotencyKey,
+} from '@lantern/shared/offlineQueue';
 
 export interface OfflineTest {
   id: string;
@@ -83,6 +118,14 @@ export interface PendingResult {
    * legacy entries written before scoping carry no owner.
    */
   userId?: string;
+  /**
+   * FIXED (F2): the attempt's idempotency key, minted ONCE when the result is
+   * queued and re-read on every retry. A fresh key per attempt is the same as
+   * no key — the server writes a second session for one sitting and the score
+   * is counted twice on the dashboard. Optional only because entries queued
+   * before F2 carry none; `resultIdempotencyKey` derives a stable key for them.
+   */
+  idempotencyKey?: string;
   sessionPayload?: {
     questions?: unknown[];
     userAnswers?: Record<string, unknown>;
@@ -240,6 +283,14 @@ const mapMessageToOfflineQuestion = (message: any, index: number): OfflineQuesti
   } as OfflineQuestion;
 };
 
+/**
+ * Build the question list for a group download: fetch the last 200 messages,
+ * keep the ones that are questions, then apply the download options in a fixed
+ * order — type filter, recency filter, count cap. The count cap runs LAST so
+ * "20 questions of type X" means twenty of X, not twenty messages of which
+ * some are X. Throws when nothing survives, because an empty bundle is
+ * indistinguishable from a broken one once it is on disk.
+ */
 const fetchGroupQuestionsForOffline = async (
   groupId: string,
   options?: DownloadOptions
@@ -288,6 +339,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
   lastSyncAt: null,
   totalStorageUsed: 0,
 
+  // Boot/refresh path. Reads local bundles and this account's pending results,
+  // migrates the legacy unkeyed results key, then merges the cloud bundle list
+  // over the local one. A cloud fetch failure must leave the local cache
+  // standing (it is caught and warned, not rethrown) — the whole point of this
+  // store is that it works with no network.
   loadOfflineData: async (userId?: string) => {
     try {
       const [testsData, scopedResultsRaw, legacyResultsRaw] = await Promise.all([
@@ -356,6 +412,11 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
+  // Download a group's questions into a local bundle, then mirror it to the
+  // cloud. Local persistence happens BEFORE the API call and the API call is
+  // best-effort: a bundle whose cloud save failed still exists on the handset,
+  // and loadOfflineData merges rather than replaces so that it survives.
+  // `downloadProgress` moves on real checkpoints, not a timer.
   downloadTest: async (testId, groupId, groupName, testName, options, userId) => {
     set({ isDownloading: true, downloadProgress: 0 });
     
@@ -474,14 +535,19 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
+  // Queue one finished offline attempt. Called by testStore.submitTest when it
+  // ran offline. The write is merged into the user's key rather than
+  // overwriting it, because memory may not hold everything storage does.
   savePendingResult: async (result, userId) => {
     try {
-      const newResult: PendingResult = {
+      // FIXED (F2): the key is minted HERE, at enqueue, and never again — that
+      // is what makes a retry idempotent rather than a second session.
+      const newResult: PendingResult = ensureResultIdempotencyKey({
         ...result,
         id: `result-${Date.now()}`,
         synced: false,
         ...(userId ? { userId } : {}),
-      };
+      });
 
       const pendingResults = [...get().pendingResults, newResult];
 
@@ -499,6 +565,15 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
+  // Upload this account's queued results on reconnect and drop only the ones
+  // that actually landed.
+  //
+  // Error contract: a per-result failure is logged and the entry is LEFT in
+  // the queue (never counted as synced, never dropped), so a transient network
+  // error retries on the next sync instead of destroying the student's work.
+  // The outer catch rethrows so the caller can surface a real failure — a
+  // swallow here would report a clean sync that never happened. The return
+  // value is the honest count; a clean return does not mean "all uploaded".
   syncPendingResults: async (userId: string) => {
     set({ isSyncing: true });
 
@@ -521,16 +596,29 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
       const unsynced = resultsOwnedBy(owned, userId).filter(r => !r.synced);
       const syncedIds = new Set<string>();
 
+      // FIXED (F2): the replay is keyed. Each entry carries the key minted at
+      // enqueue (or, for an entry queued before F2, a key derived
+      // deterministically from its own id), so a result whose upload landed
+      // server-side but failed on the wire replays the FIRST session back
+      // instead of writing a second one and counting the score twice.
       for (const result of unsynced) {
+        const idempotencyKey = resultIdempotencyKey(result, { userId });
         try {
           if (result.sessionPayload) {
-            const savedSession = await api.saveTestResult(userId, result.sessionPayload);
+            const savedSession = await api.saveTestResult(userId, {
+              ...result.sessionPayload,
+              idempotencyKey,
+            });
             if (savedSession?.id) {
-              await api.submitTestResult(savedSession.id, {
-                score: result.sessionPayload.score,
-                correctAnswersCount: result.sessionPayload.correctAnswersCount,
-                totalQuestions: result.sessionPayload.totalQuestions,
-              });
+              await api.submitTestResult(
+                savedSession.id,
+                {
+                  score: result.sessionPayload.score,
+                  correctAnswersCount: result.sessionPayload.correctAnswersCount,
+                  totalQuestions: result.sessionPayload.totalQuestions,
+                },
+                { idempotencyKey }
+              );
             }
           } else {
             await api.saveTestResult(userId, {
@@ -540,6 +628,7 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
               startTime: result.completedAt,
               endTime: result.completedAt,
               config: { groupName: result.groupName, testId: result.testId },
+              idempotencyKey,
             });
           }
           syncedIds.add(result.id);
@@ -570,6 +659,10 @@ export const useOfflineStore = create<OfflineState>((set, get) => ({
     }
   },
 
+  // Wipe local offline state, and the signed-in account's cloud bundles with
+  // it. Per-bundle API deletes are individually caught so one failure cannot
+  // leave the local wipe half-done; the storage removals only clear this
+  // user's results key, never another account's.
   clearAllOfflineData: async (userId?: string) => {
     try {
       if (userId) {

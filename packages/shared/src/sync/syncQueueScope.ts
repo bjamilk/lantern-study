@@ -1,6 +1,20 @@
 /**
  * Offline sync queue — storage scoping.
  *
+ * PURPOSE: decide WHICH storage key an operation belongs to, and how to move
+ * operations between keys safely. Pure functions and plain data only — no
+ * storage adapter, no classes, no async — so every rule here is unit-testable
+ * in isolation (see ./syncQueueScope.test.ts). ./index.ts holds the stateful
+ * SyncQueue that calls into this.
+ *
+ * CONSUMERS: ./index.ts only, plus its tests. Apps use SyncQueue, not this.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT (`npm run build` first). New
+ * subpaths need a package.json `exports` entry and an api tsconfig `paths`
+ * entry; mobile jest maps `@lantern/shared/*` subpaths separately. The web
+ * turbo build enforces `noUncheckedIndexedAccess`.
+ *
+ *
  * The queue used to persist EVERY account's operations under one key
  * (`lantern_sync_queue`), so on a shared handset the second student to sign in
  * loaded the previous student's queued creates/updates/deletes and replayed
@@ -14,6 +28,10 @@
 import type { SyncOperation } from './index';
 
 /** The old, unscoped key. Read once so nothing queued before the split is lost. */
+// ---------------------------------------------------------------------------
+// Keys
+// ---------------------------------------------------------------------------
+
 export const SYNC_QUEUE_LEGACY_KEY = 'lantern_sync_queue';
 
 /** Storage key holding `userId`'s queued operations. */
@@ -46,6 +64,13 @@ export const emptySyncQueueSnapshot = <
  * yield an empty snapshot rather than throwing — a bad cache must never break
  * sign-in, and a thrown parse would strand the queue entirely.
  */
+// ---------------------------------------------------------------------------
+// Snapshot parsing and merging
+// ---------------------------------------------------------------------------
+// Storage is untrusted: a corrupt or half-written payload must degrade to an
+// empty queue, never throw during boot. Merges are by operation id so the same
+// operation read from two keys during migration lands once.
+
 export const parseSyncQueueSnapshot = <T extends OwnedSyncOperation = SyncOperation>(
   raw: string | null | undefined
 ): SyncQueueSnapshot<T> => {
@@ -94,6 +119,14 @@ export const mergeSyncQueueSnapshots = <T extends OwnedSyncOperation>(
   failedOperations: mergeOperationsById(base.failedOperations, incoming.failedOperations),
   lastSyncTime: Math.max(base.lastSyncTime ?? 0, incoming.lastSyncTime ?? 0) || null,
 });
+
+// ---------------------------------------------------------------------------
+// Legacy-key migration
+// ---------------------------------------------------------------------------
+// Split the old shared `lantern_sync_queue` into "belongs to the signing-in
+// user" and "belongs to someone else / unknown". The signing-in user's share
+// is merged into their scoped key; the rest is LEFT IN PLACE, because another
+// account's unsynced work must not be deleted by a stranger's sign-in.
 
 export interface LegacyQueuePartition<T extends OwnedSyncOperation> {
   /** Operations grouped by the account that queued them. */
@@ -192,19 +225,22 @@ export const planSyncQueueLoad = <T extends OwnedSyncOperation = SyncOperation>(
   return { ops, writes, removeLegacy: true, droppedOwnerless };
 };
 
+// ---------------------------------------------------------------------------
+// Sign-out
+// ---------------------------------------------------------------------------
 /**
- * Keys to delete for a sign-out.
+ * Keys to delete for a sign-out: NONE, for either reason.
  *
- * `user`    — the student asked to sign out; drop their queue and the legacy key.
- * `revoked` — the server ended the session (expired/refused token). Their
- *             unsynced work MUST survive, so nothing is cleared.
+ * FIXED (G4 · H12): a `user` sign-out used to drop this account's sync queue
+ * and the pre-split legacy key. The queue holds notes, flashcards and edits
+ * the student has already made but not uploaded; `@lantern/shared/offlineQueue`
+ * states the rule for every such queue — nothing deletes unsynced work, and
+ * foreign work is preserved and reclaimable. The legacy key in particular can
+ * still hold an account that is not the one signing out. Every operation is
+ * owner-stamped (`userId` on the op), so leaving the keys in place replays
+ * them for their owner and hides them from anyone else.
  */
 export const syncQueueKeysToClearOnSignOut = (
-  reason: 'user' | 'revoked',
-  userId: string | null | undefined
-): string[] => {
-  if (reason !== 'user') return [];
-  const keys = [SYNC_QUEUE_LEGACY_KEY];
-  if (userId) keys.push(syncQueueKey(userId));
-  return keys;
-};
+  _reason: 'user' | 'revoked',
+  _userId: string | null | undefined
+): string[] => [];

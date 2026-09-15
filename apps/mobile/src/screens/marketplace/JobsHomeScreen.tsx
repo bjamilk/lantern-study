@@ -1,3 +1,22 @@
+/**
+ * `JobsHome` route: the job board — search, quick and advanced filters, saved
+ * searches with alert counts, the saved-jobs view, and paged results.
+ *
+ * Exports: JobsHomeScreen (named and default).
+ * Touches: fetchJobPostings, fetchSavedJobPostings, setJobPostingSaved,
+ * fetchJobSavedSearches, createJobSavedSearch, updateJobSavedSearch,
+ * deleteJobSavedSearch and fetchJobSavedSearchMatches in
+ * ../../services/jobsBoard; the job search/format helpers from
+ * @lantern/shared.
+ *
+ * Gotchas: activeFilters is derived, and an active saved search overrides
+ * every control, which is why nearly every control also calls
+ * setActiveSavedId(null). The default sort must stay 'trending' to match the
+ * web board — drift here has caused saved-search bugs. minPay is applied on
+ * blur or submit, not per keystroke, because `load` is keyed on activeFilters.
+ * The saved-jobs view is a single unpaged fetch with its own total. Saving,
+ * alert toggles and deletes are optimistic and rolled back on failure.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,

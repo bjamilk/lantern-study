@@ -1,15 +1,32 @@
 /**
- * Pending offline test results — storage scoping.
+ * Pending offline test results — storage scoping (mobile half).
  *
  * Pending (unsynced) results used to live under one unkeyed AsyncStorage key,
  * so on a shared handset the next account to sign in loaded the previous
  * student's finished tests and uploaded them under the wrong user — and a
  * user-initiated sign-out wiped everyone's.
  *
- * Results are now stored per user under `@lantern_pending_results:<userId>`.
- * This module is pure (no store, no AsyncStorage, no supabase imports) so the
+ * Results are stored per user under `@lantern_pending_results:<userId>`. This
+ * module is pure (no store, no AsyncStorage, no supabase imports) so the
  * key/migration/partition rules can be unit-tested on their own.
+ *
+ * FIXED (F2): the OWNERSHIP rules — who an entry belongs to, when an unowned
+ * entry may be adopted, and the fact that another account's work is preserved
+ * rather than deleted — now live in `@lantern/shared/offlineQueue` and are
+ * shared with web, which used to implement the opposite (it purged). What is
+ * left here is the mobile storage shape: keys, load plans and merges.
  */
+import {
+  OFFLINE_QUEUE_UNKNOWN_OWNER,
+  type OwnedQueueEntry,
+  decidePurge,
+  entriesOwnedBy,
+  mergeQueues,
+  parseQueue,
+  resolveEntryOwner,
+  stampOwner as sharedStampOwner,
+} from '@lantern/shared/offlineQueue';
+
 
 /** The old, unscoped key. Still read once per user so nothing is lost. */
 export const PENDING_RESULTS_LEGACY_KEY = '@lantern_pending_results';
@@ -19,81 +36,43 @@ export const pendingResultsKey = (userId: string): string =>
   `${PENDING_RESULTS_LEGACY_KEY}:${userId}`;
 
 /** Every result shape this module needs to reason about: an id and an owner. */
-export interface ScopedPendingResult {
-  id?: string;
-  /** The account that finished the test. Absent on legacy entries. */
-  userId?: string | null;
-  /** Offline results carry the submitted session; it may name the owner. */
-  sessionPayload?: unknown;
-  /** Older entries carried the attempt instead. */
-  attempt?: unknown;
-}
+export type ScopedPendingResult = OwnedQueueEntry;
 
 /**
  * Parse a raw AsyncStorage value into a result list. Corrupt or non-array
  * payloads yield [] rather than throwing — a bad cache must not break sign-in.
  */
-export const parsePendingResults = <T extends ScopedPendingResult>(
-  raw: string | null | undefined
-): T[] => {
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed.filter(Boolean) as T[]) : [];
-  } catch {
-    return [];
-  }
-};
+export const parsePendingResults = parseQueue;
 
 /**
- * Who owns a legacy entry, if it says. Reads the entry's own `userId` first,
- * then the attempt/session payload an offline result carries.
+ * Who owns an entry, if it says — the entry's own `userId`, then the
+ * attempt/session payload an offline result carries. FIXED (F2): one shared
+ * implementation, so web and mobile cannot disagree about whose work this is.
  */
-export const resolveResultOwner = (result: ScopedPendingResult): string | null => {
-  if (typeof result?.userId === 'string' && result.userId) return result.userId;
-  const payload = result?.sessionPayload as { userId?: unknown } | undefined;
-  if (payload && typeof payload.userId === 'string' && payload.userId) return payload.userId;
-  const attempt = result?.attempt as { userId?: unknown } | undefined;
-  if (attempt && typeof attempt.userId === 'string' && attempt.userId) return attempt.userId;
-  return null;
-};
+export const resolveResultOwner = resolveEntryOwner;
 
-/** Stamp the owning account onto a result (idempotent). */
-export const stampOwner = <T extends ScopedPendingResult>(result: T, userId: string): T => ({
-  ...result,
-  userId,
-});
+/** Stamp the owning account onto a result (idempotent). Shared policy. */
+export const stampOwner = sharedStampOwner;
 
 /** Only the entries `userId` owns. Unowned entries are NOT assumed to be theirs. */
-export const resultsOwnedBy = <T extends ScopedPendingResult>(
-  results: T[],
-  userId: string
-): T[] => results.filter((r) => resolveResultOwner(r) === userId);
+export const resultsOwnedBy = entriesOwnedBy;
 
 /**
  * Merge two result lists, de-duplicating by id and keeping the LAST occurrence
  * (the freshly loaded copy wins over an older one with the same id).
  */
-export const mergePendingResults = <T extends ScopedPendingResult>(
-  ...lists: T[][]
-): T[] => {
-  const byId = new Map<string, T>();
-  const unkeyed: T[] = [];
-  for (const list of lists) {
-    for (const result of list) {
-      if (typeof result?.id === 'string' && result.id) byId.set(result.id, result);
-      else unkeyed.push(result);
-    }
-  }
-  return [...byId.values(), ...unkeyed];
-};
+export const mergePendingResults = mergeQueues;
 
 /**
- * Split legacy (unkeyed) entries for the user who is loading them.
+ * Split legacy (unkeyed) entries for the user who is loading them, using the
+ * shared `decidePurge` rule so mobile and web agree.
  *
- * - entries naming an owner go to that owner;
- * - entries naming nobody are attributed to `userId` — the first account to
- *   load them — because on a single handset that is the only honest guess.
+ * - entries naming an owner go to that owner (`preserve`) — never deleted;
+ * - entries naming nobody are attributed to `userId` (`adopt`) ONLY when no
+ *   other account appears in the same legacy batch. FIXED (F2): when one does,
+ *   the batch is shared-handset work of unknown origin, so unowned entries are
+ *   quarantined under `others[UNKNOWN]` rather than uploaded under whoever
+ *   happened to sign in first.
  */
 export const partitionLegacyResults = <T extends ScopedPendingResult>(
   legacy: T[],
@@ -101,13 +80,31 @@ export const partitionLegacyResults = <T extends ScopedPendingResult>(
 ): { mine: T[]; others: Record<string, T[]> } => {
   const mine: T[] = [];
   const others: Record<string, T[]> = {};
+  // Evidence, established once for the batch: does anyone else's work sit here?
+  const otherSignedInEvidence = legacy.some((result) => {
+    const owner = resolveResultOwner(result);
+    return Boolean(owner) && owner !== userId;
+  });
+
   for (const result of legacy) {
     const owner = resolveResultOwner(result);
-    if (!owner || owner === userId) {
+    const decision = decidePurge({
+      entryOwner: owner,
+      currentUser: userId,
+      stampPresent: owner !== null,
+      // Everything under the legacy key predates per-user scoping by
+      // definition — that is what makes it the legacy key.
+      createdBeforeStamping: true,
+      otherSignedInEvidence,
+    });
+    if (decision.replay) {
       mine.push(stampOwner(result, userId));
-    } else {
-      (others[owner] ||= []).push(stampOwner(result, owner));
+      continue;
     }
+    const bucket = decision.quarantineOwner || OFFLINE_QUEUE_UNKNOWN_OWNER;
+    (others[bucket] ||= []).push(
+      decision.quarantineOwner ? stampOwner(result, decision.quarantineOwner) : result
+    );
   }
   return { mine, others };
 };
@@ -178,17 +175,21 @@ export const mergeIntoStoredResults = <T extends ScopedPendingResult>(
 };
 
 /**
- * Keys to delete for a sign-out.
+ * Keys to delete for a sign-out: NONE, for either reason.
  *
- * `user`   — the student asked; drop their pending results and the legacy key.
- * `revoked` — the server ended the session. Their unsynced work MUST survive.
+ * FIXED (G4 · H12): a `user` sign-out used to delete this account's pending
+ * results AND the pre-split legacy key. Both are destruction of unsynced work,
+ * which `@lantern/shared/offlineQueue` forbids outright (`decidePurge` cannot
+ * return "delete"): the student may be lending the handset or switching
+ * accounts, and the legacy key can hold a DIFFERENT account's un-migrated
+ * results. Everything here is owner-stamped, so leaving it costs nothing —
+ * this owner's next sign-in replays it, another account's sign-in quarantines
+ * it (`planPendingResultsLoad` / `partitionLegacyResults` above).
+ *
+ * Kept as a function, and still called from `signOutStorageKeys`, so the rule
+ * has one visible home rather than being an absence.
  */
 export const pendingResultsKeysToClearOnSignOut = (
-  reason: 'user' | 'revoked',
-  userId: string | null | undefined
-): string[] => {
-  if (reason !== 'user') return [];
-  const keys = [PENDING_RESULTS_LEGACY_KEY];
-  if (userId) keys.push(pendingResultsKey(userId));
-  return keys;
-};
+  _reason: 'user' | 'revoked',
+  _userId: string | null | undefined
+): string[] => [];

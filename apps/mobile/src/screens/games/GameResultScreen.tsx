@@ -2,6 +2,21 @@
 // Lantern Study Mobile - Game Result Screen
 // Displays 1v1 Quiz Battle Results
 // ===========================================
+/**
+ * The `GameResult` route (a fullScreenModal): the duel scoreboard — win, loss
+ * or draw, both scores and times, a per-question breakdown, and Rematch/Exit.
+ *
+ * Main exports: the default `GameResultScreen`.
+ * Touches: gameStore (`activeSession`, `resetGame`, `setChallengeOpponent`,
+ * `refreshChallengeSession`) and authStore for the display name. Native: RN
+ * Animated for the entrance, plus the Confetti component.
+ *
+ * Gotchas: the store's `activeSession` wins over the route's session copy, so
+ * the screen keeps updating in place. When the opponent has not finished yet,
+ * it polls `refreshChallengeSession` every 6s rather than showing a verdict.
+ * "Rematch" does not start a game — it parks the opponent in the store and goes
+ * back to the thread where a challenge is issued.
+ */
 
 import React, { useEffect, useRef } from 'react';
 import {

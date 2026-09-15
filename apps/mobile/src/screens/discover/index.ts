@@ -1,3 +1,8 @@
+/**
+ * Barrel for the Discover/community screens: the hub and its gate state, the
+ * community pages (detail, create, members, manage, channel, board, post,
+ * saved posts), the join-by-code sheet, the academic feed and Mastery.
+ */
 export { DiscoverScreen } from './DiscoverScreen';
 export { DiscoverWorkspaceBar } from './DiscoverWorkspaceBar';
 export type { DiscoverSection } from './DiscoverWorkspaceBar';

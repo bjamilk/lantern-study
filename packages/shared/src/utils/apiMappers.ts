@@ -2,6 +2,38 @@
 // Lantern Study - API Response Mappers
 // ===========================================
 // Explicit mappers for converting API responses (snake_case) to app types (camelCase)
+//
+// PURPOSE
+//   Hand-written translators between the API's snake_case rows and the app's
+//   camelCase domain types. Most accept BOTH spellings on input, because the
+//   same shape arrives from the REST API (snake_case), from a realtime payload,
+//   and from an already-mapped local cache.
+//
+// CONSUMERS
+//   web + mobile stores and services. Not the api (it produces these rows).
+//
+// WHY THESE ARE EXPLICIT AND NOT A GENERIC CONVERTER
+//   A generic snake->camel walk silently carries through every column the
+//   server adds, including ones that should never reach a client. Naming each
+//   field is the point: what is not written here does not cross.
+//
+// THE FAILURE MODE TO WATCH
+//   These mappers are hand-maintained and the server's shapes are not. When a
+//   field is added to a type and to the API but NOT to the mapper here, it
+//   arrives as `undefined` at runtime while the typechecker stays perfectly
+//   happy — the mapper's return is typed as the full domain type regardless of
+//   which keys it actually set. A field that "isn't loading" is almost always
+//   a missing line in this file.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
 
 import { normalizeReactions } from '../chat/reactions';
 import type {
@@ -124,39 +156,16 @@ export const mapUserStatsFromApi = (data: any): UserStats => {
   };
 };
 
-// ============================================
-// GROUP MAPPERS
-// ============================================
+// GROUP MAPPERS — removed (refactor R2). The dead, incomplete
+// `mapGroupFromApi` / `mapGroupsFromApi` that lived here (they silently dropped
+// `communitySurface`, `tags`, `memberCount` and `questionCount`) are gone. The
+// one canonical group row -> `Group` mapping now lives in
+// `@lantern/shared/groups` (`mapGroupRow` / `mapGroupRows` /
+// `toServerGroupPayload`). Do not add a second one here.
 
-export const mapGroupFromApi = (data: any): Group => {
-  if (!data) return data;
-  
-  return {
-    id: data.id,
-    name: data.name,
-    avatarUrl: data.avatar_url || data.avatarUrl,
-    members: (data.members || []).map(mapUserFromApi),
-    description: data.description,
-    lastMessage: data.last_message || data.lastMessage,
-    lastMessageTime: data.last_message_time || data.lastMessageTime,
-    unreadCount: data.unread_count || data.unreadCount || 0,
-    memberEmails: data.member_emails || data.memberEmails,
-    adminIds: data.admin_ids || data.adminIds || [],
-    moderatorIds: data.moderator_ids || data.moderatorIds,
-    parentId: data.parent_id || data.parentId,
-    isArchived: data.is_archived || data.isArchived || false,
-    inviteId: data.invite_id || data.inviteId,
-    permissions: data.permissions,
-    invitedPhoneNumbers: data.invited_phone_numbers || data.invitedPhoneNumbers,
-    courseId: data.courseId !== undefined ? data.courseId : (data.course_id ?? undefined),
-    visibility: data.visibility || 'private',
-    communityId: data.communityId !== undefined ? data.communityId : (data.community_id ?? null),
-  };
-};
-
-export const mapGroupsFromApi = (data: any[]): Group[] => {
-  return (data || []).map(mapGroupFromApi);
-};
+// Messages carry the most variation: text, questions, attachments, reactions
+// and reposts, from REST and from realtime. Reactions go through
+// ../chat/reactions so the two sources normalise identically.
 
 // ============================================
 // MESSAGE MAPPERS
@@ -319,6 +328,10 @@ export const mapDiagramLabelFromApi = (data: any): DiagramLabel => {
     y: data.y,
   };
 };
+
+// Flashcards and decks. `mapSrsDataFromApi` is the FSRS scheduling state; it
+// returns undefined rather than a zeroed object for a never-reviewed card, so
+// the scheduler can tell "new" from "reviewed and reset".
 
 // ============================================
 // FLASHCARD MAPPERS

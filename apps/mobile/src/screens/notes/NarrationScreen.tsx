@@ -27,6 +27,14 @@
  *    therefore means "the words, and the page text", and the frame says so.
  * 4. `not_generated` IS A STATE, NOT AN ERROR. So is a server without the
  *    migration. Neither is rendered as a failure.
+ *
+ * Route: `Narration`, opened with a `noteId` + `attachmentId` (and the page the
+ * walkthrough was standing on).
+ * Main exports: `NarrationScreen`.
+ * Touches: jobsStore (the one metered action), services/narration
+ * (`fetchNarrationScript`, `requestNarrationScript`, and the AsyncStorage script
+ * cache), services/notes for the note and its page images, services/jobArtifacts
+ * `saveNarrationScript`. Native: expo-speech, inside `NarrationPlayer`.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';

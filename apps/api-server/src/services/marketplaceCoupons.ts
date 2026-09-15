@@ -1,4 +1,5 @@
 import type { SupabaseService } from './supabase';
+import { PublicError } from '../utils/safeError';
 import { resolveEffectivePrice } from './marketplaceOrders';
 
 export type MarketplaceCouponRow = {
@@ -61,10 +62,10 @@ export class MarketplaceCouponsService {
     }
   ): Promise<MarketplaceCouponRow> {
     const code = normalizeCouponCode(input.code);
-    if (!code) throw new Error('Coupon code is required');
-    if (input.discountValue <= 0) throw new Error('Discount must be positive');
+    if (!code) throw new PublicError('Coupon code is required');
+    if (input.discountValue <= 0) throw new PublicError('Discount must be positive');
     if (input.discountType === 'percent' && input.discountValue > 100) {
-      throw new Error('Percent discount cannot exceed 100');
+      throw new PublicError('Percent discount cannot exceed 100');
     }
 
     const { data, error } = await this.db
@@ -102,29 +103,29 @@ export class MarketplaceCouponsService {
       .maybeSingle();
 
     if (error) throw error;
-    if (!coupon) throw new Error('Invalid coupon code');
-    if (listing.user_id === buyerId) throw new Error('Cannot use your own coupon');
+    if (!coupon) throw new PublicError('Invalid coupon code');
+    if (listing.user_id === buyerId) throw new PublicError('Cannot use your own coupon');
 
     const row = coupon as MarketplaceCouponRow;
     const now = Date.now();
     if (row.starts_at && new Date(row.starts_at).getTime() > now) {
-      throw new Error('Coupon is not active yet');
+      throw new PublicError('Coupon is not active yet');
     }
     if (row.ends_at && new Date(row.ends_at).getTime() <= now) {
-      throw new Error('Coupon has expired');
+      throw new PublicError('Coupon has expired');
     }
     if (row.max_uses != null && row.uses_count >= row.max_uses) {
-      throw new Error('Coupon has reached its usage limit');
+      throw new PublicError('Coupon has reached its usage limit');
     }
     if (row.listing_id && row.listing_id !== listing.id) {
-      throw new Error('Coupon does not apply to this listing');
+      throw new PublicError('Coupon does not apply to this listing');
     }
 
     const baseAmount = resolveEffectivePrice(listing);
     const discountAmount = computeCouponDiscount(baseAmount, row);
     const finalAmount = Math.max(0, Math.round((baseAmount - discountAmount) * 100) / 100);
     if (finalAmount <= 0 && baseAmount > 0) {
-      throw new Error('Coupon discount is too large');
+      throw new PublicError('Coupon discount is too large');
     }
 
     return { coupon: row, baseAmount, discountAmount, finalAmount };

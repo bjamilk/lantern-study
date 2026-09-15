@@ -1,3 +1,17 @@
+/**
+ * `SellerCustomers` route: the seller's buyer list, filtered by segment, with
+ * per-buyer Message and Campaign actions.
+ *
+ * Exports: SellerCustomersScreen.
+ * Touches: fetchSellerBuyers in ../../services/api (re-fetched whenever the
+ * segment chip changes); SellerCampaignModal; jumps into the chat stack via
+ * navigation.getParent()?.navigate('ChatTab', … initial: false).
+ *
+ * Gotchas: a failed fetch sets an empty list, which renders as "No customers
+ * yet" rather than an error. Filtering is server-side per segment, so every
+ * chip tap is a round trip. The header hides the Cart icon because this is a
+ * seller tool.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';

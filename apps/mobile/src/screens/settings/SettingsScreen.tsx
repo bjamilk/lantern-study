@@ -1,3 +1,31 @@
+/**
+ * Root stack -> Settings. The full preference screen: Study settings,
+ * Notifications (master push toggle plus per-category switches and the
+ * delivery panel), Appearance (theme, accent, font size, low-data mode, chat
+ * wallpaper), Academic, Accessibility, Marketplace, Privacy, Sync & data
+ * (export, reset, OTA check), Support and Account (pause, delete, sign out).
+ *
+ * Exports: SettingsScreen (default).
+ * Touches: settingsStore (settings, loadSettings, updateSingleSetting,
+ * updateSettings, syncSettings, resetToDefaults and the sync flags), authStore
+ * (user, profile, signOut), chatWallpaperStore, featureTipStore;
+ * services/api exportUserData and fetchMarketplaceCampuses, accountLifecycle,
+ * otaUpdates, pushNotifications reRegisterPushToken; expo-constants,
+ * expo-linking/Linking, DateTimePicker, Slider, shareFile.
+ * Notes: every switch here is live -- it writes to settingsStore, and the
+ * values are consumed through ThemeContext (accent, contrast, reduce motion,
+ * font scale) and utils/haptics. The ONE deliberately inert group is the
+ * per-category push switches: when the OS allows no notification they are
+ * dimmed, pointer-events-off and hidden from the screen reader, with one line
+ * saying why, while the master Push switch stays live so permission can still
+ * be granted. Turning push on writes the preference AND asks the OS; a phone
+ * that has refused for good is sent to system settings.
+ * Gotchas: changing Font Size (or family) remounts the whole app tree, so
+ * navigation-state restore depends on the navigator mounting on the same
+ * commit -- see the note at the top of App.tsx. The data export is handed to
+ * the share sheet rather than written to a sandboxed path the student cannot
+ * reach.
+ */
 // ===========================================
 // Lantern Study Mobile - Settings Screen
 // Synced with backend (shared with web app)

@@ -1,3 +1,20 @@
+/**
+ * Campus stack -> CommunityChannel (deep link
+ * `discover/c/:communitySlug/ch/:groupId`). Routes one community room to the
+ * right surface: the community's lounge stays a live chat, every other room
+ * renders as a board.
+ *
+ * Exports: CommunityChannelScreen (named and default).
+ * Touches: communityStore detailBySlug / channelsById / myCommunities /
+ * loadCommunity / loadMine and collectKnownLounges; renders GroupChatView
+ * (host="community") or CommunityBoardScreen. No gate of its own -- Discover
+ * and CommunityDetail hold it.
+ * Gotchas: the surface decision needs the community's lounge_group_id, so the
+ * screen shows a back-arrow spinner until it can decide; an unresolvable
+ * community falls back to CHAT, never to the board. knownLounges is memoised
+ * on the store records because a Set built inside a zustand selector never
+ * settles.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 // react-native's own SafeAreaView is iOS-only and applies nothing on Android.

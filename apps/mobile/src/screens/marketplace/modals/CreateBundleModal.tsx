@@ -1,3 +1,19 @@
+/**
+ * Bottom-sheet modal where a seller combines two or more of their own active
+ * listings into one bundle listing.
+ *
+ * Exports: CreateBundleModal.
+ * Touches: createMarketplaceBundle and fetchMarketplaceCampuses('NG') in
+ * ../../../services/api; CampusPicker; isDigitalListingKind and
+ * isOtherCityCampus from @lantern/shared/marketplace.
+ *
+ * Gotchas: digital products and existing bundles are filtered out of the
+ * selectable list, because a bundle is a physical hand-over sale. The
+ * suggested price is 90% of the sum of the selected listings and is only a
+ * placeholder — the seller must type the price. Picking an "Other — city"
+ * campus makes the free-text city required, and switching in or out of that
+ * mode clears it.
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';

@@ -1,3 +1,17 @@
+/**
+ * Searchable campus dropdown used by the listing and job forms to pick the
+ * campus a post belongs to.
+ *
+ * Exports: CampusPicker, the MarketplaceCampusOption type.
+ * Touches: filterCampusesByQuery and formatCampusLabel from
+ * @lantern/shared/marketplace. Purely controlled — the caller supplies the
+ * campus list and owns the selected id.
+ *
+ * Gotchas: the filtered list is capped at 40 rows, so a selected campus
+ * outside the current query's top 40 is simply not visible in the list.
+ * An empty `campuses` array renders as "Loading campuses and cities…", which
+ * is also what a failed fetch upstream looks like.
+ */
 import React, { useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import {

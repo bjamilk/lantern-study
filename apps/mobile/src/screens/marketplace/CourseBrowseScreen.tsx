@@ -1,3 +1,16 @@
+/**
+ * `CourseBrowse` route: the index of courses that have at least one active
+ * listing, with a local text filter.
+ *
+ * Exports: CourseBrowseScreen (named and default).
+ * Touches: fetchMarketplaceCourses in ../../services/api; COURSE_ANCHOR_COPY,
+ * courseAnchorLabel and courseListingCountLabel from
+ * @lantern/shared/marketplace. Navigates to `CourseListings`.
+ *
+ * Gotchas: the search box filters the already-loaded page in memory, so it
+ * cannot reach courses the server truncated away — the truncation note at the
+ * bottom is the only signal that happened.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';

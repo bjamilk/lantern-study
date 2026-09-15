@@ -1,3 +1,69 @@
+/**
+ * The contextual row — the strip of doors *within* the section you are in,
+ * drawn inside the global bottom bar.
+ *
+ * Purpose: read the focused route (and, where a route hosts several
+ * destinations, its params), look the matching row up in the registry, and draw
+ * it. See the long note below the imports for how an item is DRAWN and why.
+ *
+ * Main exports: `ContextualBar` (named and default), plus a re-export of
+ * `CONTEXTUAL_BAR_CONTENT_HEIGHT` so a caller reaching for the row also finds
+ * its height.
+ *
+ * Touches: `ChromeContext` (focused route/params, immersive, scroll-to-top,
+ * screen actions), `setRoomUiStore` (`useVisibleSetParams`), `companionStore`
+ * (`open` / `openForScope`), `notesStore` (`createNote`), `lectureRecordingStore`,
+ * `toastStore`, `confirmStore` (`confirmSheet`), the theme, and React Native's
+ * `Keyboard`, `Animated` and `LayoutAnimation`. No API calls of its own and no
+ * persistence; the registry (navigation/contextualBars.ts) and the presentation
+ * planners (contextualBarPresentation.ts, contextualBarLayout.ts,
+ * tabPillLayout.ts) are pure and unit-tested — this file is the untestable
+ * shell over them, because mobile jest is node-env and cannot render a native
+ * component.
+ *
+ * THE ONE-WAY RULE. Data flows in exactly one direction:
+ *
+ *     focused route + its params  ->  registry  ->  what this row draws
+ *
+ * and never back. The bar DERIVES its contents, its selected door and its
+ * presence from the current route; it must never write route params, set
+ * navigation state, or otherwise feed its own state back into the thing it
+ * reads from. Concretely, and all of these are load-bearing:
+ * - It never calls `navigation.setParams`, `setOptions` or any store setter
+ *   that the route/params it reads are derived from. The lit pill follows the
+ *   store (`useVisibleSetParams`); params are an INBOX, not a writeable
+ *   channel. A row that wrote back would be a render-phase feedback loop, which
+ *   on this shell shows up as "Maximum update depth exceeded" rather than as a
+ *   wrong pill.
+ * - Navigation is the CALLER's: `onNavigate` is passed in by RootNavigator's
+ *   CustomTabBar, which holds the child navigator's state key. A
+ *   `navigate('<Tab>', { screen })` from here would be the nested navigate
+ *   `nestedNavigateLint` forbids.
+ * - It never emits `tabPress`. That also pops the stack to its root, so
+ *   pressing the door you are already standing in would throw the screen away;
+ *   the row scrolls to top instead.
+ * - The one thing it reports upward is PRESENCE (`onPresence`), and that is a
+ *   fact about drawing, not about navigation state: it tells the bar whether
+ *   the five tabs are the bar's to draw. It has to come from here because the
+ *   soft keyboard takes the row off screen, which the registry cannot know.
+ *
+ * Gotchas:
+ * - `LayoutAnimation` is queued during RENDER (a selection change), not in an
+ *   effect: it configures the NEXT commit. The Android experimental flag is set
+ *   at BottomTabBar.tsx's module load — both files are mounted by the same
+ *   navigator, so it is not set twice.
+ * - `rendered` lags `spec` by one animation on the way out, on purpose: the row
+ *   must still be painted while its height animates to 0. Only a FINISHED
+ *   animation clears it; an interrupted one means a new spec has arrived and
+ *   its own effect already set the content.
+ * - The bottom hairline is an absolutely-positioned child, never a
+ *   `borderBottomWidth`: React Native puts a border inside the height, which
+ *   cost the row a dp and made the set bar's pill measure short against the
+ *   global bar's.
+ * - Adding or removing a hook here while the app is running redboxes with
+ *   "Rendered more hooks than during the previous render" — that is Fast
+ *   Refresh, not the edit. Force-stop and relaunch before believing it.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useVisibleSetParams } from '../../stores/setRoomUiStore';
 import {
@@ -310,6 +376,11 @@ export function ContextualBar({
    */
   onPresence?: (mode: 'above' | 'replace' | null) => void;
 }) {
+  // Everything this row knows about WHERE the student is comes from here, and
+  // only in this direction (see the one-way rule in the file header): the
+  // registry entry for the focused route, that route's name and params, whether
+  // the route is immersive or inside the chrome, and the two ways to act on the
+  // focused screen without navigating (scroll to top, run a registered action).
   const {
     contextual,
     contextualRoute,

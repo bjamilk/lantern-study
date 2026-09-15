@@ -1,3 +1,17 @@
+/**
+ * Root stack -> InviteFriends. Shows the viewer's referral link with copy and
+ * share actions, what each side earns, and -- for their institution -- campus
+ * ambassadors and the ambassador leaderboard.
+ *
+ * Exports: InviteFriendsScreen (named and default).
+ * Touches: services/api fetchReferralSummary and fetchAmbassadors,
+ * services/gamification fetchLeaderboard, authStore.academicProfile for the
+ * institution id; expo-clipboard and react-native Share; link and copy from
+ * @lantern/shared/network.
+ * Note: the ambassador and leaderboard calls swallow their own failures, so
+ * only a failed referral summary surfaces an error; the reward is granted on
+ * activation, not on signup (REFERRAL_ACTIVATION_EXPLAINER).
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Share, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';

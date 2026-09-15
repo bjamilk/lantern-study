@@ -1,18 +1,38 @@
 name: CI
 
+# The single source of truth for "is this tree good?".
+#
+# It runs on every pull request, and it is ALSO called as a reusable workflow by
+# deploy-web.yml and deploy-api.yml (`workflow_call` below). That is deliberate:
+# a deploy job that `needs:` these jobs cannot start until they are green in the
+# SAME run, which makes "deploy never runs on red CI" true by construction
+# rather than by a `workflow_run` race. See docs/PIPELINE.md § Why reusable.
+#
+# `push: main` is intentionally absent — a push to main is covered by the CI
+# jobs running inside the two deploy workflows, so the work is not done twice
+# per deploy path more than it already is.
+#
+# Every job name below is a required status check. Renaming one silently drops
+# its protection: update the branch-protection list in docs/PIPELINE.md too.
+
 on:
-  push:
-    branches: [main, master]
   pull_request:
+  workflow_call:
 
 # Supersede in-flight runs of the same branch/PR — a newer push makes the older
-# run's verdict irrelevant, so cancel it instead of queueing behind it.
+# run's verdict irrelevant, so cancel it instead of queueing behind it. Runs
+# invoked via workflow_call get the caller's run id, so a deploy is never
+# cancelled by an unrelated PR push.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref }}-${{ github.run_id }}
   cancel-in-progress: true
 
+env:
+  NODE_VERSION: '20'
+
 jobs:
-  build-and-typecheck:
+  shared:
+    name: shared (build + jest)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -20,24 +40,171 @@ jobs:
         with:
           node-version: '20'
           cache: npm
+      - name: Cache workspace node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: modules-node20-${{ hashFiles('package-lock.json') }}
       - run: npm ci
+      - run: npm run build --workspace=@lantern/shared
+      # packages/shared has a jest suite that no job ran until now. Web vitest
+      # picked up only packages/shared/src/learning/**, so the rest of shared
+      # was tested by nothing.
+      - run: npm test --workspace=@lantern/shared
+
+  api:
+    name: api (tsc + jest + audit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Cache workspace node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: modules-node20-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      # The npm `overrides` block is the only thing pinning several transitive
+      # deps out of known-vulnerable versions; a lockfile regeneration can drop
+      # it silently.
       - name: Security overrides are actually installed
         run: node scripts/check-overrides.mjs
       - run: npm run lint --workspace=@lantern/api-server --if-present
       - run: npm run build --workspace=@lantern/shared
       - run: npm run build --workspace=@lantern/api-server
-      - run: npm run build:web
-      - run: npm run typecheck --workspace=@lantern/api-server --if-present
-      - run: npm run typecheck --workspace=@lantern/web --if-present
+      - run: npm run typecheck --workspace=@lantern/api-server
+      - run: npm test --workspace=@lantern/api-server
+      # Fails on any high/critical advisory NOT in scripts/audit-allowlist.json.
+      # Each allowlisted GHSA id documents the forbidden major upgrade that
+      # would unblock it.
+      - name: npm audit (high severity, curated allowlist)
+        run: node scripts/check-audit.mjs
+
+  ledger:
+    name: ledger (PostgREST embed disambiguation)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Cache workspace node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: modules-node20-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - run: npm run build --workspace=@lantern/shared
+      # Its own job, not folded into `api`, because of what it guards: a second
+      # foreign key between two tables made every PostgREST embed ambiguous and
+      # silently emptied the community members roster in production. The SQL was
+      # valid; nothing re-checked the embed. This is the check that fails when a
+      # migration is individually correct but breaks a client query — keep it
+      # named and required so it cannot be quietly skipped.
+      - name: PostgREST embed disambiguation
+        run: npm test --workspace=@lantern/api-server -- src/services/postgrestEmbedDisambiguation.test.ts
+
+  mobile:
+    name: mobile (tsc + jest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Cache workspace node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: modules-node20-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      # Mobile needs shared's build output on disk to typecheck against it.
+      - run: npm run build --workspace=@lantern/shared
+      # Mobile tsc is a real 0-error gate and was the single biggest hole in CI:
+      # it never ran here, while a @lantern/shared subpath that only a test
+      # imports produces a CI-only TS2307.
+      - run: npm run typecheck --workspace=@lantern/mobile
+      # --no-cache is what reproduces the bare-specifier trap: mobile jest does
+      # not map bare `@lantern/shared`, and a warm cache hides it.
+      - name: mobile jest (no cache)
+        run: npx jest --no-cache
+        working-directory: apps/mobile
+
+  web:
+    name: web (build + vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Cache workspace node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: modules-node20-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      # --force: turbo's cache once served a stale web bundle to a deploy. A
+      # build gate that can be satisfied from cache is not a build gate.
+      - name: Build web (turbo, cache bypassed)
+        run: npx turbo run build --filter=@lantern/web --force
+      - run: npm run typecheck --workspace=@lantern/web
+      - name: vitest
+        run: npx vitest run
+        working-directory: apps/web
+
+  design:
+    name: design (contrast + tokens)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - name: Cache workspace node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            node_modules
+            apps/*/node_modules
+            packages/*/node_modules
+          key: modules-node20-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      # scripts/design/contrast.mjs existed and was referenced by no workflow —
+      # dark mode shipped dead once because the check only ever ran by hand.
+      - run: npm run design:contrast
       - run: node scripts/migrate-design-tokens.mjs --check
 
-  feature-registry:
+  registry:
+    name: registry (feature registry bump)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          # Needs the base commit to diff against; the default shallow clone
-          # has only one, and the script skips rather than fails without it.
+          # Needs the base commit to diff against; the default shallow clone has
+          # only one, and the script skips rather than fails without it.
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
@@ -47,62 +214,34 @@ jobs:
         # record of what shipped. It fell a month behind once; this catches the
         # next time. [skip registry] in a commit message opts a no-op bump out.
         env:
-          REGISTRY_CHECK_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          REGISTRY_CHECK_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
         run: node scripts/check-feature-registry.mjs
 
-  secret-scan:
+  secrets:
+    name: secrets (tree scan)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Scans the WHOLE tree, not the nine subdirectories it used to: the repo
+      # root, supabase/ (208 migrations), docs/ and public/ were all invisible
+      # to the old scanner, as were .cjs/.mjs files.
       - name: Scan for committed secrets
         run: bash scripts/check-secrets.sh
 
-  security-audit:
+  migrations:
+    name: migrations (idempotency + ordering)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: npm
-      - run: npm ci
-      - name: npm audit (high severity, curated allowlist)
-        # Fails on any high/critical advisory NOT listed in
-        # scripts/audit-allowlist.json. Each allowlisted GHSA id documents the
-        # forbidden major upgrade (e.g. expo@57) that would unblock it.
-        run: node scripts/check-audit.mjs
-
-  api-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-      - run: npm ci
-      - run: npm run build --workspace=@lantern/shared
-      - run: npm test --workspace=@lantern/api-server --if-present
-
-  mobile-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-      - run: npm ci
-      - run: npm test --workspace=@lantern/mobile
-
-  web-tests:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: npm
-      - run: npm ci
-      - run: npm run build --workspace=@lantern/shared
-      - run: npm test --workspace=@lantern/web
+      # Migrations are applied by hand against the linked Supabase project, so a
+      # non-idempotent file that fails halfway leaves the remote diverged with
+      # no way to replay it. See docs/PIPELINE.md § Migrations.
+      - name: Lint new and changed migrations
+        env:
+          MIGRATION_CHECK_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || 'origin/main' }}
+        run: node scripts/check-migrations.mjs

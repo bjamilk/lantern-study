@@ -1,3 +1,15 @@
+/**
+ * Budget stack -> SetBudget. Sets this month's spending cap, the expected
+ * income per source and the planned savings, with a live zero-based balance
+ * check as you type.
+ *
+ * Exports: SetBudgetScreen (default).
+ * Touches: budgetStore budget / setBudget / setBudgetPlan; authStore user id;
+ * summarizeBudgetPlan from @lantern/shared/utils (same maths as web).
+ * Note: saving is two writes -- setBudget for the cap, then setBudgetPlan for
+ * income and savings. Category budgets are NOT edited here (see
+ * SetCategoryBudgetScreen); they are only read into the balance summary.
+ */
 // ===========================================
 // Lantern Study Mobile - Set Budget Screen
 // ===========================================

@@ -1,3 +1,18 @@
+/**
+ * The academic feed ("From your network"): a pull-based, cursor-paged list of
+ * what the people and communities you follow have been doing, each row opening
+ * the thing it describes.
+ *
+ * Exports: FeedScreen (named and default).
+ * Touches: services/api fetchFeed + fetchLearningConnections; groupStore and
+ * communityStore, used only to decide whether a group is a board and which
+ * community slug it belongs to; the shared describeFeedItem /
+ * feedItemNavTarget / remapFeedTargetForBoard rules.
+ * Gotchas: no realtime channel here by design (direct-to-me events stay in
+ * notifications); paging de-duplicates ids across a timestamp boundary; a
+ * failed connections fetch must not blank the list, and a feed item whose verb
+ * has no copy renders nothing rather than an empty row.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, RefreshControl, Text, View } from 'react-native';
 import {

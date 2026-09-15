@@ -1,3 +1,19 @@
+/**
+ * The `RecapStudio` route in the Study stack: turns one note into a spoken
+ * recap in a chosen style and length, plays it segment by segment, and lets the
+ * student ask questions mid-listen without losing their place.
+ *
+ * Main exports: `RecapStudioScreen` — named only, there is no default export.
+ * Touches: notesStore (materials, create/save/load), toastStore, services/ai
+ * `aiGenerateRecap` and `aiAskTutor`. Native: expo-speech for playback.
+ *
+ * Gotchas: a recap IS a note — `composeRecapNoteBody`/`parseRecapNoteBody` round
+ * trip the session through the note body, saved on a 600ms debounce. `playGen`
+ * is a generation counter that makes stale expo-speech callbacks no-ops;
+ * without it the `onDone` of a cancelled segment would advance the recap, since
+ * `onDone` auto-plays the next segment. Asking sets `pausedForAsk`, which
+ * suppresses that auto-advance until the student resumes.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

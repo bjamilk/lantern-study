@@ -1,3 +1,20 @@
+/**
+ * The `PlayStudio` route in the Study stack: the game door for one set or
+ * course. The student picks a deck and a play mode (speed, define, match) and
+ * plays a timed round over that deck's cards, then can cram the ones they missed.
+ *
+ * Main exports: `PlayStudioScreen` (also the default).
+ * Touches: flashcardStore (decks, cards, `fetchFlashcards`), toastStore for the
+ * blocker messages. Navigates to MatchStudy, CramSession, StudySetUpload,
+ * StudySetLibrary and Library. No services and no native modules — the session
+ * rules, copy and blockers all come from @lantern/shared.
+ *
+ * Gotchas: Match is not a session here — it hands off to the `MatchStudy` screen,
+ * so only speed/define ever produce a local `PlaySession`. The countdown effect
+ * is keyed on `session.deckId/mode/status` rather than on the session object, so
+ * answering a question does not restart the clock. Sessions are in-memory only
+ * and are lost when the screen unmounts.
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

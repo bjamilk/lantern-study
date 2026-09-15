@@ -1,3 +1,17 @@
+/**
+ * Device-local snapshots of the price a listing had when the user saved it, so
+ * Saved Listings can show a "Price drop" badge.
+ *
+ * Exports: snapshotFavoritePrice, forgetFavoritePrice,
+ * getFavoritePriceSnapshots.
+ * Touches: AsyncStorage key `lantern_marketplace_favorite_prices`. No server
+ * call — the favorite row stores membership only, not the price at save time.
+ *
+ * Gotchas: every read and write swallows its error and falls back to an empty
+ * map, so a failure shows up as a missing badge, never as an error. The key is
+ * not scoped to a user id, so snapshots survive an account switch on a shared
+ * device.
+ */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const FAVORITE_PRICES_KEY = 'lantern_marketplace_favorite_prices';

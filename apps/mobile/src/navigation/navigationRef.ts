@@ -1,3 +1,22 @@
+/**
+ * Navigation from outside the React tree: stores, services, notification
+ * handlers and deep links, none of which hold a `navigation` prop.
+ *
+ * Main exports: `navigationRef` (attached to the container in RootNavigator),
+ * the generic `navigate`, and the named helpers below — challenges inbox, game
+ * screen/result, test player, deck detail.
+ *
+ * Touches: nothing but @react-navigation/native. No stores, no I/O.
+ *
+ * Gotchas:
+ * - Every call is guarded by `navigationRef.isReady()` and does NOTHING when
+ *   the container has not mounted. A caller that fires during boot (a cold
+ *   deep link, a notification tap on launch) must retry — see
+ *   `navigateWhenReady` in hooks/useDeepLinkHandler.ts — rather than assume
+ *   this ran.
+ * - Every nested target here carries `initial: false`; see the note above
+ *   `navigateToChallengesInbox` for why that word is load-bearing.
+ */
 import { createNavigationContainerRef, CommonActions } from '@react-navigation/native';
 import type { RootStackParamList } from './types';
 

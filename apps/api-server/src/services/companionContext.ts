@@ -1,6 +1,36 @@
 /**
  * Build server-trusted AI companion context — ignores client-forged study/privacy fields.
  */
+/**
+ * Purpose: assemble the context block that goes into the AI companion's system
+ * prompt, and the authorised message set for a group-chat summary.
+ *
+ * Exports:
+ * - `buildTrustedCompanionContext` — called by routes/ai.ts (`/ai/companion/*`)
+ *   and by the BullMQ companion processor that answers `/message` in
+ *   production.
+ * - `fetchAuthorizedGroupSummaryMessages` — called by the group-summary route
+ *   before `aiService.summarizeGroupChat`.
+ *
+ * What it touches: Supabase tables `profiles`, `group_members` + `groups`,
+ * `flashcards` + `decks`, `user_preferences`, `notes`, and `test_sessions` via
+ * `SupabaseService.fetchTestResults`. Lazily imports `topicMastery` (the
+ * materialised Mastery Graph), `notePages` (per-page transcripts) and
+ * `classSections` (the class corpus). No external API is called from here; the
+ * result is handed to aiService, which calls Groq/Fireworks.
+ *
+ * The defence this module IS: every study and entitlement fact in the returned
+ * context is re-derived SERVER-SIDE from the caller's own rows. The client's
+ * `context` object is not merged in. Group names, due-card counts, weak topics,
+ * the last test score and the wallet line are all read here; `noteId`,
+ * `attachmentId`, `pageIndex` and `classId` are accepted only as ids, UUID-
+ * shape-checked, and then re-read under a `user_id = userId` filter, so a
+ * stranger's id returns nothing rather than their content. The few free-text
+ * fields a client may contribute (`currentScreen`, `activeSessionSummary`,
+ * `studyGoal`, `userName`) pass through `sanitizeHint`, which strips control
+ * characters and hard-caps length. `mode` and `guided` are the only structured
+ * client fields honoured, and only through their normalisers.
+ */
 import { isCardDue } from '@lantern/shared/utils/srs';
 import type { SupabaseService } from './supabase';
 import {
@@ -43,6 +73,26 @@ function extractMessageText(message: Record<string, unknown>): string {
   return nestedStem;
 }
 
+/**
+ * Build the companion context for one turn, server-side.
+ *
+ * `clientContext` is treated as a set of REQUESTS, never as facts. Everything
+ * the model is told about the student — who they are, what they are behind on,
+ * how many cards are due, what they last scored, what is in their wallet — is
+ * queried here from rows keyed to `userId`. A client that inflates its own
+ * context changes nothing the assistant says about the student's data.
+ *
+ * `context.guided` is the one exception worth naming: it is honoured only in
+ * guided mode, and only after `normalizeGuidedSessionContext` shape-checks it,
+ * caps its strings and clamps the step index. A malformed guided block is
+ * dropped whole, which costs one block of prompt rather than a wrong answer.
+ *
+ * Resolution order for the note context, widest scope last:
+ *   1. `noteId` — the owned note's summary + body, capped at MAX_NOTE_LEN.
+ *   2. `attachmentId` + `pageIndex` — page scope REPLACES the whole-note body
+ *      and returns early, so nothing wider is appended.
+ *   3. Otherwise the class corpus is appended for `classId`.
+ */
 export async function buildTrustedCompanionContext(
   supabaseService: SupabaseService,
   userId: string,
@@ -50,6 +100,9 @@ export async function buildTrustedCompanionContext(
 ): Promise<CompanionContext> {
   const db = supabaseService.getClient();
 
+  // --- Server-derived facts -------------------------------------------------
+  // Four owner-scoped reads in parallel, plus the test history. Nothing below
+  // reads a count, a score or a balance out of `clientContext`.
   const [
     profileResult,
     groupsResult,
@@ -164,6 +217,10 @@ export async function buildTrustedCompanionContext(
     guided: normalizeGuidedSessionContext(clientContext.guided),
   };
 
+  // --- Note scope -----------------------------------------------------------
+  // The client names a note; the server decides whether it is theirs. The
+  // `user_id` filter on the read is the ownership predicate — the service-role
+  // client bypasses RLS, so it cannot be left to the database.
   const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   const rawNoteId = typeof clientContext.noteId === 'string' ? clientContext.noteId.trim() : '';
   const noteId = UUID_RE.test(rawNoteId) ? rawNoteId : undefined;
@@ -227,6 +284,10 @@ export async function buildTrustedCompanionContext(
     return trusted;
   }
 
+  // --- Class corpus ---------------------------------------------------------
+  // Widest scope, and last: appended only when the turn is not page-scoped.
+  // `corpusForCompanion` applies its own enrolment check, so an unenrolled
+  // classId yields nothing.
   const rawClassId = typeof clientContext.classId === 'string' ? clientContext.classId.trim() : '';
   const classId = UUID_RE.test(rawClassId) ? rawClassId : undefined;
   try {
@@ -243,6 +304,25 @@ export async function buildTrustedCompanionContext(
   return trusted;
 }
 
+// --- Group-chat summary ------------------------------------------------------
+
+/**
+ * Collect the messages a group summary may be written from.
+ *
+ * Membership is the gate: a non-member gets a 403 before any message is read.
+ * The `full` response profile is used so QUESTION stems carried in
+ * `question_data` are included — the compact profile omits them, which made
+ * summaries of a question-heavy group read as empty.
+ *
+ * FIXED (F7a): these strings are other members' text. They are still returned
+ * raw here — this function's job is authorization and retrieval — but
+ * `aiService.summarizeGroupChat` now routes them through
+ * `buildGroupChatMessagesBlock`, which sanitizes each line, caps it, defangs a
+ * typed fence marker and wraps the block in a BEGIN/END UNTRUSTED fence the
+ * system prompt names as data. Any new consumer of these strings owes them the
+ * same treatment: they are the one cross-user injection surface in the
+ * companion.
+ */
 export async function fetchAuthorizedGroupSummaryMessages(
   supabaseService: SupabaseService,
   groupId: string,

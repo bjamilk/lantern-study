@@ -1,3 +1,22 @@
+/**
+ * The `LessonStudio` route in the Study stack (titled "Tutor"): builds a paged
+ * lesson from one note, reads each page aloud, takes typed or spoken commands
+ * (next, quiz me, slower, faster, pause), and answers questions about the page.
+ *
+ * Main exports: `LessonStudioScreen` — named only, there is no default export.
+ * Touches: notesStore (materials, create/save/load), toastStore,
+ * lectureRecordingStore (read-only, to refuse the mic while a lecture holds it);
+ * services/ai `aiGenerateLesson`/`aiAskTutor`/`aiGenerateQuestions` and
+ * services/liveSpeech `recognizeOnce`. Native: expo-speech for playback.
+ *
+ * Gotchas: a lesson IS a note — the session is serialised into the note body by
+ * `composeLessonNoteBody` and read back by `parseLessonNoteBody`. Saves are
+ * debounced 600ms, and navigation handlers call `persist` + `speakPage` inline
+ * inside the setState recipe rather than through `updateSession`, because the
+ * new page has to be spoken. `autoSpokeRef` keeps a resumed lesson from
+ * re-reading its page on every render. If the lesson generator is missing,
+ * `lessonFromMaterial` silently builds a local lesson instead.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

@@ -1,3 +1,15 @@
+/**
+ * "Saved posts": the viewer's board bookmarks across every community, newest
+ * first, each row opening CommunityPost.
+ *
+ * Exports: SavedPostsScreen (named and default).
+ * Touches: services/boardActions fetchBookmarkedPosts (cursor-paged at
+ * BOARD_BOOKMARKS_PAGE_SIZE); copy and formatting from @lantern/shared/network.
+ * Gotchas: rows are text only and never fetch a photo, so opening the list on
+ * a metered connection costs the JSON alone. A page that comes back with
+ * serverBacked false means the message_bookmarks migration is not applied, and
+ * the screen says so instead of rendering an empty "nothing saved" state.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';
 import {

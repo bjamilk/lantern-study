@@ -12,6 +12,48 @@
  * request: a client-supplied `extractedText` would be an open prompt-injection
  * channel into the companion's context. Clients send ids they own.
  */
+/**
+ * Purpose: the server half of "Add image" — upload, transcribe once, store the
+ * transcript, and hand it back to a chat turn by id.
+ *
+ * Exports: `createCompanionImageAttachment` (routes/ai.ts image-upload
+ * handler), `loadTrustedCompanionImages` and
+ * `collectCompanionImageAttachmentIds` (the `/message` route AND the BullMQ
+ * companion processor), plus the caps, the table name, the
+ * `CompanionImageTableMissingError` and its detector.
+ *
+ * What it touches: Supabase table `companion_image_attachments` (columns
+ * `user_id`, `storage_path`, `file_name`, `content_type`, `extracted_text`,
+ * `word_count`, `extraction_provider`) and the `note-files` storage bucket,
+ * under the note path shape `<userId>/<timestamp>-companion-<name>` built by
+ * `buildNoteStoragePath`. Reading is done by `noteOcr.readPhotoPageText`
+ * (Tesseract / the configured vision provider); bytes are normalised by
+ * `imageProcessing.processImageForUpload` under the `notePhoto` budget.
+ *
+ * Lifecycle of one attachment:
+ *   1. Bytes arrive. `detectImageMime` decides the real type and
+ *      `assertNoteImageUpload` enforces type, size and magic bytes.
+ *   2. `processImageForUpload` re-encodes to WebP (animated GIFs pass through).
+ *   3. The NORMALIZED bytes are written to `note-files`.
+ *   4. The same normalized bytes are transcribed; a failed read is logged and
+ *      leaves an empty transcript rather than failing the upload.
+ *   5. The row is inserted. If the insert fails, the stored object is removed
+ *      so nothing is orphaned.
+ *   6. A signed URL for the object is returned for the composer chip.
+ * There is no delete path here — account deletion and the storage purge in
+ * userDataLifecycle.ts are what remove these objects.
+ *
+ * Migration `20260912100000_companion_image_attachments.sql` is hand-applied,
+ * which is why the missing-table case has a named error and a 503 rather than
+ * a generic failure. That migration's two RLS policies were written without a
+ * `TO` clause, so their role list defaulted to PUBLIC and included `anon`;
+ * nothing leaked because the predicate `auth.uid() = user_id` is false for
+ * anon, but the grant surface was wrong for a table holding the text read out
+ * of students' photographed pages. `20260915100000_rls_ownership_and_
+ * visibility_hardening.sql` re-creates both policies `TO authenticated`. A
+ * policy with no `TO` clause is TO PUBLIC — worth remembering before the next
+ * table is added here.
+ */
 import { readPhotoPageText } from './noteOcr';
 import { processImageForUpload } from './imageProcessing';
 import {
@@ -22,6 +64,8 @@ import {
 import { detectImageMime } from '../utils/fileValidation';
 import type { SupabaseService } from './supabase';
 import { logger } from '../utils/logger';
+
+// --- Table, caps and the missing-migration signal ----------------------------
 
 export const COMPANION_IMAGE_TABLE = 'companion_image_attachments';
 
@@ -76,6 +120,8 @@ export class CompanionImageTableMissingError extends Error {
  * The caller has already reserved the OCR credits — this never charges, and
  * never charges twice for one upload.
  */
+// --- Upload and transcribe ---------------------------------------------------
+
 export async function createCompanionImageAttachment(params: {
   supabaseService: SupabaseService;
   userId: string;
@@ -170,6 +216,8 @@ export async function createCompanionImageAttachment(params: {
  * that consumes them, because BOTH entry points need it — the HTTP route and
  * the BullMQ processor that actually answers `/message` in production.
  */
+// --- Read back for a chat turn ----------------------------------------------
+
 export function collectCompanionImageAttachmentIds(context?: {
   imageAttachmentIds?: unknown;
   imageAttachments?: unknown;

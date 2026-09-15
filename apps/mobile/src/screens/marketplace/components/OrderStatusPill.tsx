@@ -1,3 +1,17 @@
+/**
+ * The coloured status word at the head of an order row or order page, phrased
+ * for the side of the order the viewer is on.
+ *
+ * Exports: OrderStatusPill, orderNextStep (the one-line "what happens next").
+ * Touches: BUYER_ACTION_ORDER_STATUSES and orderNeedsSeller from
+ * ../../../stores/marketplaceStore, so the tone agrees with the You badge
+ * counts; theme colors for the tint.
+ *
+ * Gotchas: `hasPaymentId` is what separates an online Paystack order from a
+ * cash or transfer hand-over, and it flips both the label and who the order is
+ * waiting on. Tints are inline styles, not Tailwind classes, because the
+ * config has no warning/success/error background classes.
+ */
 import React from 'react';
 import { Text, View } from 'react-native';
 import type { MarketplaceOrderStatus } from '@lantern/shared/types';

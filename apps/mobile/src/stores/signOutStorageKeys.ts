@@ -5,15 +5,22 @@
  * pending offline test results, the offline sync queue (creates/updates/
  * deletes) and queued question-bank scores. Each of them is now stored per
  * account under `<legacy key>:<userId>`, and each owns a
- * `…KeysToClearOnSignOut(reason, userId)` rule:
+ * `…KeysToClearOnSignOut(reason, userId)` rule.
  *
- *   `user`    — the student tapped Sign out. Their queues (and the pre-split
- *               legacy key) may go.
- *   `revoked` — the server ended the session. Nothing goes: they did not ask
- *               for this, may sign straight back in, and a dead token is not
- *               permission to delete a finished test.
+ * FIXED (G4 · H12): all three now return NOTHING, for `user` and `revoked`
+ * alike. A `user` sign-out used to delete the student's own pending results,
+ * sync queue and queued question-bank scores, plus the three pre-split legacy
+ * keys — which may hold a DIFFERENT account's un-migrated work. That is
+ * destruction of finished work the student cannot get back, and it contradicts
+ * the one cross-platform policy both halves are supposed to follow
+ * (`@lantern/shared/offlineQueue`: nothing deletes unsynced work; foreign work
+ * is preserved and reclaimable). Every queue key is owner-stamped and is
+ * migrated per user on read, so leaving them all in place is what makes
+ * "sign out, hand the phone over, sign back in later" return the student's
+ * work instead of losing it. `isOfflineQueuePreservedKey` states the same rule
+ * for the web logout wipe.
  *
- * In both cases ANOTHER account's scoped key is never removed.
+ * In every case ANOTHER account's scoped key is never removed either.
  *
  * This module is pure — no store, no AsyncStorage, no services — so the rule
  * can be unit-tested without importing the auth store.

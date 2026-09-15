@@ -1,3 +1,18 @@
+/**
+ * Modal that publishes a downloaded offline test as a marketplace question
+ * bank -- or updates the bank already published from the same group.
+ *
+ * Exports: PublishQuestionBankModal.
+ * Touches: services/api publishQuestionBank, updateQuestionBankContent,
+ * fetchMyQuestionBanks, fetchMarketplaceCampuses; groupStore (for the source
+ * group's course); offlineStore's OfflineTest as input; shared course-anchor
+ * and rights-attestation rules.
+ * Notes: an existing bank with the same sourceGroupId flips the modal to
+ * update mode. The course prefill falls back to the source group's course
+ * because the server applies the same fallback on publish, and a topic is only
+ * kept when a course is. `attestation: true` is required on publish AND on
+ * republish; without it the API answers 400.
+ */
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import {

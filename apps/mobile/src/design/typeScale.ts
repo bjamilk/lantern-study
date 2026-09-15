@@ -14,6 +14,22 @@
  * Font-scale (the appearance setting and OS Dynamic Type) is applied on top of
  * these by theme/installFontScale.tsx, which rescales any `fontSize` it finds
  * on a Text style — so a step spread into a StyleSheet still scales.
+ *
+ * Four lints guard the mobile design system (`npx jest src/design`). Each states
+ * its own rule in full at the top of its file; in short:
+ *   - typeScaleLint.test.ts — no NEW raw sizes. Every file's remaining count is
+ *     budgeted in typeScaleAllowlist.ts (scan in typeScaleSources.ts). On
+ *     failure, migrate the file to `text-body` / `<T.Body>`; never raise a
+ *     number, and delete a row rather than editing it to zero.
+ *   - typeFloorLint.test.ts — absolute 11 sp floor, no allowlist. On failure use
+ *     `typeScale.label` / `text-label`, not a smaller step.
+ *   - tailwindFeatureColors.test.ts — every feature colour in
+ *     tailwind.config.js must stay an object carrying `ink` and `tint` (a
+ *     duplicate bare-string key later in the literal silently wins and the
+ *     `-ink`/`-tint` classes stop being generated).
+ *   - flashcardGradeSkinContrast.test.ts — the four grade chips in
+ *     flashcardGradeSkin.ts must meet AA in both palettes. Fix the skin, which
+ *     is the single source both graders read.
  */
 import type { TextStyle } from 'react-native';
 

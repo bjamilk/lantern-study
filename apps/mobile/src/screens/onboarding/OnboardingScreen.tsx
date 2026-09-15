@@ -7,6 +7,20 @@
  * with the student's programme + first course, and files the deck under that
  * course.
  */
+/**
+ * Exports: OnboardingScreen (the three-step flow, gated by a parent that
+ * passes onComplete), buildStarterPrompt (pure seed text for the AI), and
+ * isOnboardingComplete (read by the boot gate).
+ * Touches: settingsStore.updateSettings, authStore.user, flashcardStore
+ * createDeck/createFlashcard, services/ai aiGenerateFlashcards,
+ * services/academic getMyActiveCourses + loadAcademicProfile, AsyncStorage,
+ * navigationRef navigateToDeckDetail, productAnalytics.
+ * Gotchas: the completion flag and the two default keys are written to plain
+ * AsyncStorage under fixed, non-user-scoped names, so they survive an account
+ * switch on the same device. Local persistence failures are swallowed on
+ * purpose -- onboarding must never be blocked by them. The hop to the new deck
+ * is deferred ~350ms because Main only mounts after onComplete flips the gate.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native';
 import { ScreenScroll } from '../../components/layout';

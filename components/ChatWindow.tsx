@@ -1,3 +1,37 @@
+/**
+ * The whole conversation surface: header, message list, thread side panel,
+ * composer, and — for a DM that is a marketplace inquiry — the Offers tab.
+ *
+ * Exports: default `ChatWindow`. With `chat === null` it renders the chat home /
+ * mobile conversation list instead of a conversation.
+ *
+ * Touches:
+ *  - PROPS for the message data. `messages` is owned by the app shell; this
+ *    component never merges or caches it (the server-vs-cache merge lives in
+ *    `hooks/useAppEffects.ts` and `hooks/useGroupHandlers.ts`). It writes back only
+ *    through the `onSendMessage` / `onEditMessage` / `onRemoveMessage` callbacks and
+ *    `groupStore.updateMessageInState` (reaction counts).
+ *  - services/supabase: reactions (`addMessageReaction` / `removeMessageReaction` /
+ *    `fetchUserReactionsFor*`), threads (`fetchGroupThread` / `fetchDmThread`), DM
+ *    request accept/decline, block + mute status, presence (`fetchUserProfile`), and
+ *    the marketplace set (`getInquiryByThread`, `fetchOffers`, `respondToOffer`,
+ *    `fetchOrderForInquiry`, `updateMarketplaceOrder`, `resumeMarketplaceOrderCheckout`).
+ *  - supabase realtime BROADCAST channels: `typing:<chatId>` and `chat-read:<chatId>`.
+ *  - stores: `uiStore.lowDataMode`, `communityStore.myCommunities`, `toastStore`,
+ *    `confirmStore.confirmDialog`, `useBudgetHandlers`.
+ *  - localStorage: starred ids and the pinned message id, per user + scope + chat
+ *    (`chatStarredStorageKey` / `chatPinnedMessageStorageKey`) — device-local, best effort.
+ * Gotchas:
+ *  - EVERY hook must stay above the `if (!chat)` early return. Opening a chat from the
+ *    empty state otherwise changes the hook count (React error #310).
+ *  - Reaction writes go through the BFF endpoints. Do NOT move them back to a PostgREST
+ *    `.upsert({ onConflict })`: the unique index is PARTIAL and every write 500s (42P10).
+ *  - Auto-scroll is conditional on `isNearBottomRef` / own-message; the initial position
+ *    is decided once per chat id by `initialAnchorDoneRef` and must wait for
+ *    `unreadAnchorAt !== undefined`, which is the "mark-as-read has reported" signal.
+ *  - Colours are `lantern-*` tokens plus Tailwind palette steps with explicit `dark:`
+ *    pairs; there is no JS theme branch here and none should be added.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   applyReactionLocally,
@@ -139,6 +173,9 @@ interface ChatWindowProps {
   peerPresence?: { settings?: unknown; lastSeenAt?: string | null } | null;
 }
 
+// How close to the bottom still counts as "following the conversation": inside
+// this band a new message scrolls you down, outside it the "N new messages"
+// pill appears instead.
 const NEAR_BOTTOM_PX = 120;
 
 const ChatWindow: React.FC<ChatWindowProps> = ({
@@ -179,6 +216,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [buyerInquiries, setBuyerInquiries] = useState<
     Array<{ id: string; dm_thread_id?: string | null; status?: string | null; listing?: { title?: string | null } | null }>
   >(chatHomeInquiries || []);
+  // Buyer inquiries for the chat-home pane. Driven by `chatHomeInquiries`: when
+  // the shell supplies them this is a pure mirror, and only an unsupplied prop
+  // makes this component fetch for itself.
   useEffect(() => {
     if (chatHomeInquiries) {
       setBuyerInquiries(chatHomeInquiries);
@@ -194,6 +234,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       cancelled = true;
     };
   }, [chatHomeInquiries]);
+  // Peer presence for a DM header. Same shape: the prop wins; otherwise the peer
+  // profile is fetched once per `chat.id`. A peer whose status is 'hidden' is
+  // stored as an explicit privacy object rather than as "no data", so the header
+  // says nothing instead of guessing "offline".
   useEffect(() => {
     if (peerPresence) {
       setResolvedPeerPresence(peerPresence);
@@ -242,6 +286,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
 
   // Hydrate the viewer's own reactions whenever the open conversation changes.
+  // Driven by `chat.id` (+ type, which picks the group or DM endpoint). Failure
+  // is swallowed: counts still render, only the "mine" highlight is missing.
   useEffect(() => {
     if (!chat?.id) {
       setMyReactions({});
@@ -267,6 +313,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
    * Toggle one emoji. Optimistic on both halves — the viewer's own chip and the
    * visible count — then reconciled with the authoritative counts the server
    * returns. Everyone else sees it via the existing realtime message UPDATE.
+   *
+   * Failure path: BOTH optimistic halves are rolled back to the values captured
+   * before the write (`previousMine`, `previousCounts`) and the error surfaces as
+   * a toast. The write goes to the BFF reactions endpoint — see the file header
+   * on why it must never become a PostgREST upsert again.
    */
   const handleToggleReaction = useCallback(
     async (messageId: string, emoji: string, added: boolean) => {
@@ -308,11 +359,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     id: string;
     label?: string;
   } | null>(null);
+  // --- Scroll bookkeeping. These are refs, not state, because the scroll
+  // handler and the live-message effect read them during the same commit that
+  // would be setting them; a state round-trip would act on stale values.
+  // `initialAnchorDoneRef` holds the chat id whose opening position has already
+  // been decided, which is what makes the anchor once-per-conversation.
   const prevMessageCountRef = useRef(messages.length);
   const lastMessageIdRef = useRef<string | null>(null);
   const isNearBottomRef = useRef(true);
   const initialAnchorDoneRef = useRef<string | null>(null);
 
+  // --- Conversation view state. All of it is per-chat and reset by the
+  // `chat?.id` effect below; none of it is persisted except starred/pinned,
+  // which are device-local localStorage marks.
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
   const typingTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
@@ -348,6 +407,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
   // Reset loading/hasMore/scroll state when the chat changes
+  // Driven by `chat?.id` alone — a re-render of the same conversation must not
+  // clear a reply draft, close an open thread or re-arm the scroll anchor.
   useEffect(() => {
     setHasMore(true);
     setIsLoadingMore(false);
@@ -367,12 +428,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   }, [chat?.id]);
 
+  // First messages have arrived → drop the "Loading messages…" state.
   useEffect(() => {
     if (messages.length > 0) {
       setAwaitingMessages(false);
     }
   }, [messages.length, chat?.id]);
 
+  // Overflow menu closes → collapse its submenus, so reopening it starts at the
+  // top level. Opening pre-expands the question filter only when a non-default
+  // filter is active, so the current state is visible without a click.
   useEffect(() => {
     if (!isDropdownOpen) {
       setQuestionFiltersOpen(false);
@@ -382,6 +447,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setQuestionFiltersOpen(questionVisibilityMode !== 'all');
   }, [isDropdownOpen, questionVisibilityMode]);
 
+  // Backstop for the loading state: an empty conversation never sets
+  // `messages.length > 0`, so without this the spinner would run forever
+  // instead of settling into "No messages yet".
   useEffect(() => {
     if (!chat) return;
     const timer = window.setTimeout(() => setAwaitingMessages(false), 10_000);
@@ -391,6 +459,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
 
   // Typing indicators via Supabase broadcast
+  // Subscription setup/teardown, keyed on `chat.id`: one broadcast channel per
+  // conversation. Each peer's id is held for 3s by a per-user timer that a fresh
+  // broadcast resets. TEARDOWN must clear every timer, empty the id list and
+  // remove the channel — otherwise a stale "X is typing…" follows you into the
+  // next conversation.
   useEffect(() => {
     if (!chat?.id) return;
     const channel = supabase.channel(`typing:${chat.id}`);
@@ -425,6 +498,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
   // Peer mark-read broadcasts → refresh blue ticks on own messages
+  // A second channel per conversation, skipped entirely in low-data mode
+  // (`lowDataMode` is a dep, so toggling it subscribes/unsubscribes). Own
+  // broadcasts are ignored; the shell applies the watermark via `onPeerChatRead`.
   useEffect(() => {
     if (!chat?.id || lowDataMode) return;
     const channel = supabase.channel(`chat-read:${chat.id}`);
@@ -441,6 +517,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     };
   }, [chat?.id, currentUser.id, lowDataMode, onPeerChatRead]);
 
+  // --- Thread side panel. Threads are NOT part of `messages`: they are fetched
+  // whole per root id and kept in `threadMessages`, so every mutation inside the
+  // panel (send, edit, remove) has to re-run `loadThread` to see itself.
+  // Opening a thread pre-seeds the reply target with the root, so a reply with no
+  // explicit target still lands in the thread rather than in the main list.
   const loadThread = async (rootId: string) => {
     if (!chat) return;
     setThreadLoading(true);
@@ -484,6 +565,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when root/chat changes
   }, [threadRootId, chat?.id]);
 
+  // Focus handling for the thread panel, driven by `threadRootId`:
+  // remember what had focus → move focus to the panel's close button →
+  // Escape closes → on teardown, focus returns to where it came from.
+  // Note this is initial-focus + Escape only; focus is NOT trapped inside the
+  // panel even though it is marked `aria-modal`.
   useEffect(() => {
     if (!threadRootId) return;
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -513,6 +599,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setThreadRootId(rootId);
   };
 
+  // One composer serves both send and edit: an active `editingMessage` turns the
+  // submit into an edit. The optimistic message row and its failure handling
+  // belong to `onSendMessage` in the shell, not to this component.
   const handleComposerSend = async (text: string, options?: SendMessageOptions) => {
     if (!editingMessage) {
       await onSendMessage(text, options);
@@ -530,6 +619,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       if (threadRootId) await loadThread(threadRootId);
       return;
     }
+    // Reply target, most specific first. The `|| threadRootId` fallback is what
+    // guarantees a thread reply never escapes into the main conversation.
     const replyId = options?.replyToMessageId || threadReplyTo?.id || threadRootId || undefined;
     await onSendMessage(text, { ...options, replyToMessageId: replyId });
     if (threadRootId) {
@@ -573,6 +664,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
+  // Scroll handler, two jobs: track "am I near the bottom" (which decides
+  // whether a new message scrolls or only bumps the pill), and page in older
+  // history at the very top. The scroll position is restored by height delta
+  // after a page loads, so the list does not jump under the reader; `hasMore`
+  // latches false on an empty page or a chat type with no pager.
   const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
     const container = e.currentTarget;
     const distanceFromBottom =
@@ -635,6 +731,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [activeOrder, setActiveOrder] = useState<MarketplaceOrder | null>(null);
   const [orderActionLoading, setOrderActionLoading] = useState(false);
 
+  // --- Marketplace negotiation. Offers are fetched for the viewer's ROLE and
+  // then narrowed to this listing/pair client-side; the "active" offer is the
+  // newest still-pending one, everything else is history.
   const loadOfferHistory = async (inquiryData: MarketplaceInquiry) => {
     try {
       const role = currentUser.id === inquiryData.buyer_id ? 'buyer' : 'seller';
@@ -659,6 +758,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
+  // Accept / decline / counter / withdraw. Order of effects matters:
+  //  1. the server call (money side),
+  //  2. a plain chat message so the negotiation leaves a visible trail — fired
+  //     without awaiting, and a failure here is logged only: a lost narration
+  //     line must never look like a failed offer response,
+  //  3. accept-as-buyer leaves the app for Paystack and returns early; every
+  //     other path re-reads the inquiry from the server rather than assuming a
+  //     status (forcing 'negotiating' once left the pill amber over a live order).
   const handleRespond = async (action: 'accept' | 'decline' | 'counter' | 'withdraw', counterAmount?: number) => {
     if (!activeOffer || !inquiry) return;
     setOfferLoading(true);
@@ -684,11 +791,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       }
 
       if (dmContent) {
-        try {
-          onSendMessage(dmContent);
-        } catch (msgErr) {
-          console.error('Failed to send status update message to chat:', msgErr);
-        }
+        // FIXED (F1): `onSendMessage` may return a promise, and a bare try/catch
+        // cannot see its rejection — a failed narration message escaped as an
+        // unhandled rejection. It now goes through Promise.resolve().catch, which
+        // also matters because onSendMessage REJECTS on a busy send lock since
+        // E3 H16 (see MessageSendBusyError in hooks/useGroupHandlers). This is a
+        // fire-and-forget narration line: log it, never surface it.
+        void Promise.resolve()
+          .then(() => onSendMessage(dmContent))
+          .catch((msgErr) => {
+            console.error('Failed to send status update message to chat:', msgErr);
+          });
       }
 
       if (action === 'accept') {
@@ -826,12 +939,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     );
   };
 
+  // Scrolling to the end also clears the pill and re-arms "near bottom", so the
+  // two never disagree about where the reader is.
   const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
     messagesEndRef.current?.scrollIntoView({ behavior });
     setNewMessagesBelow(0);
     isNearBottomRef.current = true;
   };
 
+  // What the list actually renders, in filter order: archived-out, removed
+  // tombstone policy (a removed message still renders when something replies to
+  // it), the group question-visibility mode, the starred-only view, then the
+  // in-chat search (2+ chars). EVERY scroll and unread computation below works on
+  // this array, not on `messages` — the divider must sit at the first unread row
+  // the reader can actually see.
   const isGroupChat = chat?.chatType === 'group';
   const visibleMessages = useMemo(
     () =>
@@ -879,6 +1000,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [threadRootId, threadLoading, visibleThreadMessages.length]);
 
   // Compute first unread once the prior marker and messages are available (group + DM).
+  // `unreadAnchorAt === undefined` means "not reported yet" and must WAIT;
+  // `null` means fully read. Own messages can never be the first unread.
   useEffect(() => {
     if (!chat?.id) {
       setFirstUnreadId(null);
@@ -908,6 +1031,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [chat?.id, unreadAnchorAt, visibleMessages, currentUser.id]);
 
   // Initial open: scroll to first unread (or bottom when fully read).
+  // Runs at most once per chat id (`initialAnchorDoneRef`), and it also seeds
+  // `lastMessageIdRef`/`prevMessageCountRef` so the live-update effect below can
+  // tell "the list just mounted" from "a new message arrived".
   useEffect(() => {
     if (!chat?.id) return;
     if (visibleMessages.length === 0) return;
@@ -935,6 +1061,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [chat?.id, visibleMessages.length, firstUnreadId, unreadAnchorAt]);
 
   // Live updates: only auto-scroll when near bottom or the new message is ours.
+  // Driven by the identity of the LAST id in `visibleMessages`: an edit, a
+  // reaction or a filter change re-runs this effect but exits at the first guard,
+  // so only a genuinely new tail message scrolls or increments the pill.
   useEffect(() => {
     const last = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : null;
     const lastId = last?.id ?? null;
@@ -1062,6 +1191,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     };
   }, [chat?.id, isGroup]);
 
+  // Device-local marks: starred ids + the one pinned message, re-read per
+  // user/scope/chat. Nothing here is synced, so another device shows different
+  // stars; every write is wrapped because storage can throw in private mode.
   useEffect(() => {
     if (!chat) {
       setStarredIds(new Set());
@@ -1177,6 +1309,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
   const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
 
+  // No conversation selected. NOTHING below this line may call a hook — see the
+  // file header (React #310). Desktop gets the chat-home pane; small screens get
+  // the full conversation list, since there is no sidebar there to hold it.
   if (!chat) {
     // Desktop: show placeholder
     // Mobile: show inline group/DM list for navigation
@@ -1506,6 +1641,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     ? `${description} · ${questionCount} question${questionCount !== 1 ? 's' : ''}`
     : description;
 
+  // The conversation itself, extracted so it can be rendered either bare or
+  // inside the marketplace Tabs without duplicating the list, composer and all
+  // of their handlers.
   const chatPanelContent = (
     <>
       {threadSearchOpen && (
@@ -1555,6 +1693,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </span>
         </button>
       )}
+      {/* `relative` anchors the "N new messages" pill over the list. The scroller
+          needs both `flex-1` and `min-h-0`: without `min-h-0` its automatic
+          minimum height is the full message list, so the pane grows instead of
+          scrolling and the composer is pushed off-screen. */}
       <div className="relative flex-1 min-h-0 flex flex-col">
       <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
         {isLoadingMore && (
@@ -1563,6 +1705,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <span className="sr-only">Loading older messages</span>
           </div>
         )}
+        {/* Per-row derivations: a date separator whenever the calendar day
+            changes, and "grouped with previous" (no repeated avatar/name) for a
+            same-sender message within 5 minutes. A row carrying the unread
+            divider is never grouped, so the divider cannot land mid-cluster. */}
         {visibleMessages.map((msg, idx) => {
           const msgDate = new Date(msg.timestamp);
           const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
@@ -1723,6 +1869,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       )}
       </div>
 
+      {/* Composer slot — mutually exclusive states, in precedence order:
+          archived group → blocked DM → declined request → the real composer
+          (which may itself be preceded by the accept/decline request banner).
+          `flex-shrink-0` keeps every one of them at full height beside the
+          scrolling list; `pb-16 md:pb-0` clears the mobile bottom nav. */}
       {isArchived ? (
         <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
           <AppIcon name="archive" size={16} className="text-amber-600 dark:text-amber-400" />
@@ -1819,6 +1970,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     </>
   );
 
+  // Thread overlay. It is absolutely positioned inside this component's own
+  // `relative` root rather than portalled, so it covers the conversation but not
+  // the app chrome. The backdrop click closes it; `stopPropagation` on the panel
+  // keeps clicks inside from doing the same. The thread composer disappears when
+  // the root message has been removed — a closed thread takes no new replies.
   const threadPanel = threadRootId && chat ? (
     <div
       className="absolute inset-0 z-30 flex justify-end bg-black/30"
@@ -1927,6 +2083,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
               seedMentionUsername={threadSeedMentionUsername}
               onSeedMentionConsumed={() => setThreadSeedMentionUsername(null)}
               replyTo={threadReplyTo}
+              // Clearing a reply inside a thread falls BACK to the root rather
+              // than to nothing — there is no such thing as a thread message
+              // with no thread.
               onClearReply={() => {
                 const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];
                 if (root) {
@@ -2283,6 +2442,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         )}
       </div>
 
+      {/* A DM that the server says is a marketplace inquiry gets the Chat/Offers
+          tabs, the listing strip, the sticky deal bar and the order bar wrapped
+          around the SAME `chatPanelContent`. Any other conversation renders it
+          bare. The deal bar is hidden once an order exists — the order bar owns
+          those states — so the two can never offer contradictory actions. */}
       {chat.chatType === 'dm' && inquiry ? (
         <Tabs
           value={activeTab}
@@ -2543,6 +2707,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
                     </div>
                   </div>
 
+                  {/* `canRespondToOffer` and `canWithdrawOffer` are shared helpers,
+                      so web and mobile cannot disagree about whose turn it is; the
+                      Accept/Decline labels flip to "Counter" from the same source. */}
                   {/* Action Controls — turn-based on proposed_by */}
                   <div className="pt-2">
                     {offerError && <p className="text-xs text-red-500 mb-3 font-semibold">{offerError}</p>}
@@ -2752,11 +2919,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           listing={inquiry.listing}
           onSuccess={(amount) => {
             if (amount) {
-              try {
-                onSendMessage(`[Offer] I submitted a new offer of ₦${amount.toLocaleString()}!`);
-              } catch (msgErr) {
-                console.error('Failed to send status update message to chat:', msgErr);
-              }
+              // FIXED (F1): same fire-and-forget narration as the offer-status
+              // path above — a rejection (including the H16 busy lock) must be
+              // caught on the promise, not by a synchronous try/catch.
+              void Promise.resolve()
+                .then(() => onSendMessage(`[Offer] I submitted a new offer of ₦${amount.toLocaleString()}!`))
+                .catch((msgErr) => {
+                  console.error('Failed to send status update message to chat:', msgErr);
+                });
             }
             loadOfferHistory(inquiry);
           }}

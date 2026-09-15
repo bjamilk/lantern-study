@@ -75,16 +75,37 @@ describe('flushPendingQuestionBankScores', () => {
     expect(readPendingQuestionBankScores()).toHaveLength(0);
   });
 
-  it('keeps failed entries queued with an incremented attempt count', async () => {
-    recordQuestionBankScore.mockRejectedValue(new Error('offline'));
+  /**
+   * What `recordQuestionBankScore` throws for a non-ok HTTP answer: the status
+   * both in the message (the queue's classifier parses it there) and as a
+   * property (the contract offlineFlashcardSync reads).
+   */
+  const httpError = (status: number) =>
+    Object.assign(new Error(`Failed to record score (status: ${status})`), { status });
+
+  it('keeps a server-rejected entry queued with an incremented attempt count', async () => {
+    recordQuestionBankScore.mockRejectedValue(httpError(500));
     enqueueScoreForBundle('qbank-listing-1', 7, 10);
 
     await expect(flushPendingQuestionBankScores()).resolves.toEqual({ posted: 0, remaining: 1 });
     expect(readPendingQuestionBankScores()[0]?.attempts).toBe(1);
   });
 
-  it('drops an entry after repeated failures instead of retrying forever', async () => {
-    recordQuestionBankScore.mockRejectedValue(new Error('gone'));
+  // F1 / E3 L4: a transport failure carries no HTTP status. Counting it meant
+  // five flaky reconnects DELETED a legitimate score unsent.
+  it('does NOT count a network failure as an attempt', async () => {
+    recordQuestionBankScore.mockRejectedValue(new TypeError('Failed to fetch'));
+    enqueueScoreForBundle('qbank-listing-1', 7, 10);
+
+    for (let i = 0; i < 10; i += 1) await flushPendingQuestionBankScores();
+
+    const queue = readPendingQuestionBankScores();
+    expect(queue).toHaveLength(1);
+    expect(queue[0]?.attempts).toBe(0);
+  });
+
+  it('drops an entry after repeated SERVER rejections instead of retrying forever', async () => {
+    recordQuestionBankScore.mockRejectedValue(httpError(400));
     enqueueScoreForBundle('qbank-listing-1', 7, 10);
 
     for (let i = 0; i < 5; i += 1) await flushPendingQuestionBankScores();

@@ -32,6 +32,25 @@ import {
  * actually bite (a status frame that arrives after teardown, a seek past the
  * tail, a rate change that the decoder silently refuses) are testable without
  * a device. The component holds no playback logic of its own.
+ *
+ * Main exports: the `LectureAudioEngine` class (`load`, `command`, `remote`,
+ * `updateNowPlaying`, `markFailed`, `destroy`), the pure
+ * `lectureAudioReducer` with `initialLectureAudioState`, and the helpers
+ * `clampSeekMs` / `jumpTargetMs` / `isAtEnd` / `remoteCommandToCommand` /
+ * `sanitizeLockScreenArtworkUrl` / `lockScreenMetadata`.
+ *
+ * Touches: expo-audio only (`createAudioPlayer`, `setAudioModeAsync`, the
+ * player's lock-screen session). Deliberately imports nothing from supabase or
+ * the note services so the reducer tests run without a device or a network.
+ *
+ * Gotchas:
+ * - A lecture URL is signed and expires within 24h. `load` answers
+ *   `{ ok: false, message }` rather than throwing so the caller can re-sign and
+ *   retry once; the stored value is a reference, not a playable address.
+ * - `createAudioPlayer` is synchronous and never throws for an unopenable
+ *   source, so the load watchdog is the only thing that can report one.
+ * - One engine owns one native player and the single lock-screen session; the
+ *   owner must call `destroy()`, or the media notification outlives the screen.
  */
 
 export const LECTURE_AUDIO_JUMP_SECONDS = 10;
@@ -222,6 +241,14 @@ export function remoteCommandToCommand(
   }
 }
 
+/**
+ * The whole transport state machine, pure. Two rules carry it: a native status
+ * frame is the source of truth for everything it reports (position, rate,
+ * playing), and `failed` is terminal — a frame arriving after a failure, which
+ * happens because the native object outlives the reject by a tick, must not put
+ * the player back in `ready`. The `optimistic-*` actions only move the UI ahead
+ * of a seek or rate call; the next status frame overwrites them.
+ */
 export function lectureAudioReducer(
   state: LectureAudioState,
   action: LectureAudioAction

@@ -1,3 +1,27 @@
+/**
+ * The Notes list — the standalone screen and, with `embedded`, the Library's
+ * Notes tab. Folders, the Mine/Shared and Active/Archived filters, multi-select
+ * (move, delete, file under a course or topic), the import doors (PDF, slides,
+ * photos, YouTube), and the per-row action sheet.
+ *
+ * Main exports: `NotesScreen` (also the default). `NoteCard` and `FolderChip`
+ * are local.
+ * Touches: notesStore (folders, notes, create/save/move/remove, cover path),
+ * uiStore (the Library course/topic filter), confirmStore; services/notes
+ * (`createNoteFromYoutube`, the PDF/presentation/image uploads),
+ * services/academic (`getMyActiveCourses`, `courseHasTopics`), productAnalytics,
+ * and the moderation report sheet. Native: expo-document-picker,
+ * expo-image-picker, and iOS's ActionSheetIOS for one platform-specific menu.
+ *
+ * Gotchas: notes are loaded UNFILTERED on purpose — the companion's note picker
+ * reads `notesStore.notes` and only reloads when empty, so narrowing the store
+ * by the Library course filter would leak that filter into the companion. All
+ * narrowing happens client-side in `filteredNotes`. Search matches `searchText`
+ * as well as the body, because imported notes keep their content in attachment
+ * text. Sheets are sequenced with `SHEET_DISMISS_MS` so two modals are never up
+ * at once. A shared note can be edited by an editor but deleted only by its
+ * owner (`canManageNote` vs `canDeleteNote`).
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActionSheetIOS,

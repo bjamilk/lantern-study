@@ -29,4 +29,4 @@
 - Quarterly: restore Supabase backup to staging
 - After each production deploy: `/health` and `/ready` smoke check
 
-See [PRODUCTION_CHECKLIST.md](../../PRODUCTION_CHECKLIST.md) for infrastructure setup.
+See [PRODUCTION_CHECKLIST.md](../PRODUCTION_CHECKLIST.md) for infrastructure setup.

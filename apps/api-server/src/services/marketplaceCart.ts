@@ -1,4 +1,5 @@
 import type { SupabaseService } from './supabase';
+import { PublicError } from '../utils/safeError';
 import { isDigitalListingKind } from '@lantern/shared/marketplace';
 import { getMarketplaceOrdersService, type MarketplaceOrderRow } from './marketplaceOrders';
 
@@ -54,25 +55,25 @@ export class MarketplaceCartService {
     quantity: number
   ): void {
     if (listing.user_id === buyerId) {
-      throw new Error('Cannot add your own listing to cart');
+      throw new PublicError('Cannot add your own listing to cart');
     }
     // Digital products (question banks, study packs) are Buy-Now / free-download
     // only — they never go through the cart. Clients hide them, but enforce it
     // server-side too so a crafted request can't cart-checkout a digital item.
     if (isDigitalListingKind(listing.listing_kind)) {
-      throw new Error('Digital products are bought instantly and cannot be added to the cart');
+      throw new PublicError('Digital products are bought instantly and cannot be added to the cart');
     }
     if (listing.status !== 'active') {
-      throw new Error('Listing is not available for purchase');
+      throw new PublicError('Listing is not available for purchase');
     }
     if (listing.quantity == null) {
       if (quantity !== 1) {
-        throw new Error('This listing can only be purchased as a single item');
+        throw new PublicError('This listing can only be purchased as a single item');
       }
       return;
     }
     if (listing.quantity < quantity) {
-      throw new Error('Not enough stock for the requested quantity');
+      throw new PublicError('Not enough stock for the requested quantity');
     }
   }
 
@@ -83,7 +84,7 @@ export class MarketplaceCartService {
   ): Promise<MarketplaceCartItemRow> {
     const quantity = normalizeQuantity(quantityInput, 1);
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
-    if (!listing) throw new Error('Listing not found');
+    if (!listing) throw new PublicError('Listing not found');
     this.assertListingPurchasable(listing, buyerId, quantity);
 
     const { data: existing } = await this.db
@@ -134,7 +135,7 @@ export class MarketplaceCartService {
     }
 
     const listing = await this.supabaseService.getMarketplaceListingById(listingId);
-    if (!listing) throw new Error('Listing not found');
+    if (!listing) throw new PublicError('Listing not found');
     this.assertListingPurchasable(listing, buyerId, raw);
 
     const { data, error } = await this.db
@@ -145,7 +146,7 @@ export class MarketplaceCartService {
       .select(cartSelect)
       .maybeSingle();
     if (error) throw error;
-    if (!data) throw new Error('Cart item not found');
+    if (!data) throw new PublicError('Cart item not found');
     return data as unknown as MarketplaceCartItemRow;
   }
 
@@ -172,7 +173,7 @@ export class MarketplaceCartService {
   }> {
     const items = await this.listCart(buyerId);
     if (items.length === 0) {
-      throw new Error('Cart is empty');
+      throw new PublicError('Cart is empty');
     }
 
     const ordersService = getMarketplaceOrdersService(this.supabaseService);
@@ -208,7 +209,7 @@ export class MarketplaceCartService {
     }
 
     if (orders.length === 0) {
-      throw new Error(failures[0]?.error || 'Checkout failed for all items');
+      throw new PublicError(failures[0]?.error || 'Checkout failed for all items');
     }
 
     return { orders, failures };

@@ -8,6 +8,13 @@
  * The recent list is scoped to THIS set. A tracked job does not carry a set id
  * once it has been saved, so belonging is decided two ways: the job's pending
  * save still names the set, or the artifact it produced is filed here.
+ *
+ * Route: `StudySetUpload` in the Study stack.
+ * Main exports: `StudySetUploadScreen` and `jobBelongsToStudySet`, which the set
+ * room reuses and which is kept pure so the filing rule is testable.
+ * Touches: notesStore, flashcardStore, jobsStore, toastStore, authStore;
+ * services/notes `createNote`/`createNoteFromYoutube`/`updateNote`; the file and
+ * camera pickers live inside ImportAndStudyModal and ImportCardsSheet, not here.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';

@@ -4,24 +4,15 @@ import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { MARKETPLACE_DEFAULT_COUNTRY } from '@lantern/shared/marketplace';
 import { JOBS_DEFAULT_COUNTRY } from '@lantern/shared/jobs';
-import { marketplaceIsPublic } from '../middleware/marketplaceAccess';
 
 const router = Router();
 
 /**
- * A sitemap must not advertise pages the pilot keeps private.
- *
- * The marketplace and the jobs board are allowlisted to one account, but these
- * routes read the tables with the service role, so they would happily publish
- * every listing and posting URL to Search Console. Crawlers would then be sent
- * to pages that answer with the app shell and a "private pilot" wall.
- *
- * While the pilot is on, the sitemaps carry their section landing page and
- * nothing else. MARKETPLACE_PUBLIC=true opens both, here and at the gate.
+ * The marketplace and the jobs board are open to every viewer (2026-09-15), so
+ * the sitemaps list their listing and posting URLs again. Until then a
+ * private-pilot allowlist made every one of those URLs answer with a wall, so
+ * these routes published the section landing page and nothing else.
  */
-function pilotHidesPublicPages(): boolean {
-  return !marketplaceIsPublic();
-}
 
 let supabaseService: SupabaseService;
 let cacheService: CacheService;
@@ -35,28 +26,6 @@ function sitemapXmlResponse(res: Response, xml: string) {
   res.set('Content-Type', 'application/xml; charset=utf-8');
   res.set('Cache-Control', 'public, max-age=3600');
   res.send(xml);
-}
-
-/** The public site root every sitemap entry is built from. */
-function siteBase(): string {
-  return 'https://lanternstudy.com';
-}
-
-/**
- * A sitemap holding only its section landing page — a valid, honest 200 when
- * the section's individual pages are not public. An empty document beats the
- * alternative of a 502, which tells a crawler the sitemap is broken and to
- * come back rather than that there is nothing to index.
- */
-function sectionOnlySitemap(loc: string, changefreq: string, priority: string): string {
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
-  <url>
-    <loc>${loc}</loc>
-    <changefreq>${changefreq}</changefreq>
-    <priority>${priority}</priority>
-  </url>
-</urlset>`;
 }
 
 router.get(
@@ -112,13 +81,6 @@ router.get(
       return sitemapXmlResponse(res, cached);
     }
 
-    if (pilotHidesPublicPages()) {
-      return sitemapXmlResponse(
-        res,
-        sectionOnlySitemap(`${siteBase()}/marketplace`, 'daily', '0.8'),
-      );
-    }
-
     const client = supabaseService.getClient();
     const { data, error } = await client
       .from('marketplace_listings')
@@ -170,13 +132,6 @@ router.get(
     const cached = await cacheService.get<string>(cacheKey);
     if (cached) {
       return sitemapXmlResponse(res, cached);
-    }
-
-    if (pilotHidesPublicPages()) {
-      return sitemapXmlResponse(
-        res,
-        sectionOnlySitemap(`${siteBase()}/marketplace/jobs`, 'daily', '0.85'),
-      );
     }
 
     const client = supabaseService.getClient();

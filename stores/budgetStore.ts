@@ -1,6 +1,31 @@
 /**
  * Web Budget Store — Budget
  * Manages budget, transactions, savings goals, expense splits, and wallet
+ *
+ * Exports: `useBudgetStore` — `transactions` (+ `pendingTransactionIds`),
+ * `budget`, `plansByMonth` (keyed yyyy-mm), `savingsGoals`, `expenseSplits` and
+ * the server-authoritative `walletBalance`. Actions are plain state setters
+ * plus `reconcileTransactions` (server list merged with still-unconfirmed local
+ * rows), `contributeTo`, `addWalletCoins`, the `getTotal*` / `getTransactions*`
+ * computed getters, and `ensureOwner` / `reset`.
+ *
+ * Touches: zustand `persist`, localStorage key `budget-storage` (version 3).
+ * Persisted: ownerUserId, transactions, pendingTransactionIds, budget,
+ * savingsGoals, expenseSplits. NOT persisted: walletBalance (stripped in
+ * `partialize`, deleted in `migrate`, and forced back to the in-memory value in
+ * `merge`) and plansByMonth.
+ *
+ * Gotchas:
+ *  - The key is a single shared key, owner-STAMPED rather than owner-scoped:
+ *    `ensureOwner(userId)` must be called on every sign-in, and it wipes the
+ *    slice when the id differs. Skip that call and the previous account's
+ *    transactions rehydrate under the new user.
+ *  - `reconcileTransactions` exists because a plain server refetch drops rows
+ *    whose save has not confirmed. Anything that replaces `transactions` with a
+ *    server list must go through it, not through `setTransactions`.
+ *  - Every `getTotal*` / `getTransactionsBy*` getter recomputes and returns a
+ *    NEW array/number on each call — fine via `getState()`, a render loop if
+ *    used as a `useBudgetStore(...)` selector without memoising.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';

@@ -6,6 +6,26 @@
  * `loadChannels(id)`, `loadMine()`, `invalidate(id)`. In-flight requests are
  * deduplicated so the column and the page mounting together cost one round
  * trip, not two.
+ *
+ * Exports: `useCommunityStore` — `myCommunities` (+ `myLoadedAt`),
+ * `detailBySlug`, `channelsById`; actions `loadMine`, `loadCommunity`,
+ * `loadChannels`, `invalidate`, `reset`.
+ *
+ * Touches: services/supabase (`fetchMyCommunities`, `fetchCommunity`,
+ * `fetchCommunityChannels`). Nothing is persisted — everything is memory-only,
+ * with `myCommunities` held behind a 5-minute TTL and detail/channels cached
+ * until explicitly invalidated.
+ *
+ * Gotchas:
+ *  - `inflight` is a module-level Map keyed by slug/id, shared across users. It
+ *    is NOT cleared by `reset()`, so a request started before a sign-out can
+ *    still resolve into the new session's store; call `reset()` on account
+ *    switch and treat an immediately-following load as possibly deduped.
+ *  - `invalidate` deliberately keeps the cached detail (dropping it blanked the
+ *    page for the length of the refetch) — it only drops channels and expires
+ *    the memberships TTL.
+ *  - `loadCommunity` / `loadChannels` reject on failure; callers must catch.
+ *    There is no error state in the store.
  */
 import { create } from 'zustand';
 import type { CommunityChannels, CommunityDetail, MyCommunity } from '@lantern/shared/network';

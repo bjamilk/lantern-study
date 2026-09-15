@@ -1,3 +1,13 @@
+/**
+ * Profile tab -> MeProgress. The Progress peer section: the workspace bar plus
+ * the shared MeProgress component (streaks, mastery and the looking-back
+ * regions that came off Home).
+ *
+ * Exports: MeProgressScreen (named and default).
+ * Touches: components/me/MeProgress for all content; navigation only.
+ * Note: Leaderboard lives on the Home stack, so opening it goes through
+ * navigate('HomeTab', toTab('Leaderboard')) rather than a direct push.
+ */
 import React from 'react';
 import {
   KeyboardAwareScrollView,

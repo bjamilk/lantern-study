@@ -1,3 +1,22 @@
+/**
+ * `JobEmployer` route: the employer console — register a company for
+ * verification, edit a company profile and logo, and manage recruiter
+ * teammates.
+ *
+ * Exports: JobEmployerScreen (named and default).
+ * Touches: fetchMyJobCompanies, createJobCompany, updateJobCompany,
+ * uploadJobCompanyLogo, fetchJobCompanyMembers, inviteJobCompanyMember and
+ * removeJobCompanyMember in ../../services/jobsBoard; expo-image-picker plus
+ * prepareImageBase64ForUpload for the logo; the role predicates
+ * (canEditJobCompanyProfile, canManageJobCompanyMembers,
+ * canRemoveJobCompanyMember) from @lantern/shared.
+ *
+ * Gotchas: role predicates only hide controls — the server is the authority on
+ * what a role may do. One `error`/`message` pair is shared by the edit card
+ * and the register card, so the register card guards its copy with
+ * `editingId === null`. Invite and remove patch the member list locally rather
+ * than refetching, and companies without an id are filtered out on load.
+ */
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,

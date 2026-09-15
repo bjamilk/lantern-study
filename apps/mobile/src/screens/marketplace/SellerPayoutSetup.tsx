@@ -1,3 +1,19 @@
+/**
+ * The payout-profile gate: the bank-account form a seller must complete before
+ * Paystack earnings can be transferred. Embedded at the top of
+ * SellerPayoutScreen rather than being its own route.
+ *
+ * Exports: SellerPayoutSetup.
+ * Touches: fetchSellerPayoutProfile, fetchPaystackBanks and
+ * upsertSellerPayoutProfile in ../../services/api.
+ *
+ * Gotchas: the split is stated here and differs by kind — hand-over items are
+ * buyer-pays-list with Lantern keeping 5% (seller receives 95% once the buyer
+ * confirms); study packs and question banks keep 15% and pay out on purchase.
+ * The account number is never displayed back in full, only the stored last 4.
+ * A failed bank-list fetch degrades to an empty picker, so the form cannot be
+ * completed and says nothing about why.
+ */
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,

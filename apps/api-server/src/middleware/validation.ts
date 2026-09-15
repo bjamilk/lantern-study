@@ -134,6 +134,17 @@ export const validateGroupId = [
   param('groupId').isUUID().withMessage('Group ID must be a valid UUID'),
 ];
 
+// FIXED (F10): POST /groups/:groupId/members/batch checked only the array shape
+// and its length, so any string reached the service and the `.in()` filter
+// behind it. Every element is a profile UUID; the whole request is rejected
+// rather than the bad ids filtered, because a malformed id is a caller bug and
+// quietly inviting the other 49 hides it. The 1..50 bounds stay in the handler,
+// which already returns its own worded 400s for them.
+export const validateBatchMemberIds = [
+  body('userIds').isArray().withMessage('userIds must be an array'),
+  body('userIds.*').isUUID().withMessage('Each user ID must be a valid UUID'),
+];
+
 export const validateCreateGroup = [
   body('name').trim().isLength({ min: 1, max: 100 }).withMessage('Group name must be 1-100 characters'),
   body('description').optional().trim().isLength({ max: 500 }).withMessage('Description must be max 500 characters'),

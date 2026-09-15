@@ -1,3 +1,23 @@
+/**
+ * The `LectureStudio` route in the Study stack: record a class, type alongside
+ * the live transcript, ask Lantern about what was just said, and afterwards
+ * enhance the lecture into Smart Notes at a chosen depth.
+ *
+ * Main exports: `LectureStudioScreen` (also the default).
+ * Touches: lectureRecordingStore (the recorder state machine: idle → recording →
+ * uploading → transcribing → naming), notesStore (create/load/save/remove),
+ * companionStore (Ask), toastStore; services/notes `summarizeNote` for the
+ * enhance pass. Recording hardware and upload live in the store, not here.
+ *
+ * Gotchas: a lecture IS a note — the body is composed from typed notes plus
+ * transcript plus an appended Smart Notes section, so every autosave has to
+ * re-attach `enhancedRef` or enhancing is silently overwritten. Enhancing saves
+ * the whole body first because `summarizeNote` re-reads the note server-side.
+ * Autosave is debounced 700ms and reads refs, not state. `resolveLectureStudioNote`
+ * decides resume-vs-create so a second visit on the same day does not make a
+ * duplicate dated note; a note created by the door is deleted again on discard
+ * when it is still untouched.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

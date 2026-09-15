@@ -1,3 +1,18 @@
+/**
+ * `Addresses` route: the buyer's saved delivery addresses, and the form that
+ * adds one. Reached from Checkout when the chosen fulfillment mode needs an
+ * address.
+ *
+ * Exports: AddressesScreen.
+ * Touches: fetchMarketplaceAddresses, createMarketplaceAddress and
+ * deleteMarketplaceAddress in ../../services/api;
+ * formatMarketplaceAddressLine from @lantern/shared/marketplace.
+ *
+ * Gotchas: the first address saved is marked default (`is_default: rows.length
+ * === 0`); nothing here can change the default afterwards. Delete has no
+ * confirmation step. A failed load falls back to an empty list, which looks
+ * the same as having no addresses.
+ */
 import React, { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

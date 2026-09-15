@@ -1,3 +1,20 @@
+/**
+ * The `LearnStudy` route (a fullScreenModal): multiple-choice drilling over one
+ * deck. Each card's back is the answer and three other cards' backs are the
+ * distractors; a card is mastered when it is answered right, and re-queued at
+ * the end of the line when it is not.
+ *
+ * Main exports: `LearnStudyScreen` (also the default).
+ * Touches: flashcardStore (read-only — Learn writes no FSRS scheduling),
+ * services/gamification `trackStudyActivity` and productAnalytics. Native:
+ * expo-haptics via utils/haptics.
+ *
+ * Gotchas: only cards with BOTH a front and a back are eligible, so the deck
+ * count on the list can be larger than the queue here, and a deck with fewer
+ * than four eligible cards produces fewer than four options. The queue is
+ * screen state only, hence the `useConfirmBeforeExit` guard. Advancing is
+ * deferred 700ms so the feedback colours can be seen.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFlashcardStore, type Flashcard } from '../../stores';

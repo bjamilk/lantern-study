@@ -1,3 +1,17 @@
+/**
+ * `CreatorProfile` route: a study-product creator's public page — academic
+ * identity, trust level, published packs, follow and message.
+ *
+ * Exports: CreatorProfileScreen (named and default).
+ * Touches: fetchCreatorProfile, followCreator and unfollowCreator in
+ * ../../services/api; useAuthStore for the viewer id; navigates into the chat
+ * stack via CommonActions for Message, and to `ListingDetail` for a pack.
+ *
+ * Gotchas: follow is applied optimistically (both the flag and the follower
+ * count) and only reconciled by a full reload if the call throws. The DM
+ * thread id is derived client-side by sorting the two user ids, so it must
+ * match whatever the chat stack derives. Earnings are deliberately absent.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { CommonActions } from '@react-navigation/native';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';

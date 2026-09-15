@@ -1,3 +1,20 @@
+/**
+ * `Inquiries` route: the questions asked about listings, on either side —
+ * "Buyer questions" (received) or "Messages to sellers" (sent) — with a status
+ * filter and seller-only status actions.
+ *
+ * Exports: InquiriesScreen.
+ * Touches: fetchMyInquiries and fetchMarketplaceListing in ../../services/api;
+ * useMarketplaceStore.updateInquiryStatus; useAuthStore; opens DMs through
+ * navigation.getParent()?.navigate('ChatTab', … initial: false).
+ *
+ * Gotchas: enrichInquiries fetches each listing separately to get a title and
+ * thumbnail, so a page of N inquiries is N+1 requests; a listing that fails
+ * shows as "Listing unavailable". The Market stack keeps screens mounted, so
+ * the route.params.tab effect is what makes a second navigate here actually
+ * switch tabs. `initial: false` on the chat jump is load-bearing: without it
+ * DirectMessage becomes the only route in the chat stack.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,

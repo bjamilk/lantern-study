@@ -26,6 +26,18 @@
  * policies on units/topics/notes/decks, a non-`/users/me` read path, and the
  * route added to the public allowlist), `recipientCanOpen` is the single flag
  * to flip and both clients follow.
+
+ *
+ * CONSUMERS: web + mobile share affordances on a study set. Not the api.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT — run `npm run build` in
+ * packages/shared before typechecking or running web/mobile, or consumers
+ * resolve a stale `dist/`. A NEW subpath under src/ needs three things: the
+ * file, a `packages/shared/package.json` "exports" entry, and an
+ * `apps/api-server/tsconfig.json` "paths" entry; mobile jest maps
+ * `@lantern/shared/*` subpaths separately, so a subpath imported only by a
+ * test produces a CI-only TS2307 (reproduce with `jest --no-cache`). The web
+ * turbo build compiles with strict `noUncheckedIndexedAccess`.
  */
 
 /** The two values `study_sets.visibility` is constrained to. */

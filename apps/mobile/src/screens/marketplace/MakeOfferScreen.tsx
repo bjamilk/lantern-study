@@ -1,3 +1,19 @@
+/**
+ * `MakeOffer` route: the buyer's offer form for one listing — amount, optional
+ * message, and the percentage of asking price.
+ *
+ * Exports: MakeOfferScreen.
+ * Touches: useMarketplaceStore (fetchListing, currentListing,
+ * createMarketplaceOffer, isLoading); trackOfferMade from
+ * ../../services/productAnalytics, imported lazily after a successful submit.
+ *
+ * Gotchas: the amount field is pre-filled at 80% of the asking price whenever
+ * currentListing.price changes, which overwrites anything the user has already
+ * typed if the listing refetches. Validation here is client-side only (> 0 and
+ * not above asking); the server is the authority. Offers are on the listing
+ * price, which under the buyer-pays-list fee model already contains the
+ * hand-over fee.
+ */
 import React, { useEffect, useState } from 'react';
 import {
   Platform,

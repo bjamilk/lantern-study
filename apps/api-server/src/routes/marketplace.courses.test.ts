@@ -3,9 +3,8 @@
  *
  * What this pins:
  *   - GET /courses and GET /courses/:courseId/listings exist on the marketplace
- *     router, so they inherit the private-pilot gate that is mounted on
- *     /api/v1/marketplace — they are commerce reads, not the shared reference
- *     data the gate exempts (middleware/marketplaceAccess.ts OPEN_PATHS);
+ *     router and are readable by any viewer — there is no membership gate on
+ *     the /api/v1/marketplace mount;
  *   - both answer with a public Cache-Control and write a 600s cache entry
  *     under the `marketplace:listings:` prefix that every publish/edit already
  *     invalidates — a new bank must not leave a stale zero on its course;
@@ -16,11 +15,12 @@
 import { COURSE_ANCHOR_COPY } from '@lantern/shared/marketplace';
 import { PublicError } from '../utils/safeError';
 import router, { initializeMarketplaceRoutes, respondMarketplaceClientError } from './marketplace';
+import { routeLayers } from './marketplace/routeLayers';
 
 const COURSE = '11111111-1111-4111-8111-111111111111';
 
 function layersFor(path: string, method = 'get') {
-  return (router as any).stack.filter(
+  return routeLayers(router).filter(
     (layer: any) => layer.route?.path === path && layer.route?.methods?.[method]
   );
 }
@@ -101,7 +101,7 @@ describe('course browse routes are registered on the gated marketplace mount', (
     // '/courses' and '/listings/:id' are different first segments, so no
     // ordering trap here — but a future '/:something' top-level route would
     // create one. Assert the shape we rely on.
-    const paths = (router as any).stack
+    const paths = routeLayers(router)
       .filter((layer: any) => layer.route?.methods?.get)
       .map((layer: any) => layer.route.path as string);
     expect(paths.some((p: string) => /^\/:[^/]+$/.test(p))).toBe(false);

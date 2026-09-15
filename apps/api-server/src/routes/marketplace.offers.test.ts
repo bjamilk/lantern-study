@@ -36,6 +36,7 @@ import router, {
   initializeMarketplaceRoutes,
   offerExpiryConflict,
 } from './marketplace';
+import { routeLayers } from './marketplace/routeLayers';
 
 const HOUR = 60 * 60 * 1000;
 // Pinned clock for the pure helper (exact message text); the route tests use
@@ -82,7 +83,7 @@ function fakeDb(resolve: (call: Call) => any) {
  * layer (after authMiddleware).
  */
 async function runRoute(method: 'get' | 'put', path: string, req: any) {
-  const layer = (router as any).stack.find(
+  const layer = routeLayers(router).find(
     (l: any) => l.route?.path === path && l.route?.methods?.[method],
   );
   if (!layer) throw new Error(`route ${method.toUpperCase()} ${path} not found`);

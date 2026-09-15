@@ -50,3 +50,52 @@ export function isOriginAllowed(origin: string | undefined): boolean {
   if (!origin) return true; // mobile apps, curl, server-to-server
   return getAllowedCorsOrigins().includes(origin);
 }
+
+/**
+ * Paths whose responses SET auth cookies. A request to one of these must never
+ * be granted credentialed CORS access on a missing Origin: sandboxed iframes and
+ * cross-origin 307 redirects send `Origin: null`/no Origin, which used to be
+ * blanket-allowed with `credentials: true` and made /auth/login and
+ * /auth/exchange login-CSRF / session-fixation targets.
+ */
+export function isCookieSettingPath(pathname: string): boolean {
+  const path = (pathname || '').split('?')[0].replace(/\/+$/, '') || '/';
+  return (
+    path.endsWith('/auth/login') ||
+    path.endsWith('/auth/exchange') ||
+    path.endsWith('/auth/refresh') ||
+    path.endsWith('/auth/logout') ||
+    path.endsWith('/auth/session')
+  );
+}
+
+export interface CorsOriginDecisionInput {
+  origin: string | undefined;
+  /** Authorization / X-API-Key present — a credential the browser cannot attach cross-site without a preflight. */
+  hasNonCookieCredential: boolean;
+  /** An auth cookie rode along; ambient authority, never trust a missing Origin with it. */
+  hasAuthCookie: boolean;
+  /** Request targets a path that sets auth cookies. */
+  isCookieSetting: boolean;
+}
+
+/**
+ * Decide whether to emit credentialed CORS headers.
+ * `false` means "no Access-Control-Allow-Origin header" — NOT an error; non-browser
+ * clients (curl, mobile, server-to-server) are unaffected because they ignore CORS.
+ */
+export function decideCorsOrigin(input: CorsOriginDecisionInput): boolean {
+  const { origin, hasNonCookieCredential, hasAuthCookie, isCookieSetting } = input;
+
+  if (origin) {
+    if (getAllowedCorsOrigins().includes(origin)) return true;
+    if (process.env.ALLOW_ALL_CORS === 'true' && process.env.NODE_ENV !== 'production') {
+      return true;
+    }
+    return false;
+  }
+
+  // Missing/opaque Origin: only a non-cookie credential earns credentialed access.
+  if (hasAuthCookie || isCookieSetting) return false;
+  return hasNonCookieCredential;
+}

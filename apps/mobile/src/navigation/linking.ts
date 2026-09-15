@@ -1,3 +1,27 @@
+/**
+ * React Navigation's URL → navigation-state config: the paths the app answers
+ * to, and the screen each one resolves to.
+ *
+ * Main export: `linkingConfig`, handed to `<NavigationContainer linking>` in
+ * RootNavigator. `resolveDeepLinkNavigation` is re-exported from
+ * ./deepLinkTargets so existing callers keep one import.
+ *
+ * Touches: expo-linking (`createURL`, `getInitialURL`, the `url` event).
+ *
+ * Two routers, on purpose. This config is what React Navigation itself applies
+ * to a COLD start and to an OS-delivered URL; the table in deepLinkTargets.ts
+ * is what hooks/useDeepLinkHandler.ts and the notification tap handler apply.
+ * The paths below are the ones already in the wild (push notifications, job
+ * alerts, shared listings, board links), so renaming one breaks links that
+ * have already been sent — retire a route by keeping its path and pointing it
+ * at the screen that replaced it, the way `MarketplaceHome` and `JobsHome` are
+ * kept as one-frame redirects.
+ *
+ * Gotcha: a nested target needs the tab's own root beneath it. Here that is
+ * `initialRouteName` on the tab's screen map (CampusTab, MeTab); in imperative
+ * code it is `initial: false` via ./nestedTab. Without either, a cold link to a
+ * detail screen leaves Back exiting the tab.
+ */
 import * as Linking from 'expo-linking';
 import type { LinkingOptions } from '@react-navigation/native';
 import type { RootStackParamList } from './types';

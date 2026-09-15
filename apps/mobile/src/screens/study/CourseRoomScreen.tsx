@@ -1,3 +1,39 @@
+/**
+ * The room a student works in: one screen serving BOTH a study set
+ * (`studySetId`) and a bare course (`courseId`). Which one it is decides almost
+ * everything below — a set room gets the segment row, the eleven door tiles and
+ * the plan band; a course room draws the whole scroll with no filter (`show()`)
+ * and the generic workspace activities instead.
+ *
+ * Exports `CourseRoomScreen` (default screen for the `CourseRoom` route in
+ * StudyStackParamList). `SetHomeRecommended`, `MaterialTile` and `MaterialRow`
+ * are file-local.
+ *
+ * Touches: studySetStore (sets, plans, opened/studied timestamps), notesStore,
+ * flashcardStore, testStore, jobsStore (turn-into generation), companionStore
+ * (scoped Ask + guided next topic), setRoomUiStore (remembered segment),
+ * lectureRecordingStore, toastStore, authStore; services/academic
+ * (getMyActiveCourses), services/ai, services/notes.
+ *
+ * Gotchas:
+ * - PARAM INBOX, one way only. `route.params` is read WHOLE (not destructured)
+ *   because the params object identity is the per-press ticket. The `segment`
+ *   param is an inbox: seeded into local state on mount, adopted at most once
+ *   per press via `adoptSegmentRequest`, and NEVER written back with
+ *   setParams — writing it back is a render→params→render cycle and is what
+ *   crash-looped build 205 with a maximum-update-depth error. What is on screen
+ *   is published to setRoomUiStore instead, and the contextual row reads its
+ *   active pill from that store, not from the route.
+ * - The kebab must stay an `ActionSheet` (a Modal), not an inline Card in the
+ *   ScrollView: an inline menu was dismissed by the touch before its row ran.
+ *   ActionSheet also fires `onClose` before `onPress`, so a row handler must not
+ *   depend on state that closing clears.
+ * - Every tile count comes from data this screen already loaded; adding a count
+ *   that needs a new fetch breaks the "nothing claimed that is not on screen"
+ *   rule the counts were built on.
+ * - `guidedNextTopic` must stay derived from the same `buildStudyPlanModel` the
+ *   plan spine uses, or the Ask picker and the spine name different topics.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

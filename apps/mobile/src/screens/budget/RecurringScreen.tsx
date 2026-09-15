@@ -1,3 +1,16 @@
+/**
+ * Budget stack -> Recurring. Lists the student's recurring income/expense
+ * rules and adds new ones (type, amount, category, weekly or monthly, next
+ * date).
+ *
+ * Exports: RecurringScreen (default).
+ * Touches: services/api listRecurring / createRecurring / deleteRecurring /
+ * runRecurring; budgetStore fetchTransactions (refreshed after a rule posts)
+ * and budget.userId; BudgetDatePicker.
+ * Note: rules are materialised server-side by runRecurring(), which is called
+ * here right after a rule is created and again whenever Budget is opened, so
+ * it must stay idempotent. The rule list is local state, not the store.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

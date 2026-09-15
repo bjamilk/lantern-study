@@ -99,17 +99,25 @@ describe('Campus: one destination, three segments', () => {
   });
 
   it('hides a segment whose gate is closed, and never leaves none', () => {
-    expect(visibleCampusSegments({ communitiesOpen: true, shopOpen: true })).toEqual([
+    expect(visibleCampusSegments({ communitiesOpen: true })).toEqual([
       'communities',
       'shop',
       'jobs',
     ]);
-    expect(visibleCampusSegments({ communitiesOpen: false, shopOpen: false })).toEqual(['jobs']);
-    // Still checking is not the same as denied: the tab stays up.
-    expect(visibleCampusSegments({ communitiesOpen: false, shopOpen: null })).toEqual([
-      'shop',
-      'jobs',
-    ]);
+    // Communities is the only segment with a gate left; its gate is an academic
+    // profile, not a role.
+    expect(visibleCampusSegments({ communitiesOpen: false })).toEqual(['shop', 'jobs']);
+  });
+
+  it('shows Shop and Jobs to EVERY signed-in student — no allowlist, no probe', () => {
+    // Regression guard for V1 (2026-09-15): the founder-only marketplace pilot
+    // could delete both segments from an ordinary account's Campus. Nothing
+    // may reintroduce a viewer-dependent input here.
+    for (const communitiesOpen of [true, false]) {
+      const segments = visibleCampusSegments({ communitiesOpen });
+      expect(segments).toContain('shop');
+      expect(segments).toContain('jobs');
+    }
   });
 });
 

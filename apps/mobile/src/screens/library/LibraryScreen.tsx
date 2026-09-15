@@ -1,3 +1,26 @@
+/**
+ * The Library screen: the course tree over the archive, plus the Notes and
+ * Flashcards tabs (which are the real screens, embedded), search, and the
+ * course-row doors — tests history, offline bundles, outline management and
+ * study-pack drafting.
+ *
+ * Main exports: `LibraryScreen`.
+ * Touches: uiStore (the tab and the course/topic filter, shared with the
+ * embedded lists), authStore, flashcardStore, notesStore, studySetStore,
+ * featureTipStore; services/api `fetchLibraryOverview`, services/dataRefresh
+ * `refreshUserData`, `useLibrarySearch`, and ./libraryOverviewCache for the
+ * offline copy of the tree. Navigates out through the root navigation ref for
+ * Offline and the Market stack. No native modules.
+ *
+ * Gotchas: typing narrows the OPEN tab locally (`listQuery`) — it does not hit
+ * the server; `GET /library/search` only runs when the student deliberately
+ * presses "Search everything", because the server search ignores the panel's
+ * visible filters. The topic rides inside the course filter object so the pair
+ * cannot drift. `UNFILED_COURSE_ID` is the truthy string 'null' and has no
+ * course behind it, so uuid-validated routes must exclude it. The overview is
+ * refetched on every focus and falls back to the cache offline, with `stale`
+ * telling the tree to say so rather than claiming there are no courses.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View, Pressable, Text, TextInput } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';

@@ -7,6 +7,18 @@
  * panel can now do it to a single answer, from a modal that is not inside any
  * room, and a second copy of "generate, then save with the right scope" is how
  * two surfaces end up charging differently or filing into different places.
+ *
+ * Main exports: `startFlashcardsFromNote`, `startTestFromNote`, the
+ * `TurnIntoJobScope` shape, and the `turnIntoSourceContent`/`turnIntoSourceTitle`
+ * helpers plus `TURN_INTO_CONTENT_LIMIT`.
+ * Touches: jobsStore (through the injected `startJob`), studyGoalsStore read at
+ * run time, services/ai `aiGenerateFlashcards`, services/notes `generateNoteQuiz`,
+ * and services/jobArtifacts for the save. No React and no native modules.
+ *
+ * Gotchas: both functions return immediately with a job id — the work happens in
+ * the `run` callback the jobs store drives, so callers must not treat the return
+ * as a finished artefact. `userId` is required because the deck save has nowhere
+ * to land without it.
  */
 import { normalizeFlashcardCount } from '@lantern/shared/utils';
 // The mobile notes service's own `StudyNote`, not the shared one: the room

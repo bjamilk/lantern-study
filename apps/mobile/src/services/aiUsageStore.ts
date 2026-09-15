@@ -10,6 +10,13 @@
  * an import cycle around the AI client.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getUserScopeId,
+  readScopedWithLegacyMigration,
+  registerUserScoped,
+  scopedKey,
+  whenUserScopeResolved,
+} from '../stores/userScopedState';
 import type { AIUsageInfo } from '@lantern/shared';
 import { AI_USAGE_UNKNOWN, isAIUsageKnown } from '@lantern/shared/utils/aiUsage';
 
@@ -22,7 +29,14 @@ import { AI_USAGE_UNKNOWN, isAIUsageKnown } from '@lantern/shared/utils/aiUsage'
  * not as "we could not check". The cache restores the last known numbers and
  * marks them stale; nothing here ever invents an allowance.
  */
-const CACHE_KEY = 'lantern.aiUsage.last';
+// FIXED (F8): the cache is per account — `lantern.aiUsage.last:<userId>` — and
+// the counters are registered in stores/userScopedState, so a sign-out or an
+// account switch drops both the in-memory figures and the subscriber's view.
+// The cold-start hydrate waits for auth to answer before it reads anything, so
+// the next student's badge starts UNKNOWN rather than restoring the previous
+// account's allowance. The pre-split unscoped key is adopted once by the first
+// account that reads it and is then removed.
+export const AI_USAGE_CACHE_LEGACY_KEY = 'lantern.aiUsage.last';
 
 /**
  * Before the server has said anything, the app knows NOTHING about this
@@ -51,7 +65,14 @@ export function publishAIUsage(usage: AIUsageInfo): void {
   usageFromCache = false;
   listeners.forEach((fn) => fn(usage));
   if (isAIUsageKnown(usage)) {
-    void AsyncStorage.setItem(CACHE_KEY, JSON.stringify(usage)).catch(() => undefined);
+    const userId = getUserScopeId();
+    // Signed out, nothing to file these under — and writing the unscoped key
+    // is exactly the leak this fix removes.
+    if (!userId) return;
+    void AsyncStorage.setItem(
+      scopedKey(AI_USAGE_CACHE_LEGACY_KEY, userId),
+      JSON.stringify(usage)
+    ).catch(() => undefined);
   }
 }
 
@@ -62,7 +83,12 @@ export function publishAIUsage(usage: AIUsageInfo): void {
 export async function hydrateAIUsageFromCache(): Promise<boolean> {
   if (isAIUsageKnown(latestUsage)) return false;
   try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    // Which account's allowance this is has to be settled BEFORE the read, or
+    // a cold start would restore whatever the last student on this handset had
+    // left. Signed out, there is no cached allowance to restore.
+    const userId = await whenUserScopeResolved();
+    if (!userId) return false;
+    const raw = await readScopedWithLegacyMigration(AI_USAGE_CACHE_LEGACY_KEY, userId);
     if (!raw) return false;
     const parsed = JSON.parse(raw) as AIUsageInfo | null;
     if (!isAIUsageKnown(parsed)) return false;
@@ -99,6 +125,22 @@ export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () =
     listeners.delete(listener);
   };
 }
+
+/**
+ * FIXED (F8): the counters belong to one account.
+ *
+ * `latestUsage` is a module global that survives a sign-out, so B's badge read
+ * A's remaining credits and B's generation gates fired on A's numbers. The
+ * registry drops it back to UNKNOWN and tells every badge on screen, then
+ * re-reads the cache for whoever is signed in now (an account switch), or
+ * leaves it unknown (a sign-out).
+ */
+registerUserScoped('aiUsage', () => {
+  latestUsage = AI_USAGE_UNKNOWN;
+  usageFromCache = false;
+  listeners.forEach((fn) => fn(latestUsage));
+  if (getUserScopeId()) void hydrateAIUsageFromCache();
+});
 
 /** Test seam: forget the counters between cases. */
 export function __resetAIUsageForTests(): void {

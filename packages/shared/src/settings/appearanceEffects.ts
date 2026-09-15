@@ -1,3 +1,46 @@
+// ===========================================
+// Lantern Study - Appearance and accessibility effects
+// ===========================================
+//
+// PURPOSE
+//   Turn the student's saved appearance + accessibility settings into the
+//   concrete numbers and colours a renderer applies: font scale, motion,
+//   compact density, haptics, and the accent colour woven through the palette.
+//
+// CONSUMERS
+//   web    — `utils/applyUserSettingsToDom.ts` / `utils/applyDesignTokens.ts`
+//            and the Settings modal's appearance tab.
+//   mobile — `src/theme/*`, `src/stores/settingsStore.ts`, and
+//            `src/screens/settings/accentPresets.ts` (whose first preset must
+//            be DEFAULT_ACCENT_COLOR).
+//   api    — no.
+//
+// THE ACCENT RULE
+//   A student may pick any accent, including one that is illegible on the
+//   surfaces Lantern paints it on. `applyAccentToColors` therefore runs every
+//   derived colour through ../design/contrast's repair helpers rather than
+//   using the raw hex. The student's choice is honoured as closely as
+//   legibility allows, and never at the cost of readable text.
+//
+//   LEGACY_DEFAULT_ACCENT_COLOR is the old indigo. It is kept so an account
+//   still holding it can be recognised as "never chose an accent" and moved to
+//   the current default — `isDefaultAccentColor` treats both as unset.
+//
+// MOTION AND STATE
+//   `reduceMotion` must only ever remove animation, never the state change the
+//   animation was carrying. Decoupling motion from state is what once left
+//   elements stuck mid-transition for students with reduce-motion on.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
+
 import {
   AA_LARGE,
   ensureAaPair,
@@ -38,6 +81,10 @@ export interface AppearanceEffectFlags {
  * those three must stay byte-identical. Never compare an accent to either
  * constant directly — call `isDefaultAccentColor`, so both keep working.
  */
+// ---------------------------------------------------------------------------
+// Accent colours
+// ---------------------------------------------------------------------------
+
 export const LEGACY_DEFAULT_ACCENT_COLOR = '#6366f1';
 export const DEFAULT_ACCENT_COLOR = '#191919';
 
@@ -69,6 +116,13 @@ export function isDefaultAccentColor(accentColor: string | null | undefined): bo
   const hex = accentColor.toLowerCase();
   return hex === DEFAULT_ACCENT_COLOR || hex === LEGACY_DEFAULT_ACCENT_COLOR;
 }
+
+// ---------------------------------------------------------------------------
+// Deriving the effect flags
+// ---------------------------------------------------------------------------
+// One place that reads the settings object and answers "what does this mean
+// for rendering". Both apps call this rather than reading settings fields
+// directly, so a new accessibility toggle lands on both at once.
 
 export function getFontScale(fontSize: AppearanceSettings['fontSize']): number {
   switch (fontSize) {
@@ -111,6 +165,12 @@ export function getAppearanceEffectFlags(settings: UserSettings): AppearanceEffe
  * So ask the ink how light it is, not what it equals. The inks below are the
  * neutral ends of the same ramp the palettes use — never slate.
  */
+// ---------------------------------------------------------------------------
+// Applying the effects to a palette
+// ---------------------------------------------------------------------------
+// Both take a palette and return a new one; neither mutates. Contrast repair
+// is applied here, not at the call site, so no screen can forget it.
+
 export function applyHighContrastToColors<T extends Record<string, string>>(colors: T): T {
   const isDarkTheme = relativeLuminance(colors.text || '#000000') > 0.5;
   return {

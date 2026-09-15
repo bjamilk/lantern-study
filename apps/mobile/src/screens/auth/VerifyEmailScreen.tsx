@@ -1,3 +1,23 @@
+/**
+ * Auth stack -> VerifyEmail. Confirms a new account either by the 6-digit OTP
+ * typed in here or by the magic link in the same email, and offers a
+ * cooldown-gated resend. Route param: { email }.
+ *
+ * Exports: VerifyEmailScreen (named).
+ * Touches: expo-linking, deepLinkAllowlist `planAuthDeepLink`,
+ * components/ui/appDialog `confirmAsync` (the consent step), authStore.user
+ * (whoever is already signed in here), services/supabase
+ * establishSessionFromAuthUrl / verifySignupOtp / resendSignupConfirmation /
+ * getMobileAuthRedirectUri.
+ */
+// FIXED (F45): the magic-link effect no longer signs anyone in on its own. An
+// incoming URL is untrusted — any installed app can send
+// `lanternstudy://verify-email#access_token=…` — so the link is classified
+// behind the scheme/host allowlist and the student confirms "Sign in as
+// <email>?" before a session is established. A link for a different account
+// than the one already signed in here is refused, not silently honoured.
+// The magic-link failure is still non-fatal (the OTP field below stays usable)
+// but it is now SAID, not swallowed.
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useState } from 'react';
 import {
@@ -15,7 +35,9 @@ import { isValidOtpCode, RESEND_COOLDOWN_SECONDS } from '@lantern/shared';
 import { Button } from '../../components/ui';
 import { LanternLogo } from '../../components/LanternLogo';
 import { ResendEmailButton } from '../../components/auth/ResendEmailButton';
-import { isAllowedMobileAuthUrl } from '../../utils/deepLinkAllowlist';
+import { planAuthDeepLink } from '../../utils/deepLinkAllowlist';
+import { confirmAsync } from '../../components/ui/appDialog';
+import { useAuthStore } from '../../stores/authStore';
 import {
   establishSessionFromAuthUrl,
   getMobileAuthRedirectUri,
@@ -38,6 +60,7 @@ export function VerifyEmailScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [resendLoading, setResendLoading] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const currentUser = useAuthStore((s) => s.user);
 
   useEffect(() => {
     if (resendCooldown <= 0) return;
@@ -48,21 +71,60 @@ export function VerifyEmailScreen({ navigation, route }: Props) {
   }, [resendCooldown]);
 
   useEffect(() => {
+    const handled = new Set<string>();
     const tryMagicLink = async (url: string | null) => {
-      if (!url || !isAllowedMobileAuthUrl(url)) return;
+      if (!url) return;
+      // The cold-start URL and the 'url' event can deliver the same link twice.
+      if (handled.has(url)) return;
+      handled.add(url);
+
+      const plan = planAuthDeepLink(url, { userId: currentUser?.id, email: currentUser?.email });
+      if (plan.action === 'ignore') return;
+      if (plan.action === 'already-signed-in') {
+        setMessage('This device is already signed in to that account.');
+        return;
+      }
+      if (plan.action === 'show-error') {
+        setError('That confirmation link has expired or has already been used. Enter the code below, or resend the email.');
+        return;
+      }
+      if (plan.action === 'confirm-sign-out-first') {
+        setError(
+          `That link is for ${plan.email ?? 'another account'}. Sign out of ` +
+            `${plan.currentEmail ?? 'this account'} first, then open it again.`
+        );
+        return;
+      }
+
+      const confirmed = await confirmAsync(
+        `Sign in as ${plan.email ?? email}?`,
+        'You opened an email-confirmation link. Only continue if you asked for it.',
+        { confirmLabel: 'Continue' }
+      );
+      if (!confirmed) {
+        setMessage('Link ignored. You can still enter the 6-digit code from your email below.');
+        return;
+      }
+
       try {
         const session = await establishSessionFromAuthUrl(url);
         if (session) {
           setMessage('Email verified! Signing you in…');
         }
-      } catch {
-        // User can still enter OTP manually
+      } catch (err) {
+        // Non-fatal: the OTP field below is the other way in. Say so anyway —
+        // silence here read as "the app did nothing".
+        setError(
+          err instanceof Error && err.message
+            ? `${err.message} Enter the 6-digit code from your email instead.`
+            : 'That link could not be used. Enter the 6-digit code from your email instead.'
+        );
       }
     };
     void Linking.getInitialURL().then((url) => void tryMagicLink(url));
     const sub = Linking.addEventListener('url', ({ url }) => void tryMagicLink(url));
     return () => sub.remove();
-  }, []);
+  }, [email, currentUser?.id, currentUser?.email]);
 
   const handleVerify = async () => {
     if (!isValidOtpCode(otpCode)) {

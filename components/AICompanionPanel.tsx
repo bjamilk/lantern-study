@@ -1,3 +1,36 @@
+/**
+ * The Lantern AI companion chat — one component rendered either as the global
+ * overlay (`variant="drawer"`) or as a docked pane inside a workspace
+ * (`variant="rail"`).
+ *
+ * Exports:
+ *  - default `AICompanionPanel` — the panel (header, thread, composer).
+ *  - `buildCitationChipLabels` — excerpt-number chips (also unit-tested).
+ *  - module-local `MessageBubble`, `EmptyState`, `TypingDots`,
+ *    `bubbleMarkdownComponents`, `withHardBreaks`.
+ * Touches:
+ *  - `companionStore` for ALL thread state: messages, streaming flags, history,
+ *    conversations, the note context, pending images, guided lesson state, and the
+ *    actions `sendMessageStreaming` / `loadHistory` / `openConversation` /
+ *    `startNewChat` / `clearHistory` / `deleteConversation` / `attachImage`.
+ *  - `notesStore` (picker list), `authStore.currentUser`, `toastStore.showToast`.
+ *  - services: `services/ai` (`submitCompanionFeedback`, `trackAIAnalyticsEvent`,
+ *    `isPersistedCompanionMessageId`), `services/notes.transcribeAudioForNote`.
+ *  - browser APIs: `navigator.mediaDevices` + `MediaRecorder` (dictation),
+ *    `navigator.clipboard`, the speech engine in `./narration/speechEngine`.
+ * Gotchas:
+ *  - CREDITS: an image costs on PICK (the server charges before it reads), which is why
+ *    `validateImagePick` runs client-side first. A send costs on send, and `handleSend`
+ *    is guarded by a REF (`sendInFlightRef`), not by the store flags, because two clicks
+ *    in one frame both read the pre-render `isBusy === false` and both charge.
+ *  - AUTO-SCROLL follows the stream only while `isAtBottom`. Scrolling up must keep you
+ *    there; restoring an unconditional scroll makes a streaming answer unreadable.
+ *  - The `rail` variant is always mounted and ignores `isOpen`, so every teardown
+ *    (mic, speech) has to check `variant === 'rail'` or a docked rail tears itself down.
+ *  - `theme` is a PROP branch that runs in parallel with the `dark` class; both must
+ *    describe the same theme. Every colour here is still a `lantern-*`/Tailwind token —
+ *    do not introduce a literal colour on either branch.
+ */
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { AppIcon } from './ui/AppIcon';
 import { SourceChip } from './ui/SourceChip';
@@ -196,10 +229,15 @@ interface AICompanionPanelProps {
   guidedTopics?: readonly (string | GuidedStartTopic)[];
 }
 
+// --- Dictation tuning. `RECORDER_CHUNK_WAIT_MS` is the grace period after
+// `recorder.stop()` during which a last `ondataavailable` may still arrive;
+// without it a short clip is uploaded with zero bytes.
 const MIN_DICTATION_MS = 800;
 const MAX_DICTATION_MS = 60_000;
 const RECORDER_CHUNK_WAIT_MS = 1_200;
 
+// Chunked base64: `String.fromCharCode(...bytes)` on a whole recording blows the
+// argument limit and throws on clips of any real length.
 async function blobToBase64(blob: Blob): Promise<string> {
   const buffer = await blob.arrayBuffer();
   const bytes = new Uint8Array(buffer);
@@ -281,7 +319,13 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const loadNotes = useNotesStore((s) => s.loadNotes);
   const currentUser = useAuthStore(s => s.currentUser);
   const showToast = useToastStore(s => s.showToast);
+  // --- Local state. Note what is NOT here: messages, streaming, images and the
+  // note context all live in `companionStore`, so the drawer and a docked rail
+  // show the same thread. Only view state (which sheet is open, the composer
+  // text, dictation, speech) is local.
   const [input, setInput] = useState('');
+  // Attached to a trailing <div> at the end of the thread. Scrolling is done on
+  // `scrollRef` instead; this ref is currently never read.
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
@@ -327,6 +371,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
+  // --- Dictation refs. All of the recorder's moving parts are refs because the
+  // MediaRecorder callbacks fire outside React's render cycle and must see the
+  // current values, not the ones captured when the recorder was created.
   const recordingStartedAtRef = useRef(0);
   const maxTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const secondsTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -368,6 +415,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   };
 
   // Load active thread (+ conversation list) when the panel opens
+  // Driven by `isOpen`; `hasLoaded` makes it once-per-open rather than
+  // once-per-render, and closing resets it so the next open refetches.
+  // `isOpen` is store state shared by both variants, so a rail loads only once
+  // the companion is considered open.
   const hasLoaded = useRef(false);
   useEffect(() => {
     if (!isOpen) {
@@ -399,6 +450,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   }, [isOpen, context?.noteId, context?.noteTitle, activeNoteContext, setActiveNoteContext]);
 
   // Load notes list when opening the picker
+  // Driven by `showNotePicker`; only fetches when the store is empty, so
+  // reopening the picker does not re-request an already loaded list.
   useEffect(() => {
     if (!showNotePicker || !currentUser) return;
     if (notes.length === 0) {
@@ -432,6 +485,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
   }, [setActiveNoteContext]);
 
   // Auto-send pending message only after history has loaded (never during history fetch)
+  // `pendingMessage` is how another screen asks the companion a question. The
+  // gate is the whole point: sending mid-fetch would race the history merge and
+  // the question could land above the turns it was asked after. `handleSend` is
+  // intentionally out of the deps (it is redefined every keystroke via `input`);
+  // the effect only ever runs from a `pendingMessage` transition.
   useEffect(() => {
     if (
       isOpen &&
@@ -477,6 +535,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
    */
   const AT_BOTTOM_SLACK_PX = 48;
 
+  // Scroll listener: recomputes "am I following the stream" on every scroll and
+  // flashes the auto-hiding scrollbar by toggling `is-scrolling` for 800ms.
+  // The timer is cleared on unmount by the effect further down.
   const handleMessagesScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -514,33 +575,53 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     scrollMessagesToEnd('auto');
   }, [messages, isLoading, isStreaming, isAtBottom, scrollMessagesToEnd]);
 
+  // Unmount-only: drop the pending scrollbar-hide timer.
   useEffect(() => () => {
     if (scrollBarTimerRef.current !== undefined) window.clearTimeout(scrollBarTimerRef.current);
   }, []);
 
   // Focus input when panel opens
+  // The 100ms delay lets the drawer's open transition mount the textarea first;
+  // focusing during the transition lands on a node that is about to move.
   useEffect(() => {
     if (isOpen) {
       setTimeout(() => inputRef.current?.focus(), 100);
     }
   }, [isOpen]);
 
+  // Mirror of `input` for the callbacks that run outside render (dictation's
+  // `onstop`, the failed-send restore) and would otherwise read a stale value.
   useEffect(() => {
     inputValueRef.current = input;
   }, [input]);
 
   // A failed send hands the typed text back: restore it into the composer
   // (unless the user has already started typing something new).
+  // Retry path: the store sets `failedMessage` when `sendMessageStreaming`
+  // rejects; this effect is the only consumer. There is no automatic resend —
+  // the text goes back in the box and the student presses send again.
+  // FIXED (F9): this used to call `consumeFailedMessage()` first, which clears
+  // the store value unconditionally — so when the composer already held new
+  // text the failed question was consumed and DISCARDED, offered nowhere. The
+  // consume now happens only when there is somewhere to put the text; a
+  // question that arrives while the student is mid-sentence is left in the
+  // store and restored the moment the box is empty again (this effect re-runs
+  // on `input` for exactly that).
   useEffect(() => {
     if (!failedMessage) return;
+    if (inputValueRef.current.trim()) return;
     const restored = consumeFailedMessage();
-    if (restored && !inputValueRef.current.trim()) {
+    if (restored) {
       setInput(restored);
       inputValueRef.current = restored;
       inputRef.current?.focus();
     }
-  }, [failedMessage, consumeFailedMessage]);
+  }, [failedMessage, consumeFailedMessage, input]);
 
+  // --- Dictation. Lifecycle: startDictation() → MediaRecorder → onstop →
+  // transcribe → append to the composer. `stopDictation` ends the take and lets
+  // `onstop` transcribe it; `discardDictation` sets the discard flag and aborts
+  // any in-flight transcription, so nothing is appended.
   const stopMediaStream = useCallback(() => {
     mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
     mediaStreamRef.current = null;
@@ -627,6 +708,11 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         mediaRecorderRef.current = null;
         chunksRef.current = [];
       };
+      // Everything after the take. Branches, in order: discarded → drop it;
+      // too short / too small → toast, no upload (and no spend); transcribed →
+      // appended AFTER whatever is already typed, never replacing it.
+      // Errors: an AbortError (the student discarded) is swallowed silently;
+      // every other failure surfaces as an error toast.
       recorder.onstop = async () => {
         if (discardRecordingRef.current) {
           discardRecordingRef.current = false;
@@ -696,6 +782,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         }
       };
 
+      // 250ms timeslice so chunks accumulate during the take rather than only
+      // at stop; the seconds ticker and the hard MAX_DICTATION_MS cut-off are
+      // started alongside and cleared by `clearRecordingTimers`.
       mediaRecorderRef.current = recorder;
       recorder.start(250);
       recordingStartedAtRef.current = Date.now();
@@ -711,6 +800,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         screen: context?.currentScreen,
       });
     } catch (err: unknown) {
+      // getUserMedia rejections, split by DOMException name: denied permission
+      // and "no device" each get their own instruction; anything else gets the
+      // generic line.
       const name = err instanceof DOMException ? err.name : '';
       const message =
         name === 'NotAllowedError' || name === 'PermissionDeniedError'
@@ -744,6 +836,8 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     };
   }, [discardDictation]);
 
+  // The context object sent with every turn: the host's context plus the user's
+  // name, with `mode: 'guided'` layered LAST so the pill always wins.
   const enrichedContext: CompanionUserContext = useMemo(() => ({
     userName: currentUser?.firstName || currentUser?.name || 'Student',
     ...context,
@@ -776,6 +870,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     [messages]
   );
 
+  // Three different "busy" notions, deliberately distinct: `isSending` gates the
+  // drawer's backdrop-close, `isBusy` also covers the history fetch and disables
+  // anything that would spend a credit, `dictationBusy` locks the composer while
+  // the mic owns it.
   const isSending = isLoading || isStreaming;
   const isBusy = isSending || isLoadingHistory;
   const dictationBusy = isRecording || isTranscribing;
@@ -788,6 +886,15 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
    */
   const sendInFlightRef = useRef(false);
 
+  // The one send path (composer, quick prompt, guided goal, regenerate, explain
+  // simply all route through here). It clears the composer BEFORE awaiting, so a
+  // failure relies on the store's `failedMessage` hand-back above to restore the
+  // text. The ref is released in `finally`, including on rejection, or the panel
+  // would refuse every later send.
+  // The optimistic bubbles and the failure policy are the STORE's: an unsent
+  // request withdraws both bubbles and hands the text back here; a request the
+  // server saw keeps the exchange (a credit may already be spent) and hands
+  // nothing back. Do not add a second retry path in this component.
   const handleSend = useCallback(async (
     text?: string,
     /**
@@ -933,6 +1040,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     void handleSend(EXPLAIN_SIMPLY_PROMPT);
   }, [handleSend]);
 
+  // Composer keys. `composerKeyIntent` owns the rules (Enter sends;
+  // Shift/Alt/Ctrl/Cmd+Enter and an IME composition commit are NOT a send), and
+  // `preventDefault` runs only for the 'send' intent so every other key keeps
+  // its native behaviour in the textarea.
   const handleComposerKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
       const intent = composerKeyIntent({
@@ -950,6 +1061,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     [handleSend]
   );
 
+  // --- Header actions. Each one closes the other sheets so the panel never
+  // shows two overlays at once. `handleClear` deletes only the ACTIVE thread;
+  // `deleteConversation` (from the history list) is what removes a saved one.
   const handleClear = async () => {
     setShowClearConfirm(false);
     await clearHistory();
@@ -984,8 +1098,14 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
     close();
   };
 
+  // A drawer unmounts when closed; a rail is permanent chrome and renders
+  // regardless of `isOpen`. Every effect above that tears something down has to
+  // honour the same split.
   if (variant !== 'rail' && !isOpen) return null;
 
+  // Shared body for both variants. It assumes a `flex-col` parent with a bounded
+  // height: the header and composer are `flex-shrink-0` and the thread is the
+  // only element allowed to grow and scroll.
   const body = (
     <>
         {/* Header */}
@@ -1092,6 +1212,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         ) : (
         /* Messages area. `relative` anchors the "Jump to latest" pill. */
         <div className="relative flex-1 min-h-0 min-w-0 overflow-x-hidden flex flex-col">
+        {/* The scroll container itself. `min-h-0` lets it shrink inside the
+            flex column; `overflow-x-hidden` (plus `min-w-0` on the bubbles) is
+            what keeps a wide table or a long URL from scrolling the thread
+            sideways — the markdown table renders its own horizontal scroller. */}
         <div
           ref={scrollRef}
           onScroll={handleMessagesScroll}
@@ -1118,6 +1242,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             />
           )}
 
+          {/* The thread. `isStreaming` is granted to the LAST assistant row
+              only, so an older answer never shows a caret; the turn-into menu is
+              tracked by one id here rather than per bubble, so opening a second
+              closes the first. */}
           {!isLoadingHistory && messages.map(msg => (
             <MessageBubble
               key={msg.id}
@@ -1182,6 +1310,12 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
         )}
 
         {/* Input area — pad above home indicator; stays above bottom nav when that is visible */}
+        {/* Composer column: source chip, turn-into menu, note picker, image
+            chips, guided picker, then the input row. `flex-shrink-0` is
+            load-bearing — this block clips (`overflow-x-hidden`) inside a flex
+            column, so without it the flex pass crushes the composer vertically
+            as the thread grows. The drawer variant also pads for the iOS home
+            indicator via `env(safe-area-inset-bottom)`. */}
         {!showHistoryList && (
         <div className={`px-4 pt-3 border-t flex-shrink-0 min-w-0 overflow-x-hidden ${
           variant === 'rail'
@@ -1277,6 +1411,9 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
           {imageError && (
             <p className="mb-2 text-xs text-red-500" role="alert">{imageError}</p>
           )}
+          {/* The real file input, hidden behind the image button. Its value is
+              reset at the top of `handlePickImage` so picking the SAME file
+              twice still fires `change`. */}
           <input
             ref={imageInputRef}
             type="file"
@@ -1417,6 +1554,10 @@ const AICompanionPanel: React.FC<AICompanionPanelProps> = ({
             >
               {isRecording ? <AppIcon name="stop" size={16} /> : <AppIcon name="mic" size={16} />}
             </button>
+            {/* Auto-growing textarea, capped at 96px (`max-h-24`). The height is
+                set imperatively on input — reset to `auto` first, or scrollHeight
+                only ever grows and the box can never shrink back. `handleSend`
+                calls `resizeInput()` after clearing for the same reason. */}
             <textarea
               ref={inputRef}
               value={input}
@@ -1572,6 +1713,11 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
     message.content.length > 0 &&
     isPersistedCompanionMessageId(message.id);
 
+  // Thumbs. Optimistic: the store is updated first so the choice survives a
+  // remount or a history merge, and the PREVIOUS value is restored if the write
+  // fails. `pendingRef` is a synchronous double-click guard; `canRate` keeps the
+  // control off streaming and not-yet-persisted rows, whose ids the API cannot
+  // address.
   const handleFeedback = async (rating: 'up' | 'down') => {
     if (pendingRef.current || !canRate) return;
     const next = feedback === rating ? null : rating;

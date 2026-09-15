@@ -1,3 +1,27 @@
+/**
+ * The `FlashcardReview` route (a fullScreenModal): the graded FSRS session.
+ * Swipe or tap to reveal, grade Again/Hard/Good/Easy against a live interval
+ * preview, undo the last grade, and — when Home opened a cross-deck plan —
+ * continue into the next deck that still has due cards.
+ *
+ * Main exports: `FlashcardReviewScreen` (also the default).
+ * Touches: flashcardStore (`fetchFlashcards`, `reviewFlashcard`, and a direct
+ * `setState`+`saveToStorage` for undo), authStore, settingsStore (new-cards-per-day,
+ * max interval, auto-advance delay, haptics), statsStore (today's counts),
+ * featureTipStore, services/gamification and productAnalytics, and the presence
+ * heartbeat. Native: expo-haptics. The queue, interval preview and advance guard
+ * all come from @lantern/shared.
+ *
+ * Gotchas: the session queue is built ONCE per deck and frozen in
+ * `queueSnapshotRef` (`=== null` check, so a deliberately empty queue stays
+ * locked) — grading makes cards not-due, so rebuilding mid-session would drop
+ * the rest of the queue, including lapsed cards re-queued for today.
+ * `chainSnapshot` lives at module scope for the same reason: each leg of a
+ * cross-deck chain is a fresh mount via `navigation.replace`, and re-counting
+ * would shrink the total under the student. Grades are written through
+ * immediately; undo restores the card LOCALLY only, so the server may already
+ * hold the graded review.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import * as Haptics from 'expo-haptics';

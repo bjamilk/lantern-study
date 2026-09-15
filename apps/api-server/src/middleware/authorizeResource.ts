@@ -1,6 +1,32 @@
 /**
  * Reusable resource authorization middleware (IDOR guardrails).
  */
+/**
+ * Ownership predicates that routes mount between `authMiddleware` and the
+ * handler, so a handler never has to re-derive who may touch a `:groupId`,
+ * `:deckId`, `:noteId` or `:testId`.
+ *
+ * Exports: `requireGroupMember`, `requireGroupAdmin`, `requireDeckAccess`,
+ * `requireNoteAccess`, `requireNoteEdit`, `requireNoteOwner`,
+ * `requireTestOwner`, plus `initializeAuthorizeResource` (bootstrap) and the
+ * `allowDevAuthBypass` / `assertProductionAuthStrict` pair that keeps the dev
+ * bypass out of production.
+ *
+ * Each predicate delegates the actual lookup to `SupabaseService`
+ * (`getGroupById`, `verifyDeckAccess`, `resolveNoteAccess`, `canEditNote`,
+ * `isNoteOwner`, `getTestById`), which is what reads `study_groups`,
+ * `flashcard_decks`, `notes` / note collaborators and `tests`. These run on the
+ * service-role client, so the predicate here IS the access control — RLS does
+ * not apply to it.
+ *
+ * Conventions: every predicate also passes a live platform admin
+ * (`isLivePlatformAdmin`, a fresh `platform_admins` read per call — note that
+ * several predicates issue that query even on the success path). Denials are
+ * 403 `{ success: false, error }` except `requireTestOwner` and the
+ * `resolveNoteAccess` throw path, which answer 404 so a probe cannot confirm
+ * that an id exists. `requireNoteAccess` also parks the resolved access record
+ * on `req.noteAccess` for the handler.
+ */
 import { Response, NextFunction } from 'express';
 import { asyncHandler } from './errorHandler';
 import { SupabaseService } from '../services/supabase';
@@ -64,6 +90,8 @@ export function requireGroupAdmin(groupIdParam = 'groupId') {
     next();
   });
 }
+
+// ============ Deck, note and test predicates ============
 
 export function requireDeckAccess(
   deckIdParam = 'deckId',
@@ -180,6 +208,8 @@ export function requireTestOwner(testIdParam = 'testId') {
     next();
   });
 }
+
+// ============ Dev auth bypass guard ============
 
 /** True when dev auth bypass is explicitly enabled (never in production by default). */
 export function allowDevAuthBypass(): boolean {

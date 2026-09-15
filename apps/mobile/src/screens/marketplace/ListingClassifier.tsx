@@ -1,3 +1,18 @@
+/**
+ * The taxonomy drill-down a seller uses to file a listing, with search and
+ * title-based suggestions as fast paths.
+ *
+ * Exports: ListingClassifier.
+ * Touches: @lantern/shared/marketplace (classifyListing, searchTaxonomy,
+ * getTaxonomyNode/Children/Path, isTaxonomyLeaf, descendantLeaves,
+ * taxonomyPathLabel, MARKETPLACE_DEPARTMENTS). Purely controlled — the parent
+ * form owns selectedNodeId.
+ *
+ * Gotchas: only leaves can be selected; tapping a group only drills in. The
+ * `other` escape hatch appears at the top level only and is filtered out of
+ * every level below. Suggestions need a title of at least 4 characters and are
+ * hidden as soon as the search box has 2 or more.
+ */
 import React, { useMemo, useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 import {

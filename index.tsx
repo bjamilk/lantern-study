@@ -1,3 +1,23 @@
+/**
+ * Web entry point: boots storage/env/Sentry/auth/theme, mounts the React tree,
+ * and registers (or in dev tears down) the service worker.
+ *
+ * Exports: nothing — a side-effect module, evaluated once from apps/web's
+ *  index.html. `App` is mounted under the catch-all '/*' route below.
+ * Touches: localStorage ('theme', the auth-link error stash, the referral code),
+ *  document #root, navigator.serviceWorker, Sentry, the supabase-js in-memory
+ *  session (bootstrapAuthFromStorage), CSS custom properties on <html>.
+ * Gotchas:
+ *  - Statement ORDER in this file is load-bearing, not stylistic. The three
+ *    ordering constraints are commented at their own lines below (storage
+ *    fallback first, type.css after index.css, auth-hash/referral capture before
+ *    anything rewrites the URL).
+ *  - '/*' must stay the LAST <Route>: the legal paths above it are the only ones
+ *    that never mount <App />, so a route added after it is unreachable.
+ *  - Dev unregisters service workers instead of updating them, so a prod SW left
+ *    on localhost only stops serving its cache after one more load.
+ */
+
 // Must stay the first import: it installs a working localStorage before any
 // other module is evaluated. Webviews that expose a null localStorage (links
 // opened inside WhatsApp/Instagram) otherwise blanked the page on the theme
@@ -22,6 +42,10 @@ import InstallAppBanner from './components/pwa/InstallAppBanner';
 import ProductAnalyticsRouteListener from './components/ProductAnalyticsRouteListener';
 import LegalPage from './components/LegalPage';
 
+// Seeds supabase-js with whatever session is already in storage, synchronously,
+// so the first data fetch after mount is not made anonymously. In cookie-auth
+// prod this is the placeholder-token session; services/supabase.ts's fetch
+// interceptor is what keeps gotrue from trying to refresh it.
 bootstrapAuthFromStorage();
 
 // Failed auth-link hashes (#error_code=otp_expired etc.) must be captured
@@ -39,6 +63,10 @@ captureReferralCode();
   if (authLinkError) stashAuthLinkError(authLinkError);
 }
 
+// Applied before createRoot so the first painted frame is already in the right
+// theme. `applyDesignTokensToDom` only strips legacy inline vars and sets a
+// custom accent — the palette itself lives in index.css `:root`/`.dark`, and
+// inlining it on <html> would outrank every stylesheet rule.
 const initialTheme =
   typeof window !== 'undefined' && localStorage.getItem('theme') === 'dark' ? 'dark' : 'light';
 applyDesignTokensToDom(initialTheme);
@@ -48,6 +76,10 @@ if (!rootElement) {
   throw new Error("Could not find root element to mount to");
 }
 
+// Route table: the five legal documents render standalone (no AppShell, no auth
+// gate); '/*' hands everything else to <App />, which does its own routing off
+// location.pathname. The three banners sit outside <Routes> so they survive
+// navigation.
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
@@ -70,6 +102,10 @@ root.render(
   </React.StrictMode>
 );
 
+// Registered on 'load', after the first render, so precaching never competes
+// with the initial bundle fetch. Dev takes the opposite branch and unregisters
+// everything: a SW left behind by a prod visit on the same origin would
+// otherwise keep serving its cached shell over the dev server.
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     if (import.meta.env.PROD) {

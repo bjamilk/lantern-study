@@ -3,6 +3,43 @@
  * Manages conversation state for the Lantern AI companion panel.
  * Threads are server-backed (conversation_id); note-attached chats keep
  * note_context_id so history can list general + note-linked chats.
+ *
+ * Exports: `useCompanionStore` (the panel's entire state) and the
+ * `CompanionNoteContext` type.
+ *  - Panel: `isOpen` / open / close / toggle, plus `pendingMessage` +
+ *    `pendingMessageContext` (a one-shot send queued by another surface) and
+ *    `pendingAssistantMessage` / `injectAssistantMessage` (a local-only bubble
+ *    that is never sent to the model and never persisted server-side).
+ *  - Thread: `activeConversationId`, `pendingNewConversation`, `conversations`,
+ *    `loadConversations` / `openConversation` / `startNewChat` /
+ *    `deleteConversation` / `clearHistory`.
+ *  - Messages: `messages`, `loadHistory`, `sendMessage` (non-streaming) and
+ *    `sendMessageStreaming` (SSE), `setMessageFeedback`, `failedMessage` +
+ *    `consumeFailedMessage`.
+ *  - Guided: `guidedSession` / `startGuided` / `clearGuided`.
+ *  - Images: `pendingImages`, `attachImage`, `removeImage`,
+ *    `clearPendingImages`, `isUploadingImage`, `imageError`.
+ *
+ * Touches: services/ai (`companionSendMessage`, `companionSendMessageStream`,
+ *   `fetchCompanionHistory`, `fetchCompanionConversations`,
+ *   `clearCompanionHistory`, `uploadCompanionImage`), @lantern/shared/api
+ *   (`startGuidedSession`, `advanceGuidedSession`, `normalizeCompanionCitation`),
+ *   and two localStorage keys written by hand (no zustand persist):
+ *   `lantern_companion_note_context` and `lantern_companion_conversation_id`.
+ *
+ * Gotchas:
+ *  - Neither localStorage key is user-scoped, and this store has no reset().
+ *    Sign-out must clear both (and `messages`), or the next account in the same
+ *    browser resumes the previous student's conversation id.
+ *  - Charge semantics on a failed send are load-bearing — see the long comment
+ *    in `sendMessageStreaming`'s onError. `CompanionStreamError.phase` is
+ *    'unsent' | 'rejected' | 'stream' and only 'unsent' means nothing was
+ *    charged. Do not collapse the two branches back into one error path.
+ *  - Photos are uploaded (and charged) by `attachImage` at pick time, not at
+ *    send time. A student who attaches and then never sends has still paid, and
+ *    `clearPendingImages` does not refund anything.
+ *  - Optimistic ids are `tmp-user-${Date.now()}` / `tmp-ai-${Date.now()}`; two
+ *    sends inside the same millisecond would collide.
  */
 import { create } from 'zustand';
 import {
@@ -42,6 +79,11 @@ export type CompanionNoteContext = {
 const NOTE_CONTEXT_STORAGE_KEY = 'lantern_companion_note_context';
 const CONVERSATION_STORAGE_KEY = 'lantern_companion_conversation_id';
 
+// Hand-rolled persistence for the two things that must survive a reload: which
+// note is stapled to the thread, and which server thread is open. Every read
+// re-validates the parsed shape and every write is wrapped — a quota error or
+// private mode degrades to "this page load only" rather than throwing inside a
+// store action.
 function readPersistedNoteContext(): CompanionNoteContext | null {
   try {
     const raw = localStorage.getItem(NOTE_CONTEXT_STORAGE_KEY);
@@ -183,6 +225,11 @@ interface CompanionState {
   clearError: () => void;
 }
 
+// Build the context object that rides with ONE send. Called by both send paths
+// so a turn can never carry a different thread/lesson/attachment shape
+// depending on whether streaming was used. Everything it reads comes from
+// `get()` at call time rather than from a closure, so a thread switch between
+// keystroke and send cannot send the old thread's id.
 function mergeThreadContext(
   get: () => CompanionState,
   context?: CompanionUserContext
@@ -261,6 +308,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
   isUploadingImage: false,
   imageError: null,
 
+  // Image attach. The upload IS the read, and the read is what costs credits —
+  // so this is the charging moment, not `sendMessage`. A failure leaves
+  // `pendingImages` untouched and surfaces `imageError` next to the composer;
+  // it never throws, so the composer stays usable.
   attachImage: async (input) => {
     set({ isUploadingImage: true, imageError: null });
     try {
@@ -300,6 +351,11 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         : { isOpen: true }
     ),
   clearError: () => set({ error: null }),
+  // Delete one thread from Past chats. The row is dropped from `conversations`
+  // only after the server call succeeds; when the deleted thread was the open
+  // one, the panel is put into the same state as "New chat" (empty messages,
+  // no conversation id, pendingNewConversation) rather than left showing a
+  // thread that no longer exists.
   deleteConversation: async (conversationId: string) => {
     try {
       await clearCompanionHistory({ conversationId });
@@ -324,6 +380,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     set({ isOpen: true, pendingMessage: msg, pendingMessageContext: context ?? null }),
   setPendingAssistantMessage: (msg) => set({ pendingAssistantMessage: msg }),
   openWithAssistantMessage: (msg) => set({ isOpen: true, pendingAssistantMessage: msg }),
+  // A locally-authored assistant bubble (a walk-through's narration, a canned
+  // explainer). Its id is `assistant-local-…`, it is never sent to the model
+  // and never written server-side, so the next `loadHistory` drops it.
   injectAssistantMessage: (content: string) => {
     const trimmed = content.trim();
     if (!trimmed) return;
@@ -362,6 +421,11 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     });
   },
 
+  // Staple a note to the companion (or detach it). Changing the attachment
+  // starts a DIFFERENT thread: the conversation id is dropped and history is
+  // reloaded for the new note scope. The early return on an unchanged id+title
+  // is what stops a mirrored effect from wiping a live conversation on every
+  // render.
   setActiveNoteContext: async (ctx) => {
     const prev = get().activeNoteContext;
     const nextId = ctx?.id ?? null;
@@ -382,6 +446,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     await get().loadHistory();
   },
 
+  // Past-chats list. Failures are swallowed on purpose — this is called
+  // fire-and-forget after every send, and a failed refresh of the sidebar must
+  // not put an error banner over a conversation that worked.
   loadConversations: async () => {
     set({ isLoadingConversations: true });
     try {
@@ -392,6 +459,13 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }
   },
 
+  // Switch to a thread from Past chats. The attachment is made to agree with
+  // the thread being opened — restored for a note-linked chat, cleared for a
+  // general one — so the next send lands on the thread the student is looking
+  // at. The guided lesson is always dropped: it belonged to the thread left
+  // behind.
+  // Note the restored attachment is written WITHOUT a scopeId, which
+  // `resetForScope` then adopts into whichever room sees it first.
   openConversation: async (conversationId) => {
     const target = get().conversations.find((c) => c.id === conversationId);
     persistConversationId(conversationId);
@@ -456,6 +530,15 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }));
   },
 
+  // Fetch the open thread's messages — by conversation id when there is one,
+  // else by note scope. A brand-new chat short-circuits to an empty thread
+  // without a round trip.
+  //
+  // Both the success and the failure path re-check that the thread/attachment
+  // is STILL the one that was requested before writing anything: two rapid
+  // switches would otherwise let the slower response paint the wrong thread's
+  // messages. Locally-set 👍/👎 is carried across the reload for ids the server
+  // has no feedback for, so a refresh does not blank the student's rating.
   loadHistory: async () => {
     set({ isLoadingHistory: true, error: null });
     const noteContextId = get().activeNoteContext?.id ?? null;
@@ -513,6 +596,17 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }
   },
 
+  // Non-streaming send (the fallback path; the panel normally uses
+  // `sendMessageStreaming`). One optimistic user bubble goes up immediately and
+  // the assistant bubble is appended whole when the reply lands.
+  //
+  // FIXED (F9): `companionSendMessage` used to reject with a plain Error
+  // carrying no `phase`/`reachedServer`, so the catch below withdrew the user
+  // bubble on ANY failure — including a server error raised after the credit
+  // was charged. That is the exact "the send vanished but the credits went
+  // down" shape `sendMessageStreaming` was fixed for. `companionRequest`
+  // (services/ai.ts) now throws the same `CompanionStreamError` the stream
+  // does, and the catch below runs the same two branches.
   sendMessage: async (text: string, context?: CompanionUserContext) => {
     const oneShot = get().pendingMessageContext;
     if (oneShot) set({ pendingMessageContext: null });
@@ -560,14 +654,45 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
       }));
       void get().loadConversations();
     } catch (err: any) {
+      // Same charge-aware split as `sendMessageStreaming` below, and for the
+      // same reason: `reachedServer` is false ONLY when the request never left
+      // the client, and it is the only thing allowed to decide whether the
+      // student's question bubble is withdrawn. A failure the server answered
+      // may already have cost a credit, so the question stays on screen with
+      // the reason attached — withdrawing it reads as "nothing happened" and
+      // invites a second, second-charged send.
+      const sentence = err?.message || 'Failed to reach Lantern. Please try again.';
+      const reachedServer = (err as { reachedServer?: boolean })?.reachedServer === true;
+      if (!reachedServer) {
+        set(s => ({
+          messages: s.messages.filter(m => m.id !== tempUserMsg.id),
+          isLoading: false,
+          error: sentence,
+          failedMessage: text,
+        }));
+        return;
+      }
       set(s => ({
-        messages: s.messages.filter(m => m.id !== tempUserMsg.id),
+        messages: [
+          ...s.messages,
+          {
+            id: `tmp-ai-${Date.now()}`,
+            role: 'assistant',
+            content: sentence,
+            created_at: new Date().toISOString(),
+          },
+        ],
         isLoading: false,
-        error: err.message || 'Failed to reach Lantern. Please try again.',
+        error: sentence,
+        failedMessage: null,
       }));
     }
   },
 
+  // Streaming send. Two optimistic bubbles go up at once — the student's text
+  // and an EMPTY assistant bubble whose id (`tempAiId`) is the handle every
+  // later callback uses. The three callbacks below are, in order: token
+  // accumulation, completion, and the charge-aware failure path.
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
     const oneShot = get().pendingMessageContext;
     if (oneShot) set({ pendingMessageContext: null });
@@ -597,6 +722,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     await companionSendMessageStream(
       text,
       mergedContext,
+      // onToken: append to the placeholder bubble. Accumulation happens in
+      // store state, not in a local string, so the partial answer survives
+      // anything that re-reads `messages` mid-stream — and so the `stream`
+      // failure branch below can keep whatever arrived.
       (token) => {
         set(s => ({
           messages: s.messages.map(m =>
@@ -604,6 +733,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
           ),
         }));
       },
+      // onDone: swap the two temporary ids for the server's persisted ones (so
+      // feedback and reactions address real rows), attach actions/citations,
+      // adopt the conversation id for a thread that was new, and drop the
+      // attachment — one question, one photo set.
       ({ actions, citations, messageId, userMessageId, conversationId, guidedStep }) => {
         if (conversationId) {
           persistConversationId(conversationId);
@@ -639,6 +772,18 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
         }));
         void get().loadConversations();
       },
+      // onError: the charge-aware failure path. `services/ai.ts` classifies
+      // every failure into `CompanionStreamError.phase`:
+      //   'unsent'   — the request never left the client (no auth, connection
+      //                refused). NOTHING was charged.
+      //   'rejected' — the server answered non-2xx. It got far enough to
+      //                decide, so the exchange is treated as real.
+      //   'stream'   — the stream was accepted and then died (or carried an
+      //                `error` event). A credit is very likely already spent.
+      // `reachedServer` is the derived boolean (`phase !== 'unsent'`), and it is
+      // the ONLY thing that may decide whether the bubbles are withdrawn. Do not
+      // "simplify" the two branches below back into a single filter — that is
+      // precisely the bug they exist to fix.
       (err) => {
         const sentence = err?.message || 'Failed to reach Lantern. Please try again.';
         // `reachedServer` is false only when the request never left the client.
@@ -693,6 +838,10 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     );
   },
 
+  // Wipe the OPEN thread server-side (by conversation id, else by note scope)
+  // and leave the panel in the "New chat" state. The attachment is deliberately
+  // kept: clearing a note-linked chat's history should not also detach the note
+  // the student is reading.
   clearHistory: async () => {
     const conversationId = get().activeConversationId;
     const noteContextId = get().activeNoteContext?.id ?? null;

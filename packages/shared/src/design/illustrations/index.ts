@@ -2,6 +2,22 @@
 // Lantern Study - Spot illustrations (Wave V, spec v3 §5.6 "Imagery rule")
 // ===========================================
 //
+// CONSUMERS: web renders these as inline `<svg>`; mobile renders the same path
+// data through `react-native-svg`. Pure data on purpose — no React, no
+// platform import — so the two cannot drift into different drawings. Not used
+// by the api. Guarded by `./illustrations.test.ts`, which enforces the
+// monoline/single-fill/path-budget rules below.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
+//
 // Ten inline-SVG spot illustrations, and only ten. Pure data: no React, no
 // platform import, so mobile (`react-native-svg`) and web (inline `<svg>`)
 // render the *same* asset rather than two drawings that drift apart.
@@ -215,6 +231,13 @@ export const ILLUSTRATIONS: Record<IllustrationName, Illustration> = {
  * The enumeration itself, in map order — for tests, for a gallery screen, and
  * so a caller can iterate without re-listing the names by hand.
  */
+// ---------------------------------------------------------------------------
+// Name guards and budgets
+// ---------------------------------------------------------------------------
+// ILLUSTRATION_MAX_PATH_BYTES is a real ceiling, not advice: these ship inside
+// the JS bundle on both platforms, so a lavish drawing costs every student
+// load time. The test asserts it.
+
 export const ILLUSTRATION_NAMES = Object.keys(ILLUSTRATIONS) as IllustrationName[];
 
 /** Narrow an untrusted string (a config value, a stored key) to a mapped name. */
@@ -265,6 +288,12 @@ export function illustrationPathBytes(name: IllustrationName): number {
  * platforms must frame the ten drawings identically: web's inline `<svg>` and
  * mobile's `react-native-svg` read the same crop from here.
  */
+// ---------------------------------------------------------------------------
+// Content boxes and cropping
+// ---------------------------------------------------------------------------
+// Each asset's real ink bounds inside the 96-square, so a caller can crop to
+// the drawing instead of to the padding when space is tight.
+
 export interface IllustrationContentBox {
   /** Left edge, in viewBox units. */
   x: number;

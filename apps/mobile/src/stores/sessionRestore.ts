@@ -77,6 +77,12 @@ const SIGNED_OUT: SessionRestorePlan = {
   notice: 'none',
 };
 
+/**
+ * Decide the whole boot outcome from two facts: what the refresh attempt
+ * concluded, and whether a session was on disk. Total over those four x two
+ * cases and free of side effects, so the store's job is only to carry the
+ * plan out.
+ */
 export function planSessionRestore({
   networkResult,
   storedSession,

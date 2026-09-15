@@ -1,3 +1,19 @@
+/**
+ * `ShopBrowse` route: the three-level department taxonomy a buyer drills
+ * through, with "See everything in …" at every level.
+ *
+ * Exports: ShopBrowseScreen.
+ * Touches: the taxonomy helpers in @lantern/shared/marketplace
+ * (MARKETPLACE_DEPARTMENTS, getTaxonomyNode/Children/Path, isTaxonomyLeaf,
+ * descendantLeaves); useMarketplaceStore.setTaxonomyNode, which is what
+ * actually filters the results on `MarketplaceHome`.
+ *
+ * Gotchas: shopping a node sets the store's taxonomy node and navigates away —
+ * the selection lives in the store, not in route params, so going Back does
+ * not undo it. OTHER_TAXONOMY_NODE_ID is a seller escape hatch and is filtered
+ * out of every browse level. A non-leaf node is shoppable directly, so a buyer
+ * never has to guess which subcategory a seller filed under.
+ */
 import React, { useMemo } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

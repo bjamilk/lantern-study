@@ -2,6 +2,25 @@
 // Lantern Study Mobile - Game Screen
 // 1v1 Quiz Battle Mode
 // ===========================================
+/**
+ * The `GameScreen` route (a fullScreenModal): playing one duel — or a solo
+ * practice round — question by question against an opponent's live progress.
+ *
+ * Main exports: the default `GameScreen`.
+ * Touches: gameStore (`activeSession`, `updateAnswer`, `quitGame`) and authStore.
+ * Native: RN Animated for the progress bar; diagram images are re-signed through
+ * `useResolvedStorageUrl`.
+ *
+ * Gotchas: the question shape here is LOCAL to the games lane — `questionType`
+ * and `questionStem`, with an options array of `{id, text}` — and is not the
+ * test store's `type`/`question` shape; mixing the two renders a question with
+ * no options. An answer is final: `submitAnswer` refuses once
+ * `session.userAnswers` has the question, so single-choice types submit on tap
+ * while multi/fill/matching/diagram submit through the explicit button. The
+ * store's session wins over the route copy, and the screen `replace`s itself
+ * with GameResult as soon as the session completes or starts awaiting the
+ * opponent. Quitting a real duel concedes it — the guard says so.
+ */
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {

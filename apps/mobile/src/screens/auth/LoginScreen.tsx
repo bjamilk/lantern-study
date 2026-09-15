@@ -1,3 +1,13 @@
+/**
+ * Auth stack -> Login. Email/password sign-in, plus links to sign-up, password
+ * reset and the social providers.
+ *
+ * Exports: LoginScreen (named).
+ * Touches: authStore.signIn (which owns isLoading/error and the session);
+ * SocialAuthButtons; useCookieNoticeBottomInset.
+ * Note: a sign-in rejected because the address is unconfirmed is routed to
+ * VerifyEmail instead of being surfaced as an error (isEmailNotConfirmedError).
+ */
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState } from 'react';
 import {

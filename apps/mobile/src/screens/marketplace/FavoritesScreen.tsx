@@ -1,3 +1,18 @@
+/**
+ * `Favorites` route ("Saved Items"): the buyer's saved listings, each with a
+ * price-drop badge and an add-to-cart button.
+ *
+ * Exports: FavoritesScreen.
+ * Touches: useMarketplaceStore (favoriteListings, favorites, listings,
+ * fetchServerFavorites, toggleFavorite, addToCart); useAuthStore for the
+ * viewer id; getFavoritePriceSnapshots for the AsyncStorage price baseline.
+ *
+ * Gotchas: the list falls back to filtering the cached `listings` by the
+ * `favorites` id set whenever the server list is empty, so a failed fetch can
+ * render a stale subset rather than an error. Add-to-cart is disabled with a
+ * visible reason for your own listing, a non-active listing, or zero stock.
+ * The price-drop baseline is device-local, so it is absent on a new device.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

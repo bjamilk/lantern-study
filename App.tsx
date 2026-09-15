@@ -1,3 +1,39 @@
+/**
+ * The web app's root component: the auth gate, the route/AppMode screen switch,
+ * and the single host for every shared modal, overlay and app-wide effect.
+ *
+ * Exports: `App` — mounted by index.tsx on the catch-all '/*' route. The legal
+ *  pages are the only paths that never reach it.
+ * Touches: most zustand stores (auth, ui, group, test, flashcard, notes,
+ *  community, budget, companion, studySet, studyGoals, academic, library,
+ *  toast, confirm, featureTip, lectureRecording, accountSuspension); the
+ *  handler hooks in hooks/ (useAuthHandlers, useGroupHandlers, useTestHandlers,
+ *  useGameHandlers, useFlashcardHandlers, useBudgetHandlers, useOfflineHandlers,
+ *  useNoteHandlers, useAIHandlers, useAppEffects); services/supabase
+ *  (fetchGroups, fetchNotifications, fetchTestSessionById, fetchUserProfile,
+ *  fetchAccountLifecycle, fetchMyInquiries,
+ *  joinDiscoverableGroup, openCommunityLounge, sendMessage, apiLogoutSession),
+ *  services/sentry, services/jobArtifacts, services/ai, services/challenges;
+ *  localStorage (ONBOARDING_COMPLETE_STORAGE_KEY, 'lantern_streak_target');
+ *  window.location, window.history and document.title.
+ * Gotchas:
+ *  - Three early returns sit between the hook block and the render:
+ *    `isAuthLoading`, `isPasswordRecovery`, and `!currentUser`. Every hook must
+ *    stay ABOVE them or the hook order changes across renders.
+ *  - The `!currentUser` branch ends in <Navigate to="/login?next=…">. Any boot
+ *    path that finishes without setting `currentUser` therefore presents as an
+ *    unexplained bounce to /login rather than as an auth error.
+ *  - For communities, the Shop sub-states, study sets, `/me` and the two Tests
+ *    routes the URL is the authority; several effects re-derive state from
+ *    `location.pathname` on purpose and must not be collapsed into local flags.
+ *  - Effects that react to a user switch read `useXStore.getState()` inside the
+ *    effect body rather than closing over a store array: a captured pre-purge
+ *    array resurrects the previous account's data.
+ *  - `useFontMode()` changes a root class that remounts the subtree below it, so
+ *    state held only inside a child screen does not survive a font change.
+ *  - Screens are lazy (`lazyWithRetry`); `<Suspense>` boundaries are placed so a
+ *    chunk load never remounts SettingsModal (see the note at its render site).
+ */
 import React, { useCallback, useEffect, useState, Suspense } from 'react';
 import { useLocation, Navigate } from 'react-router-dom';
 import { lazyWithRetry } from './utils/lazyWithRetry';
@@ -40,7 +76,7 @@ import { useBudgetStore } from './stores/budgetStore';
 import { initialUserStats } from './utils/helpers';
 import { getBreadcrumbs } from './utils/breadcrumbs';
 import { getTotalActiveUnreadChatCount } from './utils/chatUnread';
-import { fetchTestSessionById, fetchNotifications, fetchDecks, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, fetchMarketplaceAccess, resetMarketplaceAccessCache, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
+import { fetchTestSessionById, fetchNotifications, fetchDecks, fetchAllFlashcards, bootstrapAuthFromStorage, fetchUserProfile, joinDiscoverableGroup, openCommunityLounge, sendMessage as sendGroupMessage } from './services/supabase';
 import { saveGeneratedDeck } from './services/jobArtifacts';
 import { useCommunityStore } from './stores/communityStore';
 import { COMMUNITY_COPY, isHiddenFromChatInbox, studyGroupAnnouncement } from '@lantern/shared/network';
@@ -48,7 +84,6 @@ import { canOpenCommunities } from './components/community/communityAccess';
 import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
 import type { CommunityNavigate } from './components/community/communityNavigation';
-import MarketplacePrivatePilot, { GOODS_MARKETPLACE_MODES } from './components/marketplace/MarketplacePrivatePilot';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
 import { purchaseStreakFreeze } from './services/gamificationStreak';
@@ -224,49 +259,10 @@ export const App: React.FC = () => {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- one-shot at mount
     }, []);
-    const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, isPasswordRecovery, setPasswordRecovery } = useAuthStore();
+    const { currentUser, setCurrentUser, setAuthLoading, isAuthLoading, isPasswordRecovery, setPasswordRecovery, sessionRestoreFailed } = useAuthStore();
     const isPlatformAdmin = usePlatformAdmin();
-    // Marketplace private pilot: ask the API whether this viewer (guest or
-    // signed-in) may see the goods marketplace. The server enforces the gate
-    // with 403s either way — this only picks which UI to render.
-    const [marketplaceAccess, setMarketplaceAccess] = useState<boolean | null>(null);
-    // Separate from the verdict: the probe could not answer. Collapsing the two
-    // meant any outage — cold API, dropped wifi, token not yet restored — told
-    // an allowlisted account it was not on the pilot, and the 5-minute cache
-    // kept saying it.
-    const [marketplaceAccessUnavailable, setMarketplaceAccessUnavailable] = useState(false);
-    const [marketplaceProbeAttempt, setMarketplaceProbeAttempt] = useState(0);
-    const retryMarketplaceAccess = useCallback(() => {
-        resetMarketplaceAccessCache();
-        setMarketplaceProbeAttempt(n => n + 1);
-    }, []);
-    useEffect(() => {
-        let cancelled = false;
-        setMarketplaceAccess(null);
-        setMarketplaceAccessUnavailable(false);
-        const probe = (attemptsLeft: number): void => {
-            fetchMarketplaceAccess(currentUser?.id ?? 'anon')
-                .then(enabled => {
-                    if (!cancelled) {
-                        setMarketplaceAccess(enabled);
-                        setMarketplaceAccessUnavailable(false);
-                    }
-                })
-                .catch(() => {
-                    if (cancelled) return;
-                    if (attemptsLeft > 0) {
-                        window.setTimeout(() => { if (!cancelled) probe(attemptsLeft - 1); }, 1200);
-                        return;
-                    }
-                    // Unknown, not denied. The API is the enforcement point and
-                    // 403s regardless, so the UI says what actually happened.
-                    setMarketplaceAccess(null);
-                    setMarketplaceAccessUnavailable(true);
-                });
-        };
-        probe(1);
-        return () => { cancelled = true; };
-    }, [currentUser?.id, marketplaceProbeAttempt]);
+    // ---- Store subscriptions. These are the re-render triggers for the whole
+    // screen switch below; anything pulled in here re-renders every mode. ----
     const { groups, messages, dmThreads, directMessages, userVotes, notifications, setNotifications } = useGroupStore();
         const { testResults, offlineBundles, pendingSyncResults, userQuestionStats, studyActivityDays,
             activeTestSession, activeStudySession, activeGameSession, setActiveGameSession, pausedSessions } = useTestStore();
@@ -289,6 +285,10 @@ export const App: React.FC = () => {
     } | null>(null);
     const [reactivatingAccount, setReactivatingAccount] = useState(false);
 
+    // Mirrors the signed-in account into Sentry. Mount-only (empty deps) on
+    // purpose: it subscribes to the auth store directly and pushes only when the
+    // *id* changes, so a profile edit or a settings write does not churn Sentry,
+    // and the subscription survives every unrelated re-render of this component.
     useEffect(() => {
         const sync = (user: User | null) => {
             setSentryUser(user ? { id: user.id } : null);
@@ -309,12 +309,18 @@ export const App: React.FC = () => {
     const markChecklist = useFeatureTipStore((s) => s.markChecklist);
 
     // ensure offline deck IDs and any cached decks/flashcards are loaded on web
+    // Mount-only: this is a localStorage read, so it must not depend on the user
+    // (the store's own owner check is what scopes the cache to an account).
     useEffect(() => {
         const store = useFlashcardStore.getState();
         store.loadOfflineFromStorage();
         store.loadFromStorage();
     }, []);
 
+    // The UI store holds everything that is "where the user currently is" but has
+    // no URL of its own: the AppMode, the modal map, and the per-mode selection
+    // (selected deck/chat/listing/order/community, the active session objects).
+    // Route hydration (useRouteSync) writes into it; the switch below reads it.
     const {
         appMode, setAppMode,
         isSidebarExpanded, toggleSidebar,
@@ -380,8 +386,14 @@ export const App: React.FC = () => {
             announceInGroupId?: string;
         } | null
     >(null);
+    // Re-entrancy guard for the community actions that hit the server and then
+    // navigate (join channel, open/mint lounge, open study group). A ref, not
+    // state: it must block the second click within the same tick, before any
+    // re-render, or a double tap mints or joins twice.
     const communityActionBusy = React.useRef(false);
 
+    // Feature-tip checklist ticks. Driven by `isCompanionOpen` — opening the
+    // companion once is the whole condition; `markChecklist` is idempotent.
     useEffect(() => {
         if (isCompanionOpen) markChecklist('tryCompanion');
     }, [isCompanionOpen, markChecklist]);
@@ -419,6 +431,8 @@ export const App: React.FC = () => {
     // The membership list carries each community's lounge pointer, so the chat
     // list can tell a lounge from a board on a cold page load. Until it lands,
     // a community's groups stay chats — never the reverse (§0a decision 1).
+    // Driven by `currentUser?.id` alone: memberships are per account, and the
+    // store dedupes, so a re-run on any other dep would be a wasted round trip.
     React.useEffect(() => {
         if (!currentUser?.id) return;
         void useCommunityStore.getState().loadMine().catch(() => {});
@@ -434,24 +448,62 @@ export const App: React.FC = () => {
         appMode === AppMode.CHAT &&
         selectedChat?.chatType === 'group' &&
         isBoardGroup(selectedChat as unknown as Group, knownLounges);
+    /** Chat id whose community membership has already been re-requested once (F9). */
+    const boardSlugResolveRef = React.useRef<string | null>(null);
     // Closing the Chat-tab bypass (spec §5.2 / §4.5): a board reached by a
     // direct route replaces itself with the community page, which renders the
     // board. It is not refused and it never falls back to a chat.
+    // Driven by `selectedChatIsBoard` + `selectedChat`: a board can only become
+    // selected through the chats list or a direct route, and both change those.
+    // FIXED (F9): when the slug could not be resolved this effect only
+    // re-requested memberships and returned, while AppMode.CHAT renders the
+    // loading fallback for a board — so a membership that never loaded (offline,
+    // or the student had been removed from the community) left a PERMANENT
+    // spinner with no way back. It now asks for memberships exactly once per
+    // board, and when the reload finishes with the slug still missing it says so
+    // and returns to the chats list. The give-up runs off the reload's own
+    // settle, not off a `myCommunities` change, because the case that produced
+    // the spinner is the one where that array never changes at all.
     useEffect(() => {
         if (!selectedChatIsBoard || !selectedChat) return;
+        const chatId = selectedChat.id;
         const communityId = (selectedChat as unknown as Group).communityId;
         const slug = myCommunities.find((c) => c.id === communityId)?.slug;
         if (!slug) {
-            void useCommunityStore.getState().loadMine().catch(() => {});
-            return;
+            if (boardSlugResolveRef.current === chatId) return;
+            boardSlugResolveRef.current = chatId;
+            let cancelled = false;
+            void useCommunityStore
+                .getState()
+                .loadMine()
+                .catch(() => {})
+                .finally(() => {
+                    if (cancelled) return;
+                    const resolved = useCommunityStore
+                        .getState()
+                        .myCommunities.find((c) => c.id === communityId)?.slug;
+                    if (resolved) return;
+                    // Still nothing: this board is not reachable for this user.
+                    boardSlugResolveRef.current = null;
+                    setSelectedChat(null);
+                    navigateTo(AppMode.CHAT, {}, { replace: true });
+                    showToast(
+                        'That board could not be opened. You may have left the community, or you are offline.',
+                        'error'
+                    );
+                });
+            return () => {
+                cancelled = true;
+            };
         }
+        boardSlugResolveRef.current = null;
         const postId = parseAppRoute(window.location.pathname).params.postId;
         navigateTo(AppMode.COMMUNITY_DETAIL, {
             slug,
             groupId: selectedChat.id,
             ...(postId ? { postId } : {}),
         });
-    }, [selectedChatIsBoard, selectedChat, myCommunities, navigateTo]);
+    }, [selectedChatIsBoard, selectedChat, myCommunities, navigateTo, setSelectedChat, showToast]);
     // A community channel opened from the plain chats list shows `in <Community>`
     // in its header; memberships resolve the id to a name + slug.
     const selectedChatCommunityId =
@@ -461,6 +513,8 @@ export const App: React.FC = () => {
         void useCommunityStore.getState().loadMine().catch(() => {});
     }, [selectedChatCommunityId, currentUser?.id]);
 
+    // Marks the three "you have been here" checklist items. Driven by `appMode`:
+    // arriving at any of the listed modes is the whole condition.
     useEffect(() => {
         if (
             appMode === AppMode.LIBRARY ||
@@ -504,6 +558,10 @@ export const App: React.FC = () => {
         return () => { document.title = previousTitle; };
     }, [appMode, libraryTab]);
 
+    // ---- Handler hooks. Each owns one feature's mutations and the store writes
+    // they imply; App only wires them to screens and modals. Ordering between
+    // them matters where one feeds the next: `useGroupHandlers` produces
+    // `addNotification`, which the test, game and offline handlers take. ----
     const {
         users, dataLoaded, setDataLoaded, bootstrapLoad, setBootstrapLoad,
         toggleTheme, handleLogout,
@@ -515,6 +573,14 @@ export const App: React.FC = () => {
         handleSavePreset, handleDeletePreset
     } = useAuthHandlers();
 
+    // Installs the ONE global "session expired" reaction, called from the service
+    // layer when the BFF answers a genuine 401/403 (a transient failure must not
+    // reach here — see the fetch interceptor in services/supabase.ts). It tears
+    // down the whole signed-in surface — user, auth-loading flag, the
+    // data-loaded and bootstrap-load gates — before sending the user to
+    // /welcome, so the next sign-in re-runs bootstrap instead of reusing state
+    // belonging to the expired session. Re-registers whenever one of the setters
+    // it closes over changes identity.
     useEffect(() => {
         setSessionExpiredHandler(async (message) => {
             showToast(message || 'Your session has expired. Please sign in again.', 'error');
@@ -536,6 +602,9 @@ export const App: React.FC = () => {
         if (!currentUser?.id) useAccountSuspensionStore.getState().clear();
     }, [currentUser?.id]);
 
+    // "Reactivate" on the deactivated-account banner. Re-reads the lifecycle from
+    // the server afterwards rather than assuming success locally, so the banner
+    // disappears only once the API agrees the account is active again.
     const handleReactivateFromBanner = async () => {
         setReactivatingAccount(true);
         try {
@@ -604,6 +673,9 @@ export const App: React.FC = () => {
         handleLoadMoreFlashcards
     } = useFlashcardHandlers();
 
+    // ---- Session resume / abandon. A paused duel is not the same thing as a
+    // paused test: ending one forfeits it to the opponent, so the shared
+    // "cancel session" control routes through a confirm for games only. ----
     const [showImportAndStudy, setShowImportAndStudy] = React.useState(false);
     const [endGameConfirmOpen, setEndGameConfirmOpen] = React.useState(false);
     const [endGameLoading, setEndGameLoading] = React.useState(false);
@@ -643,6 +715,9 @@ export const App: React.FC = () => {
         ? 'Are you sure you want to end this practice session? Your progress will not be saved.'
         : 'Are you sure you want to quit this duel? Your opponent will win by default and your progress will be lost.';
 
+    // ---- Path-derived state. Everything below reads `location.pathname` on
+    // every render instead of mirroring it into state, so a reload, a deep link
+    // and a Back step all resolve to the same place. ----
     const location = useLocation();
     // `/discover/c/:slug/ch/:groupId` — the community owns its chat, so the
     // channel id is read from the URL, never from a switch to AppMode.CHAT.
@@ -659,6 +734,9 @@ export const App: React.FC = () => {
      */
     const shopRoute = React.useMemo(() => parseShopRoute(location.pathname), [location.pathname]);
     const isSellRoute = shopRoute.view === 'sell';
+    // Remembers the path the reader came FROM. The write lives in the effect's
+    // cleanup, which runs with the OLD `location.pathname` still closed over —
+    // that is what makes this the previous path rather than the current one.
     const previousPathRef = React.useRef<string | null>(null);
     React.useEffect(() => () => { previousPathRef.current = location.pathname; }, [location.pathname]);
     /**
@@ -687,6 +765,9 @@ export const App: React.FC = () => {
             setActiveCommunity({ id: '', slug: communityRouteSlug, name: '', loungeGroupId: null });
         }
     }, [communityRouteSlug, setActiveCommunity]);
+    // Decided once, in a lazy initialiser, so the onboarding overlay cannot flash
+    // on a returning student between mount and the first localStorage read. A
+    // lecturer arriving through the teach signup is marked complete and skipped.
     const [showOnboarding, setShowOnboarding] = React.useState(() => {
         if (typeof window === 'undefined') return false;
         if (isTeachAuthRequest(window.location.pathname, window.location.search)) {
@@ -701,6 +782,10 @@ export const App: React.FC = () => {
         const first = activeUserCourses(myAcademicCourses)[0];
         return first ? { id: first.course.id, code: first.course.code, title: first.course.title } : null;
     }, [myAcademicCourses]);
+    // Loads enrolments only while onboarding is actually on screen: the starter
+    // deck is filed under the first one, and nothing else here needs them.
+    // Driven by `showOnboarding` + `currentUser?.id`; the store is read through
+    // getState() so the effect does not re-run on unrelated academic writes.
     React.useEffect(() => {
         if (showOnboarding && currentUser?.id) void useAcademicStore.getState().loadMyCourses();
     }, [showOnboarding, currentUser?.id]);
@@ -740,6 +825,10 @@ export const App: React.FC = () => {
 
     const { handleNavigateToBudgetTracker, handleSetBudget, handleAddTransaction, handleDeleteTransaction, materializeRecurring } = useBudgetHandlers();
     const { isDownloadingBundle, handleDownloadForOffline, handleStartOfflineSession, handleDeleteBundle, handleSyncResults, handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle } = useOfflineHandlers({ addNotification });
+    // What tapping a challenge push/notification does, by notification type:
+    // a result opens the duel screen directly, an acceptance asks first (so the
+    // student is not dropped into a timed duel), and anything else — including a
+    // failed challenge fetch — falls back to the challenges inbox.
     const handleChallengeNotification = React.useCallback(async (type: string, challengeId: string) => {
         if (type === 'challenge_result') {
             void handleStartChallengePlay(challengeId);
@@ -763,6 +852,11 @@ export const App: React.FC = () => {
         openModal('challenges');
     }, [handleStartChallengePlay, openModal]);
 
+    // The boot/bootstrap hook: it owns the data load, the realtime subscriptions
+    // and the gamification fetches, and reports `authTokenReady` — the signal
+    // that an auth header can actually be produced. The three effects below gate
+    // on it, because firing on `currentUser` alone sends requests before the
+    // cookie session has been restored.
     const {
         refreshDashboardGamification,
         dailyQuests,
@@ -778,6 +872,9 @@ export const App: React.FC = () => {
         onChallengeNotification: handleChallengeNotification,
     });
 
+    // Account lifecycle (active vs deactivated-with-grace) for the paused banner.
+    // Re-runs on `currentUser?.id` / `authTokenReady`; signing out clears it
+    // locally so the banner cannot outlive the account it describes.
     useEffect(() => {
         if (!currentUser?.id || !authTokenReady) {
             setAccountLifecycle(null);
@@ -786,11 +883,15 @@ export const App: React.FC = () => {
         void fetchAccountLifecycle(currentUser.id).then(setAccountLifecycle);
     }, [currentUser?.id, authTokenReady]);
 
+    // Paused sessions live server-side so they survive a device change; pulled
+    // once per signed-in boot, keyed on `currentUser?.id` + `authTokenReady`.
     React.useEffect(() => {
         if (!currentUser?.id || !authTokenReady) return;
         void refreshPausedSessions();
     }, [currentUser?.id, authTokenReady, refreshPausedSessions]);
 
+    // Streak / quests / freezes are only rendered on Home, so `appMode` gates the
+    // fetch: every return to the dashboard refreshes, no other mode pays for it.
     React.useEffect(() => {
         if (!currentUser?.id || !authTokenReady || appMode !== AppMode.DASHBOARD) return;
         void refreshDashboardGamification();
@@ -818,7 +919,15 @@ export const App: React.FC = () => {
         navigateToPath('/welcome', { replace: true });
     }, [handleLogout, navigateToPath]);
 
+    // `useFontMode` applies the font-family setting to the document root. A font
+    // change remounts the subtree below this component, so anything a screen
+    // holds in local state (scroll position, an open picker, an unsaved draft
+    // that has not reached a store) is lost across it — state that must survive
+    // belongs in a store, not in the screen.
     useFontMode();
+    // Consume a pending /invite or /notes/share link once an account exists.
+    // Both key on `currentUser?.id`: a link followed while signed out is stashed
+    // and replayed here after sign-in.
     useInviteLink(currentUser?.id);
     useNoteShareLink(currentUser?.id);
     const { isAILoading, aiError, setAiError, handleAIGenerateQuestions, handleAIExplainAnswer, handleAIStudyRecommendations, handleAIAskTutor, handleAIEnhanceFlashcard } = useAIHandlers();
@@ -833,6 +942,11 @@ export const App: React.FC = () => {
     );
 
     // Build context object for the AI companion
+    // Everything the companion is told about the student, rebuilt whenever any
+    // of it changes. `currentScreen`, `courseId`, `noteId` and `noteContext` are
+    // what make its answers about the page in front of the student, so the memo
+    // deliberately depends on `appMode`, `selectedNote` and `location.pathname`.
+    // `noteContext` is capped at 6000 chars — the note body is untrusted length.
     const companionContext = React.useMemo(() => {
         const weakTopics = testResults.flatMap(r => r.tagBreakdown ? Object.entries(r.tagBreakdown)
             .filter(([, s]: [string, any]) => s.total > 0 && s.correct / s.total < 0.6)
@@ -902,6 +1016,25 @@ export const App: React.FC = () => {
         };
     }, [testResults, groups, dueCardsCount, currentUser, transactions, budget, appMode, selectedChat, selectedDeck, activeTestSession, activeStudySession, selectedNote, studyGoal, location.pathname]);
 
+    /**
+     * Group the companion asked to build a test in, while its selection is
+     * still landing (F9). The test-config modal reads the SELECTED chat, so it
+     * must not mount before the selection it is meant to describe.
+     */
+    const pendingTestConfigGroupRef = React.useRef<string | null>(null);
+    React.useEffect(() => {
+        const pending = pendingTestConfigGroupRef.current;
+        if (!pending) return;
+        if (selectedChat?.chatType !== 'group' || selectedChat.id !== pending) return;
+        pendingTestConfigGroupRef.current = null;
+        setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
+        openModal('testConfig');
+    }, [selectedChat, setActiveTestConfigMode, openModal, getUserSettings]);
+
+    // The companion's tool calls, executed in App because they are navigations
+    // and modal opens the panel itself cannot perform. Anything the model can
+    // ask for must appear here; an unhandled `action.type` falls out of the
+    // switch silently and the student sees nothing happen.
     const handleCompanionAction = React.useCallback((action: CompanionAction) => {
         switch (action.type) {
             case 'navigate_to_flashcards':
@@ -913,11 +1046,15 @@ export const App: React.FC = () => {
                     setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
                     openModal('testConfig');
                 } else if (groups.length > 0) {
+                    // FIXED (F9): the modal used to be opened on a fixed 50 ms
+                    // timer after selecting the first group. On a slow render it
+                    // mounted while `selectedChat` was still the previous chat
+                    // (or none), so it built the test against the wrong group or
+                    // rendered nothing. The group is now recorded as PENDING and
+                    // the effect above opens the modal when that selection has
+                    // actually landed — no timer, and no wrong-group window.
+                    pendingTestConfigGroupRef.current = groups[0].id;
                     handleSelectChat({ ...groups[0], chatType: 'group' });
-                    setTimeout(() => {
-                        setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
-                        openModal('testConfig');
-                    }, 50);
                 }
                 break;
             case 'open_create_flashcard':
@@ -941,6 +1078,10 @@ export const App: React.FC = () => {
                 if (selectedNote) setAppMode(AppMode.NOTE_EDITOR);
                 else noteHandlers.navigateToNotes();
                 break;
+            // The one action that does work rather than navigate: generate cards
+            // from the student's weak topics or an explicit topic list, save them
+            // atomically, land on the result, and tell the companion what
+            // happened so its next message matches what the student can see.
             case 'auto_generate_flashcards': {
                 if (!currentUser) break;
                 const topicsRaw = action.payload?.topics || '';
@@ -1013,6 +1154,12 @@ export const App: React.FC = () => {
     }, [selectedChat, groups, setAppMode, setSelectedDeck, openModal, handleSelectChat, currentUser, companionContext, addNotification, noteHandlers, selectedNote, notes, showToast, navigateTo]);
     const duplicateInfo = useUIStore(s => s.duplicateInfo);
     const setDuplicateInfo = useUIStore(s => s.setDuplicateInfo);
+    // Normalises whatever the open chat is into the ONE shape ChatWindow renders.
+    // Group messages already have it; DMs are mapped into a Message-alike, with
+    // the sender resolved by preference order — the live roster first (it has the
+    // current avatar), then the thread's participant record, then the fields
+    // stamped on the DM row itself, then a placeholder. Every DM is typed
+    // MessageType.TEXT here: DM threads carry no questions.
     const messagesForChat = !selectedChat ? [] : selectedChat.chatType === 'group'
         ? (Array.isArray(messages[selectedChat.id]) ? messages[selectedChat.id] : [])
         : (Array.isArray(directMessages[selectedChat.id]) ? directMessages[selectedChat.id] : []).map((dm: DirectMessage): any => {
@@ -1058,6 +1205,10 @@ export const App: React.FC = () => {
             };
         });
 
+    // Where "Study" in the nav actually goes: back into the set the student last
+    // had open, so the tab resumes rather than restarting. Falls through to the
+    // hub when there is no set, and also when the list cannot load — the picker
+    // there can still show the failure, whereas navigating nowhere cannot.
     const openStudyDestination = useCallback(async () => {
         const store = useStudySetStore.getState();
         store.closePicker();
@@ -1088,7 +1239,9 @@ export const App: React.FC = () => {
         navigateTo(mode);
     }, [navigateTo, openStudyDestination]);
 
-    const findFirstGroup = () => groups.find(g => !g.isArchived && (messages[g.id]?.length ?? 0) > 0) || groups.find(g => !g.isArchived);
+    // FIXED (F9): `findFirstGroup` is deleted. It had no callers left since
+    // "New test" stopped reaching into the group chat (see below) — it read as
+    // live logic to anyone opening this file, and it was never evaluated.
     /**
      * The Tests home's "New test".
      *
@@ -1201,6 +1354,14 @@ export const App: React.FC = () => {
     const setScopedTestId = studySetPath?.testId ?? null;
 
     const [testDetailError, setTestDetailError] = useState<string | null>(null);
+    // Resolves `/study/tests/:testId` into a screen. Driven by `testDetailId` —
+    // the id parsed out of the path — plus `currentUser`, because the fetch is
+    // account-scoped and must not run before sign-in. Three outcomes: not found
+    // and no questions become `testDetailError` (rendered in place of the
+    // screen); a finished attempt replaces the route with its review; an unsat
+    // one launches as practice or exam per `attemptKindFromConfig`. Every
+    // navigation here is `replace`, so Back cannot land on a URL that instantly
+    // re-launches the test. `cancelled` guards a route change mid-fetch.
     useEffect(() => {
         if (!testDetailId || !currentUser) return;
         let cancelled = false;
@@ -1248,6 +1409,10 @@ export const App: React.FC = () => {
         return () => { cancelled = true; };
     }, [testDetailId, currentUser, navigateTo, setActiveTestResult]);
 
+    // The same resolution for a test opened INSIDE a study set
+    // (`/study/sets/:id/test/:testId`), driven by `setScopedTestId`. It only
+    // seeds the store — it never navigates and it reports no error, because the
+    // set's own workspace stays on screen around it and owns the empty state.
     useEffect(() => {
         if (!setScopedTestId || !currentUser) return;
         let cancelled = false;
@@ -1347,6 +1512,9 @@ export const App: React.FC = () => {
         { target: TurnIntoTargetId; noteId: string } | null
     >(null);
 
+    // Save the answer as a note first, confirm it is the note now selected, and
+    // only then act on the target. A failure to save and a failure to open are
+    // reported separately — the second still leaves the note on the server.
     const handleCompanionMessageTurnInto = async (
         target: TurnIntoTargetId,
         draft: MessageNoteDraft
@@ -1385,6 +1553,11 @@ export const App: React.FC = () => {
         showToast(`Saved as a note. Add it to a study set to open ${label}.`, 'info');
     };
 
+    // Runs the deferred cards/test/quiz generation from the handler above. The
+    // guard is the whole point: it fires only once `selectedNote.id` matches the
+    // note that was just created, so the note handlers generate from THAT note
+    // rather than from whatever was selected when they were created. Clears the
+    // pending marker before the async work, so a re-render cannot start it twice.
     useEffect(() => {
         if (!pendingMessageTurnInto || selectedNote?.id !== pendingMessageTurnInto.noteId) return;
         const { target } = pendingMessageTurnInto;
@@ -1430,6 +1603,10 @@ export const App: React.FC = () => {
      * phone, where "Record lecture" is the wide-screen label and pointing at it
      * sent students looking for a control that was not on their screen.
      */
+    // Three paths, in order: a recording already in flight returns to its note
+    // (never starts a second one); otherwise `resolveLectureStudioNote` says
+    // whether today's lecture note already exists (resume) or must be created.
+    // Either way the student lands with the recorder ready but NOT started.
     const handleRecordLecture = (courseId?: string) => {
         const lecture = useLectureRecordingStore.getState();
         if (lecture.status !== 'idle' && lecture.noteId) {
@@ -1492,7 +1669,10 @@ export const App: React.FC = () => {
     };
 
     const handleOpenQuickTest = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenTestConfigModal(); };
-    const handleOpenQuickStudy = (groupId: string) => { const group = groups.find(g => g.id === groupId); if (!group) { alert('Group not found.'); return; } handleSelectChat({ ...group, chatType: 'group' }); onOpenStudyConfigModal(); };
+    // FIXED (F9): `handleOpenQuickStudy` is deleted. It was passed to no screen
+    // — only `handleOpenQuickTest` above is wired up (DashboardScreen,
+    // handleBuildTestWithGroup) — and being kept "as the study-mode twin" only
+    // made the study door look wired when nothing could reach it.
     /**
      * "Study all N due" — all N of them, across every deck.
      *
@@ -1535,6 +1715,9 @@ export const App: React.FC = () => {
      */
     const homeReviewPlan = React.useMemo(() => buildHomeReviewPlan(), [buildHomeReviewPlan]);
 
+    // "Study all due". One deck due takes the ordinary single-deck path, which
+    // keeps its own new-card-limit messaging; two or more are merged into one
+    // cross-deck `cardQueue` and the largest deck names the session.
     const handleFlashcardStudy = () => {
         if (decks.length === 0) {
             showToast('No flashcard decks available. Create a deck first.', 'error');
@@ -1563,6 +1746,12 @@ export const App: React.FC = () => {
         handleStartReview(deck);
     };
     // Redirect invalid mode/state combinations
+    // The safety net for every mode that needs a companion object to render:
+    // a session, a result, a selected deck/note/listing/seller/company. Reached
+    // after a reload, a store purge, a cancelled session or a Back step, and it
+    // re-runs on `appMode` plus each of those objects. It only ever sends the
+    // user to a parent mode — it must not try to re-fetch what is missing, or a
+    // failed fetch would trap the app in the mode this exists to leave.
     useEffect(() => {
         if (appMode === AppMode.TEST_ACTIVE && !activeTestSession && !activeTestResult) {
             setAppMode(AppMode.CHAT);
@@ -1611,12 +1800,37 @@ export const App: React.FC = () => {
         }
     }, [modals.notification, currentUser, setNotifications]);
 
+    // ================= THE AUTH GATE =================
+    // No hook may be added below this line: these three early returns change
+    // which JSX tree renders, and a hook after them would run conditionally.
+    //
+    // The order is the boot sequence itself:
+    //  1. `isAuthLoading` — the session restore has not finished. Splash only;
+    //     nothing is fetched and no route decision is made yet.
+    //  2. `isPasswordRecovery` — a recovery link was consumed, so the whole app
+    //     is replaced by the reset screen until a new password is set.
+    //  3. `!currentUser` — restore finished without an account.
+    //
+    // FIXED (F9): branch 3 used to be indistinguishable from "signed out". A
+    // restore that never reached a verdict — the 5 s `getSession` timeout, or a
+    // throw (the 2026-09-12 boot storm: a session payload without `user`) —
+    // landed on the same <Navigate to="/login?next=…"> as a genuine sign-out,
+    // so a session failure surfaced as a silent bounce to /login with no error
+    // anywhere on screen. `authStore.sessionRestoreFailed` now separates the
+    // two, and the redirect at the end of branch 3 becomes a stated failure
+    // with a Try again. Only the redirect changes: the landing, teach, auth and
+    // public-marketplace paths below are all legitimate signed-out
+    // destinations and still render.
     if (isAuthLoading) return (
         <div className="min-h-screen bg-lantern-background flex flex-col items-center justify-center gap-8">
             <img src="/lantern-icon-v2.png" alt="Lantern Study" width={96} height={96} className="rounded-[22%]" draggable={false} />
             <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-lantern-primary" />
         </div>
     );
+    // After the new password is saved, the recovery session IS the signed-in
+    // session: read it back, hydrate the profile, re-seed supabase-js from
+    // storage and go to the dashboard. A failed profile fetch clears the user
+    // rather than continuing half-signed-in, which drops through to branch 3.
     if (isPasswordRecovery) {
         return (
             <ResetPasswordScreen
@@ -1653,6 +1867,11 @@ export const App: React.FC = () => {
             />
         );
     }
+    // Signed out. Only four kinds of path render anything: the marketing pages,
+    // the teach landing, the auth screens, and the public marketplace paths.
+    // Everything else redirects to /login carrying `next`, which the auth screen
+    // replays — after validating it is a same-origin relative path, so the
+    // parameter cannot be used as an open redirect.
     if (!currentUser) {
         const path = location.pathname;
         const isLandingPath = path === '/' || path === '/welcome';
@@ -1707,19 +1926,6 @@ export const App: React.FC = () => {
         }
 
         if (isPublicMarketplacePath(path)) {
-            // Private pilot: public marketplace browsing is paused too.
-            if (marketplaceAccess !== true) {
-                return (
-                    <MarketplacePrivatePilot
-                        checking={marketplaceAccess === null && !marketplaceAccessUnavailable}
-                        unavailable={marketplaceAccessUnavailable}
-                        onRetry={retryMarketplaceAccess}
-                        onBack={() => navigateToPath('/')}
-                        backLabel="Back to the homepage"
-                        onSignIn={() => navigateToPath('/login')}
-                    />
-                );
-            }
             return (
                 <GuestMarketplaceShell
                     onSignIn={() => navigateToPath('/login')}
@@ -1728,10 +1934,44 @@ export const App: React.FC = () => {
             );
         }
 
+        if (sessionRestoreFailed) {
+            return (
+                <div className="min-h-screen bg-lantern-background flex flex-col items-center justify-center gap-4 px-6 text-center">
+                    <img src="/lantern-icon-v2.png" alt="" width={72} height={72} className="rounded-[22%]" draggable={false} />
+                    <h1 className="text-title font-semibold text-lantern-text">
+                        We couldn't check your session
+                    </h1>
+                    <p className="max-w-sm text-body text-lantern-text-secondary">
+                        This is usually a dropped connection rather than a sign-out. Try again, or
+                        sign in if it keeps happening.
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-3">
+                        <button
+                            type="button"
+                            onClick={() => { void useAuthStore.getState().checkAuthState(); }}
+                            className="rounded-lantern bg-lantern-primary px-4 py-2 text-body font-medium text-white"
+                        >
+                            Try again
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => navigateToPath('/login')}
+                            className="rounded-lantern border border-lantern-border px-4 py-2 text-body font-medium text-lantern-text"
+                        >
+                            Sign in
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+
         const nextTarget = `${path}${location.search || ''}`;
         return <Navigate to={`/login?next=${encodeURIComponent(nextTarget)}`} replace />;
     }
 
+    // ---- Signed in. Four standalone routes render INSTEAD of the AppShell:
+    // an invite acceptance, a note-share acceptance, the lecturer portal and the
+    // class join page. Each is a one-off destination with its own chrome. ----
     const invitePathMatch = location.pathname.match(/^\/invite\/([^/]+)$/);
     if (invitePathMatch) {
         return (
@@ -1792,21 +2032,23 @@ export const App: React.FC = () => {
     // declaration is a TDZ ReferenceError on every render.
     const communitiesSegmentOpen = canOpenCommunities({ isPlatformAdmin, user: currentUser });
     /**
-     * Where the Campus tab lands. Never a closed segment: Communities needs
-     * an institution and a programme on the profile and Shop is a private
-     * pilot, so a student who has neither opens on Jobs rather than on an
-     * apology.
+     * Where the Campus tab lands. Shop and Jobs are open to everyone, so the
+     * only segment that can be closed is Communities — it needs an institution
+     * and a programme on the profile. A student who has neither opens on Shop
+     * rather than on an apology.
      */
-    const campusEntrySegment: CampusSegment = communitiesSegmentOpen
-        ? 'communities'
-        : marketplaceAccess !== false
-            ? 'shop'
-            : 'jobs';
+    const campusEntrySegment: CampusSegment = communitiesSegmentOpen ? 'communities' : 'shop';
     const goToCampus = () => navigateToPath(campusSegmentPath(campusEntrySegment));
     const selectCampusSegment = (segment: CampusSegment, options?: { replace?: boolean }) => {
         navigateToPath(campusSegmentPath(segment), options);
     };
 
+    // ---- Screen renderers ----
+    // Notes renders in two places — standalone (`AppMode.NOTES`) and embedded in
+    // the Library's Notes tab — hence one builder with an `embedded` flag rather
+    // than two call sites that would drift. Every handler here converts a
+    // rejection into a toast; the three that `throw e` again do so because the
+    // child screen needs the failure to keep its own row selection or draft.
     const renderNotesScreen = (embedded = false) => (
         <NotesScreen
             theme={theme}
@@ -1905,6 +2147,9 @@ export const App: React.FC = () => {
         />
     );
 
+    // The same two-places arrangement for Flashcards. `isInitialLoading` reads
+    // the bootstrap gates rather than a local flag, so an empty library during
+    // boot shows a skeleton instead of "no decks yet".
     const renderFlashcardsScreen = (embedded = false) => (
         <FlashcardsScreen
             decks={decks}
@@ -1962,6 +2207,10 @@ export const App: React.FC = () => {
         memberCount: typeof params.memberCount === 'number' ? params.memberCount : undefined,
     });
 
+    // Opening a group found in Discover. Already a member: select it and switch
+    // to Chat. Just joined (`params.joined`): insert the stub first, because the
+    // group list has not refetched yet. Neither joined nor known: do nothing —
+    // selecting a group the user is not in would render an empty chat.
     const openDiscoverGroup = (params?: Record<string, unknown>) => {
         const groupId = String(params?.groupId || '');
         if (!groupId) return;
@@ -2009,6 +2258,9 @@ export const App: React.FC = () => {
         navigateTo(AppMode.COMMUNITY_DETAIL, { slug, groupId });
     };
 
+    // The members list is rendered by a lazy screen, so the anchor may not exist
+    // when the navigation completes: poll for it 20 times at 100 ms, then give
+    // up silently (the user is already on the right page either way).
     const scrollToCommunityMembers = () => {
         let tries = 0;
         const tick = () => {
@@ -2253,20 +2505,14 @@ export const App: React.FC = () => {
         </div>
     );
 
+    // ================= THE SCREEN SWITCH =================
+    // One `appMode` → one screen. The mode is the app's location for everything
+    // that is not path-driven; `useRouteSync` keeps it and the URL in step, so
+    // this switch never reads the URL except where a screen genuinely needs a
+    // parameter the mode cannot carry (community slug, shop sub-state, study-set
+    // activity, campus slug). Cases that need a companion object return null and
+    // let the redirect effect above move the user out.
     const renderScreen = () => {
-        // Marketplace private pilot: every goods-commerce mode renders the
-        // honest explanation for accounts outside the allowlist (the API
-        // 403s them regardless). Jobs modes are not in the set and stay open.
-        if (GOODS_MARKETPLACE_MODES.has(appMode) && marketplaceAccess !== true) {
-            return (
-                <MarketplacePrivatePilot
-                    checking={marketplaceAccess === null && !marketplaceAccessUnavailable}
-                    unavailable={marketplaceAccessUnavailable}
-                    onRetry={retryMarketplaceAccess}
-                    onBack={() => navigateTo(AppMode.DASHBOARD)}
-                />
-            );
-        }
         switch (appMode) {
             case AppMode.CREATE_GROUP:
                 return (
@@ -2487,35 +2733,25 @@ export const App: React.FC = () => {
             case AppMode.STUDY_HUB:
                 return (
                     <StudyHubScreen
-                        dueCardsCount={dueCardsCount}
                         decks={decks}
-                        flashcards={flashcards}
-                        onStartDueReview={handleFlashcardStudy}
                         onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
-                        onOpenAITools={() => navigateTo(AppMode.AI_TOOLS)}
-                        onSelectDeck={handleSelectDeck}
-                        onStartLearn={handleStartLearn}
-                        onStartReview={(deckId) => {
-                            const deck = decks.find((d) => d.id === deckId);
-                            if (deck) handleStudyDeck(deck);
-                        }}
                         activeTestSession={activeTestSession}
                         activeStudySession={activeStudySession}
                         onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
                         pausedSessions={pausedSessions}
                         onResumePausedSession={handleResumePausedSession}
                         onAbandonPausedSession={handleAbandonPausedSession}
-                        recentTestCount={testResults.length}
-                        onViewRecentTests={() => navigateTo(AppMode.TESTS_HOME)}
-                        onOpenFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
-                        onOpenTests={() => navigateTo(AppMode.TESTS_HOME)}
-                        onRecordLecture={() => handleRecordLecture()}
-                        noteCount={notes.length}
-                        onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
                         onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
-                        onOpenImport={() => setShowImportAndStudy(true)}
                     />
                 );
+            // Two modes, one case: a course workspace and a study-set workspace
+            // are the same surface over a different container. Within a set the
+            // ACTIVITY comes from the path (`/study/sets/:id/<activity>/…`), so
+            // the ladder below is ordered most-specific first — a live play or
+            // card session, then the builder, then a running test, then a deck —
+            // and only falls through to the workspace shell itself. Every exit
+            // goes back through `backToSet`, so leaving a session returns to the
+            // set's tab rather than to the global screen of that kind.
             case AppMode.STUDY_SET_WORKSPACE:
             case AppMode.COURSE_WORKSPACE: {
                 const workspaceRoute = parseAppRoute(location.pathname).params;
@@ -2676,29 +2912,15 @@ export const App: React.FC = () => {
                 if (!workspaceCourseId && !workspaceSetId) {
                     return (
                     <StudyHubScreen
-                        dueCardsCount={dueCardsCount}
                         decks={decks}
-                        flashcards={flashcards}
-                        onStartDueReview={handleFlashcardStudy}
                         onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
-                        onOpenAITools={() => navigateTo(AppMode.AI_TOOLS)}
-                        onSelectDeck={handleSelectDeck}
-                        onStartLearn={handleStartLearn}
-                        onStartReview={(deckId) => {
-                            const deck = decks.find((d) => d.id === deckId);
-                            if (deck) handleStudyDeck(deck);
-                        }}
                         activeTestSession={activeTestSession}
                         activeStudySession={activeStudySession}
                         onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
                         pausedSessions={pausedSessions}
                         onResumePausedSession={handleResumePausedSession}
                         onAbandonPausedSession={handleAbandonPausedSession}
-                        recentTestCount={testResults.length}
-                        onViewRecentTests={() => navigateTo(AppMode.TESTS_HOME)}
-                        onOpenCourse={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
                         onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
-                        onOpenImport={() => setShowImportAndStudy(true)}
                     />
                     );
                 }
@@ -2812,6 +3034,9 @@ export const App: React.FC = () => {
                 return renderNotesScreen(false);
             case AppMode.NOTE_EDITOR:
                 if (!selectedNote) return null;
+                // `key={selectedNote.id}` deliberately remounts the editor when
+                // the open note changes: its editor state, autosave timer and
+                // quiz panel are all per-note and must not be carried across.
                 return (
                     <NoteEditorScreen
                         key={selectedNote.id}
@@ -2833,6 +3058,11 @@ export const App: React.FC = () => {
                             setStudyProductSource({ noteIds: [selectedNote.id], title: selectedNote.title });
                             setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
                         }}
+                        // Deleting a note that is mid-recording asks a different
+                        // question and discards the recording first; the ordinary
+                        // path just confirms. Either way the pending autosave is
+                        // cancelled and the selection cleared BEFORE the delete
+                        // request, so a queued save cannot resurrect the note.
                         onDelete={async () => {
                             const noteId = selectedNote.id;
                             const lecture = useLectureRecordingStore.getState();
@@ -3039,6 +3269,12 @@ export const App: React.FC = () => {
                     )}
                     onOpenCourseIndex={() => leaveShopSubState(SHOP_COURSES_PATH)}
                     onCloseCourseBrowse={() => leaveShopSubState(SHOP_PATH)}
+                    // The marketplace screens navigate by NAME, not by AppMode —
+                    // the same string contract mobile uses, so one screen can be
+                    // shared. Each `onNavigate` below is a translation table from
+                    // those names to modes plus the selection the target needs
+                    // (listing id, order id, seller id, …). An unrecognised name
+                    // falls through and does nothing.
                     onNavigate={(screen, params) => {
                     if (screen === 'CreateMarketplaceListing') {
                         setMarketplaceListingCategory(params?.category || 'academic');
@@ -3465,6 +3701,10 @@ export const App: React.FC = () => {
                 }} onBack={() => setAppMode(AppMode.MARKETPLACE)} userId={currentUser.id} />;
             case AppMode.SELLER_PROFILE:
                 if (!selectedSellerId) return null;
+                // Back honours `sellerProfileReturnMode`, stamped by whichever
+                // screen opened this one — except when that origin was a listing
+                // whose id has since been cleared, which would bounce straight
+                // back out through the redirect effect.
                 return <SellerProfileScreen userId={selectedSellerId}
                     onBack={() => {
                         setSelectedSellerId(null);
@@ -3566,6 +3806,11 @@ export const App: React.FC = () => {
         [AppMode.MARKETPLACE_JOBS]: 'jobs',
     };
 
+    // What actually goes in the shell's content slot. The three path-rendered
+    // destinations are checked FIRST and short-circuit the AppMode switch
+    // entirely — they are places the student is linked to, not sections, so they
+    // leave whatever mode is underneath untouched. Only then does `renderScreen`
+    // run, optionally wrapped in the Campus segment strip.
     const mainContent = () => {
         // `/me` has no AppMode: it is the one destination that is about the
         // student rather than about a part of the app, so it renders from the
@@ -3691,12 +3936,15 @@ export const App: React.FC = () => {
                 segment={segment}
                 onSelectSegment={selectCampusSegment}
                 communitiesOpen={communitiesSegmentOpen}
-                shopOpen={marketplaceAccess}
             >
                 {screen}
             </CampusHubScreen>
         );
     };
+    // Everything the sidebar/rail needs, built here because the shell is
+    // presentational: it renders what it is handed and owns no navigation of its
+    // own. `currentPath` is passed so the rail derives its lit row from the URL
+    // by the same parse this file uses, rather than from a second source.
     const sidebarProps = {
         // Boards are not chats — they live on the community page (§5.2).
         currentUser, groups: chatListGroups, dmThreads,
@@ -3733,6 +3981,12 @@ export const App: React.FC = () => {
         // the lit row can never drift from the address bar.
         onNavigateToPath: (path: string) => navigateToPath(path),
     };
+    // ================= RENDER =================
+    // AppShell (nav chrome) wraps three layers: the breadcrumb strip, the
+    // content slot from `mainContent()`, and — below the Suspense boundary — the
+    // flat modal/overlay layer. Every shared modal is mounted here unconditionally
+    // and controlled by the ui store's `modals` map, which is also what
+    // `useModalHistory` reads to make Back close a sheet.
     return (
         <ErrorBoundary>
         <AppShell sidebarProps={sidebarProps} dueCardsCount={dueCardsCount}
@@ -3754,11 +4008,21 @@ export const App: React.FC = () => {
             onNavigateToMe={() => navigateToPath(ME_PATH)}
             onNavigateToCampus={goToCampus}
             onNavigate={handleShellNavigate}>
+            {/* `routeHydrating` covers the window where useRouteSync is still
+                turning the URL into a mode + selection. Rendering the switch
+                during it would flash the default mode (and can fire a screen's
+                own fetches against the wrong id). */}
             <Suspense fallback={<AppContentLoadingFallback />}>
             {routeHydrating ? (
                 <AppContentLoadingFallback />
             ) : (
             <>
+            {/* Breadcrumb strip. `shrink-0` is required, not cosmetic: this sits
+                in a flex column whose sibling scrolls, and without it the flex
+                shrink pass crushes the strip as the content grows. Hidden
+                outright on the path-rendered destinations and on Create group /
+                Admin, and hidden only on narrow screens for an open chat or
+                community channel, where the chat header is the back control. */}
             <div className={`shrink-0 ${
                 onMePath || onTestBuilderPath || Boolean(testDetailId)
                     || appMode === AppMode.CREATE_GROUP || appMode === AppMode.ADMIN
@@ -3795,6 +4059,10 @@ export const App: React.FC = () => {
             </>
             )}
             </Suspense>
+            {/* ---- The modal / overlay layer. Flat and always mounted, keyed off
+                `modals.*`; the ones guarded by `selectedChat?.chatType === 'group'`
+                or by a non-null selection are guarded because their props cannot
+                be satisfied otherwise, not to save a render. ---- */}
             <CreateGroupModal isOpen={modals.createGroup} onClose={handleCloseCreateGroupModal}
                 onSubmit={handleCreateSubGroup} parentId={subgroupParentId} allGroups={groups} />
             <QuestionModal isOpen={modals.question} onClose={() => closeModal('question')}
@@ -3841,6 +4109,12 @@ export const App: React.FC = () => {
             <NotificationModal isOpen={modals.notification} onClose={() => closeModal('notification')}
                 notifications={notifications} onMarkAsRead={handleMarkNotificationAsRead}
                 onMarkAllAsRead={handleMarkAllNotificationsAsRead}
+                // The widest navigation table in the file: every notification
+                // type that is tappable resolves here. Two need work before they
+                // can navigate — a group invite asks accept/decline first, and an
+                // inquiry with only an `inquiryId` fetches both sides of the
+                // user's inquiries to find the DM peer, falling back to the
+                // inquiries list when that cannot be resolved.
                 onNavigate={(screen, params) => {
                     if (screen === 'MarketplaceInquiries') {
                         setAppMode(AppMode.MARKETPLACE_INQUIRIES);
@@ -4012,6 +4286,8 @@ export const App: React.FC = () => {
                     });
                     closeModal('usernameRequired');
                 }} />}
+            {/* The global companion is suppressed on the three surfaces that
+                embed their own companion pane, so the student never sees two. */}
             {appMode !== AppMode.COURSE_WORKSPACE && appMode !== AppMode.STUDY_SET_WORKSPACE && appMode !== AppMode.NOTE_EDITOR && (
             <AICompanionPanel
                 context={companionContext}
@@ -4051,6 +4327,10 @@ export const App: React.FC = () => {
                     setAppMode(AppMode.STUDY_ROOM);
                 }}
             />
+            {/* Onboarding stands down while the username gate is open: they are
+                both full-screen and the gate is the one that blocks progress.
+                Both exits write the completion flag before closing, so a crash
+                mid-flow cannot re-show onboarding on the next boot. */}
             {showOnboarding && currentUser && !modals.usernameRequired && (
                 <Suspense fallback={null}>
                     <OnboardingFlow
@@ -4117,6 +4397,10 @@ export const App: React.FC = () => {
                 onConfirm={() => void confirmEndGame()}
                 onCancel={() => !endGameLoading && setEndGameConfirmOpen(false)}
             />
+            {/* The one host for `confirmDialog()` from stores/confirmStore: any
+                module can await a confirmation and this renders it. Distinct
+                from the end-game dialog above, which owns its own loading state
+                because the forfeit is an async server call. */}
             <ConfirmDialog
                 open={globalConfirm.open}
                 title={globalConfirm.options?.title || 'Confirm'}

@@ -1,3 +1,23 @@
+/**
+ * Campus tab root: one route, three segments (Communities, Shop, Jobs). Shop
+ * and Jobs are open to every student; Communities appears once the profile
+ * names an institution and a programme, so the bar is never empty.
+ * Communities is a lean search-and-join list that pushes CommunityDetail /
+ * CreateCommunity onto the Campus stack.
+ *
+ * Exports: CampusScreen (named and default).
+ * Touches: communityStore (myCommunities, loadMine), authStore.academicProfile,
+ * useCommunityAccess; services/api discoverCommunities + joinCommunity; the
+ * MarketplaceScreen / JobsHomeScreen panels; pure rules in
+ * campusSegments.ts, communityHubModel.ts and communityDiscoveryPlan.ts.
+ * Gotchas: the visible segment is published back into this route's own
+ * `segment` param because the app chrome can only see route name + params, and
+ * shouldPublishCampusSegment exists to keep that one-way (a tap and an adopted
+ * deep link are the only other writers, and re-publishing unconditionally
+ * races them). A chip is part of the discovery REQUEST, not a client-side
+ * filter, and a kind-scoped query returning zero rows is retried once without
+ * the kind for databases that predate the community-kind backfill.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,7 +48,6 @@ import { useMarketplaceStore } from '../../stores/marketplaceStore';
 import { discoverCommunities, joinCommunity } from '../../services/api';
 import { MarketplaceScreen } from '../marketplace/MarketplaceScreen';
 import { JobsHomeScreen } from '../marketplace/JobsHomeScreen';
-import { withMarketplaceGate } from '../marketplace/MarketplaceGate';
 import {
   CAMPUS_SEGMENT_LABELS,
   resolveCampusSegment,
@@ -67,16 +86,6 @@ interface Props {
 
 /** 44px minimum touch target — NativeWind inlines rem at 14, so px literals. */
 const SEGMENT_HEIGHT = 44;
-
-/**
- * Module scope, so each wrapped component keeps a stable identity across
- * renders. Hiding the segment is the real gate — a definite refusal removes it
- * from the bar entirely — but the wrapper still matters for the window between
- * "not answered yet" and the answer: it holds the screen back rather than
- * letting it fire a wall of 403s.
- */
-const GatedShop = withMarketplaceGate(MarketplaceScreen);
-const GatedJobs = withMarketplaceGate(JobsHomeScreen, 'jobs');
 
 function SegmentBar({
   segments,
@@ -594,22 +603,14 @@ function CampusEmpty() {
  * Before this wave those three were a bottom tab (Shop), a top-bar icon
  * (Shop again), a drawer row (Jobs), a second drawer row (Community) and a
  * Discover hub that also listed the marketplace: five doors to three places.
- * They are one place now, and a segment whose gate is closed is not drawn at
- * all — Campus never shows a segment with nothing behind it.
+ * They are one place now, and Communities — the one segment that still has a
+ * gate — is not drawn at all when the profile does not meet it, so Campus
+ * never shows a segment with nothing behind it.
  */
 export function CampusScreen({ navigation, route }: Props) {
   const insets = useSafeAreaInsets();
   const { colors } = useTheme();
   const { canSee: canSeeCommunities } = useCommunityAccess();
-  const marketplaceAccess = useMarketplaceStore((s) => s.marketplaceAccess);
-  const checkMarketplaceAccess = useMarketplaceStore((s) => s.checkMarketplaceAccess);
-
-  // Warm the pilot answer so the bar settles before the first tap rather than
-  // re-flowing under the reader's thumb.
-  useEffect(() => {
-    void checkMarketplaceAccess();
-  }, [checkMarketplaceAccess]);
-
   const segments = useMemo(
     () =>
       resolveCampusSegments({
@@ -617,9 +618,8 @@ export function CampusScreen({ navigation, route }: Props) {
         // signed-in student with an institution and a programme sees
         // Communities, not platform admins alone.
         canSeeCommunities: canSeeCommunities && isDiscoverSectionEnabled('communities'),
-        marketplaceAccess,
       }),
-    [canSeeCommunities, marketplaceAccess]
+    [canSeeCommunities]
   );
 
   const [picked, setPicked] = useState<CampusSegment | null>(null);
@@ -675,9 +675,9 @@ export function CampusScreen({ navigation, route }: Props) {
     active === 'communities' ? (
       <CommunitiesPanel navigation={navigation} joinCode={route?.params?.joinCode} />
     ) : active === 'shop' ? (
-      <GatedShop navigation={navigation} />
+      <MarketplaceScreen navigation={navigation} />
     ) : (
-      <GatedJobs />
+      <JobsHomeScreen />
     );
 
   return (

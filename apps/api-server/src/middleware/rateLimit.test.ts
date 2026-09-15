@@ -5,6 +5,7 @@ import {
   anonymousIpRateLimit,
   authenticatedRateLimit,
   aiPostBurstRateLimit,
+  isWebhookRateLimitExempt,
 } from './rateLimit';
 import { AuthenticatedRequest } from '../types';
 
@@ -142,4 +143,39 @@ describe('ai route burst wiring', () => {
       server.close();
     }
   });
+});
+
+describe('resolveClientIp — X-Forwarded-For is never trusted directly', () => {
+  it('ignores a spoofed XFF header and keys on the socket address', () => {
+    const spoofed = mockRequest({
+      ip: undefined as unknown as string,
+      headers: { 'x-forwarded-for': '1.2.3.4' },
+      socket: { remoteAddress: '203.0.113.10' } as AuthenticatedRequest['socket'],
+    });
+    expect(resolveClientIp(spoofed)).toBe(resolveClientIp(mockRequest()));
+  });
+
+  it('two requests differing only in XFF share one bucket key', () => {
+    const a = resolveClientIp(mockRequest({ headers: { 'x-forwarded-for': '9.9.9.9' } }));
+    const b = resolveClientIp(mockRequest({ headers: { 'x-forwarded-for': '8.8.8.8' } }));
+    expect(a).toBe(b);
+  });
+});
+
+describe('isWebhookRateLimitExempt', () => {
+  it.each([
+    '/webhooks/paystack',
+    '/api/v1/webhooks/paystack',
+    '/api/v1/webhooks/paystack/',
+    '/webhooks/paystack?x=1',
+  ])('exempts %s from the anonymous IP limiter', (p) => {
+    expect(isWebhookRateLimitExempt(p)).toBe(true);
+  });
+
+  it.each(['/api/v1/notes', '/webhooks/other', '/api/v1/webhooks/paystack/extra'])(
+    'does not exempt %s',
+    (p) => {
+      expect(isWebhookRateLimitExempt(p)).toBe(false);
+    }
+  );
 });

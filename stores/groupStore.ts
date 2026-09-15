@@ -5,6 +5,31 @@
  * Note: This store provides a simplified interface for group management.
  * The actual API calls are made through the supabase service functions.
  * This store should be gradually integrated into App.tsx to replace useState hooks.
+ *
+ * Exports: `useGroupStore` and the `ChatItem` type. State: `groups`,
+ * `messages` (keyed by group id), `dmThreads`, `directMessages` (keyed by
+ * thread id), `dmHistoryClearedAtByThread`, `selectedChat`, `userVotes`,
+ * `notifications`, and the two unread-count maps. Actions are setters/updaters
+ * for each of those, the chat-selection trio (`selectChat`, `selectGroup`,
+ * `selectDmThread`), `markDmHistoryCleared` / `archiveDmThread` /
+ * `unarchiveDmThread` / `removeDmThread`, and `reset`.
+ *
+ * Touches: nothing persistent — entirely in-memory, fed by the chat services
+ * and realtime subscriptions in App.tsx / the chat hooks. It imports `supabase`
+ * but makes no calls of its own.
+ *
+ * Gotchas:
+ *  - Delete-for-me is enforced HERE, not by the server: every write path into
+ *    `directMessages` (set / setAll / update / add) runs
+ *    `filterMessagesAfterDmHistoryCutoff` against
+ *    `dmHistoryClearedAtByThread[threadId]`. A new write path that skips that
+ *    filter resurrects messages the user cleared.
+ *  - `setGroups` / `updateGroups` / `setDmThreads` / `updateDmThreads` coerce a
+ *    non-array to `[]` on purpose: a bad payload reaching a consumer that maps
+ *    over it took the whole sidebar down with "k.map is not a function".
+ *  - Nothing is persisted, but nothing is cleared automatically either —
+ *    sign-out must call `reset()` or the previous account's threads stay on
+ *    screen for the rest of the page's life.
  */
 import { create } from 'zustand';
 import { Group, Message, DMThread, DirectMessage, AppNotification, User } from '../types';

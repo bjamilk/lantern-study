@@ -1,6 +1,78 @@
 /**
  * AI Companion Routes — persistent, context-aware "Lantern" study companion
  */
+/**
+ * AI companion routes — conversations, message send, streaming, attachments.
+ *
+ * Purpose
+ * - Backs the "Lantern" companion rail: threaded conversations optionally
+ *   scoped to a note, a blocking and a streaming send path, photo attachments
+ *   the model can read, per-message feedback, and a group-chat summariser.
+ *
+ * Exports
+ * - Default router and `initializeAICompanionRoutes(svc)`, called from
+ *   `server.ts` at boot.
+ *
+ * Mount path
+ * - `/api/v1/ai/companion`.
+ *
+ * Auth mode
+ * - `authMiddleware` for the whole router (`router.use`), followed by
+ *   `requirePermission('ai')`. Nothing here is reachable unauthenticated.
+ *
+ * Rate-limit tier — three layers, and the ORDER of declaration matters
+ * - `aiPostBurstRateLimit` — short-window burst brake.
+ * - `aiRateLimit` — the generic per-user AI allowance, applied to
+ *   `POST /summarize-group` only.
+ * - `aiRateLimitForFeature('companion')` — the companion's own daily counter
+ *   plus a global credit reservation, installed by the `router.use` pair
+ *   partway down the file. Every route DECLARED BELOW that point pays a
+ *   companion credit; every route declared above it does not. `/attachments`
+ *   sits above deliberately (see its own comment), and the read-only
+ *   conversation, history, feedback and analytics routes are free.
+ *
+ * Credit charge points
+ * - `POST /attachments` charges `NOTE_OCR_CREDIT_COST` explicitly via
+ *   `chargeAiCreditsDetailed`, and refunds it with `refundAiCredits` when no
+ *   attachment was produced.
+ * - `POST /message` and `POST /message/stream` pay one companion feature credit
+ *   through the middleware. The blocking path passes `aiChargeFromRes(res)` into
+ *   `runSyncOrEnqueue` so an enqueued job inherits the charge already reserved.
+ *   The streaming path refunds by hand: SSE responses end as HTTP 200, so the
+ *   middleware's non-2xx auto-refund never fires.
+ *
+ * Trust boundary — two deliberate defences worth keeping
+ * - `buildTrustedCompanionContext` ignores the study and entitlement facts the
+ *   client sends and RE-DERIVES them server-side from rows this user owns. The
+ *   same applies to photos: only attachment ids are believed, and the
+ *   transcripts are read back out of the table, so a forged `extractedText`
+ *   cannot reach the prompt.
+ * - `filterCompanionActions` in `services/aiService.ts` allowlists the action
+ *   types a reply may contain. Model output therefore cannot name an action the
+ *   server did not already intend to offer, and takes no privileged action of
+ *   its own.
+ *
+ * Error-mapping convention
+ * - 400 for a missing or unusable body, 404 for a conversation or message this
+ *   account does not own, 403 for non-membership on the group summariser, 503
+ *   for AI unavailability and for a missing migration, 500 for a database
+ *   failure. Every client-facing message goes through `clientErrorMessage`, and
+ *   the analytics insert answers `{ success: false }` at 200 rather than
+ *   failing a request over telemetry.
+ *
+ * What it touches
+ * - Supabase tables `ai_companion_conversations`, `ai_companion_messages`,
+ *   `ai_analytics` and the companion image-attachment table; Redis through the
+ *   AI rate limiters and credit pools; the AI providers via
+ *   `services/aiService` (`companionChat`, `summarizeGroupChat`); BullMQ via
+ *   `runSyncOrEnqueue`; the inference log.
+ *
+ * Migration tolerance
+ * - `ai_companion_messages.citations` is applied by hand
+ *   (`20260912090000_companion_message_citations.sql`). Reads and writes both
+ *   retry without the column when PostgREST reports it missing, so an exchange
+ *   is still saved — without its source chips — rather than lost.
+ */
 import { Router, Request, Response } from 'express';
 import {
   NOTE_OCR_CREDIT_COST,
@@ -83,6 +155,14 @@ const collectImageAttachmentIds = (context?: CompanionRequestContext): string[] 
 function parseNoteContextId(value: unknown): string | null {
   return parseCompanionUuid(value);
 }
+
+// ---------------------------------------------------------------------------
+// Conversations and history — free of AI credits
+// ---------------------------------------------------------------------------
+// Declared above the `aiRateLimitForFeature('companion')` mount, so reading,
+// creating an empty thread, clearing one, rating a reply and logging analytics
+// cost nothing. Every read is scoped by `user_id`, and a conversation id the
+// caller does not own answers 404 before any row is touched.
 
 router.get('/conversations', async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
@@ -301,6 +381,15 @@ router.post('/analytics', async (req: Request, res: Response) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Group chat summary
+// ---------------------------------------------------------------------------
+// The only route on the generic `aiRateLimit` tier rather than the companion
+// feature counter. Membership is not taken from the request:
+// `fetchAuthorizedGroupSummaryMessages` resolves the group AND checks this
+// user's membership, and the client-supplied `messages[]` in the body is
+// ignored entirely — the messages summarised are the ones the server read.
+
 router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
   const { groupId, groupName: clientGroupName } = req.body as {
@@ -328,6 +417,13 @@ router.post('/summarize-group', aiPostBurstRateLimit, aiRateLimit, async (req: R
     }
 
     const displayName = groupName || clientGroupName || 'Group';
+    // FIXED (F7a, verified F10): the marker here was stale.
+    // `summarizeGroupChat` no longer joins the other members' messages raw —
+    // `buildGroupChatMessagesBlock` (services/aiService.ts) strips control
+    // characters, caps each line, defangs a typed BEGIN/END marker and wraps the
+    // whole span in an UNTRUSTED fence the system prompt names as data. This is
+    // the one cross-user prompt-injection surface in the AI stack, and
+    // `aiService.groupSummaryFencing.test.ts` pins the fence.
     const { summary, provider } = await summarizeGroupChat(messages, displayName);
     await logAIInference(supabaseService.getClient(), {
       userId,
@@ -435,6 +531,12 @@ router.post('/attachments', uploadBurstRateLimit, async (req: Request, res: Resp
   }
 });
 
+// ---------------------------------------------------------------------------
+// Everything below this line pays a companion AI credit
+// ---------------------------------------------------------------------------
+// These two `router.use` calls apply only to routes DECLARED AFTER them.
+// Moving a handler across this boundary silently changes what it costs, so
+// placement here is load-bearing, not stylistic.
 router.use(aiPostBurstRateLimit);
 router.use(aiRateLimitForFeature('companion'));
 
@@ -532,6 +634,15 @@ async function persistCompanionExchange(params: {
   await touchConversation(client, userId, conversationId);
   return [];
 }
+
+// ---------------------------------------------------------------------------
+// Sending a turn — blocking and streaming
+// ---------------------------------------------------------------------------
+// Both paths do the same work in the same order: re-derive the trusted context,
+// load the owned image transcripts, resolve or create the conversation, read
+// the last 20 messages of it, call `companionChat`, persist both messages.
+// They differ only in how the reply reaches the client and therefore in how a
+// failure is refunded — see the stream's catch block.
 
 router.post('/message', validateAICompanionMessage, handleValidationErrors, async (req: Request, res: Response) => {
   const userId = (req as any).user.id;
@@ -662,6 +773,10 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     return;
   }
 
+  // A per-instance concurrency gate: an SSE response holds a socket for the
+  // whole turn, so unbounded streams starve the process of connections. The
+  // release is in the `finally` below — every early return after this point
+  // must go through it.
   if (!companionStreamGate.tryAcquire()) {
     res.setHeader('Retry-After', '5');
     res.status(503).json({
@@ -740,6 +855,10 @@ router.post('/message/stream', validateAICompanionMessage, handleValidationError
     const assistantMessageId = inserted.find((row) => row.role === 'assistant')?.id;
     const userMessageId = inserted.find((row) => row.role === 'user')?.id;
 
+    // The stream is simulated: `companionChat` has already returned the whole
+    // reply and both messages are persisted before the first token is written.
+    // The client sees a typing effect, but a dropped connection here loses only
+    // the animation — the exchange is already saved.
     const tokens = reply.split(/(\s+)/);
     for (const token of tokens) {
       if (res.writableEnded) break;

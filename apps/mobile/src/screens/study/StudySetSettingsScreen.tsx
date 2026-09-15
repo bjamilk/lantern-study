@@ -4,6 +4,21 @@
  * Everything here was web-only: a set made on the phone could never be
  * renamed, described, made public, moved into a folder, given a study mode, or
  * deleted from the phone at all. The PATCH is the same one web sends.
+ *
+ * Route: `StudySetSettings` in the Study stack.
+ * Main exports: `StudySetSettingsScreen`.
+ * Touches: studySetStore (`loadSets`/`loadFolders`/`updateSet`/`removeSet`/
+ * `setCoverPath`), toastStore, and `useCoverPicker`, which reaches the system
+ * photo picker and uploads on its own route.
+ *
+ * Gotchas: two save models sit side by side — the cover is applied the instant
+ * it is picked (its upload is a separate request), while the text fields and the
+ * tile pick only land on Save, so Discard really discards them. Fields are
+ * seeded once per set id (`seededFor`); re-seeding from the store would wipe
+ * what is being typed whenever another screen refreshed the list. The
+ * `beforeRemove` guard is written out rather than using useConfirmBeforeExit
+ * because Save navigates away in the same tick as the store write and needs the
+ * `leavingRef` bypass.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';

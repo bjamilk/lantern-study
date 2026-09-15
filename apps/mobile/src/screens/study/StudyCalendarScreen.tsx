@@ -1,3 +1,33 @@
+/**
+ * The study plan calendar for one scope — a study set (`studySetId`) or a bare
+ * course (`courseId`), taken from route params. It shows a month grid, the exam
+ * date, and generated sessions that open cards or a quiz. Exports
+ * `StudyCalendarScreen` (route `StudyCalendar` in StudyStackParamList).
+ *
+ * THE PLAN IS STORED AS A NOTE. There is no calendar table: the schedule is
+ * serialised into the body of a calendar-flagged note
+ * (`composeCalendarNoteBody` / `parseCalendarNoteBody`) through `persist()`, so
+ * every mutation below is really a note save.
+ *
+ * Touches: notesStore (create/save/load, the plan note), flashcardStore (decks
+ * a session can open), studySetStore (set row, exam date, saved plan topics),
+ * toastStore; services/academic (getMyActiveCourses, getCourseTopics,
+ * setMyCourseExamDate). Generation, session math and the month grid are shared
+ * pure helpers in @lantern/shared.
+ *
+ * Gotchas:
+ * - Scope by SET first. A set need not belong to a course, so a course-less
+ *   set reports a null course id and course-scoped material lookups match
+ *   nothing; `studioMaterials` takes both ids for this reason.
+ * - The exam date has two homes: a set writes its own `examDate`, a course room
+ *   writes the enrolment (which is what exam reminders read). A 200 from the
+ *   set update is not proof — the row must echo the date back, or the save is
+ *   reported as unsupported.
+ * - The month grid is drawn unconditionally (`calendarViewFor`); the setup card
+ *   sits above it and never replaces it.
+ * - The screen is reachable directly (deep link, contextual bar), so it cannot
+ *   assume the set list or the plan has already been loaded.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -152,6 +182,11 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     void loadPlan(studySetId).catch(() => undefined);
   }, [loadPlan, loadStudySets, studySetId]);
 
+  // Resume an existing plan. Runs whenever the scope's calendar notes or the
+  // selected note change: the shared resolver picks which calendar note this
+  // screen is editing, and its parsed body becomes the on-screen plan. It only
+  // ever RESUMES — creating a note here would mint a calendar note on every
+  // visit; the first write happens in `persist` when a plan is generated.
   useEffect(() => {
     const decision = resolveCalendarStudioNote({
       calendars,
@@ -170,6 +205,10 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     setHoursPerWeek(parsed.hoursPerWeek);
   }, [calendars, selectedNote]);
 
+  // The single writer for the plan. Saves into the existing calendar note, or
+  // creates one filed in this scope on the first save. Everything that mutates
+  // the plan (generate, accept, marking a session done) goes through here, so
+  // the note body stays the one source of truth for the schedule.
   const persist = useCallback(
     async (next: StudyCalendarPlan, noteId: string | null) => {
       const body = composeCalendarNoteBody(next);
@@ -215,6 +254,11 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
   const examChanged = plan ? calendarExamChanged(plan, examDate) : false;
   const daySessions = selectedDate && plan ? sessionsOnDate(plan, selectedDate) : [];
 
+  // Opening a session marks it done first, then navigates. The mark is
+  // optimistic (local state, persisted in the background) because the student
+  // is leaving this screen and will not see a failure; it must not block the
+  // navigation. A session with no deck to open shows a toast instead of
+  // navigating — but it has already been marked done by then.
   const openSession = (session: StudyCalendarSession) => {
     if (plan && session.status !== 'done' && planNoteId) {
       const next = markCalendarSessionDone(plan, session.id);
@@ -273,6 +317,11 @@ export function StudyCalendarScreen({ navigation, route }: Props) {
     }
   };
 
+  // Build a schedule from the exam date, the weekly hours and this scope's
+  // topics. Generation is pure and fails with a reason (`no_topics`,
+  // `exam_passed`) BEFORE anything is persisted, so a rejected plan never
+  // overwrites the saved one. On success the view jumps to the first session's
+  // month so the student sees what was just made.
   const generate = async () => {
     if (!examDate) {
       showToast('Set an exam date first.', 'info');

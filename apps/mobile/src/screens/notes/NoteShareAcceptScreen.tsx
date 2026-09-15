@@ -1,3 +1,17 @@
+/**
+ * The `NoteShareAccept` route: the landing screen for a note share link. Shows
+ * who invited you, which note, and whether as a viewer or an editor, then
+ * accepts on an explicit press.
+ *
+ * Main exports: `NoteShareAcceptScreen` (also the default).
+ * Touches: services/notes `previewNoteShareLink` and `acceptNoteShareLink`, and
+ * notesStore `loadNotes` so the accepted note is in the list before the editor
+ * opens. No native modules.
+ *
+ * Gotchas: the link is previewed, never auto-accepted — opening the deep link
+ * grants nothing until the student presses Accept. A link for a note they can
+ * already open shows "Open note" instead, so accepting cannot re-grant access.
+ */
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

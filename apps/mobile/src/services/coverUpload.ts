@@ -12,6 +12,18 @@
  * it is read. A cover is displayed at 4:3 on a list tile and 16:5 on a header;
  * shipping the phone's full 12 MP original would cost a student megabytes to
  * upload and then again on every read.
+ *
+ * Main exports: `pickCoverImage`, `uploadCover`, `clearCover`, and the
+ * `CoverTarget` / `PickedCoverImage` / `CoverImageResult` shapes.
+ *
+ * Touches: expo-image-picker (camera and library permissions),
+ * `utils/prepareImage`, `components/ui/coverPickerModel` (validation + path
+ * building), `components/ui/appDialog`, and the deck / note / study-set cover
+ * routes through `services/api`.
+ *
+ * Gotcha: persist only `coverPath` from the result. `coverUrl` and
+ * `coverThumbUrl` are signed and expire within 24h; reads re-sign through
+ * `services/storageUrls`.
  */
 import * as ImagePicker from 'expo-image-picker';
 import { api } from './api';

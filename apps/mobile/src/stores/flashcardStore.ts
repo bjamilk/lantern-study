@@ -1,6 +1,42 @@
 /**
  * Flashcard Store
  * Manages decks and flashcard state with offline-first sync
+ *
+ * Purpose: the phone's library of decks and cards. Every write is optimistic
+ * and falls back to a queued sync operation, so the whole store is usable with
+ * no network; SRS grading is applied locally first and reconciled with the
+ * server's answer.
+ *
+ * Main exports: `useFlashcardStore` (`fetchDecks`, `fetchFlashcards`,
+ * `syncAllFlashcards`, deck CRUD, `insertSavedDeck`,
+ * `insertImportedDeckLocally`, `replaceImportedDeck`, card CRUD,
+ * `reviewFlashcard`, `loadFromStorage`/`saveToStorage`, the offline-deck
+ * helpers), plus the `Deck` and `Flashcard` types.
+ *
+ * Touches: services/api for every REST call, services/syncService for the
+ * offline queue, services/productAnalytics, settingsStore (the FSRS settings
+ * the local grade uses), `@lantern/shared` mappers and
+ * `applyLocalFlashcardReview`, utils/flashcardHelpers for deck stats, and
+ * AsyncStorage under `lantern_decks`, `lantern_flashcards` and
+ * `lantern_offline_decks`.
+ *
+ * Gotchas:
+ * - Those three AsyncStorage keys are NOT scoped by user id; authStore's
+ *   sign-out sweep is what stops one account's library reaching the next.
+ * - `pendingLocalReviews` is module state that deliberately outranks the
+ *   server on a refetch, so a graded card cannot regress to due while its
+ *   review is still in flight or queued. It is only cleared once the server
+ *   has confirmed the grade or won a version conflict.
+ * - `saveToStorage` stringifies every deck AND every card in the account on
+ *   the JS thread. Call it through `scheduleSaveToStorage` on hot paths;
+ *   doing it in the same frame as an optimistic re-render is what produced a
+ *   multi-second main-thread stall.
+ * - An optimistic deck carries a `temp_deck_…` id the server never issued.
+ *   Cards must not be queued against one (see `insertImportedDeckLocally`),
+ *   and `deleteDeck` purges the deck's queued operations before it returns.
+ * - `enrichDecksWithStats` recomputes due/new/mastered from the cards actually
+ *   held, so a deck's counts follow the local card map rather than the last
+ *   server answer.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -72,6 +108,10 @@ function flushScheduledSave(saveFn: () => Promise<void>) {
   void saveFn();
 }
 
+// Overlay the pending local grades onto anything that arrives from the server
+// or from disk. Without this, a refetch that raced an in-flight (or queued)
+// review would hand back the card's pre-grade SRS state and the deck's due
+// count would jump back up under the student's thumb.
 function mergeCardsPreferPendingReviews(remoteCards: Flashcard[]): Flashcard[] {
   if (pendingLocalReviews.size === 0) return remoteCards;
   return remoteCards.map(card => pendingLocalReviews.get(card.id) ?? card);
@@ -147,6 +187,14 @@ function unwrapFlashcardResponse(response: unknown): any[] {
   return [];
 }
 
+/**
+ * All cards for one deck, or every card in the account.
+ *
+ * The deck-scoped call is a single request; the account-wide one pages until a
+ * short batch comes back, because the endpoint caps a page at 100 and a
+ * truncated result would read as "those cards were deleted" to the full
+ * replace in `syncAllFlashcards`.
+ */
 async function fetchFlashcardPages(deckId?: string): Promise<Flashcard[]> {
   if (deckId) {
     const response = await api.fetchFlashcards(deckId);
@@ -402,6 +450,16 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
+  /**
+   * Load the deck list, then the cards behind it.
+   *
+   * Disk cache first, but ONLY when nothing is loaded yet: re-reading storage
+   * over a live session would clobber in-memory SRS updates (the common case
+   * is exiting a review early). A failed API call is not an empty library —
+   * the cached decks stay on screen and `error` explains what the student is
+   * looking at. `syncAllFlashcards` is awaited so due/new counts agree with
+   * the API before the UI settles.
+   */
   fetchDecks: async (userId: string) => {
     try {
       set({ isLoading: true, error: null });
@@ -498,6 +556,14 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
 
+  /**
+   * Re-read every card in the account and replace the local map wholesale.
+   *
+   * The user id is unused — the API scopes by the bearer token — but is kept in
+   * the signature because every caller has it and passes it. Quiet on failure:
+   * it runs off the back of `fetchDecks`, which has already reported anything
+   * the student needs to know.
+   */
   syncAllFlashcards: async (_userId: string) => {
     if (DEMO_MODE) return;
 
@@ -523,6 +589,16 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     set({ currentDeck: deck });
   },
   
+  /**
+   * Create a deck, optimistically.
+   *
+   * The temp row goes in and is persisted BEFORE the request, so the deck is
+   * there whether or not the network is. On success the temp id is swapped for
+   * the server's in place; on failure the create is queued and the temp deck is
+   * returned as-is — callers therefore have to expect a `temp_deck_…` id back
+   * and must not queue card writes against it (see
+   * `insertImportedDeckLocally`).
+   */
   createDeck: async (name: string, description: string | undefined, userId: string, options) => {
     const courseId = options?.courseId ?? null;
     // A topic without its course is the one state the server refuses.
@@ -740,6 +816,12 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
   
+  // Card writes (create / update / delete) share one shape: patch the local
+  // map, recompute the owning deck's stats, then attempt the API and fall back
+  // to a queued operation. None of them roll back on failure — the student's
+  // edit is the truth until sync says otherwise. `updateFlashcard` debounces
+  // its save because it runs on every keystroke-sized patch, and flushes once
+  // the request settles.
   createFlashcard: async (data) => {
     const { deckId, userId, ...cardData } = data;
     const cardsInDeckBefore = (get().flashcards[deckId] || []).length;
@@ -841,6 +923,24 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
     }
   },
 
+  /**
+   * Grade one card.
+   *
+   * Order matters and is the whole design: run FSRS locally, record the result
+   * in `pendingLocalReviews`, write it to state, and persist IMMEDIATELY (not
+   * debounced) so exiting the session or a remount cannot lose graded cards.
+   * Only then does the network get involved.
+   *
+   * Three outcomes:
+   * - offline, or a deck the student downloaded for offline use: queue a
+   *   `flashcard_review` stamped with `reviewedAt`, and KEEP the pending entry
+   *   so a later refetch cannot resurrect the old due state. The stamp is what
+   *   stops a week of offline study collapsing onto the sync date.
+   * - the server accepts: prefer its SRS schedule when it returned one, and
+   *   drop the pending entry.
+   * - a 409 version conflict: the server already has a newer grade for this
+   *   card (another device), so the local one is abandoned rather than retried.
+   */
   reviewFlashcard: async (
     flashcardId: string,
     deckId: string,
@@ -990,6 +1090,11 @@ export const useFlashcardStore = create<FlashcardState>((set, get) => ({
   clearError: () => set({ error: null }),
   
   // ---- offline helpers ----
+  // `offlineDeckIds` is the student's EXPLICIT download list, not a cache hint.
+  // Marking a deck pre-fetches its cards so they are on disk, and it also
+  // routes that deck's reviews down the queued path in `reviewFlashcard` even
+  // when the phone is online — a deck downloaded for a commute grades the same
+  // way whether or not there is signal at that moment.
   isDeckOffline: (deckId: string) => {
     const { offlineDeckIds } = get();
     return offlineDeckIds.includes(deckId);

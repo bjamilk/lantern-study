@@ -11,6 +11,22 @@ WebBrowser.maybeCompleteAuthSession();
 
 const redirectTo = makeRedirectUri({ scheme: 'lanternstudy' });
 
+/**
+ * Provider/gotrue error codes are machine strings (`access_denied`,
+ * `server_error`). Only the ones a student can act on get their own sentence;
+ * the rest keep the raw code so a support message can quote it.
+ */
+export function describeProviderError(code: string): string {
+  const normalized = code.toLowerCase();
+  if (normalized.includes('access_denied') || normalized.includes('user_cancelled')) {
+    return 'Google sign-in was cancelled.';
+  }
+  if (normalized.includes('temporarily_unavailable') || normalized.includes('server_error')) {
+    return 'Google could not be reached just now. Try again in a moment.';
+  }
+  return `Google sign-in could not be completed (${code}).`;
+}
+
 export async function signInWithGoogleOAuth(): Promise<{ user: User; session: Session }> {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -35,9 +51,19 @@ export async function signInWithGoogleOAuth(): Promise<{ user: User; session: Se
     throw new Error('Google sign-in failed');
   }
 
+  // WHAT COMES BACK, AND WHAT IT MEANS (Sentry LANTERN-STUDY-MOBILE-7).
+  // `openAuthSessionAsync` reports `success` for ANY return to `redirectTo`,
+  // including the one Google sends when the student backs out of the consent
+  // screen or the provider aborts. The old code read a missing `code` as a bug
+  // and threw `No authorization code in redirect URL`, which the store rethrew
+  // and the button never caught — an unhandled rejection in Sentry for what is
+  // simply somebody changing their mind. A provider error is still surfaced;
+  // a bare return is a cancellation.
   const { params, errorCode } = QueryParams.getQueryParams(result.url);
-  if (errorCode) throw new Error(String(errorCode));
-  if (!params.code) throw new Error('No authorization code in redirect URL');
+  const providerError =
+    errorCode || params.error_description || params.error || params.error_code || null;
+  if (providerError) throw new Error(describeProviderError(String(providerError)));
+  if (!params.code) throw new Error('Google sign-in was cancelled before it finished');
 
   const { data: sessionData, error: exchangeError } =
     await supabase.auth.exchangeCodeForSession(params.code);

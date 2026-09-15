@@ -1,3 +1,56 @@
+/**
+ * API server entry point: builds the Express application, wires every service
+ * and route, and starts listening.
+ *
+ * The middleware chain is order-sensitive. Each position below exists for a
+ * reason, and moving a stage breaks something specific:
+ *
+ *   1. `trust proxy` (production only) — Render and the Cloudflare proxy set
+ *      X-Forwarded-For. Without this, every request appears to come from the
+ *      proxy IP and the per-IP rate limits collapse into one shared bucket.
+ *   2. `helmet` — security headers (CSP, HSTS) before anything can respond.
+ *   3. The CORS delegate — a per-request function, not a static origin list,
+ *      because the decision depends on the credential the request carries
+ *      (cookie vs Authorization/X-API-Key) and on whether the path can set a
+ *      cookie. See `decideCorsOrigin` in utils/corsOrigins.ts.
+ *   4. `compression`, then `loadShedMiddleware` — saturated instances fail fast
+ *      with Retry-After before any body is parsed.
+ *   5. Body parsing. The Paystack webhook RAW-BODY parser is selected BEFORE the
+ *      generic json/urlencoded parsers can run, because the webhook is
+ *      authenticated by HMAC-SHA512 over the exact request bytes: a generic
+ *      parser that re-serializes the JSON destroys the signature. The dispatcher
+ *      also picks the body limit by path — the large-upload classes
+ *      (50mb / 35mb / 4mb) must be chosen before the 1mb default, or a lecture
+ *      audio or note-image upload 413s.
+ *   6. `cookieParser` then `csrfProtectionMiddleware`.
+ *   7. Rate limiters — mounted in `startServer()`, not here, because they can
+ *      only be built after Redis is connected (see the boot sequence below).
+ *   8. The sanitiser and body-shape validator — mounted AFTER the rate limiter.
+ *      H1 moved them here from the pre-limiter position: both walk the entire
+ *      parsed body, so running them before rate limiting let an unauthenticated
+ *      caller buy body-sized CPU on every request and wedge the event loop
+ *      before anything could throttle them. `middleware/security.test.ts`
+ *      asserts this ordering against this file's source.
+ *   9. Route mounts, each carrying its own auth mode (see the route-mount
+ *      banner below), with the admin gate last.
+ *  10. Sentry's Express handlers, then the database / Supabase / generic error
+ *      handlers, which must be registered after all routes.
+ *
+ * Boot sequence (H2): `initializeServices()` awaits
+ * `initializeRateLimitStores()`, which wires the Redis send-command and only
+ * then calls `buildAllLimiters()`. Limiters are also built at module import,
+ * before Redis exists, so every limiter silently fell back to a per-process
+ * in-memory store in production while the "Redis is required" guard still
+ * passed. The rebuild after Redis is wired is what makes the limits
+ * distributed. Route and limiter mounting therefore happens inside
+ * `startServer()`, after `initializeServices()` resolves.
+ *
+ * Touches: Supabase (service-role client shared by every route module via the
+ * `initialize*Routes` injectors), Redis (cache + rate-limit stores), Paystack
+ * webhooks at `/webhooks/paystack` and `/api/v1/webhooks/paystack`, the
+ * `lantern_access` / `lantern_refresh` auth cookies, Sentry, and BullMQ (cron
+ * work is delegated to the worker when `isBullMqEnabled()`).
+ */
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -19,9 +72,8 @@ import { ApiKeyService } from './services/apiKey';
 import { SupabaseService } from './services/supabase';
 
 // Import middleware
-import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores } from './middleware/rateLimit';
+import { anonymousIpRateLimit, adminRateLimit, initializeRateLimitStores, isWebhookRateLimitExempt } from './middleware/rateLimit';
 import { authMiddleware, optionalAuthMiddleware, requirePlatformAdmin } from './middleware/auth';
-import { marketplaceAccessGate, jobsBoardAccessGate } from './middleware/marketplaceAccess';
 import { AI_USAGE_EXPOSED_HEADERS } from './middleware/aiRateLimit';
 import { errorHandler, notFoundHandler, databaseErrorHandler, supabaseErrorHandler, corsRejection } from './middleware/errorHandler';
 import { handleValidationErrors } from './middleware/validation';
@@ -31,7 +83,8 @@ import { csrfProtectionMiddleware } from './middleware/csrf';
 import { validateBodyShape } from './middleware/validateBody';
 import { applyPublicRateLimits } from './middleware/publicRateLimitMiddleware';
 import { loadShedMiddleware } from './middleware/loadShed';
-import { getAllowedCorsOrigins } from './utils/corsOrigins';
+import { decideCorsOrigin, isCookieSettingPath } from './utils/corsOrigins';
+import { ACCESS_COOKIE, REFRESH_COOKIE } from './utils/authCookies';
 import healthRoutes from './routes/health';
 import { setupGracefulShutdown } from './config/production';
 import { configureHttpServer } from './config/httpServer';
@@ -97,6 +150,9 @@ import { isBullMqEnabled } from './queue/connection';
 // Import utilities
 import { logger, stream, logRequest } from './utils/logger';
 
+// ---------------------------------------------------------------------------
+// Chain stage 1 — app + trust proxy
+// ---------------------------------------------------------------------------
 // Initialize Express app
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -106,6 +162,16 @@ if (process.env.NODE_ENV === 'production') {
   app.set('trust proxy', 1);
 }
 
+// ---------------------------------------------------------------------------
+// Boot sequence — services, then limiters, then route injection
+// ---------------------------------------------------------------------------
+// `initializeServices()` runs once from `startServer()` before any route is
+// mounted. Order inside it matters: Redis connects first, then
+// `initializeRateLimitStores()` wires the send-command and rebuilds the
+// limiters (H2), then the Supabase service-role client is constructed and
+// handed to every route module through its `initialize*Routes` injector. A
+// failure anywhere here is fatal — the process exits rather than serve traffic
+// with half-wired auth.
 // Initialize services
 let cacheService: CacheService;
 let apiKeyService: ApiKeyService;
@@ -124,7 +190,16 @@ async function initializeServices() {
       logger.info('Using LRU memory cache (Redis disabled)');
     }
 
+    // H2: this both wires the Redis send-command and calls `buildAllLimiters()`
+    // again. The import-time build ran before Redis existed, so without this
+    // rebuild every limiter keeps a per-process in-memory store in production.
     await initializeRateLimitStores();
+
+    // F7a: the AI credit counters have the same Redis dependency and now make
+    // the same call — required in production, loud per-process fallback outside
+    // it — instead of silently degrading to an unshared provider spend cap.
+    const { initializeAiRateLimitStore } = await import('./middleware/aiRateLimit');
+    await initializeAiRateLimitStore();
 
     // Initialize Supabase service
     const dbConfig = {
@@ -150,6 +225,9 @@ async function initializeServices() {
     initializePlatformAdminAuth(supabaseService);
     assertProductionAuthStrict();
 
+    // Route modules hold their Supabase/cache handles in module scope and are
+    // injected here. A router mounted without its injector having run throws on
+    // first request, which is why mounting is deferred to after this function.
     // Initialize routes with services
     const { initializeUserRoutes } = await import('./routes/users');
     const { initializeGroupRoutes } = await import('./routes/groups');
@@ -216,6 +294,9 @@ async function initializeServices() {
     const { initializeBudgetRoutes } = await import('./routes/budget');
     initializeBudgetRoutes(supabaseService, cacheService);
 
+    // Background cron: run in-process only when BullMQ is off. With BullMQ
+    // enabled the dedicated worker owns these, and starting them here too would
+    // double-send retention emails and marketplace alerts.
     const { startDataRetentionJobs } = await import('./services/dataRetention');
     if (!isBullMqEnabled()) {
       startDataRetentionJobs(supabaseService);
@@ -241,6 +322,11 @@ async function initializeServices() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Chain stage 2 — helmet (security headers)
+// ---------------------------------------------------------------------------
+// First responder in the chain: CSP and a one-year preloaded HSTS are set
+// before any other middleware can write a response.
 // Security middleware
 app.use(helmet({
   contentSecurityPolicy: {
@@ -258,17 +344,12 @@ app.use(helmet({
   },
 }));
 
-// CORS configuration — production uses explicit allowlist only
-app.use(cors({
-  origin: function (origin, callback) {
-    const allowedOrigins = getAllowedCorsOrigins();
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (process.env.ALLOW_ALL_CORS === 'true' && process.env.NODE_ENV !== 'production') {
-      return callback(null, true);
-    }
-    return callback(corsRejection());
-  },
+// ---------------------------------------------------------------------------
+// Chain stage 3 — the CORS delegate
+// ---------------------------------------------------------------------------
+// A delegate rather than a static origin because the answer depends on the
+// request: which credential it carries, and whether the path can set a cookie.
+const corsBaseOptions = {
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   // 'X-Lantern-Surface' (Phase 1 C): without it in this list the browser
@@ -279,14 +360,61 @@ app.use(cors({
   // browsers, so on feature routes the web badge showed feature counts (x/15)
   // instead of the global counter (x/20).
   exposedHeaders: ['X-Request-ID', ...AI_USAGE_EXPOSED_HEADERS],
+};
+
+// CORS configuration — production uses explicit allowlist only.
+// A MISSING Origin is no longer blanket-allowed: with `credentials: true` that
+// handed sandboxed iframes and cross-origin 307 redirects (which send no Origin)
+// cookie-bearing access, making /auth/login and /auth/exchange login-CSRF and
+// session-fixation targets. Only a non-cookie credential (Authorization /
+// X-API-Key — a browser cannot attach those cross-site without a preflight)
+// earns credentialed access with no Origin, and never on a cookie-setting path.
+app.use(cors((req, callback) => {
+  const origin = req.headers.origin;
+  const rawCookie = req.headers.cookie || '';
+  const hasAuthCookie =
+    rawCookie.includes(`${ACCESS_COOKIE}=`) || rawCookie.includes(`${REFRESH_COOKIE}=`);
+  const apiKeyHeader = req.headers['x-api-key'];
+  const authHeader = req.headers.authorization;
+  const hasNonCookieCredential =
+    (typeof apiKeyHeader === 'string' && apiKeyHeader.trim().length > 0) ||
+    (typeof authHeader === 'string' && authHeader.trim().length > 0);
+
+  const allowed = decideCorsOrigin({
+    origin,
+    hasNonCookieCredential,
+    hasAuthCookie,
+    isCookieSetting: isCookieSettingPath(req.url || ''),
+  });
+
+  // A present-but-disallowed Origin stays a hard rejection (unchanged behaviour).
+  if (!allowed && origin) return callback(corsRejection());
+
+  callback(null, { ...corsBaseOptions, origin: allowed });
 }));
 
+// ---------------------------------------------------------------------------
+// Chain stage 4 — compression, then load shedding
+// ---------------------------------------------------------------------------
 // Compression middleware
 app.use(compression());
 
 // Shed load early (after CORS/helmet) so saturated instances fail fast with Retry-After
 app.use(loadShedMiddleware);
 
+// ---------------------------------------------------------------------------
+// Chain stage 5 — body parsing: raw-body webhooks first, then size classes
+// ---------------------------------------------------------------------------
+// One dispatcher middleware (below) picks exactly one parser per request.
+// Two rules govern it:
+//   - The Paystack webhook path is matched FIRST, so `jsonWebhook` — the only
+//     parser with a `verify` hook that captures `req.rawBody` — runs instead of
+//     the generic parsers. An HMAC over raw bytes cannot survive a parser that
+//     re-serializes the JSON.
+//   - The large-upload classes are chosen by pathname before the 1mb default:
+//     50mb for flashcard/marketplace/message uploads and offline bundles, 35mb
+//     for note audio/PDF/presentation/image routes and companion attachments,
+//     4mb for avatars, 1mb for everything else.
 // Body parsing middleware — large routes MUST be registered before the 1mb default.
 // Use path checks (not only RegExp mounts): Express RegExp layers can miss paths and
 // silently fall through to the 1mb parser, which breaks lecture transcription.
@@ -306,6 +434,10 @@ const jsonWebhook = express.json({
   verify: (req: any, _res, buf) => { req.rawBody = buf.toString(); },
 });
 
+// Path classifiers for the body-limit dispatcher. They test the normalized
+// pathname (query stripped, trailing slash removed) rather than relying on
+// Express mounts, because a RegExp mount can miss a path and fall through to
+// the 1mb parser.
 function normalizePathname(raw: string): string {
   const path = (raw || '').split('?')[0] || '';
   if (path.length > 1 && path.endsWith('/')) return path.slice(0, -1);
@@ -345,6 +477,8 @@ function isAvatarUploadPath(pathname: string): boolean {
   return /\/api\/v1\/(users|groups)\/[^/]+\/avatar$/.test(pathname);
 }
 
+// The dispatcher. The webhook test is first and returns early: everything
+// downstream of it depends on `req.rawBody` being the untouched request bytes.
 app.use((req, res, next) => {
   const pathname = normalizePathname(req.originalUrl || req.url || '');
   if (pathname === '/webhooks/paystack' || pathname === '/api/v1/webhooks/paystack') {
@@ -357,11 +491,21 @@ app.use((req, res, next) => {
   return json1mb(req, res, next);
 });
 app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+// ---------------------------------------------------------------------------
+// Chain stage 6 — cookies and CSRF
+// ---------------------------------------------------------------------------
+// cookieParser must precede the CSRF check and every auth middleware, which
+// read the lantern_access / lantern_refresh cookies off `req.cookies`.
 app.use(cookieParser());
 app.use(csrfProtectionMiddleware);
-app.use(sanitizationMiddleware);
-app.use(validateBodyShape());
+// NOTE: sanitizationMiddleware and validateBodyShape() are deliberately NOT mounted
+// here. Both walk the whole parsed body, so running them ahead of the rate limiter
+// let an unauthenticated caller buy body-sized CPU per request. They are mounted in
+// startServer() immediately after anonymousIpRateLimit and before any route.
 
+// ---------------------------------------------------------------------------
+// Chain stage 7 — logging, timeout, request id
+// ---------------------------------------------------------------------------
 // Request logging (morgan only — avoid double HTTP logs in production)
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'tiny' : 'combined', { stream }));
 if (process.env.NODE_ENV !== 'production') {
@@ -382,6 +526,12 @@ app.use((req: any, res: any, next: any) => {
 
 
 
+// ---------------------------------------------------------------------------
+// Public health surface
+// ---------------------------------------------------------------------------
+// Mounted here, outside startServer(), so /health and /ready answer during
+// service initialization and the platform's health check does not kill a
+// still-booting instance. No auth and no rate limiter.
 // Health, readiness, and metrics (no auth)
 app.use('/', healthRoutes);
 
@@ -401,14 +551,61 @@ app.use('/', healthRoutes);
 // Start server
 let httpServer: ReturnType<typeof app.listen> | null = null;
 
+/**
+ * Completes the chain and starts listening.
+ *
+ * Everything from here down must run after `initializeServices()`: the rate
+ * limiters need the Redis-backed stores built by `initializeRateLimitStores()`,
+ * and every router needs its service injector to have run.
+ */
 async function startServer() {
   try {
     await initializeServices();
 
+    // -----------------------------------------------------------------------
+    // Chain stage 8 — rate limiting
+    // -----------------------------------------------------------------------
+    // Mounted only now, because the limiter handlers are rebuilt against the
+    // Redis store inside initializeServices(). DISABLE_RATE_LIMIT is a
+    // development switch; validateProductionSecrets() exits the process if it
+    // is set in production.
     if (process.env.DISABLE_RATE_LIMIT !== 'true') {
-      app.use(anonymousIpRateLimit);
+      // Paystack webhooks carry no credential, so the anonymous 300/15min/IP
+      // bucket applied to them — Paystack retries from a small IP pool and
+      // would 429 itself out of delivering a payment. Signature verification
+      // in the webhook route is the real gate here.
+      app.use((req, res, next) => {
+        if (isWebhookRateLimitExempt(req.path || '')) return next();
+        return anonymousIpRateLimit(req, res, next);
+      });
     }
 
+    // -----------------------------------------------------------------------
+    // Chain stage 9 — sanitiser and body-shape validator (position set by H1)
+    // -----------------------------------------------------------------------
+    // Body-walking middleware runs AFTER the rate limiter (and after the body-size
+    // limits above) so a flood of huge bodies is shed at 429 instead of paying for
+    // a full traversal per request.
+    app.use(sanitizationMiddleware);
+    app.use(validateBodyShape());
+
+    // -----------------------------------------------------------------------
+    // Chain stage 10 — route mounts
+    // -----------------------------------------------------------------------
+    // Auth is applied per mount, in three modes:
+    //   - No middleware here: the router applies `authMiddleware` itself on the
+    //     routes that need it. This is the default for the study surfaces.
+    //   - `optionalAuthMiddleware` at the mount: the surface is browsable
+    //     signed-out but personalises when a session is present. Used for
+    //     /campuses, /jobs-board, /groups and /marketplace, each paired with
+    //     `applyPublicRateLimits` because anonymous traffic reaches them.
+    //   - Fully public: /webhooks/paystack (authenticated by HMAC signature,
+    //     not by session) and /sitemap.
+    // Mount ORDER matters where a prefix would shadow a sibling — Express
+    // matches in registration order — hence the /users/me/* and
+    // /courses/:courseId/topics mounts preceding their parents.
+    // The admin gate is last: /api/v1/admin is the only mount with a hard
+    // `authMiddleware` + `requirePlatformAdmin` + `adminRateLimit` stack.
     // API routes (mount after services initialization)
     // /users/me/courses MUST be mounted before /users so the "me" segment is
     // never captured by /users/:userId/* (Express matches in registration order).
@@ -437,11 +634,11 @@ async function startServer() {
     app.use('/api/v1/auth', authRoutes);
     app.use('/api/v1/storage', storageRoutes);
     app.use('/api/v1/jobs', jobsRoutes);
-    // Private pilot: only allowlisted accounts reach the jobs board. Mounted on
-    // the router, not a path prefix — /api/v1/jobs is the async job-queue
-    // status endpoint that note import, AI and the companion poll, and a prefix
-    // test would gate that too.
-    app.use('/api/v1/jobs-board', optionalAuthMiddleware, jobsBoardAccessGate, applyPublicRateLimits, jobsBoardRoutes);
+    // Open to every viewer (2026-09-15, founder: "make the campus and
+    // marketplace discoverable to all"). Mounted on the router, not a path
+    // prefix — /api/v1/jobs is the async job-queue status endpoint that note
+    // import, AI and the companion poll, and a prefix mount would catch it too.
+    app.use('/api/v1/jobs-board', optionalAuthMiddleware, applyPublicRateLimits, jobsBoardRoutes);
     app.use('/api/v1/budget', budgetRoutes);
     app.use('/api/v1/contact', contactRoutes);
     app.use('/api/v1/analytics', analyticsRoutes);
@@ -455,10 +652,18 @@ async function startServer() {
     app.use('/api/v1/user-stats', userStatsRoutes);
     app.use('/api/v1/dashboard', dashboardRoutes);
     app.use('/api/v1/preferences', preferencesRoutes);
-    // Private pilot: only allowlisted accounts reach the marketplace routes
-    // (GET /access stays open so clients can hide the surfaces). See
-    // middleware/marketplaceAccess.ts for the reopen switch.
-    app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceAccessGate, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
+    // Open to every viewer. The private-pilot allowlist that used to sit
+    // between optional auth and this router was removed on 2026-09-15; per-route
+    // `authMiddleware`, ownership checks, the seller payout-profile gate and the
+    // rights/moderation rules are what protect writes. GET /access remains and
+    // always answers `enabled: true` so already-installed clients open up
+    // without an update.
+    app.use('/api/v1/marketplace', optionalAuthMiddleware, marketplaceGeoMiddleware, applyPublicRateLimits, marketplaceRoutes);
+    // Public by design and mounted at two paths (the legacy root path and the
+    // /api/v1 one Paystack is configured with). Authentication is the HMAC
+    // signature over `req.rawBody`, which is why the raw-body parser had to win
+    // the dispatcher above. `isWebhookRateLimitExempt` keeps these paths out of
+    // the anonymous IP bucket.
     app.use('/webhooks/paystack', paystackWebhookRoutes);
     app.use('/api/v1/webhooks/paystack', paystackWebhookRoutes);
     app.use('/api/v1/sitemap', sitemapRoutes);
@@ -468,9 +673,18 @@ async function startServer() {
     app.use('/api/v1/notes', notesRoutes);
     app.use('/api/v1/challenges', challengeRoutes);
     app.use('/api/v1/offline-bundles', offlineBundlesRoutes);
+    // The admin gate. `requirePlatformAdmin` re-checks the role against the
+    // database on every request rather than trusting a JWT claim.
     app.use('/api/v1/admin', authMiddleware, requirePlatformAdmin, adminRateLimit, adminRoutes);
     app.use(notFoundHandler);
 
+    // -----------------------------------------------------------------------
+    // Chain stage 11 — error handling (must follow every route)
+    // -----------------------------------------------------------------------
+    // Express selects error middleware by registration order, so these run last:
+    // Sentry's capture handler, then the database and Supabase mappers that
+    // translate driver-level failures into API errors, then the generic handler
+    // that shapes the response.
     setupSentryExpress(app);
 
     // Error handling middleware (must be registered after routes)
@@ -478,6 +692,8 @@ async function startServer() {
     app.use(supabaseErrorHandler);
     app.use(errorHandler);
 
+    // Listen last. `process.send('ready')` tells a process manager the instance
+    // is fully wired, not merely bound to the port.
     httpServer = app.listen(PORT, () => {
       logger.info(`🚀 Server running on port ${PORT}`);
       logger.info(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);

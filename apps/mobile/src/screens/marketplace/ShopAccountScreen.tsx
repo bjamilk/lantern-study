@@ -1,3 +1,22 @@
+/**
+ * `ShopAccount` route: the Shop's "You" hub — one screen listing everything
+ * that is yours, split into a Buying side and a Selling side.
+ *
+ * Exports: ShopAccountScreen.
+ * Touches: useShopBadges for every count on the screen;
+ * useMarketplaceStore.fetchShopSummary (forced on focus) and
+ * fetchServerFavorites; fetchSellerPayoutProfile for the payout-gate row;
+ * useAuthStore for the name; AsyncStorage for the remembered side.
+ *
+ * Gotchas: the remembered side key is scoped per user id, so two accounts on
+ * one phone do not inherit each other's side. Every row navigates with
+ * `{ pop: true }` because React Navigation 7 would otherwise push a duplicate
+ * copy and the destination's param-sync effects would never see the new
+ * params. payoutActive is tri-state — null means unknown, and the "Not set up"
+ * nag only appears when it is false AND the user has at least one active
+ * listing. The Selling segment count is deliberately badges.sellerAttention
+ * and excludes the payout gap, so it agrees with the header and Your Listings.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

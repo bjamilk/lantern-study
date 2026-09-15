@@ -1,3 +1,17 @@
+/**
+ * Exam readiness / mastery breakdown. Lists every active course with its
+ * coverage of the shared outline, a next action, and (for a 20+ cohort) what
+ * the class finds hardest; with a courseId route param it focuses on that one
+ * course and expands its topic list.
+ *
+ * Exports: MasteryScreen (named and default).
+ * Touches: services/api fetchMasteryGraph, fetchCourseReadiness and
+ * refreshMasteryGraph; buildReadinessRow and runReadinessAction from the Home
+ * readiness card, so this screen and the card can never name different next
+ * actions.
+ * Gotcha: a topic with no mastery score must read as "not enough data yet",
+ * never 0 %. A readiness failure is additive and must not blank the graph.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import {

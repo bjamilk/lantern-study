@@ -1,3 +1,22 @@
+/**
+ * Per-route idempotency wiring for side-effectful mutations (marketplace
+ * orders, payment initialisation, credit spends).
+ *
+ * Exports `idempotencyMiddleware(options)`, which attaches
+ * `req.idempotencyKey` and `req.runIdempotent(handler)`, and
+ * `setIdempotencyClient` for server bootstrap. The middleware itself is only
+ * plumbing: the replay store lives in `services/idempotency`, which persists
+ * `(user_id, operation, key)` and the recorded response in Supabase.
+ *
+ * Key resolution: the `Idempotency-Key` request header first, then the route's
+ * `fallbackKey(req)` if it has one. With `requireKey` the route 400s when
+ * neither yields a key.
+ *
+ * Contract: `runIdempotent` is a no-op passthrough for an unauthenticated
+ * request (no user to scope the key to) and for a null key, so a handler must
+ * not treat being wrapped as a guarantee of replay protection. CAS PATCHes
+ * should not use this — they are already idempotent by version check.
+ */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { NextFunction, Request, Response } from 'express';
 import { normalizeIdempotencyKey, withIdempotency } from '../services/idempotency';

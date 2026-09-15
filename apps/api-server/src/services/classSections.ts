@@ -40,6 +40,7 @@ import {
 } from '@lantern/shared/academic';
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
+import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 import { logger } from '../utils/logger';
 import {
   getAcademicCoursesService,
@@ -56,11 +57,20 @@ import { recordLearningEvent } from './learningEvents';
 const LMS_MESSAGE =
   'Lantern classes work without Canvas, Google Classroom or Moodle. Those connectors are not available in v1.';
 
-/** JWT `app_metadata` only — same rule as packages/shared/src/auth/platformAdmin.ts. */
-function resolvePlatformAdmin(authUser?: unknown): boolean {
-  if (!authUser || typeof authUser !== 'object') return false;
-  const meta = (authUser as { app_metadata?: Record<string, unknown> }).app_metadata;
-  return meta?.is_platform_admin === true;
+/**
+ * Live platform-admin check, from the database.
+ *
+ * This used to read `app_metadata.is_platform_admin` off `req.user` — but the
+ * auth middleware builds `req.user` without any `app_metadata`, so the lookup
+ * found nothing and the helper returned false for EVERY caller, real platform
+ * admins included. The two callers below therefore silently had no admin
+ * escape hatch at all. Resolve it live, the way jobsBoard and
+ * middleware/authorizeResource already do, so the answer reflects the current
+ * database and not a claim carried in a token.
+ */
+async function resolvePlatformAdmin(actorId?: string): Promise<boolean> {
+  if (!actorId || typeof actorId !== 'string') return false;
+  return isLivePlatformAdmin(actorId);
 }
 
 export function classFail(message: string, statusCode = 400): never {
@@ -1162,7 +1172,7 @@ export class ClassSectionsService {
   }
 
   private async assertInstitutionAdmin(actorId: string, institutionId: string, authUser?: unknown) {
-    if (resolvePlatformAdmin(authUser)) return;
+    if (await resolvePlatformAdmin(actorId)) return;
     const { data, error } = await this.db
       .from('institution_staff')
       .select('role, status')
@@ -1319,7 +1329,7 @@ export class ClassSectionsService {
     if (!isUuid(courseId)) classFail('courseId is invalid');
     const course = await this.courses().getCourseById(courseId);
     if (!course) classFail('Course not found', 404);
-    if (!resolvePlatformAdmin(authUser)) {
+    if (!(await resolvePlatformAdmin(actorId))) {
       if (!course.institutionId) classFail('This course is not tied to a campus', 403);
       const { data, error } = await this.db
         .from('institution_staff')

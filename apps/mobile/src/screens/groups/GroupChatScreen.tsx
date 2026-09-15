@@ -1,3 +1,30 @@
+/**
+ * Group chat: the message list, composer, reactions, threads, stars, pins,
+ * wallpaper, in-chat search and the whole study apparatus on top of it
+ * (questions, AI generation, tests, challenges, sub-groups, member admin).
+ *
+ * Exports: GroupChatScreen (named and default) -- the route wrapper that
+ * decides which surface a group gets -- plus GroupChatView (the chat UI that
+ * CommunityChannelScreen also mounts), GroupChatNavigation and
+ * GroupChatViewProps.
+ * Touches: groupStore (messagesCache, pagination, send/edit/remove/retry,
+ * votes, flags, members, archive/leave/delete, threads), communityStore,
+ * testStore, offlineStore, toastStore, authStore, featureTipStore;
+ * services/api and navigationRef navigateToTestTaking; AsyncStorage for the
+ * draft, device-local stars and the pinned message (all user- and group-keyed);
+ * expo-clipboard, typing indicator, read receipts, image attach, wallpaper.
+ * Gotchas: with host="community" (the lounge) the study/test apparatus is
+ * stripped, and the surface is decided by the GROUP, not by which screen
+ * mounted it -- opening the lounge from the Chat tab must not restore Study or
+ * Test. A community group whose lounge pointer has not arrived yet renders
+ * nothing rather than guessing: guessing "board" for the lounge is
+ * unrecoverable. A board opened here is redirected to CommunityChannel and
+ * leaves no chat screen underneath. Store state is read through per-value
+ * selectors, never a whole-store destructure and never an object built inside
+ * a selector -- that froze the app. This screen keeps its OWN load state
+ * because groupStore.error / isLoadingMessages are store-wide and unrelated
+ * work clears them, which once made a live conversation read "No messages yet".
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,

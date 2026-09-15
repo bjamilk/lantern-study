@@ -176,7 +176,24 @@ export async function verifyUserPassword(
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { error } = await client.auth.signInWithPassword({ email, password });
+  const { data, error } = await client.auth.signInWithPassword({ email, password });
+
+  // FIXED (F6): a successful re-verification minted a real GoTrue session whose
+  // refresh token stayed valid server-side long after this request ended — a
+  // password prompt shown before an irreversible action was quietly handing out
+  // a spare key. Revoke it. `scope: 'local'` revokes only THIS session's
+  // refresh token; a global sign-out would log the user out of every device
+  // just for confirming their password.
+  if (data?.session) {
+    try {
+      await client.auth.signOut({ scope: 'local' });
+    } catch (err) {
+      logger.warn('Failed to revoke password-verification session', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   return !error;
 }
 
@@ -199,8 +216,20 @@ export async function purgeScheduledAccountDeletions(
   let count = 0;
   for (const row of data || []) {
     try {
-      const deleted = await deleteUserAccountFully(supabaseService, row.id);
-      if (deleted) count += 1;
+      // FIXED (F6): `deleteUserAccountFully` now reports partial erasure rather
+      // than a bare boolean. A partial run still counts — the account is gone —
+      // but it is logged at error level with the failing buckets so support can
+      // finish the storage cleanup by hand.
+      const result = await deleteUserAccountFully(supabaseService, row.id);
+      if (result.found) count += 1;
+      if (result.found && !result.ok) {
+        logger.error('Scheduled account deletion partially completed', {
+          userId: row.id,
+          code: 'PARTIAL_DELETION',
+          purged: result.purged,
+          failures: result.failures,
+        });
+      }
     } catch (err) {
       logger.error('Scheduled account deletion failed', { userId: row.id, err });
     }

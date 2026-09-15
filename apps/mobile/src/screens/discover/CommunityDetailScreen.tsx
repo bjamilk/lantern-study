@@ -1,3 +1,26 @@
+/**
+ * Campus stack -> CommunityDetail (route param: slug). One community rendered
+ * as a server: lounge chat, boards, study groups, study rooms and members, in
+ * the order buildCommunityChannelRows emits. Also joins/leaves the community,
+ * opens or mints the lounge, and copies or shares the invite link.
+ *
+ * Exports: CommunityDetailScreen (named and default) -- the community-gate
+ * wrapper around the internal CommunityServer.
+ * Touches: communityStore (detailBySlug, channelsById, loadCommunity,
+ * loadChannels, invalidate), groupStore (groups, fetchGroups), authStore,
+ * toastStore; services/api joinCommunity / leaveCommunity /
+ * joinDiscoverableGroup / openCommunityLounge / fetchStudyPresence;
+ * useCommunityPresence (realtime), useLowDataMode, usePlatformAdmin,
+ * ChromeContext; expo-clipboard and react-native Share for invites.
+ * Gotchas: this screen never sorts, filters or inserts a row -- ordering is
+ * the shared builder's. Everything opens on THIS stack except a study group,
+ * which changes tab to Chat by design. openCommunityLounge is idempotent and
+ * passes isLounge so CommunityChannel picks the chat surface without waiting
+ * to resolve. Presence and the room countdown are both suppressed in low-data
+ * mode. Load failures and action failures are kept apart, and "Copy invite
+ * link" awaits the clipboard write, putting the link in the toast if it fails.
+ * Who may manage comes from the shared role rules, never a local computation.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';

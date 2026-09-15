@@ -215,6 +215,24 @@
       "require": "./dist/study/*.js",
       "default": "./src/study/*.ts"
     },
+    "./offlineQueue": {
+      "types": "./src/offlineQueue/index.ts",
+      "import": "./src/offlineQueue/index.ts",
+      "require": "./dist/offlineQueue/index.js",
+      "default": "./src/offlineQueue/index.ts"
+    },
+    "./groups": {
+      "types": "./src/groups/index.ts",
+      "import": "./src/groups/index.ts",
+      "require": "./dist/groups/index.js",
+      "default": "./src/groups/index.ts"
+    },
+    "./groups/*": {
+      "types": "./src/groups/*.ts",
+      "import": "./src/groups/*.ts",
+      "require": "./dist/groups/*.js",
+      "default": "./src/groups/*.ts"
+    },
     "./moderation": {
       "types": "./src/moderation/index.ts",
       "import": "./src/moderation/index.ts",

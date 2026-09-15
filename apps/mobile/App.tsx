@@ -1,3 +1,28 @@
+/**
+ * Mobile root entry.
+ *
+ * Purpose: the outermost component Expo mounts. It installs the providers every
+ * screen assumes (gesture handler, safe-area metrics, theme), mounts the
+ * navigator and the app-wide singletons (status bar, cookie notice, dialog
+ * host), and runs the two boot side effects.
+ *
+ * Main export: the default `App` component (registered by expo-router/Expo's
+ * entry point). `AppInner` is private and exists only to read the theme from
+ * inside `ThemeProvider`.
+ *
+ * Touches: expo-splash-screen (auto-hide is prevented here; the navigator hides
+ * it), `services/otaUpdates.checkAndApplyOtaUpdate`, and
+ * `services/productAnalytics.hydrateProductAnalyticsPrefs`.
+ *
+ * Gotchas:
+ * - `checkAndApplyOtaUpdate` can reload the app into a downloaded update on the
+ *   FIRST launch, so a bad publish affects the very first session. OTA is not
+ *   usable for this app today (Reanimated SIGABRT on Android from `eas update`
+ *   exports) — ship mobile changes as full builds; see app.config.ts `updates`.
+ * - A font-scale or font-family change remounts this tree; navigation state
+ *   restore depends on the navigator mounting on the same commit, so nothing
+ *   here may delay `RootNavigator`'s mount.
+ */
 import './global.css';
 import React, { useEffect } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';

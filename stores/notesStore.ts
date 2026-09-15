@@ -1,3 +1,40 @@
+/**
+ * Notes: the folder tree, the filtered note list, the open note, and its
+ * comments — plus the serialised, version-checked save pipeline the editor
+ * autosaves through.
+ *
+ * Exports: `useNotesStore`. State: `folders`, `notes`, `selectedNote` (with
+ * `attachments`), `comments`, `selectedFolderId`, the `courseFilterId` /
+ * `topicFilterId` chip pair, `isLoading` / `isSaving` / `error`, and
+ * `conflictReloadToken`. Actions: `loadFolders`, `loadNotes`, `loadNote`, the
+ * folder CRUD, `createNote` / `saveNote` / `removeNote` / `removeNotes` /
+ * `moveNotesToFolder`, `loadComments` / `postComment`, the filter setters, and
+ * `reset`.
+ *
+ * Touches: services/notes (the whole `/notes` + `/note-folders` surface) and
+ * `mergeNoteComments` from @lantern/shared. Nothing is persisted — every list
+ * is refetched per page load.
+ *
+ * Gotchas:
+ *  - Four module-level caches: `foldersInFlight`, `notesInFlight` (+ its
+ *    filter key), `loadNoteSeq`, and the per-note `saveChains` / `saveGenerations`
+ *    maps. `reset()` does NOT clear any of them, so an account switch can let a
+ *    prior user's in-flight list or queued save settle into the new session —
+ *    effects that run on user switch must read `getState()` rather than closing
+ *    over `notes`.
+ *  - `saveNote` serialises per note id and reads the FRESHEST `version` inside
+ *    the chain; that is what keeps a user's own rapid autosaves from 409-ing
+ *    against themselves. Only title/body edits carry the version — pin/archive/
+ *    move deliberately skip the concurrency check.
+ *  - A real conflict reloads the authoritative note, bumps
+ *    `conflictReloadToken` (the editor watches it to override local text) and
+ *    then THROWS a `version_conflict`-coded error. Callers must expect a throw
+ *    from a successful-looking save.
+ *  - `saveNote` returns `null` cast as `StudyNote` when the note is unknown or
+ *    404s; callers that dereference the result need a guard.
+ *  - `loadNotes` drops its response if the chip pair changed mid-flight, so a
+ *    caller awaiting it can get a resolved promise with no state change.
+ */
 import { create } from 'zustand';
 import type { NoteAttachment, NoteComment, NoteFolder, StudyNote } from '../types';
 import { mergeNoteComments } from '@lantern/shared';

@@ -1,3 +1,25 @@
+/**
+ * Shared state for study notes and note folders: the list, the open note, and
+ * the CRUD calls every notes screen goes through.
+ *
+ * Main export: `useNotesStore` — `loadFolders`, `loadNotes`, `loadNote`,
+ * folder CRUD, `createNote`/`upsertNote`/`saveNote`/`removeNote(s)`,
+ * `moveNotesToFolder`, `setNoteCoverPath`.
+ *
+ * Touches: services/notes for every read and write. No persistence, no offline
+ * queue and no native modules — state is in memory only, and a failed call
+ * surfaces through `error` rather than being retried.
+ *
+ * Gotchas: `loadNote` guards against out-of-order responses with the
+ * module-level `loadNoteSeq`, so only the newest request may write
+ * `selectedNote`. `saveNote` serialises per note through the module-level
+ * `saveChains` map (later saves wait for earlier ones) and returns `null` cast
+ * as `StudyNote` when the note is no longer in state — callers that assume a
+ * note back will read properties of null. Both module-level maps are process
+ * lifetime and not user-scoped; `saveChains` entries are never removed.
+ * `loadNotes` is deliberately unfiltered — the Library course/topic filter is
+ * applied client-side by the screen, not here.
+ */
 import { create } from 'zustand';
 import * as notesApi from '../services/notes';
 import type { NoteAttachment, NoteFolder, StudyNote } from '../services/notes';

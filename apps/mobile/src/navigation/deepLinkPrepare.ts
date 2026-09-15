@@ -12,6 +12,14 @@
  * So a test link starts the test first. When that cannot be done — the list
  * has not loaded yet on a cold start, or the id is not this account's — the
  * link lands on the Tests list, where the test sits under Available.
+ *
+ * Main export: `prepareDeepLinkTarget(url)`, called by
+ * hooks/useDeepLinkHandler.ts in place of `resolveDeepLinkNavigation`.
+ *
+ * Touches: testStore (`fetchTests`, `startTest`, `activeTest`) and authStore
+ * (the user id), read imperatively via `getState()` because this runs outside
+ * React. That is also why it is the one impure half of the deep-link pair:
+ * everything in deepLinkTargets.ts stays pure and node-testable.
  */
 import { parseDeepLink } from '@lantern/shared/linking';
 import { useAuthStore } from '../stores/authStore';

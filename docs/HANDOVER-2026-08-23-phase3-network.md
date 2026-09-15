@@ -374,4 +374,4 @@ committed; re-create them from §4 if the migrations change.
 4. Phase 4 (Q–W) is unchanged and still unbuilt; **S** is explicitly a thin
    layer over Phase 2 H and should reuse `POST /ai/study-pack/draft`.
 
-*The canonical "resume here" pointer is the repo root `HANDOVER.md`.*
+*The canonical "resume here" pointer is `docs/HANDOVER.md`.*

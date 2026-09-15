@@ -1,3 +1,16 @@
+/**
+ * Budget stack -> ExpenseSplit. Create a shared cost (title, total, category,
+ * participants), then tick people off as they pay or settle the whole split.
+ *
+ * Exports: ExpenseSplitScreen (default).
+ * Touches: budgetStore expenseSplits + loadExpenseSplits / addExpenseSplit /
+ * toggleSplitParticipantPaid / settleExpenseSplit / removeExpenseSplit;
+ * authStore for the creator's id and display name; pure helpers in
+ * expenseSplitPlanner.ts.
+ * Note: the creator is always participant 0 and pre-marked paid; everyone else
+ * is a typed-in name given a synthetic local id (`participant_<ts>_<i>`), so a
+ * participant is not a Lantern account and is never notified.
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, TextInput, Pressable, TouchableOpacity } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

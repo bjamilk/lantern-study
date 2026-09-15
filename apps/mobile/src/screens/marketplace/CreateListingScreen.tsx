@@ -1,3 +1,28 @@
+/**
+ * `CreateListing` route: the seller's publish form — photos, title, taxonomy
+ * type, campus, optional course/topic, price, stock, promotion, description
+ * and the rights attestation.
+ *
+ * Exports: CreateListingScreen.
+ * Touches: useMarketplaceStore.createListing/updateListing/
+ * invalidateShopSummary; fetchMarketplaceCampuses and fetchSellerPayoutProfile
+ * in ../../services/api; aiGenerateListingDescription in ../../services/ai;
+ * uploadMarketplaceImage; expo-image-picker; AsyncStorage for the draft;
+ * ListingClassifier, CampusPicker, CoursePicker, TopicPicker,
+ * RightsAttestationCheckbox.
+ *
+ * Gotchas: the listing is created FIRST and photos are uploaded afterwards
+ * against its id, then patched in — so a photo failure leaves a live listing
+ * with no images, which the alerts say out loud. The draft is autosaved to
+ * AsyncStorage under a per-user key every 500ms, but it never stores the
+ * attestation, and its image entries are local URIs that can expire after
+ * process death. The form starts with no category at all, because a preset one
+ * had sellers publishing into a category they never chose. HEIC assets are
+ * rejected before upload. A discount with no end date is blocked, since it
+ * would never show to buyers. Attestation is required by the API for academic
+ * categories. The payout nudge is not a gate — cash and transfer sales need no
+ * Paystack — and is shown only to someone who has actually listed.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,

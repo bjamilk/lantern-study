@@ -1,3 +1,22 @@
+/**
+ * Saved-search filter serialisation for marketplace browse: the wire format a
+ * saved search is stored in, and how to read one back into browse state.
+ *
+ * Main exports: `normalizeSavedMarketplaceFilters` (wire → state, with
+ * forward-migration of pre-department taxonomy nodes and tabs),
+ * `buildSavedMarketplaceFilters` (state → wire),
+ * `buildMarketplaceGeographyQuery`, and `MarketplaceBrowseFilterState`.
+ *
+ * Touches: the shared marketplace taxonomy (@lantern/shared/marketplace).
+ * Pure — no store, API or native access.
+ *
+ * Gotchas: the wire format is shared with the web app
+ * (marketplaceSearchFilters.ts) and both sides treat an omitted `sortBy` as
+ * `created_at` and an omitted `sortOrder` as `desc`; changing either default
+ * here silently reinterprets searches saved on web. `activeTab` is derived
+ * from the saved taxonomy node first, so a node that moved department
+ * restores under its new tab rather than the stale saved one.
+ */
 import {
   MARKETPLACE_DEPARTMENTS,
   browseListingCategories,

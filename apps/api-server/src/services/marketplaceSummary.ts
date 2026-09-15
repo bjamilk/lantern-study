@@ -3,7 +3,7 @@
  *
  * The mobile client used to make eight requests (cart, orders x2, offers x2,
  * inquiries x2, stats) and count them itself; that was fine for a founder-only
- * pilot and is the first thing that has to go before the pilot widens. This
+ * pilot and had to go before the marketplace opened to everyone. This
  * service does the same counting on the server with head-counts where a count
  * is all that is needed, and rows only where a predicate needs fields.
  *

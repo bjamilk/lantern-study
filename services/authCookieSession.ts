@@ -1,3 +1,43 @@
+/**
+ * Client half of HttpOnly-cookie ("BFF") auth: the browser never holds a refresh
+ * token, so the real session lives in cookies and this module keeps a
+ * memory-only mirror of the access token for supabase-js and the API layer.
+ *
+ * Exports:
+ *  - isCookieAuthEnabled()      — mode switch (PROD default on, VITE_AUTH_COOKIE_MODE overrides)
+ *  - memoryAuthStorage          — the SupportedStorage handed to supabase-js in cookie mode
+ *  - applyMemorySession()       — install/clear the session + token cache + refresh timer
+ *  - cookieAuthFetch()          — fetch against /api/v1/auth with credentials + timeout
+ *  - loginViaCookieBff(), refreshCookieSession(), fetchCookieSession(),
+ *    restoreCookieSession(), exchangeCookieSession(), logoutCookieSession()
+ *  - migrateLegacyLocalSession(), purgeLegacyLocalSession() — one-time localStorage migration
+ *
+ * Touches: the API server's /api/v1/auth/{login,refresh,session,exchange,logout};
+ * `setCachedAuthToken` in ./supabase (circular — hence the dynamic import in
+ * refreshAndPropagate); localStorage keys `sb-*-auth-token` (legacy only);
+ * a `visibilitychange` listener; module-level memorySession + refreshTimer.
+ *
+ * Gotchas:
+ *  - `refresh_token` is the literal placeholder `'cookie-managed'` in this mode.
+ *    gotrue-js auto-refreshes internally whenever anything touches an expired
+ *    session (getSession/setSession/refreshSession) and would POST that
+ *    placeholder to /auth/v1/token, get a 400, and emit a spurious SIGNED_OUT.
+ *    What makes those calls safe is the `global.fetch` interceptor on the
+ *    supabase client in ./supabase — any second supabase client needs the same
+ *    interceptor, or the random-sign-out bug returns.
+ *  - Never send the placeholder back to /exchange: it would overwrite the real
+ *    refresh cookie with the string 'cookie-managed' and the session could then
+ *    never refresh. Guarded here and server-side.
+ *  - autoRefreshToken is OFF in cookie mode, so the proactive timer below is the
+ *    only thing keeping the access token alive past ~1h.
+ *  - A non-null payload that fails to normalize must NOT wipe the token cache:
+ *    doing so produced a boot redirect loop (empty cache, restore still ok).
+ *    This module is deliberately tolerant; keep it that way.
+ *  - Module-level state (memorySession, refreshTimer, visibilityHooked) survives
+ *    a user switch — sign-out must go through applyMemorySession(null).
+ *
+ * State/history for individual decisions is documented at each function.
+ */
 import type { Session, SupportedStorage } from '@supabase/supabase-js';
 import { createClient } from '@supabase/supabase-js';
 import { getApiBaseUrl, getSupabaseUrl, getSupabaseAnonKey } from '@lantern/shared';
@@ -33,6 +73,10 @@ export function isCookieAuthEnabled(): boolean {
 
 let memorySession: Session | null = null;
 
+// supabase-js persistence adapter for cookie mode: the session lives only in the
+// module variable above, so nothing reaches localStorage and a closed tab has no
+// recoverable token. Only the `*-auth-token` key is serviced; every other key
+// reads as absent, which is what keeps supabase-js from persisting anything else.
 export const memoryAuthStorage: SupportedStorage = {
   getItem: (key: string) => {
     if (!memorySession) return null;
@@ -206,6 +250,11 @@ async function refreshAndPropagate(): Promise<void> {
   }
 }
 
+// ─── BFF calls ──────────────────────────────────────────────
+// Every auth request goes through cookieAuthFetch: credentials:'include' is what
+// carries the HttpOnly cookies, X-Requested-With is the CSRF signal the API
+// checks, and the 8s default timeout stops a Render cold start from hanging boot.
+
 export async function cookieAuthFetch(
   path: string,
   init: RequestInit = {}
@@ -223,6 +272,9 @@ export async function cookieAuthFetch(
   });
 }
 
+// Password login. /login only SETS the cookies; the session itself is then read
+// back (refresh first, /session as fallback) so the caller gets a normalized
+// session and the memory cache is populated before the app proceeds.
 export async function loginViaCookieBff(
   email: string,
   password: string
@@ -267,7 +319,18 @@ export type CookieSessionResolveResult =
 
 const delay = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
-/** Restore cookie session with retries; distinguishes auth failure from transient errors. */
+/**
+ * Restore cookie session with retries; distinguishes auth failure from transient errors.
+ *
+ * Called at boot. The `reason` is load-bearing — callers must sign the user out
+ * ONLY on 'revoked':
+ *   401/403 on /session then 401/403 on /refresh → 'revoked'  (genuine sign-out)
+ *   /session or /refresh !ok, or a thrown fetch  → 'network'  (retried, then keep the user)
+ *   2xx whose body will not normalize            → 'missing'
+ * Returning ok:true always means the memory cache was populated in the same
+ * step (applyMemorySession), so a caller can never report success against an
+ * empty cache — the shape that caused the boot redirect + request storm.
+ */
 export async function restoreCookieSession(
   maxAttempts = 3
 ): Promise<CookieSessionResolveResult> {
@@ -368,6 +431,13 @@ function findLegacyLocalSession(): { key: string; session: Session } | null {
     if (!key.startsWith('sb-') || !key.endsWith('-auth-token')) continue;
     try {
       const parsed = JSON.parse(localStorage.getItem(key) || '');
+      // FIXED (SW) [Sentry WEB-18, 55 events / 4 users]: a session written by a
+      // build that ran in cookie mode carries the literal 'cookie-managed'
+      // placeholder, not a refresh token. It is not a legacy session at all,
+      // and treating it as one is the path that bypassed the fetch interceptor
+      // (the throwaway client below has no `global.fetch`) and posted the
+      // placeholder straight to /auth/v1/token for a guaranteed 400.
+      if (parsed?.refresh_token === 'cookie-managed') continue;
       if (parsed?.access_token && parsed?.refresh_token && parsed?.user) {
         return { key, session: parsed as Session };
       }
@@ -403,6 +473,13 @@ export async function migrateLegacyLocalSession(): Promise<Session | null> {
     candidate.expires_at * 1000 - Date.now() < 60_000;
 
   if (expired) {
+    // Belt and braces with findLegacyLocalSession's filter (SW / WEB-18): this
+    // client deliberately has NO `global.fetch` interceptor, so the placeholder
+    // must never reach it.
+    if (!candidate.refresh_token || candidate.refresh_token === 'cookie-managed') {
+      purgeLegacyLocalSession();
+      return null;
+    }
     // /exchange verifies the access token, so an expired one must be refreshed
     // first. Throwaway client: no persistence, no timers — one refresh call.
     try {

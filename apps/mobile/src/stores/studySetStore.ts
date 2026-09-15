@@ -1,3 +1,34 @@
+/**
+ * Study Set Store
+ *
+ * Purpose: the phone's copy of the student's study sets, their folders and
+ * their server-held plans (units and topics), plus the "which set am I in"
+ * pointer the Study hub and Home read.
+ *
+ * Main exports: `useStudySetStore` (`loadSets`, `notifyReconnected`,
+ * `createSet`, `updateSet`, `removeSet`, `setCoverPath`, `touchOpened`,
+ * `touchSet`, `loadPlan`, `savePlan`, `setTopicStatus`, folders, the folder
+ * filter and the picker flag), `StudySetStatus`, `StudySetPlan`,
+ * `studySetCacheKey`, `looksOffline`.
+ *
+ * Touches: services/academic for every network call; authStore for the current
+ * user id, which keys the cache; AsyncStorage for the per-user list cache and
+ * the last-opened id. companionStore imports this lazily to derive a set's
+ * next Guided topic.
+ *
+ * Gotchas:
+ * - `status` is not `sets.length`. Only `ready` means the server answered, and
+ *   only `ready` with zero sets earns the empty-library card; `offline`/`error`
+ *   mean "we have not been told" and must say so.
+ * - A failed fetch never blanks the list — whatever is held stays on screen,
+ *   labelled `fromCache`.
+ * - The list cache is keyed by user id on purpose; `LAST_OPENED_KEY` is not,
+ *   so the pointer is global to the handset (`removeSet` clears it when it
+ *   aims at a deleted set).
+ * - `folderFilter` is deliberately session-scoped, not persisted.
+ * - `inflight` is module state shared by every caller of `loadSets`; tests
+ *   reset it with `__resetStudySetInflightForTests`.
+ */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { StudySet, StudySetFolder } from '@lantern/shared/types';
@@ -170,6 +201,10 @@ function currentUserId(): string | null {
   }
 }
 
+// Cache helpers. Both no-op when nobody is signed in rather than falling back
+// to an unkeyed record — a list written without an owner is one the next
+// account would read as its own. Writes are fire-and-forget: a failed cache
+// write must not fail the load that triggered it.
 async function readCache(): Promise<CachedStudySets | null> {
   const userId = currentUserId();
   if (!userId) return null;
@@ -207,6 +242,15 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
   folders: [] as StudySetFolder[],
   folderFilter: 'all',
 
+  /**
+   * Load the list: cached first, server second.
+   *
+   * Single-flight — several screens mount at once on a cold start, and each
+   * one calling this must join the run already going rather than start another
+   * fetch. Returns the sets it ends up holding, which on a failed refresh is
+   * whatever was already on screen. `force` is what a pull-to-refresh and
+   * `notifyReconnected` use to get past the `loaded` short-circuit.
+   */
   loadSets: async (options) => {
     if (get().loaded && !options?.force) return get().sets;
     if (inflight) return inflight;
@@ -387,6 +431,15 @@ export const useStudySetStore = create<StudySetState>((set, get) => ({
     }
   },
 
+  /**
+   * Replace a set's whole plan with what the builder produced.
+   *
+   * Whole-document, not a diff: topic positions and unit membership only make
+   * sense together. The store adopts the SERVER's echo rather than the input,
+   * so the ids `setTopicStatus` later ticks are real ones. Loud on failure —
+   * the student pressed Save, and the screen has to be able to say it did not
+   * land.
+   */
   savePlan: async (setId, input) => {
     const saved = (await replaceStudySetPlan(setId, input)) as {
       units?: StudySetUnit[];

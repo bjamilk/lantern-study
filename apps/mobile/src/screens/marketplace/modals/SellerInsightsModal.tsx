@@ -1,3 +1,18 @@
+/**
+ * Bottom-sheet modal combining the seller's performance analytics, a short
+ * earnings ledger, the payout-profile form, and fulfillment preferences.
+ *
+ * Exports: SellerInsightsModal (named and default).
+ * Touches: fetchSellerPayments(1) on open and updateSellerPreferences on save,
+ * both in ../../../services/api; embeds SellerPayoutSetup. Analytics and every
+ * preference value are props — the parent screen owns that state.
+ *
+ * Gotchas: the require-payment-confirmation props are still wired but no
+ * longer control anything; every order starts pending_payment and only the
+ * seller can confirm. Payment amounts arrive in kobo and are converted here
+ * before formatPrice. Only the first page of payments is shown, capped at 10
+ * rows. savePreferences swallows nothing but also does not report success.
+ */
 import React, { useEffect, useState } from 'react';
 import {
   KeyboardAvoidingView,

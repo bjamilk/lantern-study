@@ -1,3 +1,25 @@
+/**
+ * `CreateJob` route: the post-a-job form, reused for editing when the route
+ * carries a jobId. Publishes, saves a draft, or previews.
+ *
+ * Exports: CreateJobScreen (named and default).
+ * Touches: createJobPosting, updateJobPosting, fetchJobPosting and
+ * fetchMyJobCompanies in ../../services/jobsBoard; the job template, scam-check
+ * and validation helpers from @lantern/shared
+ * (JOB_INTENT_TEMPLATES, findJobScamMatches, textFailsJobScamCheck,
+ * describeJobTemplateLeftovers, jobRequiresEngagementDuration,
+ * isJobPostingEditable, JOB_PHASE1/PHASE2_EMPLOYMENT_TYPES).
+ *
+ * Gotchas: the allowed employment types depend on whether a company is
+ * selected, and an effect resets the type to part_time whenever the current
+ * one falls outside that set. Applying a template seeds the description's
+ * PLACEHOLDER, never its value, so boilerplate cannot ship as the poster's
+ * words; template leftovers additionally block anything but a draft. Mobile
+ * has no apply-mode UI, so applySettings carries the posting's existing mode
+ * and URLs through an edit unchanged. Only the first screening question is
+ * editable here. Editing a moderation-removed post is locked, and the
+ * attestation is pre-checked on edit because it was accepted at creation.
+ */
 import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import {

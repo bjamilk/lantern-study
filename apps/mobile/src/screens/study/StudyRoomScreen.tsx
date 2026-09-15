@@ -1,3 +1,20 @@
+/**
+ * The Study room screen: a temporary, self-closing room students sit in together
+ * for one course or community topic. Either opens a room by id, or shows a
+ * course/topic form that joins an open room or creates one.
+ *
+ * Main exports: `StudyRoomScreen` (also the default).
+ * Touches: authStore (the presence key), services/api
+ * `fetchStudyRoom`/`joinOrCreateStudyRoom`/`joinStudyRoom`/`leaveStudyRoom`, and
+ * Supabase realtime for the presence channel. No other native modules.
+ *
+ * Gotchas: there are two entry shapes — `roomId` lands directly in a room, while
+ * `courseId` without `communityId` auto-joins-or-creates on load; inside a
+ * community the picker is always shown first so a topic can be set. Live count
+ * is presence-derived and separate from `room.participants`, which is refetched
+ * on a 20s poll. The presence channel is keyed by user id, so one account in two
+ * places counts once.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import type { StudyRoomDetail } from '@lantern/shared/network';

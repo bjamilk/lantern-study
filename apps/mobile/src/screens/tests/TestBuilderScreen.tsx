@@ -19,6 +19,20 @@
  * note editor's "Turn into" tiles use: the progress sheet takes over, the test
  * is saved and notified even if the student leaves, and `saveGeneratedTest`
  * guarantees one job can never write two tests.
+ *
+ * Route: `TestBuilder`, pushed onto the Study stack from the tests list.
+ * Main exports: the default `TestBuilderScreen`.
+ * Touches: authStore, flashcardStore (decks and their cards), notesStore,
+ * jobsStore (`startJob`, read via `getState`), studyGoalsStore; services/ai
+ * `aiGenerateQuestions`, services/notes `generateNoteQuiz`, services/jobArtifacts
+ * `saveGeneratedTest`, and productAnalytics. The decisions live in ./testAuthoring
+ * so they can be unit-tested. No native modules.
+ *
+ * Gotchas: picking a row only SELECTS a source — the labelled button is the one
+ * press that spends a credit, which is why `selection` and `handleGenerate` are
+ * separate. A `noteId` route param preselects that note but never overwrites a
+ * source the student has since chosen. `requestedCount` is a ceiling, not a
+ * promise, so the sheet says "up to" until the save counts what the server took.
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';

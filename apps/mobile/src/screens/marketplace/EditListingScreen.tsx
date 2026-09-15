@@ -1,3 +1,24 @@
+/**
+ * `EditListing` route: edit an existing listing — photos, title, category,
+ * campus, course/topic, price, stock, promotion and description.
+ *
+ * Exports: EditListingScreen.
+ * Touches: useMarketplaceStore (fetchListing, currentListing, updateListing);
+ * fetchMarketplaceCampuses in ../../services/api; uploadMarketplaceImage;
+ * expo-image-picker; CampusPicker, CoursePicker, TopicPicker,
+ * RightsAttestationCheckbox, ListingTakedownNotice.
+ *
+ * Gotchas: unlike CreateListing, photos are uploaded immediately on pick, so
+ * `images` already holds storage URLs. The form is seeded once per listing id
+ * (seededListingIdRef) because the store swaps currentListing back to the
+ * pre-edit copy after a rejected save, and re-seeding would wipe what the user
+ * typed. The sale window has a fourth preset, "keep current", which resends
+ * the original sale_ends_at unchanged — without it an untouched edit would
+ * silently reset the promo to now+7d; sale_price and sale_ends_at are sent as
+ * explicit null to clear, never undefined. A listing the moderators removed is
+ * read-only and renders the takedown notice instead of the form. An
+ * already-attested listing shows a confirmation line rather than the checkbox.
+ */
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Image,

@@ -3,9 +3,41 @@
  * Manages conversation state for the Lantern AI companion panel.
  * Threads are server-backed (conversation_id); note-attached chats keep
  * note_context_id so history can list general + note-linked chats.
+ *
+ * Main exports: `useCompanionStore` (open/close/toggle, `openForNote`,
+ * `openForScope`, `resetForScope`, `loadHistory`, `sendMessage`,
+ * `sendMessageStreaming`, `attachImage`, conversation list + delete, guided
+ * lesson state), `CompanionNoteContext`, `CompanionRequestedScope`,
+ * `PersistedConversation`, `PendingCompanionImage`.
+ *
+ * Touches: services/ai (companion send/stream, history, conversations, image
+ * upload), `@lantern/shared/api/companion` (guided-session reducers, citation
+ * normaliser), components/companion (image-failure copy, next-topic
+ * derivation), AsyncStorage for the attached note and the thread id, and —
+ * lazily, inside `hydrateGuidedNextTopic` — studySetStore for the saved plan.
+ *
+ * Gotchas:
+ * - Import from `@lantern/shared/...` subpaths, never the bare package: mobile
+ *   jest has no mapping for the bare specifier, so a value import from it
+ *   fails every store test (type-only imports are erased and are fine).
+ * - Sends are billable. `isLoading`/`isStreaming` are the in-flight guard and
+ *   `awaitingImageRead` covers the window where a send is waiting on a photo
+ *   read, which is before those flags are set.
+ * - Scope is the correctness invariant: an attachment or thread from another
+ *   room must never ride along into the next one. `resetForScope` is what
+ *   enforces it, and every persisted record carries the scope id with it.
+ * - Guided lessons are thread state and are never persisted; relaunching ends
+ *   the lesson rather than resuming an invisible one.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getUserScopeId,
+  readScopedWithLegacyMigration,
+  registerUserScoped,
+  scopedKey,
+  whenUserScopeResolved,
+} from './userScopedState';
 import type {
   CompanionConversation,
   CompanionImageAttachment,
@@ -44,12 +76,45 @@ export type CompanionNoteContext = {
   scopeId?: string | null;
 };
 
-const NOTE_CONTEXT_STORAGE_KEY = 'lantern_companion_note_context';
-const CONVERSATION_STORAGE_KEY = 'lantern_companion_conversation_id';
+// Persistence keys for the attached note and the active thread. Both records
+// carry a `scopeId` so a thread restores only into the room it started in.
+// FIXED (F8): both keys now also carry the ACCOUNT — `<base>:<userId>` — so a
+// shared handset cannot hydrate the previous student's attached note or
+// conversation id. The pre-split value is adopted by the first account to read
+// it and the unscoped key is then removed (stores/userScopedState), and every
+// read waits for auth to resolve so nothing is painted under the wrong user.
+export const NOTE_CONTEXT_LEGACY_KEY = 'lantern_companion_note_context';
+export const CONVERSATION_LEGACY_KEY = 'lantern_companion_conversation_id';
+
+/** This account's copy of a companion key, or null while signed out. */
+const scopedCompanionKey = (base: string): string | null => {
+  const userId = getUserScopeId();
+  return userId ? scopedKey(base, userId) : null;
+};
+
+/**
+ * Read a companion key for whoever is signed in, after auth has answered.
+ *
+ * Waiting matters: hydration runs on panel open, which on a cold start can
+ * beat the session restore, and reading early would restore the last writer's
+ * thread regardless of who is now holding the phone.
+ */
+async function readScopedCompanionValue(base: string): Promise<string | null> {
+  const userId = await whenUserScopeResolved();
+  if (!userId) return null;
+  return readScopedWithLegacyMigration(base, userId);
+}
+
+async function writeScopedCompanionValue(base: string, value: string | null): Promise<void> {
+  const key = scopedCompanionKey(base);
+  if (!key) return;
+  if (value == null) await AsyncStorage.removeItem(key);
+  else await AsyncStorage.setItem(key, value);
+}
 
 async function readPersistedNoteContext(): Promise<CompanionNoteContext | null> {
   try {
-    const raw = await AsyncStorage.getItem(NOTE_CONTEXT_STORAGE_KEY);
+    const raw = await readScopedCompanionValue(NOTE_CONTEXT_LEGACY_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { id?: unknown; title?: unknown; scopeId?: unknown };
     if (typeof parsed.id !== 'string' || !parsed.id.trim()) return null;
@@ -65,8 +130,7 @@ async function readPersistedNoteContext(): Promise<CompanionNoteContext | null> 
 
 async function persistNoteContext(ctx: CompanionNoteContext | null) {
   try {
-    if (!ctx) await AsyncStorage.removeItem(NOTE_CONTEXT_STORAGE_KEY);
-    else await AsyncStorage.setItem(NOTE_CONTEXT_STORAGE_KEY, JSON.stringify(ctx));
+    await writeScopedCompanionValue(NOTE_CONTEXT_LEGACY_KEY, ctx ? JSON.stringify(ctx) : null);
   } catch {
     /* ignore */
   }
@@ -101,7 +165,7 @@ export type PersistedConversation = { scopeId: string | null; conversationId: st
 
 async function readPersistedConversation(): Promise<PersistedConversation | null> {
   try {
-    const raw = await AsyncStorage.getItem(CONVERSATION_STORAGE_KEY);
+    const raw = await readScopedCompanionValue(CONVERSATION_LEGACY_KEY);
     if (!raw || !raw.trim()) return null;
     const trimmed = raw.trim();
     if (!trimmed.startsWith('{')) return { scopeId: null, conversationId: trimmed };
@@ -119,12 +183,10 @@ async function readPersistedConversation(): Promise<PersistedConversation | null
 
 async function persistConversationId(id: string | null, scopeId: string | null = null) {
   try {
-    if (!id) await AsyncStorage.removeItem(CONVERSATION_STORAGE_KEY);
-    else
-      await AsyncStorage.setItem(
-        CONVERSATION_STORAGE_KEY,
-        JSON.stringify({ scopeId, conversationId: id })
-      );
+    await writeScopedCompanionValue(
+      CONVERSATION_LEGACY_KEY,
+      id ? JSON.stringify({ scopeId, conversationId: id }) : null
+    );
   } catch {
     /* ignore */
   }
@@ -338,6 +400,17 @@ interface CompanionState {
   clearError: () => void;
 }
 
+/**
+ * Build the context object for ONE send.
+ *
+ * The caller's context is the base; thread-level facts (the attached note, the
+ * conversation id, the guided lesson, the pending photos) are layered over it,
+ * so a screen cannot accidentally drop what the thread already knows. Every
+ * note-shaped key is written explicitly — `undefined` included — because the
+ * slots are exclusive: a thread attachment wins, then a note the turn names
+ * itself, then the guided lesson's source note, and leaving a stale key behind
+ * is how a question ends up scoped to material the student has left.
+ */
 function mergeThreadContext(
   get: () => CompanionState,
   context?: CompanionUserContext
@@ -836,6 +909,9 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     });
   },
 
+  // Local only: the thumbs state is recorded on the message so the button
+  // stays pressed, and `loadHistory` carries it across a refetch. The rating
+  // itself is posted by the caller, not from here.
   setMessageFeedback: (messageId, rating) => {
     set((s) => ({
       messages: s.messages.map((m) =>
@@ -844,6 +920,17 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }));
   },
 
+  /**
+   * Fetch the messages for whatever thread is current.
+   *
+   * A pending new chat short-circuits: there is nothing on the server yet, and
+   * asking by `noteContextId` would pull the previous thread for that note back
+   * onto the screen. Both the success and the failure path re-check that the
+   * thread (or the attachment) is STILL the one that was asked for before they
+   * write — history for the chat the student just left must never overwrite the
+   * one they are now in. Locally-set feedback is carried across the replace,
+   * since the server rows do not always echo it back.
+   */
   loadHistory: async () => {
     set({ isLoadingHistory: true, error: null });
     const noteContextId = get().activeNoteContext?.id ?? null;
@@ -972,6 +1059,15 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }
   },
 
+  /**
+   * The send path mobile chat actually uses.
+   *
+   * Two placeholder messages go in up front (the student's text and an empty
+   * assistant bubble); tokens append to the assistant bubble by id, and the
+   * completion callback swaps both temp ids for the server's. On failure BOTH
+   * placeholders are removed and the typed text is handed back through
+   * `failedMessage` rather than destroyed.
+   */
   sendMessageStreaming: async (text: string, context?: CompanionUserContext) => {
     // Same one-tap-one-charge guard as sendMessage: this is the path all
     // mobile chat takes, and it is the billable one.
@@ -1090,3 +1186,37 @@ export const useCompanionStore = create<CompanionState>()((set, get) => ({
     }
   },
 }));
+
+/**
+ * FIXED (F8): the thread, its history and the attachment are this account's.
+ *
+ * The persisted keys are user-scoped now, but the STORE is not storage: a
+ * sign-out leaves the messages, conversation list and attached note hydrated
+ * in memory, and the next account's first panel open would render them before
+ * any fetch landed. The registry drops them on sign-out and account switch.
+ */
+registerUserScoped('companionStore', () => {
+  useCompanionStore.setState({
+    isOpen: false,
+    guidedSession: null,
+    messages: [],
+    isLoading: false,
+    isLoadingHistory: false,
+    historyLoaded: false,
+    isStreaming: false,
+    error: null,
+    pendingMessage: null,
+    pendingMessageContext: null,
+    activeNoteContext: null,
+    activeConversationId: null,
+    activeScopeId: null,
+    requestedScope: null,
+    pendingNewConversation: false,
+    conversations: [],
+    isLoadingConversations: false,
+    pendingImages: [],
+    isUploadingImage: false,
+    imageError: null,
+    imageErrorDetail: null,
+  });
+});

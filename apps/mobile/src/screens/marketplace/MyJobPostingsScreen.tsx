@@ -1,3 +1,19 @@
+/**
+ * `MyJobPostings` route: the employer's own job posts, with aggregate tiles
+ * and per-post status transitions.
+ *
+ * Exports: MyJobPostingsScreen (named and default).
+ * Touches: fetchMyJobPostings and updateJobPosting in
+ * ../../services/jobsBoard; isJobPostingEditable and jobPostingStatusActions
+ * from @lantern/shared decide which buttons a post gets; embeds
+ * JobEmployerInsights.
+ *
+ * Gotchas: the tiles are summed on the client from the loaded page, so they
+ * describe what was fetched, not the account. Every status change re-fetches
+ * the whole list rather than patching the row. STATUS_STYLES is a total Record
+ * over JobPosting['status'], so a new status fails to type-check until a style
+ * is added here.
+ */
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,

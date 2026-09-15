@@ -1,3 +1,23 @@
+/**
+ * The `AdaptiveQuiz` route in the Study stack: a low-stakes, one-question-at-a-time
+ * quiz over a set's or course's material. The student answers, rates their own
+ * confidence, sees the answer, and is paused after a run of misses.
+ *
+ * Main exports: `AdaptiveQuizScreen` (also the default).
+ * Touches: notesStore (materials, createNote), testStore (tests to mine for
+ * questions), companionStore (ask-about-this-question), studyGoalsStore (the goal
+ * passed to generation); services/notes `getNoteQuiz`/`generateNoteQuiz` and
+ * services/testDrafts `fetchMobileTestDraft`. No native modules. The whole quiz
+ * state machine (phases answer → confidence → feedback → paused/done) lives in
+ * @lantern/shared; this screen only renders it and holds the session in state.
+ *
+ * Gotchas: `loadExisting` walks three sources in order — route `seedItems`, then
+ * a stored quiz on each note, then a course test draft — and stops at the first
+ * that yields items, so the source shown depends on that order. The mapped rows
+ * passed to `testsFiledInCourse` all carry `courseId: null`, so course matching
+ * there is inert by design and only the note-id set selects tests. Sessions are
+ * in-memory only: leaving the screen discards progress.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

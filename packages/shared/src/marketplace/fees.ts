@@ -1,3 +1,50 @@
+// ===========================================
+// Lantern Study - Marketplace fee model
+// ===========================================
+//
+// PURPOSE
+//   The ONE calculator for what a buyer is charged and what a seller receives.
+//   Every price shown, every Paystack charge assembled and every payout figure
+//   must come from here. A second copy of this arithmetic anywhere is a bug
+//   waiting to charge someone the wrong amount.
+//
+// CONSUMERS
+//   web + mobile — for the price and breakdown shown BEFORE a student pays.
+//   api          — for the charge actually created and the payout recorded.
+//   All three read the same env-driven basis points, so the number quoted and
+//   the number charged cannot diverge.
+//
+// THE MODEL (since 2026-09-02)
+//   The hand-over fee lives INSIDE the price. The buyer pays the LIST price;
+//   Lantern's 5% comes out of the seller's payout, so the seller receives 95%.
+//   Before that date the buyer paid list + 5%, which is why
+//   MARKETPLACE_DEFAULT_SERVICE_FEE_BPS is now 0 rather than deleted — the
+//   surcharge path still exists behind an env var, and nothing may assume it
+//   is non-zero. Never add a fee on top at checkout.
+//
+// MONEY IS IN KOBO
+//   All internal amounts are integer kobo (1 naira = 100 kobo). Convert at the
+//   edges with nairaToKobo / koboToNaira and never carry a float through the
+//   arithmetic — a rounding error here is a real charge.
+//
+// BASIS POINTS
+//   Fees are bps (1% = 100 bps), resolved from env by the `resolve*` helpers so
+//   the server and the clients read the same configuration:
+//     MARKETPLACE_SERVICE_FEE_BPS          buyer surcharge, hand-over (0)
+//     MARKETPLACE_PHYSICAL_COMMISSION_BPS  seller commission, hand-over (500)
+//     MARKETPLACE_DIGITAL_BUYER_FEE_BPS    buyer surcharge, digital (0)
+//     MARKETPLACE_CREATOR_FEE_BPS          platform cut, digital (1500)
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
+
 /**
  * Buyer-side surcharge on hand-over items. Default 0: the buyer pays the LIST
  * price. It was 500 (5% on top) until 2026-09-02, when the fee moved into the
@@ -20,6 +67,10 @@ export type MarketplaceFeeBreakdown = {
 };
 
 /** Convert Naira (may be float from DB) to integer kobo. */
+// ---------------------------------------------------------------------------
+// Currency conversion
+// ---------------------------------------------------------------------------
+
 export function nairaToKobo(naira: number): number {
   if (!Number.isFinite(naira) || naira < 0) {
     throw new Error('Invalid Naira amount');
@@ -39,6 +90,10 @@ export function koboToNaira(kobo: number): number {
  * clients. The default rate is 0 since the hand-over fee moved into the price;
  * pass a rate explicitly to quote one. All math in integer kobo.
  */
+// ---------------------------------------------------------------------------
+// Hand-over (physical) checkout
+// ---------------------------------------------------------------------------
+
 export function computeMarketplaceCheckoutFees(
   itemAmountKobo: number,
   serviceFeeBps: number = MARKETPLACE_DEFAULT_SERVICE_FEE_BPS
@@ -86,6 +141,12 @@ export function resolveMarketplaceServiceFeeBps(
 // on top and paid the seller the full amount; that surcharge is now 0 by default.
 
 /** Buyer surcharge on DIGITAL listings. Default 0 — students pay list price. */
+// ---------------------------------------------------------------------------
+// Digital goods (question banks, study packs)
+// ---------------------------------------------------------------------------
+// Different economics from hand-over: no delivery, so the platform takes a
+// larger cut of the sale (creator fee) and the buyer still pays list.
+
 export const MARKETPLACE_DEFAULT_DIGITAL_BUYER_FEE_BPS = 0;
 /** Platform commission taken from the creator's payout on DIGITAL listings. Default 1500 = 15%. */
 export const MARKETPLACE_DEFAULT_CREATOR_FEE_BPS = 1500;
@@ -119,6 +180,13 @@ export function resolveMarketplaceCreatorFeeBps(
 ): number {
   return resolveBpsEnv(raw, MARKETPLACE_DEFAULT_CREATOR_FEE_BPS);
 }
+
+// ---------------------------------------------------------------------------
+// Resolving the whole fee set at once
+// ---------------------------------------------------------------------------
+// `resolveMarketplaceFees` is what callers should use — it reads every bps
+// value from one env bag so a partially-configured environment cannot produce
+// a half-old, half-new price.
 
 export type MarketplaceResolvedFees = {
   /** true for question_bank / study_pack. */

@@ -1,3 +1,43 @@
+/**
+ * Thin, stateless client for the Paystack REST API, plus the key-mode guards
+ * that decide whether this server may transact at all.
+ *
+ * Exports — consumed almost entirely by `services/marketplacePayments.ts`, with
+ * `isPaystackConfigured` also read by route guards and
+ * `listPaystackBanks` / `resolvePaystackAccount` by the seller payout-profile
+ * routes in `routes/marketplace.ts`:
+ * - charge: `initializePaystackTransaction`, `verifyPaystackTransaction`
+ * - payout: `createPaystackTransferRecipient`, `initiatePaystackTransfer`,
+ *   `resolvePaystackAccount`, `listPaystackBanks`
+ * - refund: `refundPaystackTransaction`
+ * - webhook: `verifyPaystackSignature`
+ * - config: `isPaystackConfigured`, `getPaystackPublicKey`, `paystackMode`,
+ *   `assertPaystackLiveKeyInProduction`, `createPaystackReference`
+ *
+ * What it touches: `https://api.paystack.co` over HTTPS, and the env vars
+ * `PAYSTACK_SECRET_KEY`, `PAYSTACK_PUBLIC_KEY`, `NODE_ENV`. No database, no
+ * cache, no module state.
+ *
+ * Key-mode safety. `isPaystackConfigured()` only asserts the secret is
+ * non-empty, so it alone cannot tell a test key from a live one. Two guards
+ * cover that gap: `assertPaystackLiveKeyInProduction()` — called from
+ * `secretKey()`, so it fires on every outbound call and every signature check —
+ * throws when a production server holds anything but an `sk_live_` key, and
+ * `paystackMode()` is stamped onto each `marketplace_payments` row at
+ * initialize so settlement refuses a row whose mode differs from the running
+ * server's. Together they stop a test key with checkout enabled from settling
+ * test charges as real ones.
+ *
+ * Gotchas
+ * - `verifyPaystackSignature` must receive the RAW request body. Any JSON
+ *   parsing upstream changes the bytes and every signature fails.
+ * - Paystack returns HTTP 200 with `status: false` for application-level
+ *   errors, so `paystackFetch` checks both.
+ * - Amounts are integer kobo end to end; `initializePaystackTransaction`
+ *   rejects a non-integer or anything under 100 kobo.
+ * - A transfer `reference` is Paystack's own idempotency key: reusing one for
+ *   the same recipient is rejected, which the payout path relies on.
+ */
 import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
 import { logger } from '../utils/logger';
 
@@ -27,9 +67,40 @@ export type PaystackRecipientResult = {
   accountNumberLast4: string;
 };
 
+/**
+ * 'live' | 'test' for the configured secret key. Stamped on every payment row
+ * so a row initialised against one key can never be settled against the other
+ * (a test-key settlement of a live charge would hand out goods for free, and a
+ * live-key settlement of a test charge would pay a seller real money).
+ */
+export function paystackMode(): 'live' | 'test' {
+  return process.env.PAYSTACK_SECRET_KEY?.trim().startsWith('sk_live_') ? 'live' : 'test';
+}
+
+function isProductionRuntime(): boolean {
+  return (process.env.NODE_ENV || '').trim() === 'production';
+}
+
+/**
+ * In production a test secret key is a hard error, not a degraded mode: buyers
+ * would see a working checkout that never moves real money. Throwing here
+ * refuses every Paystack call rather than silently transacting in test mode.
+ */
+export function assertPaystackLiveKeyInProduction(): void {
+  if (!isProductionRuntime()) return;
+  const key = process.env.PAYSTACK_SECRET_KEY?.trim();
+  if (!key) return; // unconfigured is handled by isPaystackConfigured()/secretKey()
+  if (!key.startsWith('sk_live_')) {
+    throw new Error(
+      'PAYSTACK_SECRET_KEY must be a live key (sk_live_...) in production; refusing to run in test mode'
+    );
+  }
+}
+
 function secretKey(): string {
   const key = process.env.PAYSTACK_SECRET_KEY?.trim();
   if (!key) throw new Error('PAYSTACK_SECRET_KEY is not configured');
+  assertPaystackLiveKeyInProduction();
   return key;
 }
 
@@ -55,6 +126,12 @@ export function verifyPaystackSignature(rawBody: string | Buffer, signature: str
   const b = Buffer.from(String(signature), 'utf8');
   return a.length === b.length && timingSafeEqual(a, b);
 }
+
+// --- Transport ---------------------------------------------------------------
+// Every call below funnels through paystackFetch, so every call also runs the
+// production live-key assertion inside secretKey(). Errors are surfaced as the
+// message Paystack returned; callers on the money path log and re-throw rather
+// than continuing.
 
 async function paystackFetch<T>(
   path: string,

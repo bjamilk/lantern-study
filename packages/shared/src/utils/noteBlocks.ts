@@ -13,6 +13,20 @@
  * sentinels, the lesson snapshot fence, any other HTML comment — are stripped
  * before parsing, so nothing meant for the code reaches a student's eyes.
  *
+ * CONSUMERS: web's `NoteReadingView` and mobile's `components/NoteBody.tsx` /
+ * `bubbleBlocks.ts`. Also the note preview strings on cards and in search.
+ * Not used by the api — the server stores note bodies verbatim.
+ *
+ * WHY IT IS REACT-FREE: the two renderers draw blocks very differently (web
+ * has real CSS, mobile has a hand-rolled renderer with no markdown library),
+ * but they must AGREE on what the body means. Parsing is shared; presentation
+ * is not.
+ *
+ * MARKER STRIPPING IS A CORRECTNESS RULE, NOT TIDINESS: Smart Notes sentinels,
+ * the lesson snapshot fence and any other HTML comment are machine
+ * instructions. `stripNoteMarkers` must run before anything a student sees,
+ * including previews — a leaked sentinel is internal state rendered as content.
+ *
  * `bubbleBlocks.ts` in the mobile companion is the chat-shaped cousin of this
  * file. It is deliberately not shared: bubbles have citations and no title,
  * notes have timestamps, quotes and a title. Conventions are kept in sync by
@@ -74,6 +88,13 @@ const LESSON_FENCE_BLOCK = /```lantern-lesson[\s\S]*?```/g;
  * Content between the Smart Notes sentinels is kept — it is the generated
  * note. Only the sentinels themselves go.
  */
+// ---------------------------------------------------------------------------
+// Stripping machine markers, and short previews
+// ---------------------------------------------------------------------------
+// `noteTypedPreview` keeps the first meaningful line with its type level;
+// `notePlainPreview` flattens to plain text for cards and search. Both strip
+// markers first.
+
 export function stripNoteMarkers(body: string | null | undefined): string {
   if (!body) return '';
   return body
@@ -206,6 +227,13 @@ function flattenLinks(text: string): string {
 }
 
 /** `**bold**`, `*italic*`/`_italic_`, `` `code` ``, links flattened to text. */
+// ---------------------------------------------------------------------------
+// Inline runs and indentation
+// ---------------------------------------------------------------------------
+// Within a line: bold key terms, code spans, plain text. Indent depth is
+// computed from leading whitespace, tolerating tabs and mixed indentation,
+// because note bodies come from students, OCR and the model alike.
+
 export function noteInlineRuns(text: string): NoteInlineRun[] {
   const source = flattenLinks(text);
   const runs: NoteInlineRun[] = [];
@@ -285,6 +313,13 @@ function pushGap(blocks: NoteBlock[]): void {
  * Parse a note body into renderable blocks. Unknown syntax degrades to a
  * paragraph; no `#`, `**`, `|`, backtick or `<!--` survives into visible text.
  */
+// ---------------------------------------------------------------------------
+// The block parser
+// ---------------------------------------------------------------------------
+// Body in, typed blocks out: headings with a level, bullets with a depth,
+// numbered steps, tables, fenced snippets, transcript timestamps, paragraphs.
+// Anything unrecognised becomes a paragraph rather than being dropped.
+
 export function noteBlocks(body: string | null | undefined): NoteBlock[] {
   const lines = stripNoteMarkers(body).split('\n');
   const blocks: NoteBlock[] = [];

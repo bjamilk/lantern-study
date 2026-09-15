@@ -1,3 +1,20 @@
+/**
+ * Notifications tab. Lists the account's notifications, marks them read (one
+ * or all), and routes each tap to whatever it points at -- a group invite to
+ * accept or decline, a marketplace order or inquiry DM, a jobs screen, a
+ * challenge or its result, or a plain in-app link. Also hosts the delivery
+ * preferences panel.
+ *
+ * Exports: NotificationsScreen (default).
+ * Touches: services/api fetchNotifications, markNotificationAsRead,
+ * markAllNotificationsAsRead, acceptGroupInvite, declineGroupInvite,
+ * fetchMyInquiries; notificationStore (the unread badge), gameStore
+ * (startChallengePlay), authStore; navigationRef helpers and CommonActions for
+ * cross-stack jumps; link parsing from @lantern/shared.
+ * Gotcha: the list reloads on FOCUS, not on mount -- the screen stays mounted
+ * inside the navigator, so a mount effect would keep showing the first visit's
+ * list and badge forever.
+ */
 import React, { useCallback, useState } from "react";
 import {
   View,

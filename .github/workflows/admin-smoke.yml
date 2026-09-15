@@ -1,5 +1,24 @@
 name: Admin API Smoke
 
+# DISABLED BY DEFAULT. This workflow does nothing until the repository variable
+# RUN_ADMIN_SMOKE is set to the string 'true' (Settings → Secrets and variables
+# → Actions → Variables). It is not set today, so every run below is skipped.
+#
+# That is on purpose, not neglect: the smoke script provisions and deletes real
+# Supabase users with a service-role key. Running it on every pull_request would
+# mean handing a production-capable key to a workflow that builds PR code. Turn
+# it on only when it points at a STAGING Supabase project.
+#
+# To enable:
+#   gh variable set RUN_ADMIN_SMOKE --body true
+#   gh secret set SUPABASE_URL / SUPABASE_ANON_KEY / SUPABASE_SERVICE_ROLE_KEY
+# To disable again:
+#   gh variable delete RUN_ADMIN_SMOKE
+#
+# Because it is gated this way it must NOT be added to the required status
+# checks — a skipped job cannot satisfy a required check, and a job that is
+# required but permanently skipped blocks every merge.
+
 on:
   workflow_dispatch:
   pull_request:
@@ -15,11 +34,28 @@ jobs:
     if: ${{ vars.RUN_ADMIN_SMOKE == 'true' }}
     steps:
       - uses: actions/checkout@v4
+
+      # With the variable on, missing credentials are a failure rather than a
+      # silent pass — the same lesson as security-regression.yml. Someone who
+      # deliberately enabled this workflow wants it to run, so "cannot run"
+      # is a result they need to see.
+      - name: Required secrets are configured
+        shell: bash
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: |
+          missing=""
+          [ -z "$SUPABASE_URL" ] && missing="$missing SUPABASE_URL"
+          [ -z "$SUPABASE_SERVICE_ROLE_KEY" ] && missing="$missing SUPABASE_SERVICE_ROLE_KEY"
+          if [ -n "$missing" ]; then
+            echo "::error::RUN_ADMIN_SMOKE is 'true' but these secrets are missing:$missing"
+            exit 1
+          fi
+
       - name: Run admin smoke test
         shell: pwsh
-        run: |
-          if (-not $env:SUPABASE_URL) { Write-Host 'Skipping: SUPABASE_URL not configured'; exit 0 }
-          ./scripts/admin-smoke.ps1 -CleanupUsers $true
+        run: ./scripts/admin-smoke.ps1 -CleanupUsers $true
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}

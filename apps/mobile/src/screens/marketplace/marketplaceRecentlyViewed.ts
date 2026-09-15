@@ -1,3 +1,16 @@
+/**
+ * Device-local list of listing ids the user recently opened, used to build the
+ * "Recently viewed" rail on Shop home.
+ *
+ * Exports: addRecentlyViewedListing, getRecentlyViewedListingIds,
+ * clearRecentlyViewedListings.
+ * Touches: AsyncStorage key `lantern_marketplace_recently_viewed`; newest
+ * first, deduped, capped at MAX_RECENT (10).
+ *
+ * Gotchas: stores ids only, so the caller must refetch each listing and cope
+ * with ones that were deleted or sold. The key carries no user id, so the list
+ * survives an account switch on the same device.
+ */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const RECENTLY_VIEWED_KEY = 'lantern_marketplace_recently_viewed';

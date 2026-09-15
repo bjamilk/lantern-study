@@ -1,3 +1,22 @@
+/**
+ * `JobApplicants` route: the employer's applicant pipeline for one posting —
+ * search, sort, per-card status moves, notes, interviews, offers, bulk actions
+ * and CSV export.
+ *
+ * Exports: JobApplicantsScreen (named and default).
+ * Touches: fetchJobApplicants, fetchJobPosting, updateJobApplicationStatus,
+ * bulkUpdateJobApplicationStatus, exportJobApplicantsCsv and
+ * fetchJobApplicationResumeUrl in ../../services/jobsBoard; the applicant
+ * filter/sort/summarize/CSV helpers from @lantern/shared; shareTextFile in
+ * ../../utils/shareFile; JobApplicantNotes, JobBulkActionsBar,
+ * JobInterviewScheduler, JobOfferPanel and JobPostingInsights.
+ *
+ * Gotchas: resumes live in a private bucket, so a fresh signed link is fetched
+ * for every view. "Select all" selects the filtered rows, not every applicant,
+ * while "Export all" goes to the server for the complete list. The posting is
+ * fetched separately only to label screening answers and seed the offer form.
+ * A failed applicant load falls back to an empty list with no error shown.
+ */
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Linking,

@@ -16,6 +16,17 @@ import { parseCommunityCode, parseInviteCode } from '../screens/discover/joinByC
  * Every target is built with `toTab` (or an explicit `initial: false`), so a
  * notification tap lands on the artefact with its tab's root underneath it
  * rather than in a stack Back cannot leave.
+ *
+ * Nothing here has a side effect: it returns a navigation target and does no
+ * I/O, joins nothing and writes nothing. The `discover/join/<code>` branch in
+ * particular carries the code to the Communities segment's Join sheet, which
+ * the student confirms — membership is not granted by resolving the link. The
+ * group-invite path is different and does not pass through this table; see
+ * hooks/useDeepLinkHandler.ts.
+ *
+ * `as any` recurs on every params object because `screen`/`params`/`initial`
+ * is React Navigation's nested descriptor, and the return type here is the
+ * flat `Record<string, string>` the callers share.
  */
 export function resolveDeepLinkNavigation(url: string): { screen: string; params?: Record<string, string> } | null {
   const parsed = parseDeepLink(url);

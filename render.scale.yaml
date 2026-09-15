@@ -31,8 +31,12 @@ services:
         value: "3001"
       - key: FRONTEND_URL
         value: https://lanternstudy.com
+      # Canonical origin (SW / Sentry WEB-1W). This was the legacy
+      # lantern-study.pages.dev alias; it is still in PRODUCTION_WEB_ORIGINS for
+      # CORS, so nothing loses access, but no URL the API builds should name an
+      # origin the browser's CSP does not allow.
       - key: WEB_APP_URL
-        value: https://lantern-study.pages.dev
+        value: https://www.lanternstudy.com
       - key: REDIS_ENABLED
         value: "true"
       - key: REDIS_URL

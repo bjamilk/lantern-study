@@ -13,7 +13,21 @@
  * returns the handful of rows worth resuming, newest first.
  *
  * Nothing here touches React, a store or the network. Each client supplies the
- * data and performs the navigation.
+ *
+ * CONSUMERS: web (`components/DashboardScreen.tsx` + `components/dashboard/*`)
+ * and mobile (`src/screens/dashboard/DashboardScreen.tsx` +
+ * `src/components/dashboard/*`). Fed by the API's `GET /dashboard/summary`
+ * roll-up. Not used by the api.
+ *
+ * HONESTY RULE: a region with nothing real to show is omitted, not rendered
+ * empty. `homeRegions` returns only the regions that have content, and
+ * `recentActivities` returns only rows a student can actually resume — an
+ * empty Home is a true statement, a Home full of zeroes is not.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT (`npm run build` first). A new
+ * subpath needs a package.json "exports" entry and an api tsconfig "paths"
+ * entry; mobile jest maps `@lantern/shared/*` subpaths separately. The web
+ * turbo build enforces strict `noUncheckedIndexedAccess`.
  */
 
 /* ------------------------------------------------------------------ *
@@ -21,6 +35,13 @@
  * ------------------------------------------------------------------ */
 
 /** Every region of Home, in spine order. */
+// ---------------------------------------------------------------------------
+// Regions: what Home is made of, in order
+// ---------------------------------------------------------------------------
+// The page spine. Order is identical on both platforms; only density differs
+// (see quickActionColumns). Web and mobile must not add a region here without
+// building it on both, or the shared spine stops being shared.
+
 export type HomeRegionId =
   | 'greeting'
   | 'studySets'
@@ -145,6 +166,12 @@ export function homeRegions(input: HomeRegionsInput): HomeRegion[] {
  * Quick actions
  * ------------------------------------------------------------------ */
 
+// ---------------------------------------------------------------------------
+// Quick actions
+// ---------------------------------------------------------------------------
+// The small grid of "start something" buttons. Two columns on mobile, three on
+// web — the only platform difference in this file.
+
 export type HomeQuickActionId =
   | 'import'
   | 'createQuiz'
@@ -181,6 +208,14 @@ export function quickActionColumns(platform: HomePlatform): 2 | 3 {
 /* ------------------------------------------------------------------ *
  * Recent activities
  * ------------------------------------------------------------------ */
+
+// ---------------------------------------------------------------------------
+// Recent activities
+// ---------------------------------------------------------------------------
+// The resume feed, built from whatever the client already holds in memory
+// (decks, tests, lecture notes, companion threads) — no extra network call.
+// Newest first, capped at RECENT_ACTIVITIES_LIMIT, each row carrying the verb
+// that describes what resuming it would do.
 
 export type RecentActivityKind =
   | 'flashcards'

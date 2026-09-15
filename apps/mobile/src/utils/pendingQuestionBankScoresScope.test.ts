@@ -97,23 +97,16 @@ describe('planPendingQbankScoresLoad', () => {
 });
 
 describe('pendingQbankScoreKeysToClearOnSignOut', () => {
-  it('clears only this user (and the legacy key) on a user sign-out', () => {
-    expect(pendingQbankScoreKeysToClearOnSignOut('user', 'u1')).toEqual([
-      PENDING_QBANK_SCORES_LEGACY_KEY,
-      pendingQbankScoresKey('u1'),
-    ]);
-    expect(pendingQbankScoreKeysToClearOnSignOut('user', 'u1')).not.toContain(
-      pendingQbankScoresKey('u2')
-    );
+  // G4 · H12: queued scores are unsynced work; a sign-out deletes none of it.
+  it('clears nothing on a user sign-out', () => {
+    expect(pendingQbankScoreKeysToClearOnSignOut('user', 'u1')).toEqual([]);
   });
 
   it('keeps everything when the session was revoked', () => {
     expect(pendingQbankScoreKeysToClearOnSignOut('revoked', 'u1')).toEqual([]);
   });
 
-  it('clears just the legacy key when the user id is unknown', () => {
-    expect(pendingQbankScoreKeysToClearOnSignOut('user', null)).toEqual([
-      PENDING_QBANK_SCORES_LEGACY_KEY,
-    ]);
+  it('keeps the legacy key when the user id is unknown', () => {
+    expect(pendingQbankScoreKeysToClearOnSignOut('user', null)).toEqual([]);
   });
 });

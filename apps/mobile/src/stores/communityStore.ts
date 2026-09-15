@@ -1,3 +1,24 @@
+/**
+ * In-memory cache of the viewer's communities, each community's detail and its
+ * channel/server view, plus the selectors that decide whether a group id is a
+ * community lounge.
+ *
+ * Main exports: `useCommunityStore` (`loadMine`, `loadCommunity`,
+ * `loadChannels`, `invalidate`, `resolveCommunity`), `selectIsLoungeGroup`,
+ * `collectLoungeGroupIds`, `collectKnownLounges`.
+ *
+ * Touches: services/api (`fetchMyCommunities`, `fetchCommunity`,
+ * `fetchCommunityChannels`) and utils/communityOverlay. No persistence and no
+ * native modules — everything here is lost on app restart.
+ *
+ * Gotchas: not user-scoped and never cleared on sign-out, so an account switch
+ * within one process leaves the previous account's communities cached until
+ * something forces a reload. `loadMine` is single-flighted through a
+ * module-level `mineInFlight` and served from a 60s TTL unless forced.
+ * `collectLoungeGroupIds` must be called with the two records (memoised by the
+ * caller), never built inside a zustand selector — a fresh Set per render never
+ * settles.
+ */
 import { create } from 'zustand';
 import type {
   CommunityChannels,

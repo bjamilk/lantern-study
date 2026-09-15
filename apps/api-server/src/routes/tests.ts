@@ -322,7 +322,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
         (typeof req.body?.sourceJobId === 'string' && `job:${req.body.sourceJobId}`) ||
         null,
     }),
-    handleValidationErrors,
     asyncHandler(async (req: IdempotentRequest & any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -415,7 +414,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.delete(
     '/history',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -440,7 +438,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/sessions/:sessionId',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -488,7 +485,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.delete(
     '/sessions/:sessionId',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -531,7 +527,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.post(
     '/drafts',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -601,7 +596,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.patch(
     '/drafts/:id',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -649,7 +643,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.post(
     '/drafts/:id/complete',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -716,7 +709,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.post(
     '/drafts/:id/abandon',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -760,7 +752,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/:testId',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -829,12 +820,29 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   );
 
   // POST /api/v1/tests - Create new test
+  //
+  // FIXED (F2 · E3 C6/H11): this is the create half of the offline result
+  // replay (`saveTestResult` with no sessionId), and it was unkeyed — a submit
+  // that reached the server but failed on the way back was retried and wrote a
+  // SECOND session for one sitting: duplicate attempts in History, points and
+  // badges awarded twice. Clients now send the attempt's `Idempotency-Key`
+  // (minted once at enqueue by `@lantern/shared/offlineQueue`, re-read on every
+  // retry); web's raw-fetch data layer sends the same value in the body, which
+  // `fallbackKey` reads. With no key at all the wrapper is a passthrough, so
+  // nothing here depends on a client having been updated.
   router.post(
     '/',
     authMiddleware,
+    idempotencyMiddleware({
+      operation: 'test_session_create',
+      fallbackKey: (req: any) =>
+        (typeof req.body?.idempotencyKey === 'string' && req.body.idempotencyKey) ||
+        (typeof req.body?.clientKey === 'string' && req.body.clientKey) ||
+        null,
+    }),
     validateTestConfig,
     handleValidationErrors,
-    asyncHandler(async (req: any, res: any) => {
+    asyncHandler(async (req: IdempotentRequest & any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
@@ -842,16 +850,21 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Creating test', { testConfig, userId });
 
+      const run = req.runIdempotent || ((handler: () => Promise<any>) => handler());
+
       let test;
       try {
-        test = await supabaseService.createTest(testConfig, userId);
+        test = await run(async () => {
+          const created = await supabaseService.createTest(testConfig, userId);
+          // Inside the wrapper: a replay must not re-run the invalidation for
+          // a write that did not happen.
+          await cacheService.deletePattern(`tests:${userId}:*`);
+          return created;
+        });
       } catch (err) {
         if (respondPublicError(err, res)) return;
         throw err;
       }
-
-      // Invalidate user's tests cache
-      await cacheService.deletePattern(`tests:${userId}:*`);
 
       res.status(201).json({
         success: true,
@@ -865,7 +878,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     '/:testId/start',
     authMiddleware,
     requireTestOwner(),
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -908,7 +920,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     '/:testId/submit',
     authMiddleware,
     requireTestOwner(),
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -968,7 +979,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     '/:testId/results',
     authMiddleware,
     requireTestOwner(),
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -1011,12 +1021,24 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   );
 
   // POST /api/v1/tests/:testId/results - Create test result
+  // FIXED (F2 · E3 C6/H11): the submit half of the replay was unkeyed too, so a
+  // retry after a lost response wrote a second result row against the same
+  // session. A session has exactly ONE result, so the fallback key is derived
+  // from the session id — every client, updated or not, is covered — and a
+  // client-sent `Idempotency-Key` (the attempt key from
+  // `@lantern/shared/offlineQueue`) still wins.
   router.post(
     '/:testId/results',
     authMiddleware,
     requireTestOwner(),
-    handleValidationErrors,
-    asyncHandler(async (req: any, res: any) => {
+    idempotencyMiddleware({
+      operation: 'test_result_create',
+      fallbackKey: (req: any) =>
+        typeof req.params?.testId === 'string' && req.params.testId
+          ? `test-result:${req.params.testId}`
+          : null,
+    }),
+    asyncHandler(async (req: IdempotentRequest & any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
 
@@ -1025,23 +1047,29 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
 
       logger.debug('Creating test result', { testId, score, correctAnswersCount, totalQuestions, userId });
 
-      const result = await supabaseService.createTestResult(testId, {
-        score,
-        correctAnswersCount,
-        totalQuestions,
-        activityDate: typeof activityDate === 'string' ? activityDate : undefined,
-      }, userId, { surface: surfaceFromRequest(req) });
+      const run = req.runIdempotent || ((handler: () => Promise<any>) => handler());
 
-      // Invalidate caches
-      await cacheService.delete(userScopedCacheKey('test:results', userId, testId));
-      await cacheService.deletePattern(`tests:${userId}:*`);
+      const payload = await run(async () => {
+        const result = await supabaseService.createTestResult(testId, {
+          score,
+          correctAnswersCount,
+          totalQuestions,
+          activityDate: typeof activityDate === 'string' ? activityDate : undefined,
+        }, userId, { surface: surfaceFromRequest(req) });
 
-      const finalScore = Number(result?.score ?? score) || 0;
-      const wallet = await awardTestPassCoins(userId, testId, finalScore);
+        // Invalidate caches
+        await cacheService.delete(userScopedCacheKey('test:results', userId, testId));
+        await cacheService.deletePattern(`tests:${userId}:*`);
+
+        const finalScore = Number(result?.score ?? score) || 0;
+        const wallet = await awardTestPassCoins(userId, testId, finalScore);
+
+        return { ...result, walletBalance: wallet.walletBalance, awarded: wallet.awarded };
+      });
 
       res.status(201).json({
         success: true,
-        data: { ...result, walletBalance: wallet.walletBalance, awarded: wallet.awarded },
+        data: payload,
       });
     })
   );
@@ -1051,7 +1079,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     '/:testId/questions',
     authMiddleware,
     requireTestOwner(),
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -1098,7 +1125,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
     '/:testId',
     authMiddleware,
     requireTestOwner(),
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -1149,7 +1175,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/stats/subject',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;
@@ -1177,7 +1202,6 @@ export const initializeTestRoutes = (supabase: SupabaseService, cache: CacheServ
   router.get(
     '/stats/performance',
     authMiddleware,
-    handleValidationErrors,
     asyncHandler(async (req: any, res: any) => {
       const userId = requireAuthUserId(req, res);
       if (!userId) return;

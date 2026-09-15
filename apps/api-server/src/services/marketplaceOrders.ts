@@ -1,3 +1,67 @@
+/**
+ * Marketplace order lifecycle: creation, the status machine, escrow release,
+ * disputes, and the seller-facing analytics built on top of them. The money
+ * itself lives in `marketplacePayments.ts`; this service owns order STATE and
+ * defers to that one whenever naira actually move.
+ *
+ * Exports
+ * - `MarketplaceOrdersService` / `getMarketplaceOrdersService(supabase)` — the
+ *   singleton used by `routes/marketplace/*` and `routes/admin.ts`;
+ *   `resetMarketplaceOrdersServiceForTests()` clears it.
+ * - `OPEN_ORDER_STATUSES` — the single source of truth for "this order is still
+ *   live", reused by the listing-delete guard so the two cannot drift.
+ * - `DISPUTE_CATEGORIES` / `DISPUTE_REASON_MAX` — mirror the column CHECKs.
+ * - `resolveEffectivePrice(listing)` — sale price while the sale window is open,
+ *   otherwise list price. Server-side pricing; the client never sends an amount.
+ * - `invalidateSellerAnalyticsCache(sellerId)`.
+ *
+ * What it touches
+ * - Supabase tables: `marketplace_orders`, `marketplace_listings`,
+ *   `marketplace_transactions`, `marketplace_inquiries`, `marketplace_offers`,
+ *   `marketplace_favorites`, `product_events`, `profiles`.
+ * - RPCs: `marketplace_create_buy_now_order`,
+ *   `marketplace_create_offer_accept_order`, `marketplace_release_escrow` —
+ *   all SECURITY DEFINER and revoked from PUBLIC. Stock is decremented under
+ *   SELECT ... FOR UPDATE inside them, which is why order creation must not be
+ *   re-implemented as client-side reads and writes.
+ * - Redis, via `cacheService`: `marketplace:analytics:seller:<id>` and the
+ *   listing caches.
+ *
+ * STATUS MACHINE
+ *   pending_payment | awaiting_payment -> paid -> ready_for_pickup -> completed
+ *                                             \-> shipped ---------> completed
+ *                        any live status -> cancelled | disputed
+ * Terminal: `completed`, `cancelled`. `confirm_received` and `cancel` are the
+ * two actions that cross into the money path — the first to
+ * `payoutOnConfirmReceived`, the second to `refundPaymentForOrder`.
+ *
+ * DELIBERATE DEFENCES
+ * - `resolveInitialOrderStatus` always returns `pending_payment`. It used to
+ *   return `paid` unless the seller opted out, so "Pay now" recorded a paid
+ *   order with no money moving. Paid state is only ever asserted by a verified
+ *   Paystack settlement or by the SELLER confirming receipt.
+ * - `mark_paid` is seller-only, and is refused outright once a Paystack payment
+ *   is attached to the order.
+ * - `paid_at` is stamped only after the status write commits, so a failed
+ *   transition cannot leave payment evidence on an unpaid order.
+ * - `getOrderById` throws `Unauthorized` unless the caller is the buyer or the
+ *   seller. This service uses the service-role client, which bypasses RLS, so
+ *   that predicate is the only thing standing between a user and another
+ *   student's order.
+ * - `createPaymentLinkOrder` deliberately changes no status: requesting payment
+ *   once flipped the order to `paid` as a side effect.
+ * - `restoreListingAfterCancelledOrder` returns held units but only re-opens
+ *   availability from an order-held state, so cancelling an order cannot
+ *   relist something moderation removed or the seller archived.
+ *
+ * Gotchas
+ * - Every `profiles` embed carries an explicit FK hint
+ *   (`profiles!marketplace_orders_buyer_id_fkey`). `marketplace_orders` has two
+ *   FKs to `profiles`, so a bare embed is ambiguous and PostgREST answers
+ *   PGRST201 at runtime — the SQL being valid says nothing about the embed.
+ * - Every throw here is a `PublicError`, whose message survives production
+ *   error masking; they are written for the end user to read.
+ */
 import type { SupabaseService } from './supabase';
 import { cacheService } from './cache';
 import { logger } from '../utils/logger';
@@ -275,6 +339,14 @@ export class MarketplaceOrdersService {
     return data?.id ?? null;
   }
 
+  // --- Order creation --------------------------------------------------------
+  // Both entry points create the row through a SECURITY DEFINER RPC rather than
+  // an insert, so the stock check and decrement happen under a row lock in one
+  // transaction. A unique-violation from the RPC means someone else won the
+  // race; the handlers below re-read the winning order instead of retrying.
+  // Amount is always computed here from the listing and an optional validated
+  // coupon — the request supplies a listing id, a quantity and a coupon code.
+
   async createOrderFromBuyNow(
     listingId: string,
     buyerId: string,
@@ -519,6 +591,13 @@ export class MarketplaceOrdersService {
     return row;
   }
 
+  // --- Status transitions ----------------------------------------------------
+  // One switch owns the whole machine. Each case carries its own role predicate
+  // (seller-only, buyer-only, or either party) and its own legal-from-status
+  // check; membership of the order alone never authorises a transition.
+  // `confirm_received` and `cancel` return or fall through into the payments
+  // service, so those two are where order state and money meet.
+
   async updateOrderStatus(
     orderId: string,
     userId: string,
@@ -615,17 +694,56 @@ export class MarketplaceOrdersService {
           throw new PublicError('Order cannot be cancelled');
         }
         nextStatus = 'cancelled';
-        const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
-          './marketplacePayments'
-        );
-        if (marketplacePaystackEnabled() && order.payment_id) {
-          await getMarketplacePaymentsService(this.supabaseService).refundPaymentForOrder(
-            orderId,
-            userId
-          );
+        // FIXED (H4b · 5): the refund, the escrow void and the stock restore
+        // used to run BEFORE the status write at the end of this method, so a
+        // failed write left the buyer refunded and the units relisted while the
+        // order still read as live — and a second cancel would refund again.
+        // Claim the cancellation first with a compare-and-set on the status we
+        // read: exactly one caller wins, and the order can never be live while
+        // its money has already gone back.
+        const { data: claimed, error: claimErr } = await this.db
+          .from('marketplace_orders')
+          .update({ status: 'cancelled', updated_at: now })
+          .eq('id', orderId)
+          .eq('status', order.status)
+          .select('id')
+          .maybeSingle();
+        if (claimErr) throw claimErr;
+        if (!claimed) {
+          // Someone else moved this order between our read and our write.
+          throw new PublicError('Order changed while cancelling — reload and try again');
         }
-        await this.refundEscrow(order);
-        await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
+        try {
+          const { getMarketplacePaymentsService, marketplacePaystackEnabled } = await import(
+            './marketplacePayments'
+          );
+          if (marketplacePaystackEnabled() && order.payment_id) {
+            await getMarketplacePaymentsService(this.supabaseService).refundPaymentForOrder(
+              orderId,
+              userId
+            );
+          }
+          await this.refundEscrow(order);
+          await this.restoreListingAfterCancelledOrder(order.listing_id, Number(order.quantity) || 1);
+        } catch (err) {
+          // The status is already cancelled and must stay that way (rolling it
+          // back could re-refund on the next attempt). Leave a note instead, so
+          // a half-finished cancellation is visible rather than silent.
+          const note = `Cancelled, but a side effect failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`.slice(0, 500);
+          await this.db
+            .from('marketplace_orders')
+            .update({ cancellation_note: note })
+            .eq('id', orderId)
+            .then(undefined, (noteErr: unknown) => {
+              logger.error('Failed to record cancellation note', {
+                orderId,
+                error: noteErr instanceof Error ? noteErr.message : String(noteErr),
+              });
+            });
+          throw err;
+        }
         break;
       }
       case 'open_dispute': {
@@ -717,6 +835,14 @@ export class MarketplaceOrdersService {
     await invalidateSellerAnalyticsCache(order.seller_id);
     return data as MarketplaceOrderRow;
   }
+
+  // --- Escrow release --------------------------------------------------------
+  // Completion goes through the `marketplace_release_escrow` RPC, which takes a
+  // row lock and performs exactly one stock decrement, so a duplicate call
+  // returns `already_completed` instead of decrementing twice. Budget ledger
+  // rows use deterministic ids and upsert for the same reason. Notifications,
+  // the inquiry close-out and the learning-connection record are all suppressed
+  // on a replay.
 
   async releaseEscrow(orderId: string, userId: string): Promise<MarketplaceOrderRow> {
     const order = await this.getOrderById(orderId, userId);
@@ -929,6 +1055,14 @@ export class MarketplaceOrdersService {
       deepLink: `marketplace:order:${orderId}`,
     };
   }
+
+  // --- Seller analytics ------------------------------------------------------
+  // Read-only aggregation over the seller's own rows, computed in Node rather
+  // than SQL and cached under `marketplace:analytics:seller:<id>` by the route.
+  // Revenue counts `completed` orders only, so it never reports money that has
+  // not settled. The `product_events` block is wrapped in try/catch because the
+  // table arrives in a hand-applied migration: a missing table degrades the
+  // funnel to empty instead of failing the whole dashboard.
 
   async getSellerAnalytics(userId: string): Promise<SellerAnalyticsRow> {
     const thirtyDaysAgo = new Date();
@@ -1420,6 +1554,20 @@ export class MarketplaceOrdersService {
     if (error) throw error;
     return { data: (data || []) as MarketplaceOrderRow[], total: count ?? 0 };
   }
+
+  // --- Admin and disputes ----------------------------------------------------
+  // These methods carry NO authorisation of their own — `routes/admin.ts` gates
+  // them behind the platform-admin check, and `getOrderByIdAdmin` deliberately
+  // skips the buyer/seller predicate that `getOrderById` enforces. Do not wire
+  // them to a user-facing route.
+  //
+  // `release_to_seller` routes through `forcePayoutForOrder`, which shares the
+  // payout compare-and-set in `marketplacePayments.transferSellerPayout`: an
+  // admin release racing a buyer's `confirm_received` now loses the claim
+  // rather than issuing a second transfer. `refund_buyer` goes through
+  // `refundPaymentForOrder`, which refuses once the seller has been paid.
+  // The dispute outcome is stamped before the status moves, because the seller
+  // trust score counts disputes LOST, not disputes opened.
 
   async resolveDisputeAsAdmin(
     orderId: string,

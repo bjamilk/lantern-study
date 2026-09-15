@@ -1,8 +1,98 @@
+/**
+ * Group routes — groups, community boards and community study groups.
+ *
+ * A "group" is one row that renders as three things: a private group chat, a
+ * community BOARD, or a community STUDY GROUP. Which one is decided by
+ * `visibility` + `communityId` + `communitySurface`, normalised through
+ * `resolveGroupDiscovery` / `isCommunityBoard` from `@lantern/shared/network`.
+ *
+ * Mounted at `/api/v1/groups` (server.ts) as
+ * `optionalAuthMiddleware, applyPublicRateLimits, groupRoutes` — the public
+ * rate-limit tier, because one route here (`GET /invite/:inviteId/preview`,
+ * the OG/WhatsApp unfurl) is genuinely anonymous. Every other route declares
+ * its own `authMiddleware`, so the router-level optional auth never softens
+ * them. `GET /:groupId/members` is the exception, and only in dev:
+ * `allowDevAuthBypass()` swaps in `optionalAuthMiddleware` there, with
+ * `requireGroupMember('groupId')` still in front of it.
+ *
+ * Exports `initializeGroupRoutes(supabase, cache)`, called from server.ts
+ * boot, plus the router. Both service handles are module-level singletons.
+ *
+ * Membership and role model
+ * -------------------------
+ * `group_members` rows carry `pending`. An admin-issued invite creates a
+ * PENDING row the invitee must accept; joining by invite link is the user's
+ * own consent and lands active immediately. Member counts and rosters filter
+ * on `pending = false`.
+ *
+ * There is no role column. Admin is a group-level list, and BOTH shapes are
+ * live, so every check tests both:
+ *
+ *   group.permissions?.[userId]?.admin === true  ||  group.adminIds?.includes(userId)
+ *
+ * Admin grants admin (`POST /:groupId/admins/:memberId`), and the last admin
+ * cannot be demoted. Archiving is the one group edit any member may perform;
+ * everything else on `PUT /:groupId` is admin-only.
+ *
+ * Community guard
+ * ---------------
+ * A group listed in a community is a channel of that community, so community
+ * membership gates it on top of group membership. Two helpers at the top of
+ * this file own that rule:
+ *
+ *  - `isBarredFromCommunity` — the actor must be an active community member
+ *    to create a group there or to move one there. It resolves discovery
+ *    first, so a `visibility: 'private'` group never consults a community.
+ *  - `refuseCommunityMemberAdd` — every TARGET of a member add must already
+ *    be an active community member, and a BOARD takes no member adds at all
+ *    (its audience is the community's membership).
+ *
+ * Both resolve the community from the GROUP ROW, never from a client-supplied
+ * community id, and community standing comes from `communitiesService` /
+ * `communityModeration` rather than from anything in the request. Keep it that
+ * way: trusting a caller's community id is exactly the hole H3 closed in
+ * `services/studyRooms.ts`, where `list`/`get`/`join` accepted a stranger
+ * community's id and handed back its rooms and rosters.
+ *
+ * A community LOUNGE is the community's own conversation room. It is minted
+ * with no admins and `DELETE /:groupId` refuses it explicitly via
+ * `communitiesService.isCommunityLounge`, because deleting it would take every
+ * message in it (messages cascade on the group).
+ *
+ * Error-mapping convention: refusals are
+ * `res.status(n).json({ success: false, error })`, not thrown. Not-found and
+ * not-yours are both 404 `'Group not found or access denied'` — membership is
+ * not disclosed. 403 is used once access is established but the role or the
+ * community rule refuses. 503 means a migration is not applied yet
+ * (`hasGroupCommunitySurface`), which is reported rather than silently
+ * downgraded.
+ *
+ * What it touches
+ * ---------------
+ *  - Tables: `groups`, `group_members`, and `communities` /
+ *    `community_members` through `communitiesService`.
+ *  - Storage: group avatars, uploaded by `uploadGroupAvatar` into a private
+ *    bucket. Like chat media, the stored reference is re-signed on read rather
+ *    than frozen — a signed URL persisted into `groups.avatar_url` expires.
+ *  - Side effects: `createNotification` (`group_invite`, fire-and-forget,
+ *    never blocks the response) and `activityFeed` `joined_group`, recorded
+ *    with a GROUP audience because a join is news to the room, not the world.
+ *  - Cache: `group:{groupId}`, `group:members:{groupId}:*`, `groups:list:*`,
+ *    `groups:user:*`, `groups:discover:*`, `user:groups:{userId}:*`, and
+ *    `messages:group:{groupId}:*` on delete. Discovery lists carry `isMember`
+ *    and a member count, so any membership change must drop
+ *    `groups:discover:*` too.
+ *  - Realtime: nothing is published here; clients subscribe to Postgres
+ *    changes on `group_members` and `messages` directly.
+ *
+ * `POST /:groupId/members/batch` reports a total failure as a success — see
+ * the KNOWN ISSUE at that route.
+ */
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
 import { allowDevAuthBypass, requireGroupMember } from '../middleware/authorizeResource';
-import { handleValidationErrors, validateGroupId, validateCreateGroup, validateUpdateGroup, validatePagination, validateSearch } from '../middleware/validation';
+import { handleValidationErrors, validateGroupId, validateBatchMemberIds, validateCreateGroup, validateUpdateGroup, validatePagination, validateSearch } from '../middleware/validation';
 import { SupabaseService } from '../services/supabase';
 import { CacheService } from '../services/cache';
 import { CacheKeys, CacheTTL } from '../services/cachePolicy';
@@ -105,6 +195,15 @@ export const initializeGroupRoutes = (supabase: SupabaseService, cache: CacheSer
   supabaseService = supabase;
   cacheService = cache;
 };
+
+// ===========================================================================
+// Listing, unread counts and pending invites.
+//
+// Scoped to the caller: the service filters to groups they belong to, plus
+// the discoverable ones for search. Registered before `/:groupId` so the
+// literal paths (`/unread/all`, `/invites/pending`) are not swallowed by the
+// parameter route.
+// ===========================================================================
 
 // GET /api/v1/groups - Get all groups with pagination and search
 router.get(
@@ -309,6 +408,16 @@ router.get(
     });
   })
 );
+
+// ===========================================================================
+// Group lifecycle — create, update, avatar, delete.
+//
+// Shared shape: `getGroupById(groupId, userId)` first (404 covers both "no
+// such group" and "not yours"), then the admin test against BOTH
+// `permissions[userId].admin` and `adminIds`, then the community guard where
+// the request touches a community listing, then the write, then cache
+// invalidation.
+// ===========================================================================
 
 // POST /api/v1/groups - Create new group
 router.post(
@@ -587,6 +696,15 @@ router.delete(
   })
 );
 
+// ===========================================================================
+// Membership writes — invites, joins, leaves, removals, admin grants.
+//
+// Group admin authorises the add; `refuseCommunityMemberAdd` then decides
+// whether the TARGETS may be pulled in at all. Both checks are required: the
+// admin test alone once let a channel admin pull non-members of a community
+// straight into one of its channels.
+// ===========================================================================
+
 // POST /api/v1/groups/:groupId/members - Add member to group
 router.post(
   '/:groupId/members',
@@ -660,10 +778,26 @@ router.post(
 );
 
 // POST /api/v1/groups/:groupId/members/batch - Add multiple members to group
+//
+// Same authorisation as the single add, capped at 50 ids, with the service
+// splitting the outcome into invited / alreadyMembers / alreadyPending.
+//
+// FIXED (F10): the batch add used to catch every failure, mark all ids failed
+// and still answer 200 { success: true, message: "0 invite(s) sent" } — a total
+// outage read to the client exactly like a deliberate no-op. The catch now
+// rethrows so `asyncHandler` maps it through the shared `errorHandler` like
+// every other route. `results.failed` stays in the payload shape for older
+// clients that read it, but it is now always empty: `addGroupMembersBatch`
+// reports invited / alreadyMembers / alreadyPending and nothing else, so a 200
+// from here means every id landed in one of those three buckets.
+// FIXED (F10): `userIds[*]` is now UUID-validated by `validateBatchMemberIds`
+// before anything else touches it. Only the array shape and length were checked,
+// so arbitrary strings reached the service and the `.in()` filter behind it.
 router.post(
   '/:groupId/members/batch',
   authMiddleware,
   validateGroupId,
+  validateBatchMemberIds,
   handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
@@ -742,8 +876,11 @@ router.post(
         }
       }
     } catch (error) {
+      // Rethrow. A swallowed failure here answered 200 { success: true } with
+      // "0 invite(s) sent", so a Supabase outage and "everyone was already a
+      // member" were the same response — the client had no way to retry.
       logger.error('Batch invite members failed', { groupId, error });
-      results.failed = userIds;
+      throw error;
     }
 
     // Invalidate caches (batch method already invalidates on success)
@@ -759,6 +896,15 @@ router.post(
     });
   })
 );
+
+// ===========================================================================
+// Invite links.
+//
+// `invite_id` is the bearer token: holding it is what grants the join, so
+// these routes look the group up by it rather than by group id. The preview
+// is the file's one anonymous route and returns name, description, avatar and
+// a count — never member identities.
+// ===========================================================================
 
 // GET /api/v1/groups/invite/:inviteId/preview — public, name + memberCount only.
 // Used by the WhatsApp/OG unfurl. Must never leak member names.
@@ -1024,6 +1170,14 @@ router.delete(
   })
 );
 
+// ===========================================================================
+// Per-group reads and per-member preferences — roster, stats, mute, read.
+//
+// The preference routes sit behind `requireGroupMember('groupId')` middleware
+// rather than an inline `getGroupById` check, and each writes only the
+// caller's own `group_members` row.
+// ===========================================================================
+
 // GET /api/v1/groups/:groupId/members - Get group members
 router.get(
   '/:groupId/members',
@@ -1215,6 +1369,15 @@ router.post(
     }
   })
 );
+
+// ===========================================================================
+// Admin grants.
+//
+// Any existing admin may promote or demote, and the last admin cannot be
+// demoted — the group must never be left with nobody able to administer it.
+// Both routes write `adminIds` through `updateGroup`; `permissions` is the
+// older shape and is read, not written, here.
+// ===========================================================================
 
 // POST /api/v1/groups/:groupId/admins/:memberId - Promote member to admin
 router.post(

@@ -1,3 +1,21 @@
+/**
+ * The `NotesStudio` route in the Study stack: one open note, the Turn Into row
+ * that sends it to the other studios or starts a generation job, and the Smart
+ * Notes enhance controls (depth plus optional guidance).
+ *
+ * Main exports: `NotesStudioScreen` (also the default).
+ * Touches: notesStore (materials, load/create, `setSelectedNote`), companionStore,
+ * toastStore, authStore (the user id the deck save needs), jobsStore/jobsCore for
+ * the background flashcards and test jobs; services/notes `summarizeNote` and
+ * `generateNoteQuiz`, services/ai `aiGenerateFlashcards`, services/jobArtifacts
+ * `saveGeneratedDeck`/`saveGeneratedTest`. No native modules.
+ *
+ * Gotchas: Turn Into splits two ways — lesson, recap, essay, play and quiz just
+ * navigate (the target studio bills its own first request), while cards and test
+ * start jobs here. A running job is matched back to this note by `sourceTitle`
+ * only, since that is all a job carries, so two notes with the same title share
+ * the busy state. Note content sent for cards is truncated to 8000 chars.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

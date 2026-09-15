@@ -1,6 +1,29 @@
 // ===========================================
 // Lantern Study Mobile - Test Screen
 // ===========================================
+/**
+ * The tests home (`TestsList`): two tabs — Available Tests, which launches a
+ * saved test through the mode sheet or the config sheet, and History, which
+ * lists past sittings with retake, review and delete.
+ *
+ * Main exports: the default `TestScreen`.
+ * Touches: testStore (`fetchTests`/`fetchAttempts`/`startTest`/
+ * `startQuestionSet`/`hydrateTestFromServer`/`deleteAttempt`/`clearTestHistory`),
+ * authStore, settingsStore (the default mode); services/academic
+ * `getMyActiveCourses` for the History course chips and productAnalytics. The
+ * decisions live in ./testConfigRules and ./testAuthoring. No native modules.
+ *
+ * Gotchas: there are two start paths, and they are not interchangeable —
+ * `startTest` (a saved test, honours the config sheet including `lockAnswered`)
+ * and `startQuestionSet` (a snapshot retake, which carries only the timer and
+ * the group). Any new per-test option has to be threaded through both.
+ * `defaultMinutesFor` is the single source of the minutes printed on the card,
+ * shown in the mode sheet and passed to the launch; reading `test.timeLimit`
+ * directly reports "No limit" for a test that merely never recorded one. A
+ * timer of 0 from the config sheet means "None" and must not fall back.
+ * Retake asks the server before refusing: the tests list is served lean, so
+ * "no local questions" is not "gone".
+ */
 
 import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {

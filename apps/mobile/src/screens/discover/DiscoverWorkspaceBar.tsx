@@ -1,3 +1,13 @@
+/**
+ * Underline section tabs shared by Discover and Marketplace (Communities,
+ * Groups, People, Rooms).
+ *
+ * Exports: DiscoverWorkspaceBar (named and default), DiscoverWorkspaceBarProps
+ * and the DiscoverSection type.
+ * Touches: isDiscoverSectionEnabled from @lantern/shared/marketplace, so
+ * hiding a section is a flag flip; with fewer than two sections enabled the
+ * bar renders nothing.
+ */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { isDiscoverSectionEnabled } from '@lantern/shared/marketplace';

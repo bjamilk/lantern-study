@@ -1,3 +1,98 @@
+/**
+ * SupabaseService — the API server's single data-access layer.
+ *
+ * This module builds ONE Supabase client from the SERVICE ROLE key
+ * (`constructor`, `createClient(config.url, config.serviceRoleKey, …)`) and
+ * every route handler in the server reaches Postgres and Storage through it.
+ *
+ * ## The service role bypasses RLS
+ *
+ * The service-role key is a superuser credential: row-level security does not
+ * apply to it. Every policy in `supabase/migrations/*` is invisible from here.
+ * So each method below must carry its OWN ownership or membership predicate —
+ * `.eq("user_id", userId)`, `isGroupMember`, `verifyDeckAccess`,
+ * `resolveNoteAccess`, `isDmThreadParticipant`, `isPlatformAdmin`. A method
+ * that forgets is a full-table read for whoever calls it; RLS will not catch
+ * the mistake, and neither will a test that only exercises the happy path.
+ * The same rule is what makes the public/unauthenticated endpoints that call
+ * in here dangerous by default.
+ *
+ * ## Layout
+ *
+ * Module scope first (payload coercion, cover-image constants and errors,
+ * marketplace write sanitizers, `mapTestListRow`, community-mute guard), then
+ * `class SupabaseService` in these blocks, in file order:
+ *
+ *   storage references + the storage ACL  ·  users/profiles  ·  groups and
+ *   membership  ·  group messages, votes, reactions  ·  decks and flashcards
+ *   (incl. FSRS review and per-question stats)  ·  image/file uploads  ·
+ *   offline bundles  ·  direct messages and blocks  ·  notifications  ·
+ *   tests and test sessions  ·  gamification (points, badges, levels,
+ *   streaks)  ·  chat internals (threads, mentions, receipts, `sendMessage`)
+ *   ·  board actions (favorite, repost, bookmark) and board hydration  ·
+ *   admin/health  ·  marketplace (listings, reviews, orders, favorites,
+ *   inquiries, seller dashboard)  ·  unread counts, mutes, DM thread state ·
+ *   custom categories and user preferences  ·  academic filing
+ *   (course/topic resolution)  ·  notes (folders, collaborators, share links,
+ *   attachments, quizzes)  ·  admin analytics.
+ *
+ * ## What it touches
+ *
+ * Tables (partial, by traffic): `messages`, `group_members`, `profiles`,
+ * `dm_threads`, `dm_messages`, `dm_read_status`, `marketplace_listings`,
+ * `marketplace_orders`, `marketplace_reviews`, `marketplace_review_votes`,
+ * `marketplace_favorites`, `marketplace_inquiries`, `marketplace_offers`,
+ * `marketplace_transactions`, `marketplace_reports`, `marketplace_campuses`,
+ * `marketplace_question_bank_entitlements`, `test_sessions`, `test_results`,
+ * `test_templates`, `flashcards`, `flashcard_comments`, `decks`,
+ * `deck_collaborators`, `notifications`, `groups`, `communities`,
+ * `community_members`, `notes`, `note_collaborators`, `note_attachments`,
+ * `note_share_links`, `note_folders`, `note_comments`, `note_quizzes`,
+ * `user_question_stats`, `question_votes`, `message_reactions`,
+ * `message_bookmarks`, `chat_mutes`, `chat_message_audit`, `user_blocks`,
+ * `offline_bundles`, `achievements`, `user_achievements`,
+ * `points_transactions`, `levels`, `user_streaks`, `study_activity`,
+ * `study_sets`, `saved_searches`, `custom_categories`, `user_preferences`,
+ * `budget_transactions`, `creator_stats`, `courses`, `platform_admins`.
+ * Plus the `admin_analytics` RPC.
+ *
+ * Storage buckets (all private; the allowlist is
+ * `PRIVATE_STORAGE_BUCKETS` in `@lantern/shared/utils/storageUrl`):
+ * `flashcard-images`, `question-images`, `marketplace-images`, `note-files`,
+ * `profile-avatars`, `group-avatars`, `job-resumes`, `cover-images`.
+ *
+ * ## Caching convention
+ *
+ * Reads go through `cacheService.cached(key, loader, { ttl })` and writes
+ * invalidate by key or by `deletePattern` / `invalidateUserCache` /
+ * `invalidateGroupCache`. Two rules:
+ *
+ *  1. A cache key covering user-scoped data must either be user-scoped, or
+ *     the access decision must be made OUTSIDE the loader. `cached` skips the
+ *     loader on a hit, so a check that lives inside it runs only on a miss.
+ *     `getNotificationById` had exactly that bug and was fixed by hotfix H3 —
+ *     read the comment there before you move any predicate into a loader.
+ *  2. Invalidation sites and the key they clear are spread across files
+ *     (`routes/notifications.ts`, `routes/messages.ts`); changing a key shape
+ *     without finding them leaves stale rows served until the TTL expires.
+ *
+ * ## Repo traps that bite in this file
+ *
+ *  - PostgREST embeds: a SECOND foreign key between two tables makes a bare
+ *    `select("… , other(*)")` ambiguous and fails at RUNTIME with PGRST201 —
+ *    a migration is not safe just because its SQL is. Bare embeds are frozen
+ *    by `services/postgrestEmbedDisambiguation.test.ts`; name the constraint
+ *    (`other!fk_name(*)`) rather than adding to the allowlist.
+ *  - `onConflict` cannot use a PARTIAL unique index. PostgREST 500s on such
+ *    an upsert, which is how every reaction and favorite broke silently for
+ *    several releases.
+ *  - Schema-degradation ladders: several methods retry a query with a column
+ *    or table dropped when the migration that adds it is unapplied. They are
+ *    load-bearing — see the KNOWN ISSUE at `reactionsMissingTable`.
+ *  - A new `@lantern/shared` subpath needs an entry in the api-server
+ *    `tsconfig` `paths` or it compiles locally and fails only in CI, and a
+ *    stale `packages/shared/dist` makes `tsc` disagree with the runtime.
+ */
 import { createClient } from "@supabase/supabase-js";
 import {
   DatabaseConfig,
@@ -140,6 +235,7 @@ import {
   parseChatImageUrl,
 } from "@lantern/shared/utils/chatMedia";
 import { normalizeReactions } from "@lantern/shared/chat";
+import { toServerGroupPayload } from "@lantern/shared/groups";
 import {
   clearDmHistoryClearedAtForUser,
   effectiveDmUnreadFloor,
@@ -920,6 +1016,26 @@ async function assertNotMutedInCommunity(
   }
 }
 
+/**
+ * FIXED (F10): is this GoTrue failure the INFRASTRUCTURE's fault rather than
+ * the token's?
+ *
+ * supabase-js reports a network failure as `AuthRetryableFetchError` (status 0
+ * or absent) and a gateway failure as a 5xx; a token that is simply bad comes
+ * back as a 401/403. Everything unrecognised is treated as transient on
+ * purpose: mistaking an outage for a bad token silently signs a student out,
+ * while mistaking a bad token for an outage only answers 503 to a caller whose
+ * credential was not going to work anyway.
+ */
+export function isTransientAuthError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return true;
+  const name = (error as { name?: unknown }).name;
+  if (name === 'AuthRetryableFetchError') return true;
+  const status = (error as { status?: unknown }).status;
+  if (typeof status !== 'number' || status === 0) return true;
+  return status >= 500;
+}
+
 export class SupabaseService {
   private supabase;
   private supabaseUrl: string;
@@ -956,10 +1072,14 @@ export class SupabaseService {
     );
   }
 
+  // FIXED (F10): the default was 24 h — the maximum — so every caller that
+  // omitted a TTL minted a day-long bearer link. It is now `undefined`, which
+  // lets `clampSignedUrlTtl` apply its conservative one-hour default, and the
+  // bucket is passed so a sensitive bucket gets its own lower ceiling.
   async createSignedStorageUrl(
     bucket: string,
     path: string,
-    expiresInSeconds = 60 * 60 * 24,
+    expiresInSeconds?: number,
   ): Promise<string> {
     if (!isPrivateStorageBucket(bucket)) {
       throw new Error(
@@ -974,7 +1094,7 @@ export class SupabaseService {
     ) {
       throw new Error("Invalid storage path");
     }
-    const ttl = clampSignedUrlTtl(expiresInSeconds);
+    const ttl = clampSignedUrlTtl(expiresInSeconds, bucket);
     const { data, error } = await this.supabase.storage
       .from(bucket)
       .createSignedUrl(path, ttl);
@@ -992,13 +1112,13 @@ export class SupabaseService {
   async createSignedStorageUrlWithVariant(
     bucket: string,
     path: string,
-    expiresInSeconds = 60 * 60 * 24,
+    expiresInSeconds?: number,
     variant: "thumb" | "original" = "original",
   ): Promise<string> {
     if (variant !== "thumb") {
       return this.createSignedStorageUrl(bucket, path, expiresInSeconds);
     }
-    const ttl = clampSignedUrlTtl(expiresInSeconds);
+    const ttl = clampSignedUrlTtl(expiresInSeconds, bucket);
     const thumbPath = storageThumbPath(path);
     try {
       const { data, error } = await this.supabase.storage
@@ -1030,7 +1150,6 @@ export class SupabaseService {
       variant?: "thumb" | "original";
     },
   ): Promise<Map<number, string>> {
-    const ttl = clampSignedUrlTtl(options?.expiresInSeconds);
     const variant = options?.variant || "original";
     const signedByIndex = new Map<number, string>();
     const byBucket = new Map<string, Array<{ index: number; path: string }>>();
@@ -1043,6 +1162,11 @@ export class SupabaseService {
 
     for (const [bucket, items] of byBucket) {
       try {
+        // FIXED (F10): the TTL is clamped PER BUCKET, inside the loop. One
+        // clamp outside it gave every bucket in a mixed batch the same
+        // ceiling, which is exactly how a sensitive bucket inherits a cover
+        // image's lifetime.
+        const ttl = clampSignedUrlTtl(options?.expiresInSeconds, bucket);
         const paths =
           variant === "thumb"
             ? items.flatMap((item) => [storageThumbPath(item.path), item.path])
@@ -1104,6 +1228,59 @@ export class SupabaseService {
     );
   }
 
+  // ===========================================================================
+  // STORAGE ACL — the authorization gate for every signed URL
+  //
+  // All eight buckets are PRIVATE, so an object is only reachable through a
+  // signed URL, and `canAccessStorageObject` is the one thing standing between
+  // a caller and a signature. The service role can sign anything; this method
+  // decides whether it should. Treat it as security code, not plumbing.
+  //
+  // Invariants a change must preserve:
+  //
+  //  1. DENY BY DEFAULT. An unknown bucket returns false (the
+  //     `isPrivateStorageBucket` allowlist), and every branch below that does
+  //     not explicitly grant falls through to `return false` at the end.
+  //     Adding a bucket without adding a branch denies it — which is correct.
+  //  2. PATH HYGIENE. A path containing `..`, starting with `/`, or containing
+  //     a backslash is rejected outright, before anything is parsed out of it.
+  //     Authorization is then derived from path SEGMENTS (`parts[0]` is the
+  //     owner), so a traversal that survived would authorize the wrong object.
+  //  3. OWNER SHORT-CIRCUIT. `parts[0] === userId` grants; everything after
+  //     that point answers the harder question "may a NON-owner read this?".
+  //
+  // CONFUSED-DEPUTY DEFENCES (two, both deliberate and both easy to delete by
+  // accident). Object paths embed the UPLOADER's id, and rows that reference
+  // an object are written by users. So "some row I can read points at this
+  // object" is NOT proof the object is mine to share — an attacker can put any
+  // path in a row they own. Both checks below therefore require the PATH OWNER
+  // to be independently authorized on the referencing artefact:
+  //
+  //  - `canAccessFlashcardImage`: the viewer must be able to READ a deck that
+  //    references the object, AND the path owner must be able to EDIT that
+  //    same deck. Planting a stranger's image path on your own card grants
+  //    nothing, because you are not an editor of their deck.
+  //  - `canAccessQuestionImage`: the viewer must be a member of a group whose
+  //    message references the object, AND the path owner must be a member of
+  //    that same group.
+  //
+  // Both also match the reference EXACTLY (`storageUrlMatchesObject`) after an
+  // `ilike '%path%'` narrowing query; the ilike is a prefilter only, never the
+  // decision, and the pattern is escaped (`escapeIlikePattern`) so a path
+  // containing `%` or `_` cannot widen it.
+  //
+  // COVER PATHS are hardened at construction rather than at read time:
+  // `uploadCoverImage` strips the owner and artefact id segments to
+  // `[A-Za-z0-9_-]`, so neither can introduce a separator or a traversal, and
+  // `normalizeCoverRef` (packages/shared/src/utils/storageUrl.ts) refuses to
+  // bucket-qualify a ref that already names another private bucket, is absolute,
+  // or contains `..`/backslashes — a legacy ref cannot be rewritten into a
+  // pointer at someone else's bucket.
+  //
+  // Do not weaken any of the above to fix a 403. A cover or avatar that fails
+  // to load is a missing read predicate on the ARTEFACT, not a reason to widen
+  // the bucket rules.
+  // ===========================================================================
   async canAccessStorageObject(
     userId: string | null,
     bucket: string,
@@ -1454,6 +1631,29 @@ export class SupabaseService {
     return this.supabase;
   }
 
+  // ===========================================================================
+  // USERS AND PROFILES
+  //
+  // CRUD over `profiles` plus the derived reads clients treat as part of a
+  // user: stats (`getUserStats`), group membership (`getUserGroups`), push
+  // token registration, and account export/erasure entry points
+  // (`exportUserData`, `deleteUser`, `deleteUserProfileOnly`).
+  //
+  // Visibility is decided HERE, not by RLS: `isProfileVisibleToViewer` is the
+  // predicate every non-self profile read must pass, and `canViewPeerChatAvatar`
+  // is the narrower "we share a DM or a group" grant used for chat bubbles.
+  // The storage ACL above calls both.
+  //
+  // Display names are scrubbed of email addresses on the way out
+  // (`scrubEmailFromDisplayName`) because a signup that defaulted the name to
+  // the email would otherwise publish it.
+  //
+  // Caching: `user:${userId}:profile` and friends, invalidated by
+  // `cacheService.invalidateUserCache(userId)` on every write. A profile edit
+  // also has to clear the places the profile is EMBEDDED — group member lists,
+  // message author previews — which is what
+  // `invalidateProfilePresentationCaches` does with `deletePattern`.
+  // ===========================================================================
   // User/Profile Functions
   async fetchUserProfile(userId: string): Promise<User | null> {
     const cacheKey = `user:${userId}:profile`;
@@ -1953,9 +2153,17 @@ export class SupabaseService {
     return mapProfileRowToUser(data as Record<string, unknown>);
   }
 
+  /**
+   * @deprecated Loses the deletion report. Call
+   * `deleteUserAccountFully` directly — it returns `{ ok, found, purged,
+   * failures }` and a caller that only sees this boolean cannot tell a complete
+   * erasure from one that left files in a bucket. Kept for back-compat; `false`
+   * means "no such account", never "partially deleted".
+   */
   async deleteUser(userId: string): Promise<boolean> {
     const { deleteUserAccountFully } = await import("./userDataLifecycle");
-    return deleteUserAccountFully(this, userId);
+    const result = await deleteUserAccountFully(this, userId);
+    return result.found;
   }
 
   async exportUserData(userId: string): Promise<Record<string, unknown>> {
@@ -2088,6 +2296,33 @@ export class SupabaseService {
     ); // Cache for 5 minutes
   }
 
+  // ===========================================================================
+  // GROUPS AND MEMBERSHIP
+  //
+  // `groups` + `group_members`, plus the invite lifecycle (invite id lookup,
+  // accept/decline, batch add) and the roster reads.
+  //
+  // This block owns the authorization primitives the rest of the file leans
+  // on, so they are the most reused predicates in the server:
+  //
+  //   isGroupMember(groupId, userId)        — may read the group's content
+  //   isGroupAdmin(groupId, userId)         — may moderate it
+  //   isDmThreadParticipant(threadId, uid)  — the DM equivalent
+  //   getAuthorizedGroupMessage(...)        — membership + the message row
+  //   getAuthorizedDmMessage(...)           — participation + the message row
+  //   canNotifyUser(...)                    — may address a notification at them
+  //
+  // Prefer the `getAuthorized*Message` helpers over fetching a message and
+  // checking membership separately: they are what makes "can see" and "can
+  // read this row" one decision. They prove membership only — a write on
+  // someone ELSE's message additionally needs author-or-admin, which is the
+  // rule `routes/messages.ts` applies for both `/status` and the
+  // similarity-flag route.
+  //
+  // Paging is clamped by the DEFAULT_/MAX_GROUP_PAGE_SIZE constants on the
+  // class; list caches are keyed `groups:list:*` and every membership change
+  // clears them by pattern alongside the per-group and per-user caches.
+  // ===========================================================================
   // Group Methods for API Routes
   async getGroups(
     options: {
@@ -2184,26 +2419,14 @@ export class SupabaseService {
           }
         }
 
-        // Transform snake_case to camelCase
-        return (data || []).map((item: any) => ({
-          id: item.id,
-          name: item.name,
-          description: item.description,
-          avatarUrl: item.avatar_url,
-          lastMessage: item.last_message,
-          lastMessageTime: item.last_message_time,
-          adminIds: item.admin_ids || [],
-          permissions: item.permissions || {},
-          parentId: item.parent_id,
-          isArchived: item.is_archived,
-          inviteId: item.invite_id,
-          courseId: item.course_id ?? null,
-          visibility: item.visibility || "private",
-          communityId: item.community_id ?? null,
-          communitySurface: item.community_surface ?? null,
-          createdAt: item.created_at,
-          memberCount: memberCounts[item.id] || 0,
-        })) as Group[];
+        // Snake_case row -> `Group`, through the one shared mapper.
+        // `memberCounts` was counted separately above; `|| 0` keeps the
+        // pre-refactor promise that this endpoint always answers a number.
+        return (data || []).map((item: any) =>
+          toServerGroupPayload(item, {
+            memberCounts: { [item.id]: memberCounts[item.id] || 0 },
+          }),
+        ) as Group[];
       },
       { ttl: 300 },
     ); // Cache for 5 minutes
@@ -2233,26 +2456,7 @@ export class SupabaseService {
       }
       if (error) throw error;
       if (!data) return null;
-      return {
-        id: data.id,
-        name: data.name,
-        description: data.description,
-        avatarUrl: data.avatar_url,
-        lastMessage: data.last_message,
-        lastMessageTime: data.last_message_time,
-        adminIds: data.admin_ids || [],
-        permissions: data.permissions || {},
-        parentId: data.parent_id,
-        isArchived: data.is_archived,
-        inviteId: data.invite_id,
-        courseId: data.course_id ?? null,
-        visibility: (data as { visibility?: string }).visibility || "private",
-        communityId: (data as { community_id?: string | null }).community_id ?? null,
-        communitySurface:
-          (data as { community_surface?: "board" | "study_group" | null })
-            .community_surface ?? null,
-        createdAt: data.created_at,
-      } as Group;
+      return toServerGroupPayload(data) as Group;
     }
 
     const cacheKey = `group:${groupId}:user:${userId}`;
@@ -2291,26 +2495,7 @@ export class SupabaseService {
         }
 
         // Transform snake_case to camelCase
-        return {
-          id: data.id,
-          name: data.name,
-          description: data.description,
-          avatarUrl: data.avatar_url,
-          lastMessage: data.last_message,
-          lastMessageTime: data.last_message_time,
-          adminIds: data.admin_ids || [],
-          permissions: data.permissions || {},
-          parentId: data.parent_id,
-          isArchived: data.is_archived,
-          inviteId: data.invite_id,
-          courseId: data.course_id ?? null,
-          visibility: (data as { visibility?: string }).visibility || "private",
-          communityId: (data as { community_id?: string | null }).community_id ?? null,
-          communitySurface:
-            (data as { community_surface?: "board" | "study_group" | null })
-              .community_surface ?? null,
-          createdAt: data.created_at,
-        } as Group;
+        return toServerGroupPayload(data, { viewerId: userId }) as Group;
       },
       { ttl: 600 },
     ); // Cache for 10 minutes
@@ -2414,24 +2599,21 @@ export class SupabaseService {
       });
     });
 
-    // Transform snake_case to camelCase
+    // Transform snake_case to camelCase. The discovery trio is what we just
+    // asked the database for, so it wins over a row that may predate the
+    // `community_surface` column.
     return {
-      id: data.id,
-      name: data.name,
-      description: data.description,
-      avatarUrl: data.avatar_url,
-      lastMessage: data.last_message,
-      lastMessageTime: data.last_message_time,
-      adminIds: data.admin_ids || [],
-      permissions: data.permissions || {},
-      parentId: data.parent_id,
-      isArchived: data.is_archived,
-      inviteId: data.invite_id,
-      courseId: data.course_id ?? null,
+      ...toServerGroupPayload(data, {
+        viewerId: userId,
+        fallback: {
+          visibility: discovery.visibility,
+          communityId: discovery.communityId,
+          communitySurface: surface,
+        },
+      }),
       visibility: discovery.visibility,
       communityId: discovery.communityId,
       communitySurface: data.community_surface ?? surface,
-      createdAt: data.created_at,
       pendingInviteUserIds: Array.from(explicitInviteSet),
     } as Group & { pendingInviteUserIds?: string[] };
   }
@@ -2486,26 +2668,7 @@ export class SupabaseService {
     await cacheService.deletePattern("groups:list:*");
 
     // Transform snake_case to camelCase
-    return {
-      id: data.id,
-      name: data.name,
-      description: data.description,
-      avatarUrl: data.avatar_url,
-      lastMessage: data.last_message,
-      lastMessageTime: data.last_message_time,
-      adminIds: data.admin_ids || [],
-      permissions: data.permissions || {},
-      parentId: data.parent_id,
-      isArchived: data.is_archived,
-      inviteId: data.invite_id,
-      courseId: data.course_id ?? null,
-      visibility: (data as { visibility?: string }).visibility || "private",
-      communityId: (data as { community_id?: string | null }).community_id ?? null,
-      communitySurface:
-        (data as { community_surface?: "board" | "study_group" | null })
-          .community_surface ?? null,
-      createdAt: data.created_at,
-    } as Group;
+    return toServerGroupPayload(data) as Group;
   }
 
   async getGroupByInviteId(inviteId: string): Promise<Group | null> {
@@ -2520,21 +2683,9 @@ export class SupabaseService {
       throw error;
     }
 
-    return {
-      id: data.id,
-      name: data.name,
-      description: data.description,
-      avatarUrl: data.avatar_url,
-      lastMessage: data.last_message,
-      lastMessageTime: data.last_message_time,
-      adminIds: data.admin_ids || [],
-      permissions: data.permissions || {},
-      parentId: data.parent_id,
-      isArchived: data.is_archived,
-      inviteId: data.invite_id,
-      courseId: data.course_id ?? null,
-      createdAt: data.created_at,
-    } as Group;
+    // Was the one copy that dropped visibility/communityId/communitySurface,
+    // so a group opened from an invite link lost its community surface.
+    return toServerGroupPayload(data) as Group;
   }
 
   /**
@@ -3060,6 +3211,31 @@ export class SupabaseService {
     ); // Cache for 5 minutes
   }
 
+  // ===========================================================================
+  // GROUP MESSAGES — reads, edits, votes, reactions
+  //
+  // `messages` is the busiest table in the file and serves three products at
+  // once: group chat, the community board, and the peer question bank. A row's
+  // `type`/`questionType` decides which, so a change here lands on all three.
+  //
+  // What lives in this block:
+  //   - paged reads (`getGroupMessages`, `getMessageById`) with the reply,
+  //     thread-count, receipt and peer-upvote enrichments attached afterwards
+  //     rather than embedded, so one missing table degrades one field;
+  //   - edit/remove (`editChatMessage`, `removeChatMessage`) with the pin
+  //     cleanup and the cache/preview refresh that must follow every mutation
+  //     (`refreshChatPreview`, `invalidateChatMessageMutation`,
+  //     `refreshChatMessageNotifications`);
+  //   - peer verification: `voteQuestion` / `removeVote` on `question_votes`,
+  //     with `syncQuestionStatusAfterVote` recomputing the question's status
+  //     from `countPeerUpvotes` + `canVerifyQuestion` in shared;
+  //   - emoji reactions on `message_reactions`, one table for group and DM.
+  //
+  // Authorization is the CALLER's job on every write here: these methods take
+  // ids and write. Route handlers must have gone through
+  // `getAuthorizedGroupMessage` / `getAuthorizedDmMessage` first, and for a
+  // write on content the caller did not author, the author-or-group-admin rule.
+  // ===========================================================================
   // Message Methods for API Routes
   async getGroupMessages(
     groupId: string,
@@ -3816,6 +3992,19 @@ export class SupabaseService {
    * Authorization is the caller's job (getAuthorizedGroupMessage /
    * getAuthorizedDmMessage) — this layer only writes.
    */
+  // KNOWN ISSUE (tracked, deferred F10: planned refactor stage — the
+  // schemaCapabilities consolidation rides with the services/supabase.ts
+  // god-object split, and moving these ladders piecemeal ahead of it would
+  // spread a half-migrated convention across a 17k-line file):
+  // this is one of several ad-hoc schema-degradation
+  // ladders in this file (see also `bookmarksMissingTable`,
+  // `isMissingRatingColumn`, `writeWithTopicFallback`,
+  // `isMissingCoverPathColumn`) that compare `error.code` against '42P01' /
+  // '42703' / 'PGRST204' / 'PGRST205' inline instead of using the
+  // `schemaCapabilities.ts` helpers. They cannot simply be deleted: the repo
+  // keeps no record of which migrations are actually applied to production, so
+  // there is no way to prove from the tree that the column or table now exists.
+  // Consolidate them behind schemaCapabilities before removing any.
   private reactionsMissingTable(error: any): boolean {
     return (
       error?.code === "42P01" ||
@@ -3831,6 +4020,13 @@ export class SupabaseService {
     scope: "group" | "dm" = "group",
   ): Promise<{ reactions: Record<string, number> }> {
     const column = scope === "dm" ? "dm_message_id" : "group_message_id";
+    // The `onConflict` target must name a PLAIN unique index. PostgREST cannot
+    // use a PARTIAL unique index (`… WHERE group_message_id IS NOT NULL`) as a
+    // conflict target, and the upsert then 500s at runtime with no compile-time
+    // or test signal — that is exactly how every reaction and every favorite
+    // broke silently for several releases. `message_reactions` carries one
+    // nullable FK per scope, which makes a partial index the tempting shape;
+    // it is not a usable one. Verify the index before changing this string.
     const { error } = await this.supabase
       .from("message_reactions")
       .upsert(
@@ -4174,6 +4370,32 @@ export class SupabaseService {
     };
   }
 
+  // ===========================================================================
+  // DECKS AND FLASHCARDS
+  //
+  // `decks`, `flashcards`, `deck_collaborators`, `flashcard_comments`, and the
+  // per-question mastery in `user_question_stats`.
+  //
+  // Access predicate: `verifyDeckAccess(userId, deckId, "read" | "edit")` is
+  // the ONE gate — owner, collaborator at the right role, or a share that
+  // grants read. `getAccessibleDeckIds` is its bulk form for list queries, and
+  // `getDeckForUser` / `getFlashcardForUser` are the fetch-plus-check pairs.
+  // The storage ACL calls `verifyDeckAccess` for cover and flashcard images,
+  // so widening it widens image access too.
+  //
+  // Spaced repetition: `reviewFlashcard` runs `calculateFsrsData` from shared
+  // and writes the scheduling columns back, honouring `getSrsMaxInterval` from
+  // the user's normalized settings. Deck statistics are derived, and
+  // `resetDeckStatistics` clears them.
+  //
+  // Bulk creation (`createDeckWithCards`) prefers an RPC for atomicity and
+  // falls back to a deck insert plus card insert with
+  // `deleteDeckRowBestEffort` as the compensating action when the cards fail —
+  // a half-created deck is worse than none.
+  //
+  // Concurrent edits raise `VersionConflictError` rather than last-write-wins,
+  // so a collaborator never silently overwrites another's edit.
+  // ===========================================================================
   async createDeck(
     deckData: {
       name: string;
@@ -4996,6 +5218,36 @@ export class SupabaseService {
     return data;
   }
 
+  // ===========================================================================
+  // IMAGE AND FILE UPLOADS
+  //
+  // Every bytes-into-Storage path in the server: flashcard images, deck/note/
+  // study-set covers, marketplace listing images, chat images and audio,
+  // question images, profile and group avatars, and note file attachments.
+  //
+  // The shared shape, and the parts a new upload must copy:
+  //   - a size ceiling checked on the decoded buffer, before any processing;
+  //   - `assertImageMagicBytes` — the declared content type is never trusted;
+  //     a file is what its bytes say it is;
+  //   - `processImageForUpload` normalizes to WebP (animated GIFs pass
+  //     through) and yields an optional thumb, uploaded best-effort by
+  //     `uploadSiblingThumb` so a thumb failure never fails the real upload;
+  //   - a path whose FIRST segment is the owner's user id, because the storage
+  //     ACL above derives authorization from that segment. Owner and artefact
+  //     id segments are stripped to `[A-Za-z0-9_-]` so neither can introduce a
+  //     separator or a traversal;
+  //   - `upsert: false` plus a timestamp in the filename, because the objects
+  //     are served with an immutable cache header and reusing a path would
+  //     serve the old picture forever;
+  //   - the bucket is created on demand by the service role, so there is no
+  //     manual dashboard step — but a new bucket must also be added to
+  //     `PRIVATE_STORAGE_BUCKETS`, or the deny-by-default gate refuses to sign
+  //     anything in it.
+  //
+  // Callers persist the returned PATH, never the URL: signed URLs expire (24 h
+  // maximum), and a frozen signed URL stored in a row is how chat and board
+  // photos went blank after a day.
+  // ===========================================================================
   /** Best-effort sibling thumb upload; failures never fail the parent upload. */
   private async uploadSiblingThumb(
     bucket: string,
@@ -5736,6 +5988,17 @@ export class SupabaseService {
     return { url: signedUrl, path: filePath, avatarUrl };
   }
 
+  // ===========================================================================
+  // OFFLINE BUNDLES
+  //
+  // `offline_bundles` holds the per-user snapshots the mobile app downloads to
+  // study without a connection, filed against a course like every other
+  // artefact (`courseFilter`: unfiled → IS NULL, course → eq).
+  //
+  // Rows are owner-scoped on every read, write and delete; the upsert conflict
+  // target is the plain `(user_id, bundle_id)` unique index, so re-saving a
+  // bundle replaces the snapshot rather than accumulating copies.
+  // ===========================================================================
   // Offline bundle persistence
   async getOfflineBundles(
     userId: string,
@@ -6549,6 +6812,28 @@ export class SupabaseService {
     return { success: true };
   }
 
+  // ===========================================================================
+  // DIRECT MESSAGES, MESSAGE REQUESTS AND BLOCKS
+  //
+  // `dm_threads`, `dm_messages`, `dm_read_status`, `user_blocks`, and the
+  // cross-thread `searchMessages`.
+  //
+  // Access predicate: `isDmThreadParticipant(threadId, userId)` — a thread has
+  // exactly two participants and nobody else may read it, including through
+  // the storage ACL's `note-files/{owner}/chat/dm/{threadId}/…` branch.
+  //
+  // Two rules that are easy to break:
+  //  - Blocks are checked in BOTH directions (`isDmBlockedBetween`) before a
+  //    send; `didUserBlock` is the one-directional form and is not sufficient
+  //    on its own.
+  //  - Delete-for-me is a per-user history cutoff, not a row delete. Every DM
+  //    read must apply the caller's cutoff (`.gt("timestamp", historyClearedAt)`)
+  //    or a cleared conversation reappears for the person who cleared it while
+  //    remaining intact for the other side, which is the intended behaviour.
+  //
+  // A first message from a stranger lands as a request; `acceptDmMessageRequest`
+  // and `declineDmMessageRequest` resolve it.
+  // ===========================================================================
   async getDirectMessages(
     userId: string,
     otherUserId: string,
@@ -7222,6 +7507,26 @@ export class SupabaseService {
     }));
   }
 
+  // ===========================================================================
+  // NOTIFICATIONS
+  //
+  // `notifications` CRUD plus the bulk fan-out (`createBulkNotifications`) and
+  // the unread counters. Delivery to devices rides `sendExpoPushForNotification`
+  // in the users block, using the token stored on `profiles`.
+  //
+  // CACHE SCOPING is the thing to be careful about here. `getNotificationById`
+  // caches under the unscoped key `notification:${id}` and therefore makes its
+  // ownership decision OUTSIDE `cacheService.cached` — hotfix H3 moved it
+  // there, because inside the loader it ran only on a cache MISS and every
+  // later caller, any user at all, got a hit that skipped the check and read a
+  // stranger's notification for the rest of the 5-minute TTL. The key stays
+  // unscoped deliberately: three call sites invalidate by that exact string.
+  //
+  // `getTestById` in the next block never had this bug — it keys
+  // `test:${id}:user:${userId}`, so its in-loader check is per-viewer and
+  // correct. Either scope the key or hoist the check; doing neither is the
+  // bug.
+  // ===========================================================================
   // Notification Methods for API Routes
   async getUserNotifications(
     userId: string,
@@ -7264,9 +7569,22 @@ export class SupabaseService {
     notificationId: string,
     userId?: string,
   ): Promise<Notification | null> {
+    // The ownership check MUST live outside `cached`. It used to sit INSIDE
+    // the loader, so it ran only on a cache MISS: the first caller populated
+    // `notification:${id}` with the row, and every later caller — any user at
+    // all — got a HIT that skipped the check and returned a stranger's
+    // notification for the next 5 minutes.
+    //
+    // The key stays unscoped on purpose. What is cached is now the raw row,
+    // which is the same for every viewer and carries no access decision, and
+    // three call sites outside this method (routes/notifications.ts, and
+    // markNotificationRead/deleteNotification below) invalidate by this exact
+    // string — a per-user suffix would leave those deletes matching nothing
+    // and serve read notifications as unread. Access is decided per call
+    // below, so a hit is checked just as strictly as a miss.
     const cacheKey = `notification:${notificationId}`;
 
-    return cacheService.cached(
+    const data = await cacheService.cached(
       cacheKey,
       async () => {
         const { data, error } = await this.supabase
@@ -7280,15 +7598,17 @@ export class SupabaseService {
           throw error;
         }
 
-        // Check if notification belongs to user
-        if (userId && data.user_id !== userId) {
-          return null; // Access denied
-        }
-
         return data;
       },
       { ttl: 300 },
     ); // Cache for 5 minutes
+
+    if (!data) return null;
+    // Check if notification belongs to user
+    if (userId && data.user_id !== userId) {
+      return null; // Access denied
+    }
+    return data;
   }
 
   async createNotification(
@@ -7516,6 +7836,31 @@ export class SupabaseService {
     return data || [];
   }
 
+  // ===========================================================================
+  // TESTS AND TEST SESSIONS
+  //
+  // `test_sessions` (one row per attempt, live or finished), `test_results`
+  // (the scored outcome), and `test_templates`. Covers creation from every
+  // source — group question bank, a note, a deck, a personal set — the draft
+  // lifecycle (`createTestDraft` → `updateTestDraft` →
+  // `completeTestDraft` / `abandonTestDraft`), start/submit, and the
+  // derived stats (`getSubjectStats`, `getPerformanceStats`).
+  //
+  // The response shape is a CONTRACT, not an implementation detail. Rows go
+  // out through the module-level `mapTestListRow`, which emits the same data
+  // twice: flat fields for mobile's "Available Tests" list and a nested
+  // `session` object for web. A change that satisfies one side silently makes
+  // every test invisible on the other — read the comment on that function
+  // before touching it.
+  //
+  // `test_sessions` has no `created_at`: `start_time` is the creation date and
+  // what lists sort by, exposed as `created_at` because that is what shipped
+  // clients read.
+  //
+  // Ownership is a plain `data.user_id !== userId` check on every read;
+  // `getTestById` makes it inside its loader safely because its cache key is
+  // per-user (see the notifications banner above for the version that was not).
+  // ===========================================================================
   // Test Methods for API Routes
   async getUserTests(
     userId: string,
@@ -8947,6 +9292,29 @@ export class SupabaseService {
     ); // Cache for 30 minutes
   }
 
+  // ===========================================================================
+  // GAMIFICATION — points, badges, achievements, levels, streaks
+  //
+  // `points_transactions`, `achievements`, `user_achievements`, `levels`,
+  // `user_streaks`, `study_activity`, and the denormalised counters on
+  // `profiles` that every client reads as "my stats".
+  //
+  // The award RULES are not here: they live in
+  // `@lantern/shared/utils/gamification` (`BADGE_DEFINITIONS`,
+  // `checkAndAwardBadges`) and `@lantern/shared/utils/activity`
+  // (`computeStudyStreak`), so web, mobile and the server agree on what earns
+  // what. This block persists the outcome and nothing more.
+  //
+  // Counters on `profiles` are a cache of the event tables, and they drift:
+  // `recomputeDerivedUserStats` and `recomputeUserStreak` rebuild them from
+  // the source rows, and `syncGamificationProgress*` reconciles the two.
+  // Prefer `incrementUserStatsAndAwardBadges` to a bare column bump — it is
+  // what runs the badge check afterwards.
+  //
+  // `applyTestCompletionGamification` is the single entry point the test block
+  // calls on submit, so scoring a test awards points, badges, streak and
+  // activity in one place.
+  // ===========================================================================
   // Gamification Methods for API Routes
   async getLeaderboard(
     options: {
@@ -9998,6 +10366,33 @@ export class SupabaseService {
     return data;
   }
 
+  // ===========================================================================
+  // CHAT INTERNALS AND SEND PATH
+  //
+  // The private machinery behind group and DM messaging, ending in
+  // `sendMessage` — the widest method in the file, because one call has to
+  // write the row, resolve mentions, notify the right people, keep thread
+  // state consistent and refresh every preview and unread counter.
+  //
+  // Enrichment helpers (`attachReplyPreview(sBatch)`,
+  // `attachThreadReplyCounts`, `enrichGroupMessageReceipts`,
+  // `enrichDmMessageReceipts`) run AFTER the row query rather than as embeds,
+  // so a table that is missing on this database degrades one field instead of
+  // failing the page. They are also where the PostgREST embed trap bites: a
+  // second FK between two tables makes a bare embed ambiguous and returns
+  // PGRST201 at runtime, which is why several selects below name their
+  // constraint explicitly. Bare embeds repo-wide are frozen by
+  // `services/postgrestEmbedDisambiguation.test.ts`.
+  //
+  // Notification fan-out (`notifyMentionedUsers`, `notifyReplyRecipient`,
+  // `notifyGroupMessageRecipients`, `notifyBoardCommentRecipients`) is
+  // best-effort and capped — a notification failure must not fail the send.
+  //
+  // `resolveBoardContext` / `resolveCommunityRoleFor` decide whether a message
+  // is chat or board content and which community it belongs to, and that is
+  // what feeds the community mute check (`assertNotMutedInCommunity`, module
+  // scope above) on every write path.
+  // ===========================================================================
   // Helper methods
   private generateTestQuestions(config: any): any[] {
     // Simplified question generation - in a real app this would be more sophisticated
@@ -12868,6 +13263,17 @@ export class SupabaseService {
     ); // Cache for 5 minutes
   }
 
+  // ===========================================================================
+  // CLIENT ESCAPE HATCH, HEALTH AND ADMIN GATE
+  //
+  // `getSupabaseClient` / `getClient` hand out the raw SERVICE-ROLE client for
+  // RPC calls and queries this class does not wrap. Anything built on it
+  // inherits the RLS bypass and must carry its own ownership predicate.
+  //
+  // `isPlatformAdmin` (a `platform_admins` lookup) is the only privilege check
+  // in this file, and `verifySupabaseToken` validates a caller's access token
+  // against gotrue. `healthCheck` is the readiness probe.
+  // ===========================================================================
   // Real-time subscription helpers (for future use)
   getSupabaseClient() {
     return this.supabase;
@@ -12902,21 +13308,73 @@ export class SupabaseService {
     }
   }
 
+  // FIXED (F10): verification used to collapse "this token is bad" and
+  // "Supabase is unreachable" into the same `{ isValid: false }`, which is what
+  // let one network blip downgrade a signed-in caller to anonymous in
+  // `optionalAuthMiddleware`. `verifySupabaseTokenDetailed` keeps the two apart
+  // with a `transient` flag; `verifySupabaseToken` is unchanged for the callers
+  // that only ever answer 401 either way.
   async verifySupabaseToken(
     accessToken: string,
   ): Promise<{ user: any; isValid: boolean }> {
+    const result = await this.verifySupabaseTokenDetailed(accessToken);
+    return { user: result.user, isValid: result.isValid };
+  }
+
+  async verifySupabaseTokenDetailed(
+    accessToken: string,
+  ): Promise<{ user: any; isValid: boolean; transient: boolean }> {
     try {
       const { data, error } = await this.supabase.auth.getUser(accessToken);
       if (error) {
-        return { user: null, isValid: false };
+        return { user: null, isValid: false, transient: isTransientAuthError(error) };
       }
-      return { user: data.user, isValid: true };
+      return { user: data.user, isValid: true, transient: false };
     } catch (error) {
+      // A throw out of getUser is never a statement about the token — the SDK
+      // returns bad-credential outcomes in `error`, so reaching here means the
+      // call itself failed.
       logger.error("Token verification failed:", error);
-      return { user: null, isValid: false };
+      return { user: null, isValid: false, transient: true };
     }
   }
 
+  // ===========================================================================
+  // MARKETPLACE
+  //
+  // The largest block in the file: `marketplace_listings`, `marketplace_orders`,
+  // `marketplace_reviews` + `marketplace_review_votes`, `marketplace_offers`,
+  // `marketplace_transactions`, `marketplace_reports`, `marketplace_campuses`,
+  // `marketplace_question_bank_entitlements`, plus the seller dashboard,
+  // favorites, inquiries and marketplace notification sub-blocks that follow.
+  // Money movement itself is NOT here — that is `services/marketplacePayments.ts`
+  // and Paystack; this block owns catalogue, reviews and order bookkeeping, and
+  // mirrors sales into `budget_transactions` via `logMarketplaceBudgetTransactions`.
+  //
+  // Writes are MASS-ASSIGNMENT GUARDED. A listing row carries server-owned
+  // fields — boost/promotion state inside `category_specific_fields`,
+  // moderation status, seller id — and clients post free-form JSON, so every
+  // create/update goes through the sanitizers at module scope
+  // (`assertValidListingKind`, image and quantity assertions,
+  // `assertSellerListingUpdateAllowed`). A seller may only make a status
+  // transition the shared lifecycle table permits, and a moderated listing is
+  // read-only. Never write a client payload into `marketplace_listings`
+  // directly.
+  //
+  // Listing reads come in several shapes on purpose: `toListingCardRecords` /
+  // `pickCompactListingFields` for browse, the full record for a detail page,
+  // and `getMarketplaceListingForViewer` for the viewer-scoped version. Seller
+  // trust is attached separately (`attachSellerTrust`), and images are signed
+  // on the way out (`normalizeListingRecordAsync`) because stored refs are
+  // paths, not URLs.
+  //
+  // Reviews are gated by `canUserReviewListing` — a review must be backed by a
+  // real order, which is what stopped reviews being self-minted.
+  //
+  // Rating columns degrade: `ratingColumnsAvailable` / `isMissingRatingColumn`
+  // drop the rating fields when the migration is unapplied rather than failing
+  // browse (see the KNOWN ISSUE on `reactionsMissingTable`).
+  // ===========================================================================
   // Marketplace Methods for API Routes
   async getMarketplaceCampuses(countryCode = "NG"): Promise<any[]> {
     const { data, error } = await this.supabase
@@ -13770,7 +14228,12 @@ export class SupabaseService {
       await import("../utils/marketplacePricing");
     const campusId = listingData.campus_id ?? listingData.campusId;
     if (!campusId) {
-      throw new Error("Campus or city metadata is required");
+      // FIXED (G3 · H0c): a bare Error here reached POST /listings as a generic
+      // 500 "Something went wrong" once R5a's `isPlainValidation` heuristic was
+      // removed — a seller who left the campus/city out was told the server
+      // broke, and their bad input paged 5xx alerting. It is the caller's
+      // problem and says so.
+      throw new PublicError("Campus or city metadata is required");
     }
     const pricing = normalizeMarketplacePricing({
       price: listingData.price,
@@ -14440,9 +14903,13 @@ export class SupabaseService {
     durationHours: number = 72,
   ): Promise<any> {
     const listing = await this.getMarketplaceListingById(listingId);
-    if (!listing) throw new Error("Listing not found");
+    // R5a: explicit PublicError, not a bare Error. POST /listings/:id/boost
+    // answers these two through respondMarketplaceClientError, which used to
+    // classify any bare `new Error` as a 400 by name check; the check is gone,
+    // so the intent has to be stated here. Status is unchanged (400).
+    if (!listing) throw new PublicError("Listing not found");
     if (listing.user_id !== userId)
-      throw new Error("Unauthorized: You do not own this listing");
+      throw new PublicError("Unauthorized: You do not own this listing");
 
     const existingFields =
       listing.category_specific_fields || listing.categorySpecificFields || {};
@@ -14650,6 +15117,22 @@ export class SupabaseService {
   }
 
   // Get unread message count for a group for a specific user
+  // ===========================================================================
+  // UNREAD COUNTS, READ STATE, DM THREAD STATE AND MUTES
+  //
+  // What drives every badge in both clients: per-group and per-DM unread
+  // counts (single and batched), the mark-as-read writes, DM thread
+  // delete/archive/unarchive, and `chat_mutes`.
+  //
+  // The batched counters prefer an RPC and fall back to per-thread queries
+  // (`getAllGroupUnreadCountsFallback`, `getAllDMUnreadCountsFallback`) when
+  // it is absent — the badge is wrong-but-present rather than missing.
+  //
+  // `assertChatMuteAccess` is the predicate for mute writes: a caller may only
+  // mute a scope they can actually see. `deleteDmThread` is delete-for-me — it
+  // stamps a per-user history cutoff rather than removing rows, which is what
+  // the DM reads above must honour.
+  // ===========================================================================
   async getGroupUnreadCount(groupId: string, userId: string): Promise<number> {
     try {
       // Get user's last read timestamp for this group
@@ -15790,6 +16273,17 @@ export class SupabaseService {
     });
   }
 
+  // ===========================================================================
+  // CUSTOM CATEGORIES AND USER PREFERENCES
+  //
+  // `custom_categories` is a shared, platform-wide vocabulary ranked by
+  // `usage_count` — creating one is a get-or-create by name, not a per-user
+  // row, so it is the one write in this file a caller does not own outright.
+  //
+  // `user_preferences` is strictly owner-scoped; reads normalize through
+  // `normalizeUserSettings` in shared so a partial or legacy row still yields
+  // every field a client expects.
+  // ===========================================================================
   // ============ CUSTOM CATEGORIES ============
 
   async getCustomCategories(): Promise<any[]> {
@@ -15895,6 +16389,24 @@ export class SupabaseService {
     return data;
   }
 
+  // ===========================================================================
+  // ACADEMIC FILING — courses and topics
+  //
+  // Where every artefact (note, deck, test session, offline bundle, listing)
+  // gets its `course_id` and `topic_id`. The validation rule is that a topic
+  // is checked against the course the row will END UP with, not the one in the
+  // request body, so a course change cannot orphan a topic.
+  //
+  // `resolveCourseIdFromConfigLike` (module scope) drops a non-UUID course
+  // silently; `resolveTopicIdFromConfigLike` returns the value RAW so an
+  // unusable topic id 400s instead of vanishing into a file the student
+  // thinks they made.
+  //
+  // `writeWithTopicFallback` retries a write with `topic_id` (and
+  // `study_set_id`) dropped when those columns are not on this database —
+  // see the KNOWN ISSUE on `reactionsMissingTable` for why these ladders
+  // cannot simply be removed.
+  // ===========================================================================
   // ─── Course topics (Phase 1 · A) ──────────────────────────────
 
   /**
@@ -15974,6 +16486,34 @@ export class SupabaseService {
     return (data as { course_id?: string | null } | null)?.course_id ?? null;
   }
 
+  // ===========================================================================
+  // NOTES
+  //
+  // `notes`, `note_folders`, `note_collaborators`, `note_attachments`,
+  // `note_share_links`, `note_comments`, `note_quizzes`, and the `note-files`
+  // storage bucket.
+  //
+  // Access predicate: `resolveNoteAccess(noteId, userId)` is the ONE gate and
+  // it returns the level, not a boolean — owner, collaborator role, or the
+  // grant a share link carries. `isNoteOwner` and `canEditNote` are its
+  // narrower forms. The storage ACL calls `resolveNoteAccess` for note covers,
+  // so widening it widens image access.
+  //
+  // Sharing has two independent mechanisms and they must not be conflated:
+  //  - `note_collaborators` — named users with a role, added/removed/
+  //    role-changed explicitly, and `leaveNoteCollaboration` for self-removal;
+  //  - `note_share_links` — a revocable token; `previewNoteShareLink` shows
+  //    what a link grants before it is accepted, `acceptNoteShareLink`
+  //    converts it, and `copyNoteForUser` forks the content instead.
+  //
+  // Attachments: uploads go through `uploadNoteFile` or a signed upload URL
+  // (`createSignedNoteFileUploadUrl`) so large files bypass the API process,
+  // and `resolveNoteAttachmentStoragePath` is what maps a stored attachment
+  // row back to the object the storage ACL will be asked about. Reads are
+  // always freshly signed — never a stored URL.
+  //
+  // Concurrent edits raise `VersionConflictError` rather than last-write-wins.
+  // ===========================================================================
   // ─── Notes ───────────────────────────────────────────────────
 
   private mapNote(
@@ -17553,6 +18093,14 @@ export class SupabaseService {
     return this.mapNoteQuiz(data);
   }
 
+  // ===========================================================================
+  // ADMIN ANALYTICS
+  //
+  // The platform dashboard aggregate, computed in Postgres by the
+  // `admin_analytics` RPC rather than assembled here. Callers must gate on
+  // `isPlatformAdmin` first — there is no privilege check inside this method,
+  // and the service role will happily run it for anyone.
+  // ===========================================================================
   async getAdminAnalytics(days: number): Promise<AdminAnalyticsPayload> {
     const [{ data, error }, { data: zoneData, error: zoneError }] =
       await Promise.all([

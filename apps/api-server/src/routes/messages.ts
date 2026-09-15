@@ -1,3 +1,89 @@
+/**
+ * Chat, board and DM message routes.
+ *
+ * Mounted at `/api/v1/messages` (server.ts) with no router-level middleware,
+ * so every route below carries its own `authMiddleware` — there is no
+ * anonymous path into this file. The sibling `/api/v1/groups` router is the
+ * one mounted behind `optionalAuthMiddleware` + `applyPublicRateLimits`;
+ * messages are not.
+ *
+ * Exports `initializeMessageRoutes(supabase, cache)`, called from server.ts
+ * boot, plus the router itself. Both service handles are module-level
+ * singletons: a route that runs before initialization has an undefined
+ * `supabaseService`.
+ *
+ * Rate limiting: the global tier only, except the three upload routes
+ * (`/upload-image`, `/upload-audio`, `/upload-question-image`), which add
+ * `uploadBurstRateLimit` — base64 bodies of up to 10 MB are the expensive
+ * traffic in this file.
+ *
+ * Ownership predicate pattern
+ * ---------------------------
+ * Two levels, and the difference matters:
+ *
+ *  - `supabaseService.getAuthorizedGroupMessage(messageId, userId)` proves
+ *    MEMBERSHIP only: it returns the row when the caller belongs to the
+ *    message's group, whoever wrote it. It is the read/participate predicate —
+ *    good enough for reacting, reposting, voting and bookmarking. It is NOT an
+ *    ownership check.
+ *  - author-or-group-admin (`row.sender_id === userId ||
+ *    supabaseService.isGroupAdmin(row.group_id, userId)`) is the standard for
+ *    any WRITE onto someone else's message. Both `/:messageId/status` and
+ *    `/:messageId/update` hold to it.
+ *
+ * The DM equivalents are `getAuthorizedDmMessage` and
+ * `isDmThreadParticipant`; group reads additionally go through
+ * `getGroupById(groupId, userId)`, which returns null for a non-member.
+ *
+ * Error-mapping convention: refusals are `res.status(n).json({ success:
+ * false, error })` with a human sentence, never a thrown error, so
+ * `asyncHandler` sees only genuine faults. Missing-or-not-yours is 404, not
+ * 403, on the read paths — group and DM existence is not disclosed. Service
+ * results that carry a reason (`ChatMessageMutationResult`,
+ * `BoardRepostResult`) are mapped through the `sendChatMutationResult` /
+ * `REPOST_REFUSALS` tables so each reason keeps its own status code, and 503
+ * means a migration is not applied yet rather than a fault.
+ *
+ * What it touches
+ * ---------------
+ *  - Tables: `messages` (group + board posts, `image_url`, `reactions`,
+ *    `flagged_as_similar_user_ids`, `question_status`), `groups` /
+ *    `group_members`, `dm_threads` / `dm_messages` / `dm_thread_participants`,
+ *    `message_votes`, board bookmarks and reposts.
+ *  - Storage: the `note-files` bucket, under
+ *    `{userId}/chat/{groupId | dm/threadId}/…`. Question images go to
+ *    `question-images`.
+ *  - Side effects: `learningEvents.recordLearningEvent`
+ *    (`group_question_posted`), `activityFeed` (`answered_question`),
+ *    `learningConnections` (`question_verified`, vote credit), and
+ *    `communityModeration.enforceAnnouncementCap`. All are fail-soft and run
+ *    AFTER the write they describe.
+ *  - Cache: `cacheService` keys `messages:group:{groupId}:*`,
+ *    `message:{messageId}`, `group:stats:{groupId}`. Invalidation is explicit
+ *    at each mutation.
+ *  - Realtime: this router publishes nothing itself. Clients subscribe to
+ *    Supabase Postgres changes on `messages` / `dm_messages` directly, so a
+ *    row written here is what fans out — which is why denormalised columns
+ *    such as `reactions` must be SELECTed by the listing queries too.
+ *
+ * MEDIA ATTACHMENTS — the re-signing requirement
+ * ----------------------------------------------
+ * `note-files` is private, so a photo or voice note is only readable through a
+ * signed URL. `clampSignedUrlTtl` caps every signed URL at 24 hours. Chat and
+ * board photos once died after exactly 24 hours because the URL minted at
+ * upload was frozen into the message row and never renewed.
+ *
+ * The fix, which must not be removed: the upload routes return `{ url, path }`
+ * and the `path` is the durable reference. Clients mint a fresh URL on every
+ * read through `POST /api/v1/storage/signed-url[s]` (batched, up to 40 refs
+ * per call). Anything that persists a signed `url` into a row and renders it
+ * later reintroduces the 24-hour expiry.
+ *
+ * The path is also the ACL: `note-files/{userId}/chat/{groupId}/…` is what
+ * `canAccessStorageObject` resolves back to `isGroupMember(groupId, …)`, which
+ * is why `POST /group/:groupId` validates a supplied `image_url` against the
+ * caller and the target group before the insert.
+ */
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
@@ -110,6 +196,19 @@ export const initializeMessageRoutes = (supabase: SupabaseService, cache: CacheS
   supabaseService = supabase;
   cacheService = cache;
 };
+
+// ===========================================================================
+// Media uploads — chat images, voice notes, question images.
+//
+// The only routes in this file on the `uploadBurstRateLimit` tier. Each takes
+// base64 in the JSON body, enforces its own byte cap from the encoded length
+// before decoding, and delegates to the service, which re-checks the cap,
+// verifies magic bytes and re-checks group membership from the path prefix.
+//
+// Every one returns `{ url, path }`. `url` is a 24-hour convenience for the
+// composer's local preview; `path` is what a message row stores, and readers
+// re-sign it through POST /api/v1/storage/signed-url[s]. See the file header.
+// ===========================================================================
 
 // POST /api/v1/messages/upload-image — SEC-07 chat image upload with magic-byte checks
 
@@ -408,6 +507,15 @@ router.post(
   })
 );
 
+// ===========================================================================
+// Group and board reads.
+//
+// Every route here gates on `getGroupById(groupId, userId)` returning a row —
+// that is the membership predicate, and a non-member gets 404, not 403.
+// Ordering is load-bearing: the more specific `/group/:groupId/<suffix>`
+// paths must be registered before the bare `/group/:groupId`.
+// ===========================================================================
+
 // GET /api/v1/messages/group/:groupId/user-votes - Get user votes for a group
 // This route MUST be defined before /group/:groupId to avoid being caught by that route
 router.get(
@@ -601,6 +709,15 @@ const REPOST_REFUSALS: Record<
   too_many: { status: 429, error: COMMUNITY_BOARD_COPY.repostTooMany },
   quote_too_long: { status: 400, error: COMMUNITY_BOARD_COPY.repostQuoteTooLong },
 };
+
+// ===========================================================================
+// Board interactions — repost, bookmark, thread.
+//
+// Participation, not ownership: these authorise with
+// `getAuthorizedGroupMessage`, which proves the caller is in the group. That
+// is the right level here because each one writes only the caller's OWN row
+// (a repost, a bookmark) and never edits the target post.
+// ===========================================================================
 
 // POST /api/v1/messages/:messageId/repost  { quote? }
 //
@@ -843,6 +960,14 @@ router.get(
 );
 
 // POST /api/v1/messages/group/:groupId - Send message to group
+// ===========================================================================
+// POST /api/v1/messages/group/:groupId — send a group message or board post.
+//
+// The one write path into `messages` for new content. Order matters:
+// membership first, then the attachment ACL check, then the insert, then the
+// fail-soft side effects (announcement pin cap, cache invalidation,
+// learning_events). Nothing after the insert may throw a post away.
+// ===========================================================================
 router.post(
   '/group/:groupId',
   authMiddleware,
@@ -948,6 +1073,16 @@ router.post(
     });
   })
 );
+
+// ===========================================================================
+// Direct messages — threads, requests, read state, mute, archive, delete.
+//
+// A parallel access model to the group half: the predicate is
+// `isDmThreadParticipant(threadId, userId)` / `getAuthorizedDmMessage`, not
+// group membership, and a non-participant gets 404. A "delete" of a thread is
+// a per-viewer history cutoff (`readDmHistoryClearedAt`), not a row delete —
+// the other participant keeps their copy.
+// ===========================================================================
 
 // GET /api/v1/messages/dm/threads - List DM threads for current user
 router.get(
@@ -1335,6 +1470,17 @@ router.delete(
   })
 );
 
+// ===========================================================================
+// Single-message CRUD — edit and soft-remove, DM then group.
+//
+// Sender-only, and the predicate lives in `editChatMessage` /
+// `removeChatMessage` rather than here: the service returns a reason
+// (`forbidden`, `not_editable`, `expired`, …) and `sendChatMutationResult`
+// maps each to its own status. That is why these handlers do no authorisation
+// of their own beyond the body shape — moving the check up here would
+// duplicate the 30-minute mutation window and the removed/removable rules.
+// ===========================================================================
+
 // PUT /api/v1/messages/dm-message/:messageId - Edit an owned DM message
 router.put(
   '/dm-message/:messageId',
@@ -1536,7 +1682,6 @@ router.get(
 router.post(
   '/user/:userId',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const senderId = requireAuthUserId(req, res);
     if (!senderId) return;
@@ -1610,7 +1755,6 @@ router.post(
 router.post(
   '/:messageId/vote',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -1662,7 +1806,6 @@ router.post(
 router.delete(
   '/:messageId/vote',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -1695,6 +1838,21 @@ router.delete(
 // ---------------------------------------------------------------------------
 
 /** Resolve the message and the viewer's right to react to it, group or DM. */
+// ===========================================================================
+// Votes and reactions.
+//
+// Participation-level again: the caller must be able to reach the message, and
+// the row written is their own. `authorizeReactionTarget` tries the group
+// predicate first and falls back to the DM one, so a single route serves both
+// surfaces and returns which scope matched — the caller needs that to know
+// which cache pattern to invalidate.
+//
+// The reaction upsert is the site of the `onConflict`-vs-partial-unique-index
+// trap: PostgREST cannot use a partial unique index for `onConflict`, and the
+// upsert 500s. That silently broke every reaction and favorite for several
+// releases. Changing the reaction uniqueness constraint means re-checking this
+// path, not just the SQL.
+// ===========================================================================
 async function authorizeReactionTarget(messageId: string, userId: string) {
   const group = await supabaseService.getAuthorizedGroupMessage(messageId, userId);
   if (group) return { scope: 'group' as const, groupId: (group as any).group_id ?? null };
@@ -1707,7 +1865,6 @@ async function authorizeReactionTarget(messageId: string, userId: string) {
 router.post(
   '/:messageId/reactions',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -1773,7 +1930,6 @@ router.post(
 router.delete(
   '/:messageId/reactions',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -1849,10 +2005,22 @@ router.get(
 );
 
 // PUT /api/v1/messages/:messageId/status - Update question status
+// ===========================================================================
+// Writes onto SOMEONE ELSE'S message — question status and similarity flags.
+//
+// The only two routes in this file that change a row the caller may not have
+// written, and both hold to the same predicate:
+//
+//   getAuthorizedGroupMessage  -> the caller is IN the group (404 otherwise)
+//   sender_id === userId || isGroupAdmin(group_id, userId)  -> may write
+//
+// Membership alone is not enough here, because the field being written
+// describes another member. Keep the two routes in step: if one gains a
+// relaxation the other has not, that is the bug.
+// ===========================================================================
 router.put(
   '/:messageId/status',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -1952,10 +2120,16 @@ router.put(
 );
 
 // PUT /api/v1/messages/:messageId/update - Update message (flagged status)
+//
+// `flagged_as_similar_user_ids` drives who a board shows as a duplicate
+// poster, so writing it onto another member's message is a write on their
+// content. This route once authorised with `getAuthorizedGroupMessage` alone
+// — membership — which let any member of a group rewrite the flags on any
+// other member's message. It now applies the author-or-group-admin rule
+// below, matching /:messageId/status. Covered by messages.flagUpdate.test.ts.
 router.put(
   '/:messageId/update',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -1975,6 +2149,19 @@ router.put(
       return res.status(400).json({
         success: false,
         error: 'flagged_as_similar_user_ids must be an array',
+      });
+    }
+
+    // getAuthorizedGroupMessage only proves the caller is IN the group, so
+    // any member could rewrite any other member's similarity flags. This is a
+    // write on someone else's message: hold it to the same author-or-admin
+    // rule the /status route above uses.
+    const isSender = authorized.sender_id === userId;
+    const isAdmin = await supabaseService.isGroupAdmin(authorized.group_id, userId);
+    if (!isSender && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        error: 'Only the author or a group admin can update this message',
       });
     }
 

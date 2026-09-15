@@ -4,7 +4,6 @@ import { fetchNoteAttachmentContent } from '../services/notes';
 import { useModalFocusTrap } from '../hooks/useModalFocusTrap';
 import { AppIcon } from './ui/AppIcon';
 
-const PDFJS_VERSION = '4.10.38';
 
 interface NotePdfViewerProps {
   noteId: string;
@@ -64,8 +63,14 @@ const NotePdfViewer: React.FC<NotePdfViewerProps> = ({
 
         const pdf = await pdfjs.getDocument({
           data: buffer,
-          standardFontDataUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/standard_fonts/`,
-          cMapUrl: `https://unpkg.com/pdfjs-dist@${PDFJS_VERSION}/cmaps/`,
+          // SELF-HOSTED (SW) [Sentry WEB-1P / WEB-1N]: these used to point at
+          // unpkg.com, which font-src blocks — the fonts never loaded and every
+          // open of a PDF with non-embedded base-14 fonts filed a CSP
+          // violation. apps/web/vite.config.ts copies both directories out of
+          // node_modules/pdfjs-dist into dist/pdfjs at build time, so they are
+          // always the exact version this bundle was built against.
+          standardFontDataUrl: '/pdfjs/standard_fonts/',
+          cMapUrl: '/pdfjs/cmaps/',
           cMapPacked: true,
         }).promise;
         if (cancelled) return;

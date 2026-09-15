@@ -1,3 +1,17 @@
+/**
+ * Unread-notification badge count only — not the notification list itself.
+ *
+ * Main export: `useNotificationStore` with `loadUnreadCount(userId)` plus
+ * `increment`/`decrement`/`setUnread` for optimistic badge updates from screens
+ * that mark rows read.
+ *
+ * Touches: `fetchNotifications` in services/api. No persistence; the count
+ * resets to 0 on app start until something calls `loadUnreadCount`.
+ *
+ * Gotchas: rows carry the read flag as either `read` or `is_read`, so
+ * `countUnread` checks both. A failed fetch sets the count to 0 rather than
+ * keeping the previous value, so a transient error silently clears the badge.
+ */
 import { create } from 'zustand';
 import { fetchNotifications } from '../services/api';
 

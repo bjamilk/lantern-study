@@ -29,6 +29,26 @@
  * palette hexes (`#F59E0B`) that no token owned, so they were the same colour
  * in both themes and answered to nothing. What remains is flat cards and
  * feature tints.
+ *
+ * Touches: authStore (user + profile name), statsStore, flashcardStore,
+ * notesStore, testStore (paused sessions), studySetStore, companionStore,
+ * toastStore; services/api, services/dataRefresh, services/academic
+ * (`GET /users/me/study-resume`), services/gamification (login streak).
+ * Regions render from components/dashboard/*; ordering and every "what may Home
+ * claim" rule are shared pure helpers so mobile and web cannot drift.
+ *
+ * Gotchas:
+ * - Render from `shownStats`, never from `stats` directly. One branch showing
+ *   live numbers next to another showing offline zeros is the bug
+ *   `resolveProgressDisplay` exists to prevent, and "not loaded" is not "zero".
+ * - Only an UNREACHABLE failure (offline/timeout/server) may demote the screen
+ *   to last-synced numbers; a 403 or 404 is an answer and is believed.
+ * - The Home tab stays mounted, so anything that can change while the student
+ *   is away must refresh in `useFocusEffect`, not only on mount.
+ * - The readiness card owns its own fetch and cannot be reached by `load()`;
+ *   pull-to-refresh bumps `readinessReloadToken` to reload it.
+ * - `load` changes identity on every stats tick — depending on it in an effect
+ *   refetches the whole screen in a loop.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
@@ -312,10 +332,18 @@ export function DashboardScreen({ navigation }: Props) {
     void useStudySetStore.getState().notifyReconnected();
   }, []);
 
+  // Region 4's saved sessions, re-read on mount and whenever the account
+  // changes. Keyed on the user id so a sign-in switch cannot leave the previous
+  // account's paused tests on screen.
   useEffect(() => {
     void refreshPausedSessions();
   }, [refreshPausedSessions, user?.id]);
 
+  // Pull-to-refresh. It has to ask each owner separately: `load()` covers decks,
+  // notes and stats, the set list and the resume feed are fetched here, and the
+  // readiness card only reloads because the token changes. Everything runs in
+  // parallel and nothing rejects out — a failed leg leaves its last value in
+  // place rather than clearing the screen.
   const onRefresh = async () => {
     setRefreshing(true);
     setReadinessReloadToken((n) => n + 1);
@@ -577,6 +605,10 @@ export function DashboardScreen({ navigation }: Props) {
     );
   };
 
+  // Resuming a SAVED session, as opposed to the one already in progress above.
+  // The store is what promotes a paused session into `activeTest`, so the route
+  // params are read back from the store after the await rather than guessed
+  // from the row — a session that failed to promote must not open TestTaking.
   const handleResumePaused = async (sessionId: string) => {
     try {
       await resumePausedSession(sessionId);

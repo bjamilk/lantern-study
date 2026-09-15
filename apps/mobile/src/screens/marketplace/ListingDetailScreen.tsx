@@ -1,3 +1,35 @@
+/**
+ * `ListingDetail` route: one listing's product page — gallery, breadcrumb,
+ * price and fulfillment chips, quantity and coupon, seller card, description,
+ * specs, digital-product previews, reviews, related listings, and a sticky
+ * action bar whose contents depend on who is looking.
+ *
+ * Exports: ListingDetailScreen.
+ * Touches: useMarketplaceStore (fetchListing, fetchListingReviews,
+ * fetchSimilar, sendInquiry, toggleFavorite, addReview, buyNowListing,
+ * addToCart, boostListing, updateListing, deleteListing,
+ * toggleReviewHelpful); fetchPickupNudge, fetchSellerFulfillment,
+ * validateMarketplaceCoupon, fetchListingOffersHistory,
+ * fetchMarketplaceListingReviewEligibility, fetchQuestionBankPreview,
+ * fetchStudyPackPreview, downloadQuestionBank, downloadStudyPack;
+ * useMarketplacePaymentsConfig; expo-web-browser; productAnalytics (lazily
+ * imported); addRecentlyViewedListing; StickyActionBar; ReportContentSheet.
+ *
+ * Gotchas: `load` is one long sequence whose branches depend on the fetched
+ * listing — seller-only, buyer-only and digital-only requests all hang off it,
+ * and each failure degrades silently to null. The action bar is measured
+ * (onHeightChange) rather than assumed, because its height varies with price,
+ * ownership and coupon state; a hard-coded reserve used to hide the tail of
+ * the page. Buy Now's confirmation quote is computed on the client from
+ * paymentsConfig: every kind charges the LIST price and Lantern's cut comes
+ * out of the seller's payout (5% hand-over, 15% digital); a buyer-side
+ * surcharge exists only when the server's serviceFeeBps is non-zero and never
+ * applies to digital items — the server is still the authority. "Write review"
+ * is gated on real server eligibility (a completed purchase), not on the
+ * viewer being signed in. Digital listings get their own action bar with no
+ * cart and no offers. The type label is blanked when it repeats the last
+ * breadcrumb.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,

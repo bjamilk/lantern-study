@@ -1,3 +1,98 @@
+/**
+ * Notes API — the study-library surface: notes and folders, the files a student
+ * imports into them (PDF, slides, photographs, lecture audio, YouTube), the AI
+ * actions those files feed (Smart Notes, quizzes, flashcards, narration, OCR,
+ * transcription), and the ways a note is shared (collaborators, share links,
+ * group sharing, comments).
+ *
+ * Mount path: `/api/v1/notes` (see `server.ts`). Default export is the router;
+ * `initializeNotesRoutes(supabase, cache)` injects the two services every
+ * handler reads from module scope, and must run before the first request.
+ *
+ * Auth: `router.use(authMiddleware)` at the top — every route in this file is
+ * authenticated, none are public or admin-gated.
+ *
+ * Ownership predicate. Static paths (`/folders`, `/upload-pdf`,
+ * `/finalize-*`, `/transcribe-audio`, `/from-youtube`, `/share/:token/*`) are
+ * declared BEFORE the note-scoped gate and carry their own scoping, normally by
+ * passing the authenticated `userId` into the service call. Everything under
+ * `/:noteId` then passes through one `router.use('/:noteId', …)`: the id is
+ * matched against `UUID_RE` and a non-UUID answers 404 without touching the
+ * database, and only then does `requireNoteAccess('noteId')` run. So
+ * `requireNoteAccess` is applied to every note-scoped path in this file behind a
+ * UUID pre-check, and individual routes layer the stronger predicate on top —
+ * `requireNoteEdit('noteId')` for writes and AI actions that mutate the note,
+ * `requireNoteOwner('noteId')` for delete, covers, collaborators, share links
+ * and group sharing. Handlers additionally re-read through
+ * `supabaseService.getNote(noteId, userId)`, which throws when the caller may
+ * not read the note, so an attachment sub-resource is never served on the
+ * strength of the route match alone.
+ *
+ * Rate-limit tiers:
+ * - `uploadBurstRateLimit` on every import, finalize and attachment-upload path.
+ * - `aiPostBurstRateLimit` plus an AI credit limiter on every generation path —
+ *   `aiRateLimitForFeature(...)` for flat-price features (generate_questions,
+ *   generate_flashcards, voice_ask) and `aiRateLimitWithCost(...)` where the
+ *   price is computed per request (Smart Notes depth, narration page count,
+ *   lecture length).
+ * - `collaboratorInviteRateLimit` on collaborator invites and share-link
+ *   creation.
+ *
+ * Error mapping. Handlers are wrapped in `asyncHandler`, so an unexpected throw
+ * reaches the central error handler. Deliberate mappings: `PublicError` →
+ * 400 via `respondPublicError`; version conflicts → 409 with
+ * `code: 'version_conflict'`; a missing hand-applied migration → 503 carrying
+ * the migration id (covers) or a 200 with `available: false` (pages,
+ * narration); share-link failures → 404 / 410 / 400 off the service error
+ * `code`; an object storage refuses to sign → 404 about the file, not a 500
+ * about the server; an upstream storage failure → 502 with
+ * `clientErrorMessage`. Collaborator add deliberately collapses non-safe
+ * errors to one generic sentence (SEC-06) so the route cannot be used to probe
+ * which usernames or emails exist.
+ *
+ * What it touches:
+ * - Supabase tables: `notes`, `note_folders`, `note_attachments`,
+ *   `note_attachment_pages`, `note_quizzes`, `note_collaborators`,
+ *   `note_share_links`, `note_comments`, `narration_scripts`,
+ *   `learning_events`, `ai_inference_log`.
+ * - Storage buckets: `note-files` (private) holds every uploaded PDF, slide
+ *   deck, photograph, generated thumbnail, rendered page image and lecture
+ *   audio clip; `cover-images` holds note cover art. Note rows persist the
+ *   storage PATH, never a signed URL — signed URLs expire and clients re-sign
+ *   through `POST /api/v1/storage/signed-urls`.
+ * - External work: Whisper transcription (`transcribeAudioBase64` /
+ *   `transcribeAudioBuffer`), the LLM generation calls in `aiService`
+ *   (`summarizeNoteContent`, `generateDailyQuiz`, `generateFlashcardsFromNotes`,
+ *   `generateQuestionsFromNotes`), narration script writing, local Tesseract OCR
+ *   via `notes.ocr.extract` jobs, Gotenberg slide-preview rendering, and the
+ *   YouTube metadata/transcript fetch.
+ * - AI credits are charged at four kinds of point: the request-scoped limiter
+ *   middlewares reserve BEFORE any work and their finish hook refunds every
+ *   non-2xx (never refund manually next to them — a duplicate refund mints
+ *   credits); `tryChargeAutoOcrCredits` charges fire-and-forget for auto-OCR
+ *   after the upload response has been sent; `startNoteOcrJob` stamps the
+ *   reserved `AiJobCharge` on the queued job so a permanently failed job
+ *   refunds the pool that paid; and `refundFeatureAiCredit` hands back the
+ *   reservation on the one path that answers with an existing artefact instead
+ *   of generating (a protected note quiz).
+ *
+ * Defences to preserve. Every upload path validates magic bytes and
+ * cross-checks them against the declared MIME (`assertNoteImageUpload` →
+ * `assertImageMagicBytes`, `detectImageMime`, `assertValidOfficeZip`,
+ * `resolveAudioUploadMeta`) — a declared content type is never trusted on its
+ * own, and SVG is accepted nowhere in this file. Storage keys are always built
+ * server-side from the authenticated user id (`buildNoteStoragePath`), and any
+ * client-supplied path is re-checked with `assertUserOwnedNoteStoragePath`,
+ * which rejects traversal segments, absolute paths and any prefix other than
+ * the caller's own folder. Note excerpts and OCR text reach the model fenced
+ * and labelled untrusted, under an explicit never-follow-embedded-instructions
+ * rule in the system prompt (`services/aiService.ts`). Upload handlers delete
+ * the stored object when the row write fails, so storage never keeps orphans.
+ *
+ * Two open cost defects are marked at their sites: lecture transcription
+ * prices off an unverified client `durationMs`, and `POST /notes/upload-images`
+ * accepts an unbounded `images[]`.
+ */
 import { Router, Request, Response, NextFunction } from 'express';
 import { authMiddleware, requirePermission } from '../middleware/auth';
 import {
@@ -147,6 +242,13 @@ export const initializeNotesRoutes = (supabase: SupabaseService, cache: CacheSer
   cacheService = cache;
 };
 
+/* ------------------------------------------------------- shared helpers ----
+ * Everything between here and `router.use(authMiddleware)` is route-local
+ * plumbing: study-content assembly, image upload validation and storage,
+ * the auto-OCR charge/start/revert dance, and the two status resolvers that
+ * turn attachment metadata into a poll answer.
+ */
+
 async function resolveNoteStudyContent(
   noteId: string,
   note: { body?: string; summary?: string; sourceType?: string },
@@ -172,6 +274,16 @@ type ValidatedNoteImage = {
   contentType: string;
 };
 
+/**
+ * Adopt images the client already PUT to storage: confirm each path is inside
+ * the caller's own folder, download the bytes, and validate them.
+ *
+ * The declared content type is never trusted on its own — an
+ * `application/octet-stream` is re-sniffed from magic bytes, and
+ * `assertNoteImageUpload` then cross-checks the magic bytes against the
+ * resolved MIME and the size cap. JPEG, PNG, GIF and WebP only; SVG is not an
+ * accepted note image anywhere.
+ */
 async function validateNoteImageUploads(
   userId: string,
   storagePaths: string[],
@@ -223,10 +335,58 @@ type Base64NoteImageInput = {
   contentType?: unknown;
 };
 
+/**
+ * The direct path: decode base64 photographs, validate, normalise and store
+ * them under a server-built storage key.
+ *
+ * Same magic-byte cross-check as the adopt path, then `processImageForUpload`
+ * re-encodes through sharp and produces a thumbnail, so two storage objects are
+ * written per photograph. The storage key comes from `buildNoteStoragePath`
+ * (`{userId}/{timestamp}-{sanitised name}`) — the client never names the key,
+ * so a crafted `fileName` cannot escape the caller's folder.
+ *
+ * Every object written so far is deleted when any image in the batch fails, so
+ * a rejected upload leaves no half-stored note behind.
+ *
+ * Per photograph this costs one decode, one resize, one thumbnail encode and
+ * two storage round trips. Callers are responsible for bounding the batch —
+ * see the KNOWN ISSUE on `POST /upload-images`.
+ */
+/**
+ * FIXED (F7a): how many photographs one request may carry.
+ *
+ * Every element costs a sharp decode, a resize, a thumbnail encode and two
+ * `note-files` uploads, while OCR is charged ONCE for the whole batch
+ * (NOTE_OCR_CREDIT_COST) and only ever reads MAX_OCR_IMAGES of them. Unbounded,
+ * a single ~2-credit request bought thousands of sharp invocations and storage
+ * objects. The cap is generous next to a real photo note — a phone camera roll
+ * selection is a handful of pages — and the per-image 10 MB size check in
+ * `assertNoteImageUpload` continues to bound each element.
+ */
+export const MAX_NOTE_IMAGES_PER_REQUEST = Math.max(
+  1,
+  parseInt(process.env.NOTE_MAX_IMAGES_PER_REQUEST || '20', 10) || 20
+);
+
+/**
+ * Why this batch is refused, or null when it is fine. One message, used by
+ * every route that accepts an image array, so the routes cannot drift apart.
+ */
+export function noteImageBatchRejection(count: number): string | null {
+  if (count > MAX_NOTE_IMAGES_PER_REQUEST) {
+    return `Too many images. Upload at most ${MAX_NOTE_IMAGES_PER_REQUEST} at a time.`;
+  }
+  return null;
+}
+
 async function uploadBase64NoteImages(
   userId: string,
   images: Base64NoteImageInput[]
 ): Promise<ValidatedNoteImage[]> {
+  // Defence in depth: the routes check first and answer 400 with this message,
+  // but no caller may reach the decode loop with an uncapped array.
+  const tooMany = noteImageBatchRejection(images.length);
+  if (tooMany) throw new Error(tooMany);
   const validated: ValidatedNoteImage[] = [];
   const uploadedPaths: string[] = [];
 
@@ -546,6 +706,13 @@ async function startPhotoNoteOcr(params: {
  * client to poll — previously this was fire-and-forget, so photo OCR status
  * had no `attachment` and no `ocr_processing` flag when the client first polled.
  */
+// FIXED (F7a) in part: the batch is still charged once here
+// (NOTE_OCR_CREDIT_COST) no matter how many photographs arrived, which is the
+// pricing decision — OCR reads at most MAX_OCR_IMAGES of them. What has changed
+// is that the upload can no longer be arbitrarily large:
+// `noteImageBatchRejection` caps every route that produces these attachments at
+// MAX_NOTE_IMAGES_PER_REQUEST, so "charged once" is now bounded work rather
+// than unbounded.
 async function queuePhotoNoteOcr(
   noteId: string,
   userId: string,
@@ -634,6 +801,13 @@ const respondPublicError = (err: unknown, res: Response): boolean => {
   return true;
 };
 
+/* ------------------------------------------------------------- folders ----
+ * User-owned note folders. There is no `requireFolderOwner` middleware: every
+ * service call takes the authenticated `userId` and scopes on it, and a folder
+ * that resolves a course/topic the user cannot use comes back as a
+ * `PublicError` → 400.
+ */
+
 // Folders
 router.get('/folders', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
@@ -683,6 +857,28 @@ router.delete('/folders/:folderId', validateFolderId, handleValidationErrors, as
   await supabaseService.deleteNoteFolder(userId, req.params.folderId);
   res.json({ success: true });
 }));
+
+/* --------------------------------------------- imports: files and uploads ----
+ * Each of these creates a NEW note from a file, so there is no `:noteId` to
+ * authorise against — they are declared before the note-scoped gate and scope
+ * themselves on the authenticated user.
+ *
+ * Two shapes per file type. `upload-*` takes the bytes inline as base64;
+ * `finalize-*` adopts an object the client already PUT to storage through a
+ * signed upload URL, which is how anything large avoids the proxy body limit.
+ * The adopt shape re-downloads the object and validates it exactly as the
+ * inline shape does — `assertUserOwnedNoteStoragePath` first, then size, magic
+ * bytes and (for pptx) zip structure — because a storage path in a request body
+ * is a claim.
+ *
+ * Every one of them deletes the stored object if the note or attachment row
+ * fails to write, and answers a rejected file as a 400 naming what was wrong.
+ *
+ * PDFs whose extracted text is too thin auto-start OCR
+ * (`autoStartPdfOcrOrRevert`); slide decks kick off a Gotenberg preview render
+ * and never run Tesseract inline, which can OOM the request; photographs queue
+ * a batch OCR through `queuePhotoNoteOcr`.
+ */
 
 // Special routes (must be before /:noteId)
 router.post('/upload-pdf', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
@@ -1105,6 +1301,13 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
     res.status(400).json({ error: 'storagePaths and fileNames must have the same length.' });
     return;
   }
+  // FIXED (F7a): same cap as the base64 routes — this path downloads and
+  // re-validates each object, so an uncapped array is the same amplifier.
+  const tooManyPaths = noteImageBatchRejection(storagePaths.length);
+  if (tooManyPaths) {
+    res.status(400).json({ error: tooManyPaths });
+    return;
+  }
 
   let validated: ValidatedNoteImage[] = [];
   try {
@@ -1156,6 +1359,10 @@ router.post('/finalize-images', uploadBurstRateLimit, asyncHandler(async (req: R
   });
 }));
 
+// FIXED (F7a): `images[]` is capped at MAX_NOTE_IMAGES_PER_REQUEST and a longer
+// array is refused with 400 before any sharp decode or storage upload happens
+// (`noteImageBatchRejection`). The per-image 10 MB check in
+// `assertNoteImageUpload` bounds each element; this bounds the batch.
 router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const startedAt = Date.now();
   const userId = requireAuthUserId(req, res);
@@ -1163,6 +1370,11 @@ router.post('/upload-images', uploadBurstRateLimit, asyncHandler(async (req: Req
   const { images, folderId, title } = req.body;
   if (!Array.isArray(images) || images.length === 0) {
     res.status(400).json({ error: 'images array is required.' });
+    return;
+  }
+  const tooManyImages = noteImageBatchRejection(images.length);
+  if (tooManyImages) {
+    res.status(400).json({ error: tooManyImages });
     return;
   }
 
@@ -1224,6 +1436,23 @@ router.post('/daily-quiz', requirePermission('ai'), aiPostBurstRateLimit, aiRate
   const result = await runNoteAiSync(() => generateDailyQuiz(content, { studyGoal, count }));
   res.json({ success: true, data: result });
 }));
+
+/* ------------------------------------- lecture audio and transcription ----
+ * Three steps, and one route that serves two different products.
+ *
+ * `prepare-lecture-audio-upload` mints a signed storage URL so the browser PUTs
+ * the clip straight to `note-files`; `upload-lecture-audio` is the inline
+ * fallback for small clips. Both cap the size, and both resolve the audio type
+ * through `resolveAudioUploadMeta` against an allowlist rather than trusting
+ * the declared `mimeType` — the inline path sniffs the real bytes, the prepare
+ * path has none to sniff yet and so validates only the declaration.
+ *
+ * `transcribe-audio` then calls Whisper. The same route serves a lecture
+ * recording (priced per 15 minutes, written into the note body) and a spoken
+ * question (`featureKey: "voice_ask"`, free with a daily count, never written
+ * into the note), and `transcribeAudioLimiter` is what routes between the two
+ * prices before either limiter reserves anything.
+ */
 
 const MAX_LECTURE_AUDIO_BYTES = 25 * 1024 * 1024;
 const ALLOWED_LECTURE_AUDIO_TYPES = new Set([
@@ -1506,9 +1735,52 @@ router.post('/upload-lecture-audio', uploadBurstRateLimit, asyncHandler(async (r
  * Pages proxy or an empty Content-Type can leave `body` unset, so it is never
  * destructured; a missing duration falls through to the 1-use minimum.
  */
+// FIXED (F7a): the price is no longer the client's `durationMs` alone. The
+// bytes of audio in the request (or the byte length the client declares for a
+// clip it PUT straight to storage) imply a MINIMUM duration, because no codec
+// the app records in exceeds LECTURE_MAX_AUDIO_BYTES_PER_SECOND. The charge is
+// the larger of the claimed duration and that floor, so declaring
+// `durationMs: 1000` for a 90-minute upload no longer buys a 6-credit
+// transcription for 1 credit. The floor is deliberately generous — it assumes
+// the highest bitrate the app could plausibly produce — so an honest client is
+// never overcharged; understatement is what it catches. `MAX_AI_CREDIT_COST`
+// still caps the top, and a request with no audio in it (and no declared size)
+// still prices at the 1-use minimum rather than at a guess.
+/**
+ * The highest bitrate a recording is assumed to use, in bytes per second
+ * (256 kbps). Above this the byte floor would start overcharging honest
+ * high-bitrate uploads, which is the one failure mode that must not happen.
+ */
+export const LECTURE_MAX_AUDIO_BYTES_PER_SECOND = 32 * 1024;
+
+/**
+ * Bytes of audio this request is worth — the base64 payload if it carries one,
+ * otherwise the size the client declared for the object it uploaded to storage.
+ * Both are claims, but a claim of MORE bytes can only raise the price, so a
+ * client cannot use either to pay less.
+ */
+function lectureAudioBytes(body: Record<string, unknown>): number {
+  const audioBase64 = typeof body.audioBase64 === 'string' ? body.audioBase64 : '';
+  if (audioBase64) {
+    const padding = audioBase64.endsWith('==') ? 2 : audioBase64.endsWith('=') ? 1 : 0;
+    return Math.max(0, Math.floor((audioBase64.length * 3) / 4) - padding);
+  }
+  const declared = Number(body.clientByteLength);
+  return Number.isFinite(declared) && declared > 0 ? Math.floor(declared) : 0;
+}
+
+/** The shortest the submitted audio can plausibly be, in milliseconds. */
+export function lectureDurationFloorMs(body: Record<string, unknown>): number {
+  const bytes = lectureAudioBytes(body);
+  if (bytes <= 0) return 0;
+  return Math.floor((bytes / LECTURE_MAX_AUDIO_BYTES_PER_SECOND) * 1000);
+}
+
 export function lectureTranscriptionCostFromRequest(req: { body?: unknown }): number {
   const body = (req.body && typeof req.body === 'object' ? req.body : {}) as Record<string, unknown>;
-  return getLectureTranscriptionCost(Number(body.durationMs));
+  const claimed = Number(body.durationMs);
+  const claimedMs = Number.isFinite(claimed) && claimed > 0 ? claimed : 0;
+  return getLectureTranscriptionCost(Math.max(claimedMs, lectureDurationFloorMs(body)));
 }
 
 /**
@@ -1731,6 +2003,15 @@ router.post('/transcribe-audio', requirePermission('ai'), aiPostBurstRateLimit, 
   res.json({ success: true, data: { ...result, note: updatedNote } });
 }));
 
+/* ------------------------------------------------------ youtube import ----
+ * Create a note from a video link. The url is reduced to a video id and
+ * re-canonicalised, so only the id ever reaches storage or the fetcher. The
+ * note and its attachment are written immediately with
+ * `transcriptStatus: 'processing'`; the transcript fetch itself goes through
+ * `runSyncOrEnqueue`, which answers 202 with a job id when the queue is live
+ * and runs inline otherwise. A retry lives at
+ * `POST /:noteId/retry-youtube-transcript`.
+ */
 router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
@@ -1807,6 +2088,20 @@ router.post('/from-youtube', uploadBurstRateLimit, asyncHandler(async (req: Requ
   });
 }));
 
+/* ----------------------------------------------- share links: redeeming ----
+ * The two routes a recipient calls. They are keyed by an opaque token, not by
+ * a note id, so they must be declared before the `/:noteId` gate or the token
+ * would be rejected as a malformed UUID. Authentication is still required —
+ * a share link grants a signed-in user access to someone else's note, it does
+ * not make the note public.
+ *
+ * Accepting is idempotent (`note_share_accept`), so a double tap or a retried
+ * request does not mint a second collaborator row. A revoked or expired link
+ * answers 410 and an unknown one 404, which is what lets the client tell "this
+ * link is finished" from "this link was never real". Link management —
+ * creating, listing and revoking — is owner-only and lives further down with
+ * the collaborator routes.
+ */
 // Secure share-link preview/accept (token path — before UUID noteId middleware)
 router.get(
   '/share/:token/preview',
@@ -1869,6 +2164,27 @@ router.post(
   })
 );
 
+/* ============================================================================
+ * THE NOTE-SCOPED GATE
+ *
+ * Everything below this point is reached only through this middleware: the
+ * `:noteId` must match `UUID_RE` — a non-UUID answers 404 without a database
+ * round trip, which also keeps a garbage id out of PostgREST — and then
+ * `requireNoteAccess('noteId')` decides whether this user may see the note at
+ * all (owner, collaborator, or a member of the group it is shared into).
+ *
+ * `requireNoteAccess` is READ access. Routes that write layer
+ * `requireNoteEdit('noteId')` on top, and owner-only operations (delete,
+ * covers, collaborators, share links, group sharing) layer
+ * `requireNoteOwner('noteId')`. Adding a note-scoped route without one of those
+ * two gives every reader write rights.
+ *
+ * Declaration order matters twice over: this `router.use` must come after all
+ * the static paths above, and inside each group the static segments
+ * (`/attachments/reorder`, `/attachments/finalize-image`) must come before the
+ * `:attachmentId` patterns.
+ * ==========================================================================*/
+
 // Note-scoped ownership checks (must be after static paths like /folders, /upload-pdf)
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 router.use('/:noteId', (req, res, next) => {
@@ -1878,6 +2194,22 @@ router.use('/:noteId', (req, res, next) => {
   }
   return requireNoteAccess('noteId')(req as any, res, next);
 });
+
+/* ------------------------------ attachments: images, files, pages, media ----
+ * Adding photographs to an existing photo note (the same adopt/inline pair as
+ * the import routes, reusing the same validation), reordering them, and reading
+ * an attachment back — as a signed URL, as bytes, or as pages.
+ *
+ * The two upload routes here require `requireNoteEdit`, refuse a note that is
+ * not a photo note, and continue the image numbering from the highest existing
+ * `sortOrder` rather than from zero. Their `images[]` is unbounded in the same
+ * way `POST /notes/upload-images` is; see the marker there.
+ *
+ * Reads answer about the FILE, not about the server: an attachment with no
+ * resolvable storage path is a 400 that names which shape it is, and storage
+ * refusing to sign is a 404 saying the object is gone. Both sentences are shown
+ * to the student verbatim.
+ */
 
 // Attachment routes (before /:noteId CRUD) — static paths before :attachmentId
 router.patch('/:noteId/attachments/reorder', requireNoteEdit('noteId'), asyncHandler(async (req: Request, res: Response) => {
@@ -1940,6 +2272,13 @@ router.post('/:noteId/attachments/finalize-image', requireNoteEdit('noteId'), up
     res.status(400).json({ error: 'storagePaths and fileNames must have the same length.' });
     return;
   }
+  // FIXED (F7a): same cap as the base64 routes — this path downloads and
+  // re-validates each object, so an uncapped array is the same amplifier.
+  const tooManyPaths = noteImageBatchRejection(storagePaths.length);
+  if (tooManyPaths) {
+    res.status(400).json({ error: tooManyPaths });
+    return;
+  }
 
   let validated: ValidatedNoteImage[] = [];
   try {
@@ -1988,6 +2327,11 @@ router.post('/:noteId/attachments/upload-images', requireNoteEdit('noteId'), upl
   const { images } = req.body;
   if (!Array.isArray(images) || images.length === 0) {
     res.status(400).json({ error: 'images array is required.' });
+    return;
+  }
+  const tooManyImages = noteImageBatchRejection(images.length);
+  if (tooManyImages) {
+    res.status(400).json({ error: tooManyImages });
     return;
   }
 
@@ -2639,6 +2983,23 @@ router.get('/:noteId/preview-status', validateNoteId, handleValidationErrors, as
   });
 }));
 
+/* ------------------------------------------------------------ note CRUD ----
+ * List, read, create, update, delete, copy, and note cover art.
+ *
+ * `GET /` and `POST /` sit outside the `/:noteId` gate and scope on the
+ * authenticated user; `PATCH` requires edit rights and `DELETE`, the cover
+ * routes and `POST /:noteId/copy` require ownership.
+ *
+ * Updates are optimistic-concurrency checked: a client may send
+ * `expectedVersion` / `expectedUpdatedAt`, and a losing write answers 409 with
+ * `code: 'version_conflict'` and the current row, so the editor can merge
+ * rather than silently overwrite a collaborator. Successful writes invalidate
+ * `note:{noteId}` in the cache.
+ *
+ * Reading one note emits the `resource_opened` learning event; list and search
+ * reads deliberately do not.
+ */
+
 // Notes CRUD
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
@@ -2868,6 +3229,33 @@ router.post(
     res.status(201).json({ success: true, data: result.note });
   })
 );
+
+/* ------------------------------------------------ AI generation surfaces ----
+ * Smart Notes summaries, note quizzes, page-scoped quizzes and flashcards.
+ * (Narration lives above with the attachment routes; OCR and transcription
+ * have their own sections.)
+ *
+ * Every one of them follows the same shape. `requirePermission('ai')` and
+ * `aiPostBurstRateLimit` first, then a credit limiter that RESERVES the price
+ * before any work — that middleware's finish hook refunds on every non-2xx
+ * response, so a handler must never call `refundAiCredits` next to it; the
+ * duplicate refund mints free credits. The one deliberate manual refund is
+ * `refundFeatureAiCredit` on the protected-quiz path, which answers with an
+ * existing quiz and does no AI work at all.
+ *
+ * Content comes from `resolveNoteStudyContent`, which assembles the note body,
+ * summary and attachment extracted text (OCR output included). It is sliced to
+ * a character budget, and a note below the minimum is refused BEFORE the model
+ * is called. The assembled text reaches the model fenced and labelled untrusted
+ * with a never-follow-embedded-instructions rule — see
+ * `services/aiService.ts`; that fencing is the only thing standing between a
+ * crafted PDF and the system prompt, so do not inline note text into a prompt
+ * without it.
+ *
+ * Work runs through `runSyncOrEnqueue`: 202 with a job id when the queue is
+ * live, inline otherwise. Results emit `question_generated` / `card_generated`
+ * learning events from whichever side actually ran.
+ */
 
 // AI-powered learn actions (Smart Notes). Credits scale with depth
 // (SMART_NOTES_CREDIT_COST: concise/standard 1, deep 3), reserved atomically
@@ -3330,6 +3718,19 @@ router.post(
   })
 );
 
+/* --------------------------------------------- text extraction and OCR ----
+ * `reextract-text` re-runs the cheap text extractor over the stored PDF or
+ * deck and costs nothing; `POST /:noteId/ocr` runs local Tesseract over the
+ * pages or photographs and costs `NOTE_OCR_CREDIT_COST`; `GET /:noteId/ocr-status`
+ * is the poll the editor drives its progress banner from.
+ *
+ * Photo notes are a batch (one attachment per photograph, capped at
+ * MAX_OCR_IMAGES) and documents are one attachment with a page cap. Status is
+ * derived from attachment metadata by `resolveOcrStatus`, which ages an
+ * `ocr_processing` older than OCR_PROCESSING_STALE_MS into `failed` so a job
+ * that died cannot leave the client polling forever.
+ */
+
 router.post('/:noteId/reextract-text', requireNoteEdit('noteId'), validateNoteId, handleValidationErrors, asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
   if (!userId) return;
@@ -3702,6 +4103,25 @@ router.get(
   })
 );
 
+/* -------------------------------------------- collaborators and sharing ----
+ * Three ways a note reaches another student: a named collaborator (viewer or
+ * editor), a share link the owner mints and can revoke, and sharing into a
+ * group. All three are managed by the OWNER — `requireNoteOwner('noteId')` on
+ * every mutating route — while listing collaborators is open to anyone who can
+ * read the note.
+ *
+ * `DELETE /:noteId/collaborators/:collaboratorUserId` is the one exception: it
+ * serves both owner-removes-collaborator and collaborator-leaves-note, and
+ * decides which by comparing the path id against the caller (or the literal
+ * `me`). It carries no `requireNoteOwner` for that reason; the service call
+ * enforces the owner predicate on the remove branch.
+ *
+ * Adding a collaborator collapses every non-client-safe failure into one
+ * generic sentence (SEC-06). Do not restore a distinct "no such user" message:
+ * this route is rate-limited but still reachable, and a distinguishable
+ * response turns it into a username and email oracle.
+ */
+
 // Collaboration + secure share links (owner-managed)
 router.get('/:noteId/collaborators', asyncHandler(async (req: Request, res: Response) => {
   const userId = requireAuthUserId(req, res);
@@ -3870,6 +4290,13 @@ router.post('/:noteId/share-group', requireNoteOwner('noteId'), asyncHandler(asy
   const note = await supabaseService.shareNoteWithGroup(req.params.noteId, userId, groupId);
   res.json({ success: true, data: note });
 }));
+
+/* ------------------------------------------------------------- comments ----
+ * Flat comments on a note, readable and writable by anyone who can read the
+ * note — `requireNoteAccess` from the gate, re-confirmed by the
+ * `getNote(noteId, userId)` call in each handler. Viewers may comment by
+ * design; commenting is not editing.
+ */
 
 // Comments
 router.get('/:noteId/comments', asyncHandler(async (req: Request, res: Response) => {

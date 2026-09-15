@@ -27,9 +27,16 @@ export function buildContentSecurityPolicy(env = {}) {
     'https://lantern-study-api.onrender.com',
     'https://*.supabase.co',
     'wss://*.supabase.co',
-    'https://unpkg.com',
     'https://*.ingest.us.sentry.io',
     'https://*.ingest.sentry.io',
+    // Cloudflare Web Analytics. The beacon is injected by Cloudflare into every
+    // Pages response — we do not add the tag ourselves and cannot remove it
+    // without turning the feature off in the dashboard — so it is deliberate
+    // first-party traffic. script-src already allowed the loader; without the
+    // matching connect-src entries the beacon's own fetch was blocked and
+    // filed a CSP violation on every page view (Sentry WEB-1V).
+    'https://static.cloudflareinsights.com',
+    'https://cloudflareinsights.com',
     // Turnstile: the widget script calls home while solving the challenge.
     TURNSTILE_HOST,
   ]);
@@ -49,7 +56,14 @@ export function buildContentSecurityPolicy(env = {}) {
 
   return [
     "default-src 'self'",
-    `script-src 'self' https://static.cloudflareinsights.com ${TURNSTILE_HOST}`,
+    // 'wasm-unsafe-eval' (SW) [Sentry WEB-1A, violations at /login]: Turnstile's
+    // challenge compiles a WebAssembly module in the PAGE, not only in its
+    // iframe, so without this the widget fails the way it always fails —
+    // silently, rendering nothing, and the sign-in form simply never gets a
+    // token. It is the narrow keyword on purpose: it permits WebAssembly
+    // compilation and NOTHING else. 'unsafe-eval' (which would also re-enable
+    // eval() and Function() for the whole app) must not be used here.
+    `script-src 'self' 'wasm-unsafe-eval' https://static.cloudflareinsights.com ${TURNSTILE_HOST}`,
     "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com",
     `connect-src ${[...connectSrc].join(' ')}`,
     "img-src 'self' data: blob: https:",

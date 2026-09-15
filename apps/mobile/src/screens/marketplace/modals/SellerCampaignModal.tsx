@@ -1,3 +1,16 @@
+/**
+ * Bottom-sheet modal for a seller to message a segment of their customers, or
+ * a specific set of buyers, in one send.
+ *
+ * Exports: SellerCampaignModal.
+ * Touches: sendSellerCampaign in ../../../services/api. The server caps a
+ * campaign at 25 recipients and returns sent/skipped counts.
+ *
+ * Gotchas: passing defaultBuyerIds hides the segment chips entirely — the
+ * buyer list wins over the segment. The result line stays on screen after the
+ * message box is cleared, so sending twice is possible; nothing here dedupes
+ * a repeat send.
+ */
 import React, { useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';

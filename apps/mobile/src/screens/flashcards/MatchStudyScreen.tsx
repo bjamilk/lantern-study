@@ -1,3 +1,17 @@
+/**
+ * The `MatchStudy` route (a fullScreenModal): a timed pairs game. Each card
+ * becomes two tiles, front and back, and the student taps a pair to match it.
+ *
+ * Main exports: `MatchStudyScreen` (also the default).
+ * Touches: flashcardStore (read-only — Match writes no FSRS scheduling),
+ * services/gamification `trackStudyActivity` and productAnalytics. Native:
+ * expo-haptics via utils/haptics.
+ *
+ * Gotchas: only BASIC cards with both sides are playable, and the board is
+ * capped at the first six of them, so a large deck plays a fixed-size round.
+ * The board is screen state only, hence the `useConfirmBeforeExit` guard. A
+ * wrong pair locks input for 600ms (`wrongPair`) so the red state is visible.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useFlashcardStore } from '../../stores';

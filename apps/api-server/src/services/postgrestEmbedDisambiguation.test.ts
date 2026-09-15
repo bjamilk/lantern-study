@@ -307,7 +307,9 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   //     marketplace_orders.transaction_id (20260615140000) are each the only
   //     FK between their two tables. Counts are per resolved call site, so one
   //     shared `orderSelect` string counts once for every query that uses it.
-  'routes/marketplace.ts::marketplace_listings': 2,
+  // R5a split routes/marketplace.ts into routes/marketplace/*; both call sites
+  // are the offer→listing embeds, now in offers.ts. Same queries, new path.
+  'routes/marketplace/offers.ts::marketplace_listings': 2,
   'services/marketplaceAlerts.ts::marketplace_listings': 4,
   'services/marketplaceCart.ts::marketplace_listings': 5,
   'services/marketplaceOrders.ts::marketplace_listings': 16,

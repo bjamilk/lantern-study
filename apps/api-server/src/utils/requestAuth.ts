@@ -1,3 +1,18 @@
+/**
+ * Small request-level authorization helpers plus the production secret gate.
+ *
+ * Exports:
+ *   - `requireAuthUserId` — the standard "get the caller's id or 401" helper
+ *     used across route handlers.
+ *   - `rejectMismatchedUserId` — blocks a handler from acting on a
+ *     client-supplied userId that is not the caller's, unless the caller is a
+ *     live platform admin.
+ *   - `validateProductionSecrets` — called at the very top of server.ts, before
+ *     Sentry and before the app is built.
+ *
+ * Touches: the request's decoded JWT user, and `utils/platformAdminAuth`, which
+ * checks the admin role against the database rather than a token claim.
+ */
 import { Response } from 'express';
 import { AuthenticatedRequest } from '../types';
 import { isLivePlatformAdmin } from './platformAdminAuth';
@@ -12,6 +27,9 @@ export function requireAuthUserId(req: AuthenticatedRequest, res: Response): str
   return id;
 }
 
+// The admin escape hatch is deliberately a live lookup: `isLivePlatformAdmin`
+// re-reads the role rather than trusting a claim in the presented token, so a
+// revoked admin cannot keep acting on other users with an old JWT.
 /** Reject if client-supplied userId differs from JWT (unless live platform admin). Returns true if rejected. */
 export async function rejectMismatchedUserId(
   req: AuthenticatedRequest,
@@ -33,6 +51,23 @@ export async function rejectMismatchedUserId(
   return false;
 }
 
+// --- Production boot gate ---
+// Runs before anything else in server.ts and is a no-op outside production.
+// Two classes of check, both fail-closed with `process.exit(1)`:
+//   - Missing required config: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, and
+//     REDIS_ENABLED=true with REDIS_URL. Redis is required because without it
+//     every rate limiter falls back to a per-process in-memory store and the
+//     limits stop being shared across instances.
+//   - Dev bypass flags that must never be live: DISABLE_RATE_LIMIT,
+//     ALLOW_DEV_AUTH_BYPASS and ALLOW_ALL_CORS each abort the boot rather than
+//     being ignored, so a bypass cannot be switched on by an env-var typo in a
+//     production deploy.
+// FIXED (F10): TURNSTILE_SECRET / TURNSTILE_HOSTNAMES are still not REQUIRED —
+// bot protection is optional by product decision, and middleware/turnstile.ts
+// treats an unconfigured Turnstile as "not enabled" — but the boot no longer
+// stays silent about it. Absent config gets one warning; half-configured gets a
+// louder one, because that deployment believes it is protected and is not.
+// Warnings only: a missing nice-to-have must not fail a deploy.
 /** Fail startup when required secrets are missing in production. */
 export function validateProductionSecrets(): void {
   if (process.env.NODE_ENV !== 'production') return;
@@ -59,4 +94,26 @@ export function validateProductionSecrets(): void {
     console.error(`FATAL: Missing required environment variables in production: ${missing.join(', ')}`);
     process.exit(1);
   }
+
+  warnOnUnconfiguredTurnstile();
+}
+
+/** See the Turnstile note above. Exported for the test; called from the gate. */
+export function warnOnUnconfiguredTurnstile(): void {
+  const hasSecret = !!process.env.TURNSTILE_SECRET;
+  const hasHostnames = !!(process.env.TURNSTILE_HOSTNAMES || '').trim();
+  if (hasSecret && hasHostnames) return;
+  if (hasSecret || hasHostnames) {
+    console.warn(
+      'WARNING: Turnstile is HALF configured (' +
+        `TURNSTILE_SECRET ${hasSecret ? 'set' : 'missing'}, ` +
+        `TURNSTILE_HOSTNAMES ${hasHostnames ? 'set' : 'missing'}). ` +
+        'Verification is DISABLED and every token is accepted. Set both or neither.'
+    );
+    return;
+  }
+  console.warn(
+    'WARNING: Turnstile is not configured (TURNSTILE_SECRET, TURNSTILE_HOSTNAMES). ' +
+      'The contact form has no bot protection.'
+  );
 }

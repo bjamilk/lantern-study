@@ -24,6 +24,38 @@
  * Only an explicit Retry starts a second, separately-charged request, and the
  * UI says so in those words. Nothing here ever tells a student their work was
  * lost while it is still queued.
+ *
+ * Exports: `useAiJobStore` (the `jobs` list plus `tick`), the `AiJob` /
+ * `AiJobResultRef` / `PendingAiSave` types, the pure helpers the panel and the
+ * unit tests share (`computeJobPercent`, `computeJobElapsedMs`,
+ * `formatElapsed`, `isJobRunning`, `isJobOverBudget`, `getCurrentStageLabel`,
+ * `pruneJobs`, `hasUnsavedGeneration`, `planRetry`, `planResume`,
+ * `planServerSettle`, `routeForResultRef`, `targetForResultRef`,
+ * `toAiJobResultRef`), the user-scoped selectors (`getJobsForUser`,
+ * `getActiveJobs`, `getVisibleJobs`, `countInFlight`) and the budget constants.
+ * Store actions: `startJob`, `advanceStage`, `attachServerJob`,
+ * `reportServerProgress`, `recordPendingSave`, `claimSave`, `savedRefFor`,
+ * `succeedJob`, `failJob`, `orphanJob`, `keepWaiting`, `markNotified`,
+ * `dismissJob`, `dismissFinished`, `bumpTick`.
+ *
+ * Touches: localStorage key `lantern-ai-jobs` (exported as
+ * `AI_JOB_STORAGE_KEY`) through a lazily-resolved storage adapter; the server's
+ * `/api/v1/jobs/:id` indirectly, via aiJobRunner/aiJobResume which drive these
+ * actions; utils/appRoutes for the artefact routes.
+ *
+ * Gotchas:
+ *  - The persisted list is NOT user-scoped: every job carries `userId` and the
+ *    selectors filter on it. Read jobs through `getJobsForUser` /
+ *    `getVisibleJobs` / `getActiveJobs`, never off `jobs` directly, or a shared
+ *    browser shows the previous student's titles. Those selectors return a new
+ *    array each call, so they must not be passed to `useAiJobStore(...)` as a
+ *    selector without memoising.
+ *  - `claimSave` is the save-once guard: a job that already has a `resultRef`
+ *    must never write a second artefact. A retry on a job carrying a
+ *    `pendingSave` re-runs only the SAVE (`planRetry` → 'save') and costs
+ *    nothing; only `planRetry` → 'generate' spends another credit.
+ *  - Progress is reported, never animated: `computeJobPercent` ignores the
+ *    clock and `reportServerProgress` is monotonic.
  */
 
 import { create } from 'zustand';

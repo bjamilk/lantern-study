@@ -1,5 +1,28 @@
+/**
+ * `/study` — the study-set shelf: search / sort / folder-filter over every set,
+ * plus the create + paused-session entry points.
+ *
+ * Exports:
+ *  - `StudyHubScreen` (named + default) — the route body.
+ *  - `CreateSetTile`, `StudyHubSkeleton` (module-local presentational pieces).
+ * Touches:
+ *  - `studySetStore`: `sets`, `loaded`, `loadError`, `lastOpenedId`, `folders`, and the
+ *    actions `loadSets`, `loadFolders`, `createSet`, `updateSet`, `removeSet`,
+ *    `touchOpened`, `createFolder` (these hit the sets/folders API through the store).
+ *  - `academicStore.loadMyCourses` (for the course picker inside the create/settings modals).
+ *  - `notesStore.notes` (read-only; per-card material counts and the topic fallback).
+ *  - `toastStore.showToast` for every mutation failure.
+ * Gotchas:
+ *  - Three-way render gate (`showSkeleton` / `showLoadError` / `showEmptyState`): the empty
+ *    state is reachable ONLY from `loaded && sets.length === 0`. Branching on
+ *    `sets.length === 0` alone tells a returning student they have nothing on first paint.
+ *  - `progressPercent` is `null` unless the set has reading notes to derive topics from.
+ *    Null renders no bar; do not substitute 0, which reads as "no progress".
+ *  - Most of `StudyHubScreenProps` is not destructured below (see the note on the
+ *    signature) — passing one of those props changes nothing here.
+ */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Deck, Flashcard, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
+import { Deck, TestSessionData, StudySessionData, PausedSessionSummary } from '../types';
 import {
   isCalendarNote,
   isLectureNote,
@@ -27,31 +50,27 @@ import { StudyWorkspaceBar } from './study/StudyWorkspaceBar';
 import { StudySetCard } from './study/StudySetCard';
 import type { StudySet } from '../types';
 
+/**
+ * FIXED (F9): this interface used to be far wider than the component —
+ * `dueCardsCount`, `flashcards`, `onStartDueReview`, `onOpenAITools`,
+ * `onSelectDeck`, `onStartLearn`, `onStartReview`, `recentTestCount`,
+ * `onViewRecentTests`, `onOpenFlashcards`, `onOpenTests`, `onRecordLecture`,
+ * `noteCount`, `onOpenCourse` and `onOpenImport` were accepted, and passed by
+ * the shell at both call sites, but nothing here read them. Every one of those
+ * callbacks was silently inert: the screen looked wired to the deck, test and
+ * lecture doors and was not. They are deleted at both ends; what remains is
+ * what the component actually uses.
+ */
 interface StudyHubScreenProps {
-  dueCardsCount: number;
   decks: Deck[];
-  flashcards?: Flashcard[];
-  onStartDueReview: () => void;
   onOpenLibrary: () => void;
-  onOpenAITools: () => void;
-  onSelectDeck: (deck: Deck) => void;
-  onStartLearn?: (deck: Deck) => void;
-  onStartReview?: (deckId: string) => void;
   activeTestSession?: TestSessionData | null;
   activeStudySession?: StudySessionData | null;
   onResumeSession?: () => void;
   pausedSessions?: PausedSessionSummary[];
   onResumePausedSession?: (sessionId: string) => void;
   onAbandonPausedSession?: (sessionId: string) => void;
-  recentTestCount?: number;
-  onViewRecentTests?: () => void;
-  onOpenFlashcards?: () => void;
-  onOpenTests?: () => void;
-  onRecordLecture?: () => void;
-  noteCount?: number;
-  onOpenCourse?: (courseId: string) => void;
   onOpenStudySet?: (studySetId: string) => void;
-  onOpenImport?: () => void;
 }
 
 /** The dashed tile, first in the grid — the reference puts "new" before "old". */
@@ -143,17 +162,26 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   const [folderFormOpen, setFolderFormOpen] = useState(false);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
+  // Mount load. The deps are zustand action identities, which are stable for the
+  // life of the store, so in practice this runs once per mount. Rejections are
+  // swallowed here on purpose: `loadSets` records the failure on the store as
+  // `loadError`, which is what drives the error branch below.
   useEffect(() => {
     void loadMyCourses();
     void loadSets().catch(() => undefined);
     void loadFolders().catch(() => undefined);
   }, [loadFolders, loadMyCourses, loadSets]);
 
+  // Focus moves into the folder-name field the moment the inline form replaces
+  // the "Create folder" chip, so the keyboard does not lose its place.
+  // Driven by `folderFormOpen` only.
   useEffect(() => {
     if (folderFormOpen) folderInputRef.current?.focus();
   }, [folderFormOpen]);
 
   const hasPausedSession = Boolean(activeTestSession || activeStudySession);
+  // Search + folder filter, then the shared sort. `lastOpenedId` is passed
+  // through because the 'lastAccessed' sort pins the set you were just in.
   const visibleSets = useMemo(() => {
     const filtered = sets.filter((set) => {
       const matchesQuery = studySetLabel(set).toLowerCase().includes(query.trim().toLowerCase());
@@ -169,10 +197,15 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
   // `loaded` is the only honest signal that "you have no sets" is true.
   // A failed list request used to leave `loaded` false, so this tab stayed
   // on the skeleton after a 429 or a dropped proxy — "stuck on refresh".
+  // Mutually exclusive in render order: skeleton → error → empty → grid.
+  // Any cached set at all (`sets.length > 0`) beats all three and renders the
+  // grid, so a failed REFRESH never blanks a shelf that already has content.
   const showEmptyState = setsLoaded && sets.length === 0;
   const showLoadError = Boolean(setsLoadError) && sets.length === 0 && !setsLoaded;
   const showSkeleton = !setsLoaded && sets.length === 0 && !setsLoadError;
 
+  // Shell: `min-h-0` on the flex column is what lets the inner
+  // `flex-1 overflow-y-auto` actually scroll instead of growing the page.
   return (
     <div className="flex-1 flex flex-col min-h-0 bg-lantern-background text-lantern-text">
       <StudyWorkspaceBar
@@ -188,6 +221,9 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
           subtitle="Search, sort, or start a new set. Every tool you open stays inside it."
         />
 
+        {/* Resume affordance, in priority order: the persisted paused-session
+            list if the shell gave us one AND both callbacks, otherwise the
+            single in-memory active session card, otherwise nothing. */}
         {pausedSessions.length > 0 && onResumePausedSession && onAbandonPausedSession ? (
           <SavedSessionsList
             sessions={pausedSessions}
@@ -217,6 +253,9 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
         {showSkeleton ? (
           <StudyHubSkeleton />
         ) : showLoadError ? (
+          // Error branch. The only message that varies is the 429 case, matched
+          // on the store's error text; everything else gets the connection copy.
+          // "Try again" forces past the store's freshness cache.
           <div className="rounded-2xl border border-dashed border-lantern-border px-6 py-12 text-center">
             <span className="mx-auto mb-3 inline-flex h-12 w-12 items-center justify-center rounded-[16px] bg-lantern-background-secondary text-lantern-text">
               <AppIcon name="refresh" size={24} />
@@ -304,6 +343,9 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
               </Button>
             </div>
 
+            {/* Folder chips. `flex-wrap` + per-chip intrinsic width is deliberate:
+                the chip row must wrap on the CONTENT column's width (the sidebar
+                leaves roughly 460px), which viewport breakpoints cannot see. */}
             <div className="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -395,6 +437,12 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
               )}
             </div>
 
+            {/* Set grid. NOTE: `sm:`/`xl:` are VIEWPORT widths, not container
+                widths, so on a wide window with the sidebar open these columns
+                are narrower than their breakpoint implies — card contents must
+                truncate rather than assume the breakpoint's width. The counts
+                and topics below are derived per card from data already in the
+                stores; nothing here fetches per set. */}
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
               <CreateSetTile onClick={() => setCreateOpen(true)} />
               {visibleSets.map((set) => {
@@ -452,6 +500,10 @@ export const StudyHubScreen: React.FC<StudyHubScreenProps> = ({
         )}
         </div>
       </div>
+      {/* Modals + destructive confirm. Create navigates straight into the new
+          set. Delete closes the dialog BEFORE awaiting `removeSet`, so a
+          rejection surfaces only as a toast — whatever the store leaves in
+          `sets` is what the grid then shows. */}
       <CreateStudySetModal
         isOpen={createOpen}
         onClose={() => setCreateOpen(false)}

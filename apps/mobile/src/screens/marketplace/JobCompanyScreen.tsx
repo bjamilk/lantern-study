@@ -1,3 +1,17 @@
+/**
+ * `JobCompany` route in the Jobs stack: an employer's public profile and its
+ * open roles.
+ *
+ * Exports: JobCompanyScreen (named and default).
+ * Touches: fetchJobCompanyProfile in ../../services/jobsBoard, which returns
+ * company, jobs and the viewer's own member role in one response;
+ * getJobEmployerTrustPresentation and the job label/format helpers from
+ * @lantern/shared; Linking for the company website.
+ *
+ * Gotchas: the rejection note is only rendered when the viewer is a member of
+ * the company (`myRole`), so a candidate never sees it. There is no loading
+ * flag — the spinner is inferred from "no company and no error yet".
+ */
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,

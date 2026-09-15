@@ -5,6 +5,24 @@
  *
  * Persistence is user-scoped (`lantern-settings:${userId}`) so pending
  * patches from User A cannot sync onto User B after account switch.
+ *
+ * Main exports: `useSettingsStore`, `DEFAULT_SETTINGS`, the per-category
+ * hooks (`useNotificationSettings`, `useStudySettings`,
+ * `useAppearanceSettings`, `usePrivacySettings`, `useAccessibilitySettings`,
+ * `useSyncSettings`) and the matching types.
+ *
+ * Touches: AsyncStorage via zustand `persist`, services/api
+ * (`fetchUserPreferences`, `saveUserPreferences`), services/supabase for the
+ * auth headers, NetInfo for the flush trigger, and
+ * services/pushNotifications (`clearPushToken`) when notifications go off.
+ *
+ * Gotchas: edits accumulate in `pendingPatch` and are flushed as a
+ * compare-and-set write, so a rejected CAS merges the server copy back in
+ * rather than overwriting it — never write `settings` straight to the server
+ * from elsewhere. The flush is also driven by a module-level NetInfo listener
+ * and honours the student's sync-on-wifi-only preference, so an edit can sit
+ * unsynced indefinitely on cellular. Migration from the old unscoped key
+ * carries `pendingPatch` forward only when the current one is empty.
  */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';

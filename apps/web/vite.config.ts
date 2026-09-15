@@ -1,9 +1,118 @@
+/**
+ * Vite + Vitest config for the web app (`@lantern/web`).
+ *
+ * The package lives in apps/web but the app's source does NOT: `root` is the
+ * REPO ROOT, so App.tsx, components/, hooks/, stores/, services/ and index.html
+ * are the real inputs and every path in this file that is "relative to root" is
+ * relative to the repo root, not to apps/web.
+ *
+ * Exports: the default Vite config factory (receives `mode`; currently unused
+ * beyond the signature).
+ * Touches: dev-server port/proxy (`/__lantern_api` → Render API), the
+ * react-native → `apps/web/src/stubs/react-native.ts` alias that lets shared
+ * cross-platform modules import from 'react-native' in a browser build, build
+ * output at apps/web/dist, and the vitest `include` list.
+ *
+ * Gotchas:
+ *  - Build/deploy gate: `npm run build` for this package is `tsc && vite build`.
+ *    A strict-tsc failure fails the whole build, and deploying apps/web/dist
+ *    afterwards ships the PREVIOUS dist while reporting success — always check
+ *    the build printed `✓ built in …` with fresh index-*.js hashes.
+ *  - Root `npx tsc --noEmit` is a false gate for this app (thousands of
+ *    pre-existing errors from other workspaces); this build is the real one.
+ *  - Turbo hashes this package's inputs; the root sources above are only seen
+ *    because apps/web/turbo.json lists them explicitly. See docs/web-build.md.
+ */
+import fs from 'fs';
 import path from 'path';
+import { execSync } from 'child_process';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 // Root directory where actual web app source lives
 const rootDir = path.resolve(__dirname, '../..');
+
+/**
+ * `lantern-study-web@<version>+<commit>` — the web twin of the `/health`
+ * commit marker (apps/api-server/src/routes/health.ts), which reads
+ * RENDER_GIT_COMMIT / GIT_COMMIT / SOURCE_VERSION. Web builds run on
+ * Cloudflare Pages (CF_PAGES_COMMIT_SHA) or a laptop (git), so all four are
+ * tried before falling back to 'unknown'.
+ *
+ * Without this every web Sentry event arrived with NO release, so a report
+ * could not be told apart from a stale bundle the service worker was still
+ * serving — and web deploys here are manual/CI-raced.
+ */
+function resolveWebRelease(): string {
+  const version = JSON.parse(
+    fs.readFileSync(path.join(__dirname, 'package.json'), 'utf8')
+  ).version as string;
+  let commit =
+    process.env.CF_PAGES_COMMIT_SHA ||
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.GIT_COMMIT ||
+    process.env.SOURCE_VERSION ||
+    '';
+  if (!commit) {
+    try {
+      commit = execSync('git rev-parse HEAD', { cwd: rootDir, stdio: ['ignore', 'pipe', 'ignore'] })
+        .toString()
+        .trim();
+    } catch {
+      commit = '';
+    }
+  }
+  return `lantern-study-web@${version}+${commit.slice(0, 7) || 'unknown'}`;
+}
+
+/**
+ * Self-host pdf.js standard fonts and CMaps.
+ *
+ * FIXED (SW) [Sentry WEB-1P / WEB-1N]: NotePdfViewer pointed pdf.js at
+ * `unpkg.com/pdfjs-dist@<v>/standard_fonts/`, which font-src blocks — every
+ * PDF with a non-embedded base-14 font rendered with the wrong glyphs and
+ * filed a CSP violation. Serving them from our own origin fixes the rendering
+ * AND removes a third-party CDN from the note-reading path (unpkg going down
+ * or being MITM'd would otherwise change what a student reads). 2.4 MB of
+ * static files, copied at build time rather than committed.
+ */
+function pdfjsAssets() {
+  const from = path.join(rootDir, 'node_modules/pdfjs-dist');
+  const dirs = ['standard_fonts', 'cmaps'];
+  return {
+    name: 'lantern-pdfjs-assets',
+    // Dev: serve them straight out of node_modules at the same URL the build
+    // emits, so /notes/<id> behaves identically in dev and production.
+    configureServer(server: any) {
+      server.middlewares.use((req: any, res: any, next: any) => {
+        const match = /^\/pdfjs\/(standard_fonts|cmaps)\/([\w.-]+)$/.exec((req.url || '').split('?')[0]);
+        if (!match) return next();
+        const file = path.join(from, match[1], match[2]);
+        if (!fs.existsSync(file)) return next();
+        res.setHeader('Content-Type', 'application/octet-stream');
+        fs.createReadStream(file).pipe(res);
+      });
+    },
+    closeBundle() {
+      // vitest fires closeBundle too; copying 2.4 MB on every test run is not
+      // what this plugin is for.
+      if (process.env.VITEST) return;
+      for (const dir of dirs) {
+        const src = path.join(from, dir);
+        if (!fs.existsSync(src)) {
+          console.warn(`[pdfjs-assets] ${src} missing — PDFs will fall back to blank glyphs`);
+          continue;
+        }
+        const dest = path.join(rootDir, 'apps/web/dist/pdfjs', dir);
+        fs.mkdirSync(dest, { recursive: true });
+        for (const entry of fs.readdirSync(src)) {
+          fs.copyFileSync(path.join(src, entry), path.join(dest, entry));
+        }
+      }
+      console.log('[pdfjs-assets] copied standard_fonts + cmaps into dist/pdfjs');
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
     return {
@@ -35,8 +144,13 @@ export default defineConfig(({ mode }) => {
           },
         },
       },
+      define: {
+        // Stamped into every Sentry event (services/sentry.ts).
+        __APP_RELEASE__: JSON.stringify(resolveWebRelease()),
+      },
       plugins: [
         react({ fastRefresh: false }),
+        pdfjsAssets(),
         {
           name: 'favicon-fallback',
           configureServer(server) {

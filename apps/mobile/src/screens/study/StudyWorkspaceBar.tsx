@@ -1,3 +1,13 @@
+/**
+ * The Study/Library section switcher — a two-tab underline row shown at the
+ * top of the Study area screens.
+ *
+ * Main exports: `StudyWorkspaceBar` (also the default), `StudyWorkspaceBarProps`,
+ * and a re-export of the `StudyAreaSection` type.
+ * Touches: no stores, no services, no native modules. Tab ids and labels come
+ * from `STUDY_AREA_SECTIONS` in @lantern/shared, so web and mobile name the
+ * sections identically. The active section is owned by the parent screen.
+ */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { STUDY_AREA_SECTIONS, type StudyAreaSection } from '@lantern/shared';

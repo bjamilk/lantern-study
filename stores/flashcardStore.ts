@@ -5,6 +5,33 @@
  * Note: This store provides state management for flashcards.
  * API calls should be made through the supabase service functions
  * and then state updated through the store methods.
+ *
+ * Exports: `useFlashcardStore` — `decks`, `flashcards`, `dueCardsCount`, the
+ * offline set `offlineDeckIds`, and the offline review queue
+ * `pendingFlashcardReviews`. Actions: the deck/card setters and mutators,
+ * `getDueCards` / `calculateDueCardsCount`, `loadFromStorage` / `saveToStorage`,
+ * the offline helpers (`markDeckOffline`, `unmarkDeckOffline`,
+ * `queueFlashcardReview`, `removePendingReviews`, `clearPendingReviews`), the
+ * bootstrap-error pair `deckLoadError` / `retryDeckBootstrap`, and `reset`.
+ *
+ * Touches: four localStorage keys, written directly rather than through zustand
+ * persist — `lantern_decks`, `lantern_flashcards`, `lantern_offline_decks`,
+ * `lantern_pending_flashcard_reviews` (names mirror the mobile app's). SRS
+ * scheduling itself lives in @lantern/shared (`getCardsDue`,
+ * `createPendingFlashcardReview`); no network calls are made from here.
+ *
+ * Gotchas:
+ *  - None of the four keys is user-scoped. `reset()` is what makes a sign-out
+ *    safe: it clears state AND calls `saveToStorage()`, overwriting the keys
+ *    with empties. A sign-out path that skips `reset()` leaves the previous
+ *    student's decks on disk for the next account.
+ *  - `pendingLocalReviews` is a module-level Map of optimistic grades, and
+ *    `setFlashcards` merges it OVER any incoming server list — this is what
+ *    stops a refetch from resurrecting a card the user just graded. It is
+ *    cleared only by `removeFlashcard` / `clearPendingLocalReview` / `reset`,
+ *    so it must be cleared on user switch too.
+ *  - `getDueCards` and `getFlashcardsByDeck` build a new array every call; use
+ *    them via `getState()` or memoise, never as a bare hook selector.
  */
 import { create } from 'zustand';
 import type { PendingFlashcardReview } from '@lantern/shared/utils/offlineReview';

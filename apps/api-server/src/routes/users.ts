@@ -1,3 +1,61 @@
+/**
+ * User routes — profiles, settings, account lifecycle, presence, blocks,
+ * budgets and creator follows for the signed-in student.
+ *
+ * Mount: `/api/v1/users` (server.ts). Two sibling routers are mounted BEFORE
+ * this one — `/api/v1/users/me/courses` and `/api/v1/users/me/study-sets` —
+ * because Express matches in registration order and `/:userId` would otherwise
+ * capture the literal `me` segment. The same rule applies inside this file:
+ * `/search`, `/me`, `/settings`, `/check-username/:username`, `/push-token`
+ * and `/presence/*` are all declared before the `/:userId` routes that would
+ * swallow them.
+ *
+ * Auth: every route runs `authMiddleware` except
+ * `GET /check-username/:username`, which is public so the sign-up form can
+ * check availability before an account exists.
+ *
+ * Rate limits: `authMiddleware` applies the shared `authenticatedRateLimit`
+ * tier. Three routes add a stricter tier on top — `searchRateLimit` on
+ * `/search`, `usernameCheckRateLimit` on `/check-username/:username`, and
+ * `dataExportRateLimit` on `/:userId/export` and `/:userId/import`.
+ *
+ * Ownership predicate: this router uses the service-role Supabase client, so
+ * RLS never applies and each handler carries its own predicate. There are two,
+ * and the difference is deliberate:
+ *
+ *   `isSelfOrLivePlatformAdmin(req, userId)` — self, or a platform admin
+ *       re-resolved live from `platform_admins` (never a JWT claim). Used for
+ *       profile reads and writes, settings, stats, groups, avatar, export and
+ *       delete, so support can act on a user's behalf.
+ *   `requestingUserId !== userId` → 403 — SELF ONLY, no admin escape hatch.
+ *       Used for deactivate/reactivate, import, blocks, username and budget.
+ *       Nothing in support needs to read a student's finances or block list.
+ *
+ * Error mapping: handlers return `{ success: false, error }` with an explicit
+ * status. A `version_conflict` from `updateUser` becomes a 409 carrying the
+ * current server state so the client can rebase; `PublicError` from a service
+ * becomes its `statusCode` (4xx only) and anything else rethrows to the global
+ * handler, so a real fault is never masked as the caller's mistake.
+ *
+ * What it touches: Supabase tables `profiles`, `user_budgets`,
+ * `marketplace_campuses` (via `academicCourses`), and — through the services
+ * it delegates to — creator follows, communities, moderation, study presence
+ * and study sets. Storage bucket `profile-avatars` (avatar upload). Redis via
+ * `cacheService` (`user:*`, `user:settings:*`, `users:list:*`,
+ * `institution:*`, `creator:verification:*`, `referral:activation:*`) and via
+ * `getRedisClient` for the push-token registration stamp. No external HTTP API
+ * is called directly; Expo push tokens are only stored here.
+ *
+ * The profile model: `profiles` is the private row (phone, settings, push
+ * token, academic identity). Its RLS policy `profiles_select_own` is
+ * OWNER-ONLY SELECT — the single most important policy in the schema. Every
+ * other viewer reads the `member_profiles` view, a security_invoker projection
+ * of the privacy-safe columns gated by `profile_visible_to(id)`. This router
+ * bypasses both (service role), so `toPublicUser` is the code-side equivalent:
+ * non-owner, non-admin responses go through it and drop phone, settings,
+ * entryYear and expectedGraduationYear. Widening `toPublicUser` widens the
+ * whole platform.
+ */
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, requirePlatformAdmin } from '../middleware/auth';
@@ -26,11 +84,13 @@ import {
   verifyUserPassword,
 } from '../services/accountLifecycle';
 import { importAccountArchive } from '../services/accountImport';
+import { deleteUserAccountFully } from '../services/userDataLifecycle';
 import { getStudyPresenceService } from '../services/studyPresence';
 import { ACCOUNT_DELETION_GRACE_DAYS } from '@lantern/shared/accountLifecycle';
 import { getAcademicCoursesService } from '../services/academicCourses';
 import { PublicError } from '../utils/safeError';
 import { getRedisClient, redisKey } from '../services/redisStore';
+import { withUpstreamTimeout, PRESENCE_UPSTREAM_TIMEOUT_MS } from '../utils/upstreamTimeout';
 
 const ALLOWED_AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
@@ -141,6 +201,16 @@ export const initializeUserRoutes = (supabase: SupabaseService, cache: CacheServ
   supabaseService = supabase;
   cacheService = cache;
 };
+
+// ===========================================================================
+// Directory and lookup
+//
+// Three tiers of visibility: `GET /` is the unfiltered admin directory,
+// `/search` runs the `search_users` RPC (which applies its own viewer-aware
+// filter), and `GET /:userId` falls back to `isProfileVisibleToViewer` and
+// answers 404 — not 403 — when a stranger may not see the profile, so the
+// endpoint cannot be used to prove an account exists.
+// ===========================================================================
 
 // GET /api/v1/users - Platform admin only (use /search for scoped lookup)
 router.get(
@@ -471,11 +541,26 @@ router.post(
   })
 );
 
+// ===========================================================================
+// Settings
+//
+// Settings are never replaced wholesale. `mergeUserSettings` deep-merges the
+// patch onto the stored object and `sanitizeSettings` strips the privileged
+// keys (`is_banned`, `account_status`, `is_platform_admin`, `ban_reason`,
+// `banned_at`, `banned_by`, `suspended_until`, `moderation_flags`) from the
+// incoming patch while preserving whatever the admin routes wrote — a user
+// cannot unban or promote themselves through a settings save.
+//
+// Writes are compare-and-swap on `settingsVersion`; a stale version answers
+// 409 with the authoritative settings attached so the client can rebase
+// instead of clobbering another device. `PUT /:userId/settings` below is the
+// same handler under an explicit id.
+// ===========================================================================
+
 // PUT /api/v1/users/settings - Update current user's settings (must be before /:userId)
 router.put(
   '/settings',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -567,6 +652,25 @@ router.put(
   })
 );
 
+// ===========================================================================
+// Avatar upload
+//
+// The only storage write in this router. The body carries base64, not
+// multipart; the handler enforces the content-type allowlist
+// (JPEG/PNG/GIF/WebP) and a ~2 MB decoded ceiling before decoding, then
+// `SupabaseService.uploadProfileAvatar` re-checks the real type by magic bytes
+// (web clients compress to WebP but send the original MIME), normalises the
+// image and writes it to the `profile-avatars` bucket at
+// `<userId>/avatar-<timestamp>.<ext>`, deleting the user's older avatar
+// objects afterwards. The response carries a signed `url`; the value stored on
+// `profiles.avatarUrl` is the unsigned object path, which readers sign on
+// demand. The timestamp in the path is what stops a CDN serving a replaced
+// avatar forever.
+//
+// `PUT /:userId` rejects a `data:` avatar value outright so nobody can route
+// around this endpoint and inline an image into the profile row.
+// ===========================================================================
+
 // POST /api/v1/users/:userId/avatar - Upload profile avatar to private storage
 router.post(
   '/:userId/avatar',
@@ -618,6 +722,30 @@ router.post(
     });
   })
 );
+
+// ===========================================================================
+// Profile update — the mass-assignment defence
+//
+// `req.body` is spread into `updateData` and then reduced to a POSITIVE
+// ALLOWLIST: for any caller who is not a live platform admin, every key not in
+// `NON_ADMIN_UPDATABLE_FIELDS` is dropped, after `ADMIN_ONLY_USER_FIELDS`
+// (`points`, `badges`, `isAdmin`) are deleted outright. An allowlist, not a
+// denylist — a new column added to `profiles` is NOT user-writable until
+// someone adds it to that set on purpose. Do not flip this to a denylist and
+// do not add a privileged column to the set.
+//
+// Three writes are refused here rather than being silently accepted: a `data:`
+// avatar (use POST /:userId/avatar), any `settings` key (use PUT
+// /users/settings, which merges and CAS-checks), and an out-of-range semester.
+// Free-text and numeric academic fields are normalised so a bad value becomes
+// a 400 rather than a DB CHECK violation surfacing as a 500.
+//
+// Two follow-on effects fire only when they should: auto community memberships
+// are recomputed only if an `ACADEMIC_PROFILE_FIELDS` value actually changed,
+// and a newly chosen institution seeds the marketplace campus preference only
+// when that preference is still unset. Both are best-effort — neither may fail
+// the profile save.
+// ===========================================================================
 
 // PUT /api/v1/users/:userId - Update user
 router.put(
@@ -791,6 +919,37 @@ router.put(
   })
 );
 
+// ===========================================================================
+// Account lifecycle — pause, delete, export, import
+//
+// Entry points, in the order a user meets them:
+//   GET  /:userId/lifecycle        status + days left in the grace period
+//   POST /:userId/deactivate       pause now, schedule deletion in
+//                                  ACCOUNT_DELETION_GRACE_DAYS (self only)
+//   POST /:userId/reactivate       cancel that schedule (self only)
+//   POST /:userId/delete-immediate skip the grace period; self must re-enter
+//                                  their password (`verifyUserPassword`)
+//   DELETE /:userId                the same destructive path, admin-reachable
+//                                  and audited via `logAdminAction`
+//   GET  /:userId/export           signed GDPR portability archive
+//   POST /:userId/import           restore an archive (self only, password +
+//                                  a signature and source-email check)
+//
+// These routes are only the doors. The actual work lives in
+// `services/userDataLifecycle.ts` — `deleteUserAccountFully` (called directly;
+// `SupabaseService.deleteUser` is the deprecated boolean wrapper that hides the
+// deletion report) and `exportUserDataArchive` — with the export signed by
+// `services/accountExportSign.ts` so `importAccountArchive` can reject a
+// hand-edited archive.
+//
+// Both delete paths answer 207 with `code: 'PARTIAL_DELETION'` when the account
+// row is gone but storage could not be fully purged, and log the failing
+// buckets, so nobody reads a green 200 as "every file is erased".
+//
+// Export is heavy, so it goes through `runSyncOrEnqueue`: a large account is
+// answered 202 with a job id instead of blocking the request.
+// ===========================================================================
+
 // GET /api/v1/users/:userId/lifecycle - Account pause / deletion schedule status
 router.get(
   '/:userId/lifecycle',
@@ -922,13 +1081,34 @@ router.post(
       }
     }
 
-    const deleted = await supabaseService.deleteUser(userId);
-    if (!deleted) {
+    // FIXED (F6): the storage purge behind this route walked each bucket
+    // non-recursively and skipped `job-resumes`, `job-company-logos` and
+    // `cover-images`, so an uploaded CV outlived the account — and the route
+    // reported success anyway. The purge is now a paginated recursive walk, and
+    // `deleteUserAccountFully` returns what it actually managed to erase.
+    const result = await deleteUserAccountFully(supabaseService, userId);
+    if (!result.found) {
       return res.status(404).json({ success: false, error: 'User not found' });
     }
 
     await cacheService.delete(`user:${userId}`);
     await cacheService.deletePattern('users:list:*');
+
+    if (!result.ok) {
+      logger.error('Account deletion partially completed', {
+        userId,
+        code: 'PARTIAL_DELETION',
+        purged: result.purged,
+        failures: result.failures,
+      });
+      return res.status(207).json({
+        success: false,
+        code: 'PARTIAL_DELETION',
+        error:
+          'Your account is deleted, but some uploaded files could not be removed. Support has been notified to finish the cleanup.',
+        data: { purged: result.purged, failures: result.failures, skipped: result.skipped },
+      });
+    }
 
     res.json({ success: true, message: 'Account permanently deleted.' });
   })
@@ -1013,7 +1193,12 @@ router.delete(
       });
     }
 
-    const deleted = await supabaseService.deleteUser(userId);
+    // FIXED (F6): same purge as /:userId/delete-immediate — now recursive,
+    // paginated, covering `job-resumes`, `cover-images` and solely-owned
+    // `job-company-logos`, and reporting what it could not remove instead of
+    // returning a bare success.
+    const result = await deleteUserAccountFully(supabaseService, userId);
+    const deleted = result.found;
 
     if (!deleted) {
       return res.status(404).json({
@@ -1036,6 +1221,22 @@ router.delete(
     await cacheService.deletePattern('users:list:*');
     await cacheService.deletePattern(`groups:*`);
     await cacheService.deletePattern(`messages:*`);
+
+    if (!result.ok) {
+      logger.error('Account deletion partially completed', {
+        userId,
+        code: 'PARTIAL_DELETION',
+        purged: result.purged,
+        failures: result.failures,
+      });
+      return res.status(207).json({
+        success: false,
+        code: 'PARTIAL_DELETION',
+        error:
+          'The account is deleted, but some uploaded files could not be removed. Support must finish the storage cleanup.',
+        data: { purged: result.purged, failures: result.failures, skipped: result.skipped },
+      });
+    }
 
     res.json({
       success: true,
@@ -1351,6 +1552,21 @@ router.put(
   })
 );
 
+// ===========================================================================
+// Usernames
+//
+// `/check-username/:username` is the one PUBLIC route in this router — the
+// sign-up form needs it before a session exists — which is why it carries the
+// tight `usernameCheckRateLimit` tier and why it answers 200 with
+// `available: false` for a malformed name rather than 400: the client renders
+// one message either way, and an enumeration probe learns nothing from the
+// status code.
+//
+// Setting a username is SELF ONLY (no admin override) and is checked twice:
+// `is_username_available` first, then the unique constraint on `profiles`,
+// whose 23505 maps to 409. The pre-check alone would race.
+// ===========================================================================
+
 // GET /api/v1/users/check-username/:username - Check if username is available
 router.get(
   '/check-username/:username',
@@ -1541,6 +1757,16 @@ router.put(
   })
 );
 
+// ===========================================================================
+// Push tokens
+//
+// The Expo token lives on `profiles.expo_push_token`; the "when was it
+// registered" stamp lives in Redis only (see below). Registration is refused
+// when push is switched off in the user's settings, and turning push off in
+// settings clears the stored token through `applySettingsSideEffects`, so the
+// toggle and the token can never disagree.
+// ===========================================================================
+
 /**
  * When this account last registered a push token.
  *
@@ -1690,6 +1916,17 @@ router.delete(
   })
 );
 
+// ===========================================================================
+// Presence
+//
+// Two independent things travel on one timer: `profiles.last_seen_at` (the
+// online dot, filtered for the viewer by `resolvePublicOnlineStatus` and the
+// user's `privacy.showOnlineStatus`) and the optional study-intent row owned
+// by `services/studyPresence`. The study write is wrapped in its own
+// try/catch: presence is a nicety and must never fail the heartbeat that
+// keeps the online indicator alive.
+// ===========================================================================
+
 // POST /api/v1/users/presence/heartbeat - Update last seen for online status.
 // Phase 3 M: the same beat optionally carries study INTENT ({context, courseId,
 // topic}) so "23 people studying cardiology tonight" needs no second timer.
@@ -1701,23 +1938,54 @@ router.post(
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
 
-    await supabaseService.touchLastSeen(userId);
+    // FIXED (SW) [Sentry LANTERN-STUDY-API-2, 25 events]: `touchLastSeen` was
+    // unbounded and unguarded, so a PostgREST "Gateway Timeout" propagated out
+    // of the handler as a STATUS-LESS Error. @sentry/node's express handler
+    // defaults a status-less error to 500, so every upstream blip filed as a
+    // server crash — and the client saw a hard failure on a beat that is, by
+    // design, a nicety. Presence is now best-effort on BOTH sides of the wire:
+    // bounded, and answered with a status (504) that keeps it out of Sentry and
+    // tells the client "later", not "you are signed out".
+    const touched = await withUpstreamTimeout(
+      supabaseService.touchLastSeen(userId),
+      PRESENCE_UPSTREAM_TIMEOUT_MS
+    );
+    if (!touched.ok) {
+      logger.warn('presence heartbeat upstream unavailable', {
+        userId,
+        reason: touched.reason,
+      });
+      res.status(504).json({
+        success: false,
+        error: 'Gateway Timeout',
+        message: 'Could not update presence right now.',
+        code: 'PRESENCE_UNAVAILABLE',
+      });
+      return;
+    }
 
     const body = (req.body ?? {}) as Record<string, unknown>;
     let studySharing: boolean | undefined;
     if (body.context || body.courseId || body.topic) {
       // Presence is a nicety; never fail the heartbeat (and therefore the
       // online indicator) because the study row could not be written.
-      try {
-        const result = await getStudyPresenceService(supabaseService).heartbeat(userId, {
+      // Bounded for the same reason as touchLastSeen above: the catch handled a
+      // rejection but nothing handled a hang, so a stalled study-presence write
+      // held the whole beat open until the client's fetch timeout.
+      const study = await withUpstreamTimeout(
+        getStudyPresenceService(supabaseService).heartbeat(userId, {
           context: typeof body.context === 'string' ? body.context : undefined,
           courseId: typeof body.courseId === 'string' ? body.courseId : null,
           topic: typeof body.topic === 'string' ? body.topic : null,
-        });
-        studySharing = result.shared;
-      } catch (err) {
+        }),
+        PRESENCE_UPSTREAM_TIMEOUT_MS
+      );
+      if (study.ok) {
+        studySharing = study.value.shared;
+      } else {
         logger.warn('study presence heartbeat failed', {
-          error: err instanceof Error ? err.message : String(err),
+          reason: study.reason,
+          error: study.error instanceof Error ? study.error.message : String(study.error ?? ''),
         });
       }
     }
@@ -1737,6 +2005,16 @@ router.delete(
     res.json({ success: true });
   })
 );
+
+// ===========================================================================
+// DM blocks
+//
+// All four routes are SELF ONLY — a platform admin cannot read or edit
+// someone's block list. `/blocks/status/:otherUserId` answers two separate
+// questions because the UI needs both: `blocked` is true if EITHER side
+// blocked (the DM is closed), `iBlockedThem` says whether the caller can undo
+// it. Collapsing them would tell A that B blocked them.
+// ===========================================================================
 
 // GET /api/v1/users/:userId/blocks - List users blocked by the caller
 router.get(

@@ -1,3 +1,30 @@
+/**
+ * Handler barrel for the test/study session lifecycle on web: building a session from a
+ * group's question messages, answering and navigating, submitting (online and offline),
+ * pausing/resuming/abandoning drafts, and retakes.
+ *
+ * Exports: useTestHandlers({ addNotification }) — handlers wired into App.tsx and the
+ *  test runner / review screens, plus `isSubmittingTest` for button disabling.
+ * Touches: testStore (activeTestSession, activeStudySession, userQuestionStats, testResults,
+ *  pendingSyncResults, pausedSessions), uiStore (appMode, selectedChat, activeTestResult,
+ *  isOnline), authStore, groupStore (messages = the question pool), budgetStore (wallet),
+ *  companionStore (post-test debrief); services/supabase (createTestSession,
+ *  createTestResult, upsertUserQuestionStat, createNotification, fetchDashboardSummary,
+ *  fetchTestResults), services/testDrafts (fetch/complete/abandon/fetchPaused),
+ *  utils/sessionDraftSync (autosave), localStorage via loadQuestionVisibilityMode.
+ * Gotchas:
+ *  - Questions are chat Messages: `type` is the MessageType ('QUESTION'), the real kind is in
+ *    `questionType`. Every filter here reads `questionType` — never `type`.
+ *  - `config.timerDuration` is SECONDS. The end time is `start + timerDuration * 1000`, and
+ *    the "only a graded test gets a clock" rule is re-implemented in each launch path
+ *    (handleTestSubmit here, buildRetakeSession for retakes, the config sheet, deep links).
+ *  - Graded tests draw only from the verified bank (`isQuestionTestable`); study mode honours
+ *    the per-device question-visibility preference instead.
+ *  - Handlers that can run in the same tick as another store write (answer, navigate) read
+ *    `useTestStore.getState()` rather than the closed-over session.
+ *  - Draft ids: a session created offline keeps a `local-` id; every server call is guarded
+ *    by a `startsWith('local-')` check.
+ */
 import { useCallback, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AppMode, TestConfig, TestQuestion, UserAnswerRecord, TestSessionData, StudySessionData, TestResult, UserStats, UserQuestionStats, Message } from '../types';
@@ -73,6 +100,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     // dialog is open cannot open a second dialog or race session construction.
     const startConfirmPendingRef = useRef(false);
 
+    // ── Launch: build a session from the selected group's question messages ────
+    // Triggered by the test-config sheet's Start. Gathers messages from the group plus any
+    // selected subgroups, filters them into a candidate pool, shuffles per the user's study
+    // settings, and pushes the session into the store + appMode. Game mode is not handled
+    // here (useGameHandlers owns it).
     const handleTestSubmit = useCallback(async (config: Omit<TestConfig, 'questionIds' | 'groupId'>, mode: 'test' | 'study' | 'game', useSpacedRepetition: boolean, selectedSubgroupIDs: string[]) => {
         // Only block when a session is already open in the runner (not merely paused in the list).
         if (
@@ -113,8 +145,28 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                   )
                 : allSourceMessages.filter(isQuestionTestable);
     
+        // The type/tag filter the student picked in the config sheet. One
+        // predicate, applied by every selection strategy below.
+        // FIXED (F9): the spaced-repetition branch used to skip this entirely,
+        // so ticking "spaced repetition" silently discarded the question types
+        // and tags chosen in the same sheet — the session came back full of
+        // types the student had just unticked.
+        const matchesConfigFilters = (msg: Message) =>
+            (config.allowedQuestionTypes.length === 0 ||
+                config.allowedQuestionTypes.includes(msg.questionType!)) &&
+            (!config.selectedTags ||
+                config.selectedTags.length === 0 ||
+                !!msg.tags?.some(tag => config.selectedTags!.includes(tag)));
+
+        // Three mutually exclusive selection strategies, all of them filtered first:
+        //  1. spaced repetition — only questions never attempted, or whose incorrect attempts
+        //     are non-zero and at least equal to the correct ones.
+        //  2. focusOnNew — unattempted questions, recent (7 days) first, never falling back
+        //     to already-answered ones even if that leaves the session short.
+        //  3. default — a shuffled slice.
         if (useSpacedRepetition) {
             candidateQuestions = allTestableQuestions.filter((q: Message) => {
+                if (!matchesConfigFilters(q)) return false;
                 const stats = userQuestionStats[q.id];
                 if (!stats) return true; // Never attempted = needs study
                 return stats.incorrectAttempts > 0 && stats.incorrectAttempts >= stats.correctAttempts;
@@ -123,11 +175,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             const addedIds = new Set<string>();
             const sevenDaysAgo = new Date();
             sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-    
-            const baseFilteredQuestions = allTestableQuestions.filter(q =>
-                (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(q.questionType!)) &&
-                (!config.selectedTags || config.selectedTags.length === 0 || q.tags?.some(tag => config.selectedTags!.includes(tag)))
-            );
+
+            const baseFilteredQuestions = allTestableQuestions.filter(matchesConfigFilters);
             const shuffledBase = shuffleArray(baseFilteredQuestions);
     
             const recent = shuffledBase.filter(q => new Date(q.timestamp) >= sevenDaysAgo && !userQuestionStats[q.id]);
@@ -150,10 +199,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
     
             // Do NOT fall back to already-answered questions when focusOnNew is enabled
         } else {
-            candidateQuestions = allTestableQuestions.filter(msg =>
-                (config.allowedQuestionTypes.length === 0 || config.allowedQuestionTypes.includes(msg.questionType!)) &&
-                (!config.selectedTags || config.selectedTags.length === 0 || msg.tags?.some(tag => config.selectedTags!.includes(tag)))
-            );
+            candidateQuestions = allTestableQuestions.filter(matchesConfigFilters);
         }
 
         let selectedQuestions: Message[];
@@ -177,6 +223,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             return;
         }
 
+        // Shuffle policy comes from user settings: whole-set shuffle (optionally also
+        // shuffling each question's options), options-only, or neither — in which case the
+        // questions are only stamped with a 1-based questionNumber.
         const studySettings = normalizeUserSettings(currentUser?.settings).study;
         const testQuestions: TestQuestion[] = studySettings.shuffleQuestions
             ? createShuffledQuestionSet(selectedQuestions, { shuffleOptions: studySettings.shuffleOptions })
@@ -191,6 +240,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             questionIds: selectedQuestions.map(q => q.id),
         };
     
+        // Time-limit rule (duplicated in buildRetakeSession and the other launchers):
+        // only a graded test gets a clock, and timerDuration is SECONDS — hence * 1000.
         const startTime = new Date();
         let endTime: Date | undefined = undefined;
         if (mode === 'test' && config.timerDuration) {
@@ -219,6 +270,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             setAppMode(AppMode.STUDY_ACTIVE);
         }
 
+        // The server draft is created AFTER the session is already on screen, so the user can
+        // start answering during the round trip; the id is then merged onto the latest store
+        // session. Offline, ensureSessionDraft yields a `local-` id instead.
         void ensureSessionDraft(sessionData, sessionKind).then((drafted) => {
             // Merge onto latest store state — never clobber answers/index chosen during create latency.
             const bound = bindDraftIdToActiveSession(sessionKind, drafted);
@@ -236,6 +290,11 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         closeModal('testConfig');
     }, [appMode, activeTestSession, activeStudySession, selectedChat, messages, userQuestionStats, currentUser, setActiveTestSession, setActiveStudySession, setAppMode, closeModal]);
     
+    // ── In-session: answering, navigation, bookmarks ──────────────────────────
+    // Records an answer for the active session. In a graded test it only stores the answer
+    // (grading happens at submit); in study mode, when the answer is revealed (explicitly or
+    // via showExplanationsImmediately) it grades immediately and — once per question, first
+    // attempt only — increments the per-question stats locally and upserts them.
     const handleUpdateAnswer = useCallback((questionId: string, answerData: Partial<Omit<UserAnswerRecord, 'questionId'>> & { revealAnswer?: boolean }) => {
         const { revealAnswer, ...answerFields } = answerData;
         const showExplanationsImmediately = normalizeUserSettings(currentUser?.settings).study.showExplanationsImmediately;
@@ -347,7 +406,15 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
     }, [appMode, setActiveTestSession, setActiveStudySession]);
     
+    // Flips the bookmark flag on the answer record for the current session.
+    // FIXED (F9): this used to read the closed-over `activeTestSession` /
+    // `activeStudySession` instead of `useTestStore.getState()`, so a bookmark
+    // tapped in the same tick as an answer or a page change wrote a stale
+    // session back and silently dropped that answer or index change. It now
+    // reads the live store like handleUpdateAnswer/handleChangeQuestion, and
+    // schedules the same draft autosave they do so the flag survives a resume.
     const handleToggleBookmark = useCallback((questionId: string) => {
+        const store = useTestStore.getState();
         const toggleBookmark = (session: TestSessionData | null): TestSessionData | null => {
             if (!session) return null;
             const existingAnswer = session.userAnswers[questionId] || { questionId };
@@ -360,19 +427,31 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             };
         };
 
-        if (appMode === AppMode.TEST_ACTIVE && activeTestSession) {
-            const updated = toggleBookmark(activeTestSession);
+        if (appMode === AppMode.TEST_ACTIVE && store.activeTestSession) {
+            const updated = toggleBookmark(store.activeTestSession);
             if (updated) {
                 setActiveTestSession(updated);
+                scheduleSessionDraftAutosave();
             }
-        } else if (appMode === AppMode.STUDY_ACTIVE && activeStudySession) {
-            const updated = toggleBookmark(activeStudySession);
+        } else if (appMode === AppMode.STUDY_ACTIVE && store.activeStudySession) {
+            const updated = toggleBookmark(store.activeStudySession);
             if (updated) {
                 setActiveStudySession(updated as StudySessionData);
+                scheduleSessionDraftAutosave();
             }
         }
-    }, [appMode, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
+    }, [appMode, setActiveTestSession, setActiveStudySession]);
 
+    // ── Submit ────────────────────────────────────────────────────────────────
+    // Grades every question locally (unanswered counts as incorrect), then forks:
+    //  - OFFLINE (session flagged offline, or isOnline false): the result is pushed to the
+    //    pending-sync queue and into the local history; nothing is sent.
+    //  - ONLINE: an existing server draft is completed, otherwise a session+result pair is
+    //    created; the local history is updated optimistically and then reconciled against
+    //    the dashboard summary. Any throw here leaves the active session intact so the
+    //    user can retry without losing answers.
+    // The ref guard (not the state flag) is what actually blocks a double submit — state
+    // updates are async and would let a second tap through.
     const handleSubmitTest = useCallback(async () => {
         if (!activeTestSession || !currentUser || isSubmittingTestRef.current) return;
         isSubmittingTestRef.current = true;
@@ -428,10 +507,18 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 addPendingSyncResult(result);
                 updateTestResults(prev => [result, ...prev]);
 
+                // FIXED (F9): `{ ...userQuestionStats }` is a SHALLOW copy, so
+                // `stats.correctAttempts++` used to mutate the per-question
+                // objects already held in the store — consumers comparing by
+                // reference saw no change and showed stale counters until some
+                // other render, and there was no pre-submit snapshot to roll
+                // back to. Each touched entry is now replaced with a NEW object.
+                // Same fix in the online path below.
                 const newUserQuestionStats: UserQuestionStats = { ...userQuestionStats };
                 Object.values(finalUserAnswers).forEach((answer: UserAnswerRecord) => {
                     const questionId = answer.questionId;
-                    const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                    const previous = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                    const stats = { ...previous };
                     if (answer.isCorrect) stats.correctAttempts++;
                     else stats.incorrectAttempts++;
                     stats.lastAttempted = new Date().toISOString();
@@ -451,6 +538,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 let savedSessionId = finalSessionData.id;
                 let saved: any;
 
+                // A real (non-`local-`) draft id means the session already exists server-side,
+                // so complete it in place; otherwise create the session and its result now.
                 if (savedSessionId && !String(savedSessionId).startsWith('local-')) {
                     saved = await completeTestDraft(savedSessionId, {
                         userAnswers: finalUserAnswers,
@@ -529,6 +618,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 useBudgetStore.getState().setWalletBalance(walletBalance);
             }
 
+            // Points/badges/stats normally come back on the save response. Only when the
+            // server omitted them do we pay for a separate sync round trip; a failure there
+            // is logged and ignored (the submit itself already succeeded).
             const gamification = (saved as { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } })?.gamification
                 || (saved as { result?: { gamification?: { points: number; badges: typeof currentUser.badges; stats: UserStats; awardedBadges?: typeof currentUser.badges } } })?.result?.gamification;
             if (gamification) {
@@ -562,10 +654,14 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
                 }
             }
         
+            // FIXED (F9): see the offline path above — the per-question stat
+            // object is cloned before it is incremented, so the store's copy is
+            // never mutated in place.
             const newUserQuestionStats: UserQuestionStats = { ...userQuestionStats };
             Object.values(finalUserAnswers).forEach((answer: UserAnswerRecord) => {
                 const questionId = answer.questionId;
-                const stats = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                const previous = newUserQuestionStats[questionId] || { correctAttempts: 0, incorrectAttempts: 0, lastAttempted: '' };
+                const stats = { ...previous };
                 if (answer.isCorrect) {
                     stats.correctAttempts++;
                 } else {
@@ -580,13 +676,21 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
             });
             setUserQuestionStats(newUserQuestionStats);
             
-                setActiveTestResult(result);
+                // FIXED (F9): the review screen used to be handed `result` (the
+                // local uuid) rather than `persistedResult` (the server session
+                // id just written into the history list), so the reviewed
+                // result carried an id that existed nowhere server-side and did
+                // not match its own row in `testResults`.
+                setActiveTestResult(persistedResult);
                 setAppMode(AppMode.TEST_REVIEW);
                 setActiveTestSession(null);
                 trackQuestProgress('complete_test');
                 trackTestCompleted({ score, totalQuestions: finalSessionData.questions.length });
                 // Study activity recorded server-side with createTestResult
                 // Post-test debrief via Lantern companion
+                // Weak-tag extraction for the companion debrief: per-tag accuracy over the
+                // just-finished test, keeping tags with >=2 questions and <60% correct,
+                // worst three first. Untagged questions are bucketed as 'General'.
                 const __tagStats: Record<string, { correct: number; total: number }> = {};
                 finalSessionData.questions.forEach(q => {
                     const isCorrect = finalUserAnswers[q.id]?.isCorrect ?? false;
@@ -627,6 +731,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
         }, [activeTestSession, currentUser, userQuestionStats, isOnline, setCurrentUser, updateTestResults, setTestResults, addPendingSyncResult, setUserQuestionStats, setActiveTestResult, setActiveTestSession, setAppMode, addNotification, removePausedSession]);
     
+    // ── Session lifecycle: end / cancel / pause / resume ──────────────────────
+    // Study sessions are not graded, so ending one just marks the server draft complete
+    // (best effort — offline or a `local-` id skips the call) and returns to chat.
     const handleEndStudySession = useCallback(async () => {
         cancelScheduledSessionDraftAutosave();
         const session = activeStudySession;
@@ -645,6 +752,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         setAppMode(AppMode.CHAT);
     }, [activeStudySession, isOnline, setActiveStudySession, setAppMode, removePausedSession]);
 
+    // Destructive discard of the in-progress session, behind a confirm that is itself
+    // re-entrancy guarded. The server draft is abandoned (fire-and-forget) and removed from
+    // the paused list. A session launched from a note returns to that note, not to chat.
     const cancelConfirmPendingRef = useRef(false);
     const handleCancelActiveSession = useCallback(async () => {
         if (cancelConfirmPendingRef.current) return;
@@ -673,6 +783,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         setAppMode(AppMode.CHAT);
     }, [activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession]);
 
+    // Pause freezes the clock by converting the absolute endTime into `remainingTime`
+    // SECONDS (never negative), flips status to 'paused', and flushes the draft before
+    // navigating away. Study sessions have no clock, so only the status changes.
     const handlePauseSession = useCallback(() => {
         cancelScheduledSessionDraftAutosave();
         let remaining: number | undefined;
@@ -689,13 +802,24 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         });
     }, [appMode, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode]);
 
+    // Resume re-arms the clock as `now + remainingTime * 1000` (the inverse of pause) and
+    // clears remainingTime so the runner goes back to reading endTime.
+    // FIXED (F9): the test branch was gated on `remainingTime != null`, so an
+    // UNTIMED paused test matched neither branch — its status stayed 'paused'
+    // and its paused-list entry was never removed, while appMode still switched
+    // into the runner. The branch is now gated on the SESSION, and only the
+    // clock re-arm is conditional on there being a clock to re-arm.
     const handleResumeSession = useCallback((mode: AppMode) => {
-        if (mode === AppMode.TEST_ACTIVE && activeTestSession?.remainingTime != null) {
-            const newEndTime = new Date(Date.now() + activeTestSession.remainingTime * 1000);
+        if (mode === AppMode.TEST_ACTIVE && activeTestSession) {
+            const hasClock = activeTestSession.remainingTime != null;
             setActiveTestSession({
                 ...activeTestSession,
-                endTime: newEndTime,
-                remainingTime: undefined,
+                ...(hasClock
+                    ? {
+                        endTime: new Date(Date.now() + activeTestSession.remainingTime! * 1000),
+                        remainingTime: undefined,
+                    }
+                    : {}),
                 status: 'in_progress',
             });
             if (activeTestSession.id) removePausedSession(activeTestSession.id);
@@ -707,6 +831,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         void flushActiveSessionDraft({ status: 'in_progress' });
     }, [activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession]);
 
+    // ── Paused-session list (server drafts) ───────────────────────────────────
+    // Offline is a silent no-op: the list is server-owned, so there is nothing to show and
+    // no reason to clear what is already cached.
     const refreshPausedSessions = useCallback(async () => {
         if (!currentUser?.id || !isOnline) return;
         try {
@@ -717,6 +844,10 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
     }, [currentUser?.id, isOnline, setPausedSessions]);
 
+    // Resumes from the list rather than from memory: refetch the draft, re-arm the clock
+    // from remainingTime (tests only), and clear whichever session slot is not in use so the
+    // two runners can never both be populated. A failed fetch means the draft was completed
+    // or discarded elsewhere, so the list is refreshed instead of retried.
     const handleResumePausedSession = useCallback(async (sessionId: string) => {
         try {
             let session = await fetchTestDraft(sessionId);
@@ -749,6 +880,8 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
     }, [setActiveTestSession, setActiveStudySession, setAppMode, removePausedSession, refreshPausedSessions]);
 
+    // Discards a saved draft from the list; also clears the active session if the discarded
+    // id happens to be the one currently loaded. `local-` drafts never existed server-side.
     const handleAbandonPausedSession = useCallback(async (sessionId: string) => {
         if (!(await confirmDialog(planDiscardSavedSessionConfirm()))) return;
         try {
@@ -764,6 +897,7 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         }
     }, [removePausedSession, activeTestSession, activeStudySession, setActiveTestSession, setActiveStudySession]);
 
+    // ── Relaunch paths ────────────────────────────────────────────────────────
     const handleRetakeTest = useCallback((sessionData: TestSessionData) => {
         // One rule for every launch: `buildRetakeSession` re-shuffles, re-arms
         // the clock from the config and reads the attempt kind back off it —
@@ -800,6 +934,9 @@ export function useTestHandlers({ addNotification }: UseTestHandlersParams) {
         });
     }, [setActiveTestSession, setActiveStudySession, setActiveTestResult, setAppMode]);
     
+    // "Practice the ones you missed" from the review screen. Always a STUDY session — the
+    // config it synthesises carries no timerDuration and no type filter, so the time-limit
+    // rule above never applies to it.
     const handlePracticeFailedQuestions = useCallback((failedQuestions: TestQuestion[]) => {
         if (!selectedChat || selectedChat.chatType !== 'group' || failedQuestions.length === 0) return;
     

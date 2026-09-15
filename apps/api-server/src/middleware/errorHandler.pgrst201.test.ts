@@ -87,3 +87,62 @@ describe('errorHandler renders a PGRST201 failure safely to a student', () => {
     expect(body.message).toBe('Something went wrong');
   });
 });
+
+
+/**
+ * F7b / E4 M20: an upstream 4xx used to reach production clients with its raw
+ * message. A PostgREST 400 names the column, the constraint and the RLS policy
+ * it tripped — a free schema map for a prober.
+ */
+describe('upstream 4xx messages are not leaked in production', () => {
+  const originalEnv = process.env.NODE_ENV;
+  afterEach(() => {
+    process.env.NODE_ENV = originalEnv;
+  });
+
+  const run = (err: any) => {
+    const req: any = { url: '/api/v1/x', method: 'POST', params: {}, query: {}, get: () => '' };
+    let statusCode = 0;
+    let body: any;
+    const res: any = {
+      status: (c: number) => {
+        statusCode = c;
+        return res;
+      },
+      json: (b: any) => {
+        body = b;
+        return res;
+      },
+    };
+    errorHandler(err, req, res, (() => {}) as NextFunction);
+    return { statusCode, body };
+  };
+
+  it('replaces a raw PostgREST 400 message but keeps the status', () => {
+    process.env.NODE_ENV = 'production';
+    const pgrst = Object.assign(
+      new Error('new row for relation "notes" violates check constraint "notes_user_id_fkey"'),
+      { status: 400, code: '23514' }
+    );
+    const { statusCode, body } = run(pgrst);
+
+    expect(statusCode).toBe(400);
+    expect(body.message).toBe('That request was not valid.');
+    expect(body.message).not.toContain('notes_user_id_fkey');
+  });
+
+  it('still renders an ApiError a route threw on purpose', () => {
+    process.env.NODE_ENV = 'production';
+    const { statusCode, body } = run(new ApiError('Coupon has expired', 400));
+
+    expect(statusCode).toBe(400);
+    expect(body.message).toBe('Coupon has expired');
+  });
+
+  it('keeps the raw message outside production so the cause is debuggable', () => {
+    process.env.NODE_ENV = 'test';
+    const pgrst = Object.assign(new Error('violates RLS policy "notes_select"'), { status: 403 });
+
+    expect(run(pgrst).body.message).toContain('notes_select');
+  });
+});

@@ -1,6 +1,48 @@
 /**
  * Authentication Store
  * Manages user authentication state with Supabase
+ *
+ * Purpose: owns the mobile session — cold-start restore, the four sign-in
+ * paths (email, sign-up, Google, Apple), sign-out and the local cleanup that
+ * goes with it, plus the display/academic identity every other screen reads.
+ *
+ * Main exports:
+ * - `useAuthStore` — `initialize`, `signIn`, `signUp`, `signInWithGoogle`,
+ *   `signInWithApple`, `signOut({ reason })`, `refreshProfileName`,
+ *   `setAcademicProfile`; state `user`, `session`, `sessionState`,
+ *   `isInitialized`, `profileName`, `academicProfile`.
+ * - `SignOutReason`, `displayNameFromUser`, `cancelSessionRestoreRetry`.
+ *
+ * Touches:
+ * - services/supabase (`readStoredSession`, `onAuthStateChange`,
+ *   `getAuthHeaders`, `supabaseSignOut`), services/authFailure
+ *   (`classifyRefreshError`), services/api (`fetchUserProfile`),
+ *   services/ensureUserProfile, services/socialAuth.
+ * - `POST /api/v1/auth/logout` on the API; `GET /users/me` via fetchUserProfile.
+ * - AsyncStorage (the sign-out key sweep only), and, lazily on sign-out,
+ *   marketplaceStore, chatWallpaperStore, offlineStore, settingsStore and
+ *   utils/signedUrlCache.
+ * - uiStore.setAuthOffline drives the shell's offline notice.
+ *
+ * Gotchas:
+ * - A transient network failure must NEVER end a session or delete unsynced
+ *   work. Only `classifyRefreshError(...) === 'invalid'` (gotrue positively
+ *   proving the refresh token is dead) may reach `signOut({ reason:'revoked' })`;
+ *   timeout/offline keep the stored session and retry. The collapse of every
+ *   refresh failure into "signed out" is the 2026-09-04 bug this file is
+ *   shaped around, together with services/authFailure.ts (the pure classifier),
+ *   the single-flight refresh and the refresh-grant fetch interceptor in
+ *   services/api.ts / services/supabase.ts.
+ * - `signOut` takes a reason. `user` wipes the handset; `revoked` preserves the
+ *   outbound queues (pending results, sync queue, question-bank scores) via
+ *   stores/signOutStorageKeys — a session ending is not permission to delete a
+ *   finished offline test.
+ * - Local cleanup runs independently of the remote revoke; an offline sign-out
+ *   used to throw at the network call and leave every cache on the device.
+ * - `sessionEpoch` discards any refresh that lands after the session changed
+ *   hands. Every write from an async path must re-check it.
+ * - Module-level retry state (`restoreRetryTimer`) survives Fast Refresh and the
+ *   font-scale remount, so `initialize()` cancels the ladder before starting.
  */
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -26,6 +68,7 @@ import {
   pendingQbankScoresKey,
 } from '../utils/pendingQuestionBankScoresScope';
 import { planSignOutKeyRemoval } from './signOutStorageKeys';
+import { resetAllUserScopedState, setUserScopeId } from './userScopedState';
 import {
   planSessionRestore,
   restoreRetryDelayMs,
@@ -281,6 +324,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
   setAcademicProfile: (academicProfile) => set({ academicProfile }),
 
+  /**
+   * Pull the server's copy of the identity (name, first name, academic
+   * profile) over whatever the session metadata seeded.
+   *
+   * Called after a confirmed session and on every TOKEN_REFRESHED. Quiet on
+   * failure and never clears a field it did not get back: an empty answer must
+   * not downgrade a real name to null, and a failed profile fetch is not a
+   * reason to disturb the session.
+   */
   refreshProfileName: async (userId: string) => {
     try {
       const profile = await fetchUserProfile(userId);
@@ -485,6 +537,13 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
   
+  // The four explicit sign-in paths — signIn, signUp, signInWithGoogle,
+  // signInWithApple — share one shape: authenticate, best-effort
+  // `ensureUserProfile`, write the session, then bump `sessionEpoch` LAST so a
+  // boot refresh still in flight for the previous account cannot land on top of
+  // the account just signed in. Only `signIn` swallows its error (the screen
+  // reads `error`), except for an unconfirmed-email failure, which it rethrows
+  // so the caller can route to the verification screen.
   signIn: async (email: string, password: string) => {
     try {
       set({ isLoading: true, error: null });
@@ -711,6 +770,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       remoteError = error;
     }
 
+    // Candidate keys, not the final list. These are the account-agnostic caches
+    // (legacy unscoped keys plus the per-user ones appended below); what is
+    // actually deleted is decided by `planSignOutKeyRemoval` from the reason.
     const keysToRemove = [
       '@lantern_offline_data',
       PENDING_RESULTS_LEGACY_KEY,
@@ -754,6 +816,20 @@ export const useAuthStore = create<AuthState>((set, get) => ({
 
     await AsyncStorage.multiRemove(finalKeys).catch(() => {});
 
+    // The ONE sweep of in-memory user-scoped state. Clearing storage does
+    // nothing to a hydrated store, a module-level cache or a subscriber list,
+    // so everything holding this account's data registers itself in
+    // stores/userScopedState and is dropped here — after the storage work, so
+    // no reset can re-read a key that is about to go. The ad-hoc resets above
+    // predate the registry and are kept because they must run in that order
+    // (before the remote revoke); new holders belong in the registry.
+    //
+    // Scope goes to null FIRST: a reset that re-reads its own storage (the AI
+    // usage cache re-hydrates for whoever is signed in) would otherwise be
+    // handed the id of the account that is being signed out.
+    await setUserScopeId(null);
+    await resetAllUserScopedState(reason === 'user' ? 'sign-out' : 'session-revoked');
+
     set({
       user: null,
       session: null,
@@ -781,3 +857,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   
   clearError: () => set({ error: null }),
 }));
+
+/**
+ * Publish who is signed in to the user-scoped state registry.
+ *
+ * Every path that ends with an identity — initialize, the auth listener,
+ * sign-in/up, the restore ladder, sign-out — goes through `set`, so one
+ * subscription covers all of them without each having to remember. It also
+ * catches the switch a sign-out never sees: A's session replaced by B's
+ * in-place (session handover, a sign-in while a session is still mounted),
+ * where `setUserScopeId` sweeps on its own.
+ *
+ * `isInitialized` gates the FIRST publish: until auth has answered, "no user"
+ * is not a fact, and resolving the scope as signed-out would let a scoped read
+ * settle for nobody.
+ */
+let lastPublishedScopeId: string | null | undefined;
+useAuthStore.subscribe((state) => {
+  if (!state.isInitialized && state.sessionState !== 'authenticated') return;
+  const userId = state.user?.id ?? null;
+  if (userId === lastPublishedScopeId) return;
+  lastPublishedScopeId = userId;
+  void setUserScopeId(userId);
+});

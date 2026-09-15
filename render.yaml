@@ -24,6 +24,22 @@ services:
     plan: free
     region: oregon
     healthCheckPath: /health
+    # Render's own git hook must NOT deploy this service. It used to, which
+    # meant .github/workflows/deploy-api.yml — with its build, tests and
+    # merge-provenance gate — was decoration: the API shipped from main with
+    # zero checks while a red CI sat on the same commit. With auto-deploy off,
+    # that workflow's Render API call is the only door.
+    #
+    # `autoDeployTrigger` is the current field; the older boolean `autoDeploy`
+    # is deprecated. Quoted because unquoted `off` is boolean false in YAML 1.1.
+    # ("checksPass" would let Render deploy on green CI by itself — not used
+    # here, because the provenance gate must also pass.)
+    #
+    # THIS FILE ONLY TAKES EFFECT WHEN THE BLUEPRINT IS RE-APPLIED. Until then,
+    # set Auto-Deploy to "No" by hand: Render dashboard -> lantern-study-api ->
+    # Settings -> Build & Deploy. Note JWT_SECRET is generateValue:true, so
+    # re-applying the blueprint ROTATES it and signs every live session out.
+    autoDeployTrigger: "off"
     envVars:
       - key: NODE_ENV
         value: production
@@ -31,8 +47,12 @@ services:
         value: "3001"
       - key: FRONTEND_URL
         value: https://lanternstudy.com
+      # Canonical origin (SW / Sentry WEB-1W). This was the legacy
+      # lantern-study.pages.dev alias; it is still in PRODUCTION_WEB_ORIGINS for
+      # CORS, so nothing loses access, but no URL the API builds should name an
+      # origin the browser's CSP does not allow.
       - key: WEB_APP_URL
-        value: https://lantern-study.pages.dev
+        value: https://www.lanternstudy.com
       - key: REDIS_ENABLED
         value: "true"
       - key: REDIS_URL
@@ -132,6 +152,10 @@ services:
     plan: starter
     region: oregon
     dockerCommand: node apps/api-server/dist/worker.js
+    # Same reasoning as lantern-study-api above: the workflow is the only door.
+    # The worker shares the API image, so an ungated auto-deploy here ships the
+    # same untested commit by another route.
+    autoDeployTrigger: "off"
     envVars:
       - key: NODE_ENV
         value: production

@@ -1,5 +1,31 @@
 /**
  * Web feature-tip progress store — local cache + sync into profile.settings.featureTips.
+ *
+ * Exports: `useFeatureTipStore` and `getTipCopy(tipId)`. State: `tips` (the
+ * normalised progress record), `readyTips` / `allowedByTip` (which surfaces are
+ * currently mounted and eligible), `onboardingComplete`, `hydrated` and the
+ * derived `activeTipId`. Actions: `hydrate`, `syncFromUserSettings`,
+ * `setTipReady` / `setTipAllowed` / `setOnboardingComplete` / `recomputeActive`,
+ * and the user gestures `dismiss`, `skipAll`, `dontShowAgain`, `replay`,
+ * `markChecklist`, `dismissGettingStarted`, `persistRemote`.
+ *
+ * Touches: utils/featureTipsStorage (sessionStorage for the per-session "Got
+ * it" map, localStorage for the durable flags), `saveUserSettingsDetailed`
+ * (a `featureTips`-only settings patch, deep-merged server-side), and it writes
+ * back into `useAuthStore.currentUser.settings`; failures toast via
+ * `useToastStore`.
+ *
+ * Gotchas:
+ *  - The durable hide flags (`skippedAll`, `dontShowAgain`, `checklistDismissed`)
+ *    are MONOTONIC on the way out: `schedulePersist` ORs local with remote so a
+ *    client that has not loaded the profile yet cannot flip a saved "don't show
+ *    again" back to false. Only `replay` passes `allowRegress`.
+ *  - `schedulePersist` is a single module-level 400ms timer shared by every
+ *    caller, and it reads `useAuthStore.getState()` when it FIRES. The gestures
+ *    that must survive an immediate refresh (`skipAll`, `dontShowAgain`,
+ *    `replay`) write through to local storage synchronously as well.
+ *  - Nothing here is user-scoped in local storage; correctness on an account
+ *    switch depends on `syncFromUserSettings` running with the new profile.
  */
 import { create } from 'zustand';
 import {

@@ -179,3 +179,59 @@ describe('isOfflineAuthError', () => {
     expect(isOfflineAuthError('offline')).toBe(false);
   });
 });
+
+/**
+ * F9 · E3 L2: `requestText` used to be a second, bare copy of the fetch —
+ * no refresh, no SESSION_REVOKED, and every failure flattened to the string
+ * `HTTP error <status>` with nothing machine-readable on it. A student with a
+ * just-expired token exporting a deck got a number and no recovery. These pin
+ * that the text path now runs the SAME core as the JSON path.
+ */
+describe('requestText shares the request core', () => {
+  it('refreshes once on a 401 and returns the retried body', async () => {
+    const fetchMock = setFetch([
+      jsonResponse(401, { error: 'Unauthorized' }),
+      new Response('front,back\na,b', { status: 200 }),
+    ]);
+    const onUnauthorized = jest.fn();
+
+    const client = createApiClient({
+      ...baseConfig(),
+      refreshAuth: async () => true,
+      onUnauthorized,
+    });
+
+    await expect(client.requestText('/decks/1/export')).resolves.toBe('front,back\na,b');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(onUnauthorized).not.toHaveBeenCalled();
+  });
+
+  it('signs out once on a definitive 401 rather than throwing a bare number', async () => {
+    setFetch([jsonResponse(401, { code: 'SESSION_REVOKED', message: 'Session ended.' })]);
+    const onUnauthorized = jest.fn();
+
+    const client = createApiClient({
+      ...baseConfig(),
+      refreshAuth: async () => true,
+      onUnauthorized,
+    });
+
+    await expect(client.requestText('/decks/1/export')).rejects.toThrow('Session ended.');
+    expect(onUnauthorized).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the server sentence and status on a plain failure', async () => {
+    setFetch([jsonResponse(404, { error: 'Deck not found' })]);
+    const client = createApiClient(baseConfig());
+
+    const error = await client.requestText('/decks/missing/export').then(
+      () => {
+        throw new Error('requestText should have rejected');
+      },
+      (err: Error & { status?: number }) => err
+    );
+
+    expect(error.message).toBe('Deck not found');
+    expect(error.status).toBe(404);
+  });
+});

@@ -179,12 +179,12 @@ describe('planSyncQueueLoad', () => {
 });
 
 describe('syncQueueKeysToClearOnSignOut', () => {
-  it('clears the user key and the legacy key on a user sign-out', () => {
-    expect(syncQueueKeysToClearOnSignOut('user', 'u1')).toEqual([
-      SYNC_QUEUE_LEGACY_KEY,
-      syncQueueKey('u1'),
-    ]);
-    expect(syncQueueKeysToClearOnSignOut('user', null)).toEqual([SYNC_QUEUE_LEGACY_KEY]);
+  // G4 · H12: the sync queue holds notes and edits the student has made but
+  // not uploaded. A sign-out deletes none of it, and never the legacy key,
+  // which can still hold a different account's un-migrated operations.
+  it('clears nothing on a user sign-out', () => {
+    expect(syncQueueKeysToClearOnSignOut('user', 'u1')).toEqual([]);
+    expect(syncQueueKeysToClearOnSignOut('user', null)).toEqual([]);
   });
 
   it('keeps everything when the session was revoked', () => {

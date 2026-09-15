@@ -17,6 +17,8 @@ jest.mock('./paystack', () => ({
   initializePaystackTransaction: (...args: unknown[]) => mockInitializePaystackTransaction(...args),
   initiatePaystackTransfer: jest.fn(),
   isPaystackConfigured: () => true,
+  paystackMode: () => 'test',
+  assertPaystackLiveKeyInProduction: () => {},
   refundPaystackTransaction: jest.fn(),
   resolvePaystackAccount: jest.fn(),
   verifyPaystackSignature: (...args: unknown[]) => mockVerifyPaystackSignature(...args),

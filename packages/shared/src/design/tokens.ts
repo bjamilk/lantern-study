@@ -1,6 +1,41 @@
 // ===========================================
 // Lantern Study - Shared Design Tokens
 // ===========================================
+//
+// PURPOSE
+//   The single palette, type scale, spacing and radius set for the whole
+//   product. Everything visual on both platforms resolves back to a value in
+//   this file, so a colour is changed here once rather than in two apps.
+//
+// CONSUMERS
+//   web    — `utils/applyDesignTokens.ts` turns these into CSS custom
+//            properties on <html>; `index.css` holds the light/dark `:root`
+//            and `.dark` blocks; `tailwind.config.js` reads them as
+//            `rgb(var(--x) / <alpha-value>)`.
+//   mobile — `src/theme/*` consumes the objects directly.
+//   api    — no.
+//
+// THE RULE THAT KEEPS DARK MODE ALIVE
+//   Dark mode was once dead because an INLINE light palette was written onto
+//   <html>, and an inline custom property outranks the `.dark` stylesheet. A
+//   token must never get its only definition from an inline style or from
+//   inside a media query. web's applyDesignTokens keeps a purge list of legacy
+//   inline vars for exactly this reason — do not reintroduce them.
+//
+// CONTRAST IS A GATE, NOT A PREFERENCE
+//   Every ink here has been checked against every ground it is painted on by
+//   ./contrast.ts, which runs in jest AND in `npm run design:contrast` against
+//   what index.css actually ships. Changing a colour means re-running both.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
 
 export const lanternColors = {
   // 2026-09-12 colour pivot: the brand's primary is no longer indigo. A
@@ -263,6 +298,13 @@ export const darkColors = darkTheme;
  * Two inks are tight: lime (4.60 on tint) and amber (4.51). Per the spec,
  * use `#3f6212` for lime text under 12px, and never set body copy in an ink.
  */
+// ---------------------------------------------------------------------------
+// Feature accents
+// ---------------------------------------------------------------------------
+// Each product area gets an ink/tint pair, per theme. `ink` is for text and
+// strokes, `tint` for fills — they are not interchangeable, and the small-text
+// overrides exist because a hue legible at 18px is not always legible at 12px.
+
 export const FEATURE_KEYS = [
   'notes',
   'flashcards',
@@ -396,6 +438,13 @@ export const featureAccents = {
 
 /** @deprecated Alias of `featureAccents`'s key set; use `FeatureKey`. */
 export type LegacyFeatureKey = keyof typeof featureAccents;
+
+// ---------------------------------------------------------------------------
+// Spacing, radius, type
+// ---------------------------------------------------------------------------
+// The type scale is a closed set of named steps (TYPE_STEP_NAMES). Web lints
+// against an allowlist so an ad-hoc font size cannot creep in; keep new sizes
+// as named steps rather than one-off numbers.
 
 export const spacing = {
   xs: 4,
@@ -561,6 +610,12 @@ export const fontStacks = {
 } as const;
 
 /** CSS custom property names for web */
+// ---------------------------------------------------------------------------
+// CSS variable bridge (web)
+// ---------------------------------------------------------------------------
+// Names and the palette -> custom-property conversion. Values are emitted as
+// RGB channel triples, not hex, so Tailwind can apply an alpha to them.
+
 export const cssVarNames = {
   background: '--color-background',
   backgroundSecondary: '--color-background-secondary',

@@ -1,3 +1,15 @@
+/**
+ * The shortcut band under Shop home's search bar, and the same tile reused as
+ * the You hub's card grid.
+ *
+ * Exports: ShopQuickActions, buildQuickActions, the QuickAction type.
+ * Touches: ShopBadges from ../../../hooks/useShopBadges (the caller owns the
+ * subscription and passes it in); navigates via the onNavigate prop.
+ *
+ * Gotchas: badges are counts of what needs attention now, not lifetime totals,
+ * so Buy Again and Saved deliberately carry a zero badge. `layout: 'grid'`
+ * renders only the first four actions and is the only layout that shows hints.
+ */
 import React from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { Badge } from '../../../components/ui';

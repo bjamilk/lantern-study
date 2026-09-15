@@ -1,3 +1,15 @@
+/**
+ * Bottom-sheet modal listing the seller's coupons and creating new ones
+ * (percent or fixed naira off, applied by buyers at checkout).
+ *
+ * Exports: SellerCouponsModal.
+ * Touches: fetchSellerCoupons and createSellerCoupon in
+ * ../../../services/api; reloads whenever `visible` flips to true.
+ *
+ * Gotchas: a failed list fetch renders as no coupons rather than an error.
+ * Codes are upper-cased as typed. Validation here is only "non-empty code and
+ * a positive value"; everything else (uniqueness, caps) is the server's.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { KeyboardAvoidingView, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
 import { SCREEN_KEYBOARD_BEHAVIOR, useScreenInsets } from '../../../components/layout';

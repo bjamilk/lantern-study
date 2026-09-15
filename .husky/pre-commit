@@ -1,0 +1,45 @@
+#!/usr/bin/env sh
+# Lantern Study pre-commit hook.
+#
+# Installed by the `prepare` script in package.json, which points
+# core.hooksPath at this directory. No husky dependency: `git config
+# core.hooksPath .husky` is all husky does for a repo this size, and adding a
+# devDependency to run one `git config` is not worth the supply-chain surface.
+#
+# Two checks, both scoped to what you are actually committing:
+#   1. Secret scan on staged files. The repo is PUBLIC — a key that lands in a
+#      commit is scraped by bots in minutes, and remediation becomes rotation
+#      plus a history rewrite rather than an amend. CI catches it too, but only
+#      after the push, which is too late.
+#   2. The mobile type-scale and type-floor lints, when the commit touches
+#      apps/mobile. They are jest tests; running them here costs a few seconds
+#      and saves a CI round trip.
+#
+# EMERGENCY BYPASS:  git commit --no-verify
+# Use it when you must, then run `bash scripts/check-secrets.sh` before you
+# push. A bypass that reaches main is caught by the `secrets` job in CI — which
+# is the safety net, not the plan.
+#
+# To uninstall:  git config --unset core.hooksPath
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -z "$staged" ] && exit 0
+
+echo "pre-commit: scanning staged files for secrets..."
+bash scripts/check-secrets.sh --staged
+
+if echo "$staged" | grep -q '^apps/mobile/'; then
+  if [ -d apps/mobile/node_modules ] || [ -d node_modules ]; then
+    echo "pre-commit: mobile type-scale lint..."
+    (cd apps/mobile && npx jest --silent src/design/typeScaleLint.test.ts src/design/typeFloorLint.test.ts)
+  else
+    echo "pre-commit: skipping type-scale lint (no node_modules; run npm ci)"
+  fi
+fi
+
+echo "pre-commit: ok"

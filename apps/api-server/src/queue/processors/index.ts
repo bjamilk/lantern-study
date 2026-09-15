@@ -1,7 +1,47 @@
-import { Worker, type Job } from "bullmq";
+/**
+ * The worker half of the job lifecycle: the BullMQ processors that do the work
+ * a route offloaded, and the wrapper that keeps every one of them honest about
+ * stage, result and credit.
+ *
+ * Exports:
+ * - `startWorkers` — called at boot (server.ts) once Redis is wired; starts one
+ *   Worker per queue: `ai-generation`, `file-processing`, `data-export` and
+ *   `marketplace-alerts`.
+ * - `scheduleRepeatableCronJobs` — registers the repeatable cron jobs, each with
+ *   a fixed `jobId` so a redeploy replaces its schedule instead of stacking a
+ *   second one.
+ * - `initializeWorkerServices` — injects the service-role SupabaseService the
+ *   processors use.
+ * - `processAiJob` and the `JobProgress` interface.
+ *
+ * What it touches: every AI provider path in `services/aiService.ts`, the
+ * study-pack factory, narration, OCR, presentation preview, YouTube transcript
+ * and APKG import services; Supabase tables through the service-role client
+ * (`ai_companion_messages`, notes, decks, note quizzes, `learning_events`, the
+ * AI inference log); and the Redis job records via `queue/jobStatus.ts`.
+ *
+ * Service role bypasses RLS. Every processor here runs with the service-role
+ * client and must carry its own ownership predicate — the companion handler
+ * re-reads attachments and history filtered by `user_id` for exactly this
+ * reason.
+ *
+ * Lifecycle contract that `wrapProcessor` enforces for all four workers:
+ * - Stage: every job is stamped `reading` before the processor runs; the
+ *   processor moves it on with `progress.stage(...)`; the wrapper stamps `done`
+ *   or `failed`. Progress writes are best-effort — a failed progress write must
+ *   never fail the student's actual work — and `advanceJobStage` refuses to
+ *   move a record that is already terminal, so a straggler cannot un-finish a
+ *   job or reopen its refund.
+ * - Credit: the enqueueing request already spent the AI credit and answered
+ *   202, so the queue owns the refund. It fires on final failure, on a stall
+ *   the process never lived to catch, and on a soft-failed OCR;
+ *   `refundJobCreditOnce` makes all of those idempotent.
+ */
+import { UnrecoverableError, Worker, type Job } from "bullmq";
 import { getQueueConnectionOptions } from "../connection";
 import { QUEUE_NAMES } from "../jobs/types";
 import { setJobStage, getJobRecord, refundJobCreditOnce } from "../jobStatus";
+import { JOB_STALE_TIMEOUT_MS } from "@lantern/shared/jobs/jobState";
 import type { JobError, JobResultRef } from "@lantern/shared/jobs/jobState";
 import {
   generateQuestionsFromNotes,
@@ -58,6 +98,14 @@ import {
   touchConversation,
 } from "../../services/companionConversations";
 
+// ---------------------------------------------------------------------------
+// Worker-side services and telemetry
+//
+// The workers run in the same process as the API but outside any request, so
+// they have no `req.supabase`; server.ts injects the service-role client here
+// at boot. Both telemetry helpers no-op rather than throw when it is missing.
+// ---------------------------------------------------------------------------
+
 let supabaseService: SupabaseService;
 
 export function initializeWorkerServices(supabase: SupabaseService): void {
@@ -103,6 +151,15 @@ async function recordGenerationEvent(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Progress reporting and error classification
+//
+// `progress.stage` is also the job's heartbeat: it refreshes the record's
+// `updatedAt`, which is what `reconcileJobTimeout` measures staleness from. A
+// processor that goes quiet for longer than JOB_STALE_TIMEOUT_MS (10 min) is
+// timed out and refunded even though it is still working.
+// ---------------------------------------------------------------------------
+
 /**
  * What a processor uses to say where it has got to. Every call is best-effort:
  * a progress write that fails must never fail the student's actual work.
@@ -135,6 +192,58 @@ function createProgress(job: Job): JobProgress {
   };
 }
 
+/**
+ * FIXED (F7a): a heartbeat for work that makes no progress writes of its own.
+ *
+ * `reconcileJobTimeout` measures SILENCE, not elapsed time: a record whose
+ * `updatedAt` has not moved for JOB_STALE_TIMEOUT_MS (10 min) is stamped
+ * `timed_out` and refunded by the next poll, even though the worker is still
+ * running — after which `advanceJobStage` refuses the eventual `done` because
+ * the record is already terminal. A study pack is up to a dozen chat
+ * completions, each with a 120 s timeout plus rate-limit backoff, so it sat
+ * squarely past that window.
+ *
+ * The tick re-stamps the current stage, which is exactly what refreshes
+ * `updatedAt`, and it also calls `job.updateProgress` so BullMQ sees the job as
+ * live rather than stalled. Both are best-effort: a heartbeat that throws must
+ * never fail the work it is reporting on. The interval is well under the stale
+ * window, so the reconciler only ever has to outlast one missed tick.
+ */
+const JOB_HEARTBEAT_INTERVAL_MS = (() => {
+  const raw = Number(process.env.JOB_HEARTBEAT_INTERVAL_MS);
+  const chosen = Number.isFinite(raw) && raw >= 1000 ? Math.floor(raw) : 60_000;
+  // Never at or above the stale window — that would be no heartbeat at all.
+  return Math.min(chosen, Math.floor(JOB_STALE_TIMEOUT_MS / 2));
+})();
+
+export async function withJobHeartbeat<T>(
+  job: Job,
+  progress: JobProgress,
+  stage: "reading" | "generating" | "saving",
+  fn: () => Promise<T>,
+  intervalMs: number = JOB_HEARTBEAT_INTERVAL_MS,
+): Promise<T> {
+  let beats = 0;
+  const timer = setInterval(() => {
+    beats += 1;
+    void (async () => {
+      try {
+        await progress.stage(stage);
+        await job.updateProgress({ heartbeat: beats, at: new Date().toISOString() });
+      } catch (err) {
+        console.error(`[queue] heartbeat failed for job ${job.id}:`, err);
+      }
+    })();
+  }, intervalMs);
+  // Never hold the process open for a heartbeat.
+  if (typeof timer.unref === "function") timer.unref();
+  try {
+    return await fn();
+  } finally {
+    clearInterval(timer);
+  }
+}
+
 /** Anything the student could fix by changing their input is not retryable. */
 function toJobError(err: unknown): JobError {
   const message = err instanceof Error ? err.message : String(err);
@@ -147,6 +256,19 @@ function toJobError(err: unknown): JobError {
   );
   return { code, message, retryable: !permanent };
 }
+
+// ---------------------------------------------------------------------------
+// ai-generation queue
+//
+// Every AI job name in `QUEUE_FOR_JOB` lands here. The shape each case returns
+// is a client contract: for names a route also serves synchronously, the object
+// must match that route's response exactly, because in production BullMQ is
+// what answers and anything dropped here never reaches the client.
+//
+// Throwing is how a processor asks for the credit back — `wrapProcessor` marks
+// the job failed and refunds. A case that wants to report failure without a
+// refund returns a `success: false` payload instead (see the OCR case).
+// ---------------------------------------------------------------------------
 
 export async function processAiJob(job: Job, progress: JobProgress): Promise<unknown> {
   const userId = job.data.userId as string | undefined;
@@ -505,15 +627,32 @@ export async function processAiJob(job: Job, progress: JobProgress): Promise<unk
       if (!draftId || !supabaseService) {
         throw new Error("Study pack generation job requires draftId and supabase service");
       }
+      // FIXED (F7a): the pack makes exactly one progress write of its own, and
+      // everything after it — up to 8 note summaries, then flashcards, MCQs and
+      // essays, each a chat completion with a 120 s timeout plus rate-limit
+      // backoff — used to run silent, so the record went stale at 10 minutes and
+      // the next poll terminalised and refunded a job that was still running.
+      // `withJobHeartbeat` re-stamps the stage on an interval, which is what
+      // `reconcileJobTimeout` measures, so the reconciler now sees a live job.
       await progress.stage("generating");
       progress.ref({ type: "studyPack", id: draftId, route: `/study-packs/drafts/${draftId}` });
       // Throws on total failure → the worker wrapper refunds the AI charge.
-      return getStudyPackFactoryService(supabaseService).generate(draftId);
+      return withJobHeartbeat(job, progress, "generating", () =>
+        getStudyPackFactoryService(supabaseService).generate(draftId),
+      );
     }
     default:
       throw new Error(`Unknown AI job: ${name}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// file-processing queue
+//
+// Attachment and import work: APKG decks, presentation previews, YouTube
+// transcripts and OCR. Binary input rides on the payload as base64, so these
+// jobs are large — the worker runs at concurrency 1 by default.
+// ---------------------------------------------------------------------------
 
 async function processFileJob(job: Job, progress: JobProgress): Promise<unknown> {
   if (job.name === "deck.importApkg") {
@@ -616,6 +755,10 @@ async function processFileJob(job: Job, progress: JobProgress): Promise<unknown>
   throw new Error(`Unknown file job: ${job.name}`);
 }
 
+// ---------------------------------------------------------------------------
+// data-export queue
+// ---------------------------------------------------------------------------
+
 async function processExportJob(job: Job, progress: JobProgress): Promise<unknown> {
   if (job.name === "export.userData") {
     const { userId } = job.data as { userId: string };
@@ -625,6 +768,14 @@ async function processExportJob(job: Job, progress: JobProgress): Promise<unknow
   }
   throw new Error(`Unknown export job: ${job.name}`);
 }
+
+// ---------------------------------------------------------------------------
+// marketplace-alerts queue (repeatable cron)
+//
+// Scheduled platform work, not a student's request: these jobs have no userId
+// and no charge, so the refund path is inert for them. Concurrency is 1, so a
+// slow sweep delays the next tick rather than overlapping with itself.
+// ---------------------------------------------------------------------------
 
 async function processCronJob(job: Job, _progress: JobProgress): Promise<unknown> {
   if (job.name === "cron.dataRetention") {
@@ -658,6 +809,18 @@ async function processCronJob(job: Job, _progress: JobProgress): Promise<unknown
   throw new Error(`Unknown cron job: ${job.name}`);
 }
 
+// ---------------------------------------------------------------------------
+// The lifecycle wrapper, refunds, and worker startup
+// ---------------------------------------------------------------------------
+
+/**
+ * Give every processor the same stage and credit contract: stamp `reading`
+ * before it runs, `done` with its result and resultRef after, or `failed` plus
+ * a refund if it throws.
+ *
+ * The error is rethrown after the record is written so BullMQ still sees the
+ * job as failed — the record and the queue must not disagree.
+ */
 function wrapProcessor(processor: (job: Job, progress: JobProgress) => Promise<unknown>) {
   return async (job: Job) => {
     const progress = createProgress(job);
@@ -668,13 +831,44 @@ function wrapProcessor(processor: (job: Job, progress: JobProgress) => Promise<u
       await setJobStage(job.id!, "done", { result, resultRef: progress.resultRef });
       return result;
     } catch (err) {
-      await setJobStage(job.id!, "failed", { error: toJobError(err) });
-      await refundChargeOnFinalFailure(job).catch((refundErr) => {
-        console.error(`[queue] Credit refund failed for job ${job.id}:`, refundErr);
-      });
+      const jobError = toJobError(err);
+      // FIXED (F7a): jobs now carry real `attempts` (queue/enqueue.ts), so a
+      // failure is not automatically the end. Stamping `failed` on a retryable
+      // attempt would terminalise the record — and `advanceJobStage` refuses to
+      // move a terminal record, so the retry that succeeded could never report
+      // `done`. A non-final, retryable failure therefore leaves the record
+      // alone; only the last attempt (or a permanent error) terminalises and
+      // refunds.
+      const permanent = !jobError.retryable;
+      if (permanent || isFinalAttempt(job)) {
+        await setJobStage(job.id!, "failed", { error: jobError });
+        await refundChargeOnFinalFailure(job, { final: true }).catch((refundErr) => {
+          console.error(`[queue] Credit refund failed for job ${job.id}:`, refundErr);
+        });
+      } else {
+        console.warn(
+          `[queue] Job ${job.id} attempt ${job.attemptsMade + 1}/${attemptsAllowed(job)} failed, retrying: ${jobError.message}`,
+        );
+      }
+      // A permanent error must not spend the remaining attempts on an input
+      // that will fail identically every time.
+      if (permanent) {
+        throw new UnrecoverableError(jobError.message);
+      }
       throw err;
     }
   };
+}
+
+/** How many attempts BullMQ was told to make for this job (default 1). */
+function attemptsAllowed(job: Job): number {
+  const attempts = job.opts?.attempts;
+  return typeof attempts === "number" && attempts > 0 ? attempts : 1;
+}
+
+/** Is this the last attempt BullMQ will make? */
+function isFinalAttempt(job: Job): boolean {
+  return job.attemptsMade + 1 >= attemptsAllowed(job);
 }
 
 /** Refund whatever charge is stamped on this job's record (idempotent). */
@@ -689,9 +883,15 @@ async function refundJobCharge(job: Job): Promise<void> {
  * job's final attempt, hand those credits back (markJobChargeRefunded makes
  * this idempotent across racing retries).
  */
-async function refundChargeOnFinalFailure(job: Job): Promise<void> {
-  const attemptsAllowed = job.opts?.attempts ?? 1;
-  if (job.attemptsMade + 1 < attemptsAllowed) return;
+async function refundChargeOnFinalFailure(
+  job: Job,
+  options: { final?: boolean } = {},
+): Promise<void> {
+  // FIXED (F7a): this guard is live now that `enqueueJob` passes real
+  // `attempts` — a mid-cascade failure keeps the charge because the job is
+  // going to run again. `final: true` is how the caller says it has already
+  // decided this is the end (a permanent error on a non-final attempt).
+  if (!options.final && !isFinalAttempt(job)) return;
   await refundJobCharge(job);
 }
 
@@ -701,6 +901,14 @@ function envConcurrency(name: string, fallback: number, max = 32): number {
   return Math.min(max, Math.floor(raw));
 }
 
+/**
+ * Start one Worker per queue. Call after Redis is configured — each Worker
+ * opens its own connection immediately.
+ *
+ * Concurrency is per queue and env-tunable within a hard ceiling, so a bad
+ * value cannot open unbounded provider connections. The AI worker's default of
+ * 2 sits beneath the provider concurrency gate in services/aiService.ts.
+ */
 export function startWorkers(): Worker[] {
   const connection = getQueueConnectionOptions();
   const aiConcurrency = envConcurrency("AI_WORKER_CONCURRENCY", 2, 16);
@@ -748,9 +956,12 @@ export function startWorkers(): Worker[] {
       // run wrapProcessor's catch — the process that owned the job is gone.
       // This hook DOES fire for them: record the failure and refund the
       // charge (idempotent, so overlap with the catch path is harmless).
-      if (job?.id) {
+      // FIXED (F7a): only on the FINAL attempt. A stall with retries left is
+      // about to be picked up again, and terminalising the record here would
+      // refuse the `done` that attempt writes.
+      if (job?.id && (isFinalAttempt(job) || err instanceof UnrecoverableError)) {
         void setJobStage(job.id, "failed", { error: toJobError(err) }).catch(() => {});
-        void refundChargeOnFinalFailure(job).catch((refundErr) => {
+        void refundChargeOnFinalFailure(job, { final: true }).catch((refundErr) => {
           console.error(`[queue] Credit refund failed for stalled job ${job.id}:`, refundErr);
         });
       }
@@ -760,6 +971,14 @@ export function startWorkers(): Worker[] {
   return [aiWorker, fileWorker, exportWorker, cronWorker];
 }
 
+/**
+ * Register the repeatable platform jobs on the alerts queue.
+ *
+ * Each carries a fixed `jobId`, so re-running this on every boot replaces the
+ * existing schedule rather than stacking a second copy. Changing a pattern or
+ * interval without changing the `jobId` leaves the old repeat registered until
+ * it is removed by hand.
+ */
 export async function scheduleRepeatableCronJobs(): Promise<void> {
   const { getQueue } = await import("../queues");
   const alertsQueue = getQueue(QUEUE_NAMES.MARKETPLACE_ALERTS);

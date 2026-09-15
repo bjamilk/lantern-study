@@ -1,3 +1,19 @@
+/**
+ * The `CramSession` route (a fullScreenModal): an ungraded speed run through a
+ * deck. Tap to reveal, mark Got it or Missed, optionally against a clock, then
+ * retry just the misses.
+ *
+ * Main exports: `CramSessionScreen` (also the default).
+ * Touches: flashcardStore (reads `flashcards[deckId]`; writes nothing — cram
+ * never touches FSRS scheduling), services/gamification `trackStudyActivity`
+ * and productAnalytics. Native: expo-haptics via utils/haptics.
+ *
+ * Gotchas: `cardIds` narrows the deck to a subset (Play's missed cards, for
+ * example) but falls back to the whole deck when none of the ids are present.
+ * Nothing is persisted — the whole session is screen state, which is why
+ * `useConfirmBeforeExit` guards leaving mid-run. The two tracking refs are
+ * reset per deck/timer so one session reports start and completion once.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { FlashcardType } from '@lantern/shared';

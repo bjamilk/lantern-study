@@ -35,7 +35,6 @@ export function FeatureTipsHost({
   const activeTipId = useFeatureTipStore((s) => s.activeTipId);
   const markChecklist = useFeatureTipStore((s) => s.markChecklist);
   const featureTips = useSettingsStore((s) => s.settings.featureTips);
-  const marketplaceAccess = useMarketplaceStore((s) => s.marketplaceAccess);
 
   useEffect(() => {
     void hydrate();
@@ -65,11 +64,8 @@ export function FeatureTipsHost({
     setTipReady('chat.aiGenerate', isGroupChat);
     setTipAllowed('chat.aiGenerate', isGroupAdmin);
 
-    // Only coach the marketplace to accounts that can actually open it —
-    // otherwise the tip advertises a private-pilot surface to the people it is
-    // closed to. `setTipAllowed` false suppresses it without consuming it, so
-    // it still appears if the pilot later opens.
-    setTipAllowed('nav.marketplace', marketplaceAccess === true);
+    // The Shop is open to every account (2026-09-15), so the tip no longer
+    // needs an access answer before it may coach anyone.
     setTipReady('nav.marketplace', activeTab === 'Campus' || moreOpen);
     // Budget and Downloads are both rows on Me, so Me is where each tip has
     // something to point at.
@@ -90,7 +86,6 @@ export function FeatureTipsHost({
     isGroupAdmin,
     moreOpen,
     companionOpen,
-    marketplaceAccess,
     setTipReady,
     setTipAllowed,
     markChecklist,

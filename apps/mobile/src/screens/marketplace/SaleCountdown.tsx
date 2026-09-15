@@ -1,3 +1,13 @@
+/**
+ * Pill that counts down to a listing's sale end time.
+ *
+ * Exports: SaleCountdown.
+ * Touches: formatSaleCountdown from @lantern/shared/utils. No store or API.
+ *
+ * Gotchas: renders nothing when the formatter returns an empty label, and the
+ * refresh interval is 60s, so the label can be up to a minute stale. The timer
+ * is only started when saleEndsAt is set and is cleared on unmount.
+ */
 import React, { useEffect, useState } from 'react';
 import { View, Text } from 'react-native';
 import { formatSaleCountdown } from '@lantern/shared/utils';

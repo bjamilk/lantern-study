@@ -1,7 +1,21 @@
 name: Deploy API (Render)
 
-# Manual on purpose — see deploy-web.yml for the reasoning.
+# This workflow is now THE door to the production API.
+#
+# It used to be workflow_dispatch-only while Render auto-deployed from main on
+# its own git hook, which meant the gates written below guarded nothing: the API
+# shipped straight from the branch with zero checks. `autoDeploy: false` on the
+# API and worker services in render.yaml closes that side door — after applying
+# the blueprint (or flipping Auto-Deploy to "No" in the Render dashboard for
+# lantern-study-api and lantern-study-worker), this workflow is the only path.
+#
+# Gate order is the same as deploy-web.yml and for the same reasons:
+#   1. `provenance` — the commit must have come from a merged PR.
+#   2. `ci` — the full CI workflow, called reusably so the deploy job's `needs:`
+#      edge makes "deploy never runs on red CI" a property of the graph.
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       ref:
@@ -17,13 +31,35 @@ env:
   RENDER_SERVICE_NAME: lantern-study-api
 
 jobs:
+  provenance:
+    name: provenance (came from a merged PR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Commit must come from a merged pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          node scripts/check-merge-provenance.mjs --sha "$sha"
+
+  ci:
+    name: ci
+    needs: provenance
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    name: deploy
+    needs: [provenance, ci]
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || 'main' }}
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -83,13 +119,20 @@ jobs:
           echo "::error::Timed out waiting for the Render deploy to go live."
           exit 1
 
-      - name: Health check
+      # /health stamps the deployed commit. Comparing it against the commit we
+      # deployed is the only proof the new image is the one serving — a 200 alone
+      # is satisfied by the PREVIOUS image when a deploy fails.
+      - name: Health check and commit marker
         run: |
           set -euo pipefail
+          expected=$(git rev-parse --short=7 HEAD)
+          echo "expecting /health commit: $expected"
           for i in $(seq 1 20); do
-            code=$(curl -o /dev/null -s -w '%{http_code}' https://lantern-study-api.onrender.com/health || true)
-            [ "$code" = "200" ] && { echo "API healthy"; exit 0; }
-            echo "attempt $i: HTTP $code"; sleep 10
+            body=$(curl -fsS https://lantern-study-api.onrender.com/health || true)
+            live=$(echo "$body" | jq -r '.commit // empty' 2>/dev/null || true)
+            echo "attempt $i: commit=$live"
+            if [ "$live" = "$expected" ]; then echo "API healthy on $live"; exit 0; fi
+            sleep 10
           done
-          echo "::error::API did not return 200 from /health after the deploy."
+          echo "::error::API /health never reported commit $expected. The old image may still be serving."
           exit 1

@@ -1,3 +1,60 @@
+/**
+ * Purpose: the note upload pipeline — validate bytes, put them somewhere safe,
+ * and turn a PDF, a presentation or a photo into the study text the rest of
+ * the product reads.
+ *
+ * Exports (consumed by routes/notes.ts, routes/storage.ts, the note OCR
+ * worker, notePages.ts and companionImageAttachments.ts):
+ * - Paths and validation: `sanitizeNoteFileName`, `buildNoteStoragePath`,
+ *   `assertUserOwnedNoteStoragePath`, `assertFileSize`, `assertPdfSize`,
+ *   `assertPresentationSize`, `assertPresentationFileName`,
+ *   `assertValidOfficeZip`, `assertNoteImageUpload`,
+ *   `imageContentTypeFromFileName`, `presentationContentType`.
+ * - Extraction: `extractPdfTextFromBuffer`, `extractPdfTextDetailsFromBuffer`,
+ *   `extractPdfPageTextsFromBuffer`, `extractPresentationTextFromBuffer`,
+ *   `extractPresentationTextDetailsFromBuffer`, `buildPdfStudyText`,
+ *   `buildPresentationStudyText`, `mergeExtractionTexts`,
+ *   `isThinExtractedStudyText`.
+ * - Slide rendering: `convertPresentationToPdf`, `warmGotenberg`.
+ * - Caps: the MAX_OCR_* limits, the timeouts, `PDF_OCR_SCALE`,
+ *   `NOTE_FILES_BUCKET`, `MAX_PDF_BYTES`, `MAX_PRESENTATION_BYTES`.
+ *
+ * What it touches: the Supabase storage bucket `note-files` (path shape
+ * `<userId>/<timestamp>-<sanitised name>` — the leading segment is the
+ * ownership predicate `assertUserOwnedNoteStoragePath` enforces). Libraries:
+ * pdf-parse (whole-document text), pdfjs-dist (per-page text, no worker),
+ * officeparser (PPT/PPTX, optional Tesseract OCR). External service: Gotenberg
+ * at `GOTENBERG_URL` for LibreOffice slide-to-PDF conversion, with a local
+ * `libreoffice-convert` last resort. No table is written here; the caller owns
+ * the `notes` row.
+ *
+ * Pipeline, in order:
+ *   1. Size and type gate — `assertPdfSize` / `assertPresentationSize` +
+ *      `assertValidOfficeZip` / `assertNoteImageUpload`.
+ *   2. Storage path — `buildNoteStoragePath` sanitises the name, collapses
+ *      `..`, and prefixes the user id.
+ *   3. Text — the document's own text layer first; OCR only where there is
+ *      none, under the MAX_OCR_* caps and the soft timeouts, so a scan cannot
+ *      hold a request open indefinitely.
+ *   4. Study text — `buildPdfStudyText` / `buildPresentationStudyText` report
+ *      an honest `ok` / `needs_ocr` / `empty` status instead of passing a
+ *      placeholder off as content.
+ *
+ * Content validation is by MAGIC BYTES, not by the declared type. The client's
+ * Content-Type is only ever a cross-check: `assertImageMagicBytes` detects the
+ * real format and rejects any mismatch (with `image/jpg` allowed as an alias
+ * for `image/jpeg`, because phone pickers send it), and `assertPdfMagicBytes`
+ * requires a real `%PDF-` header.
+ *
+ * No stored-XSS route through the buckets. SVG is accepted nowhere: the
+ * signature table in utils/fileValidation.ts holds JPEG, PNG, GIF and WebP and
+ * nothing else, so an XML document carrying <script> has no way in. Everything
+ * that is not an animated GIF is re-encoded to WebP by
+ * `imageProcessing.processImageForUpload` before it is stored, so the bytes in
+ * the bucket are the encoder's output rather than the uploader's. These
+ * buckets are same-origin with the app, which is exactly why both rules
+ * matter.
+ */
 import {
   assessPdfTextExtraction,
   isPlaceholderExtractedText,
@@ -7,6 +64,11 @@ import {
 } from '@lantern/shared/utils/noteStudyContent';
 import { logger } from '../utils/logger';
 import { assertImageMagicBytes, assertPdfMagicBytes } from '../utils/fileValidation';
+
+// --- Bucket, size caps and OCR budgets ---------------------------------------
+// Every MAX_OCR_* and timeout is env-overridable but floored, so a bad value
+// cannot switch a cap off. They exist because Tesseract is memory- and
+// latency-bound on Render.
 
 const NOTE_FILES_BUCKET = 'note-files';
 const MAX_PDF_BYTES = 25 * 1024 * 1024;
@@ -47,6 +109,12 @@ export const PDF_OCR_SCALE = Math.min(
   Math.max(1, parseFloat(process.env.NOTE_OCR_PDF_SCALE || '2') || 2)
 );
 
+// --- Storage paths and the ownership predicate -------------------------------
+// The first path segment is the user id, and that is what makes a note object
+// ownable. Storage handlers run on the service-role client, which bypasses RLS,
+// so `assertUserOwnedNoteStoragePath` is the only thing standing between a
+// caller and another student's object.
+
 export function sanitizeNoteFileName(name: string): string {
   const base = String(name || 'file').replace(/^.*[\\/]/, '');
   const cleaned = base
@@ -85,6 +153,13 @@ export function assertUserOwnedNoteStoragePath(storagePath: string, userId: stri
     throw new Error('Invalid storage path.');
   }
 }
+
+// --- PDF text extraction -----------------------------------------------------
+// Two independent reads of the same document. `extractPdfTextDetailsFromBuffer`
+// (pdf-parse) returns the whole document as one string and feeds Smart Notes
+// and quiz generation; `extractPdfPageTextsFromBuffer` (pdfjs) reads the same
+// text layer page by page for the page model. Neither throws — an unreadable
+// PDF degrades to an honest `needs_ocr` or `empty` status.
 
 export type PdfTextExtractionResult = {
   text: string;
@@ -239,6 +314,12 @@ export async function extractPdfPageTextsFromBuffer(
   }
 }
 
+// --- Presentation text extraction --------------------------------------------
+// OCR here is opt-in and time-boxed with an AbortSignal. Every failure —
+// timeout, a missing Tesseract, a malformed deck — falls back to the shape
+// text from a non-OCR parse, so the open path never depends on OCR being
+// available.
+
 async function astToPlainText(ast: {
   toText?: () => string;
   to?: (format: string) => Promise<{ value: string | Uint8Array }>;
@@ -371,6 +452,11 @@ export async function extractPresentationTextDetailsFromBuffer(
   }
 }
 
+// --- Study text and extraction status ----------------------------------------
+// Turn raw extracted text into what the note stores, plus a status the UI can
+// be honest with. A placeholder string is never reported as `ok`, so "text
+// extraction unavailable" is never shown to the student as content.
+
 export function buildPdfStudyText(
   fileName: string,
   extraction: PdfTextExtractionResult
@@ -439,6 +525,14 @@ export function presentationContentType(fileName: string): string {
     ? 'application/vnd.ms-powerpoint'
     : 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
 }
+
+// --- Slide rendering via Gotenberg -------------------------------------------
+// A PPTX has no page model until LibreOffice renders it, so the slide preview
+// is a PDF produced by Gotenberg. Production MUST set GOTENBERG_URL: the public
+// Render instance is a shared host and private uploads are never sent to it,
+// which is what `allowPublicGotenbergFallback` enforces. Cold Render instances
+// are woken first (`warmGotenbergService`), each candidate is retried, and a
+// local `libreoffice-convert` is the last resort.
 
 const GOTENBERG_PUBLIC_FALLBACK = 'https://lantern-study-gotenberg.onrender.com';
 /** Background jobs are not limited by Render HTTP proxy (~100s). */
@@ -695,6 +789,13 @@ export async function convertPresentationToPdf(
   };
 }
 
+// --- Upload gates ------------------------------------------------------------
+// Size first, then content. Every one of these runs on the raw buffer BEFORE
+// anything is written to `note-files`, and each checks what the bytes are
+// rather than what the client called them: `%PDF-` for a PDF, the ZIP local
+// and end-of-central-directory signatures for a PPTX (which also catches a
+// truncated upload), and the magic-byte table for an image.
+
 export function assertFileSize(buffer: Buffer, maxBytes: number, label: string): void {
   if (buffer.length > maxBytes) {
     throw new Error(`${label} exceeds maximum size of ${Math.round(maxBytes / (1024 * 1024))}MB`);
@@ -739,6 +840,14 @@ export function imageContentTypeFromFileName(fileName: string): string {
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp']);
 
+/**
+ * Gate a note image: allowed type, size cap, real bytes.
+ *
+ * The allowlist is JPEG, PNG, GIF and WebP — SVG is absent deliberately, since
+ * an SVG served from a same-origin bucket is stored XSS. The declared type is
+ * checked against the allowlist and then cross-checked against the detected
+ * format by `assertImageMagicBytes`, so a PNG-named SVG fails on both counts.
+ */
 export function assertNoteImageUpload(buffer: Buffer, contentType: string): void {
   const normalized = contentType.toLowerCase();
   if (!ALLOWED_IMAGE_TYPES.has(normalized)) {

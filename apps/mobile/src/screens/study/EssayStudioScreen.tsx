@@ -1,3 +1,23 @@
+/**
+ * The `EssayStudio` route in the Study stack: paste or load a draft, optionally
+ * add a prompt and a rubric, and get a practice grade with per-criterion scores.
+ * Each grading run is appended as an attempt so earlier ones stay readable.
+ *
+ * Main exports: `EssayStudioScreen` (also the default).
+ * Touches: notesStore (materials, `createNote`/`saveNote`/`loadNote`),
+ * toastStore, services/ai `aiGradeEssay`, and `ImportAndStudyModal` for photo
+ * import. Native: expo-document-picker and expo-file-system/legacy for the
+ * "Upload a text file" path. Session shape, parsing and copy come from
+ * @lantern/shared.
+ *
+ * Gotchas: the session IS the note — it is serialised into the note body by
+ * `composeEssayNoteBody` and read back by `parseEssayNoteBody`, so a body edit
+ * elsewhere can invalidate it. Saving is debounced 600ms through `saveTimer` and
+ * reads `essayNoteIdRef`, not the state value, because `updateSession` runs
+ * inside a setState recipe. The note is only created on the first successful
+ * grade, so typing before grading persists nothing. If the AI grader is missing,
+ * `essayFromMaterial` silently produces a local score instead.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';

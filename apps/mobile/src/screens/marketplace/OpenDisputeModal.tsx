@@ -1,3 +1,18 @@
+/**
+ * Bottom-sheet modal for opening a dispute on an order: a category plus free
+ * text, with the payout-hold warning stated before submission.
+ *
+ * Exports: OpenDisputeModal (named and default), the OpenDisputeModalProps
+ * type.
+ * Touches: DISPUTE_CATEGORIES, DISPUTE_CATEGORY_LABELS and DISPUTE_REASON_MAX
+ * from @lantern/shared/network. Submission is the caller's `onSubmit`; this
+ * component makes no API call of its own.
+ *
+ * Gotchas: the category labels are buyer-voiced, so `viewerIsSeller` starts a
+ * seller on "other" instead of pre-filling a claim they are not making. The
+ * reason is truncated to DISPUTE_REASON_MAX both while typing and again on
+ * submit. Close is blocked while a submission is in flight.
+ */
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useState } from 'react';

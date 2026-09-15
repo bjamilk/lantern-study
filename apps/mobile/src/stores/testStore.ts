@@ -1,6 +1,42 @@
 // ===========================================
 // Lantern Study Mobile - Test Store
 // ===========================================
+//
+// Purpose: every test/study sitting on mobile — the list of startable tests,
+// the one in-flight session (`activeTest`), pause/resume against server
+// drafts, submission and scoring, and the attempt history behind it.
+//
+// Main exports: `useTestStore` (zustand), `isMobileAnswerAnswered`, and the
+// types `Test`, `TestQuestion`, `TestAttempt`, `ActiveTest`, `TestMode`,
+// `StartTestConfig`, `TestPreset`.
+//
+// Touches:
+// - AsyncStorage: `lantern_tests`, `lantern_test_attempts`,
+//   `lantern_test_questions`, `lantern_test_timer_choices`.
+// - services/api (tests, sessions, results, per-question stats, presets on the
+//   user profile), services/testDrafts (create/patch/complete/abandon +
+//   paused-session list), services/syncService (queued result on failure),
+//   services/dashboardCache, services/gamification, services/productAnalytics.
+// - Other stores: settingsStore (study defaults), offlineStore (offline
+//   submissions), statsStore (refreshed after a submit, imported lazily).
+//
+// Gotchas:
+// - TWO start paths. `startTest` is the standalone Tests screen;
+//   `startQuestionSet` is the group/offline/retake path and is the MAIN one.
+//   Any per-session option must be threaded through BOTH, plus the offline
+//   bundle chain (TestConfigModal → GroupChatScreen → offlineStore
+//   DownloadOptions/OfflineTest → OfflineScreen start). The exam-lock toggle
+//   silently did nothing on mobile because only one path honoured it.
+// - `lockAnswered` is tri-state on the way in: `undefined` falls back to the
+//   study setting, so the `??` in both start paths is load-bearing and a bare
+//   `false` is a different statement from "not asked".
+// - The locked-question set is never persisted; it is re-derived on resume
+//   (see `resumePausedSession`). That derivation is only correct while
+//   `goToQuestion` stays the single navigation choke point.
+// - `timerDuration` on a stored config is SECONDS while `Test.timeLimit` is
+//   MINUTES; all reads go through utils/resolveAttemptTimeLimitMinutes.
+// - `startTime` is when the session first began, not how long the reader has
+//   worked; duration is `bankedSeconds` + the current run.
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -32,6 +68,7 @@ import {
   shuffleArray,
   nearestPreviousUnlockedIndex,
 } from '@lantern/shared/utils';
+import { resultIdempotencyKey } from '@lantern/shared/offlineQueue';
 import { useSettingsStore } from './settingsStore';
 import {
   hasStoredTimerChoice,
@@ -82,6 +119,14 @@ function buildQuestionStatsFromAttempts(
   return stats;
 }
 
+/**
+ * Build the SUBMITTED session payload (questions + answers + score + config).
+ *
+ * Unattempted questions are omitted from `userAnswers` entirely so the
+ * server-side hydrate agrees with web that a skip is not a wrong answer.
+ * Mode, pass mark and timer are restated in `config` because History and the
+ * results screen read them from there.
+ */
 function buildSessionPayload(
   activeTest: ActiveTest,
   attempt: Pick<TestAttempt, 'startedAt' | 'completedAt'>,
@@ -149,6 +194,14 @@ function buildSessionPayload(
   };
 }
 
+/**
+ * Build the IN-PROGRESS draft payload — what create/autosave/pause send.
+ *
+ * Unlike {@link buildSessionPayload} this keeps every stored answer, including
+ * ones that would not count as attempted, because a draft is a snapshot of
+ * work rather than a score. The only lock fact that travels is the boolean
+ * `config.lockAnsweredQuestions`; the locked set itself is derived on resume.
+ */
 function buildDraftPayloadFromActive(activeTest: ActiveTest) {
   const canonicalQuestions = activeTest.questions.map((q, index) =>
     normalizeTestQuestionForSession(q as unknown as Record<string, unknown>, index),
@@ -208,6 +261,13 @@ function buildDraftPayloadFromActive(activeTest: ActiveTest) {
   };
 }
 
+/**
+ * Ensure the session has a server draft id, creating one if needed.
+ *
+ * Never throws: a failed create falls back to a `local-` id, which every
+ * caller treats as "not on the server" and so skips patch/complete/abandon.
+ * Losing the draft must not stop the sitting.
+ */
 async function ensureMobileDraft(activeTest: ActiveTest): Promise<ActiveTest> {
   if (activeTest.draftId && !activeTest.draftId.startsWith('local-')) {
     return activeTest;
@@ -806,6 +866,9 @@ const mockAttempts: TestAttempt[] = [
   },
 ];
 
+// Per-type projection of a question's correct answer into the display shape
+// the results/review screens expect (string, array, or left→right map). Used
+// when building attempt answers; it does not grade anything.
 const getCorrectAnswerForQuestion = (question: TestQuestion): string | string[] | Record<string, string> | undefined => {
   switch (question.type) {
     case 'multiple_choice_single':
@@ -890,6 +953,12 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
+  // Load the startable tests: cache first, then the API mapped over it.
+  //
+  // Ordering matters. `mergeAvailableTests` keeps a test this device just
+  // filed but the server list has not caught up with, and `applyTimerChoices`
+  // is applied LAST so a fetch cannot undo the timer the reader picked in the
+  // config sheet. A failed fetch leaves the cached list alone.
   fetchTests: async (userId: string) => {
     set({ isLoading: true, error: null });
     
@@ -1087,6 +1156,13 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
+  // Rebuild attempt history from the (lean) results list.
+  //
+  // Mode, tally and pass mark all come from utils/testAttemptMapping rather
+  // than being read off the row — a practice sitting writes no test_results
+  // row, so its score has to be recovered. The merge at the end must not let a
+  // lean server row (no `userAnswers`, hence `answers: []`) overwrite the
+  // richer copy this device built when the test was finished.
   fetchAttempts: async (userId: string) => {
     set({ isLoading: true, error: null });
     
@@ -1224,6 +1300,16 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
+  // START PATH 1 of 2 — a saved test launched from the Tests screen.
+  //
+  // Resolves questions (local cache → API row → the deck's flashcards), then
+  // applies the config sheet's filters, then shuffle. `lockAnswered` uses the
+  // tri-state `??`: only an explicit choice overrides the study setting, and
+  // study mode is never locked.
+  //
+  // See `startQuestionSet` below — it is the OTHER start path and the busier
+  // one. A per-session option added here and not there silently does nothing
+  // for group tests, offline bundles and retakes.
   startTest: async (testId: string, mode: TestMode = 'test', config?: StartTestConfig) => {
     const test = get().tests.find(t => t.id === testId);
     if (!test) throw new Error('Test not found');
@@ -1335,6 +1421,17 @@ export const useTestStore = create<TestState>((set, get) => ({
     await get().saveToStorage();
   },
 
+  // START PATH 2 of 2 — questions handed in directly: group question banks,
+  // offline bundles, retakes. This is the path most sittings take.
+  //
+  // It receives a ready question list (no filtering or shuffling here) and
+  // synthesises a `custom-` test row for it. Unlike `startTest` the draft is
+  // created in the BACKGROUND so the first question renders immediately; the
+  // callback may only bind `draftId`, never write back answers or the index,
+  // or work done during create latency is lost.
+  //
+  // Same tri-state rule as `startTest`: `options.lockAnswered ?? setting`,
+  // test mode only.
   startQuestionSet: async (
     testName: string,
     questions: TestQuestion[],
@@ -1424,6 +1521,12 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
+  // Record an answer for ONE question and autosave the draft.
+  //
+  // It only ever touches the current question's entry — it does not lock, and
+  // it does not move the index. That is what makes the resume derivation in
+  // `resumePausedSession` (answered ∧ not current) exact. The draft patch is
+  // fire-and-forget: a failed autosave must not block typing.
   answerQuestion: (questionId: string, answer: string | string[] | Record<string, string>, timeSpentSeconds?: number) => {
     const activeTest = get().activeTest;
     if (!activeTest) return;
@@ -1476,6 +1579,10 @@ export const useTestStore = create<TestState>((set, get) => ({
   },
 
   // For study mode - check if the current answer is correct
+  // Practice-mode reveal only; it scores nothing and stores nothing. The
+  // grading rules below are a second copy of `checkAnswer` inside
+  // `submitTest` — a rule changed in one has to be changed in the other or
+  // the reveal and the final score disagree.
   checkCurrentAnswer: () => {
     const activeTest = get().activeTest;
     if (!activeTest) return null;
@@ -1542,6 +1649,12 @@ export const useTestStore = create<TestState>((set, get) => ({
     set({ activeTest: null });
   },
 
+  // Pause: flush the current answers to the draft as `paused`, then clear
+  // `activeTest` and file a summary row for the Home/paused list.
+  //
+  // No locked set is written. The server PATCH whitelists config anyway, so
+  // the lock survives as the boolean in `config.lockAnsweredQuestions` and the
+  // set is rebuilt on resume.
   pauseActiveTest: async () => {
     const active = get().activeTest;
     if (!active) return;
@@ -1596,6 +1709,17 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
+  // Resume a paused draft into a live `activeTest`.
+  //
+  // Three things are RECONSTRUCTED here rather than restored, because the
+  // draft does not carry them:
+  // 1. answers — the draft stores canonical answer records, so matching and
+  //    diagram answers come back as ids and are mapped to the text/map shape
+  //    the board and the grader use;
+  // 2. `lockedQuestionIds` — derived as answered ∧ not-current (see below);
+  // 3. `bankedSeconds` — summed from the per-question timings.
+  // The timer is taken from the draft's own config, never inferred from the
+  // remaining seconds, so an untimed session cannot come back with a clock.
   resumePausedSession: async (sessionId: string) => {
     const draft = await fetchMobileTestDraft(sessionId);
     const rawQuestions: any[] = Array.isArray(draft.questions) ? draft.questions : [];
@@ -1676,6 +1800,10 @@ export const useTestStore = create<TestState>((set, get) => ({
           )
         : [],
     );
+    // Known margin: the current question is excluded, and a force-quit (no
+    // pause) resumes from the index the last ANSWER autosaved, not the one the
+    // reader had navigated to — so the most recent answer can come back
+    // editable. Pausing writes the real index and closes the gap.
     // Per-question timings were dropped on resume, which lost the
     // time-per-question chart AND left the duration model with nothing to
     // bank. They are already in the draft's answer records; read them back.
@@ -1769,6 +1897,10 @@ export const useTestStore = create<TestState>((set, get) => ({
     });
   },
 
+  // The ONE navigation choke point — next/previous/the palette all route
+  // through it, and nothing else may write `currentQuestionIndex`. That is
+  // what keeps the exam lock enforceable and keeps the resume derivation
+  // (answered ∧ not current) equivalent to the live locked set.
   goToQuestion: (index: number) => {
     const activeTest = get().activeTest;
     if (!activeTest) return;
@@ -1830,6 +1962,14 @@ export const useTestStore = create<TestState>((set, get) => ({
     }
   },
 
+  // Grade, file and upload the sitting, in that order.
+  //
+  // Local first: the attempt is pushed onto `attempts` and saved to
+  // AsyncStorage BEFORE any network call, so a submit survives a dead
+  // connection. Then one of three destinations — the offline queue, the
+  // existing server draft (completed in place), or a fresh session row.
+  // Practice sittings write no test_results row, so their tally rides in
+  // `config` and no `passed` is recorded at all.
   submitTest: async (
     userId: string,
     options?: {
@@ -1967,6 +2107,10 @@ export const useTestStore = create<TestState>((set, get) => ({
 
     const correctCount = answers.filter(a => a.isCorrect).length;
 
+    // Per-question mastery counters, online submissions only. Local state is
+    // updated first and each upsert is fire-and-forget, so a failed stat write
+    // cannot fail the submit. An offline sitting skips this block altogether,
+    // so its counters are never incremented here.
     if (!options?.isOffline && userId) {
       const updatedStats = { ...get().userQuestionStats };
       const now = new Date().toISOString();
@@ -2000,6 +2144,20 @@ export const useTestStore = create<TestState>((set, get) => ({
       percentage,
       correctCount,
       options
+    );
+
+    // One key for this SITTING (F2). Derived from the test id plus the session
+    // start time, NOT from `attempt.id` — that is minted `attempt-${Date.now()}`
+    // on every call, so a second press of Submit after a failed one would send
+    // a different key and create a second session, which is exactly the bug.
+    // Every path below sends this identical value: the direct submit, its
+    // queued retry, and the offline queue.
+    const attemptIdempotencyKey = resultIdempotencyKey(
+      {
+        id: `${activeTest.test.id}:${activeTest.startTime}`,
+        userId: userId || null,
+      },
+      { userId: userId || null }
     );
 
     if (options?.isOffline) {
@@ -2052,13 +2210,25 @@ export const useTestStore = create<TestState>((set, get) => ({
             },
           });
         } else {
-          const savedSession = await api.saveTestResult(userId, sessionPayload);
-          sessionId = savedSession.id;
-          await api.submitTestResult(sessionId, {
-            score: percentage,
-            correctAnswersCount: correctCount,
-            totalQuestions: activeTest.questions.length,
+          // FIXED (F2): this path is keyed. The key is minted once per attempt
+          // (below, from the attempt's own id, so the queued retry in the catch
+          // sends the SAME value) — a submit that reached the server but failed
+          // on the way back now replays the first session instead of writing a
+          // second result for one sitting.
+          const savedSession = await api.saveTestResult(userId, {
+            ...sessionPayload,
+            idempotencyKey: attemptIdempotencyKey,
           });
+          sessionId = savedSession.id;
+          await api.submitTestResult(
+            sessionId,
+            {
+              score: percentage,
+              correctAnswersCount: correctCount,
+              totalQuestions: activeTest.questions.length,
+            },
+            { idempotencyKey: attemptIdempotencyKey }
+          );
         }
 
         set(state => ({
@@ -2083,12 +2253,16 @@ export const useTestStore = create<TestState>((set, get) => ({
           console.warn('Failed to refresh dashboard stats after test submit:', err);
         }
       } catch (error) {
+        // The attempt is already in local state and on disk, so a failed
+        // upload is queued for replay rather than surfaced as a lost test.
         console.warn('Failed to save test result to API:', error);
+        // FIXED (F2): the queued replay carries the SAME key this attempt just
+        // used, so the retry is a replay of the first write, not a second one.
         await syncService.queueOperation(
           'test_result',
           attempt.id,
           'create',
-          sessionPayload,
+          { ...sessionPayload, idempotencyKey: attemptIdempotencyKey },
           userId
         );
       }

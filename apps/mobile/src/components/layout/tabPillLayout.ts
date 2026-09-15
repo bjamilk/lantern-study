@@ -33,6 +33,34 @@
  * `bottomBarComposition.ts` and `screenInsets.ts` next door: mobile jest runs
  * the `node` environment and cannot transform a native component, so every
  * decision the bar makes has to live in a `.ts` to be exercised at all.
+ *
+ * MAIN EXPORTS
+ * - `planTabPillRow` — the whole row at once: which item wears the pill, which
+ *   are pinned, each one's flex share and the pill's ceiling.
+ * - `tabPillActiveIndex` — id to row index, with one agreed "nothing selected".
+ * - `tabPillMaxWidth` — the pill's ceiling on a bar of a measured width.
+ * - `tabBadgeAnchor` / `tabBadgeGlyphOverlap` — where the unread badge sits on
+ *   a glyph, and the proof of how little of it the badge can cover.
+ * - `tabPillTransitionMs` and the measured constants (gap, paddings, edge
+ *   padding, font-scale cap, transition ms, badge size/overlap).
+ *
+ * TOUCHES: nothing but `TAB_PILL` from theme/surfaceMetrics (pure data). No
+ * React, no stores, no native modules, no I/O.
+ *
+ * GOTCHAS
+ * - Every number here is dp measured at 420 dpi; a px figure quoted in the
+ *   notes is the raw capture, not a value to paste into code.
+ * - `barWidth` is `null` until the first layout pass. Null means "no ceiling
+ *   yet", NOT a ceiling of zero — an unclamped pill for one frame beats a pill
+ *   clamped to nothing.
+ * - The ceiling has to be applied as a real `maxWidth` by the caller: on
+ *   Android an over-wide child does not clip, it draws over its neighbour.
+ * - The badge is anchored by its TOP-LEFT corner. Do not "simplify" it back to
+ *   a right-anchored offset — a right-anchored badge grows leftwards as the
+ *   count widens and swallows the glyph, which is the defect this replaced.
+ * - Dropping the idle labels is a drawing decision only: `accessibleName` is
+ *   always populated and the caller must keep putting it on
+ *   `accessibilityLabel`.
  */
 import { TAB_PILL } from '../../theme/surfaceMetrics';
 

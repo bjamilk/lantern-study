@@ -27,6 +27,18 @@
  * 4. Done marks are local. They are a reading position, not shared work: they
  *    live in AsyncStorage under a key of note + attachment, so they survive
  *    leaving the screen without pretending to be a synced artifact.
+ *
+ * Route: `Walkthrough`, opened with a `noteId` + `attachmentId` (and optionally
+ * the page to land on).
+ * Main exports: `WalkthroughScreen`.
+ * Touches: companionStore (`openWithMessage`, `setActiveNoteContext`) for Ask,
+ * services/notes `fetchNote`/`fetchNoteAttachmentPages`/
+ * `generateDailyQuizFromContent`, and AsyncStorage for the done marks. The page
+ * viewer, sheets and pure rules live in components/walkthrough. No other native
+ * modules.
+ *
+ * Gotcha: the done-marks key is note + attachment only, with no user id in it,
+ * so two accounts on one device share a reading position.
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';

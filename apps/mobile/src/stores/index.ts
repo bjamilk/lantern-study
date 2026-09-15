@@ -1,5 +1,14 @@
 /**
  * Store exports
+ *
+ * Barrel for the zustand stores and the value/type helpers screens import
+ * alongside them. It is deliberately partial: stores such as jobsStore,
+ * boardStore, notesStore, communityStore and the small UI stores
+ * (toast/confirm/featureTip) are imported from their own modules.
+ *
+ * Gotchas: a few names here are re-exported from elsewhere, not from a store —
+ * the dashboard-stats types come from ../types/dashboardStats and the game
+ * question-type/answer-record aliases from @lantern/shared/types.
  */
 export { useAuthStore } from './authStore';
 export { useFlashcardStore } from './flashcardStore';

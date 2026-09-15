@@ -2,6 +2,54 @@
 // Lantern Study - Sync System
 // ===========================================
 // Local-first sync queue with conflict resolution
+//
+// PURPOSE
+//   The offline queue. Work a student does with no connection is written to
+//   local storage as a SyncOperation, then replayed against the API when the
+//   connection returns. Two classes: `SyncQueue` (durable list + replay) and
+//   `SyncManager` (the timer and online/offline supervisor around it).
+//
+//   The product promise this file keeps is "your work is never lost". Every
+//   rule below exists because some version of it once was.
+//
+// CONSUMERS
+//   mobile — the main consumer; the queue is the reason a review on the bus
+//            still counts.
+//   web    — uses it for the same offline paths, backed by its own storage
+//            adapter.
+//   api    — no.
+//
+// HOW IT WORKS
+//   enqueue -> persisted under a PER-USER key -> processQueue replays each
+//   operation through a handler registered by entity type -> success drops it,
+//   failure either retries (up to maxRetries) or moves it to failedOperations.
+//
+// THE FOUR RULES THAT MUST NOT BE SOFTENED
+//   1. PER-USER STORAGE. Operations live under `lantern_sync_queue:<userId>`
+//      (see ./syncQueueScope). One shared key meant the next student to sign
+//      in on a shared handset replayed the previous student's work under their
+//      own session, and a sign-out wiped everyone's queue.
+//   2. EVENTS ARE NOT DEDUPED. Flashcard reviews and test results are each
+//      individually meaningful. Last-write-wins dedupe by entity id threw away
+//      real work — two offline reviews of the same card synced as one.
+//   3. TRANSIENT ERRORS MUST RETHROW. A handler that returns `false` for a
+//      dead connection burns one of the operation's three retries. Handlers
+//      must call `isTransientSyncError` and RETHROW so the operation is
+//      retried later rather than exhausted while offline.
+//   4. NOTHING IS DROPPED SILENTLY. An operation that cannot be replayed ends
+//      up in failedOperations where the UI can surface it — it is never
+//      discarded to keep the queue tidy.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: `npm run build` in packages/shared
+//     before typechecking or running web/mobile.
+//   - New subpaths need a package.json `exports` entry and an api tsconfig
+//     `paths` entry; mobile jest maps `@lantern/shared/*` separately, so a
+//     subpath only a test imports fails CI-only with TS2307.
+//   - The web turbo build enforces `noUncheckedIndexedAccess`.
+//   - `setActiveUser` is re-entrant-guarded (`switching`). Sign-in fan-out can
+//     call it more than once; the guard is why the queue does not get merged
+//     into the wrong key mid-switch.
 
 import { IStorageAdapter } from '../storage';
 import {
@@ -19,6 +67,11 @@ export * from './syncQueueScope';
 // ============================================
 // TYPES
 // ============================================
+
+// A SyncOperation is the unit of durable offline work: what entity, which id,
+// create/update/delete, the payload, and how many replay attempts remain.
+// `userId` is load-bearing — it decides which storage key the operation lives
+// under and which account it may ever be replayed against.
 
 export type SyncOperationType = 'create' | 'update' | 'delete';
 
@@ -91,6 +144,11 @@ export function isTransientSyncError(error: unknown): boolean {
   const msg = String((error as { message?: string })?.message ?? error ?? '');
   return /network|failed to fetch|fetch failed|timeout|timed out|abort|offline|econn|socket/i.test(msg);
 }
+
+// The durable queue itself. Owns: the per-user storage key, enqueue/dedupe
+// policy, the replay loop, retry accounting, and the legacy-key migration on
+// first load. Handlers are registered per entity type by the app at boot —
+// SyncQueue knows nothing about the API.
 
 export class SyncQueue {
   private storage: IStorageAdapter;
@@ -545,6 +603,13 @@ export class SyncQueue {
 // CONFLICT RESOLUTION
 // ============================================
 
+// ---------------------------------------------------------------------------
+// Conflict resolution
+// ---------------------------------------------------------------------------
+// Applied when a replayed write collides with a newer server copy. Strategies
+// are chosen per queue, not per operation. `latest-wins` is the usual pick;
+// `merge` exists for documents where both sides may hold real edits.
+
 export function resolveConflict(
   localData: Record<string, any>,
   remoteData: Record<string, any>,
@@ -588,6 +653,14 @@ export function resolveConflict(
 // ============================================
 // SYNC MANAGER
 // ============================================
+
+// ---------------------------------------------------------------------------
+// SyncManager: when the queue actually runs
+// ---------------------------------------------------------------------------
+// Wraps a SyncQueue with an auto-sync interval and an online/offline flag the
+// app feeds from its connectivity listener. Going online triggers a drain;
+// going offline stops the timer rather than letting operations burn retries
+// against a connection that is not there (see rule 3 above).
 
 export interface SyncManagerConfig {
   autoSyncInterval: number; // ms between auto-syncs

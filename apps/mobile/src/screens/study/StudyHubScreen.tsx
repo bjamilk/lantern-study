@@ -1,3 +1,25 @@
+/**
+ * Study tab root: the list of study sets, plus the toolbar (search, sort,
+ * create), folder chips, and the per-row kebab. Exports `StudyHubScreen`.
+ *
+ * Touches: studySetStore (sets, folders, folder filter, plans, lastOpenedId),
+ * notesStore, flashcardStore, testStore, authStore, toastStore;
+ * services/academic (getMyActiveCourses). Row presentation lives in
+ * components/study/StudySetCard.tsx; ordering and folder filtering are the
+ * shared comparators so the phone and the browser agree on list order.
+ *
+ * Gotchas:
+ * - The hub must NOT navigate on focus. It used to resolve the last-opened set
+ *   and push straight into its room, which made the list unreachable.
+ * - ActionSheet fires `onClose` BEFORE `onPress`, so every row here captures the
+ *   set it acts on into a local (`const target = menuSet`) before clearing the
+ *   selection state. Reading `menuSet`/`moveSet` inside the async body instead
+ *   would see null.
+ * - Progress and resume pills only come from a LOADED plan; deriving topics
+ *   from note titles is what made a topic ticked on the web come back unticked.
+ * - Counts are derived here, not in the card: a personal test belongs to a set
+ *   only by way of the note it was generated from (tests carry no set id).
+ */
 import React, { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -219,6 +241,10 @@ export function StudyHubScreen({ navigation }: Props) {
   const sortLabel =
     STUDY_SET_SORTS.find((option) => option.id === sort)?.label ?? 'Last accessed';
 
+  // The row kebab's sheet, rebuilt whenever a row opens it. Each handler closes
+  // the sheet first and therefore must capture its set BEFORE clearing
+  // `menuSetId` — ActionSheet runs `onClose` ahead of `onPress`, so anything
+  // read from state after the clear is already null. Same rule in `moveItems`.
   const menuSet = menuSetId ? sets.find((row) => row.id === menuSetId) ?? null : null;
   const menuItems: ActionSheetItem[] = menuSet
     ? [

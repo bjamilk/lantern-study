@@ -1,3 +1,14 @@
+/**
+ * Horizontal row of the nine Shop department discs on Shop home.
+ *
+ * Exports: ShopDepartmentRow.
+ * Touches: shopDepartmentDiscs and the MarketplaceDepartment type from
+ * @lantern/shared/marketplace; FeatureDisc and AppIcon.
+ *
+ * Gotchas: DEPARTMENT_ICONS must cover every MarketplaceDepartment — it is a
+ * total Record, so a new department fails to type-check until an icon is added
+ * here. Labels and order come from shared, not from this file.
+ */
 import React from 'react';
 import { Pressable, ScrollView, Text } from 'react-native';
 import { shopDepartmentDiscs, type MarketplaceDepartment } from '@lantern/shared/marketplace';

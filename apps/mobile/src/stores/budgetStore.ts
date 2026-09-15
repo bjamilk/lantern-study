@@ -3,6 +3,20 @@
  * Manages budget tracking, transactions, income/expenses, savings goals,
  * expense splits, wallet balance, and category budgets.
  * Uses local-first approach: data is stored in AsyncStorage and synced with Supabase.
+ *
+ * Main exports: `useBudgetStore`, `TransactionType`, `EXPENSE_CATEGORIES`,
+ * `INCOME_CATEGORIES`, and the `Transaction`/`Budget` types.
+ *
+ * Touches: AsyncStorage directly (not via zustand persist), services/api for
+ * the Supabase-backed reads and writes, expo-crypto for local row ids, and
+ * toastStore for user-facing failures.
+ *
+ * Gotchas: the storage keys are inconsistently scoped — savings goals,
+ * expense splits and the wallet balance are per user (`savingsGoals_<userId>`
+ * and friends), but `budgetTransactions` and `monthlyBudget` are NOT, so those
+ * two caches carry across an account switch on one device. `DEMO_MODE` is a
+ * module constant (currently false) that swaps the whole store for seeded
+ * demo-user rows and suppresses the extras sync.
  */
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {

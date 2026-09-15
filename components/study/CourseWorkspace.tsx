@@ -1,3 +1,39 @@
+/**
+ * The study ROOM: one screen that hosts every studio for a study set (or, in the
+ * older shape, a course) — notes, cards, quiz, test, lecture, lesson, recap,
+ * essay, play, plan/calendar, walkthrough — plus the docked AI companion.
+ *
+ * Exports:
+ *  - `CourseWorkspace` (named + default) — the room.
+ *  - module-local `LecturesGroup`, `MaterialGroup`, `applyPlanPayload`,
+ *    `fetchWorkspaceTests`, `lectureAddedLabel`.
+ * Touches:
+ *  - stores: `studySetStore` (sets, folders, resolveSet, updateSet/createSet,
+ *    touchOpened, openPicker), `notesStore` (notes + `selectedNote`, createNote),
+ *    `flashcardStore`, `testStore`, `academicStore`, `companionStore` (attach note,
+ *    open with message, `resetForScope`), `studyResumeStore.recordActivity`,
+ *    `lectureRecordingStore`, `toastStore`, `authStore`.
+ *  - services: `notes` (fetch/create/generateNoteQuiz), `ai`
+ *    (`aiGenerateFromTopic`, `aiGenerateQuestions`), `academic`
+ *    (`fetchStudySetPlan`, `replaceStudySetPlan`, `updateStudySetTopicStatus`,
+ *    `fetchCourseTopics`), plus a direct `GET /api/v1/tests` (`fetchWorkspaceTests`).
+ *  - `runAiJob` for every credit-spending generation.
+ * Gotchas:
+ *  - TWO navigation models. With a `studySetId` the room is ROUTED: `go()` builds a
+ *    path and calls `navigateTo`, and `routePath` drives `activity` back. Without one
+ *    (course room) `go()` just does `setActivity`. Code that calls `setActivity`
+ *    directly inside a set room changes the pane WITHOUT changing the URL.
+ *  - The note-handler layer acts on `notesStore.selectedNote`, so any "do X to note
+ *    N" must open N first and wait for it to land — that is what `pendingTurnInto`
+ *    exists for. Running in the same tick generates from the PREVIOUS note.
+ *  - `notes` here is the union of the store's notes and this room's own fetch,
+ *    de-duplicated by id, then filtered to the set/course.
+ *  - The companion is scoped by `studySetId ?? courseId`; scoping by course alone
+ *    let a note attached in one set follow the student into the next.
+ *  - Colours come from the `dark` class and the feature token maps
+ *    (`FEATURE_TINT_BG` / `FEATURE_INK_TEXT`); `theme` is passed down only because
+ *    the studios and the companion take it as a prop.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   WORKSPACE_ACTIVITIES,
@@ -183,6 +219,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const flashcards = useFlashcardStore((s) => s.flashcards);
   const testResults = useTestStore((s) => s.testResults);
 
+  // --- Room state. Three groups: what is showing (`activity`, `createKind`,
+  // the modal flags), what has been fetched for THIS room (`fetchedNotes`,
+  // `fetchedTests`, `topics`, the plan), and in-flight work (`turning`,
+  // `writingQuiz`, `planGenerating`, `pendingTurnInto`).
   const [fetchedNotes, setFetchedNotes] = useState<StudyNote[]>([]);
   const [fetchedTests, setFetchedTests] = useState<WorkspaceTestRow[]>([]);
   const [activity, setActivity] = useState<RoomActivity>(
@@ -222,6 +262,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   const lectureNoteId = useLectureRecordingStore((s) => s.noteId);
   const lectureStatus = useLectureRecordingStore((s) => s.status);
 
+  // Room-scoped refetches. Both are called ad hoc after anything that files new
+  // material, because the stores are library-wide and do not know about this
+  // room's filter.
   const reloadNotes = useCallback(() => {
     return notesApi
       .fetchNotes(
@@ -245,11 +288,15 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     void loadFolders().catch(() => undefined);
   }, [loadFolders, loadSets]);
 
+  // Opening a set is what makes it "last opened" for Home and the switcher.
   useEffect(() => {
     if (!studySetId) return;
     touchOpened(studySetId);
   }, [studySetId, touchOpened]);
 
+  // Load this set's stored plan (units + topics). Driven by `studySetId`;
+  // `cancelled` stops a slow response from a previous set overwriting the new
+  // one's plan. A failure empties the plan rather than keeping the old set's.
   useEffect(() => {
     if (!studySetId) {
       setPlanTopics([]);
@@ -273,6 +320,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     };
   }, [studySetId]);
 
+  // Companion layout: docked rail at lg+, overlay drawer below. Driven by the
+  // media query itself rather than by a CSS breakpoint, because the two render
+  // DIFFERENT components (`variant="rail"` vs `"drawer"`), not one styled two
+  // ways. Mount-only; the listener is removed on unmount.
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
     const sync = () => setCompanionRail(mq.matches);
@@ -281,6 +332,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     return () => mq.removeEventListener('change', sync);
   }, []);
 
+  // URL → pane. This is the ROUTED half of the two navigation models: the path's
+  // activity becomes `activity`, and `?createNew` opens that activity's creation
+  // wizard. Leaving a creatable activity clears `createKind`, so backing out of a
+  // wizard does not leave it armed for the next visit.
+  // Driven by `routePath.activity` / `routePath.createNew` only.
   useEffect(() => {
     if (!routePath) return;
     setActivity(workspaceActivityFromPath(routePath.activity));
@@ -311,6 +367,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
   }, [routePath?.activity, routePath?.createNew]);
 
+  // Entering a room: record it as recent, shut the companion, and re-scope it.
+  // Driven by `courseId` + `studySetId` — a change of either is a change of room.
   useEffect(() => {
     if (courseId) touchWorkspaceRecent(courseId);
     closeCompanion();
@@ -321,6 +379,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     void loadMyCourses();
   }, [courseId, studySetId, loadMyCourses, closeCompanion, resetCompanionForScope]);
 
+  // The room's own data load: notes, tests, and (course rooms only) the course
+  // outline. Re-runs when the room changes, since `reloadNotes`/`reloadTests` are
+  // memoised on exactly `courseId` + `studySetId`.
   useEffect(() => {
     let cancelled = false;
     void reloadNotes().catch(() => {
@@ -354,6 +415,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     ? `/study/sets/${encodeURIComponent(studySetId)}`
     : `/study/courses/${encodeURIComponent(courseId)}`;
 
+  // THE navigation primitive for this room. In a set room it builds the path,
+  // stamps a resume row (so Home can offer "continue"), and navigates — the URL
+  // is the state. In a course room there is no route, so it falls back to local
+  // `activity`. Prefer `go()` over `setActivity()` in a set room: bare
+  // `setActivity` moves the pane while the URL keeps pointing at the old one.
   const go = useCallback(
     (next: RoomActivity | StudySetPathActivity, extras: Partial<StudySetPath> = {}) => {
       const pathActivity: StudySetPathActivity =
@@ -404,6 +470,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     return studySetId ? note.studySetId === studySetId : note.courseId === courseId;
   };
 
+  // --- The room's material, derived once and sliced by kind below. The store's
+  // notes and this room's fetch are merged by id (the fetch wins, being later in
+  // the spread) and then filtered to the set or course. Every `notes`-shaped list
+  // further down — lectures, lessons, recaps, essays, readingNotes — is a slice of
+  // this, so a note can never appear in two groups.
   const filedNotes = useMemo(() => {
     const byId = new Map<string, StudyNote>();
     for (const note of [...storeNotes, ...fetchedNotes]) {
@@ -590,19 +661,32 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       };
     });
   }, [planTopics, planUnits, readingNotes, studySetId, notes]);
+  // One-shot steer into the Lecture studio when a recording is running and its
+  // note belongs to this room — so returning to the room lands on the recording
+  // rather than on whatever pane was last open. The ref makes it once per room,
+  // so the student can navigate away again.
+  // FIXED (F9): the reset effect watched `courseId` ONLY. Study sets commonly
+  // have no course, so moving between them never re-armed the steer and, after
+  // one steer anywhere, no other set would jump to its running recording. The
+  // room's identity is the set OR the course, whichever it has, so the reset
+  // now watches both.
   const steeredToLecture = useRef(false);
   useEffect(() => {
     steeredToLecture.current = false;
-  }, [courseId]);
+  }, [courseId, studySetId]);
   useEffect(() => {
     if (steeredToLecture.current) return;
     if (lectureStatus === 'idle' || !lectureNoteId) return;
     if (!notes.some((row) => row.id === lectureNoteId)) return;
     setActivity('lecture');
     steeredToLecture.current = true;
-  }, [courseId, lectureNoteId, lectureStatus, notes]);
+  }, [courseId, studySetId, lectureNoteId, lectureStatus, notes]);
   const noteIds = useMemo(() => new Set(notes.map((n) => n.id)), [notes]);
   const deckIds = useMemo(() => new Set(courseDecks.map((d) => d.id)), [courseDecks]);
+  // Tests in this room, from two sources merged by id: the lean `/tests` fetch
+  // and locally completed attempts in `testStore`. Filing is decided by the
+  // shared `testsFiledIn*` rules, which also count a test as "in this room" when
+  // its SOURCE note or deck is — hence the id sets above.
   const courseTests = useMemo(() => {
     const byId = new Map<string, WorkspaceTestRow>();
     for (const row of [
@@ -626,6 +710,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       : testsFiledInCourse(rows, courseId, noteIds, deckIds);
   }, [fetchedTests, testResults, courseId, studySetId, noteIds, deckIds]);
 
+  // Opening a note does two things at once: it becomes the store's
+  // `selectedNote` (which is what every studio and note handler reads) and it
+  // becomes the companion's attached note, stamped with THIS room's scope.
   const openNote = useCallback(
     async (noteId: string) => {
       await loadNote(noteId);
@@ -641,10 +728,16 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     [loadNote, setActiveNoteContext, studySetId, courseId]
   );
 
+  // A `?noteId` in the path opens that note. Driven by `routePath.noteId`.
   useEffect(() => {
     if (routePath?.noteId) void openNote(routePath.noteId);
   }, [routePath?.noteId, openNote]);
 
+  // Four sibling effects, one per note-backed studio (lecture / lesson / recap /
+  // essay). Each asks the shared `resolve*StudioNote` rule what to do on entering
+  // that studio and acts ONLY on a 'resume' decision — a 'create' decision is the
+  // studio's own job, not this component's. Driven by `activity` plus that
+  // studio's list; the `selectedNote?.id` guard stops a re-open loop.
   useEffect(() => {
     if (activity !== 'lecture') return;
     const decision = resolveLectureStudioNote({
@@ -696,6 +789,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     else useCompanionStore.getState().open();
   };
 
+  // Build this set's plan from its own reading notes, once, and persist it.
+  // Guarded three ways: no set, a plan already in state, or a run in flight. It
+  // re-checks the server first because another surface may have written a plan
+  // since this room loaded. A failure is swallowed — the room keeps using the
+  // locally derived topics, which is why every topic read below falls back to
+  // `topicsFromReadingNotes`.
   const kickPlanGeneration = useCallback(async () => {
     if (!studySetId || planTopics.length > 0 || planGenerating) return;
     setPlanGenerating(true);
@@ -736,6 +835,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
   }, [planGenerating, planTopics.length, studySetId]);
 
+  // Set-home tool tiles. A tool whose kind has NOTHING made yet jumps straight
+  // to its creation wizard; otherwise it opens the activity's library.
   const handleHomeTool = (tool: StudySetHomeTool) => {
     if (tool.id === 'import') {
       go('add');
@@ -827,6 +928,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     return created;
   };
 
+  // "Generate from a topic": file the AI-written notes first, then continue into
+  // whatever the student actually asked for. Every branch ends in either a `go()`
+  // or a `handleTurnInto`, so the topic path and the pick-a-note path converge on
+  // the same generation code (and the same credit charge).
   const handleCreateFromTopic = async (
     brief: TopicBrief,
     kind: CreateFromSourceKind,
@@ -881,6 +986,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
   };
 
+  // Quiz written from existing cards. The 50-character floor is a pre-flight
+  // check: too little text would spend a credit on a request that cannot produce
+  // usable questions.
   const handleQuizFromDecks = async (ids: string[], options?: CreateFromSourceOptions) => {
     const cards = flashcards.filter((card) => ids.includes(card.deckId));
     const text = cards
@@ -911,6 +1019,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     }
   };
 
+  // The activity chip strip's handler: navigate, then make sure the pane has a
+  // sensible note to open on. A 'later' chip only explains itself and changes
+  // nothing. The per-activity blocks below repeat the `resolve*StudioNote` rules
+  // used by the effects above, because a chip click can land on a studio the
+  // room is ALREADY standing in, where no effect would re-run.
   const handleActivity = (id: WorkspaceActivityId, status: 'ready' | 'later') => {
     if (status === 'later') {
       showToast(WORKSPACE_LATER_COPY, 'info');
@@ -1069,6 +1182,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
       showToast('Add more study content to this note first.', 'info');
       return;
     }
+    // From here on a credit is spent. Each target runs the same work twice over:
+    // directly when there is no AI-job user (tests, signed-out edge), or wrapped
+    // in `runAiJob` — which owns the progress UI, the credit cost and the
+    // "back to this room" target. `turning` is released in `finally` so a failed
+    // generation does not leave the studio's buttons disabled.
     setTurning(true);
     try {
       const title = note.title || 'Untitled note';
@@ -1180,6 +1298,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingTurnInto, selectedNote?.id]);
 
+  // Quiz questions for the adaptive quiz pane. Both guards THROW rather than
+  // toast: the caller is the quiz component, which shows the message in place.
   const handleWriteQuizQuestions = async (noteId: string) => {
     const note =
       notes.find((row) => row.id === noteId) ?? useNotesStore.getState().selectedNote;
@@ -1243,6 +1363,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     );
   };
 
+  // `selectedNote` comes from a single-note load that can omit attachments, so
+  // both `walkable` and `studioNote` fall back to this room's copy of the note
+  // for them — without it the Walkthrough door reads as "no document attached"
+  // on a note that plainly has one.
   const walkable = selectedNote?.attachments?.find(isWalkableAttachment)
     || notes.find((row) => row.id === selectedNote?.id)?.attachments?.find(isWalkableAttachment);
 
@@ -1338,6 +1462,9 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
     activity === 'notes' &&
     Boolean(studioNote && noteInRoom(studioNote) && !isCalendarNote(studioNote) && !isEssayNote(studioNote) && !isLectureNote(studioNote) && !isLessonNote(studioNote) && !isRecapNote(studioNote));
 
+  // A set id whose set is not in the store yet is not the same as a set that does
+  // not exist: while `loaded` is false and there is no error it is still opening,
+  // and only once the list has settled (or failed) is "could not open" true.
   const setMissing = Boolean(studySetId && !studySet);
   const setOpening = setMissing && !setsLoaded && !setsLoadError;
   const setUnavailable = setMissing && (Boolean(setsLoadError) || setsLoaded);
@@ -1392,6 +1519,13 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
           if (section === 'library') onOpenLibrary();
         }}
       />
+      {/* Room layout. Stacked below lg, side-by-side with the companion rail at
+          lg+. `min-h-0` + `min-w-0` repeat down every level of this nesting on
+          purpose: each is a flex child that must be allowed to shrink, or the
+          inner scrollers stop scrolling and the panes spill.
+          The header block is `shrink-0` — it clips, and a clipping element in a
+          flex column is crushed vertically as the content beside it grows unless
+          it refuses to shrink. */}
       <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
         <div className="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden px-4 md:px-6 pt-4">
         <div className="shrink-0">
@@ -1457,6 +1591,10 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
             }
           />
         )}
+        {/* Activity chips. Hidden on set home, which has its own tool tiles.
+            `flex-wrap` with intrinsically sized chips is deliberate: the chips
+            must wrap on the CONTENT column's width (sidebar + companion rail
+            leave it narrow), which viewport breakpoints cannot see. */}
         {!(studySetId && activity === 'home') ? (
         <div className="flex flex-wrap gap-1.5 pb-4">
           {WORKSPACE_ACTIVITIES.map((item) => {
@@ -1485,6 +1623,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-hidden lg:flex-row">
+        {/* Materials column. Hidden on set home and while a note is open in the
+            Notes studio, so the reading pane gets the full width. `shrink-0`
+            protects its width beside the studio; the `max-h-[min(62vh,36rem)]`
+            cap applies only while stacked — at lg+ it is released so the column
+            can fill the row. */}
         {!(studySetId && activity === 'home') && !notesRoomOpen ? (
         <aside className="w-full lg:w-72 shrink-0 flex flex-col min-h-0 lg:max-w-xs max-h-[min(62vh,36rem)] lg:max-h-none">
           <Card padding="md" className="flex-1 min-h-0 overflow-y-auto">
@@ -1655,6 +1798,12 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         </aside>
         ) : null}
 
+        {/* THE PANE. One long ternary chain, and the ORDER is the logic — each
+            studio is preceded by (a) its creation wizard when `?createNew` is
+            set, and (b) its "library" list when the studio has no note to open
+            on. Reordering these arms changes which screen a route lands on.
+            The final `else` is the plain Card that hosts the list-only
+            activities (notes / cards / test / walkthrough placeholder). */}
         <section className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {activity === 'add' && studySetId ? (
             <StudySetUpload
@@ -1808,6 +1957,11 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
               onWriteQuestions={handleWriteQuizQuestions}
               onOpenNotes={() => setActivity('notes')}
               onOpenWalkthrough={() => handleActivity('walkthrough', 'ready')}
+              // Finishing a quiz writes mastery back onto the plan topic the
+              // source note belongs to — optimistically in local state, then to
+              // the server. 80% is the mastered threshold; anything lower is
+              // 'covered' (seen, not done). A failed write is ignored: the next
+              // plan fetch is the source of truth.
               onComplete={({ mastery, sourceNoteId }) => {
                 if (!studySetId || !sourceNoteId) return;
                 const topic = planTopics.find((row) => row.sourceNoteIds.includes(sourceNoteId));
@@ -2233,6 +2387,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
         )}
       </div>
 
+      {/* Room-level dialogs. The cover pickers are held HERE rather than inside
+          the row menus, which unmount the moment an item is chosen. */}
       {coverNote ? (
         <CoverPickerDialog
           open
@@ -2318,6 +2474,8 @@ export const CourseWorkspace: React.FC<CourseWorkspaceProps> = ({
   );
 };
 
+// Tolerant reader for a plan payload: anything that is not an array becomes an
+// empty list, so a shape change or an error body cannot crash the room.
 function applyPlanPayload(
   data: unknown,
   setUnits: (units: StudySetUnit[]) => void,
@@ -2498,6 +2656,17 @@ interface WorkspaceTestRow {
   mode?: string | null;
 }
 
+/**
+ * The room's test list, straight from `/api/v1/tests` (lean, first 100, newest
+ * first) rather than through a store, because no store holds tests filtered by
+ * room.
+ *
+ * A 401/403 goes through `handleApiAuthFailure` ONCE and the request is retried;
+ * if that does not recover, an empty list is returned rather than throwing — a
+ * failed test list must not take the whole room down. Every field is read
+ * defensively from three possible shapes (row, `config`, `session.config`)
+ * because rows come from more than one generation of the API.
+ */
 async function fetchWorkspaceTests(filter: {
   courseId?: string;
   studySetId?: string;

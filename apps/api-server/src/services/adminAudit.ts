@@ -22,6 +22,10 @@ export type AdminAuditAction =
   | 'message_delete'
   | 'deck_remove'
   | 'ai_quota_reset'
+  // The one READ in the console that is audited. Every other entry here is a
+  // state change; this is a privacy read — an admin opening a named student's
+  // private companion conversation — and it is recorded for the same reason.
+  | 'ai_companion_history_view'
   | 'user_delete'
   | 'order_dispute_release_seller'
   | 'order_dispute_refund_buyer'

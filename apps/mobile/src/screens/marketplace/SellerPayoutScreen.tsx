@@ -1,3 +1,19 @@
+/**
+ * `SellerPayout` route ("Payouts"): the bank-account form on top and the
+ * paged earnings ledger below.
+ *
+ * Exports: SellerPayoutScreen (named and default).
+ * Touches: fetchSellerPayments in ../../services/api; SellerPayoutSetup for
+ * the payout-profile gate; useMarketplaceStore.shopSummary.payouts for the
+ * two balance tiles, refreshed on focus via fetchShopSummary. Rows link to
+ * `OrderDetail`.
+ *
+ * Gotchas: PAGE_SIZE is hard-coded to 20 to match the route's default, so a
+ * short page is the only end-of-list signal there is. Re-fetching page 1
+ * replaces the list; later pages append. Refunded and failed rows are shown as
+ * zero rather than their would-be payout. Amounts are kobo and are formatted
+ * here, not with formatPrice, which renders 0 as "Free".
+ */
 import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';

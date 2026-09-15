@@ -1,0 +1,105 @@
+name: Preview web (Cloudflare Pages)
+
+# Builds the web app for every pull request and publishes it to a Cloudflare
+# Pages preview branch `pr-<number>`, then comments the URL on the PR.
+#
+# The Pages project is NOT git-connected, so Cloudflare generates no per-branch
+# preview on its own — this workflow is the only source of one. Direct-upload
+# deploys do not count against the 500 git-connected builds/month limit; the
+# cost is Actions minutes.
+#
+# Deliberately NOT included: deploy-web.yml's "verify bundle points at
+# production" step. A preview is built against the same production Supabase
+# (there is no staging project) but it must never be gated on being the
+# production deploy, and the SPA/Functions liveness assertions target
+# lanternstudy.com, which a preview is not.
+#
+# Forks: skipped. A pull_request run from a fork has no access to
+# CLOUDFLARE_API_TOKEN, and using pull_request_target to give it one would run
+# fork code with a production token. The job is skipped instead.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: preview-web-${{ github.event.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  preview:
+    name: preview
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build web
+        env:
+          VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+          VITE_API_URL: ${{ vars.VITE_API_URL }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+        run: npm run build:web
+
+      - name: Publish preview to Cloudflare Pages
+        id: publish
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR_NUMBER: ${{ github.event.number }}
+        run: |
+          set -euo pipefail
+          # Deploy from the repo root so wrangler compiles ./functions — a deploy
+          # from apps/web ships static assets only and every /api/v1/auth/* call
+          # 405s, which makes the preview impossible to sign into.
+          test -d functions/api
+          npx wrangler pages deploy apps/web/dist \
+            --project-name lantern-study \
+            --branch "pr-${PR_NUMBER}" | tee /tmp/wrangler-preview.log
+
+          url=$(grep -oE 'https://[a-z0-9.-]+\.pages\.dev' /tmp/wrangler-preview.log | tail -1 || true)
+          # Fall back to the deterministic alias Pages gives every branch.
+          alias="https://pr-${PR_NUMBER}.lantern-study.pages.dev"
+          echo "url=${url:-$alias}" >> "$GITHUB_OUTPUT"
+          echo "alias=$alias" >> "$GITHUB_OUTPUT"
+
+      - name: Comment the preview URL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.number }}
+          URL: ${{ steps.publish.outputs.url }}
+          ALIAS: ${{ steps.publish.outputs.alias }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          MARKER='<!-- lantern-preview -->'
+          body=$(printf '%s\n**Web preview** for \`%s\`\n\n- This build: %s\n- Branch alias (always latest): %s\n\nSigned in against the production Supabase — treat data you create here as real.\n' \
+            "$MARKER" "${SHA:0:8}" "$URL" "$ALIAS")
+
+          # Idempotent: update the existing preview comment rather than adding a
+          # new one on every push, so a long-running PR does not accumulate a
+          # column of near-identical bot comments.
+          existing=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq "[.[] | select(.body | contains(\"${MARKER}\"))][0].id // empty")
+
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" \
+              -f body="$body" > /dev/null
+            echo "updated comment $existing"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              -f body="$body" > /dev/null
+            echo "created preview comment"
+          fi

@@ -2,6 +2,29 @@
 // Lantern Study Mobile - Game Store
 // Real member-vs-member challenges (no simulation)
 // ===========================================
+//
+// One active duel session at a time, plus solo practice built from the
+// questions already posted in a group chat. Scoring and correctness are the
+// shared rules (computeDuelQuestionPoints, checkAnswerIsCorrect), so mobile
+// and the server agree.
+//
+// Main exports: `useGameStore` (`sendChallenge`, `startChallengePlay`,
+// `refreshChallengeSession`, `startSoloPractice`, `updateAnswer`, `quitGame`),
+// and the `GameSession`/`GameQuestion`/`GameUser`/`GameConfig` types.
+//
+// Touches: services/challenges (create/fetch/submit/forfeit),
+// services/gamification (`trackStudyActivity`), groupStore's `messagesCache`
+// for solo practice, and authStore. No persistence — a session is lost on
+// restart.
+//
+// Gotchas: `sendChallenge` is deduped only for the lifetime of the in-flight
+// request, by a module-level `pendingChallengeSends` map keyed
+// group:challenger:opponent — a retry after it settles creates a second
+// challenge. `submitChallenge` fires once when the last answer lands and
+// carries no attempt key; if it throws, only `error` is set and the answers
+// are never resubmitted. `groupMessageToGameQuestion` must keep mirroring the
+// server's challengeService mapping, or solo practice renders blank options
+// and grades every answer wrong.
 
 import { create } from 'zustand';
 import type { GroupChallenge, TestQuestion, UserAnswerRecord } from '@lantern/shared/types';

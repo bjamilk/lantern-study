@@ -1,6 +1,54 @@
 /**
  * Personal study sets — owner-only containers on the Study tab.
  */
+/**
+ * Purpose: the workspace model behind the Study tab. A study set is an
+ * owner-only container; folders file sets, and a set carries a two-level plan
+ * of units and topics.
+ *
+ * Exports: `StudySetsService` and `getStudySetsService` (a process singleton),
+ * the `StudySet` / `StudySetFolder` / `StudySetUnitRow` / `StudySetTopicRow`
+ * shapes, the `MAX_STUDY_SETS` / `MAX_STUDY_SET_FOLDERS` caps, and
+ * `SetTileColumnMissingError` + `SET_TILE_MIGRATION`. Called from
+ * routes/studySets.ts and the Home "resume" surface.
+ *
+ * What it touches: Supabase tables `study_sets`, `study_set_folders`,
+ * `study_set_units`, `study_set_topics`, and read-only `notes` and
+ * `test_sessions` for `resume()`. No storage, no external API — `cover_path`
+ * holds a reference the client signs elsewhere.
+ *
+ * The model:
+ * - `study_sets` — one row per set, owned by `user_id`. `folder_id` is a
+ *   nullable FK to `study_set_folders` (ON DELETE SET NULL, so deleting a
+ *   folder unfiles its sets rather than destroying them).
+ * - `study_set_units` — the outline's top level, ordered by `position`.
+ * - `study_set_topics` — leaves under a unit, each with a `status` of
+ *   unseen/covered/mastered and `source_note_ids`.
+ * `replacePlan` is a full replace: topics then units are deleted for the set
+ * before the new rows are inserted, so unit ids are not stable across a save.
+ *
+ * Ownership: this service runs on the service-role client, which bypasses RLS,
+ * so every statement carries its own predicate. Reads and writes filter
+ * `user_id`, and every plan method calls `this.get(userId, setId)` first so a
+ * set the caller does not own fails before any child row is touched.
+ *
+ * Hand-applied migrations are the recurring hazard here. `exam_date`
+ * (20260911140000), `cover_path` (20260913120000) and the `tile_hue`/
+ * `tile_glyph` pair (20260913150000) may each be absent on a live database,
+ * and PostgREST fails the WHOLE statement with 42703/PGRST204 when one name is
+ * unknown — hence `SET_COLUMN_LADDER` below.
+ *
+ * Child-row ownership in the database: `20260911130000_study_set_workspace.sql`
+ * created `study_set_units` and `study_set_topics` with RLS policies that
+ * checked only `user_id = auth.uid()`, never that `study_set_id` pointed at a
+ * set the caller owns. Straight through PostgREST with the shipped anon key,
+ * that let a signed-in user POST a unit carrying a stranger's `study_set_id` —
+ * row pollution of someone else's outline, not disclosure of it, since reads
+ * still required their own `user_id`. This service was never the hole; it
+ * always scoped both columns. `20260915100000_rls_ownership_and_visibility_
+ * hardening.sql` closes the database half, requiring the parent set to be
+ * owned (and, for a topic, the unit to belong to that same owned set).
+ */
 import { PublicError } from '../utils/safeError';
 import type { SupabaseService } from './supabase';
 import { isUuid } from './academicCourses';
@@ -37,6 +85,8 @@ export class SetTileColumnMissingError extends Error {
 }
 
 export { SET_TILE_MIGRATION };
+
+// --- Shapes and caps ---------------------------------------------------------
 
 export interface StudySet {
   id: string;
@@ -89,6 +139,8 @@ export const MAX_STUDY_SETS = 80;
 export const MAX_STUDY_SET_FOLDERS = 40;
 const STUDY_SET_TITLE_MAX = 80;
 const STUDY_SET_DESCRIPTION_MAX = 280;
+
+// --- Projection ladder for the hand-applied columns --------------------------
 
 const SET_COLUMNS =
   'id, user_id, title, description, course_id, folder_id, cover_path, visibility, mode, exam_date, last_studied_at, created_at, updated_at, tile_hue, tile_glyph';
@@ -315,6 +367,10 @@ export class StudySetsService {
     if (first.error) throw first.error;
     return (first.data || []).map((row) => mapSet(row as Record<string, unknown>));
   }
+
+  // --- Sets: list, read, create, update, delete ------------------------------
+  // Every method scopes by `user_id`; `get` is the ownership gate the rest of
+  // the class reuses.
 
   async list(userId: string): Promise<StudySet[]> {
     return this.selectSets(userId);
@@ -543,6 +599,11 @@ export class StudySetsService {
     if (error) throw error;
   }
 
+  // --- Folders ---------------------------------------------------------------
+  // Filing only. `study_sets.folder_id` is ON DELETE SET NULL, so removing a
+  // folder unfiles its sets and destroys nothing. A database without the table
+  // reads as "no folders" rather than failing the Study tab.
+
   async listFolders(userId: string): Promise<StudySetFolder[]> {
     const { data, error } = await this.db
       .from('study_set_folders')
@@ -581,6 +642,13 @@ export class StudySetsService {
       .eq('id', folderId);
     if (error) throw error;
   }
+
+  // --- Plan: units and topics ------------------------------------------------
+  // The two-level outline for one set. `replacePlan` is a full replace —
+  // topics then units are deleted for the set before the new rows go in, so
+  // unit and topic ids do not survive a save. Each method opens with
+  // `this.get(userId, setId)` so the parent set's ownership is proven before
+  // any child row is read, written or deleted.
 
   async getPlan(
     userId: string,
@@ -724,6 +792,12 @@ export class StudySetsService {
       sourceNoteIds: Array.isArray(data.source_note_ids) ? data.source_note_ids : [],
     };
   }
+
+  // --- Home "resume" ---------------------------------------------------------
+  // Read-only cross-table view: the most recently touched set, the newest
+  // notes filed under a set, and the newest quizzes. Rows without a
+  // `study_set_id` are dropped rather than linked to a set they do not belong
+  // to.
 
   async resume(userId: string): Promise<{
     lastActivity: {

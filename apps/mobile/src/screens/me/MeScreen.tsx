@@ -1,3 +1,17 @@
+/**
+ * Profile tab -> Me. The account half of the fifth destination: identity card
+ * (name, email, academic line) over the shared Profile menu, with Progress as
+ * the peer section in the workspace bar.
+ *
+ * Exports: MeScreen (named and default).
+ * Touches: ChromeContext for the display name/avatar/email, authStore
+ * academicProfile and signOut, buildMeSections from meRows (the same rows web
+ * renders), navigationRef navigate() for the root-stack destinations
+ * (UsageLimits, AcademicSettings, JoinClass, Offline, InviteFriends, Settings,
+ * EditProfile) and expo/react-native Linking for the Teach page.
+ * Note: the `admin` row is a deliberate no-op here -- the switch case returns
+ * without navigating, so the console is web-only.
+ */
 import React, { useCallback } from 'react';
 import { Linking, Pressable, Switch, Text, View } from 'react-native';
 import {

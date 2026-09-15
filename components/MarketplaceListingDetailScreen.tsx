@@ -291,7 +291,7 @@ const MarketplaceListingDetailScreen: React.FC<MarketplaceListingDetailScreenPro
   const loadListingFull = async (loadId?: number) => {
     setLoading(true);
     try {
-      const data = await fetchMarketplaceListingFull(listingId, currentUser?.id);
+      const data = await fetchMarketplaceListingFull(listingId);
       if (loadId !== undefined && loadId !== listingLoadId.current) return;
       setListing(data.listing);
       if (data.listing?.quantity == null) {

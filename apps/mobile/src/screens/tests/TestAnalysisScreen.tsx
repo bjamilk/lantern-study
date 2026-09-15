@@ -3,6 +3,24 @@
 // Stack screen (not nested RN Modal) so charts work from Dashboard and
 // from TestResults, which is itself presented as a fullScreenModal.
 // ===========================================
+/**
+ * The `TestAnalysis` route: per-question charts for one finished attempt —
+ * time per question, stems, and a chip linking back to where the questions came
+ * from. Reached from the Dashboard's recent-test rows and from TestResults.
+ *
+ * Main exports: the default `TestAnalysisScreen`.
+ * Touches: testStore (local attempts, read via `getState`), services/api
+ * `fetchTestSessionDetail` with a `fetchTestById` fallback, and
+ * TestAnalysisContent for the charts themselves. No native modules.
+ *
+ * Gotchas: the screen races a local seed against a network hydrate and keeps
+ * whichever payload scores higher in `analysisQuality` (bars, real stems,
+ * non-zero timings), because lean dashboard rows ship an empty
+ * `timePerQuestion` while a local attempt can be richer than the server body.
+ * Opening the source resets the Study stack first — this screen can sit above
+ * TestResults on it, and a bare tab switch would leave both mounted after the
+ * session is gone.
+ */
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {

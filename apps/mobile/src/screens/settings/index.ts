@@ -1,3 +1,8 @@
+/**
+ * Barrel for the Settings-area screens on the root stack (settings, profile,
+ * downloads, notifications, blocked users, academic profile, join a class,
+ * invite friends). Every entry is a default export upstream.
+ */
 export { default as SettingsScreen } from './SettingsScreen';
 export { default as EditProfileScreen } from './EditProfileScreen';
 export { default as OfflineScreen } from './OfflineScreen';

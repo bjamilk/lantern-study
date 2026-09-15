@@ -1,3 +1,36 @@
+/**
+ * The durable state of every queued job: the Redis-backed record a client
+ * polls, the stage machine that moves it, and the credit refund that closes it.
+ *
+ * Exports (called by `queue/enqueue.ts`, `queue/processors/index.ts` and
+ * `routes/jobs.ts`):
+ * - `createJobRecord` / `saveJobRecord` / `getJobRecord` — the store.
+ * - `setJobStage` / `updateJobStatus` — the only writers that move a stage.
+ * - `attachJobCharge` / `attachJobResultRef` — late stamps that do not move it.
+ * - `refundJobCreditOnce` / `markJobChargeRefunded` — the refund and its lock.
+ * - `getJobRecordForClient` / `reconcileJobTimeout` — the poller's view.
+ *
+ * What it touches:
+ * - Redis: `job:<jobId>` holds the JSON `JobRecord` (24 h TTL, so a job older
+ *   than a day simply reads as "not found"), and `job:<jobId>:refunded` is the
+ *   SET NX claim that makes the refund once-only. Both keys are prefixed by
+ *   `redisKey`.
+ * - `middleware/aiRateLimit.ts` for the actual credit write-back, and
+ *   `services/jobPush.ts` for the completion push. No Supabase table: a job
+ *   record is deliberately ephemeral, while the artefact it produces is not.
+ *
+ * Stage machine: queued -> reading -> generating -> saving -> done, with
+ * `failed` and `timed_out` as the other terminals. `advanceJobStage` (in
+ * `@lantern/shared/jobs/jobState`) keeps `percent` monotonic and refuses to
+ * move a record that is already terminal, so a late worker cannot un-fail a
+ * refunded job and a straggling failure cannot un-finish one the student has
+ * already seen land.
+ *
+ * Charge contract: the route charges before enqueueing and the charge is
+ * stamped at `createJobRecord` time. Exactly one refund is ever issued, by
+ * `refundJobCreditOnce`, on final failure, on a soft-failed OCR, or on a stale
+ * timeout — and it always returns to the pool that paid.
+ */
 import { getRedisClient, redisKey } from '../services/redisStore';
 import {
   advanceJobStage,
@@ -19,6 +52,13 @@ import { notifyJobTerminal } from '../services/jobPush';
 import type { JobRecord, JobStatus, QueueName } from './jobs/types';
 import type { AiJobCharge } from './enqueue';
 
+// ---------------------------------------------------------------------------
+// Redis store
+//
+// A job record lives for a day. That outlasts any poll, any completion push a
+// student taps hours later, and the BullMQ retention caps — but it means a
+// client asking about a two-day-old job gets null, not a stale answer.
+// ---------------------------------------------------------------------------
 const TTL_SECONDS = 60 * 60 * 24;
 
 function statusKey(jobId: string): string {
@@ -30,6 +70,13 @@ export async function saveJobRecord(record: JobRecord): Promise<void> {
   if (!client) return;
   await client.set(statusKey(record.id), JSON.stringify(record), { EX: TTL_SECONDS });
 }
+
+// ---------------------------------------------------------------------------
+// Stage machine
+//
+// `setJobStage` is the single writer that moves a record forward and the single
+// place a job becomes terminal, which is why the completion push lives here.
+// ---------------------------------------------------------------------------
 
 /**
  * Advance a job's stage and progress (reading → generating → saving → done).
@@ -99,6 +146,14 @@ function pushJobCompletion(record: JobRecord): Promise<unknown> {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Late stamps
+//
+// Writes that add to a record without moving its stage, so they are safe on a
+// terminal job where `setJobStage` deliberately refuses to act. Each re-reads
+// the record first, because it may be racing the refund or the push audit.
+// ---------------------------------------------------------------------------
+
 /**
  * Point a finished job at the artefact a CLIENT saved from it.
  *
@@ -165,6 +220,18 @@ export async function attachJobCharge(
   });
 }
 
+// ---------------------------------------------------------------------------
+// Charge and refund
+//
+// The AI credit is spent by the route BEFORE the job exists — the 202 the
+// student got back is a 2xx, so aiRateLimit's non-2xx auto-refund can never
+// fire for async work and the queue owns the refund instead. Three paths reach
+// it: final failure and stall (processors/index.ts), a soft-failed OCR that
+// completes with `success: false`, and a stale timeout (below). All three go
+// through `refundJobCreditOnce`, which is once-only and returns the credit to
+// the pool that paid.
+// ---------------------------------------------------------------------------
+
 /**
  * Claim the (single) failure refund for this job; returns false if another
  * caller already claimed it. Uses an atomic SET NX side key rather than a
@@ -223,6 +290,14 @@ export async function refundJobCreditOnce(record: JobRecord | null): Promise<boo
   );
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Reads
+//
+// `getJobRecord` is the internal read (raw, migrated, no side effects);
+// `getJobRecordForClient` is the poller's read and may terminalise and refund a
+// stale job as a side effect of being asked about it.
+// ---------------------------------------------------------------------------
 
 export async function getJobRecord(jobId: string): Promise<JobRecord | null> {
   const client = await getRedisClient();
@@ -284,7 +359,23 @@ export async function getJobRecordForClient(
 /**
  * Call once the caller is known to own the job: a stale record is stamped
  * `timed_out` and its credits handed back (once).
+ *
+ * "Stale" means no write to the record for `JOB_STALE_TIMEOUT_MS` (10 minutes),
+ * measured from `updatedAt` — so it is silence, not total elapsed time, that
+ * times a job out. Progress is what keeps a long job alive, and the reconcile
+ * only ever runs when somebody asks about the job.
  */
+// FIXED (F7a): the window stayed at 10 minutes and the long path grew a
+// heartbeat, which is the right way round — a longer window would only delay
+// every real timeout. `ai.studyPack.generate` (up to 8 summaries plus
+// flashcards, MCQs and essays, each a chat completion with a 120 s timeout and
+// rate-limit backoff) now runs inside `withJobHeartbeat` in
+// queue/processors/index.ts, which re-stamps the stage on an interval well under
+// this window. Because staleness is measured from `updatedAt`, that heartbeat is
+// what this function reads: a job that is still working is no longer stale, so
+// it is no longer terminalised and refunded underneath a worker that then
+// finishes and finds the record already terminal. Any new long-running
+// processor owes itself the same heartbeat.
 export async function reconcileJobTimeout(
   record: JobRecord | null,
   now: number = Date.now()
@@ -304,6 +395,13 @@ export async function reconcileJobTimeout(
   });
   return (await getJobRecord(jobId)) ?? timedOut;
 }
+
+// ---------------------------------------------------------------------------
+// Creation
+//
+// Called by `enqueueJob` before the BullMQ job is added, so a worker can never
+// pick up a job whose record does not yet exist.
+// ---------------------------------------------------------------------------
 
 export async function createJobRecord(input: {
   id: string;

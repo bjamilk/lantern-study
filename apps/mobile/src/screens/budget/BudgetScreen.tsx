@@ -1,3 +1,22 @@
+/**
+ * Budget tab root. One screen, five segments (Overview, Transactions, Goals,
+ * Study wallet, Insights) over a selected month: spend against the month's
+ * plan, a category pie, the transaction list, and links out to SetBudget,
+ * AddExpense/AddIncome, SavingsGoals, ExpenseSplit and FinancialToolkit.
+ *
+ * Exports: BudgetScreen (default).
+ * Touches: budgetStore (transactions, budget, savingsGoals, expenseSplits,
+ * walletBalance, plansByMonth; fetchTransactions/fetchBudget/loadBudgetExtras/
+ * deleteTransaction); services/api runRecurring() and fetchUserBudget(); shared
+ * budget maths from @lantern/shared/utils; ChromeContext onScroll for the
+ * scroll-away chrome; react-native-gifted-charts PieChart.
+ * Gotchas: the store's totals describe the CURRENT month only, so a past month
+ * recomputes its own totals and fetches its cap from user_budgets on demand; a
+ * failed history lookup is kept distinct from "that month had no budget". The
+ * plan is read by subscribing to plansByMonth, not by calling a getter, so a
+ * plan synced from another device re-renders. The active segment is mirrored
+ * into the route param `tab`, and useFocusEffect reads it back.
+ */
 // ===========================================
 import { parseDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Budget Tracker Screen

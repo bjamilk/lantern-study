@@ -16,6 +16,7 @@ import {
   isForbiddenError,
   probeAccountSuspension,
 } from './accountSuspension';
+import { withPurchaseIntent } from './marketplacePurchaseIntent';
 
 const setAuthOffline = (offline: boolean) => useUIStore.getState().setAuthOffline(offline);
 
@@ -446,11 +447,15 @@ export const {
   fetchShopSummary,
   fetchSimilarListings,
   reportMarketplaceListing,
-  createMarketplaceOffer,
-  respondToOffer,
+  // FIXED (F3): the money-moving marketplace calls are NOT re-exported raw.
+  // Each is wrapped below so it carries an idempotency key that is stable
+  // across retries of one purchase intent. Importing the raw endpoint again
+  // would reintroduce the per-call random key.
+  createMarketplaceOffer: rawCreateMarketplaceOffer,
+  respondToOffer: rawRespondToOffer,
   fetchListingOffers,
   fetchMarketplaceOffers,
-  buyNowListing,
+  buyNowListing: rawBuyNowListing,
   downloadQuestionBank,
   fetchQuestionBankPreview,
   restoreQuestionBanks,
@@ -533,13 +538,13 @@ export const {
   updateMarketplaceCartItem,
   removeMarketplaceCartItem,
   clearMarketplaceCart,
-  checkoutMarketplaceCart,
+  checkoutMarketplaceCart: rawCheckoutMarketplaceCart,
   fetchMarketplaceAddresses,
   createMarketplaceAddress,
   updateMarketplaceAddress,
   deleteMarketplaceAddress,
   fetchSellerFulfillment,
-  boostListing,
+  boostListing: rawBoostListing,
   uploadMarketplaceImage,
   uploadChatImage,
   uploadChatAudio,
@@ -634,6 +639,77 @@ export const {
   appealListingTakedown,
   fetchMyModerationState,
 } = lanternApi;
+
+// ============================================================
+// FIXED (F3): money-moving calls, under a stable idempotency key
+//
+// Each wrapper names the user's INTENT with a scope string derived from what
+// is being bought, and `withPurchaseIntent` mints one key for that scope, reuses
+// it on every retry (timeout, dropped connection, app resume) and rotates it
+// only once the intent resolves. Before this, `endpoints.ts` defaulted the
+// header to a fresh `createIdempotencyKey(...)` on every call, so a buyer who
+// tapped Buy again after a 10s timeout created a SECOND order and a SECOND
+// Paystack charge — the server had two different keys and nothing to dedupe on.
+//
+// The wrappers replace the raw endpoints in the export list above, so every
+// caller (the marketplace store, CheckoutScreen, the offers panels) is covered
+// without each screen having to remember.
+// ============================================================
+
+export const buyNowListing = (
+  listingId: string,
+  couponCode?: string,
+  _idempotencyKey?: string,
+  quantity?: number,
+) =>
+  withPurchaseIntent(
+    `buy_now:${listingId}:${quantity ?? 1}:${couponCode ?? ''}`,
+    (key) => rawBuyNowListing(listingId, couponCode, key, quantity),
+  );
+
+export const checkoutMarketplaceCart = (
+  input?: Parameters<typeof rawCheckoutMarketplaceCart>[0],
+  _idempotencyKey?: string,
+) =>
+  withPurchaseIntent(
+    // The cart itself lives only on the server, so the intent is identified by
+    // the choices this checkout makes over it. A buyer who edits the cart and
+    // retries inside an unresolved intent deliberately reuses the key: the
+    // first attempt may already have created the orders.
+    `cart_checkout:${input?.addressId ?? ''}:${(input?.groups ?? [])
+      .map((g) => `${g.sellerId}:${g.fulfillmentMode}`)
+      .sort()
+      .join(',')}`,
+    (key) => rawCheckoutMarketplaceCart(input, key),
+  );
+
+export const createMarketplaceOffer = (
+  listingId: string,
+  amount: number,
+  message?: string,
+  _idempotencyKey?: string,
+) =>
+  withPurchaseIntent(
+    `create_offer:${listingId}:${amount}`,
+    (key) => rawCreateMarketplaceOffer(listingId, amount, message, key),
+  );
+
+export const respondToOffer = (
+  offerId: string,
+  action: 'accept' | 'decline' | 'counter' | 'withdraw',
+  counterAmount?: number,
+  message?: string,
+  _idempotencyKey?: string,
+) =>
+  withPurchaseIntent(
+    // Accept is the money one (it mints the order and the checkout session);
+    // the others are keyed too so a retried decline/counter cannot double-post.
+    `offer_respond:${offerId}:${action}:${counterAmount ?? ''}`,
+    (key) => rawRespondToOffer(offerId, action, counterAmount, message, key),
+  );
+
+export const boostListing = (listingId: string, _idempotencyKey?: string) =>
+  withPurchaseIntent(`boost:${listingId}`, (key) => rawBoostListing(listingId, key));
 
 // Legacy type exports used by stores
 type ArrayElement<T> =

@@ -120,4 +120,4 @@ Paid student tiers / premium AI · physical-first monetisation before digital li
 - **Store prep:** `docs/store/*`, `docs/RELEASING.md`
 - **Memory notes:** [[lantern-study-phase1-knowledge-network]] (this build, live state) · [[lantern-study-knowledge-network-plan]] (strategy) · [[lantern-study-rights-moderation]] · [[lantern-study-paystack-live]] · [[lantern-study-two-repos-trap]] · [[lantern-study-web-deploy-traps]]
 
-*This root-level session detail lives in `docs/`. The canonical "resume here" pointer is the repo root `HANDOVER.md`, which points here.*
+*This root-level session detail lives in `docs/`. The canonical "resume here" pointer is `docs/HANDOVER.md`, which points here.*

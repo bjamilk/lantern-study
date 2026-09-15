@@ -1,6 +1,18 @@
 /**
  * Nested URLs under `/study/sets/:id`. The set is the place; every tool is a
  * path inside it so Back, refresh and Home resume stay in the set.
+
+ *
+ * CONSUMERS: web (its router) + mobile (expo-router paths and deep links). Not the api. Keep this in step with linking/ for deep-link parsing.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT — run `npm run build` in
+ * packages/shared before typechecking or running web/mobile, or consumers
+ * resolve a stale `dist/`. A NEW subpath under src/ needs three things: the
+ * file, a `packages/shared/package.json` "exports" entry, and an
+ * `apps/api-server/tsconfig.json` "paths" entry; mobile jest maps
+ * `@lantern/shared/*` subpaths separately, so a subpath imported only by a
+ * test produces a CI-only TS2307 (reproduce with `jest --no-cache`). The web
+ * turbo build compiles with strict `noUncheckedIndexedAccess`.
  */
 import type { WorkspaceActivityId } from './courseWorkspace';
 
@@ -23,6 +35,12 @@ export type StudySetPathActivity =
 
 export type StudySetCardSession = 'review' | 'cram' | 'learn';
 export type StudySetPlaySession = 'match';
+
+// ---------------------------------------------------------------------------
+// The activity path vocabulary
+// ---------------------------------------------------------------------------
+// Every tool that can be open inside a set. This list is what URLs are built
+// from and parsed against, so adding a tool means adding it here first.
 
 export const STUDY_SET_PATH_ACTIVITIES: readonly StudySetPathActivity[] = [
   'home',
@@ -69,6 +87,13 @@ export interface StudySetPath {
   cardSession?: StudySetCardSession;
   playSession?: StudySetPlaySession;
 }
+
+// ---------------------------------------------------------------------------
+// Build and parse
+// ---------------------------------------------------------------------------
+// `buildStudySetPath` and `parseStudySetPath` are inverses and must stay so —
+// a path that builds but does not parse breaks Back and Home-resume, which is
+// the entire reason these routes are nested rather than flat.
 
 export function studySetRootPath(studySetId: string): string {
   return `/study/sets/${encodeURIComponent(studySetId)}`;
@@ -199,6 +224,12 @@ function decodeSegment(value: string): string {
     return value;
   }
 }
+
+// ---------------------------------------------------------------------------
+// List sorting and type chips
+// ---------------------------------------------------------------------------
+// How the set list is ordered, and the short "3 notes · 1 deck" chips beneath
+// a set. See ../study/setPresentation for the tile art that goes with them.
 
 export type StudySetSortId =
   | 'lastAccessed'

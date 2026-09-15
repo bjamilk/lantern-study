@@ -1,3 +1,22 @@
+/**
+ * Auth stack -> SignUp. One long form: name, username (debounced availability
+ * check), institution + level + optional programme, email and password. On
+ * submit it creates the Supabase auth user, best-effort inserts the profile
+ * row, then either saves the academic profile (session already granted) or
+ * stashes it and sends the student to VerifyEmail.
+ *
+ * Exports: SignUpScreen (default).
+ * Touches: supabase.auth.signUp and a profiles insert; services/api
+ * checkUsername; services/academic saveAcademicProfile (PUT /users/:id, the
+ * source of truth); services/pendingAcademicProfile stash; authStore;
+ * useInstitutions; productAnalytics trackSignupStarted; react-native Linking
+ * for the `?ref=` referral code.
+ * Gotchas: institution is required except when the institution list is
+ * genuinely unavailable (areInstitutionsUnavailable), the one deliberate
+ * escape. handleSignUp's dependency list omits referralCode, so a code that
+ * arrives after the handler was memoised is only picked up once another
+ * dependency (a typed field) changes.
+ */
 // ===========================================
 // Lantern Study Mobile - Sign Up Screen
 // ===========================================

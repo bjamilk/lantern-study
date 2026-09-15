@@ -41,15 +41,9 @@ describe('unsyncedWorkKeys', () => {
 });
 
 describe('unsyncedWorkKeysToClearOnSignOut', () => {
-  it('clears this account and the legacy keys when the student asked', () => {
-    expect(new Set(unsyncedWorkKeysToClearOnSignOut('user', ME))).toEqual(
-      new Set([
-        ...UNSYNCED_WORK_LEGACY_KEYS,
-        pendingResultsKey(ME),
-        syncQueueKey(ME),
-        pendingQbankScoresKey(ME),
-      ])
-    );
+  // G4 · H12: unsynced work is never deleted by a sign-out, for either reason.
+  it('clears nothing when the student asked to sign out', () => {
+    expect(unsyncedWorkKeysToClearOnSignOut('user', ME)).toEqual([]);
   });
 
   it('clears nothing when the server revoked the session', () => {
@@ -58,15 +52,23 @@ describe('unsyncedWorkKeysToClearOnSignOut', () => {
 });
 
 describe('planSignOutKeyRemoval', () => {
-  it('removes this account’s queues on a user sign-out', () => {
-    expect(planSignOutKeyRemoval('user', ME, candidates(ME))).toEqual(candidates(ME));
+  const caches = ['lantern_decks', `lantern-settings:${ME}`];
+
+  // G4 · H12: the student may be lending the handset or switching accounts —
+  // neither is permission to destroy a test they finished offline.
+  it('keeps this account’s queues on a user sign-out, caches still go', () => {
+    expect(planSignOutKeyRemoval('user', ME, candidates(ME))).toEqual(caches);
+  });
+
+  it('keeps the pre-split legacy keys, which may hold another account’s work', () => {
+    for (const reason of ['user', 'revoked'] as const) {
+      expect(planSignOutKeyRemoval(reason, ME, [...UNSYNCED_WORK_LEGACY_KEYS, 'lantern_stats']))
+        .toEqual(['lantern_stats']);
+    }
   });
 
   it('keeps every unsynced queue on a revoked session, caches still go', () => {
-    expect(planSignOutKeyRemoval('revoked', ME, candidates(ME))).toEqual([
-      'lantern_decks',
-      `lantern-settings:${ME}`,
-    ]);
+    expect(planSignOutKeyRemoval('revoked', ME, candidates(ME))).toEqual(caches);
   });
 
   it('never removes another account’s queues, whatever the reason', () => {
@@ -81,19 +83,19 @@ describe('planSignOutKeyRemoval', () => {
     }
   });
 
-  it('removes only the legacy queues when no user id is known', () => {
+  it('removes no queue at all when no user id is known', () => {
     const keys = planSignOutKeyRemoval('user', null, [
       ...UNSYNCED_WORK_LEGACY_KEYS,
       syncQueueKey(THEM),
       'lantern_tests',
     ]);
-    expect(keys).toEqual([...UNSYNCED_WORK_LEGACY_KEYS, 'lantern_tests']);
+    expect(keys).toEqual(['lantern_tests']);
   });
 
   it('collapses duplicates and preserves order', () => {
     expect(
       planSignOutKeyRemoval('user', ME, ['a', 'b', 'a', syncQueueKey(ME), 'b'])
-    ).toEqual(['a', 'b', syncQueueKey(ME)]);
+    ).toEqual(['a', 'b']);
   });
 
   it('passes unrelated keys through untouched', () => {

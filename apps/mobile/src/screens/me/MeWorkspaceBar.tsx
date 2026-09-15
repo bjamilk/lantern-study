@@ -1,3 +1,12 @@
+/**
+ * Underline tab row for the Profile area's two peer sections (Profile and
+ * Progress). Presentational: it renders ME_AREA_SECTIONS and reports taps.
+ *
+ * Exports: MeWorkspaceBar (named and default), MeWorkspaceBarProps, and a
+ * re-export of the MeAreaSection type.
+ * Touches: ME_AREA_SECTIONS from @lantern/shared/learning, so web and mobile
+ * agree on the sections. No store, no navigation of its own.
+ */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { ME_AREA_SECTIONS, type MeAreaSection } from '@lantern/shared/learning';

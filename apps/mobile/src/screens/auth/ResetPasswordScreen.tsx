@@ -1,3 +1,22 @@
+/**
+ * Auth stack -> ResetPassword. Landing screen for the emailed reset link: it
+ * turns the link into a Supabase session, then takes the new password.
+ *
+ * Exports: ResetPasswordScreen (named).
+ * Touches: expo-linking (initial URL + 'url' events), deepLinkAllowlist
+ * `planAuthDeepLink`, components/ui/appDialog `confirmAsync` (the consent step),
+ * services/supabase establishSessionFromAuthUrl and updateAuthPassword,
+ * authStore.setPasswordRecovery (held true while the recovery session is live,
+ * cleared once the password is updated) and authStore.user (the account already
+ * signed in here, if any).
+ */
+// FIXED (F45): the mount effect no longer turns an incoming link into a
+// session on its own. `planAuthDeepLink` classifies the URL (allowlist first,
+// tokens parsed only after) and the student is asked "Sign in as <email>?"
+// before `establishSessionFromAuthUrl` runs — otherwise any app able to send
+// `lanternstudy://reset-password#access_token=…` could put this handset into
+// the attacker's account and collect the new password typed below. Errors are
+// shown rather than swallowed.
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useState } from 'react';
 import {
@@ -14,7 +33,8 @@ import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as Linking from 'expo-linking';
 import { Button } from '../../components/ui';
 import { LanternLogo } from '../../components/LanternLogo';
-import { isAllowedMobileAuthUrl } from '../../utils/deepLinkAllowlist';
+import { planAuthDeepLink } from '../../utils/deepLinkAllowlist';
+import { confirmAsync } from '../../components/ui/appDialog';
 import { establishSessionFromAuthUrl, updateAuthPassword } from '../../services/supabase';
 import { useAuthStore } from '../../stores/authStore';
 import type { AuthStackParamList } from '../../navigation/types';
@@ -35,11 +55,52 @@ export function ResetPasswordScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const [sessionReady, setSessionReady] = useState(false);
   const setPasswordRecovery = useAuthStore((s) => s.setPasswordRecovery);
+  // Who (if anyone) this handset is already signed in as: a reset link for a
+  // different account must not be allowed to switch accounts behind their back.
+  const currentUser = useAuthStore((s) => s.user);
 
   useEffect(() => {
     let active = true;
+    const handled = new Set<string>();
     const establish = async (url: string | null) => {
-      if (!url || !isAllowedMobileAuthUrl(url)) return;
+      if (!url) return;
+      // The cold-start URL and the 'url' event can both deliver the same link.
+      if (handled.has(url)) return;
+      handled.add(url);
+
+      const plan = planAuthDeepLink(url, { userId: currentUser?.id, email: currentUser?.email });
+      if (plan.action === 'ignore') return;
+      if (plan.action === 'show-error') {
+        if (active) setError('That reset link has expired or has already been used. Request a new one.');
+        return;
+      }
+      if (plan.action === 'already-signed-in') {
+        if (active) {
+          setSessionReady(true);
+          setPasswordRecovery(true);
+        }
+        return;
+      }
+      if (plan.action === 'confirm-sign-out-first') {
+        if (active) {
+          setError(
+            `This link is for ${plan.email ?? 'another account'}. Sign out of ` +
+              `${plan.currentEmail ?? 'this account'} first, then open the link again.`
+          );
+        }
+        return;
+      }
+
+      const confirmed = await confirmAsync(
+        plan.email ? `Sign in as ${plan.email}?` : 'Use this reset link?',
+        'You opened a password-reset link. Only continue if you asked for it — otherwise the new password you set would belong to someone else’s account.',
+        { confirmLabel: 'Continue' }
+      );
+      if (!confirmed) {
+        if (active) setError('Reset link ignored. Request a new one from the sign-in screen when you are ready.');
+        return;
+      }
+
       try {
         await establishSessionFromAuthUrl(url);
         if (active) {
@@ -59,7 +120,7 @@ export function ResetPasswordScreen({ navigation }: Props) {
       active = false;
       sub.remove();
     };
-  }, [setPasswordRecovery]);
+  }, [setPasswordRecovery, currentUser?.id, currentUser?.email]);
 
   const handleSubmit = async () => {
     if (password.length < 6) {

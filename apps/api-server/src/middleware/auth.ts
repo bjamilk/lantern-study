@@ -1,3 +1,36 @@
+/**
+ * Request authentication for the API server: resolves a credential into
+ * `req.user`, then runs the per-account gates (revoked session, ban,
+ * suspension, deactivation) before any route handler sees the request.
+ *
+ * Exports:
+ * - `authMiddleware` — required auth. Mounted on every private router in
+ *   server.ts. Accepts a Supabase JWT (Authorization: Bearer, or the access
+ *   cookie) or an `X-API-Key` key; 401s when no credential resolves.
+ * - `optionalAuthMiddleware` — best-effort auth for mixed public/private
+ *   routes (marketplace, public profiles, campus pages). Populates `req.user`
+ *   when a credential verifies and otherwise calls next() anonymously.
+ * - `jwtOnlyAuthMiddleware` — same as `authMiddleware` but refuses API keys,
+ *   so a key cannot mint sibling keys on the key-management routes.
+ * - `requirePlatformAdmin` — the admin gate, mounted after `authMiddleware`.
+ * - `requirePermission` / `requireWritePermission` — API-key scope checks.
+ * - `initializeAuthMiddleware`, `evictAuthTokenCache`, `clearAuthTokenCache`,
+ *   `rejectIfBanned` (tests) — lifecycle and cache control.
+ * - `rejectIfBannedOnly` — the BAN half of `rejectIfBanned`, used by the
+ *   session gates in routes/auth.ts: a temporary suspension must not end a
+ *   session, only stop the requests the middleware answers.
+ *
+ * What it touches: Supabase auth (`verifySupabaseToken`), the `platform_admins`
+ * table through `isLivePlatformAdmin`, account lifecycle and admin-audit rows
+ * through `services/accountLifecycle` and `services/adminAudit`, the access
+ * token cookie via `utils/authCookies`, the Redis-backed token denylist and
+ * per-user session cutoff, and the rate limiters in `middleware/rateLimit`.
+ *
+ * Verified JWTs are memoised in a 20k-entry, 15-second LRU keyed by SHA-256 of
+ * the token. The denylist, session-cutoff, ban and deactivation checks all run
+ * on the cached path too, so a revocation takes effect immediately rather than
+ * after the TTL.
+ */
 import { Request, Response, NextFunction } from 'express';
 import { createHash } from 'crypto';
 import { LRUCache } from 'lru-cache';
@@ -10,7 +43,10 @@ import {
   isAccountDeactivated,
   isDeactivatedLifecycleRoute,
 } from '../services/accountLifecycle';
-import { isAccessTokenDenied, isTokenIssuedBeforeUserCutoff } from '../services/tokenDenylist';
+import {
+  checkAccessTokenDenied,
+  checkTokenIssuedBeforeUserCutoff,
+} from '../services/tokenDenylist';
 import { readAccessCookie } from '../utils/authCookies';
 import { isLivePlatformAdmin } from '../utils/platformAdminAuth';
 import { authenticatedRateLimit, apiKeyAuthRateLimit } from './rateLimit';
@@ -30,6 +66,13 @@ function hashToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
+// ============ Credential extraction and post-auth gates ============
+
+/**
+ * Resolves the request credential in fixed precedence: `X-API-Key`, then an
+ * `Authorization: Bearer` token, then the access cookie. Returns the raw
+ * string; the caller decides whether it is an API key or a JWT.
+ */
 function extractAuthCredential(req: Request): string | null {
   const apiKeyHeader = req.headers['x-api-key'];
   if (typeof apiKeyHeader === 'string' && apiKeyHeader.trim()) {
@@ -50,6 +93,20 @@ function attachUser(
   user: { id: string; permissions: string[]; isAdmin?: boolean; credentialType: 'jwt' | 'api_key' }
 ): void {
   req.user = user;
+}
+
+/**
+ * The one answer `optionalAuthMiddleware` gives when it cannot tell whether the
+ * caller is signed in. `code` is what a client keys a retry on: this is not a
+ * revoked session and must not send anyone back to sign-in.
+ */
+function respondAuthUnavailable(res: Response): void {
+  res.status(503).json({
+    success: false,
+    error: 'Service Unavailable',
+    message: 'Could not verify your session right now. Please try again.',
+    code: 'AUTH_TEMPORARILY_UNAVAILABLE',
+  });
 }
 
 async function rejectIfDeactivated(
@@ -81,9 +138,17 @@ async function rejectIfDeactivated(
   return true;
 }
 
+/**
+ * The common tail of every successful authentication: enforce API-key write
+ * scope, reject deactivated accounts, attach the per-request dataloader
+ * context, then hand off to the authenticated rate limiter (which calls
+ * `next()`).
+ */
 function proceedWithAuth(req: AuthenticatedRequest, res: Response, next: NextFunction): void {
   if (!enforceApiKeyMutationPolicy(req, res)) return;
   if (req.user?.id) {
+    // This promise was floating with no catch: a lifecycle-lookup failure threw
+    // an unhandled rejection and the request hung until the client timed out.
     void (async () => {
       if (await rejectIfDeactivated(req.user!.id, req, res)) return;
       if (req.user?.id) {
@@ -92,7 +157,13 @@ function proceedWithAuth(req: AuthenticatedRequest, res: Response, next: NextFun
         );
       }
       authenticatedRateLimit(req, res, next);
-    })();
+      // The `.catch` is the fix: without it a rejection here never reached the
+      // error handler, so the route produced no response and no 5xx in the logs
+      // — every authenticated request simply hung. Forwarding to next() turns
+      // the same failure into a visible 500.
+    })().catch((err) => {
+      next(err as Error);
+    });
     return;
   }
   authenticatedRateLimit(req, res, next);
@@ -144,6 +215,36 @@ export async function rejectIfBanned(userId: string, res: Response): Promise<boo
   return false;
 }
 
+/**
+ * FIXED (F10, coordinator R1): the BAN half of `rejectIfBanned`, and nothing
+ * else.
+ *
+ * The session gates in `routes/auth.ts` — `rejectRevokedSession` and the
+ * `/login` check — are about whether a session may EXIST. A ban is permanent
+ * and ends the session; a temporary suspension does not. Using the combined
+ * gate there cleared a suspended student's cookies, 403'd `GET /session` and
+ * refused `/login`, so the web client signed them out — and they never saw the
+ * dated notice that is the whole point of a suspension
+ * (`apps/web/src/services/accountSuspension.ts`). Suspension enforcement stays
+ * where it belongs: the per-request middleware, which answers ACCOUNT_SUSPENDED
+ * with the date on every route while the session lives on.
+ */
+export async function rejectIfBannedOnly(userId: string, res: Response): Promise<boolean> {
+  if (!supabaseService) return false;
+  const state = await getUserBlockState(supabaseService, userId);
+  if (!state.banned) return false;
+  res.status(403).json({
+    error: 'Forbidden',
+    message: 'Your account has been suspended. Contact support if you believe this is an error.',
+    code: 'ACCOUNT_BANNED',
+  });
+  return true;
+}
+
+// ============ Wiring and cache control ============
+
+/** Injects the Supabase service; called once from server bootstrap. Until it
+ * runs, the lifecycle and ban gates no-op (they return false). */
 export const initializeAuthMiddleware = (supabase: SupabaseService) => {
   supabaseService = supabase;
 };
@@ -157,33 +258,54 @@ export function clearAuthTokenCache(): void {
   tokenCache.clear();
 }
 
+/**
+ * FIXED (SW) [Sentry WEB-17]: both revocation gates fail CLOSED when Redis is
+ * unreachable — correct, and unchanged — but they used to refuse with
+ * `401 SESSION_REVOKED`, which is a TERMINAL code: the web client
+ * (services/sessionHandler.ts) signs the user out on it without even trying to
+ * refresh. One Redis blip therefore ended every live session on the platform,
+ * which is what a burst of 401s across unrelated URLs (heartbeat first,
+ * because it beats every two minutes) looked like in the breadcrumbs.
+ *
+ * `unavailable` now answers 503 AUTH_TEMPORARILY_UNAVAILABLE — the same code
+ * `respondAuthUnavailable` already uses — so the request still fails, and the
+ * client retries instead of throwing the session away.
+ */
+function respondRevoked(res: Response): void {
+  res.status(401).json({
+    error: 'Unauthorized',
+    message: 'Session has been revoked. Please sign in again.',
+    code: 'SESSION_REVOKED',
+  });
+}
+
 async function rejectIfSessionCutoff(
   token: string,
   userId: string,
   res: Response
 ): Promise<boolean> {
-  if (await isTokenIssuedBeforeUserCutoff(token, userId)) {
-    res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Session has been revoked. Please sign in again.',
-      code: 'SESSION_REVOKED',
-    });
+  const check = await checkTokenIssuedBeforeUserCutoff(token, userId);
+  if (check === 'allowed') return false;
+  if (check === 'unavailable') {
+    respondAuthUnavailable(res);
     return true;
   }
-  return false;
+  respondRevoked(res);
+  return true;
 }
 
 async function rejectIfTokenDenied(token: string, res: Response): Promise<boolean> {
-  if (await isAccessTokenDenied(token)) {
-    res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Session has been revoked. Please sign in again.',
-      code: 'SESSION_REVOKED',
-    });
+  const check = await checkAccessTokenDenied(token);
+  if (check === 'allowed') return false;
+  if (check === 'unavailable') {
+    respondAuthUnavailable(res);
     return true;
   }
-  return false;
+  respondRevoked(res);
+  return true;
 }
+
+// ============ The middlewares ============
 
 /** JWT-only auth for API key management routes (keys cannot mint sibling keys). */
 export const jwtOnlyAuthMiddleware = async (
@@ -240,6 +362,17 @@ export const jwtOnlyAuthMiddleware = async (
   });
 };
 
+/**
+ * Required authentication. Contract: on success `req.user` carries
+ * `{ id, permissions, isAdmin?, credentialType }` and `req.context` carries the
+ * dataloader context; on failure it answers and never calls `next()`.
+ *
+ * Status codes: 401 for a missing, malformed, invalid or expired credential and
+ * for a revoked session (`SESSION_REVOKED`); 403 for `ACCOUNT_BANNED`,
+ * `ACCOUNT_SUSPENDED`, `ACCOUNT_DEACTIVATED` and `API_KEY_WRITE_REQUIRED`.
+ * `isAdmin` here is only the JWT's claim and is advisory — `requirePlatformAdmin`
+ * re-resolves it live and is the only thing that grants admin.
+ */
 export const authMiddleware = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -355,6 +488,17 @@ export const requirePermission = (requiredPermission: string) => {
 /** Shorthand for mutating routes — enforces write scope on API keys. */
 export const requireWritePermission = requirePermission('write');
 
+/**
+ * Best-effort authentication. Contract: a request with no credential, or with
+ * one that does not verify, continues anonymously with `req.user` unset; a
+ * credential that does verify gets the same `req.user` shape `authMiddleware`
+ * attaches. Downstream gates (per-route ownership predicates) therefore have
+ * to treat "no user" as public, not as an error.
+ *
+ * Unlike `authMiddleware` this path does NOT run the API-key write-scope check,
+ * the session-cutoff check on the API-key branch, or the authenticated rate
+ * limiter — anonymous callers stay on the anonymous IP bucket.
+ */
 export const optionalAuthMiddleware = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -381,16 +525,50 @@ export const optionalAuthMiddleware = async (
       return;
     }
 
-    if (await isAccessTokenDenied(credential)) {
-      next();
+    // A POSITIVELY denied token is a revoked session, not an anonymous visitor.
+    // Falling through to next() let a signed-out or force-revoked credential keep
+    // reading every optional-auth route (including GET /auth/session) as "public".
+    const denied = await checkAccessTokenDenied(credential);
+    if (denied === 'unavailable') {
+      // SW / WEB-17: "cannot verify" is not "revoked" — see respondRevoked.
+      respondAuthUnavailable(res);
+      return;
+    }
+    if (denied === 'denied') {
+      res.status(401).json({
+        success: false,
+        error: 'Unauthorized',
+        message: 'Session revoked. Please sign in again.',
+        code: 'SESSION_REVOKED',
+      });
       return;
     }
 
     if (supabaseService) {
-      const supabaseResult = await supabaseService.verifySupabaseToken(credential);
+      const supabaseResult = await supabaseService.verifySupabaseTokenDetailed(credential);
+      // FIXED (F10): a verification that failed because Supabase was
+      // unreachable is NOT an anonymous visitor. Continuing as anonymous here
+      // is what made a signed-in buyer lose their own marketplace during a
+      // blip, and made every optional-auth route serve the public view of the
+      // caller's own data. A retryable 503 says what actually happened; a
+      // genuinely bad token still falls through to anonymous, unchanged.
+      if (!supabaseResult.isValid && supabaseResult.transient) {
+        respondAuthUnavailable(res);
+        return;
+      }
       if (supabaseResult.isValid && supabaseResult.user) {
-        if (await isTokenIssuedBeforeUserCutoff(credential, supabaseResult.user.id)) {
-          next();
+        const cutoff = await checkTokenIssuedBeforeUserCutoff(credential, supabaseResult.user.id);
+        if (cutoff === 'unavailable') {
+          respondAuthUnavailable(res);
+          return;
+        }
+        if (cutoff === 'denied') {
+          res.status(401).json({
+            success: false,
+            error: 'Unauthorized',
+            message: 'Session revoked. Please sign in again.',
+            code: 'SESSION_REVOKED',
+          });
           return;
         }
         if (await rejectIfBanned(supabaseResult.user.id, res)) return;
@@ -405,12 +583,28 @@ export const optionalAuthMiddleware = async (
     }
 
     next();
+    // FIXED (F10): nothing on the path above throws for a BAD credential —
+    // `verifySupabaseTokenDetailed` returns its outcome, the denylist fails
+    // closed with a boolean, and the ban/deactivation gates answer on `res`.
+    // A throw reaching here is therefore an infrastructure failure, and
+    // answering it as "anonymous visitor" is the same lie the transient branch
+    // above used to tell. 503 with a retryable code instead.
   } catch (error) {
     console.warn('Optional auth error:', error);
-    next();
+    respondAuthUnavailable(res);
   }
 };
 
+/**
+ * The admin gate. Mount after `authMiddleware`; answers 401 without a user and
+ * 403 without platform-admin rights.
+ *
+ * Admin is a LIVE lookup against `platform_admins` on every request, never a
+ * JWT claim. That is deliberate: a claim is fixed for the life of the token, so
+ * a revoked admin would keep admin until it expired, and the 15-second token
+ * cache would serve the stale claim as well. The live answer is written back
+ * onto `req.user.isAdmin` so handlers read the same value the gate used.
+ */
 export const requirePlatformAdmin = async (
   req: AuthenticatedRequest,
   res: Response,
@@ -436,35 +630,14 @@ export const requirePlatformAdmin = async (
 // Legacy export kept for compatibility
 export const authenticateApiKey = authMiddleware;
 
-export const errorHandler = (
-  error: any,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void => {
-  console.error('API Error:', error);
+// ============ Legacy helpers ============
 
-  if (error.code === 'PGRST116') {
-    res.status(400).json({
-      error: 'Bad Request',
-      message: 'Database relationship error. Please check your query.',
-    });
-    return;
-  }
-
-  if (error.message?.includes('JWT')) {
-    res.status(401).json({
-      error: 'Unauthorized',
-      message: 'Invalid or expired token',
-    });
-    return;
-  }
-
-  res.status(500).json({
-    error: 'Internal Server Error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
-  });
-};
+// FIXED (F7b): a second `errorHandler` used to live here and disagreed with the
+// global one in `middleware/errorHandler.ts` — it answered PGRST116 with 400
+// "Database relationship error" where the global `supabaseErrorHandler` answers
+// 404 "Resource not found". It had no importer (server.ts has always mounted the
+// errorHandler.ts one), so it was a trap waiting for someone to wire it up:
+// deleted, leaving exactly one error-mapping policy for the API.
 
 export const requestLogger = (
   req: Request,

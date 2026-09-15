@@ -1,4 +1,62 @@
 /**
+ * The AI credit ledger: who may run an AI action today, what it costs, and how a
+ * charge is given back when the work does not happen. Every AI route in the API
+ * goes through one of the middleware exported here. Provider selection, prompts
+ * and the calls themselves live in `services/aiService.ts`.
+ *
+ * Credit model
+ * - Two pools per user. The DAILY allowance (`AI_DAILY_LIMIT`, default
+ *   `DEFAULT_AI_DAILY_LIMIT`) resets at 00:00 UTC. The BANKED bonus pool
+ *   (`services/aiBonusUses.ts`, earned through referrals, capped at
+ *   `REFERRAL_BONUS_AI_USES_CAP`) never expires. `chargeGlobalAllowance()` always
+ *   tries daily first and falls back to bonus, and a charge is paid entirely from
+ *   one pool — never split — so the `pool` on the reservation is the whole truth
+ *   for the refund path.
+ * - A third counter, the PER-FEATURE daily cap (`FEATURE_LIMITS`, overridable per
+ *   feature with `AI_LIMIT_<FEATURE>`), is a fairness rule rather than a currency:
+ *   it moves one step per request whatever the credit cost, and bonus uses do not
+ *   extend it.
+ * - Charging happens BEFORE the model call, in middleware, so a user who cannot
+ *   afford the action is refused without any provider spend. `aiRateLimitForFeature`
+ *   checks the feature cap first, so a spent feature budget never burns a global
+ *   credit; if the global charge succeeds and the feature counter then trips, the
+ *   global credit is released before the 429.
+ * - Refunds return to the pool that paid. Every paid middleware registers a
+ *   `res.on('finish')` refund for any non-2xx response, and the `res.json` wrapper
+ *   restates the pre-charge usage headers so the client badge does not tick down
+ *   for work that never happened. Async 202 handlers carry the charge on
+ *   `res.locals.aiCharge` so a permanently failed job can refund it later.
+ *
+ * Atomicity
+ * `reserveUsage()` is a single Redis `INCRBY` followed by a full-cost rollback
+ * when it overshoots the limit. There is no read-modify-write and therefore no
+ * double-spend race between concurrent requests, and a denial can never partially
+ * consume credits. This is deliberate; `aiRateLimit.dualCharge.test.ts` and
+ * `aiRateLimit.refund.test.ts` pin the behaviour.
+ *
+ * Exports
+ * - Middleware: `aiRateLimit` (flat one-credit), `aiRateLimitWithCost` (cost
+ *   derived from the request, clamped to `MAX_AI_CREDIT_COST`),
+ *   `aiRateLimitForFeature` (global credit plus feature cap; zero-credit features
+ *   get the cap-only limiter).
+ * - Manual charge/refund for handlers that charge outside middleware (note OCR):
+ *   `chargeAiCredits`, `chargeAiCreditsDetailed`, `refundAiCredits`,
+ *   `refundFeatureAiCredit`, `applyGlobalUsageHeaders`, `NOTE_OCR_CREDIT_COST`.
+ * - Reads for GET /ai/usage and the admin console: `getAIUsage`,
+ *   `getFeatureAIUsage`, `getAIBonusUsage`, `getAllAIUsageForUser`,
+ *   `resetAIUsageForUser`.
+ * - Header names: `AI_COST_HEADER`, `AI_BONUS_REMAINING_HEADER`,
+ *   `AI_USAGE_EXPOSED_HEADERS` (the CORS `Access-Control-Expose-Headers` list —
+ *   a new header added here must be added there or browsers cannot read it).
+ *
+ * What it touches
+ * - Redis keys `redisKey("ai:<YYYY-MM-DD>:<userId>")` for the global daily
+ *   counter and `redisKey("ai:<YYYY-MM-DD>:<userId>:<featureKey>")` for the
+ *   per-feature cap, each expiring at the next UTC midnight. The bonus pool is
+ *   owned by `services/aiBonusUses.ts` and is not stored under these keys.
+ * - No database and no provider API of its own.
+ */
+/**
  * AI Rate Limiting Middleware
  * Distributed via Redis when REDIS_ENABLED=true; in-memory fallback for dev.
  * Each window resets at 00:00 UTC (midnight GMT).
@@ -27,7 +85,91 @@ import {
   type AiUsePool,
 } from '../services/aiBonusUses';
 
+/* --------------------------------- limits, windows and the fallback store -- */
+
+// The per-process fallback counter, used whenever Redis is unavailable.
+// FIXED (F7a): the fallback is still a per-process Map — it has to be, there is
+// nowhere else to count — but it is no longer silent, and production no longer
+// boots into it. `initializeAiRateLimitStore()` mirrors
+// `initializeRateLimitStores()` in middleware/rateLimit.ts exactly: it throws in
+// production when no Redis client can be had (so the process refuses to start
+// rather than serving an unshared spend cap), and logs a loud one-line warning
+// outside production. Every request-time fall-through then calls
+// `noteAiLimiterFallback()`, which flips the store kind to 'memory' (readable by
+// `getAiLimiterStoreKind()`, the same test hook shape `getLimiterStoreKind()`
+// gives the HTTP limiters) and logs a throttled degraded-mode error, so a Redis
+// incident is visible in the logs and in the degraded header instead of showing
+// up as a provider bill.
 const userAIUsage = new Map<string, { count: number; dateKey: string }>();
+
+export type AiLimiterStoreKind = 'redis' | 'memory';
+
+let aiLimiterStoreKind: AiLimiterStoreKind | undefined;
+let lastFallbackWarnAt = 0;
+
+/** Ten minutes between degraded-mode log lines: loud, not a flood. */
+const FALLBACK_WARN_INTERVAL_MS = 10 * 60 * 1000;
+
+/**
+ * Which store the AI counters are actually using, or undefined before the first
+ * counter call. `'memory'` means the daily allowance is per process and not
+ * shared between instances — the degraded mode, never the intended one in
+ * production. Exported so tests can assert the fallback is reported.
+ */
+export function getAiLimiterStoreKind(): AiLimiterStoreKind | undefined {
+  return aiLimiterStoreKind;
+}
+
+/** Test seam: forget what the last call observed. */
+export function resetAiLimiterStoreKindForTests(): void {
+  aiLimiterStoreKind = undefined;
+  lastFallbackWarnAt = 0;
+}
+
+function isProductionEnv(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+/** Record (and periodically shout about) a request served from the Map. */
+function noteAiLimiterFallback(): void {
+  aiLimiterStoreKind = 'memory';
+  const now = Date.now();
+  if (now - lastFallbackWarnAt < FALLBACK_WARN_INTERVAL_MS) return;
+  lastFallbackWarnAt = now;
+  logger.error(
+    'AI rate limiter DEGRADED: Redis unavailable, counting AI credits in this process only. ' +
+      'The daily allowance is no longer shared between instances and resets on restart.'
+  );
+}
+
+function noteAiLimiterRedis(): void {
+  aiLimiterStoreKind = 'redis';
+}
+
+/**
+ * Startup check for the AI credit counters, mirroring
+ * `initializeRateLimitStores()` (H2) decision for decision: Redis is REQUIRED in
+ * production, and its absence is a startup failure rather than a silent
+ * downgrade. Outside production the Map fallback is fine for development, but it
+ * says so loudly once at boot.
+ */
+export async function initializeAiRateLimitStore(): Promise<void> {
+  const client = await getRedisClient();
+  if (isProductionEnv() && !client) {
+    throw new Error(
+      'Redis is required for AI credit limiting in production (REDIS_ENABLED=true, REDIS_URL set)'
+    );
+  }
+  if (client) {
+    noteAiLimiterRedis();
+    return;
+  }
+  aiLimiterStoreKind = 'memory';
+  logger.warn(
+    'AI credit limiting is using the per-process fallback counter (no Redis). ' +
+      'Counts are not shared between instances and reset on restart.'
+  );
+}
 
 const AI_DAILY_LIMIT = parseInt(
   process.env.AI_DAILY_LIMIT || String(DEFAULT_AI_DAILY_LIMIT),
@@ -48,6 +190,9 @@ const FEATURE_LIMITS: Record<string, number> = Object.fromEntries(
   ])
 );
 
+// Windows are calendar days in UTC, not rolling windows: the date key is part of
+// the Redis key and the TTL is set to the remaining seconds of the day, so the
+// counter expires rather than being reset by a job.
 function getUtcDateKey(now = new Date()): string {
   return now.toISOString().slice(0, 10);
 }
@@ -66,6 +211,12 @@ function toResetsAt(resetTime: number): string {
   return new Date(resetTime).toISOString();
 }
 
+/* ---------------------------------------- the counter primitive and reads -- */
+
+// The one place a counter moves. `reserveUsage` charges (positive cost) and
+// refunds (negative cost) on both the global key `ai:<date>:<userId>` and the
+// feature key `ai:<date>:<userId>:<featureKey>`; `readUsage` is the matching
+// non-mutating read. Nothing else in this module touches Redis for counting.
 /**
  * Atomically reserve `cost` credits against `key`, all-or-nothing.
  * Redis path: a single INCRBY, rolled back in full if it overshoots the limit —
@@ -83,6 +234,7 @@ async function reserveUsage(
   const redis = await getRedisClient();
 
   if (redis?.isOpen) {
+    noteAiLimiterRedis();
     const rKey = redisKey(`ai:${dateKey}:${key}`);
     const count = await redis.incrBy(rKey, cost);
     const ttlSec = Math.ceil(msUntilNextUtcMidnight(now) / 1000);
@@ -101,6 +253,7 @@ async function reserveUsage(
     return { allowed: true, count, resetTime };
   }
 
+  noteAiLimiterFallback();
   const usage = userAIUsage.get(key);
   if (usage && usage.dateKey === dateKey) {
     if (cost > 0 && usage.count + cost > limit) {
@@ -160,13 +313,97 @@ export interface GlobalCharge {
   pool: AiUsePool;
   /** Banked bonus left AFTER this charge — what the header reports. */
   bonusRemaining: number;
+  /**
+   * FIXED (F10): why a refusal was NOT the student's fault. Both values mean
+   * the request must answer 503, not the 429 "you've used your daily limit"
+   * — telling a student they are out of credits when the platform ran out of
+   * budget, or when Redis is down, is a lie they cannot act on.
+   */
+  denialReason?: 'platform_budget' | 'limiter_unavailable';
 }
 
 /**
  * Reserve `cost` against the global allowance, falling back to the bonus pool.
  * All-or-nothing in both pools: a refusal consumes nothing anywhere.
  */
+/**
+ * The platform-wide daily AI budget, in credits — the cap that bounds the
+ * PROVIDER BILL rather than any one student.
+ *
+ * KNOWN ISSUE (tracked, deferred F10: product decision — the NUMBER is a
+ * founder cost decision and nobody else can pick it; a wrong guess either
+ * leaves the bill uncapped or cuts every student off mid-afternoon): every
+ * other limit in this module is per user and per feature, sign-up is free and
+ * unverified, so provider cost still scales linearly with the number of
+ * accounts until this is set.
+ *
+ * What F10 did build is the mechanism, so setting it is one environment
+ * variable and a redeploy: `AI_DAILY_BUDGET_CREDITS`. UNSET means unlimited,
+ * which is today's behaviour exactly — the counter is not even touched — so
+ * this is inert until the founder names a number. Set it to, say, 50000 and
+ * every AI charge is reserved against one shared daily counter first; when the
+ * day's budget is gone every AI route answers 503 AI_BUDGET_EXHAUSTED until
+ * midnight UTC instead of spending money nobody approved.
+ *
+ * Read per call rather than at module load so the value can be changed without
+ * a code change, and so tests can set it.
+ */
+function platformDailyBudget(): number | null {
+  const raw = process.env.AI_DAILY_BUDGET_CREDITS;
+  if (!raw) return null;
+  const parsed = parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+/**
+ * The key the platform counter lives under. It shares `reserveUsage`'s
+ * `ai:<date>:<key>` shape and its midnight-UTC expiry, so the budget resets with
+ * everything else. The sentinel cannot collide with a user id: those are UUIDs.
+ */
+const PLATFORM_BUDGET_KEY = '__platform__';
+
 async function chargeGlobalAllowance(userId: string, cost: number): Promise<GlobalCharge> {
+  // FIXED (F10, coordinator R1): fail CLOSED when the authoritative counter is
+  // gone. Falling through to the per-process Map means each replica keeps its
+  // own allowance, so a Redis incident multiplies both the per-user cap and the
+  // platform budget by the replica count — the spend cap disappearing exactly
+  // during an incident. Outside production the Map is the intended dev store.
+  const redis = await getRedisClient();
+  if (!redis?.isOpen && isProductionEnv()) {
+    noteAiLimiterFallback();
+    return {
+      allowed: false,
+      count: 0,
+      resetTime: Date.now() + msUntilNextUtcMidnight(),
+      pool: 'daily',
+      bonusRemaining: 0,
+      denialReason: 'limiter_unavailable',
+    };
+  }
+
+  // The platform budget is reserved BEFORE the user's own pools, so a refusal
+  // here costs the student nothing, and released again below if the user cannot
+  // pay — the platform must not be billed for a request that never ran.
+  const budget = platformDailyBudget();
+  const chargesPlatform = budget !== null && cost > 0;
+  if (chargesPlatform) {
+    const platform = await reserveUsage(PLATFORM_BUDGET_KEY, budget as number, cost);
+    if (!platform.allowed) {
+      logger.error(
+        'Platform AI budget exhausted for the day; AI routes are answering 503 until midnight UTC.',
+        { budget, used: platform.count }
+      );
+      return {
+        allowed: false,
+        count: 0,
+        resetTime: platform.resetTime,
+        pool: 'daily',
+        bonusRemaining: await getBonusBalance(userId),
+        denialReason: 'platform_budget',
+      };
+    }
+  }
+
   const daily = await reserveUsage(userId, AI_DAILY_LIMIT, cost);
   if (daily.allowed) {
     return {
@@ -178,6 +415,9 @@ async function chargeGlobalAllowance(userId: string, cost: number): Promise<Glob
 
   const paidFromBonus = await spendBonusUses(userId, cost);
   const bonusRemaining = await getBonusBalance(userId);
+  if (!paidFromBonus && chargesPlatform) {
+    await releaseUsage(PLATFORM_BUDGET_KEY, cost);
+  }
   return {
     allowed: paidFromBonus,
     count: daily.count,
@@ -200,11 +440,36 @@ async function releaseGlobalAllowance(
   pool: AiUsePool = 'daily'
 ): Promise<void> {
   if (cost <= 0) return;
+  // The platform budget is charged for every allowed request whatever pool paid
+  // the student's half, so it is given back for every refund the same way.
+  if (platformDailyBudget() !== null) {
+    await releaseUsage(PLATFORM_BUDGET_KEY, cost);
+  }
   if (pool === 'bonus') {
     await refundBonusUses(userId, cost);
     return;
   }
   await releaseUsage(userId, cost);
+}
+
+/**
+ * Answer a refusal that is the PLATFORM's fault, not the student's. Returns
+ * true when it answered, so the caller returns immediately.
+ */
+function respondIfServiceDenial(res: Response, result: GlobalCharge): boolean {
+  if (!result.denialReason) return false;
+  res.status(503).json({
+    error:
+      result.denialReason === 'platform_budget'
+        ? 'AI is at its limit for today across Lantern. It comes back at midnight UTC — nothing was charged to your account.'
+        : 'AI is temporarily unavailable. Please try again in a few minutes — nothing was charged to your account.',
+    code:
+      result.denialReason === 'platform_budget'
+        ? 'AI_BUDGET_EXHAUSTED'
+        : 'AI_LIMITER_UNAVAILABLE',
+    resetsAt: toResetsAt(result.resetTime),
+  });
+  return true;
 }
 
 /**
@@ -231,6 +496,12 @@ export async function getAIBonusUsage(
   };
 }
 
+/**
+ * Current count for a key without charging it. Backs GET /ai/usage and the
+ * soft feature check in `aiRateLimitForFeature`.
+ * When Redis is down this reads the per-process Map, so it reports the count
+ * this instance happens to hold — see the fallback note on `userAIUsage`.
+ */
 async function readUsage(
   key: string,
   limit: number
@@ -241,12 +512,14 @@ async function readUsage(
   const redis = await getRedisClient();
 
   if (redis?.isOpen) {
+    noteAiLimiterRedis();
     const rKey = redisKey(`ai:${dateKey}:${key}`);
     const raw = await redis.get(rKey);
     const used = raw ? parseInt(raw, 10) : 0;
     return { used, limit, resetsAt };
   }
 
+  noteAiLimiterFallback();
   const usage = userAIUsage.get(key);
   if (!usage || usage.dateKey !== dateKey) {
     return { used: 0, limit, resetsAt };
@@ -275,6 +548,8 @@ export async function getFeatureAIUsage(
  * an absent header means "this server does not know", which is not the same
  * as zero and must not be printed as zero.
  */
+/* ------------------------------------------- usage headers sent to clients -- */
+
 export const AI_BONUS_REMAINING_HEADER = 'X-AI-Bonus-Remaining';
 
 function setBonusHeader(res: Response, bonusRemaining: number): void {
@@ -290,6 +565,11 @@ function setGlobalUsageHeaders(
   res.setHeader('X-AI-Global-Usage-Used', usage.count.toString());
   res.setHeader('X-AI-Global-Usage-Limit', AI_DAILY_LIMIT.toString());
   res.setHeader('X-AI-Global-Usage-Resets-At', resetsAt);
+  // FIXED (F7a): say so when the count came from the per-process fallback, so a
+  // client is not told "3 used" by a counter that knows about one instance only.
+  if (aiLimiterStoreKind === 'memory') {
+    res.setHeader(AI_USAGE_DEGRADED_HEADER, 'memory');
+  }
 }
 
 /** Global-only routes: legacy + explicit global headers carry the same counts. */
@@ -304,6 +584,20 @@ function setLegacyAndGlobalUsageHeaders(
   setGlobalUsageHeaders(res, usage);
 }
 
+/* ------------------------------------------------------ the middleware -- */
+
+/**
+ * Flat one-credit gate for AI routes with no feature cap of their own. Requires
+ * an authenticated request (`authMiddleware` must run first). Charges before the
+ * handler and leaves the charge on `res.locals.aiCharge` for 202 async handlers.
+ *
+ * KNOWN ISSUE (tracked, deferred F10: product decision — the platform-wide cap
+ * is now BUILT but deliberately unset, because the number is a founder cost
+ * decision): every limit in this module is per user and per feature, so until
+ * `AI_DAILY_BUDGET_CREDITS` is given a value provider cost still scales
+ * linearly with the number of accounts and sign-up is free and unverified. See
+ * `platformDailyBudget()` — setting that one variable is the whole change.
+ */
 export async function aiRateLimit(req: Request, res: Response, next: NextFunction): Promise<void> {
   const userId = (req as any).user?.id;
   if (!userId) {
@@ -313,6 +607,7 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
 
   const result = await chargeGlobalAllowance(userId, AI_FEATURE_CREDIT_COST);
   setBonusHeader(res, result.bonusRemaining);
+  if (respondIfServiceDenial(res, result)) return;
   if (!result.allowed) {
     res.status(429).json({
       // Plain words with the two facts a student can act on — how many they
@@ -340,6 +635,11 @@ export async function aiRateLimit(req: Request, res: Response, next: NextFunctio
   };
   next();
 }
+
+/* ------------------------------- manual charge/refund for non-middleware -- */
+// Note OCR charges from inside its handler rather than from middleware, because
+// the cost is only known once the upload is inspected. These helpers give that
+// path the same all-or-nothing reservation and pool-aware refund.
 
 /** Soft credit cost for local OCR imports (default 2). Set NOTE_OCR_CREDIT_COST=0 to disable. */
 export const NOTE_OCR_CREDIT_COST = Math.max(
@@ -389,8 +689,14 @@ export async function chargeAiCreditsDetailed(
     return {
       ok: false,
       denial: {
-        error:
-          credits > 1
+        // FIXED (F10): this helper has no `res` to answer 503 on, so the
+        // caller's 429 stands — but the SENTENCE must not blame the student
+        // for a platform refusal they cannot act on.
+        error: result.denialReason
+          ? result.denialReason === 'platform_budget'
+            ? 'AI is at its limit for today across Lantern. It comes back at midnight UTC — nothing was charged to your account.'
+            : 'AI is temporarily unavailable. Please try again in a few minutes — nothing was charged to your account.'
+          : credits > 1
             ? `Daily AI limit reached. ${label} needs ${credits} AI uses — you have ${describeRemaining(result)}.`
             : describeAIDailyLimitReached({
                 limit: AI_DAILY_LIMIT,
@@ -458,6 +764,9 @@ export async function refundFeatureAiCredit(
 export const AI_COST_HEADER = 'X-AI-Cost';
 
 /** Every response header this module can set. CORS must expose all of these. */
+/** Present only while the counters are running on the per-process fallback. */
+export const AI_USAGE_DEGRADED_HEADER = 'X-AI-Usage-Degraded';
+
 export const AI_USAGE_EXPOSED_HEADERS = [
   'X-AI-Feature',
   'X-AI-Cost',
@@ -468,12 +777,19 @@ export const AI_USAGE_EXPOSED_HEADERS = [
   'X-AI-Global-Usage-Limit',
   'X-AI-Global-Usage-Resets-At',
   'X-AI-Bonus-Remaining',
+  'X-AI-Usage-Degraded',
 ] as const;
 
 /**
  * Charge a variable number of global AI credits based on the request, reserved
  * atomically BEFORE the handler runs: a user who cannot afford the action is
  * refused with a 429 without consuming anything or doing any work.
+ */
+/**
+ * Variable-cost gate. `getCost(req)` is clamped into `[1, MAX_AI_CREDIT_COST]`,
+ * so a malformed or hostile request body cannot ask for a free action or an
+ * unbounded charge — but the cost still derives from what the client sent, and
+ * any cross-check against the real workload belongs in the route.
  */
 export function aiRateLimitWithCost(
   getCost: (req: Request) => number,
@@ -497,6 +813,7 @@ export function aiRateLimitWithCost(
     setLegacyAndGlobalUsageHeaders(res, result);
     setBonusHeader(res, result.bonusRemaining);
 
+    if (respondIfServiceDenial(res, result)) return;
     if (!result.allowed) {
       // `remaining` is the day's remainder PLUS anything banked, so a client
       // can show a total. The SENTENCE keeps the two apart: a charge is paid
@@ -582,6 +899,10 @@ export async function applyGlobalUsageHeaders(res: Response, userId: string): Pr
   // line on the badge would go stale on exactly the requests that spent it.
   setBonusHeader(res, bonusRemaining);
 }
+
+/* --------------------------------------- per-feature caps and key shapes -- */
+// A feature with no entry in FEATURE_LIMITS falls back to the global daily
+// limit, so an unknown key is capped but not free.
 
 function resolveFeatureLimit(featureKey?: string): number {
   if (featureKey && FEATURE_LIMITS[featureKey] !== undefined) {
@@ -671,6 +992,13 @@ function zeroCreditFeatureLimiter(featureKey: string) {
   };
 }
 
+/**
+ * The gate for a named feature. Zero-credit features get the cap-only limiter
+ * above; everything else runs, in order: soft feature-cap read, global charge
+ * (daily then bonus), feature-cap increment, refund-on-non-2xx registration,
+ * usage headers. The feature cap is deliberately checked before the global
+ * charge so a spent feature budget cannot consume a credit.
+ */
 export function aiRateLimitForFeature(featureKey: string) {
   if (isZeroCreditAIFeature(featureKey)) return zeroCreditFeatureLimiter(featureKey);
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -705,6 +1033,7 @@ export function aiRateLimitForFeature(featureKey: string) {
     // an earned reward is not a reason to run 30 flashcard generations.
     const globalResult = await chargeGlobalAllowance(userId, AI_FEATURE_CREDIT_COST);
     setBonusHeader(res, globalResult.bonusRemaining);
+    if (respondIfServiceDenial(res, globalResult)) return;
     if (!globalResult.allowed) {
       res.status(429).json({
         error: describeAIDailyLimitReached({
@@ -799,6 +1128,14 @@ export function aiRateLimitForFeature(featureKey: string) {
   };
 }
 
+/* -------------------------------------------- admin and usage-screen reads -- */
+
+/**
+ * Clears today's counters for a user, one feature or all of them. Only today's
+ * date key is deleted — older keys have already expired. The Map branch scans
+ * this process only, so after a Redis outage other instances keep their own
+ * stale fallback counts.
+ */
 export async function resetAIUsageForUser(userId: string, featureKey?: string): Promise<void> {
   const dateKey = getUtcDateKey();
   const redis = await getRedisClient();
@@ -816,6 +1153,7 @@ export async function resetAIUsageForUser(userId: string, featureKey?: string): 
   }
 }
 
+/** Global row plus one row per configured feature, for the Usage & limits screen. */
 export async function getAllAIUsageForUser(
   userId: string
 ): Promise<Array<{ feature: string; used: number; limit: number; resetsAt: string }>> {

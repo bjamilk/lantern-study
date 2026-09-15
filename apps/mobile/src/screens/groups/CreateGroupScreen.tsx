@@ -1,3 +1,22 @@
+/**
+ * CreateGroup: a two-step form (pick members, then name/avatar/course/
+ * permissions/discoverability) that creates a study group, a sub-group, or a
+ * community board or study group. Registered on BOTH the Chat stack and the
+ * Campus stack, which is why the navigation prop is structural.
+ *
+ * Exports: CreateGroupScreen (named and default).
+ * Touches: groupStore.createGroup (and sendMessage for the board
+ * announcement), communityStore.invalidate, authStore, toastStore;
+ * services/api searchUsers; expo-image-picker plus utils/prepareImage for the
+ * avatar; GroupDiscoverabilityFields for the listing rules.
+ * Gotchas: the avatar is passed as a base64 data URL, not a file. Where the
+ * new group lands depends on its surface -- a board replaces onto
+ * CommunityChannel on the community's own stack, while a community STUDY group
+ * changes tab into Chat and says so in a toast, because that handoff is shown,
+ * not inferred. The owner name goes through profileDisplayName so an email
+ * local part can never become the group's owner name. StepFooter is the only
+ * layer that pays the bottom inset.
+ */
 import { pluralize } from '@lantern/shared/utils';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {

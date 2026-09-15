@@ -23,6 +23,8 @@
     "seo:notify": "node scripts/seo/notify-search-engines.mjs",
     "eas-build-pre-install": "node scripts/eas-prepare-mobile-install.js",
     "//postinstall": "`|| true` is required: apps/api-server/Dockerfile installs with `npm ci --omit=dev`, which excludes patch-package (a devDependency) while still running this hook. Without the guard the hook exits 127 and the Render image build fails. Patches only affect the mobile build, so skipping them in a production API install is correct.",
+    "//prepare": "Installs .husky/pre-commit (secret scan + mobile type-scale lint) by pointing git at that directory. `|| true` because npm runs `prepare` in contexts with no .git — a Docker build, `npm ci` from a tarball — and a failing hook install must never fail an install.",
+    "prepare": "git config core.hooksPath .husky || true",
     "postinstall": "patch-package || true"
   },
   "devDependencies": {

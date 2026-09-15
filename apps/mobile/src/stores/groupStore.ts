@@ -1,11 +1,50 @@
 // ===========================================
 // Lantern Study Mobile - Groups Store
 // ===========================================
+//
+// Purpose: every chat surface on mobile — study groups, community boards and
+// direct messages. Holds the group list, the per-group message cache, DM
+// threads and their messages, unread counts, votes, and the optimistic
+// send/outbox machinery shared by all of them.
+//
+// Main exports: `useGroupStore` (zustand), `mapApiMessage` (the ONE message
+// mapper, also used by the board store), and the types `Group`, `GroupMember`,
+// `Message`, `CreateGroupInput`, plus the `DMThread`/`DirectMessage`
+// re-exports from @lantern/shared.
+//
+// It also registers the syncService `'message'` handler at the bottom of the
+// file — the outbox that flushes queued group and DM sends.
+//
+// Touches:
+// - AsyncStorage: `lantern_groups`, `lantern_messages` (the whole
+//   `messagesCache` is serialised on every save).
+// - services/api (groups, members, messages, threads, DMs, votes, unread
+//   counts, avatars), services/syncService, expo-crypto for client ids.
+// - authStore, for the viewer's own identity when a roster has not loaded.
+// - @lantern/shared/utils for the merge/receipt/delivery-intent helpers.
+//
+// Gotchas:
+// - Server rows must win on a REFRESH (`mergeServerRefresh`) and only the
+//   local outbox rows survive; merging the cache in as the incoming side made
+//   every stale cached field beat the fresh server row.
+// - Sends are serialised per conversation and de-duplicated by
+//   `deliveryIntents`, so a retry of an uncertain delivery reuses the same
+//   `clientMessageId` instead of posting twice.
+// - A queued send is NOT a failure: `sendMessage`/`sendDirectMessageTo`
+//   resolve `'queued'` rather than throwing, and only server rejections throw.
+// - Rosters come from their own endpoint; the group payload carries no
+//   `members`, so nothing here may overwrite a loaded roster with an empty
+//   one, and `memberCount` is never shrunk to one page of members.
+// - A board post is stored as TEXT even when its body starts with `{`.
+//   Re-deriving "question" from the body is what turned board posts into
+//   read-only question cards on mobile.
 
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { registerUserScoped } from './userScopedState';
 import type { DMThread as SharedDMThread, DirectMessage as SharedDirectMessage } from '@lantern/shared/types';
 import { isBoardPostKind, type BoardPostKind, type BoardQuotedPost } from '@lantern/shared/network';
+import { mapGroupMemberRow, mapGroupRow } from '@lantern/shared/groups';
 import { boardActionFields } from '../utils/boardMessageFields';
 import {
   chatMessagePreview,
@@ -246,55 +285,78 @@ export interface Message {
   seenByTotal?: number;
 }
 
+// Role is DERIVED, not stored per member: `adminIds[0]` is the owner and the
+// rest of the array are admins. Both API casings are accepted because the
+// members endpoint, the realtime payload and the group row disagree. Both the
+// derivation and the casing rules now live in `@lantern/shared/groups` — this
+// is only the mobile-shaped projection of it.
 function mapApiMember(m: any, adminIds: string[]): GroupMember {
-  const userId = m.user_id || m.userId || m.id;
-  const isOwner = userId === adminIds[0];
-  const isAdmin = adminIds.includes(userId);
-
+  const mapped = mapGroupMemberRow(m, adminIds);
   return {
     // Use auth user id as the stable member key so chat roster lookups match sender_id.
-    id: userId,
-    userId,
-    name: m.name || 'Unknown',
-    username: m.username,
-    avatarUrl: m.avatar_url || m.avatarUrl,
-    role: isOwner ? 'owner' : isAdmin ? 'admin' : 'member',
-    joinedAt: m.joined_at || m.joinedAt || new Date().toISOString(),
+    id: mapped.id,
+    userId: mapped.userId,
+    name: mapped.name,
+    username: mapped.username,
+    avatarUrl: mapped.avatarUrl,
+    role: mapped.role,
+    joinedAt: mapped.joinedAt,
   };
 }
 
+// One API group row → the mobile `Group`. The canonical field resolution lives
+// in `@lantern/shared/groups`; everything below is the mobile-only shape on top
+// of it — `ownerId` (adminIds[0]), the required-string `createdAt`/`updatedAt`,
+// a `memberCount` that is a number rather than "unknown", and a synthesised
+// `lastMessage` Message.
+//
+// The list endpoint carries no members, so `members` is usually empty here and
+// `memberCount` falls back to the server's own count; callers must merge rather
+// than assign, or a loaded roster is lost. `lastMessage` is synthesised from the
+// row's preview text and is not a real message row (its id is `preview-<groupId>`).
 function mapApiGroup(g: any, unreadCounts: Record<string, number>): Group {
-  const adminIds = g.admin_ids || g.adminIds || [];
-  const lastMessageText = g.last_message || g.lastMessage;
-  const lastMessageTime = g.last_message_time || g.lastMessageTime || g.updated_at || g.updatedAt;
-  const mappedMembers = (g.members || []).map((m: any) => mapApiMember(m, adminIds));
+  const shared = mapGroupRow(g, { unreadCounts });
+  const adminIds = shared.adminIds;
+  // Mobile alone falls back to the row's update time for the preview stamp:
+  // the chat list sorts on it and a group whose preview predates
+  // `last_message_time` would otherwise sort to the bottom.
+  const lastMessageTime =
+    shared.lastMessageTime || g.updated_at || g.updatedAt || shared.updatedAt;
 
   return {
-    id: g.id,
-    name: g.name,
-    description: g.description,
-    avatarUrl: g.avatar_url || g.avatarUrl,
+    id: shared.id,
+    name: shared.name,
+    description: shared.description,
+    avatarUrl: shared.avatarUrl,
     ownerId: adminIds[0] || '',
-    parentId: g.parent_id || g.parentId,
-    courseId: g.course_id ?? g.courseId ?? null,
-    visibility: g.visibility || 'private',
-    communityId: g.community_id ?? g.communityId ?? null,
-    communitySurface: g.community_surface ?? g.communitySurface ?? null,
+    parentId: shared.parentId,
+    courseId: shared.courseId,
+    visibility: shared.visibility,
+    communityId: shared.communityId,
+    communitySurface: shared.communitySurface,
     adminIds,
-    inviteId: g.invite_id || g.inviteId,
-    members: mappedMembers,
-    memberCount: g.member_count ?? g.memberCount ?? (mappedMembers.length > 0 ? mappedMembers.length : 0),
-    unreadCount: unreadCounts[g.id] || 0,
-    isArchived: g.is_archived || g.isArchived || false,
-    createdAt: g.created_at || g.createdAt || '',
-    updatedAt: g.updated_at || g.updatedAt || '',
-    lastMessage: lastMessageText
+    inviteId: shared.inviteId,
+    members: shared.members.map((m) => ({
+      id: m.id,
+      userId: m.userId,
+      name: m.name,
+      username: m.username,
+      avatarUrl: m.avatarUrl,
+      role: m.role,
+      joinedAt: m.joinedAt,
+    })),
+    memberCount: shared.memberCount ?? 0,
+    unreadCount: shared.unreadCount,
+    isArchived: shared.isArchived ?? false,
+    createdAt: shared.createdAt || '',
+    updatedAt: shared.updatedAt || '',
+    lastMessage: shared.lastMessage
       ? {
           id: `preview-${g.id}`,
           groupId: g.id,
           senderId: '',
           senderName: '',
-          text: lastMessageText,
+          text: shared.lastMessage,
           type: 'text',
           createdAt: lastMessageTime || new Date().toISOString(),
         }
@@ -313,6 +375,16 @@ interface GroupState {
   /** Group id for the chat screen currently open (may differ from currentGroup when group list is still loading). */
   activeGroupId: string | null;
   messages: Message[];
+  /**
+   * Every message this process has loaded, keyed by group id. It is the source
+   * the open thread renders from and the thing `saveToStorage` serialises.
+   */
+  // FIXED (F8): bounded. `boundMessagesCache` keeps the 30 most recently used
+  // conversations and the newest 200 messages in each (plus anything still
+  // undelivered, and whatever is on screen) and runs on every load and save,
+  // so neither the cache nor the `lantern_messages` blob written from it can
+  // grow for the lifetime of the process. It is also registered in
+  // stores/userScopedState, so a sign-out drops every chat it holds.
   messagesCache: Record<string, Message[]>;
   messagePagination: Record<string, MessagePagination>;
   dmThreads: DMThread[];
@@ -821,6 +893,118 @@ function applyDirectMessageMutation(
   });
 }
 
+// ---------------------------------------------------------------------------
+// FIXED (F8): bounding the message cache
+// ---------------------------------------------------------------------------
+
+/** Conversations kept in the cache. Beyond this, the least recently used go. */
+export const MESSAGES_CACHE_MAX_CONVERSATIONS = 30;
+/** Messages kept per conversation. The NEWEST are the ones kept. */
+export const MESSAGES_CACHE_MAX_PER_CONVERSATION = 200;
+
+/**
+ * Which conversations were touched most recently, newest tick first.
+ *
+ * Recency is what "least recently used" needs and no message carries it: a
+ * thread opened today may hold a month-old last message. Every read/write path
+ * that means "the student is in this conversation" stamps a tick here; a
+ * conversation with no tick (restored from disk, never opened this launch)
+ * falls back to the time of its newest message.
+ */
+const messagesCacheRecency = new Map<string, number>();
+let messagesCacheTick = 0;
+
+/** Forget all recency. Used by the sign-out sweep below. */
+export const clearMessagesCacheRecency = (): void => {
+  messagesCacheRecency.clear();
+  messagesCacheTick = 0;
+};
+
+/** Mark a conversation as just used. Cheap enough to call on every touch. */
+export const touchMessagesCache = (conversationId?: string | null): void => {
+  if (conversationId) messagesCacheRecency.set(conversationId, ++messagesCacheTick);
+};
+
+const newestMessageTime = (list: Message[]): number => {
+  let newest = 0;
+  for (const m of list) {
+    const t = Date.parse(m?.createdAt ?? '');
+    if (Number.isFinite(t) && t > newest) newest = t;
+  }
+  return newest;
+};
+
+/** A message that has not reached the server yet is never evicted. */
+const isUndelivered = (m: Message): boolean =>
+  m?.deliveryState === 'pending' || m?.deliveryState === 'failed';
+
+/** Newest `max` messages, plus every undelivered row whatever its age. */
+const trimConversation = (list: Message[], max: number): Message[] => {
+  if (list.length <= max) return list;
+  const byTime = [...list].sort(
+    (a, b) => (Date.parse(a?.createdAt ?? '') || 0) - (Date.parse(b?.createdAt ?? '') || 0)
+  );
+  const keep = new Set(byTime.slice(-max));
+  for (const m of list) if (isUndelivered(m)) keep.add(m);
+  // Preserve the caller's ordering — the thread renders straight from this.
+  return list.filter((m) => keep.has(m));
+};
+
+/**
+ * Bound the cache: at most N conversations, at most M messages in each.
+ *
+ * It used to be unbounded — every fetch, realtime event and page added rows
+ * and nothing ever evicted — so a long-lived process grew without limit and
+ * `saveToStorage` serialised the whole thing to one AsyncStorage blob on every
+ * send. `pinned` (the open thread, the open DM, the selected group) is kept
+ * regardless of recency: evicting what is on screen would blank it.
+ *
+ * Pure, and returns the SAME object when nothing needs dropping, so callers
+ * can use it as a no-op guard.
+ */
+export const boundMessagesCache = (
+  cache: Record<string, Message[]>,
+  pinned: (string | null | undefined)[] = [],
+  limits: { maxConversations?: number; maxPerConversation?: number } = {}
+): Record<string, Message[]> => {
+  const maxConversations = limits.maxConversations ?? MESSAGES_CACHE_MAX_CONVERSATIONS;
+  const maxPer = limits.maxPerConversation ?? MESSAGES_CACHE_MAX_PER_CONVERSATION;
+  const keepIds = new Set(pinned.filter((id): id is string => !!id && id in cache));
+
+  const ids = Object.keys(cache);
+  if (ids.length > maxConversations) {
+    const ranked = ids
+      .filter((id) => !keepIds.has(id))
+      .sort(
+        (a, b) =>
+          (messagesCacheRecency.get(b) ?? 0) - (messagesCacheRecency.get(a) ?? 0) ||
+          newestMessageTime(cache[b] || []) - newestMessageTime(cache[a] || [])
+      );
+    for (const id of ranked) {
+      if (keepIds.size >= maxConversations) break;
+      keepIds.add(id);
+    }
+  } else {
+    ids.forEach((id) => keepIds.add(id));
+  }
+
+  let changed = keepIds.size !== ids.length;
+  const next: Record<string, Message[]> = {};
+  for (const id of ids) {
+    if (!keepIds.has(id)) continue;
+    const list = cache[id] || [];
+    const trimmed = trimConversation(list, maxPer);
+    if (trimmed !== list) changed = true;
+    next[id] = trimmed;
+  }
+  if (!changed) return cache;
+  // Nothing may be remembered about a conversation that is no longer cached.
+  for (const id of messagesCacheRecency.keys()) {
+    if (!keepIds.has(id)) messagesCacheRecency.delete(id);
+  }
+  return next;
+};
+
 export const useGroupStore = create<GroupState>((set, get) => ({
   groups: [],
   currentGroup: null,
@@ -858,7 +1042,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         // messages that thread had just fetched (the disk copy rarely holds
         // them) — the thread then rendered as "No messages yet".
         const stored = JSON.parse(messagesJson) as GroupState['messagesCache'];
-        set(state => ({ messagesCache: { ...stored, ...state.messagesCache } }));
+        set(state => ({
+          messagesCache: boundMessagesCache(
+            { ...stored, ...state.messagesCache },
+            [state.activeGroupId, state.currentGroup?.id, state.activeDmThreadId]
+          ),
+        }));
       }
     } catch (error) {
       console.error('[GroupStore] Failed to load from storage:', error);
@@ -868,16 +1057,32 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   // Save current state to AsyncStorage
   saveToStorage: async () => {
     try {
-      const { groups, messagesCache } = get();
+      // Trim before serialising, and keep the trimmed copy: the blob and the
+      // in-memory cache are the same data, so bounding only the write would
+      // leave the process growing anyway.
+      const state = get();
+      const bounded = boundMessagesCache(state.messagesCache, [
+        state.activeGroupId,
+        state.currentGroup?.id,
+        state.activeDmThreadId,
+      ]);
+      if (bounded !== state.messagesCache) set({ messagesCache: bounded });
+      const groups = state.groups;
       await Promise.all([
         AsyncStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups)),
-        AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(messagesCache)),
+        AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(bounded)),
       ]);
     } catch (error) {
       console.error('[GroupStore] Failed to save to storage:', error);
     }
   },
 
+  // Chat list load: cache first for an instant render, then the API over it.
+  // Two things must survive the mapping — a roster already loaded for
+  // @mentions, and a chat-list preview that is newer than the server's
+  // (`last_message` lags the thread it summarises). Failure sets `listError`
+  // rather than `error`, so an offline list says so instead of reading as an
+  // empty account.
   fetchGroups: async (userId: string) => {
     set({ isLoading: true, error: null, listError: null });
 
@@ -937,6 +1142,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  // The roster comes from its OWN endpoint — the group payload has no embedded
+  // members — and roles are re-derived from the group's `adminIds`. Keep it
+  // that way: a roster read as a PostgREST embed breaks outright once a second
+  // foreign key exists between the two tables, which is how the members list
+  // silently emptied before. On failure the already-loaded roster is returned
+  // unchanged, never an empty list.
   fetchGroupMembers: async (groupId: string) => {
     const group = get().groups.find(g => g.id === groupId);
     const adminIds = group?.adminIds || [];
@@ -998,6 +1209,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   selectGroup: (groupId: string) => {
+    // The open thread is the most-recently-used conversation by definition;
+    // the LRU bound must never evict it out from under the screen.
+    touchMessagesCache(groupId);
     const group = get().groups.find(g => g.id === groupId) ?? null;
     const cached = get().messagesCache[groupId] || [];
     set({
@@ -1052,10 +1266,19 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  // Load one page of a group's messages into the cache (and into `messages`
+  // when that group is the one on screen).
+  //
+  // Three rules hold this together: a per-group sequence number so a slow
+  // fetch cannot apply after a newer one; `mergeServerRefresh` on a refresh so
+  // fresh server rows win while local outbox rows survive, versus a plain
+  // merge-by-id when paging; and the shared spinner belonging only to the
+  // active group, so a board or a background prefetch cannot strand it.
   fetchMessages: async (
     groupId: string,
     options?: { page?: number; refresh?: boolean; limit?: number; rootsOnly?: boolean }
   ) => {
+    touchMessagesCache(groupId);
     const page = options?.page ?? 1;
     const limit = options?.limit ?? MESSAGES_PAGE_SIZE;
     const refresh = options?.refresh ?? page === 1;
@@ -1141,6 +1364,20 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return Math.max(0, afterCount - beforeCount);
   },
 
+  // Send to a group or board, optimistically.
+  //
+  // Order: take the per-group send slot (sends are serialised, not rejected) →
+  // resolve a `clientMessageId` from the delivery-intent registry so a retry
+  // of the same content reuses it → render the optimistic row → POST →
+  // replace the optimistic row with the server row.
+  //
+  // On failure it distinguishes two cases. Network-shaped errors queue the
+  // send in the outbox, leave the row `'pending'` and resolve `'queued'` —
+  // throwing here is what made screens alert "Send failed" and invite a
+  // duplicate of a message already on its way. Anything the server rejected
+  // marks the row `'failed'` and throws. Only the failed row is patched:
+  // restoring a pre-await snapshot destroys realtime messages that landed
+  // mid-send.
   sendMessage: async (
     groupId: string,
     text: string,
@@ -1432,6 +1669,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
   },
 
+  // Create a group (or a community board/study group). The avatar is a two-step
+  // when it arrives as a data URL — create first, then upload — and a failed
+  // upload keeps the created group rather than failing the creation. Only the
+  // creator is an active member; invited ids stay pending until accepted. If
+  // the API call fails entirely the locally built group is kept and saved, so
+  // the caller always gets a group back.
   createGroup: async (input: CreateGroupInput | string, description?: string, ownerId?: string, ownerName?: string, parentId?: string) => {
     const groupInput: CreateGroupInput = typeof input === 'string'
       ? {
@@ -1837,6 +2080,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const seen = new Set<string>();
 
     for (const gid of uniqueIds) {
+      touchMessagesCache(gid);
       let cached = get().messagesCache[gid];
       if (!cached?.length) {
         try {
@@ -1894,6 +2138,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   setActiveDmThreadId: (threadId) => {
+    touchMessagesCache(threadId);
     set({ activeDmThreadId: threadId });
   },
 
@@ -1998,6 +2243,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  // The DM twin of `sendMessage`, with the same slot/intent/queue contract.
+  // Two DM-only rules: sending CLEARS this thread's delete-for-me cutoff (the
+  // conversation is alive again), and the thread preview is reverted on a
+  // queued or failed send so the inbox never advertises a message that never
+  // left.
   sendDirectMessageTo: async (
     senderId: string,
     recipientId: string,
@@ -2366,6 +2616,9 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
   },
 
+  // Realtime INSERT. Ignores a row already in the cache and strips the
+  // optimistic twin (same sender, same text, within a minute) so the viewer's
+  // own message does not appear twice when the broadcast beats the response.
   appendGroupMessage: (groupId: string, rawMessage: unknown) => {
     const roster = get().groups.find(g => g.id === groupId)?.members;
     const message = mapApiMessage(rawMessage, groupId, roster);
@@ -2381,6 +2634,15 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
   },
 
+  // Realtime UPDATE. Patches a row already held — matched by id, or by
+  // `clientMessageId` when the update is the server's version of a still
+  // optimistic row — and does nothing when the row is unknown.
+  //
+  // A realtime payload is PARTIAL: question fields and a concrete author label
+  // are kept from the previous copy when the incoming row carries none, so an
+  // edit broadcast cannot blank a question's options or reduce its author to
+  // "Member". Reply previews pointing at this message are refreshed at the
+  // same time.
   mergeGroupMessage: (groupId: string, rawMessage: unknown) => {
     const roster = get().groups.find(g => g.id === groupId)?.members;
     const message = mapApiMessage(rawMessage, groupId, roster);
@@ -2464,6 +2726,11 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     return apiMessages.map((m: any) => mapDirectMessage(m, context.threadId));
   },
 
+  // Someone else read a chat: advance the read receipts on the viewer's OWN
+  // messages only. A DM flips to 'read' on the timestamp comparison; a group
+  // counts seen-by up to `seenByTotal` (members minus the viewer) and only
+  // reads as 'read' once everyone has. Messages older than `lastReadAt` are
+  // untouched, and a peer event for the viewer's own id is ignored.
   applyPeerChatRead: ({ chatId, userId, lastReadAt }) => {
     const currentUserId = useAuthStore.getState().user?.id;
     if (!currentUserId || !userId || !lastReadAt || userId === currentUserId) return;
@@ -2583,6 +2850,13 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
   },
 
+  // Vote, or un-vote when the same direction is tapped again.
+  //
+  // Server-first, unlike the other mutations here: nothing is written to state
+  // until the call returns, and the server's own counts are preferred over the
+  // locally adjusted ones. A question's VERIFIED status is likewise the
+  // server's if it reports one; the local `resolveQuestionStatusAfterVote` is
+  // only the fallback for API builds that do not.
   voteOnMessage: async (groupId: string, messageId: string, userId: string, voteType: 'up' | 'down') => {
     const groupMessages = get().messagesCache[groupId] || get().messages;
     const message = groupMessages.find(m => m.id === messageId);
@@ -2790,4 +3064,38 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
     console.warn('[SyncHandler:message] send failed, will retry:', error);
     return false;
   }
+});
+
+/**
+ * FIXED (F8): every chat this account can see is dropped on sign-out.
+ *
+ * The group list, the bounded message cache, DM threads and their messages are
+ * hydrated state, not storage — `signOut` clearing `lantern_groups` and
+ * `lantern_messages` left all of it mounted, so the next account's chat list
+ * rendered the previous student's groups and unread badges until the first
+ * fetch landed. The recency map goes with it: it names conversations that are
+ * no longer cached.
+ */
+registerUserScoped('groupStore', () => {
+  clearMessagesCacheRecency();
+  useGroupStore.setState({
+    groups: [],
+    currentGroup: null,
+    activeGroupId: null,
+    messages: [],
+    messagesCache: {},
+    messagePagination: {},
+    dmThreads: [],
+    activeDmThreadId: null,
+    directMessages: {},
+    dmHistoryClearedAtByThread: {},
+    dmUnreadCounts: {},
+    groupUnreadCounts: {},
+    userVotes: {},
+    isLoading: false,
+    isLoadingMore: false,
+    isLoadingMessages: false,
+    error: null,
+    listError: null,
+  });
 });

@@ -1,3 +1,19 @@
+/**
+ * `SemesterProducts` route: a seller tool that proposes one AI study-pack draft
+ * per course the user has notes for, and enqueues the selected ones.
+ *
+ * Exports: SemesterProductsScreen (named and default).
+ * Touches: fetchSemesterPackProposals and createStudyPackDraft in
+ * ../../services/api; enqueueSemesterDraftsSequentially and
+ * STUDY_PACK_DRAFT_CREDITS from @lantern/shared/marketplace. Navigates to
+ * `StudyProductDrafts` when the run finishes.
+ *
+ * Gotchas: drafts are generated one at a time by
+ * enqueueSemesterDraftsSequentially, and a partial run still navigates away
+ * after reporting how many started. The initial selection is pre-checked up to
+ * maxSelectable, so tapping Generate without reading spends credits. The
+ * credit cap shown is the value from the last load, not a live balance.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

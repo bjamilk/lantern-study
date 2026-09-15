@@ -4,6 +4,7 @@ import {
   toPersistedMarketplaceImageUrl,
 } from '@lantern/shared/utils/storageUrl';
 import type { SupabaseService } from './supabase';
+import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 
 const MAX_CAMPAIGN_RECIPIENTS = 25;
@@ -304,8 +305,8 @@ export class MarketplaceSellerToolsService {
     let shopName = current.shop_name;
     if (patch.shopName !== undefined) {
       const trimmed = patch.shopName.trim();
-      if (!trimmed) throw new Error('Shop name is required');
-      if (trimmed.length > 80) throw new Error('Shop name must be 80 characters or fewer');
+      if (!trimmed) throw new PublicError('Shop name is required');
+      if (trimmed.length > 80) throw new PublicError('Shop name must be 80 characters or fewer');
       shopName = trimmed;
     }
 
@@ -315,7 +316,7 @@ export class MarketplaceSellerToolsService {
         shopBio = null;
       } else {
         const trimmed = patch.bio.trim();
-        if (trimmed.length > 500) throw new Error('Shop bio must be 500 characters or fewer');
+        if (trimmed.length > 500) throw new PublicError('Shop bio must be 500 characters or fewer');
         shopBio = trimmed;
       }
     }
@@ -331,7 +332,7 @@ export class MarketplaceSellerToolsService {
           supabaseUrl: process.env.SUPABASE_URL || '',
         });
         if (!persisted) {
-          throw new Error('Cover image is not a valid marketplace photo');
+          throw new PublicError('Cover image is not a valid marketplace photo');
         }
         cover = persisted;
       }
@@ -551,13 +552,13 @@ export class MarketplaceSellerToolsService {
       currency: string;
     }
   ): Promise<Record<string, unknown>> {
-    if (!input.title?.trim()) throw new Error('Bundle title is required');
-    if (!input.price || input.price <= 0) throw new Error('Bundle price must be positive');
-    if (!input.campusId) throw new Error('Campus or city metadata is required');
+    if (!input.title?.trim()) throw new PublicError('Bundle title is required');
+    if (!input.price || input.price <= 0) throw new PublicError('Bundle price must be positive');
+    if (!input.campusId) throw new PublicError('Campus or city metadata is required');
     if (!input.listingIds?.length || input.listingIds.length < 2) {
-      throw new Error('Select at least 2 listings for a bundle');
+      throw new PublicError('Select at least 2 listings for a bundle');
     }
-    if (input.listingIds.length > 10) throw new Error('Bundles can include at most 10 items');
+    if (input.listingIds.length > 10) throw new PublicError('Bundles can include at most 10 items');
 
     const { data: listings, error } = await this.db
       .from('marketplace_listings')
@@ -567,7 +568,7 @@ export class MarketplaceSellerToolsService {
 
     if (error) throw error;
     if (!listings || listings.length !== input.listingIds.length) {
-      throw new Error('One or more bundle listings were not found');
+      throw new PublicError('One or more bundle listings were not found');
     }
 
     const bundleItems: MarketplaceBundleItem[] = listings.map((l) => ({
@@ -610,8 +611,8 @@ export class MarketplaceSellerToolsService {
     input: { message: string; segment?: string; buyerIds?: string[] }
   ): Promise<{ sent: number; skipped: number }> {
     const message = input.message?.trim();
-    if (!message || message.length < 5) throw new Error('Message must be at least 5 characters');
-    if (message.length > 500) throw new Error('Message must be 500 characters or fewer');
+    if (!message || message.length < 5) throw new PublicError('Message must be at least 5 characters');
+    if (message.length > 500) throw new PublicError('Message must be 500 characters or fewer');
 
     const { getMarketplaceOrdersService } = await import('./marketplaceOrders');
     const buyers = await getMarketplaceOrdersService(this.supabaseService).getSellerBuyersWithSegments(
@@ -625,7 +626,7 @@ export class MarketplaceSellerToolsService {
       recipients = buyers.filter((b) => idSet.has(b.buyerId));
     }
 
-    if (!recipients.length) throw new Error('No customers match this audience');
+    if (!recipients.length) throw new PublicError('No customers match this audience');
 
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
@@ -636,7 +637,7 @@ export class MarketplaceSellerToolsService {
       .gte('created_at', dayStart.toISOString());
 
     if ((sentToday || 0) >= DAILY_CAMPAIGN_CAP) {
-      throw new Error('Daily campaign limit reached. Try again tomorrow.');
+      throw new PublicError('Daily campaign limit reached. Try again tomorrow.');
     }
 
     const batch = recipients.slice(0, MAX_CAMPAIGN_RECIPIENTS);
@@ -728,7 +729,7 @@ export class MarketplaceSellerToolsService {
 
     if (error) throw error;
     if (typeof data !== 'number') {
-      throw new Error('No boost credits remaining. Complete more sales to earn boosts.');
+      throw new PublicError('No boost credits remaining. Complete more sales to earn boosts.');
     }
     return data;
   }

@@ -1,3 +1,15 @@
+/**
+ * Root stack -> JoinClass. Takes a lecturer's join code (optionally prefilled
+ * from a route param), previews the class it names, then joins it.
+ *
+ * Exports: JoinClassScreen (default).
+ * Touches: services/api previewClassByCode and joinClassByCode; code shape and
+ * copy from @lantern/shared/academic (canonicalizeJoinCode, isValidJoinCode,
+ * classSubjectLine).
+ * Note: the preview runs on every keystroke that forms a valid code, but
+ * joining is an explicit button press; the code is canonicalised on input so
+ * what is previewed is what is sent.
+ */
 import React, { useEffect, useState } from 'react';
 import { useTheme } from '../../theme';
 import { ActivityIndicator, Pressable, ScrollView, Text, TextInput, View } from 'react-native';

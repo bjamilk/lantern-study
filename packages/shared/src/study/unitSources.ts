@@ -33,6 +33,18 @@
  * or a unit fed by several materials.
  *
  * Pure. No I/O, no inference, no title matching — ids in, resolved ids out.
+
+ *
+ * CONSUMERS: web + mobile plan units. Not the api.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT — run `npm run build` in
+ * packages/shared before typechecking or running web/mobile, or consumers
+ * resolve a stale `dist/`. A NEW subpath under src/ needs three things: the
+ * file, a `packages/shared/package.json` "exports" entry, and an
+ * `apps/api-server/tsconfig.json` "paths" entry; mobile jest maps
+ * `@lantern/shared/*` subpaths separately, so a subpath imported only by a
+ * test produces a CI-only TS2307 (reproduce with `jest --no-cache`). The web
+ * turbo build compiles with strict `noUncheckedIndexedAccess`.
  */
 import { isLectureNote, isWalkableAttachment } from '../learning/courseWorkspace';
 import { topicsInUnit, type StudySetTopic } from '../learning/studySetPlan';

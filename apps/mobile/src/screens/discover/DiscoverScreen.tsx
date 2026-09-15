@@ -1,3 +1,25 @@
+/**
+ * The Discover hub: four sections (Communities, Groups, People, Rooms) behind
+ * one search box, plus a Marketplace section that is a pointer to the Shop
+ * rather than a list. Cards join/leave a community, join or open a group, open
+ * a creator profile, or enter a study room.
+ *
+ * Exports: DiscoverScreen (named and default) -- the gate wrapper around the
+ * internal DiscoverHub.
+ * Touches: services/api discoverCommunities / fetchMyCommunities /
+ * discoverGroups / discoverPeople / listStudyRooms / fetchStudyPresence /
+ * joinCommunity / leaveCommunity / joinDiscoverableGroup / createCommunity;
+ * groupStore (fetchGroups, groups for the unread rollup), authStore,
+ * useCommunityAccess, ChromeContext onScroll.
+ * Gotchas: "Your communities" is built from the MEMBERSHIP list, never by
+ * partitioning the global discover page, or another campus's rooms read as
+ * yours. Load failures (loadError) and action failures (actionFailure) are
+ * kept apart: resolveListState must never turn a failed load into "no
+ * results". The marketplace section navigates away instead of listing, and it
+ * clears `loading` explicitly or the screen spins forever when marketplace is
+ * the default section. Rooms refetch on focus and filter locally; every other
+ * section searches on submit, not per keystroke.
+ */
 import { pluralize } from '@lantern/shared/utils';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';

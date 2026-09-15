@@ -1,3 +1,49 @@
+/**
+ * Lantern AI on the phone: the full-screen companion sheet.
+ *
+ * Purpose: the mobile counterpart of the web companion rail — one thread with
+ * the assistant, scoped to whatever the student was standing on when the sheet
+ * came up, with dictation, image and note attachments, guided lessons, past
+ * chats, and per-answer actions (copy, read aloud, ask again, turn into study
+ * material).
+ *
+ * Main export: `AICompanionPanel`. It is mounted ONCE, at the root
+ * (`RootNavigator`), and is not given a `context` prop there — which is why the
+ * live route, sampled at open, is the only truth about which room a thread and
+ * its attachments belong to.
+ *
+ * Touches:
+ * - Stores: `companionStore` (the thread, scope, images, guided state — it owns
+ *   all persistence), `authStore`, `notesStore`, `jobsStore`, `toastStore`.
+ * - Services: `services/ai` (`submitCompanionFeedback`, `trackAIAnalyticsEvent`),
+ *   `services/notes` (`transcribeAudioForNote`), `screens/study/turnIntoJobs`.
+ * - Navigation: `navigationRef` only — `getCurrentRoute()` to sample the scope,
+ *   and `navigate` for action chips, citations and turn-into destinations.
+ * - Native: `expo-av` (dictation recording, imported lazily),
+ *   `expo-file-system/legacy` (reads the clip back as base64),
+ *   `expo-image-picker`, `expo-clipboard`, `expo-speech`, RN `AppState`.
+ *
+ * Gotchas:
+ * - TIMERS AND NATIVE NODES. RN 0.81.5 (Expo SDK 54) does not have
+ *   `TextInput.State` at runtime, and a throw inside a `setTimeout` has no
+ *   error boundary above it — it kills the process. Treat any timer in this
+ *   file that reaches a native node (`listRef.current?.scrollToEnd`, the
+ *   dictation interval/timeout) as that class of code: keep the optional
+ *   chaining, never add a bare component static, and clear the handle.
+ * - `ActionSheet` calls `onClose()` BEFORE the row's `onPress()`. Anything an
+ *   item's handler needs must not be the state that `onClose` clears.
+ * - The Android photo picker and camera are separate Activities, so choosing a
+ *   photo reports AppState `background`. `pickerBusyRef` is what stops that
+ *   from being read as the student leaving the app (which used to close the
+ *   sheet mid-upload).
+ * - `isStreaming` is a render snapshot; the double-send guard is the
+ *   synchronous `sendInFlightRef`, because one AI turn is one credit.
+ * - The sheet is a `Modal`, so the route under it cannot change while it is
+ *   up — scope is sampled on open, deliberately not on every render.
+ * - Adding or removing a hook in this file while the app is running redboxes
+ *   with "Rendered more hooks than during the previous render". That is Fast
+ *   Refresh, not the edit: force-stop and relaunch before believing it.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
@@ -117,6 +163,12 @@ function citationChipLabels(excerpts: number[]): string[] {
   return unique.map((n) => `Excerpt ${n}`);
 }
 
+/**
+ * Past-chat timestamps: minutes, hours and days while that reads as recent,
+ * then a locale date. Handed to `CompanionHistory` as a prop so the list stays
+ * presentational. Returns '' rather than throwing on an unparseable value —
+ * `toLocaleDateString` can throw on some Android locales, hence the try.
+ */
 function formatRelativeTime(iso: string): string {
   const ts = Date.parse(iso);
   if (!Number.isFinite(ts)) return '';
@@ -135,6 +187,12 @@ function formatRelativeTime(iso: string): string {
   }
 }
 
+/**
+ * Dictation bounds. Below the minimum the clip is dropped with an explanation
+ * instead of being sent (a tap that grazes the mic is not a question, and
+ * transcribing it would still cost); at the maximum a timer stops the recording
+ * for the student so a pocketed phone cannot record forever.
+ */
 const MIN_DICTATION_MS = 800;
 const MAX_DICTATION_MS = 60_000;
 
@@ -457,6 +515,21 @@ export function AICompanionPanel({ context }: Props) {
     inputValueRef.current = input;
   }, [input]);
 
+  /**
+   * BOOTSTRAP — runs once per open, for a signed-in student.
+   *
+   * Order matters and is the whole point of the effect: sample the room, decide
+   * the scope, reset the store to that scope, THEN settle the attachment, and
+   * only then load the thread and the past-chat list. The precedence for what
+   * the thread is "on" is: a caller that named its own scope, then the route's
+   * own note id, then the route saying "this open is about the SET", then
+   * whatever was persisted for this scope, then the `context` prop (web only).
+   *
+   * `hasLoaded` is the once-per-open latch and the close effect below clears
+   * it; without it every re-render while open would re-reset the scope and
+   * reload history. It must not become a scope watcher — a scope CHANGE while
+   * the sheet is up cannot happen, because the sheet is a Modal over the route.
+   */
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     if (hasLoaded.current) return;
@@ -513,6 +586,12 @@ export function AICompanionPanel({ context }: Props) {
         void loadConversations();
         return;
       }
+      // FIXED (F8): the attachment and conversation id this restores are
+      // persisted per ACCOUNT in stores/companionStore.ts
+      // (`lantern_companion_note_context:<userId>`,
+      // `lantern_companion_conversation_id:<userId>`) on top of the study
+      // scope, and the read waits for auth to resolve — so an account switch
+      // on the same device restores nothing of the previous student's.
       await hydrateNoteContext(openScopeId);
       if (!useCompanionStore.getState().activeNoteContext && context?.noteId && !didAutoAttachRef.current) {
         didAutoAttachRef.current = true;
@@ -538,6 +617,19 @@ export function AICompanionPanel({ context }: Props) {
     context?.noteTitle,
   ]);
 
+  /**
+   * OPEN/CLOSE HOUSEKEEPING for the panel's own view state.
+   *
+   * On close: drop the once-per-open latches and put the sheet back in its
+   * default view, so the next open is not still showing the past-chat list or
+   * an expanded prompt tray. Composer text is deliberately NOT cleared — this
+   * component never unmounts, and a draft should survive a close.
+   *
+   * On open: sample the room ONCE, for display (`routeScope`, the "On:" line)
+   * and for filing (`roomScope`, where a turned-into note is saved). A caller
+   * that stated its own scope through `openForScope` overrides the inferred
+   * name and id; everything it did not state falls back to the inference.
+   */
   useEffect(() => {
     if (!isOpen) {
       hasLoaded.current = false;
@@ -626,6 +718,17 @@ export function AICompanionPanel({ context }: Props) {
     [setActiveNoteContext]
   );
 
+  /**
+   * Send the question a host handed over with the open (`setPendingMessage`) —
+   * the "ask about this" doors elsewhere in the app.
+   *
+   * Every condition is a gate, not a nicety: the turn must wait until history
+   * has actually landed (`historyLoaded` and not loading), or it is sent into a
+   * thread that is about to be replaced by the loaded one, and it must not
+   * overlap a turn already in flight. The pending message is cleared BEFORE the
+   * send so a re-render inside the same open cannot queue it twice — one turn
+   * is one credit.
+   */
   useEffect(() => {
     if (
       isOpen &&
@@ -651,6 +754,23 @@ export function AICompanionPanel({ context }: Props) {
     enrichedContext,
   ]);
 
+  /* ------------------------------------------------------------------------
+   * DICTATION — start, finish, discard, and the timers that back them.
+   *
+   * The state lives in refs rather than in React state wherever a timer or a
+   * promise continuation reads it (`recordingRef`, `discardRecordingRef`,
+   * `transcribeAbortRef`, the two timer handles): a callback that fires after a
+   * re-render must see the CURRENT recording, not the one captured when it was
+   * scheduled. The `is*` booleans are state because they are drawn.
+   *
+   * The two timers here reach native objects after the fact — the interval
+   * ticks a counter, the timeout stops the recording — which is the shape that
+   * killed the process elsewhere in this app on RN 0.81.5 (a component static
+   * missing at runtime, thrown inside a `setTimeout`, no error boundary above a
+   * timer). Every exit path therefore goes through `clearRecordingTimers` and
+   * nulls the handles, and both the close effect and the unmount effect below
+   * call `discardDictation`.
+   * --------------------------------------------------------------------- */
   const clearRecordingTimers = useCallback(() => {
     if (maxTimerRef.current) {
       clearTimeout(maxTimerRef.current);
@@ -662,6 +782,16 @@ export function AICompanionPanel({ context }: Props) {
     }
   }, []);
 
+  /**
+   * Stop recording and turn the clip into composer text.
+   *
+   * Triggered by the mic button while recording, or by the max-length timeout.
+   * Reads the discard flag first, so a cancel that raced the stop is honoured
+   * and nothing is uploaded; drops a too-short clip; otherwise reads the file
+   * back as base64, transcribes it, and APPENDS to whatever is already typed
+   * (via `inputValueRef`, not `input` — the callback outlives the render it was
+   * created in). It never sends: the student still gets to read and edit.
+   */
   const finishDictation = useCallback(async () => {
     const recording = recordingRef.current;
     if (!recording) return;
@@ -765,6 +895,15 @@ export function AICompanionPanel({ context }: Props) {
     }
   }, [clearRecordingTimers, context?.currentScreen, showToast]);
 
+  /**
+   * Ask for the mic, start recording, and arm the two timers (the visible
+   * seconds counter and the hard stop at `MAX_DICTATION_MS`).
+   *
+   * `expo-av` is imported lazily here so the audio stack is only loaded for a
+   * student who actually dictates. A refused permission is explained and the
+   * function returns — no recording state is entered, so the mic button is not
+   * left looking armed.
+   */
   const startDictation = useCallback(async () => {
     if (isRecording || isTranscribing) return;
     discardRecordingRef.current = false;
@@ -801,6 +940,15 @@ export function AICompanionPanel({ context }: Props) {
     }
   }, [context?.currentScreen, finishDictation, isRecording, isTranscribing]);
 
+  /**
+   * Throw the clip away: the flag `finishDictation` reads, the in-flight
+   * transcription aborted, the timers cleared, the recording unloaded.
+   *
+   * The only teardown path, and it is called from three places — closing the
+   * sheet, unmounting, and (through the flag) a stop that has already started.
+   * It must stay synchronous up to the point it nulls `recordingRef`, so a
+   * second call cannot unload the same recording twice.
+   */
   const discardDictation = useCallback(() => {
     discardRecordingRef.current = true;
     transcribeAbortRef.current?.abort();
@@ -816,17 +964,27 @@ export function AICompanionPanel({ context }: Props) {
     }
   }, [clearRecordingTimers]);
 
+  // Closing the sheet ends any recording: the mic must not stay hot behind a
+  // panel that is no longer on screen.
   useEffect(() => {
     if (isOpen) return;
     discardDictation();
   }, [isOpen, discardDictation]);
 
+  // Same on unmount — this component normally lives for the process, so this is
+  // the safety net for a remount (a font-scale change re-keys the tree) rather
+  // than an everyday path.
   useEffect(() => {
     return () => {
       discardDictation();
     };
   }, [discardDictation]);
 
+  /**
+   * The one send path. Every other caller in this file (the composer, the
+   * prompt chips, Explain simply, Ask again, a guided goal) goes through it, so
+   * the busy checks and the double-send guard exist once.
+   */
   const handleSend = useCallback(
     async (
       text?: string,
@@ -857,6 +1015,11 @@ export function AICompanionPanel({ context }: Props) {
       } finally {
         sendInFlightRef.current = false;
       }
+      // One frame after the answer lands, so the list has the new row's height
+      // before it scrolls. A timer that reaches a native node: the optional
+      // chaining is what makes it safe when the sheet has been closed (and the
+      // list unmounted) in the meantime — this handle is never cleared, and an
+      // unguarded call here would throw inside a timer, where nothing catches.
       setTimeout(() => listRef.current?.scrollToEnd({ animated: true }), 100);
     },
     [input, isLoading, isStreaming, isRecording, isTranscribing, sendMessageStreaming, enrichedContext]
@@ -954,6 +1117,15 @@ export function AICompanionPanel({ context }: Props) {
     showAttachSheet || showNotePicker || Boolean(activeNoteContext) || pendingImages.length > 0;
   const dictationBusy = isRecording || isTranscribing;
 
+  /* ------------------------------------------------------------------------
+   * THREAD HANDLERS — past chats, new chat, delete.
+   *
+   * All four are thin: the store owns the conversation list, the active id and
+   * the deletes, and each handler's own work is putting the panel into the
+   * right view and reporting the event. Opening history closes the note picker
+   * so two overlays are never stacked; "Delete this chat" confirms first and
+   * removes only the CURRENT conversation, which is what its dialog says.
+   * --------------------------------------------------------------------- */
   const handleOpenHistory = useCallback(() => {
     setShowHistoryList(true);
     setShowNotePicker(false);
@@ -1264,6 +1436,19 @@ export function AICompanionPanel({ context }: Props) {
             </View>
             )
           }
+          /* MESSAGE MAPPING — one store message to one bubble and its
+             trailing rows, in this order: the bubble (or the typing indicator
+             for the empty assistant message the store appends at send), the
+             citation chips, the action chips the phone can actually honour, the
+             per-answer action row, the turn-into target row, then feedback.
+             Everything below the bubble is assistant-only.
+
+             Two gates decide what a row may offer. `isStreaming` hides the
+             action rows while the answer is still arriving — they act on a
+             finished answer. `canRate` requires a real server id: a `tmp-`
+             id is the optimistic one the store minted locally, and feedback
+             posted against it would have nothing to attach to. Actions that
+             need no id (copy, read aloud, ask again) stay available on it. */
           renderItem={({ item }) => {
             const isUser = item.role === 'user';
             const supportedActions = ((item.actions || []) as CompanionAction[]).filter(
@@ -1600,6 +1785,14 @@ export function AICompanionPanel({ context }: Props) {
             </View>
           ) : null}
 
+          {/* The one "+" sheet: everything attachable, plus the Guided toggle.
+              ORDERING TRAP — ActionSheet calls `onClose()` BEFORE the row's
+              `onPress()` (see ui/ActionSheet.tsx `select`). So by the time any
+              handler below runs, `showAttachSheet` is already false. That is
+              safe here only because no handler reads it: each one either
+              launches a picker Activity, opens the note picker, or toggles
+              Guided. Any new row that needs sheet state must capture it in the
+              closure rather than read it back. */}
           <ActionSheet
             visible={showAttachSheet}
             title="Attach to this question"

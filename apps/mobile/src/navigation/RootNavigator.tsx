@@ -1,3 +1,49 @@
+/**
+ * The whole mobile navigation tree, and the app-level work that hangs off it.
+ *
+ * Structure, outermost first: `RootNavigator` (the NavigationContainer, theme
+ * and nav-state preservation) → `RootNavigatorInner` (the auth/onboarding/app
+ * decision and the per-session bootstrap) → `MainTabs`/`MainTabsShell` (top
+ * bar, the five-tab navigator, the chrome context) → one stack navigator per
+ * tab (Home · Study · Chat · Campus · Me) → `CustomTabBar` (the bottom bar, the
+ * contextual row above it, and the chrome publications the rest of the app
+ * reads).
+ *
+ * Main export: `RootNavigator`. Everything else in this file is private.
+ *
+ * Touches:
+ * - Stores: authStore, settingsStore, flashcardStore, groupStore,
+ *   communityStore, testStore, notificationStore, companionStore,
+ *   featureTipStore, marketplaceStore.
+ * - Services: supabase (`profiles` select, `getAuthHeaders`), sentry,
+ *   ai (`fetchAIUsage`), dataRefresh, pushNotifications, academic,
+ *   pendingAcademicProfile, productAnalytics (lazy-imported per screen view).
+ * - Native/Expo: expo-splash-screen, AsyncStorage (onboarding flag, the
+ *   per-user academic-setup dismissal), React Native `AppState`.
+ * - Pure planners next door: tabPressBehavior, stackNavigate, contextualBars
+ *   (through ContextualBar), legacyTabs, types.
+ *
+ * Gotchas:
+ * - FONT REMOUNT. Changing the in-app font size re-keys the View wrapping the
+ *   app, which remounts this NavigationContainer. The three module-level
+ *   caches below (`preservedNavState`, `onboardingCache`, `bootstrappedUserId`)
+ *   exist for that: without them the student is dropped on Home, and the
+ *   navigator must mount on the SAME COMMIT as the container or the restored
+ *   `initialState` goes unconsumed. See each one's own note before changing the
+ *   boot gate.
+ * - Three timers run at boot (`SplashScreen.hideAsync` at 4 s, `bootTimedOut`
+ *   at 10 s, `authGateTimedOut` at BOOT_GATE_MAX_MS) and they answer different
+ *   questions. Only `resolveBootGate` may decide the AUTH route; the others
+ *   only take a splash away.
+ * - ONE-WAY PARAMS. `CustomTabBar` is the one component that knows the focused
+ *   route; it publishes `{ activeTab, immersive, focusedRoute, focusedParams }`
+ *   into the chrome context, and the contextual row is a pure read of that. The
+ *   chrome must never write back into the route it derived those from — see
+ *   navigation/segmentParamSync.ts for the update loop that causes.
+ * - Retired tab names (`MarketTab`, `JobsTab`, `BudgetTab`, `MarketplaceHome`,
+ *   `JobsHome`) stay registered as redirect screens. A navigate to a route that
+ *   does not exist is silently dropped in release builds.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { AppState, View } from 'react-native';
@@ -226,51 +272,6 @@ import {
   JobCompanyScreen,
 
 } from '../screens/marketplace';
-import { withMarketplaceGate } from '../screens/marketplace/MarketplaceGate';
-import { useMarketplaceStore } from '../stores/marketplaceStore';
-
-// Marketplace private pilot: commerce screens render only for allowlisted
-// accounts (the API 403s everyone else regardless — see MarketplaceGate).
-// Network screens on the same stack (Discover, CommunityDetail, Feed,
-// StudyRoom, CreatorProfile, Mastery) are deliberately NOT gated.
-// Module scope so each wrapped component keeps a stable identity. The Shop
-// and Jobs HOME screens are gated inside CampusScreen instead: they are
-// segments now, not routes.
-const GatedShopBrowse = withMarketplaceGate(ShopBrowseScreen);
-// "Browse by course" reads the same gated marketplace endpoints as the rest of
-// the shop, so it wears the same gate rather than 403-ing inside the screen.
-const GatedCourseBrowse = withMarketplaceGate(CourseBrowseScreen);
-const GatedCourseListings = withMarketplaceGate(CourseListingsScreen);
-const GatedShopAccount = withMarketplaceGate(ShopAccountScreen);
-// Jobs joins the private pilot: hiding the drawer row is not a gate, since a
-// deep link, a job notification or the marketplace workspace bar all reach
-// these screens directly.
-const GatedJobDetail = withMarketplaceGate(JobDetailScreen, 'jobs');
-const GatedCreateJob = withMarketplaceGate(CreateJobScreen, 'jobs');
-const GatedMyJobPostings = withMarketplaceGate(MyJobPostingsScreen, 'jobs');
-const GatedMyJobApplications = withMarketplaceGate(MyJobApplicationsScreen, 'jobs');
-const GatedJobEmployer = withMarketplaceGate(JobEmployerScreen, 'jobs');
-const GatedJobApplicants = withMarketplaceGate(JobApplicantsScreen, 'jobs');
-const GatedJobCompany = withMarketplaceGate(JobCompanyScreen, 'jobs');
-const GatedListingDetail = withMarketplaceGate(ListingDetailScreen);
-const GatedMyListings = withMarketplaceGate(MyListingsScreen);
-const GatedInquiries = withMarketplaceGate(InquiriesScreen);
-const GatedCreateListing = withMarketplaceGate(CreateListingScreen);
-const GatedEditListing = withMarketplaceGate(EditListingScreen);
-const GatedMakeOffer = withMarketplaceGate(MakeOfferScreen);
-const GatedSellerProfile = withMarketplaceGate(SellerProfileScreen);
-const GatedOffers = withMarketplaceGate(OffersScreen);
-const GatedMarketFavorites = withMarketplaceGate(FavoritesScreen);
-const GatedOrders = withMarketplaceGate(OrdersScreen);
-const GatedCart = withMarketplaceGate(CartScreen);
-const GatedCheckout = withMarketplaceGate(CheckoutScreen);
-const GatedAddresses = withMarketplaceGate(AddressesScreen);
-const GatedPurchases = withMarketplaceGate(PurchasesScreen);
-const GatedStudyProductDrafts = withMarketplaceGate(StudyProductDraftsScreen);
-const GatedSemesterProducts = withMarketplaceGate(SemesterProductsScreen);
-const GatedOrderDetail = withMarketplaceGate(OrderDetailScreen);
-const GatedSellerCustomers = withMarketplaceGate(SellerCustomersScreen);
-const GatedSellerPayout = withMarketplaceGate(SellerPayoutScreen);
 import {
   CommunityDetailScreen,
   CreateCommunityScreen,
@@ -522,41 +523,41 @@ function CampusNavigator() {
 
       <CampusStack.Screen name="JobsHome" component={JobsHomeRedirect} />
 
-      <CampusStack.Screen name="ShopBrowse" component={GatedShopBrowse} />
-      <CampusStack.Screen name="CourseBrowse" component={GatedCourseBrowse} />
-      <CampusStack.Screen name="CourseListings" component={GatedCourseListings} />
+      <CampusStack.Screen name="ShopBrowse" component={ShopBrowseScreen} />
+      <CampusStack.Screen name="CourseBrowse" component={CourseBrowseScreen} />
+      <CampusStack.Screen name="CourseListings" component={CourseListingsScreen} />
 
-      <CampusStack.Screen name="ShopAccount" component={GatedShopAccount} />
+      <CampusStack.Screen name="ShopAccount" component={ShopAccountScreen} />
 
-      <CampusStack.Screen name="ListingDetail" component={GatedListingDetail} />
+      <CampusStack.Screen name="ListingDetail" component={ListingDetailScreen} />
 
-      <CampusStack.Screen name="MyListings" component={GatedMyListings} />
+      <CampusStack.Screen name="MyListings" component={MyListingsScreen} />
 
-      <CampusStack.Screen name="Inquiries" component={GatedInquiries} />
+      <CampusStack.Screen name="Inquiries" component={InquiriesScreen} />
 
-      <CampusStack.Screen name="CreateListing" component={GatedCreateListing} />
+      <CampusStack.Screen name="CreateListing" component={CreateListingScreen} />
 
-      <CampusStack.Screen name="EditListing" component={GatedEditListing} />
+      <CampusStack.Screen name="EditListing" component={EditListingScreen} />
 
-      <CampusStack.Screen name="MakeOffer" component={GatedMakeOffer} />
+      <CampusStack.Screen name="MakeOffer" component={MakeOfferScreen} />
 
-      <CampusStack.Screen name="SellerProfile" component={GatedSellerProfile} />
+      <CampusStack.Screen name="SellerProfile" component={SellerProfileScreen} />
 
-      <CampusStack.Screen name="Offers" component={GatedOffers} />
+      <CampusStack.Screen name="Offers" component={OffersScreen} />
 
-      <CampusStack.Screen name="Favorites" component={GatedMarketFavorites} />
+      <CampusStack.Screen name="Favorites" component={FavoritesScreen} />
 
-      <CampusStack.Screen name="Orders" component={GatedOrders} />
+      <CampusStack.Screen name="Orders" component={OrdersScreen} />
 
-      <CampusStack.Screen name="Cart" component={GatedCart} />
-      <CampusStack.Screen name="Checkout" component={GatedCheckout} />
-      <CampusStack.Screen name="Addresses" component={GatedAddresses} />
+      <CampusStack.Screen name="Cart" component={CartScreen} />
+      <CampusStack.Screen name="Checkout" component={CheckoutScreen} />
+      <CampusStack.Screen name="Addresses" component={AddressesScreen} />
 
-      <CampusStack.Screen name="Purchases" component={GatedPurchases} />
+      <CampusStack.Screen name="Purchases" component={PurchasesScreen} />
 
-      <CampusStack.Screen name="StudyProductDrafts" component={GatedStudyProductDrafts} />
+      <CampusStack.Screen name="StudyProductDrafts" component={StudyProductDraftsScreen} />
 
-      <CampusStack.Screen name="SemesterProducts" component={GatedSemesterProducts} />
+      <CampusStack.Screen name="SemesterProducts" component={SemesterProductsScreen} />
 
       <CampusStack.Screen name="StudyRoom" component={StudyRoomScreen} />
 
@@ -593,25 +594,25 @@ function CampusNavigator() {
 
       <CampusStack.Screen name="Mastery" component={MasteryScreen} />
 
-      <CampusStack.Screen name="OrderDetail" component={GatedOrderDetail} />
+      <CampusStack.Screen name="OrderDetail" component={OrderDetailScreen} />
 
-      <CampusStack.Screen name="SellerCustomers" component={GatedSellerCustomers} />
+      <CampusStack.Screen name="SellerCustomers" component={SellerCustomersScreen} />
 
-      <CampusStack.Screen name="SellerPayout" component={GatedSellerPayout} />
+      <CampusStack.Screen name="SellerPayout" component={SellerPayoutScreen} />
 
-      <CampusStack.Screen name="JobDetail" component={GatedJobDetail} />
+      <CampusStack.Screen name="JobDetail" component={JobDetailScreen} />
 
-      <CampusStack.Screen name="CreateJob" component={GatedCreateJob} />
+      <CampusStack.Screen name="CreateJob" component={CreateJobScreen} />
 
-      <CampusStack.Screen name="MyJobPostings" component={GatedMyJobPostings} />
+      <CampusStack.Screen name="MyJobPostings" component={MyJobPostingsScreen} />
 
-      <CampusStack.Screen name="MyJobApplications" component={GatedMyJobApplications} />
+      <CampusStack.Screen name="MyJobApplications" component={MyJobApplicationsScreen} />
 
-      <CampusStack.Screen name="JobEmployer" component={GatedJobEmployer} />
+      <CampusStack.Screen name="JobEmployer" component={JobEmployerScreen} />
 
-      <CampusStack.Screen name="JobApplicants" component={GatedJobApplicants} />
+      <CampusStack.Screen name="JobApplicants" component={JobApplicantsScreen} />
 
-      <CampusStack.Screen name="JobCompany" component={GatedJobCompany} />
+      <CampusStack.Screen name="JobCompany" component={JobCompanyScreen} />
 
     </CampusStack.Navigator>
 
@@ -856,6 +857,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     setTabState({ activeTab, immersive: hideBar, focusedRoute, focusedParams });
   }, [activeTab, hideBar, focusedRoute, focusedParams, setTabState]);
 
+  // The two bottom-bar badges. Both are derived from store data on every
+  // render rather than pushed by whoever changed it, so a card reviewed or a
+  // thread read anywhere in the app clears its badge without telling the bar.
   const dueCardsCount = useMemo(
 
     () => decks.reduce((sum, d) => sum + (d.due_count || 0), 0),
@@ -919,6 +923,9 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
    * behaviour unchanged.
    *
    * The decisions are in navigation/tabPressBehavior.ts, where they are tested.
+   *
+   * NOTE: this block describes `navigateTab`, further down — the bottom bar's
+   * own press handler — not the `navigateWithinFocusedStack` immediately below.
    */
   /**
    * Navigate to a route INSIDE the currently focused tab's stack.
@@ -962,6 +969,11 @@ function CustomTabBar({ state, navigation }: { state: any; navigation: any }) {
     [navigation, state]
   );
 
+  // A press on one of the five. Three steps, in this order: emit `tabPress`
+  // (which the nested stacks and useScrollToTop listen for), repair the
+  // pressed tab's stack root if it needs it, then navigate — but only when
+  // that tab is not already focused. See the block above for why each is
+  // needed; the decisions themselves are in tabPressBehavior.ts.
   const navigateTab = (tab: BottomTabKey) => {
 
     const routeName = TAB_ROUTE_BY_KEY[tab];
@@ -1143,13 +1155,6 @@ function MainTabsShell() {
     navigateFromRoot('Main', { screen, params });
   };
 
-  // Private pilot: warm the access answer as soon as the shell mounts, so the
-  // Campus segments settle before the first tap.
-  const checkMarketplaceAccess = useMarketplaceStore(s => s.checkMarketplaceAccess);
-  useEffect(() => {
-    void checkMarketplaceAccess();
-  }, [checkMarketplaceAccess]);
-
   return (
 
     <View className="flex-1 bg-lantern-background dark:bg-lantern-background">
@@ -1263,18 +1268,32 @@ function RootNavigatorInner() {
 
 
 
+  // App-wide listeners, mounted once here because this component lives for the
+  // whole session. Each owns its own subscriptions and teardown; none of them
+  // renders anything.
   useChallengeNotificationHandler();
   useDeepLinkHandler();
   useDailyStudyReminder();
   usePresenceHeartbeat();
   useAutoSync(user?.id);
 
+  // Identify crash reports. Keyed on the id alone, so an account switch
+  // re-tags and a sign-out clears rather than leaving the previous user
+  // attached to the next session's errors.
   useEffect(() => {
     setSentryUser(user ? { id: user.id, email: user.email } : null);
   }, [user?.id]);
 
 
 
+  /**
+   * Password-recovery deep link → the reset form.
+   *
+   * Polls because the flag can be set before the container is ready (the link
+   * is what launched the app). The interval clears itself on the first
+   * successful navigate; the effect's cleanup covers the case where recovery
+   * ends first.
+   */
   useEffect(() => {
     if (!isPasswordRecovery) return;
     const timer = setInterval(() => {
@@ -1286,6 +1305,8 @@ function RootNavigatorInner() {
     return () => clearInterval(timer);
   }, [isPasswordRecovery]);
 
+  // Restore the persisted session. Everything below waits on the `user` and
+  // `isInitialized` this sets.
   useEffect(() => {
 
     void initialize();
@@ -1294,6 +1315,29 @@ function RootNavigatorInner() {
 
 
 
+  /**
+   * Per-account bootstrap, and the only place the signed-in stores are filled
+   * on entry.
+   *
+   * Runs on sign-in, on account switch, and on sign-out (the early return,
+   * which clears account-scoped state and re-arms the next bootstrap). Ordering
+   * that matters:
+   *
+   * 1. `getAuthHeaders()` first. Fanning out before a Bearer token exists
+   *    produced 401s right after login that used to trigger a hard sign-out.
+   *    It rejects with OfflineAuthError when there is no token and the last
+   *    refresh failed at the transport — the correct answer offline, caught and
+   *    ignored so it is not an unhandled rejection.
+   * 2. The fan-out is guarded by the module-level `bootstrappedUserId`, so a
+   *    font-change remount does NOT re-fetch every store.
+   * 3. Onboarding is answered from `onboardingCache` when it is this user's,
+   *    and only otherwise from AsyncStorage — the same remount rule, and the
+   *    reason the boot gate can render the navigator on the container's commit.
+   *
+   * The AppState listener is the refresh half: bootstrap runs once per login,
+   * so without it the app keeps showing what it fetched then. `cancelled`
+   * guards every async continuation; the listener is removed on cleanup.
+   */
   useEffect(() => {
 
     if (!user?.id) {
@@ -1387,6 +1431,21 @@ function RootNavigatorInner() {
 
 
 
+  /**
+   * The profile-setup gate: does this account still need a username, or an
+   * academic identity?
+   *
+   * Two modes, and they are not interchangeable — `username` cannot be skipped,
+   * `academic` is offered once and remembered per user under
+   * ACADEMIC_SETUP_DISMISSED_KEY. The rule that must not be relaxed: a FETCH
+   * FAILURE IS NOT AN ANSWER. Only a definitive PGRST116 (no rows) may raise
+   * the username gate, and a failed academic read never raises the academic
+   * one; an offline cold boot used to trap the student behind a modal whose
+   * Continue needs the network.
+   *
+   * Runs independently of the bootstrap above and may sit on top of onboarding
+   * by design, so an OAuth student picks identity before the starter deck step.
+   */
   useEffect(() => {
 
     if (!user?.id) {
@@ -1481,6 +1540,17 @@ function RootNavigatorInner() {
 
 
 
+  /**
+   * The three boot timers. They answer different questions and must not be
+   * collapsed into one:
+   *
+   * - hide the native splash as soon as there is something real to show, and
+   *   unconditionally after 4 s so a stall does not look like a broken install;
+   * - `bootTimedOut` (10 s) forces past BootLoadingScreen when the bootstrap
+   *   never finishes. It does NOT decide the auth route;
+   * - `authGateTimedOut` (BOOT_GATE_MAX_MS) is the last resort for a PENDING
+   *   session restore only, sized to outlast the store's own boot budget.
+   */
   useEffect(() => {
     if (isInitialized && (!user || onboardingChecked)) {
       void SplashScreen.hideAsync();
@@ -1530,6 +1600,11 @@ function RootNavigatorInner() {
 
     <>
 
+      {/* Three mutually exclusive worlds, and only one set of screens is
+          registered at a time: Auth (signed out, or mid password recovery),
+          Onboarding, or the app. A route that is not registered cannot be
+          navigated to, which is what keeps a deep link from landing inside the
+          app while the student is still signed out. */}
       <RootStack.Navigator screenOptions={{ headerShown: false }}>
 
         {!user || isPasswordRecovery ? (
@@ -1619,6 +1694,19 @@ function RootNavigatorInner() {
 
 
 
+/**
+ * The container: theme, deep-link config, and the nav-state preservation the
+ * font-size remount depends on.
+ *
+ * `initialState={preservedNavState}` is read ONCE per mount, so it only helps
+ * when `RootNavigatorInner` renders the navigator on this same commit — the
+ * reason `onboardingCache` and `bootstrappedUserId` exist. `onStateChange` is
+ * the writer, and it never clears: `state ?? preservedNavState` keeps the last
+ * good state through the frames where the container reports none.
+ *
+ * Screen-view analytics ride the same callback, with productAnalytics imported
+ * lazily so it is not on the boot path.
+ */
 export function RootNavigator() {
   const colorScheme = useAppTheme();
   const { colors } = useTheme();

@@ -1,3 +1,16 @@
+/**
+ * Bottom-sheet modal that walks a new seller through setup tips and then
+ * completes onboarding to unlock boost credits.
+ *
+ * Exports: SellerOnboardingModal.
+ * Touches: completeSellerOnboarding in ../../../services/api; tips come from
+ * the SellerOnboardingStatus prop, with a hard-coded fallback list.
+ *
+ * Gotchas: step state is not reset when the modal is dismissed, so reopening
+ * resumes where the seller left off within the same mount. A failed
+ * completeSellerOnboarding is swallowed and onComplete is not called, so the
+ * modal simply stays open with no error shown.
+ */
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { Modal, Pressable, Text, View } from 'react-native';

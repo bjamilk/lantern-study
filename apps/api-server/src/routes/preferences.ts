@@ -57,7 +57,6 @@ router.get(
 router.post(
   '/',
   preferencesAuth,
-  handleValidationErrors,
   asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { userId, theme, preferences } = req.body;
 

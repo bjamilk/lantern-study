@@ -227,4 +227,4 @@ D1–D7, D9 are settled and implemented. D10 (Play/Apple accounts) is an ops tas
 - **Copiable migration page:** https://claude.ai/code/artifact/8f4e8519-bac3-442d-8d3f-ffc71fb76aac
 - **Store prep:** `docs/store/*`, `docs/RELEASING.md`
 
-*The canonical "resume here" pointer is the repo root `HANDOVER.md`, which links here.*
+*The canonical "resume here" pointer is `docs/HANDOVER.md`, which links here.*

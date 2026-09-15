@@ -25,6 +25,18 @@
  * card renders the line only `{studiedLabel ? ...}` and needs an empty string so
  * it can draw nothing. One default cannot serve both, so the wording is an
  * option with the web default and mobile binds its own.
+
+ *
+ * CONSUMERS: web + mobile set lists and tiles (`apps/mobile/src/components/study/setPresentation.ts` is a thin adapter over this file — do not reintroduce a second implementation). Not the api.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT — run `npm run build` in
+ * packages/shared before typechecking or running web/mobile, or consumers
+ * resolve a stale `dist/`. A NEW subpath under src/ needs three things: the
+ * file, a `packages/shared/package.json` "exports" entry, and an
+ * `apps/api-server/tsconfig.json` "paths" entry; mobile jest maps
+ * `@lantern/shared/*` subpaths separately, so a subpath imported only by a
+ * test produces a CI-only TS2307 (reproduce with `jest --no-cache`). The web
+ * turbo build compiles with strict `noUncheckedIndexedAccess`.
  */
 
 /** The six StudyFetch pastels a set tile can take. */
@@ -32,6 +44,16 @@ export type SetTileHue = 'mint' | 'peach' | 'lilac' | 'lime' | 'sky' | 'butter';
 
 /** The six glyphs a set tile can carry. */
 export type SetTileGlyph = 'layers' | 'book' | 'flask' | 'globe' | 'monitor' | 'lightbulb';
+
+// ---------------------------------------------------------------------------
+// Tile art: hue and glyph
+// ---------------------------------------------------------------------------
+// A set's colour and glyph are DERIVED from its id by hash, not stored, so a
+// set looks the same everywhere without a migration. The hash must stay
+// byte-identical across platforms — the phone and the browser once used
+// different hashes and gave one set two different colours, which is exactly
+// the ambiguity this module exists to remove. An explicit SetTileOverride
+// wins when the student has chosen.
 
 export const SET_TILE_HUES: readonly SetTileHue[] = [
   'mint',
@@ -200,6 +222,12 @@ export function setTileArt(
 /* ------------------------------------------------------------- count chips */
 
 /** What a set holds. Every field optional: a caller counts what it can see. */
+// ---------------------------------------------------------------------------
+// Count chips
+// ---------------------------------------------------------------------------
+// The "4 notes · 2 lectures · 1 deck" row. Zero counts produce no chip: an
+// empty set should look empty rather than claim a zero of everything.
+
 export interface SetCounts {
   materials?: number;
   notes?: number;
@@ -284,6 +312,14 @@ const MONTHS = [
 ] as const;
 
 /** `2 Sep`. Locale-free, so it reads the same on a server, a phone and a test. */
+// ---------------------------------------------------------------------------
+// Last studied
+// ---------------------------------------------------------------------------
+// Relative where relative is useful ("Yesterday"), absolute once it is not.
+// The never-studied wording is an OPTION, not a constant: the web card wraps
+// it in "Last studied · {label}" and needs words, the phone card renders the
+// line only when there is one and needs an empty string.
+
 export function formatShortDate(date: Date): string {
   return `${date.getDate()} ${MONTHS[date.getMonth()] ?? ''}`.trim();
 }

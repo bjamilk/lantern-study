@@ -1,4 +1,66 @@
 /**
+ * Admin console API — the platform's moderation and operations surface.
+ *
+ * Mount: `/api/v1/admin` (server.ts), behind the stack
+ * `authMiddleware` → `requirePlatformAdmin` → `adminRateLimit` → this router.
+ * It is the only mount in the app with that hard stack, which is why no
+ * individual route below repeats an auth check.
+ *
+ * THE ADMIN GATE — read this before touching anything in this file.
+ *
+ * `requirePlatformAdmin` resolves admin status with a LIVE DATABASE LOOKUP on
+ * every single request: `isLivePlatformAdmin` → `SupabaseService.isPlatformAdmin`
+ * → a `platform_admins` row, falling back to the GoTrue user's
+ * `app_metadata.is_platform_admin`. It NEVER reads the `isAdmin` claim carried
+ * on the verified JWT — `authMiddleware` copies that claim onto `req.user` but
+ * documents it as advisory, and the gate overwrites it with the live answer.
+ *
+ * This is deliberate, not an oversight to optimise away. A JWT lives up to an
+ * hour and `authMiddleware` memoises verifications for 15 seconds; if admin
+ * came from the token, a revoked admin would keep full console access until
+ * their token expired. With the live lookup, revocation takes effect on the
+ * next request. Do not cache it, do not move it into the JWT, do not read
+ * `req.user.isAdmin` as the source of truth.
+ *
+ * Nothing here can be self-granted from the user side either: the privileged
+ * settings keys (`is_banned`, `account_status`, `is_platform_admin`,
+ * `ban_reason`, `banned_at`, `banned_by`, `suspended_until`,
+ * `moderation_flags`, in `utils/sanitizeSettings.ts`) are stripped from every
+ * user-supplied settings patch and preserved from the stored row, so the only
+ * writer of ban and admin state is this file and the service role.
+ *
+ * Audit convention: every state-changing route calls `logAdminAction`
+ * (`services/adminAudit`) with `{actorId, action, targetType, targetId,
+ * metadata?, reason?}`, which appends to `admin_audit_log` — the table served
+ * back by `GET /audit`. A new mutating route without a `logAdminAction` call
+ * is a bug.
+ *
+ * Error-mapping convention: this file has two, and the API as a whole has
+ * several competing ones — do not assume the convention you know from another
+ * route file applies here.
+ *   - Moderation-service routes use `respondModerationError(res, err)`:
+ *     `PublicError` → its own `statusCode` (or 400), everything else → 500
+ *     with a scrubbed `clientErrorMessage`. Prefer this for new routes.
+ *   - The older routes inline `catch (err) { res.status(500).json({ error:
+ *     clientErrorMessage(err) }) }`, which reports a genuine 4xx as a 500.
+ * Either way `clientErrorMessage` is what keeps raw PostgREST text (column,
+ * constraint and policy names) out of the response.
+ *
+ * What it touches: Supabase tables `profiles`, `platform_admins`,
+ * `admin_audit_log`, `content_reports`, `marketplace_listings`,
+ * `marketplace_reports`, `marketplace_orders`, `groups`, `group_members`,
+ * `messages`, `decks`, `flashcards`, `offline_bundles`, `ai_analytics`,
+ * `ai_inference_log`, `ai_companion_messages`, `product_events`,
+ * `study_activity`; the GoTrue admin API (`auth.admin.getUserById`,
+ * `updateUserById`, `signOut`, `listUsers`) and the
+ * `admin_search_users_by_email` RPC; Redis through `cacheService`
+ * (`authMeta:*`, `notifications:*`, `marketplace:listings:*`,
+ * `gamification:user:badges:*`), the AI quota counters in
+ * `middleware/aiRateLimit`, and the per-user session cutoff in
+ * `services/tokenDenylist`. `GET /ai/provider-probe` bills one real completion
+ * against a live AI provider.
+ */
+/**
  * Admin Routes — platform system-admin console endpoints.
  * All routes are pre-protected by authMiddleware + requirePlatformAdmin
  * applied at mount time in server.ts.
@@ -180,6 +242,16 @@ async function getAuthUserInfoForUserIds(
   return result;
 }
 
+// ===========================================================================
+// Dashboard — probe, stats
+//
+// `GET /stats` is one Promise.all of head-only `count: 'exact'` queries plus
+// two bounded scans, so the console's landing page is a single round trip.
+// Cost figures prefer real `ai_inference_log` token totals and fall back to
+// an events-times-flat-guess only for windows recorded before token logging
+// existed; the blended rate is env-tunable because it is pricing, not code.
+// ===========================================================================
+
 // GET /api/v1/admin/ai/provider-probe?provider=fireworks
 // Sends one real request to a single AI provider so a newly added key can be
 // checked without waiting for the fallback chain to reach it in production.
@@ -304,6 +376,27 @@ router.get('/stats', async (req: any, res: any) => {
     res.status(500).json({ success: false, error: clientErrorMessage(err) });
   }
 });
+
+// ===========================================================================
+// User administration — search, status, strikes, role
+//
+// `GET /users` searches in three modes: an exact UUID, an email (the
+// `admin_search_users_by_email` RPC, with a bounded legacy page scan only if
+// the migration is not applied), or a name/username ilike. Free-text always
+// goes through `escapePostgrestSearch` before it reaches a PostgREST `.or()`
+// filter. Email and admin flags come from GoTrue and are cached for ten
+// minutes under `authMeta:<id>`.
+//
+// Three escalating enforcement levels, all audited:
+//   strike     — `POST /users/:id/strikes`; three active strikes auto-suspend
+//   suspended  — time-boxed (`settings.suspended_until`, at most
+//                MAX_SUSPENSION_DAYS), no sign-out; the API answers
+//                ACCOUNT_SUSPENDED until it lapses, and the user is notified
+//   banned     — `settings.is_banned` + global sign-out + session cutoff +
+//                a GoTrue `banned_until` write
+// `status: 'active'` is the single un-do: it clears the ban, the suspension
+// and the GoTrue ban together.
+// ===========================================================================
 
 // GET /api/v1/admin/users
 router.get('/users', async (req: any, res: any) => {
@@ -532,6 +625,14 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
       // user out only invalidates the tokens they already hold — without this
       // they can sign in again immediately and get a fresh one. GoTrue refuses
       // to issue tokens at all while banned_until is in the future.
+      // Best-effort by design: `setAuthBan` swallows its own failure and
+      // returns false, which is surfaced to the console as `authBanApplied`.
+      // The authoritative ban is the `profiles.settings` record written above
+      // — `authMiddleware` and `POST /api/v1/auth/refresh` both consult it
+      // through `rejectIfBanned`, so a failed GoTrue write does not reopen the
+      // API. What it does reopen is token minting outside the API: a client
+      // talking to GoTrue directly with the anon key can still sign in. Treat
+      // `authBanApplied: false` as work to redo, not as noise.
       authBanApplied = await setAuthBan(client, id, AUTH_BAN_DURATION);
     } else if (status === 'active') {
       // Lift the auth-layer ban, or an unbanned user could never sign in again.
@@ -600,6 +701,33 @@ router.get('/users/:id/strikes', validateUuidParam('id'), handleValidationErrors
   }
 });
 
+// PATCH /api/v1/admin/users/:id/role — grant or revoke platform admin.
+//
+// The highest-privilege route in the API. It carries six rails, and every one
+// of them exists because the alternative is an account that cannot be
+// recovered. Do not remove or soften any of them:
+//
+//   1. The platform-admin gate at the mount (a live `platform_admins` lookup,
+//      never a JWT claim — see the file header).
+//   2. A kill switch, `ENABLE_ADMIN_ROLE_MANAGEMENT=false`, read per request
+//      via `resolveRoleManagementEnabled` so the console's reported state and
+//      the route's behaviour can never disagree. Default is ON.
+//   3. A typed confirmation phrase — the body must carry
+//      `confirmationPhrase: 'CONFIRM_ADMIN_ROLE_CHANGE'`, so the change cannot
+//      be a mis-click or a replayed URL.
+//   4. No self-revoke: an admin may not remove their own role.
+//   5. A last-admin guard — `countPlatformAdmins` must exceed one before the
+//      current admin flag can be cleared, so the platform can never be left
+//      with nobody who can administer it.
+//   6. An audit entry (`user_role_grant` / `user_role_revoke`) and, on revoke,
+//      a forced global sign-out plus `setUserSessionCutoff`, so tokens already
+//      issued to the demoted account stop working immediately.
+//
+// The grant is written in three places that must stay in step: GoTrue
+// `app_metadata.is_platform_admin`, `profiles.settings.is_platform_admin`
+// (display only) and the `platform_admins` row that `isLivePlatformAdmin`
+// actually reads. `clearAuthTokenCache()` at the end drops the 15-second JWT
+// verification cache so the change is not delayed by a TTL.
 router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, async (req: any, res: any) => {
   try {
     if (!resolveRoleManagementEnabled()) {
@@ -686,6 +814,21 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
     res.status(500).json({ success: false, error: clientErrorMessage(err) });
   }
 });
+
+// ===========================================================================
+// Marketplace moderation — listings, orders, disputes
+//
+// Listing removal and restore go through `services/moderation` rather than a
+// bare status update, because both carry state beyond `status`: a takedown
+// also writes `rights_status`/`takedown_*` and notifies the seller with
+// `force: true` so they can appeal, and a restore derives the real status
+// rather than blindly re-listing an item that was reserved or sold before it
+// was removed. Every mutation invalidates the listing caches.
+//
+// `PATCH /marketplace/orders/:id/dispute` moves money — it either releases
+// escrow to the seller or refunds the buyer — so it is audited with the order
+// amount and both party ids in `metadata`.
+// ===========================================================================
 
 router.get('/marketplace/listings', async (req: any, res: any) => {
   try {
@@ -914,6 +1057,20 @@ router.patch('/marketplace/orders/:id/dispute', async (req: any, res: any) => {
   }
 });
 
+// ===========================================================================
+// Report queue and appeals
+//
+// One generic queue over `content_reports` for every target type, with the
+// pre-Phase-1 console's shapes kept alive by aliasing rather than by a second
+// code path: `status: 'open'` normalises to `pending`, the actions
+// `remove_listing` and `warn_seller` map to `remove_content` and `warn`, and
+// `adminNote` maps to `note`. `GET /jobs/reports` further below is the same
+// queue filtered to `target_type: 'job_posting'`.
+//
+// These routes are the ones that use `respondModerationError`, so a service
+// `PublicError` keeps its own status instead of becoming a 500.
+// ===========================================================================
+
 // GET /api/v1/admin/reports?status&targetType&page&limit — generic content
 // report queue (content_reports; Phase 1 · E). Each row carries a `target`
 // summary (title / status / owner) resolved per target type, plus the legacy
@@ -999,6 +1156,17 @@ router.put('/marketplace/listings/:id/appeal', validateUuidParam('id'), handleVa
     respondModerationError(res, err);
   }
 });
+
+// ===========================================================================
+// Analytics, activity feed and audit log
+//
+// Read-only, so none of these routes audit. Every aggregation runs in Node
+// over a capped row scan (`ROW_LIMIT`), and the ones that can be truncated say
+// so in the payload — a silently short answer here would read as a real drop
+// in usage. `GET /audit` degrades to `{data: [], tableReady: false}` when
+// `admin_audit_log` has not been migrated yet, so an un-migrated environment
+// still gets a working console.
+// ===========================================================================
 
 // GET /api/v1/admin/analytics
 router.get('/analytics', async (req: any, res: any) => {
@@ -1330,6 +1498,16 @@ router.get('/users/:id', async (req: any, res: any) => {
   }
 });
 
+// ===========================================================================
+// Direct user tools — notifications, points, badges, content removal
+//
+// `force: true` on the single notification bypasses the recipient's
+// notification preferences: these are moderation and support messages, not
+// marketing. Content removal is soft where a user might appeal
+// (`decks.removed_by_admin_at`, `groups.is_archived`) and hard only for
+// messages. All of them audit.
+// ===========================================================================
+
 // POST /api/v1/admin/notifications
 router.post('/notifications', validateAdminNotification, handleValidationErrors, async (req: any, res: any) => {
   try {
@@ -1601,6 +1779,14 @@ router.get('/offline/summary', async (req: any, res: any) => {
   }
 });
 
+// ===========================================================================
+// AI quota and companion history
+//
+// Quota lives in `middleware/aiRateLimit`, not in a table, so a reset is a
+// counter write rather than a row update — it is audited here because it hands
+// a user more paid inference.
+// ===========================================================================
+
 // POST /api/v1/admin/ai/quota/reset
 router.post('/ai/quota/reset', async (req: any, res: any) => {
   try {
@@ -1621,10 +1807,24 @@ router.post('/ai/quota/reset', async (req: any, res: any) => {
 });
 
 // GET /api/v1/admin/ai/companion/:userId
+//
+// FIXED (F10): this reads a named student's private AI companion conversation,
+// so it now audits like its neighbours. The audit is written BEFORE the read,
+// not after: an admin who opens a conversation and then hits a 500 still read
+// the request, and a trail that only records successful reads is a trail an
+// admin can step around. `logAdminAction` swallows its own errors, so a failing
+// audit table cannot break the console.
 router.get('/ai/companion/:userId', async (req: any, res: any) => {
   try {
     const { userId } = req.params;
     const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 20));
+    await logAdminAction(supabaseService, {
+      actorId: req.user.id,
+      action: 'ai_companion_history_view',
+      targetType: 'user',
+      targetId: userId,
+      metadata: { limit },
+    });
     const { data, error } = await supabaseService.getClient()
       .from('ai_companion_messages')
       .select('id, role, content, created_at')
@@ -1647,6 +1847,17 @@ router.get('/ai/quota/:userId', async (req: any, res: any) => {
     res.status(500).json({ success: false, error: clientErrorMessage(err) });
   }
 });
+
+// ===========================================================================
+// Jobs board admin
+//
+// Postings and companies are handled by `services/jobsBoard` with
+// `{ asAdmin: true }`, which is what lets these routes bypass the owner
+// predicate the seller-facing routes enforce. Company verification is the
+// gate that lets a posting go live, so it is audited with its new status.
+// `GET/PATCH /jobs/reports` are a filtered view of the generic report queue
+// above, kept in the shape the jobs console already reads.
+// ===========================================================================
 
 // ─── Jobs board admin ────────────────────────────────────────────────────────
 

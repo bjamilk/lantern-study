@@ -1,3 +1,14 @@
+/**
+ * Budget stack -> AddInvestment. Logs money moved into savings or long-term
+ * funds as an INVESTMENT transaction. Amount and description are both required.
+ *
+ * Exports: AddInvestmentScreen (default).
+ * Touches: budgetStore.addTransaction ({ type: 'INVESTMENT', category:
+ * 'other' }); authStore for the user id; useScreenBottomPadding.
+ * Note: the date is fixed to the mount time (no picker) and normalised with
+ * toDateOnlyLocal; unlike the income/expense forms this one confirms with an
+ * alert before popping back.
+ */
 import React, { useState, useCallback } from 'react';
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 import {

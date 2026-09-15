@@ -1,3 +1,8 @@
+/**
+ * Barrel for the Chat stack screens (inbox, create group, group chat, direct
+ * message). Each is exported both by name and, for the navigator's lazy
+ * imports, under a *Default alias.
+ */
 export { GroupsScreen } from './GroupsScreen';
 export { default as GroupsScreenDefault } from './GroupsScreen';
 export { CreateGroupScreen } from './CreateGroupScreen';

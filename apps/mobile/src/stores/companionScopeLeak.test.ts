@@ -41,9 +41,14 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 
 import { useCompanionStore } from './companionStore';
 import { scopeLabel } from '../components/companion/companionScope';
+import { setUserScopeId } from './userScopedState';
 
-const CONV_KEY = 'lantern_companion_conversation_id';
-const NOTE_KEY = 'lantern_companion_note_context';
+// Companion persistence is keyed per account (F8), so a test has to say who is
+// signed in before anything is written or read.
+const USER_ID = 'user-a';
+void setUserScopeId(USER_ID);
+const CONV_KEY = `lantern_companion_conversation_id:${USER_ID}`;
+const NOTE_KEY = `lantern_companion_note_context:${USER_ID}`;
 
 const reset = () => {
   for (const k of Object.keys(storage)) delete storage[k];

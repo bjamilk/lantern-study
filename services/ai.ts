@@ -1,6 +1,39 @@
 /**
  * Client-side AI service — calls the backend AI API endpoints.
  * Uses the same auth headers and base URL as the main supabase service.
+ *
+ * Two concerns live here:
+ *  1. The AI usage/quota mirror (module-level `_latestUsage` + a listener set)
+ *     that every credit badge subscribes to. It is updated from three places:
+ *     GET /ai/usage, the `X-AI-Global-Usage-*` headers on ANY AI response, and
+ *     429 error bodies. Nothing else may write it.
+ *  2. Thin wrappers over POST /api/v1/ai/* — one per feature — plus the
+ *     companion (chat) endpoints, including the SSE streaming send.
+ *
+ * Exports: getLatestAIUsage / subscribeToAIUsage / fetchAIUsage /
+ * fetchAIUsageDetail / forceRefreshAIUsage / resetAIUsageState (sign-out) /
+ * applyAIUsageFrom{Response,ErrorBody,Xhr};
+ * the ai*() feature calls (questions, flashcards, lesson, recap, essay, tutor,
+ * listing description …); the companion calls (send, stream, history,
+ * conversations, attachments, feedback, analytics); CompanionStreamError.
+ *
+ * Touches: `${API_BASE_URL}/api/v1/ai/**`; `getAuthHeaders`/`ensureAuthTokenReady`
+ * from ./supabase; `useAuthStore.getState().currentUser` (read, never written);
+ * `pollApiJob` from ./jobPoll for 202 responses.
+ *
+ * Gotchas:
+ *  - Unknown usage is `limit: 0`, NOT a default allowance. Every consumer draws
+ *    nothing at limit 0 and every gate is written `limit > 0 && …`, so an
+ *    un-answered quota never blocks a student and never states a wrong number.
+ *    Do not seed this with DEFAULT_AI_DAILY_LIMIT (see the note below).
+ *  - Long jobs answer 202 + jobId and are finished by polling, so these
+ *    functions can take much longer than one HTTP round trip.
+ *  - Feature quotas and the global quota are DIFFERENT counters; a feature 429
+ *    body must not overwrite the global badge.
+ *  - Charge semantics on a failed send are decided by CompanionStreamError.phase
+ *    — read that type before changing any error path; deleting the optimistic
+ *    bubbles on a 'stream' failure hides a credit the student was already
+ *    charged.
  */
 import { getApiBaseUrl } from '@lantern/shared';
 import { AI_USAGE_UNKNOWN, resolveAIUsageFallback } from '@lantern/shared/utils/aiUsage';
@@ -34,6 +67,17 @@ export type {
 const API_BASE_URL = getApiBaseUrl();
 
 // ─── AI Usage Tracking ─────────────────────────────────────
+// Module-level singleton: one cached snapshot, one listener set, one in-flight
+// promise. `fetchAIUsage` is the cheap path used by badges — TTL'd (60s),
+// single-flighted, and silent during a 30s backoff after a 429. Header-driven
+// updates stamp `_usageLastFetchAt` so a slower TTL'd GET cannot stale-overwrite
+// a fresher number.
+// FIXED (F1) [E3 M11, medium]: `_latestUsage` is still a module global, but it
+// is no longer stuck across an account change — `resetAIUsageState()` below puts
+// it back to AI_USAGE_UNKNOWN (with the TTL, backoff and in-flight promise) and
+// is registered in the one sign-out reset registry,
+// stores/userScopedStoreReset.ts. The mobile half (`lantern.aiUsage.last`)
+// belongs to another lane and is NOT fixed here.
 
 export interface AIUsageInfo {
   used: number;
@@ -68,6 +112,24 @@ let _usageBackoffUntil = 0;
 
 export function getLatestAIUsage(): AIUsageInfo {
   return _latestUsage;
+}
+
+/**
+ * FIXED (F1) [E3 M11, medium]: drop everything this module knows about the
+ * signed-out account's allowance. Called on every sign-out from the one
+ * user-scoped reset registry (stores/userScopedStoreReset.ts), so the next
+ * account starts at the honest unknown instead of inheriting A's remaining
+ * credits — which used to fire B's generation gates on A's numbers until the
+ * first live fetch landed. Listeners are notified so mounted badges redraw
+ * immediately; the listener set itself is per-component, not per-account, and
+ * is deliberately left in place.
+ */
+export function resetAIUsageState(): void {
+  _usageLastFetchAt = 0;
+  _usageInFlight = null;
+  _usageBackoffUntil = 0;
+  _latestUsage = AI_USAGE_UNKNOWN;
+  _usageListeners.forEach((fn) => fn(AI_USAGE_UNKNOWN));
 }
 
 export function subscribeToAIUsage(listener: (usage: AIUsageInfo) => void): () => void {
@@ -436,6 +498,11 @@ export async function aiEnhanceFlashcard(
 
 // ─── AI Companion ────────────────────────────────────────────
 
+// Shared transport for /ai/companion/*. `trackUsage: false` is the norm here:
+// most companion calls (history, conversations, plain send) either do not charge
+// or are charged elsewhere, and letting them write the badge would move the
+// counter for a read. Only the paths that really spend credits leave it on.
+// Like aiRequest, a 202 + jobId is finished by polling.
 async function companionRequest<T>(
   endpoint: string,
   method: 'GET' | 'POST' | 'DELETE',
@@ -454,7 +521,20 @@ async function companionRequest<T>(
     fetchOptions.body = JSON.stringify(body || {});
   }
 
-  const response = await fetch(url, fetchOptions);
+  // FIXED (F9): failures here used to be bare `Error`s carrying no
+  // phase/reachedServer, so `companionStore.sendMessage` withdrew the student's
+  // question bubble on ANY failure — including a server error raised AFTER the
+  // credit was charged. That is the exact "the send vanished but the credits
+  // went down" shape `sendMessageStreaming` was fixed for. The non-streaming
+  // path now throws the same `CompanionStreamError` the stream does, with the
+  // same two phases: 'unsent' (never left the client — nothing charged) and
+  // 'rejected' (the server answered, so the exchange is real).
+  let response: Response;
+  try {
+    response = await fetch(url, fetchOptions);
+  } catch (error: any) {
+    throw new CompanionStreamError(error?.message || 'Network error', 'unsent');
+  }
 
   if (options?.trackUsage !== false) {
     parseGlobalAIUsageFromHeaders(response, updateUsage);
@@ -467,7 +547,11 @@ async function companionRequest<T>(
   }
 
   if (!response.ok) {
-    throw new Error(json.error || `Companion request failed (${response.status})`);
+    throw new CompanionStreamError(
+      json.error || `Companion request failed (${response.status})`,
+      'rejected',
+      response.status
+    );
   }
 
   return json as T;
@@ -699,6 +783,11 @@ export async function companionSendMessageStream(
     return;
   }
 
+  // SSE read loop. Chunks are split on the blank-line event separator and the
+  // trailing partial event is carried in `buffer` to the next read — never parse
+  // a decoded chunk directly, events straddle reads. A malformed `data:` payload
+  // is skipped rather than aborting the stream; `done` may arrive in the same
+  // batch as the last tokens, so onToken/onDone order is per-event, not per-read.
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
@@ -807,53 +896,12 @@ export async function summarizeGroupChat(
   return companionRequest('/summarize-group', 'POST', { groupId, groupName });
 }
 
-// ─── Health check (no auth needed) ──────────────────────────
-
-export async function aiHealthCheck(): Promise<{
-  status: string;
-  totalRemainingToday: number;
-  providers: Array<{ name: string; available: boolean; remainingToday: number }>;
-}> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/ai/health`);
-  if (!response.ok) throw new Error('AI health check failed');
-  return response.json();
-}
-
-// ─── Study Plan ──────────────────────────────────────────────
-
-export interface StudyPlanContext {
-  userName?: string;
-  dueCardsCount?: number;
-  weakTopics?: string[];
-  recentTestSummary?: string;
-  studyGoal?: string;
-  availableHoursPerDay?: number;
-  daysUntilExam?: number;
-}
-
-export interface StudyPlanDay {
-  day: string;
-  focus: string;
-  tasks: string[];
-  estimatedMinutes: number;
-}
-
-export interface StudyPlan {
-  overview: string;
-  days: StudyPlanDay[];
-  tips: string[];
-  provider: string;
-}
-
-export async function aiGenerateStudyPlan(context: StudyPlanContext): Promise<StudyPlan> {
-  const response = await fetch(`${API_BASE_URL}/api/v1/ai/study-plan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ context }),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error((err as any).error || 'Failed to generate study plan');
-  }
-  return response.json();
-}
+// ─── Health check / study plan: DELETED ──────────────────────
+// FIXED (F1): `aiHealthCheck` and `aiGenerateStudyPlan` (plus StudyPlanContext /
+// StudyPlanDay / StudyPlan) were removed. Both were dead — zero callers anywhere
+// in the repo — and both were misleading: aiHealthCheck sent no auth headers to
+// a route mounted behind authMiddleware (so it would 401), and
+// aiGenerateStudyPlan POSTed to /api/v1/ai/study-plan, which the API server
+// never registers ('study_plan' survives only as the rate-limit bucket on
+// /ask-tutor). The mobile app's `aiHealthCheck` is a different function
+// (packages/shared/src/api/ai.ts) and is untouched.

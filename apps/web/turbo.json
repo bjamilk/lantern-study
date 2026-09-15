@@ -20,11 +20,9 @@
         "../../index.css",
         "../../types.ts",
         "../../gamification.ts",
-        "../../srs.ts",
         "../../env-bootstrap.ts",
         "../../tailwind.config.js",
         "../../postcss.config.js",
-        "../../vite.config.ts",
         // Vite copies public/ into dist verbatim. Without it listed here turbo
         // replays a cached dist after edits to _headers, _redirects,
         // _routes.json or .well-known/assetlinks.json — a green "FULL TURBO"

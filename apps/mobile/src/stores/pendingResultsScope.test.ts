@@ -84,14 +84,28 @@ describe('mergePendingResults', () => {
 });
 
 describe('partitionLegacyResults', () => {
-  it('routes owned entries to their owner and adopts unowned ones', () => {
+  it('adopts unowned entries when nobody else\'s work is in the batch', () => {
     const { mine, others } = partitionLegacyResults<Row>(
-      [result('a'), result('b', { userId: 'u2' }), result('c', { userId: 'u1' })],
+      [result('a'), result('c', { userId: 'u1' })],
       'u1'
     );
     expect(mine.map((r) => r.id)).toEqual(['a', 'c']);
     expect(mine.every((r) => r.userId === 'u1')).toBe(true);
+    expect(others).toEqual({});
+  });
+
+  // FIXED (F2): an unowned entry used to be adopted by whoever loaded the
+  // legacy key first, even when the SAME batch proved a second account had
+  // used this handset. That is how one student's finished test was uploaded
+  // under another's id. It is now quarantined — preserved, never replayed.
+  it('quarantines unowned entries when another account is present in the batch', () => {
+    const { mine, others } = partitionLegacyResults<Row>(
+      [result('a'), result('b', { userId: 'u2' }), result('c', { userId: 'u1' })],
+      'u1'
+    );
+    expect(mine.map((r) => r.id)).toEqual(['c']);
     expect(others.u2.map((r) => r.id)).toEqual(['b']);
+    expect(others.unknown.map((r) => r.id)).toEqual(['a']);
   });
 });
 
@@ -130,9 +144,15 @@ describe('planPendingResultsLoad', () => {
       null,
       JSON.stringify([result('a', { userId: 'u2' }), result('b')])
     );
-    expect(plan.results.map((r) => r.id)).toEqual(['b']);
+    // FIXED (F2): 'b' names nobody, and 'a' proves a second account used this
+    // handset — so 'b' is quarantined rather than adopted by u1.
+    expect(plan.results).toEqual([]);
     const otherWrite = plan.writes.find((w) => w.key === '@lantern_pending_results:u2');
     expect(otherWrite?.results.map((r) => r.id)).toEqual(['a']);
+    const unknownWrite = plan.writes.find(
+      (w) => w.key === '@lantern_pending_results:unknown'
+    );
+    expect(unknownWrite?.results.map((r) => r.id)).toEqual(['b']);
     expect(plan.removeLegacy).toBe(true);
   });
 
@@ -154,21 +174,44 @@ describe('planPendingResultsLoad', () => {
 });
 
 describe('pendingResultsKeysToClearOnSignOut', () => {
-  it('clears only the signing-out user on a user-initiated sign-out', () => {
-    expect(pendingResultsKeysToClearOnSignOut('user', 'u1')).toEqual([
-      '@lantern_pending_results',
-      '@lantern_pending_results:u1',
-    ]);
+  // G4 · H12: a sign-out never deletes unsynced results — not this account's,
+  // and above all not the legacy key, which may hold another account's.
+  it('keeps this user’s results when they sign out themselves', () => {
+    expect(pendingResultsKeysToClearOnSignOut('user', 'u1')).toEqual([]);
   });
 
   it('keeps everything when the session was revoked', () => {
     expect(pendingResultsKeysToClearOnSignOut('revoked', 'u1')).toEqual([]);
   });
 
-  it('still drops the legacy key when the user id is unknown', () => {
-    expect(pendingResultsKeysToClearOnSignOut('user', undefined)).toEqual([
-      '@lantern_pending_results',
-    ]);
+  it('keeps the legacy key when the user id is unknown', () => {
+    expect(pendingResultsKeysToClearOnSignOut('user', undefined)).toEqual([]);
+  });
+
+  // The whole point of keeping the keys (G4 · H12), end to end: a student
+  // finishes a test offline, signs out to lend the phone, and nothing is lost.
+  describe('after a sign-out that deletes nothing', () => {
+    // What storage holds once the sign-out has run: the keys are untouched.
+    const storage = {
+      [pendingResultsKey('u1')]: JSON.stringify([result('r1', { userId: 'u1' })]),
+      [PENDING_RESULTS_LEGACY_KEY]: JSON.stringify([result('legacy', { userId: 'u2' })]),
+    };
+
+    it('replays the work when the same student signs back in', () => {
+      const plan = planPendingResultsLoad<Row>('u1', storage[pendingResultsKey('u1')], null);
+      expect(plan.results.map((r) => r.id)).toEqual(['r1']);
+    });
+
+    it('hides — and does not delete — the work when a different account signs in', () => {
+      const plan = planPendingResultsLoad<Row>('u3', null, storage[PENDING_RESULTS_LEGACY_KEY]);
+      // u3 sees nothing of u2's…
+      expect(plan.results).toEqual([]);
+      // …and u2's result is written to u2's own key, not dropped.
+      expect(plan.writes).toContainEqual({
+        key: pendingResultsKey('u2'),
+        results: [result('legacy', { userId: 'u2' })],
+      });
+    });
   });
 });
 

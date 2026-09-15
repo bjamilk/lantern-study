@@ -1,10 +1,27 @@
 name: Deploy web (Cloudflare Pages)
 
-# Auto-deploys the web app to lanternstudy.com on every push to main (e.g. a merged
-# PR), and can still be run on demand via workflow_dispatch for a specific ref.
-# The build/verify/publish steps below are the safety net that makes auto-deploy
-# safe: they refuse to publish a bundle that does not build or that points at a
-# non-production Supabase. To go back to manual-only, delete the `push:` trigger.
+# Deploys the web app to lanternstudy.com on every push to main (i.e. a merged
+# PR), and can still be run on demand for a specific ref.
+#
+# TWO GATES STAND IN FRONT OF THE DEPLOY, and they are the point of this file:
+#
+#   1. `provenance` — the commit must have arrived through a merged pull
+#      request (scripts/check-merge-provenance.mjs). GitHub cannot reject a
+#      direct push to main outside Enterprise, but this can stop that push
+#      reaching production.
+#   2. `ci` — the whole CI workflow, invoked as a REUSABLE workflow, in this
+#      run. The deploy job `needs:` it, so it cannot start until every CI job is
+#      green on this exact commit.
+#
+# Why reusable and not `workflow_run`: with workflow_run the deploy is a
+# separate run triggered after CI finishes, and matching it back to the right
+# commit is fiddly — which is how this repo shipped the web bundle twice in 48h
+# on a red main (runs 34791618300 and 34760148524), because deploy-web and CI
+# were siblings on the same push with no edge between them. A `needs:` edge
+# inside one run makes "deploy never runs on red CI" a property of the graph
+# rather than a thing to get right.
+#
+# To go back to manual-only, delete the `push:` trigger.
 on:
   push:
     branches: [main]
@@ -20,13 +37,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  provenance:
+    name: provenance (came from a merged PR)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+      - name: Commit must come from a merged pull request
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          sha=$(git rev-parse HEAD)
+          node scripts/check-merge-provenance.mjs --sha "$sha"
+
+  ci:
+    name: ci
+    needs: provenance
+    uses: ./.github/workflows/ci.yml
+
   deploy:
+    name: deploy
+    needs: [provenance, ci]
     runs-on: ubuntu-latest
     environment: production
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.ref || 'main' }}
+          ref: ${{ inputs.ref || github.sha }}
 
       - uses: actions/setup-node@v4
         with:

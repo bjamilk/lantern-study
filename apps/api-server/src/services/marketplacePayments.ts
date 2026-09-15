@@ -1,3 +1,113 @@
+/**
+ * Marketplace money path: Paystack charge sessions, settlement, seller payouts
+ * and refunds. Every naira that moves through Lantern moves through this file.
+ *
+ * Exports
+ * - `MarketplacePaymentsService` / `getMarketplacePaymentsService(supabase)` —
+ *   the process-wide singleton. Called by `routes/marketplace/*` (buy-now,
+ *   cart checkout, verify, confirm-received, refund), `routes/admin.ts` (force
+ *   payout, dispute resolution) and `routes/paystackWebhook.ts`.
+ * - `marketplacePaystackEnabled()` — the env kill switch; routes fall back to
+ *   the manual meetup flow when it is false.
+ * - `orderPayoutReference(orderId)` — the deterministic transfer reference.
+ *
+ * What it touches
+ * - Supabase tables: `marketplace_payments`, `marketplace_orders`,
+ *   `marketplace_checkouts`, `marketplace_cart_items`, `marketplace_listings`,
+ *   `marketplace_seller_payout_profiles`, `paystack_webhook_events`.
+ * - Paystack REST: transaction initialize/verify, transfer recipient, transfer,
+ *   refund (all via `./paystack`).
+ * - Redis, indirectly: `invalidateSellerAnalyticsCache` busts the seller
+ *   analytics key after every settlement.
+ * - Sentry, via `recordSettlementMismatch` and the digital-delivery catch.
+ *
+ * SETTLEMENT STATE MACHINE
+ *
+ * `marketplace_payments.status`
+ *   initialized -> paid -> payout_pending -> paid_out
+ *                       \-> refunding -> refunded
+ *                       \-> failed
+ * `marketplace_orders.status`
+ *   awaiting_payment | pending_payment -> paid -> ready_for_pickup | shipped
+ *                                             -> completed | cancelled
+ * `marketplace_orders.payout_status` (unified checkout only)
+ *   pending -> paying (claimed by exactly one caller) -> paid_out; `skipped`
+ *   for orders that never pay out (and for one whose buyer has been refunded).
+ *
+ * MONEY OUT AND MONEY BACK ARE MUTUALLY EXCLUSIVE (G3 · H2/H3/H4)
+ * `payout_status` is one row's single claim slot and both directions compete
+ * for it: the payout CAS takes `pending -> paying`, the refund CAS takes
+ * `pending -> refund_hold`, and neither can start from the other's state. The
+ * payment row carries the same rule for single-order checkouts — `paid ->
+ * refunding` is the refund claim, `paid -> payout_pending` (plus a
+ * `claim:<reference>` marker in `payout_transfer_code`) is the payout claim —
+ * so a buyer's refund and a seller's transfer can never both be in flight for
+ * the same money, and two refunds cannot both reach Paystack.
+ *
+ * `payout_attempt` (orders and payments) counts the transfers Paystack has
+ * BURNT: it is incremented only by `transfer.failed` / `transfer.reversed`, and
+ * `orderPayoutReference(orderId, attempt)` folds it into the transfer
+ * reference, so a reversed payout can be retried (H1) while a duplicate of the
+ * same attempt is still refused by Paystack.
+ *
+ * Requires migration `20260915140000_marketplace_payout_attempt_and_refund_claim.sql`.
+ *
+ * Two shapes of checkout share the machine:
+ * - Buy-now / offer-accept: ONE payment row with `order_id` set and
+ *   `checkout_id` NULL. Payout state lives on the payment row itself
+ *   (`paid` -> `payout_pending` + `payout_transfer_code` -> `paid_out`).
+ * - Cart checkout: ONE payment row with `checkout_id` set, covering MANY
+ *   `marketplace_orders` that share that `checkout_id` — potentially several
+ *   sellers. Each order is paid out separately, so the per-order
+ *   `payout_status` is the truthful answer to "has this seller been paid?";
+ *   the payment row only reaches `paid_out` once every sibling order has.
+ *
+ * WEBHOOK CONTRACT (`handleWebhook`, mounted at `routes/paystackWebhook.ts`)
+ * Handled events: `charge.success`, `transfer.success`, `transfer.failed`,
+ * `transfer.reversed`. Anything else is claimed, stamped and ignored.
+ * Dedupe is TWO-PHASE: the `paystack_webhook_events` claim row is inserted with
+ * `processed_at` NULL and stamped only after processing returns. Stamping on
+ * insert (the old behaviour) meant a crash mid-processing turned every Paystack
+ * retry into a silent "duplicate" no-op, stranding a paid order forever. A
+ * claim with `processed_at` still NULL is a dead previous attempt and is
+ * re-processed; only a stamped row is a true duplicate. Requires migration
+ * `20260915110000_paystack_webhook_two_phase.sql`. Every branch of
+ * `processWebhookEvent` must therefore stay safe to re-run.
+ *
+ * IDEMPOTENCY
+ * Webhook dedupe is DB-backed on the `paystack_webhook_events.event_key` UNIQUE
+ * index, not an in-memory set, so it holds across the multiple Render replicas
+ * that serve the webhook. Request-level idempotency for checkout creation lives
+ * in `services/idempotency.ts` on `api_idempotency_keys`, same reasoning.
+ *
+ * DELIBERATE DEFENCES — do not weaken any of these
+ * - No client-supplied amount exists anywhere on the charge path. Every kobo
+ *   figure is derived server-side from the listing price and the fee resolver.
+ * - Amount AND currency are verified against the stored payment row on both the
+ *   webhook and the verify path before anything is marked paid.
+ * - A mismatch calls `recordSettlementMismatch`, which alerts Sentry and stamps
+ *   the row for reconciliation instead of swallowing captured funds.
+ * - Retired payment rows (superseded, failed, refunded) cannot be settled by a
+ *   late `charge.success` from a Paystack page left open in a stale tab.
+ * - `paystack_mode` is stamped at initialize and re-checked at settlement, so a
+ *   test-key server can never settle a live charge or vice versa.
+ * - `seller_id` is always derived from the listing, never from the request.
+ * - The payout account is read from `marketplace_seller_payout_profiles` by the
+ *   seller's own id; no request field selects a destination account.
+ * - `assertSellerCanReceivePayout` gates every checkout-creation path, so money
+ *   is never captured for a seller who cannot be paid.
+ * - Entitlements for digital goods are granted only from server-side
+ *   settlement, never from a client-reported success.
+ * - Stock is protected by SELECT ... FOR UPDATE inside the SECURITY DEFINER RPC
+ *   `marketplace_create_buy_now_order`, which is revoked from PUBLIC.
+ * - Fee maths is integer kobo throughout, with the platform cut clamped by
+ *   `Math.min` in `@lantern/shared/marketplace` so a seller payout can never go
+ *   negative.
+ *
+ * Gotcha: the service is a module-level singleton bound to the first
+ * `SupabaseService` passed in, so tests must construct the class directly
+ * rather than re-calling the factory.
+ */
 import {
   computeMarketplaceCheckoutFees,
   isDigitalListingKind,
@@ -7,6 +117,7 @@ import {
   resolveMarketplaceServiceFeeBps,
 } from '@lantern/shared/marketplace';
 import type { SupabaseService } from './supabase';
+import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
 import {
   createPaystackReference,
@@ -15,6 +126,7 @@ import {
   initializePaystackTransaction,
   initiatePaystackTransfer,
   isPaystackConfigured,
+  paystackMode,
   refundPaystackTransaction,
   resolvePaystackAccount,
   verifyPaystackSignature,
@@ -44,6 +156,38 @@ function allowlistedCheckoutCallback(checkoutId: string): string {
   return `${callbackBaseUrl()}/marketplace/orders?payment=return&checkout=${checkoutId}`;
 }
 
+/**
+ * The payout transfer reference for one ATTEMPT at paying out an order.
+ * Paystack refuses a duplicate transfer reference, so this is the last line of
+ * defence against paying a seller twice for one order even if two processes get
+ * past the database claim.
+ *
+ * FIXED (G3 · H1): the reference used to be a pure hash of the order id, which
+ * made that last line of defence permanent. `transfer.failed` /
+ * `transfer.reversed` reset `payout_status` to `pending` "so it can be retried",
+ * but every retry sent Paystack the identical reference, Paystack rejected it as
+ * a duplicate, the claim was released, and the seller was never paid for that
+ * order — a dead end with no manual way out.
+ *
+ * The attempt number breaks the tie and nothing else: the reference is still
+ * deterministic per (order, attempt), so a retry of the SAME attempt — the
+ * double-transfer case — still collides at Paystack. Attempt 0 keeps the
+ * original spelling, so a payout in flight across this deploy still matches its
+ * stored reference. The counter lives on the order / payment row and is
+ * incremented only when Paystack has definitively burnt a reference (a
+ * `transfer.failed` or `transfer.reversed` event); a transfer call that throws
+ * locally keeps the same attempt, because the request may still have reached
+ * Paystack and the duplicate-reference refusal is what protects the seller.
+ */
+export function orderPayoutReference(orderId: string, attempt: number = 0): string {
+  const base = createHash('sha256').update(`payout:${orderId}`).digest('hex').slice(0, 32);
+  const n = Number.isFinite(attempt) ? Math.max(0, Math.floor(attempt)) : 0;
+  return n === 0 ? `ls_po_${base}` : `ls_po_${base}_a${n}`;
+}
+
+/** How many past attempts a reference scan will consider. Bounded on purpose. */
+const MAX_PAYOUT_ATTEMPT_SCAN = 25;
+
 export class MarketplacePaymentsService {
   private orders: MarketplaceOrdersService;
 
@@ -54,6 +198,13 @@ export class MarketplacePaymentsService {
   private get db() {
     return this.supabaseService.getClient();
   }
+
+  // --- Seller payout profiles ------------------------------------------------
+  // The destination bank account for every transfer. Always keyed by the
+  // seller's own user id: no request field names an account, and no caller
+  // passes a recipient code in. `assertSellerCanReceivePayout` is the gate
+  // every checkout-creation path calls before money is captured, so Lantern
+  // never holds funds for a seller it cannot pay.
 
   async getSellerPayoutProfile(userId: string) {
     const { data, error } = await this.db
@@ -72,7 +223,7 @@ export class MarketplacePaymentsService {
     const accountNumber = String(input.accountNumber || '').replace(/\D/g, '');
     const bankCode = String(input.bankCode || '').trim();
     if (accountNumber.length < 8 || !bankCode) {
-      throw new Error('Valid bank account number and bank code are required');
+      throw new PublicError('Valid bank account number and bank code are required');
     }
 
     const resolved = await resolvePaystackAccount({ accountNumber, bankCode });
@@ -107,11 +258,20 @@ export class MarketplacePaymentsService {
   async assertSellerCanReceivePayout(sellerId: string): Promise<void> {
     const profile = await this.getSellerPayoutProfile(sellerId);
     if (!profile || profile.status !== 'active') {
-      throw new Error(
+      throw new PublicError(
         'Seller has not set up a payout bank account. They must add bank details before checkout.'
       );
     }
   }
+
+  // --- Charge creation -------------------------------------------------------
+  // Three entry points open a Paystack session: buy-now, unified cart checkout,
+  // and attaching a charge to an existing order (offer-accept / resume). All
+  // three follow the same shape: resolve the fee split server-side from the
+  // listing, insert a `marketplace_payments` row stamped with the current
+  // Paystack mode, point the order(s) at it, then initialize the transaction.
+  // No amount on any of these paths comes from the client — the request only
+  // ever names a listing, a quantity and an optional coupon.
 
   /**
    * Buy-now with Paystack: create order in awaiting_payment, initialize charge.
@@ -124,11 +284,11 @@ export class MarketplacePaymentsService {
     quantity?: number;
   }) {
     if (!marketplacePaystackEnabled()) {
-      throw new Error('Paystack marketplace checkout is not enabled');
+      throw new PublicError('Paystack marketplace checkout is not enabled');
     }
 
     const listing = await this.supabaseService.getMarketplaceListingById(input.listingId);
-    if (!listing) throw new Error('Listing not found');
+    if (!listing) throw new PublicError('Listing not found');
     await this.assertSellerCanReceivePayout(listing.user_id);
 
     // Create order with awaiting_payment via existing buy-now path after forcing status.
@@ -164,6 +324,9 @@ export class MarketplacePaymentsService {
         currency: 'NGN',
         paystack_reference: reference,
         status: 'initialized',
+        // Which Paystack key this session was opened against; settlement
+        // refuses a row whose mode differs from the running server's.
+        paystack_mode: paystackMode(),
         metadata: {
           listingId: input.listingId,
           quantity: order.quantity || 1,
@@ -243,10 +406,10 @@ export class MarketplacePaymentsService {
     totalChargeKobo: number;
   }) {
     if (!marketplacePaystackEnabled()) {
-      throw new Error('Paystack marketplace checkout is not enabled');
+      throw new PublicError('Paystack marketplace checkout is not enabled');
     }
     const first = input.orders[0];
-    if (!first) throw new Error('Checkout has no orders');
+    if (!first) throw new PublicError('Checkout has no orders');
     for (const order of input.orders) {
       await this.assertSellerCanReceivePayout(order.seller_id);
     }
@@ -268,6 +431,9 @@ export class MarketplacePaymentsService {
         currency: 'NGN',
         paystack_reference: reference,
         status: 'initialized',
+        // Which Paystack key this session was opened against; settlement
+        // refuses a row whose mode differs from the running server's.
+        paystack_mode: paystackMode(),
         metadata: {
           checkoutId: input.checkoutId,
           orderIds: input.orders.map((order) => order.id),
@@ -332,8 +498,8 @@ export class MarketplacePaymentsService {
   }) {
     // Use RPC with initial status awaiting_payment if supported; fallback pending_payment then patch.
     const listing = await this.supabaseService.getMarketplaceListingById(input.listingId);
-    if (!listing) throw new Error('Listing not found');
-    if (listing.user_id === input.buyerId) throw new Error('Cannot buy your own listing');
+    if (!listing) throw new PublicError('Listing not found');
+    if (listing.user_id === input.buyerId) throw new PublicError('Cannot buy your own listing');
 
     const quantity = Math.max(1, Math.floor(Number(input.quantity) || 1));
     const unitPrice = resolveEffectivePrice(listing);
@@ -370,6 +536,9 @@ export class MarketplacePaymentsService {
     if (rpcError) throw rpcError;
     const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
     const orderId = rpcRow?.order_id as string | undefined;
+    // Invariant break, not a client mistake: the RPC returned no order id.
+    // A bare Error so it reaches the global handler as a 500 and lands in 5xx
+    // alerting, instead of being reported to the buyer as their fault.
     if (!orderId) throw new Error('Failed to create marketplace order');
 
     await this.db
@@ -378,6 +547,8 @@ export class MarketplacePaymentsService {
       .eq('id', orderId);
 
     const order = await this.orders.getOrderById(orderId, input.buyerId);
+    // Same: the row was just created by the RPC above, so its absence is a
+    // server fault. Bare Error → 500.
     if (!order) throw new Error('Order not found after creation');
     return order;
   }
@@ -391,11 +562,11 @@ export class MarketplacePaymentsService {
     buyerEmail: string;
   }) {
     if (!marketplacePaystackEnabled()) {
-      throw new Error('Paystack marketplace checkout is not enabled');
+      throw new PublicError('Paystack marketplace checkout is not enabled');
     }
     const order = await this.orders.getOrderById(input.orderId, input.buyerId);
-    if (!order) throw new Error('Order not found');
-    if (order.buyer_id !== input.buyerId) throw new Error('Unauthorized');
+    if (!order) throw new PublicError('Order not found');
+    if (order.buyer_id !== input.buyerId) throw new PublicError('Unauthorized');
     await this.assertSellerCanReceivePayout(order.seller_id);
 
     const itemAmountKobo = nairaToKobo(Number(order.amount));
@@ -509,6 +680,9 @@ export class MarketplacePaymentsService {
         currency: 'NGN',
         paystack_reference: reference,
         status: 'initialized',
+        // Which Paystack key this session was opened against; settlement
+        // refuses a row whose mode differs from the running server's.
+        paystack_mode: paystackMode(),
         metadata: {
           source: 'offer_accept',
           listingId: order.listing_id,
@@ -573,13 +747,13 @@ export class MarketplacePaymentsService {
    */
   async getCheckoutSessionForOrder(orderId: string, buyerId: string, buyerEmail: string) {
     if (!marketplacePaystackEnabled()) {
-      throw new Error('Paystack marketplace checkout is not enabled');
+      throw new PublicError('Paystack marketplace checkout is not enabled');
     }
     const order = await this.orders.getOrderById(orderId, buyerId);
-    if (!order) throw new Error('Order not found');
-    if (order.buyer_id !== buyerId) throw new Error('Unauthorized');
+    if (!order) throw new PublicError('Order not found');
+    if (order.buyer_id !== buyerId) throw new PublicError('Unauthorized');
     if (!['awaiting_payment', 'pending_payment'].includes(order.status)) {
-      throw new Error('Order is not awaiting payment');
+      throw new PublicError('Order is not awaiting payment');
     }
 
     if (order.payment_id) {
@@ -589,7 +763,7 @@ export class MarketplacePaymentsService {
         .eq('id', order.payment_id)
         .maybeSingle();
       if (existing?.status === 'paid' || existing?.status === 'paid_out' || existing?.status === 'payout_pending') {
-        throw new Error('Order is already paid');
+        throw new PublicError('Order is already paid');
       }
     }
 
@@ -598,6 +772,13 @@ export class MarketplacePaymentsService {
     return this.createCheckoutForExistingOrder({ orderId, buyerId, buyerEmail });
   }
 
+  // --- Settlement ------------------------------------------------------------
+  // Two ways a payment becomes `paid`: the buyer's browser returning to
+  // `verifyPaymentByReference` (a server-to-server Paystack verify, never a
+  // client assertion), and `charge.success` on the webhook. Both converge on
+  // `markPaymentPaid`, and both check amount, currency, Paystack mode and that
+  // the row is still open before they do.
+
   async verifyPaymentByReference(reference: string, actorId: string) {
     const { data: payment, error } = await this.db
       .from('marketplace_payments')
@@ -605,10 +786,11 @@ export class MarketplacePaymentsService {
       .eq('paystack_reference', reference)
       .maybeSingle();
     if (error) throw error;
-    if (!payment) throw new Error('Payment not found');
+    if (!payment) throw new PublicError('Payment not found');
     if (payment.buyer_id !== actorId && payment.seller_id !== actorId) {
-      throw new Error('Unauthorized');
+      throw new PublicError('Unauthorized');
     }
+    this.assertPaystackModeMatches(payment);
 
     if (payment.status === 'paid' || payment.status === 'paid_out' || payment.status === 'payout_pending') {
       const order = payment.order_id
@@ -619,7 +801,7 @@ export class MarketplacePaymentsService {
 
     const verified = await verifyPaystackTransaction(reference);
     if (verified.status !== 'success') {
-      throw new Error(`Payment not successful (${verified.status})`);
+      throw new PublicError(`Payment not successful (${verified.status})`);
     }
     // A retired row (superseded as stale, failed, refunded) must not be settled
     // by a late success either — see the webhook path for the reasoning.
@@ -638,7 +820,7 @@ export class MarketplacePaymentsService {
         gotCurrency: verified.currency,
         ...(retiredRow ? { reason: `payment_${payment.status}` } : {}),
       });
-      throw new Error(retiredRow ? 'Payment session is no longer open' : 'Payment amount mismatch');
+      throw new PublicError(retiredRow ? 'Payment session is no longer open' : 'Payment amount mismatch');
     }
 
     await this.markPaymentPaid(payment.id, String(verified.id), verified.paidAt || undefined);
@@ -653,6 +835,16 @@ export class MarketplacePaymentsService {
     return { payment: refreshed || payment, order, alreadySettled: false };
   }
 
+  // The single settlement funnel, reached from both verify and the webhook.
+  // The status flip and the order-side fulfilment are deliberately separate
+  // steps. The flip is a compare-and-set on `status = 'initialized'`, so only
+  // one caller performs it; fulfilment then runs on EVERY call, including one
+  // that lost the race or found the payment already `paid`. It used to return
+  // early on an already-paid payment while the multi-order fulfilment loop ran
+  // after the flip, so a failure partway through a cart left the remaining
+  // orders unfulfilled with no way back in — every retry hit the early exit.
+  // `fulfillOrdersForPayment` selects each order by its own unfulfilled status,
+  // which is what makes re-running it a no-op rather than a duplicate.
   async markPaymentPaid(
     paymentId: string,
     paystackTransactionId: string,
@@ -665,39 +857,76 @@ export class MarketplacePaymentsService {
       .eq('id', paymentId)
       .single();
     if (error || !payment) throw error || new Error('Payment not found');
+    this.assertPaystackModeMatches(payment);
 
-    if (['paid', 'payout_pending', 'paid_out'].includes(payment.status)) return;
+    const alreadySettled = ['paid', 'payout_pending', 'paid_out'].includes(payment.status);
+    let settled: Record<string, any> = payment;
 
-    const { data: updated, error: updErr } = await this.db
-      .from('marketplace_payments')
-      .update({
-        status: 'paid',
-        paystack_transaction_id: String(paystackTransactionId),
-        paid_at: now,
-        updated_at: now,
-      })
-      .eq('id', paymentId)
-      .eq('status', 'initialized')
-      .select('*')
-      .maybeSingle();
-    if (updErr) throw updErr;
-    if (!updated) return; // raced
+    if (!alreadySettled) {
+      const { data: updated, error: updErr } = await this.db
+        .from('marketplace_payments')
+        .update({
+          status: 'paid',
+          paystack_transaction_id: String(paystackTransactionId),
+          paid_at: now,
+          updated_at: now,
+        })
+        .eq('id', paymentId)
+        .eq('status', 'initialized')
+        .select('*')
+        .maybeSingle();
+      if (updErr) throw updErr;
+      if (updated) {
+        settled = updated;
+      } else {
+        // Raced with another settler. The status flip is theirs; the order-side
+        // work below is still ours to resume — it filters on order state, so
+        // running it twice is a no-op rather than a duplicate.
+        const { data: again } = await this.db
+          .from('marketplace_payments')
+          .select('*')
+          .eq('id', paymentId)
+          .single();
+        settled = again || payment;
+        if (!['paid', 'payout_pending', 'paid_out'].includes(String(settled.status))) return;
+      }
 
-    if (payment.checkout_id) {
-      await this.db
-        .from('marketplace_checkouts')
-        .update({ status: 'paid', updated_at: now })
-        .eq('id', payment.checkout_id);
+      if (payment.checkout_id) {
+        await this.db
+          .from('marketplace_checkouts')
+          .update({ status: 'paid', updated_at: now })
+          .eq('id', payment.checkout_id);
+      }
+    }
+
+    // Fulfilment is a separate, resumable step. It used to run only on the
+    // attempt that flipped the status, so a throw partway through a multi-order
+    // checkout left the remaining orders unfulfilled with no way back in — the
+    // retry saw 'paid' and returned immediately.
+    await this.fulfillOrdersForPayment(settled, now);
+
+    await invalidateSellerAnalyticsCache(payment.seller_id);
+  }
+
+  /**
+   * Bring every order behind a settled payment up to date. Safe to re-run: each
+   * order is selected by its own unfulfilled status, so an order already paid
+   * and notified is skipped and one left behind by a crashed attempt is picked
+   * up on the next webhook retry.
+   */
+  private async fulfillOrdersForPayment(
+    payment: Record<string, any>,
+    now: string
+  ): Promise<void> {
+    const checkoutId = payment.checkout_id as string | undefined;
+    let rows: Array<{ id: string; listing_id: string; buyer_id: string; seller_id: string; status: string }> = [];
+
+    if (checkoutId) {
       const { data: checkoutOrders } = await this.db
         .from('marketplace_orders')
-        .select('id, listing_id, buyer_id, seller_id')
-        .eq('checkout_id', payment.checkout_id);
-      const rows = (checkoutOrders || []) as Array<{
-        id: string;
-        listing_id: string;
-        buyer_id: string;
-        seller_id: string;
-      }>;
+        .select('id, listing_id, buyer_id, seller_id, status')
+        .eq('checkout_id', checkoutId);
+      rows = (checkoutOrders || []) as typeof rows;
       if (rows.length > 0) {
         await this.db
           .from('marketplace_cart_items')
@@ -708,58 +937,86 @@ export class MarketplacePaymentsService {
             rows.map((row) => row.listing_id),
           );
       }
-      for (const order of rows) {
+    } else if (payment.order_id) {
+      const { data: single } = await this.db
+        .from('marketplace_orders')
+        .select('id, listing_id, buyer_id, seller_id, status')
+        .eq('id', payment.order_id)
+        .maybeSingle();
+      if (single) rows = [single as (typeof rows)[number]];
+    }
+
+    for (const order of rows) {
+      const awaiting = ['awaiting_payment', 'pending_payment'].includes(String(order.status));
+      // Terminal orders need nothing; re-running would re-notify or re-pay.
+      if (!awaiting && !['paid'].includes(String(order.status))) continue;
+
+      if (awaiting) {
         await this.db
           .from('marketplace_orders')
           .update({ status: 'paid', payment_id: payment.id })
           .eq('id', order.id)
           .in('status', ['awaiting_payment', 'pending_payment']);
         await this.orders.stampOrderPaidAt(order.id, now);
-        const digital = await this.fulfillDigitalOrderAfterPayment(order.id, updated);
-        if (!digital) {
-          await this.orders.notifyOrderParty(order.seller_id, {
-            type: 'marketplace_order_update',
-            message: 'Payment received via Paystack. Mark the order ready when the item is prepared.',
-            link: `marketplace:order:${order.id}`,
-            data: { orderId: order.id, paid: true, checkoutId: payment.checkout_id },
-          });
-          await this.orders.notifyOrderParty(order.buyer_id, {
-            type: 'marketplace_order_update',
-            message: 'Payment confirmed. Arrange campus pickup or watch for shipping.',
-            link: `marketplace:order:${order.id}`,
-            data: { orderId: order.id, paid: true, checkoutId: payment.checkout_id },
-          });
-        }
       }
-    } else if (payment.order_id) {
-      await this.db
-        .from('marketplace_orders')
-        .update({ status: 'paid' })
-        .eq('id', payment.order_id)
-        .in('status', ['awaiting_payment', 'pending_payment']);
-      await this.orders.stampOrderPaidAt(payment.order_id, now);
 
       // Digital products (question banks, study packs) fulfill instantly:
       // deliver, complete, pay out. Everything else keeps the meetup flow.
-      const digital = await this.fulfillDigitalOrderAfterPayment(payment.order_id, updated);
-      if (!digital) {
-        await this.orders.notifyOrderParty(payment.seller_id, {
+      const digital = await this.fulfillDigitalOrderAfterPayment(order.id, payment);
+      if (!digital && awaiting) {
+        await this.orders.notifyOrderParty(order.seller_id, {
           type: 'marketplace_order_update',
           message: 'Payment received via Paystack. Mark the order ready when the item is prepared.',
-          link: `marketplace:order:${payment.order_id}`,
-          data: { orderId: payment.order_id, paid: true },
+          link: `marketplace:order:${order.id}`,
+          data: { orderId: order.id, paid: true, ...(checkoutId ? { checkoutId } : {}) },
         });
-        await this.orders.notifyOrderParty(payment.buyer_id, {
+        await this.orders.notifyOrderParty(order.buyer_id, {
           type: 'marketplace_order_update',
-          message: 'Payment confirmed. Arrange campus pickup with the seller.',
-          link: `marketplace:order:${payment.order_id}`,
-          data: { orderId: payment.order_id, paid: true },
+          message: checkoutId
+            ? 'Payment confirmed. Arrange campus pickup or watch for shipping.'
+            : 'Payment confirmed. Arrange campus pickup with the seller.',
+          link: `marketplace:order:${order.id}`,
+          data: { orderId: order.id, paid: true, ...(checkoutId ? { checkoutId } : {}) },
         });
       }
     }
-
-    await invalidateSellerAnalyticsCache(payment.seller_id);
   }
+
+  /**
+   * A payment row initialised against one Paystack key must never be settled
+   * against the other. Without this a test-mode charge could settle a live
+   * order (free goods) or a live charge could be "settled" by test webhooks.
+   */
+  private assertPaystackModeMatches(payment: Record<string, any>): void {
+    const rowMode = payment.paystack_mode ? String(payment.paystack_mode) : null;
+    if (!rowMode) return; // legacy rows predate the stamp
+    const current = paystackMode();
+    if (rowMode !== current) {
+      const err = new Error(
+        `Paystack mode mismatch: payment was created in ${rowMode} mode, server is in ${current} mode`
+      );
+      logger.error('Refusing to settle a payment from a different Paystack mode', {
+        paymentId: payment.id,
+        rowMode,
+        serverMode: current,
+      });
+      throw err;
+    }
+  }
+
+  // --- Digital fulfilment ----------------------------------------------------
+  // The JSDoc below predates the current control flow: delivery failure no
+  // longer falls through to completion and payout. It used to — the error was
+  // logged, swallowed, escrow released and the seller paid, leaving the buyer
+  // charged with no entitlement and their only remedy throwing "cannot
+  // auto-refund after seller payout". Now a delivery failure reports to Sentry
+  // and returns immediately, so the payment stays `paid` (refundable), the
+  // order stays open, and the next settlement attempt retries delivery.
+  // Completion and payout are still isolated from each other below: a missed
+  // payout leaves a visible `paid` payment recoverable via forcePayoutForOrder.
+  //
+  // Entitlements are granted here and only here — from server-side settlement,
+  // never from a client reporting a successful checkout.
 
   /**
    * Instant fulfillment for digital orders (question banks + study packs).
@@ -827,6 +1084,28 @@ export class MarketplacePaymentsService {
         kind,
         error: err instanceof Error ? err.message : String(err),
       });
+      // The buyer has nothing. Completing the order and paying the seller now
+      // would put the money beyond auto-refund for goods that were never
+      // delivered, so stop here: the payment stays 'paid' (refundable), the
+      // order stays open, and the next settle attempt retries delivery.
+      try {
+        const { captureException } = await import('../utils/sentry');
+        captureException(
+          err instanceof Error ? err : new Error('Digital delivery failed after payment'),
+          {
+            scope: 'marketplace_digital_delivery',
+            orderId,
+            listingId: order.listing_id,
+            buyerId: order.buyer_id,
+            sellerId: order.seller_id,
+            kind,
+            paymentId: payment?.id,
+          }
+        );
+      } catch {
+        // alerting must never mask the delivery failure
+      }
+      return true;
     }
 
     try {
@@ -851,6 +1130,27 @@ export class MarketplacePaymentsService {
     return true;
   }
 
+  // --- Seller payout ---------------------------------------------------------
+  // Two branches, one per checkout shape, and BOTH now claim before money moves.
+  //
+  // Unified checkout (`payment.checkout_id` set): a compare-and-set on
+  // `marketplace_orders.payout_status` pending -> paying. Exactly one caller
+  // wins; the losers return 'in_flight' or 'already_paid_out'. This branch used
+  // to guard on a plain read of `payout_status` and write `paid_out` only AFTER
+  // the transfer, so a buyer's confirm_received racing an admin force-payout
+  // both passed the read and both transferred — and because the reference was
+  // freshly random, Paystack's own reference idempotency did not catch it
+  // either. The platform paid the seller twice out of its own balance, which is
+  // not refund-recoverable. Fixed by the CAS plus `orderPayoutReference`.
+  //
+  // Single order (`checkout_id` NULL): the same claim expressed on the payment
+  // row, paid -> payout_pending, plus an `in_flight` short-circuit when a
+  // transfer code is already recorded.
+  //
+  // `orderPayoutReference(orderId)` is deterministic on purpose: Paystack
+  // rejects a duplicate transfer reference, so it is the last line of defence
+  // if a process somehow gets past the database claim.
+
   /**
    * Initiate seller transfer for a paid payment. Idempotent when already paid_out.
    * Returns true if a transfer was initiated or already completed; false if no Paystack payment.
@@ -860,60 +1160,158 @@ export class MarketplacePaymentsService {
     sellerId: string,
     payment: Record<string, any>
   ): Promise<'legacy' | 'already_paid_out' | 'transferred' | 'in_flight'> {
-    if (payment.status === 'refunded' || payment.status === 'failed') {
-      throw new Error('Payment cannot be paid out in its current state');
+    // 'refunding' is the refund claim (H2): the buyer's money is on its way
+    // back, so the seller's must not go out. Same class of refusal as a payment
+    // already refunded or failed.
+    if (
+      payment.status === 'refunded' ||
+      payment.status === 'refunding' ||
+      payment.status === 'failed'
+    ) {
+      throw new PublicError('Payment cannot be paid out in its current state');
     }
     if (payment.status === 'paid_out' && !payment.checkout_id) return 'already_paid_out';
     if (payment.status !== 'paid' && payment.status !== 'payout_pending' && payment.status !== 'paid_out') {
-      throw new Error('Order payment is not settled yet');
+      throw new PublicError('Order payment is not settled yet');
     }
 
     if (payment.checkout_id) {
-      const { data: orderRow } = await this.db
+      // CAS claim: exactly one caller may move a per-order payout out of
+      // 'pending'. Without it a buyer's confirm_received racing an admin force
+      // (or two webhook retries) both read 'pending', both transfer, and the
+      // seller is paid twice for one order.
+      const { data: claimed, error: claimErr } = await this.db
         .from('marketplace_orders')
-        .select('id, seller_payout_kobo, payout_status, amount, shipping_amount')
+        .update({ payout_status: 'paying' })
         .eq('id', orderId)
+        .eq('payout_status', 'pending')
+        // `*` rather than a column list: naming `payout_attempt` here would
+        // fail the whole claim on a database whose (hand-applied) migration is
+        // not in yet, and that would stop every cart payout.
+        .select('*')
         .maybeSingle();
-      if (orderRow?.payout_status === 'paid_out') return 'already_paid_out';
+      if (claimErr) throw claimErr;
+      if (!claimed) {
+        const { data: current } = await this.db
+          .from('marketplace_orders')
+          .select('payout_status')
+          .eq('id', orderId)
+          .maybeSingle();
+        if (current?.payout_status === 'paid_out') return 'already_paid_out';
+        if (current?.payout_status === 'paying') return 'in_flight';
+        // FIXED (G3 · H3): the refund path takes the SAME claim on this row and
+        // holds it as 'refund_hold'. Payout and refund are now mutually
+        // exclusive states on one row, so the buyer's money going back and the
+        // seller's money going out can never both be in flight. Loudly refused
+        // rather than silently reported as already paid out.
+        if (current?.payout_status === 'refund_hold') {
+          throw new PublicError('A refund is in progress for this order; payout is blocked');
+        }
+        // 'skipped' (or a missing order): nothing to pay out.
+        return 'already_paid_out';
+      }
+      const orderRow = claimed as {
+        seller_payout_kobo?: number | null;
+        amount?: number | null;
+        shipping_amount?: number | null;
+        payout_attempt?: number | null;
+      };
+      // The attempt this payout is: bumped only by a failed/reversed transfer.
+      const payoutAttempt = Math.max(0, Math.floor(Number(orderRow?.payout_attempt ?? 0)) || 0);
       const { data: profile } = await this.db
         .from('marketplace_seller_payout_profiles')
         .select('paystack_recipient_code, status')
         .eq('user_id', sellerId)
         .maybeSingle();
       if (!profile?.paystack_recipient_code || profile.status !== 'active') {
-        throw new Error('Seller payout profile is missing or inactive');
+        await this.releaseOrderPayoutClaim(orderId, 'Seller payout profile is missing or inactive');
+        throw new PublicError('Seller payout profile is missing or inactive');
       }
       const amountKobo = Number(
         orderRow?.seller_payout_kobo ??
           nairaToKobo(Number(orderRow?.amount || 0) + Number(orderRow?.shipping_amount || 0)),
       );
-      const transferRef = createPaystackReference('ls_po');
-      const transfer = await initiatePaystackTransfer({
-        amountKobo,
-        recipientCode: profile.paystack_recipient_code,
-        reference: transferRef,
-        reason: `Lantern marketplace order ${orderId}`,
-      });
-      await this.db
+      // FIXED (H4c · a): the reference is deterministic, so it is known BEFORE
+      // the transfer — write it while the money is still ours and CHECK the
+      // write. supabase-js returns errors instead of throwing, so an unchecked
+      // stamp (the H4b shape) silently did nothing when the column was absent,
+      // which is exactly the state right after a deploy whose migration has not
+      // been hand-applied yet: the order would sit at 'paying' with no
+      // reference and no code, findable by no webhook, with the seller's money
+      // already gone. Failing here costs nothing — nothing has moved yet.
+      const payoutReference = orderPayoutReference(orderId, payoutAttempt);
+      const { error: refErr } = await this.db
         .from('marketplace_orders')
-        .update({ payout_status: 'paid_out' })
+        // `payout_attempt` is written back only when it is non-zero, and it can
+        // only BE non-zero if the column exists (a webhook wrote it). On a
+        // deploy whose migration is not hand-applied yet this is byte-for-byte
+        // the old single-column write, so an unmigrated database degrades to
+        // today's behaviour instead of failing every payout closed.
+        .update(
+          payoutAttempt > 0
+            ? { payout_reference: payoutReference, payout_attempt: payoutAttempt }
+            : { payout_reference: payoutReference },
+        )
         .eq('id', orderId);
-      const { data: siblings } = await this.db
-        .from('marketplace_orders')
-        .select('id, status, payout_status')
-        .eq('checkout_id', payment.checkout_id);
-      const remaining = (siblings || []).filter(
-        (row: { status: string; payout_status: string }) =>
-          !['cancelled', 'completed'].includes(row.status) || row.payout_status !== 'paid_out',
-      );
-      const unfinished = (siblings || []).filter(
-        (row: { status: string; payout_status: string }) =>
-          row.status !== 'cancelled' && row.payout_status !== 'paid_out',
-      );
-      if (unfinished.length === 0 || remaining.length === 0) {
-        await this.markPaymentPaidOut(payment.id);
+      if (refErr) {
+        await this.releaseOrderPayoutClaim(
+          orderId,
+          `Could not record the payout reference: ${refErr.message || String(refErr)}`
+        );
+        throw refErr;
       }
-      void transfer;
+      let transfer: Awaited<ReturnType<typeof initiatePaystackTransfer>>;
+      try {
+        // Deterministic reference: Paystack rejects a duplicate transfer
+        // reference, so even a retry that somehow slips past the CAS cannot
+        // move money a second time for this order.
+        transfer = await initiatePaystackTransfer({
+          amountKobo,
+          recipientCode: profile.paystack_recipient_code,
+          reference: payoutReference,
+          reason: `Lantern marketplace order ${orderId}`,
+        });
+      } catch (err) {
+        await this.releaseOrderPayoutClaim(
+          orderId,
+          err instanceof Error ? err.message : String(err)
+        );
+        throw err;
+      }
+      // FIXED (H4b · 1): the transfer result is no longer discarded. The code
+      // and reference are stamped on the order row BEFORE it settles — exactly
+      // as the single-order branch does on the payment row — so a later
+      // transfer.failed / transfer.reversed webhook can find this order and put
+      // it back when the money comes back, instead of leaving it 'paid_out'.
+      //
+      // FIXED (H4c · b): the money has ALREADY moved by this point, so a failed
+      // stamp must never be thrown or retried — that would risk a second
+      // transfer. Record it loudly and carry on: the reference written before
+      // the transfer, plus the `paying` reference scan in
+      // findOrderByPayoutTransfer, is what recovers this order by webhook.
+      const { error: stampErr } = await this.db
+        .from('marketplace_orders')
+        .update({
+          payout_transfer_code: transfer.transferCode,
+          payout_reference: transfer.reference || payoutReference,
+          payout_failed_reason: null,
+        })
+        .eq('id', orderId);
+      if (stampErr) {
+        logger.error('Payout transfer code could not be stamped on the order', {
+          orderId,
+          transferCode: transfer.transferCode,
+          reference: transfer.reference || payoutReference,
+          error: stampErr.message || String(stampErr),
+        });
+      }
+      // Paystack usually answers 'pending' and confirms by webhook. Settling
+      // only on a confirmed success is what makes the reversal path meaningful:
+      // an order left at 'paying' is finished by the transfer.success handler,
+      // which matches the code stamped above.
+      if (transfer.status === 'success') {
+        await this.finalizeOrderPayout(orderId, payment.checkout_id, payment.id);
+      }
       return 'transferred';
     }
 
@@ -923,38 +1321,57 @@ export class MarketplacePaymentsService {
       .eq('user_id', sellerId)
       .maybeSingle();
     if (!profile?.paystack_recipient_code || profile.status !== 'active') {
-      throw new Error('Seller payout profile is missing or inactive');
+      throw new PublicError('Seller payout profile is missing or inactive');
     }
 
+    // FIXED (G3 · H11): ONE compare-and-set covers both entry states.
+    //
+    // The old code only CASed the `paid` -> `payout_pending` flip. A payment
+    // that was ALREADY `payout_pending` with no transfer code — the window
+    // between the flip and the stamp, or a previous attempt that died there —
+    // walked straight past the claim, so a second caller transferred again,
+    // Paystack rejected the duplicate reference, and that second caller's
+    // rollback then wiped the FIRST caller's in-flight transfer code. The real
+    // transfer settled later, `transfer.success` matched nothing, and the
+    // payment sat at `paid` and refundable while the seller already had the
+    // money.
+    //
+    // The claim is now `payout_transfer_code IS NULL` -> `claim:<reference>`,
+    // conditional on the status being payable. Exactly one caller can take it;
+    // the losers see a non-null code and read as `in_flight`. The marker is
+    // never a real Paystack transfer code, so no webhook can match it, and it
+    // is what every subsequent write in this branch filters on — a duplicate
+    // attempt therefore cannot clobber the live one's tracking columns.
     let working = payment;
-    if (working.status === 'paid') {
-      const { data: locked, error: lockErr } = await this.db
+    const attempt = Math.max(0, Math.floor(Number(working.payout_attempt ?? 0)) || 0);
+    const transferRef = orderPayoutReference(orderId, attempt);
+    const claimMarker = `claim:${transferRef}`;
+    const { data: locked, error: lockErr } = await this.db
+      .from('marketplace_payments')
+      .update({
+        status: 'payout_pending',
+        payout_transfer_code: claimMarker,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', working.id)
+      .in('status', ['paid', 'payout_pending'])
+      .is('payout_transfer_code', null)
+      .select('*')
+      .maybeSingle();
+    if (lockErr) throw lockErr;
+    if (!locked) {
+      const { data: again } = await this.db
         .from('marketplace_payments')
-        .update({ status: 'payout_pending', updated_at: new Date().toISOString() })
-        .eq('id', working.id)
-        .eq('status', 'paid')
         .select('*')
-        .maybeSingle();
-      if (lockErr) throw lockErr;
-      if (!locked) {
-        const { data: again } = await this.db
-          .from('marketplace_payments')
-          .select('*')
-          .eq('id', working.id)
-          .single();
-        if (again?.status === 'paid_out') return 'already_paid_out';
-        if (again?.status === 'payout_pending') return 'in_flight';
-        working = again || working;
-      } else {
-        working = locked;
-      }
+        .eq('id', working.id)
+        .single();
+      if (again?.status === 'paid_out') return 'already_paid_out';
+      if (again?.status === 'payout_pending') return 'in_flight';
+      // refunded / refunding / failed / initialized: not ours to pay out.
+      throw new PublicError('Payment cannot be paid out in its current state');
     }
+    working = locked;
 
-    if (working.status === 'payout_pending' && working.payout_transfer_code) {
-      return 'in_flight';
-    }
-
-    const transferRef = createPaystackReference('ls_po');
     try {
       const transfer = await initiatePaystackTransfer({
         // The seller is paid the item minus any platform commission. Legacy
@@ -972,10 +1389,12 @@ export class MarketplacePaymentsService {
           updated_at: new Date().toISOString(),
           metadata: {
             ...(working.metadata || {}),
-            payoutReference: transfer.reference,
+            payoutReference: transfer.reference || transferRef,
           },
         })
-        .eq('id', working.id);
+        .eq('id', working.id)
+        // Only the holder of this claim may stamp the real code (H11).
+        .eq('payout_transfer_code', claimMarker);
 
       if (transfer.status === 'success') {
         await this.markPaymentPaidOut(working.id);
@@ -983,13 +1402,146 @@ export class MarketplacePaymentsService {
     } catch (err) {
       await this.db
         .from('marketplace_payments')
-        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .update({
+          status: 'paid',
+          // The transfer never took: clear the in-flight code so the next
+          // attempt is not mistaken for one already running (see finding 3).
+          payout_transfer_code: null,
+          payout_failed_reason: err instanceof Error ? err.message : String(err),
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', working.id)
-        .eq('status', 'payout_pending');
+        .eq('status', 'payout_pending')
+        // Conditional on THIS attempt's claim (H11): a rollback must never
+        // release a transfer another caller has already stamped as live.
+        .eq('payout_transfer_code', claimMarker);
       throw err;
     }
 
     return 'transferred';
+  }
+
+  /**
+   * Give back a per-order payout claim after a failed attempt, leaving a
+   * reason behind so a stuck payout is diagnosable rather than invisible.
+   */
+  private async releaseOrderPayoutClaim(orderId: string, reason: string): Promise<void> {
+    try {
+      await this.db
+        .from('marketplace_orders')
+        .update({ payout_status: 'pending', payout_failed_reason: reason.slice(0, 500) })
+        .eq('id', orderId)
+        .eq('payout_status', 'paying');
+    } catch (err) {
+      logger.error('Failed to release order payout claim', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Settle one unified-checkout order's payout and, when it was the last one
+   * outstanding, the parent payment row.
+   *
+   * Extracted for H4b so the exact same roll-up runs whether the transfer came
+   * back 'success' inline or was confirmed later by a transfer.success webhook.
+   */
+  private async finalizeOrderPayout(
+    orderId: string,
+    checkoutId: string | null,
+    paymentId: string | null
+  ): Promise<void> {
+    // Guarded (M8, and load-bearing for H3): an order a reversal put back to
+    // 'pending', or one a refund marked 'skipped', must not be re-settled as
+    // paid_out by a late or replayed transfer.success.
+    await this.db
+      .from('marketplace_orders')
+      .update({ payout_status: 'paid_out', payout_failed_reason: null })
+      .eq('id', orderId)
+      .in('payout_status', ['paying', 'pending']);
+    if (!checkoutId) return;
+    const { data: siblings } = await this.db
+      .from('marketplace_orders')
+      .select('id, status, payout_status')
+      .eq('checkout_id', checkoutId);
+    const remaining = (siblings || []).filter(
+      (row: { status: string; payout_status: string }) =>
+        !['cancelled', 'completed'].includes(row.status) || row.payout_status !== 'paid_out',
+    );
+    const unfinished = (siblings || []).filter(
+      (row: { status: string; payout_status: string }) =>
+        row.status !== 'cancelled' && row.payout_status !== 'paid_out',
+    );
+    if (paymentId && (unfinished.length === 0 || remaining.length === 0)) {
+      await this.markPaymentPaidOut(paymentId);
+    }
+  }
+
+  /**
+   * Find the unified-checkout order a transfer webhook is about. Two exact
+   * matches, never an interpolated `.or()` string: the transfer_code and the
+   * reference both come from Paystack's payload and a comma or a dot-operator
+   * inside one would rewrite a PostgREST `or` filter.
+   */
+  private async findOrderByPayoutTransfer(
+    transferCode: string,
+    reference: string
+  ): Promise<{ id: string; checkout_id: string | null; payment_id: string | null } | null> {
+    // Deliberately NOT selecting `payout_attempt`: a select naming a column the
+    // database does not have yet (migration not hand-applied) fails the whole
+    // query, and this is the lookup every transfer webhook depends on. The
+    // attempt is read separately, where its absence costs nothing.
+    const columns = 'id, checkout_id, payment_id';
+    if (transferCode) {
+      const { data } = await this.db
+        .from('marketplace_orders')
+        .select(columns)
+        .eq('payout_transfer_code', transferCode)
+        .maybeSingle();
+      if (data) return data as { id: string; checkout_id: string | null; payment_id: string | null };
+    }
+    if (reference) {
+      const { data } = await this.db
+        .from('marketplace_orders')
+        .select(columns)
+        .eq('payout_reference', reference)
+        .maybeSingle();
+      if (data) return data as { id: string; checkout_id: string | null; payment_id: string | null };
+    }
+    // FIXED (H4c · 2): last-resort recovery for an order whose code/reference
+    // never made it onto the row — the stamp failed, or the columns do not
+    // exist yet because the migration has not been hand-applied. The payout
+    // reference is derived from the order id, so the id can be recovered from
+    // the reference alone. Bounded scan over orders still claimed as 'paying':
+    // that set is only ever the payouts currently in flight.
+    if (reference) {
+      const { data: inFlight } = await this.db
+        .from('marketplace_orders')
+        .select(columns)
+        .eq('payout_status', 'paying')
+        .limit(500);
+      // The reference is derived from (order id, attempt), and the attempt of
+      // the row is not readable here on an unmigrated database, so every
+      // attempt up to a small bound is tried. Bounded twice over: the candidate
+      // set is only the payouts currently in flight, and the attempt range is
+      // fixed (H1).
+      const match = ((inFlight || []) as Array<{ id: string }>).find((row) => {
+        if (!row?.id) return false;
+        for (let attempt = 0; attempt <= MAX_PAYOUT_ATTEMPT_SCAN; attempt++) {
+          if (orderPayoutReference(row.id, attempt) === reference) return true;
+        }
+        return false;
+      });
+      if (match) {
+        logger.warn('Recovered a payout order by reference scan; its transfer stamp is missing', {
+          orderId: match.id,
+          reference,
+        });
+        return match as { id: string; checkout_id: string | null; payment_id: string | null };
+      }
+    }
+    return null;
   }
 
   /**
@@ -998,8 +1550,8 @@ export class MarketplacePaymentsService {
    */
   async payoutOnConfirmReceived(orderId: string, buyerId: string) {
     const order = await this.orders.getOrderById(orderId, buyerId);
-    if (!order) throw new Error('Order not found');
-    if (order.buyer_id !== buyerId) throw new Error('Only the buyer can confirm receipt');
+    if (!order) throw new PublicError('Order not found');
+    if (order.buyer_id !== buyerId) throw new PublicError('Only the buyer can confirm receipt');
 
     let payment: Record<string, any> | null = null;
     if (order.payment_id) {
@@ -1025,7 +1577,7 @@ export class MarketplacePaymentsService {
    */
   async forcePayoutForOrder(orderId: string): Promise<void> {
     const order = await this.orders.getOrderByIdAdmin(orderId);
-    if (!order) throw new Error('Order not found');
+    if (!order) throw new PublicError('Order not found');
     if (!order.payment_id) return;
 
     const { data: payment } = await this.db
@@ -1052,11 +1604,20 @@ export class MarketplacePaymentsService {
       .in('status', ['payout_pending', 'paid']);
   }
 
+  // --- Refunds ---------------------------------------------------------------
+  // A refund is only auto-issued while Lantern still holds the money. The
+  // payment row's own `paid_out` blocks the single-order case; for unified
+  // checkout the per-order `payout_status` is checked as well, because the
+  // payment row legitimately stays `paid` while a sibling order is open. That
+  // second check is what stops a cart holding a digital item and a physical one
+  // from refunding the digital order whose seller already has the money.
+  // A cart refund is for this order's share only, not the whole charge.
+
   async refundPaymentForOrder(orderId: string, actorId: string, isAdmin = false) {
     const order = await this.orders.getOrderById(orderId, actorId);
-    if (!order) throw new Error('Order not found');
+    if (!order) throw new PublicError('Order not found');
     if (!isAdmin && order.buyer_id !== actorId && order.seller_id !== actorId) {
-      throw new Error('Unauthorized');
+      throw new PublicError('Unauthorized');
     }
     if (!order.payment_id) {
       // legacy
@@ -1069,48 +1630,202 @@ export class MarketplacePaymentsService {
       .single();
     if (!payment) return;
     if (payment.status === 'refunded') return;
-    if (payment.status === 'paid_out') {
-      throw new Error('Cannot auto-refund after seller payout; contact support');
+    if (payment.status === 'refunding') {
+      // Someone else holds the refund claim (H2).
+      throw new PublicError('A refund for this payment is already in progress');
     }
-    if (payment.status !== 'paid' && payment.status !== 'payout_pending' && payment.status !== 'initialized') {
-      throw new Error('Payment cannot be refunded');
+    if (payment.status === 'paid_out') {
+      throw new PublicError('Cannot auto-refund after seller payout; contact support');
+    }
+    // FIXED (G3 · H4): a single-order payment at 'payout_pending' is refused
+    // UNCONDITIONALLY, not only when a transfer code has already been stamped.
+    // The old guard left the claim-to-stamp window open — roughly the duration
+    // of the Paystack transfer call — and a refund landing inside it paid the
+    // buyer back while the transfer went on to succeed. Nothing is lost by
+    // refusing: transfer.success makes it paid_out (refund correctly refuses
+    // for good), transfer.failed / .reversed puts it back to 'paid' (refund
+    // then correctly proceeds).
+    if (payment.status === 'payout_pending') {
+      throw new PublicError('Payout in progress — retry after it settles');
+    }
+    if (payment.status !== 'paid' && payment.status !== 'initialized') {
+      throw new PublicError('Payment cannot be refunded');
     }
 
-    if (payment.status === 'paid' || payment.status === 'payout_pending') {
-      const txRef = payment.paystack_transaction_id || payment.paystack_reference;
-      const orderShareKobo = nairaToKobo(
-        Number(order.amount || 0) + Number((order as { shipping_amount?: number }).shipping_amount || 0),
-      );
-      const amountKobo = payment.checkout_id ? orderShareKobo : Number(payment.total_charged_kobo);
-      const refund = await refundPaystackTransaction({
-        transactionIdOrReference: txRef,
-        amountKobo,
-      });
-      const { data: siblings } = payment.checkout_id
-        ? await this.db
-            .from('marketplace_orders')
-            .select('id, status')
-            .eq('checkout_id', payment.checkout_id)
-        : { data: [] };
-      const othersOpen = (siblings || []).some(
-        (row: { id: string; status: string }) =>
-          row.id !== orderId && !['cancelled', 'completed'].includes(row.status),
-      );
-      if (!payment.checkout_id || !othersOpen) {
-        await this.db
-          .from('marketplace_payments')
-          .update({
-            status: 'refunded',
-            refund_reference: String(refund.id),
-            updated_at: new Date().toISOString(),
-          })
-          .eq('id', payment.id);
-      }
-    } else {
+    if (payment.status === 'initialized') {
+      // Nothing was ever captured: no Paystack call, no claim to take.
       await this.db
         .from('marketplace_payments')
         .update({ status: 'failed', updated_at: new Date().toISOString() })
-        .eq('id', payment.id);
+        .eq('id', payment.id)
+        .eq('status', 'initialized');
+      return;
+    }
+
+    // FIXED (G3 · H3): unified checkout pays each order out separately, so the
+    // payment row stays 'paid' while a sibling order is open and the per-order
+    // `payout_status` is the only truthful answer to "has this seller already
+    // been paid?". Reading it was a read-then-act race: the refund read
+    // 'pending', the payout job then CASed pending -> paying and transferred,
+    // and the refund paid the buyer anyway — money out twice. The refund now
+    // takes the SAME claim on the SAME row, in a state the payout CAS cannot
+    // enter: 'refund_hold'. Payout blocks refund, refund blocks payout.
+    let orderHeld = false;
+    if (payment.checkout_id) {
+      const { data: held, error: holdErr } = await this.db
+        .from('marketplace_orders')
+        .update({ payout_status: 'refund_hold' })
+        .eq('id', orderId)
+        .eq('payout_status', 'pending')
+        .select('id')
+        .maybeSingle();
+      if (holdErr) throw holdErr;
+      if (held) {
+        orderHeld = true;
+      } else {
+        const { data: current } = await this.db
+          .from('marketplace_orders')
+          .select('payout_status')
+          .eq('id', orderId)
+          .maybeSingle();
+        const status = (current as { payout_status?: string } | null)?.payout_status;
+        if (status === 'paid_out' || status === 'paying') {
+          throw new PublicError('Cannot auto-refund after seller payout; contact support');
+        }
+        if (status === 'refund_hold') {
+          throw new PublicError('A refund for this order is already in progress');
+        }
+        // 'skipped' — this order never pays out, so there is nothing to hold.
+      }
+    }
+
+    // FIXED (G3 · H2): claim the payment before calling Paystack. Both a
+    // double-tapped cancel and a buyer-cancel racing an admin-refund used to
+    // read 'paid', both POST /refund, and the buyer was refunded twice —
+    // `services/paystack.ts` sends no idempotency key of its own, so Paystack
+    // does not catch it either. Exactly one caller flips paid -> refunding.
+    //
+    // For a cart this claim is deliberately coarse: it is one row covering
+    // several orders, so two SIBLING refunds running at the same instant
+    // serialise — the loser is refused and succeeds on a retry, because the
+    // winner releases the row back to 'paid' while any sibling is still open.
+    // Refusing a concurrent sibling is the safe direction; the alternative is a
+    // partial-refund race on one charge.
+    const { data: claimedPayment, error: claimErr } = await this.db
+      .from('marketplace_payments')
+      .update({ status: 'refunding', updated_at: new Date().toISOString() })
+      .eq('id', payment.id)
+      .eq('status', 'paid')
+      .select('id')
+      .maybeSingle();
+    if (claimErr) {
+      await this.releaseRefundHold(orderId, orderHeld);
+      throw claimErr;
+    }
+    if (!claimedPayment) {
+      await this.releaseRefundHold(orderId, orderHeld);
+      throw new PublicError('A refund for this payment is already in progress');
+    }
+
+    const txRef = payment.paystack_transaction_id || payment.paystack_reference;
+    const orderShareKobo = nairaToKobo(
+      Number(order.amount || 0) + Number((order as { shipping_amount?: number }).shipping_amount || 0),
+    );
+    const amountKobo = payment.checkout_id ? orderShareKobo : Number(payment.total_charged_kobo);
+    let refund: Awaited<ReturnType<typeof refundPaystackTransaction>>;
+    try {
+      refund = await refundPaystackTransaction({
+        transactionIdOrReference: txRef,
+        amountKobo,
+      });
+    } catch (err) {
+      // Nothing moved: give both claims back so a corrected retry can run.
+      await this.db
+        .from('marketplace_payments')
+        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .eq('id', payment.id)
+        .eq('status', 'refunding');
+      await this.releaseRefundHold(orderId, orderHeld);
+      throw err;
+    }
+
+    const { data: siblings } = payment.checkout_id
+      ? await this.db
+          .from('marketplace_orders')
+          .select('id, status')
+          .eq('checkout_id', payment.checkout_id)
+      : { data: [] };
+    const othersOpen = (siblings || []).some(
+      (row: { id: string; status: string }) =>
+        row.id !== orderId && !['cancelled', 'completed'].includes(row.status),
+    );
+    if (!payment.checkout_id || !othersOpen) {
+      await this.db
+        .from('marketplace_payments')
+        .update({
+          status: 'refunded',
+          refund_reference: String(refund.id),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', payment.id)
+        .eq('status', 'refunding');
+    } else {
+      // A sibling order is still open, so the charge as a whole is not
+      // refunded: release the claim back to 'paid', exactly where the
+      // pre-claim code left the row. `refund_reference` is deliberately not
+      // written — it names ONE refund, and a cart can produce several.
+      await this.db
+        .from('marketplace_payments')
+        .update({ status: 'paid', updated_at: new Date().toISOString() })
+        .eq('id', payment.id)
+        .eq('status', 'refunding');
+    }
+
+    if (orderHeld) {
+      // The buyer has their money back, so this order must never pay out.
+      // 'skipped' is the payout machine's terminal "not payable" state, and it
+      // is what stops a late transfer.success from settling it (finalizeOrderPayout).
+      await this.db
+        .from('marketplace_orders')
+        .update({ payout_status: 'skipped', payout_failed_reason: 'refunded' })
+        .eq('id', orderId)
+        .eq('payout_status', 'refund_hold');
+    }
+  }
+
+  /**
+   * The order's payout attempt counter, or 0 when it cannot be read — the
+   * column is added by a hand-applied migration, and a webhook must still
+   * un-settle a reversed payout on a database that has not had it yet.
+   */
+  private async readOrderPayoutAttempt(orderId: string): Promise<number> {
+    try {
+      const { data } = await this.db
+        .from('marketplace_orders')
+        .select('*')
+        .eq('id', orderId)
+        .maybeSingle();
+      const raw = Number((data as any)?.payout_attempt ?? 0);
+      return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 0;
+    } catch {
+      return 0;
+    }
+  }
+
+  /** Give a refund hold back to the payout machine when the refund did not happen. */
+  private async releaseRefundHold(orderId: string, held: boolean): Promise<void> {
+    if (!held) return;
+    try {
+      await this.db
+        .from('marketplace_orders')
+        .update({ payout_status: 'pending' })
+        .eq('id', orderId)
+        .eq('payout_status', 'refund_hold');
+    } catch (err) {
+      logger.error('Failed to release refund hold', {
+        orderId,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
@@ -1228,6 +1943,18 @@ export class MarketplacePaymentsService {
     }
   }
 
+  // --- Paystack webhook ------------------------------------------------------
+  // Signature first (HMAC SHA512 over the RAW body — the route must not have
+  // parsed it), then the two-phase dedupe claim, then the side effects, then
+  // the `processed_at` stamp. Handled events: charge.success, transfer.success,
+  // transfer.failed, transfer.reversed.
+  //
+  // Dedupe is DB-backed on the `paystack_webhook_events.event_key` UNIQUE
+  // index, so it is replica-safe on Render; an in-memory set would let a second
+  // instance re-run the same event. `event_key` is `<event>:<data.id>`, falling
+  // back to the reference / transfer code, and finally to a hash of the raw
+  // body.
+
   async handleWebhook(rawBody: string | Buffer, signature: string | undefined) {
     if (!verifyPaystackSignature(rawBody, signature)) {
       const err = new Error('Invalid Paystack webhook signature');
@@ -1246,18 +1973,53 @@ export class MarketplacePaymentsService {
         ? `${eventType}:${data.id}`
         : `${eventType}:${data.reference || data.transfer_code || createHash('sha256').update(String(rawBody)).digest('hex').slice(0, 24)}`;
 
+    // Two-phase dedupe. The claim row is written with processed_at NULL and is
+    // only stamped once processing succeeds. Stamping on insert (the old
+    // behaviour) meant a throw mid-processing turned every Paystack retry into
+    // a silent "duplicate" no-op — a paid order that never settles.
     const { error: dedupeErr } = await this.db.from('paystack_webhook_events').insert({
       event_key: eventKey,
       event_type: eventType,
       payload_hash: createHash('sha256').update(String(rawBody)).digest('hex'),
+      processed_at: null,
     });
     if (dedupeErr) {
       if (String(dedupeErr.code) === '23505' || /duplicate/i.test(dedupeErr.message || '')) {
-        return { ok: true, duplicate: true };
+        const { data: existing } = await this.db
+          .from('paystack_webhook_events')
+          .select('event_key, processed_at')
+          .eq('event_key', eventKey)
+          .maybeSingle();
+        // Only a completed event is a true duplicate. An unfinished claim is a
+        // previous attempt that died; re-process it.
+        if (existing?.processed_at) {
+          return { ok: true, duplicate: true };
+        }
+      } else {
+        throw dedupeErr;
       }
-      throw dedupeErr;
     }
 
+    await this.processWebhookEvent(eventType, data, rawBody);
+
+    await this.db
+      .from('paystack_webhook_events')
+      .update({ processed_at: new Date().toISOString() })
+      .eq('event_key', eventKey);
+
+    return { ok: true, duplicate: false, eventType };
+  }
+
+  /**
+   * The side-effecting half of the webhook, split out so the dedupe row can be
+   * stamped only after it returns. Every path here must be safe to re-run.
+   */
+  private async processWebhookEvent(
+    eventType: string,
+    data: Record<string, any>,
+    rawBody: string | Buffer
+  ): Promise<void> {
+    void rawBody;
     if (eventType === 'charge.success') {
       const reference = String(data.reference || '');
       const { data: payment } = await this.db
@@ -1295,38 +2057,142 @@ export class MarketplacePaymentsService {
     } else if (eventType === 'transfer.success') {
       const transferCode = String(data.transfer_code || '');
       const reference = String(data.reference || '');
-      const { data: payment } = await this.db
-        .from('marketplace_payments')
-        .select('*')
-        .or(
-          transferCode
-            ? `payout_transfer_code.eq.${transferCode}`
-            : `paystack_reference.eq.${reference}`
-        )
-        .maybeSingle();
-      // Prefer lookup by transfer code in metadata / column
-      let row = payment;
-      if (!row && transferCode) {
+      // Two exact-match lookups. A PostgREST .or() string interpolated from
+      // webhook-controlled fields is a filter-injection hole: a transfer_code
+      // containing a comma or a dot-operator rewrites the query.
+      let row: Record<string, any> | null = null;
+      if (transferCode) {
         const { data: byCode } = await this.db
           .from('marketplace_payments')
           .select('*')
           .eq('payout_transfer_code', transferCode)
           .maybeSingle();
-        row = byCode;
+        row = byCode || null;
       }
-      if (row) await this.markPaymentPaidOut(row.id);
+      // FIXED (H4b · 2): the fallback used to match against `paystack_reference`,
+      // which holds the CHARGE reference — a transfer reference never equals it,
+      // so a transfer.success carrying no transfer_code found nothing and the
+      // payment was never marked paid_out. The payout reference is the one
+      // written alongside the transfer code, in `metadata.payoutReference`; match
+      // that JSON field directly (a typed PostgREST `eq`, not an `.or()` string
+      // built from webhook-controlled text).
+      if (!row && reference) {
+        const { data: byPayoutRef } = await this.db
+          .from('marketplace_payments')
+          .select('*')
+          .eq('metadata->>payoutReference', reference)
+          .maybeSingle();
+        row = byPayoutRef || null;
+      }
+      if (row) {
+        await this.markPaymentPaidOut(row.id);
+      } else {
+        // A unified-checkout payout settles on the ORDER row, not the payment:
+        // the code/reference stamped by the cart branch above is what matches.
+        const order = await this.findOrderByPayoutTransfer(transferCode, reference);
+        if (order) {
+          await this.finalizeOrderPayout(order.id, order.checkout_id, order.payment_id);
+        }
+      }
     } else if (eventType === 'transfer.failed' || eventType === 'transfer.reversed') {
       const transferCode = String(data.transfer_code || '');
+      const reference = String(data.reference || '');
+      // FIXED (H4b · 1): a cart payout records its transfer on the ORDER row, so
+      // a reversal has to unwind there too. Without this an order that had
+      // already reached 'paid_out' stayed 'paid_out' after Paystack sent the
+      // money back — the seller reads as paid for cash that is no longer theirs.
+      // Both 'paying' and 'paid_out' go back to 'pending' so the payout can be
+      // retried once the cause is fixed.
+      if (transferCode || reference) {
+        const order = await this.findOrderByPayoutTransfer(transferCode, reference);
+        if (order) {
+          // FIXED (G3 · H1): Paystack has burnt this attempt's reference, so the
+          // retry this reset exists to allow must use a NEW one. The attempt
+          // counter is bumped here and nowhere else, under the same CAS that
+          // un-settles the row, so a replayed webhook cannot bump it twice.
+          const nextAttempt = (await this.readOrderPayoutAttempt(order.id)) + 1;
+          const { error: unwindErr } = await this.db
+            .from('marketplace_orders')
+            .update({
+              payout_status: 'pending',
+              payout_transfer_code: null,
+              payout_reference: null,
+              payout_attempt: nextAttempt,
+              payout_failed_reason: `paystack_${eventType}`,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', order.id)
+            .in('payout_status', ['paying', 'paid_out']);
+          if (unwindErr) {
+            // Most likely the `payout_attempt` column is not there yet (its
+            // migration is hand-applied). The un-settle matters more than the
+            // counter, so retry without it rather than leave returned money
+            // reading as paid.
+            logger.error('Payout unwind with attempt bump failed; retrying without it', {
+              orderId: order.id,
+              error: unwindErr.message || String(unwindErr),
+            });
+            await this.db
+              .from('marketplace_orders')
+              .update({
+                payout_status: 'pending',
+                payout_transfer_code: null,
+                payout_reference: null,
+                payout_failed_reason: `paystack_${eventType}`,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', order.id)
+              .in('payout_status', ['paying', 'paid_out']);
+          }
+        }
+      }
       if (transferCode) {
-        await this.db
+        // Clearing payout_transfer_code matters as much as the status: the
+        // payout path treats 'payout_pending' + a transfer code as a transfer
+        // still in flight, so leaving the dead code behind wedges the payment
+        // at 'in_flight' forever and the seller is never paid.
+        //
+        // FIXED (G3 · H10): 'paid_out' is unwound too. An inline
+        // `transfer.status === 'success'` marks the payment paid_out before any
+        // webhook arrives, so a reversal guarded on 'payout_pending' alone
+        // matched nothing: the seller read as paid for money Paystack had taken
+        // back, and the buyer's refund was then refused as "after seller
+        // payout". `payout_at` is cleared with it — a paid_out timestamp left
+        // behind is the same lie in a different column.
+        const reset = {
+          status: 'paid',
+          payout_transfer_code: null,
+          payout_at: null,
+          payout_failed_reason: `paystack_${eventType}`,
+          updated_at: new Date().toISOString(),
+        };
+        // The payment row needs the same attempt bump as the order row (H1),
+        // or its retry reuses the reference Paystack has just burnt.
+        const { data: payRow } = await this.db
           .from('marketplace_payments')
-          .update({ status: 'paid', updated_at: new Date().toISOString() })
+          .select('*')
           .eq('payout_transfer_code', transferCode)
-          .eq('status', 'payout_pending');
+          .maybeSingle();
+        const nextAttempt =
+          Math.max(0, Math.floor(Number((payRow as any)?.payout_attempt ?? 0)) || 0) + 1;
+        const { error: resetErr } = await this.db
+          .from('marketplace_payments')
+          .update({ ...reset, payout_attempt: nextAttempt })
+          .eq('payout_transfer_code', transferCode)
+          .in('status', ['payout_pending', 'paid_out']);
+        if (resetErr) {
+          logger.error('Payment payout reset with attempt bump failed; retrying without it', {
+            transferCode,
+            error: resetErr.message || String(resetErr),
+          });
+          await this.db
+            .from('marketplace_payments')
+            .update(reset)
+            .eq('payout_transfer_code', transferCode)
+            .in('status', ['payout_pending', 'paid_out']);
+        }
       }
     }
-
-    return { ok: true, duplicate: false, eventType };
   }
 }
 

@@ -1,3 +1,23 @@
+/**
+ * Campus stack -> CommunityMembers (params: slug, optional communityId/name).
+ * The roster: Online and Offline sections, cursor-paged with a "Load more"
+ * footer and a client-side name filter. A row's sheet offers Message and
+ * Report member.
+ *
+ * Exports: CommunityMembersScreen (named and default) -- the community-gate
+ * wrapper around the internal list.
+ * Touches: services/api fetchCommunityMembers; communityStore
+ * detailBySlug/loadCommunity (a deep link carries only the slug);
+ * useCommunityPresence for online ids; authStore for the viewer;
+ * ReportContentSheet (target type community_member); ChromeContext.
+ * Gotchas: no raw server phrase may reach a student -- Forbidden becomes "join
+ * to see members" and everything else goes through requestFailureSentence.
+ * Presence is gated by shouldSubscribeCommunityPresence (off in low-data mode
+ * and for large communities). A row opens the sheet first, so one tap can
+ * never file a report, and Report is never offered on the viewer's own row.
+ * Message navigates by CommonActions into Main > ChatTab > DirectMessage with
+ * the sorted-pair thread id.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { CommonActions } from '@react-navigation/native';
 import {

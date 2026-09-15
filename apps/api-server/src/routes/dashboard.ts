@@ -14,7 +14,6 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
-import { handleValidationErrors } from '../middleware/validation';
 import { requireAuthUserId } from '../utils/requestAuth';
 import { resolveAllowedActivityDate } from '../utils/activityDate';
 import { SupabaseService } from '../services/supabase';
@@ -97,7 +96,6 @@ async function getQuestionStats(userId: string) {
 router.get(
   '/summary',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;

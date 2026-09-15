@@ -1,3 +1,16 @@
+/**
+ * `CourseListings` route: the banks and packs filed under one course.
+ *
+ * Exports: CourseListingsScreen (named and default).
+ * Touches: fetchMarketplaceCourseListings in ../../services/api;
+ * useLowDataMode for the image default; COURSE_ANCHOR_COPY from
+ * @lantern/shared/marketplace. Navigates to `ListingDetail`.
+ *
+ * Gotchas: the effect on `lowDataMode` resets showImages, so toggling the
+ * app-wide low-data setting overrides a per-screen choice. Header text falls
+ * back to the route params until the fetch lands, so a stale label can show
+ * briefly.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { Screen, useScreenBottomPadding } from '../../components/layout';

@@ -1,3 +1,36 @@
+/**
+ * The web app's effect barrel: every long-lived side effect App.tsx needs, in one hook —
+ * session restore and auth-state handling, the signed-in bootstrap fan-out, all Realtime
+ * subscriptions, theme/settings DOM sync, offline-queue persistence and replay, and the
+ * SRS reminder scheduler.
+ *
+ * Exports: useAppEffects({ dataLoaded, setDataLoaded, bootstrapLoad, setBootstrapLoad,
+ *  onChallengeNotification }) → { refreshDashboardGamification, dailyQuests, serverStreak,
+ *  streakFreezes, questsLoaded, authTokenReady }.
+ * Touches: auth/group/test/flashcard/budget/ui/notes/toast stores; supabase Realtime channels
+ *  (notifications, dm_threads, dm_messages, messages, notes, note_collaborators, profiles,
+ *  group_members) and the REST/BFF fetchers in services/supabase; localStorage keys
+ *  'theme', 'offlineBundles', 'pendingSyncResults', 'monthlyBudget' and the onboarding flag;
+ *  window events 'lantern:streak-updated', 'lantern:refresh-dm-threads', 'online',
+ *  'visibilitychange'; the Notification API via utils/webNotifications.
+ * Gotchas:
+ *  - USER SWITCH / STALE CLOSURES: several effects outlive the account they were created
+ *    for. Anything that writes a store or uploads a queue re-reads `use*Store.getState()`
+ *    inside the effect body; an effect whose dep array carries the array itself would hold
+ *    the PRE-purge snapshot and resurrect the previous user's data.
+ *  - Every authenticated effect gates on `authTokenReady`, not just `currentUser`. Realtime
+ *    channels subscribed without a live JWT pass RLS filters that drop every event.
+ *  - `realtimeEpoch` is part of each channel name; bumping it (tab focus, CHANNEL_ERROR,
+ *    TIMED_OUT) is how channels are recreated with a fresh token. `bumpRealtimeEpoch` is
+ *    rate-limited so a persistently failing channel cannot spin a recreate loop.
+ *  - A refresh merge (`mergeChatMessagesById(cached, serverList)`) is incoming-wins, which
+ *    is server-wins ONLY in that argument order — swapping them lets the persisted cache
+ *    clobber fresh server rows (reactions/edits vanish after a cold start).
+ *  - SIGNED_OUT is not proof the user is signed out: a refresh-token 400 fires one
+ *    spuriously. The handler tries to recover from the authority (BFF in cookie mode,
+ *    stored session in legacy mode) before clearing anything, under a cooldown.
+ *  - Theme is applied by toggling the `dark` class only; colour values live in index.css.
+ */
 import { useEffect, useCallback, useState, useRef, type Dispatch, type SetStateAction } from 'react';
 import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
@@ -92,6 +125,7 @@ import {
   type BootstrapLoadState,
 } from './useAuthHandlers';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
+import { mergeFetchedGroups } from '../utils/groupListMerge';
 import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
 import { resetSessionExpiredGuard } from '../services/sessionHandler';
 import { ensureOfflineQueueOwner, isOfflineQueueOwner } from '../services/offlineQueueOwner';
@@ -106,6 +140,7 @@ import {
 const SPURIOUS_SIGNOUT_RECOVERY_COOLDOWN_MS = 15_000;
 let lastSpuriousSignoutRecoveryAt = 0;
 
+// 'error' counts as settled — a domain that failed must not hold the boot spinner open.
 function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
   return Object.values(state).every((status) => status !== 'pending');
 }
@@ -178,6 +213,11 @@ export function useAppEffects({
         setRealtimeEpoch((value) => value + 1);
     }, []);
 
+    // Dashboard gamification refresh (quests, login streak, study-activity heatmap, profile
+    // points/badges/stats) as four independent Promise.allSettled slots — one failing must
+    // not blank the other three. Slot 3 (profile sync) falls back to a direct profile fetch;
+    // both write paths re-read the store and compare ids so a user switch mid-flight cannot
+    // stamp one account's points onto another. Always ends with questsLoaded = true.
     const refreshDashboardGamification = useCallback(async () => {
         const user = useAuthStore.getState().currentUser;
         if (!user?.id) return;
@@ -253,6 +293,8 @@ export function useAppEffects({
 
     useDailyStudyReminder(currentUser);
 
+    // Mount-once ([] deps): lets any code that already knows the new streak (e.g. a review
+    // submit response) push it here via a window event, instead of forcing a refetch.
     useEffect(() => {
         const onStreakUpdated = (event: Event) => {
             const streak = (event as CustomEvent<{ streak?: number }>).detail?.streak;
@@ -264,6 +306,9 @@ export function useAppEffects({
         return () => window.removeEventListener('lantern:streak-updated', onStreakUpdated);
     }, []);
 
+    // Shared DM-thread refresher used by the realtime handlers and the manual refresh event.
+    // Threads and unread counts are fetched together; a unread-count failure degrades to {}
+    // rather than failing the whole refresh.
     const refreshDmThreadsForUser = useCallback(async (userId: string) => {
         try {
             const [fetchedThreads, dmUnreadCounts] = await Promise.all([
@@ -284,6 +329,9 @@ export function useAppEffects({
     // --- Presence heartbeat for online status ---
     // Gate on authTokenReady (same as lifecycle / paused sessions / gamification)
     // so guest + stale-session landings never POST /presence/heartbeat.
+    // Re-runs on currentUser.id / currentUser.settings / authTokenReady: the settings dep is
+    // what makes toggling "show online status" start or stop the 2-minute interval. The
+    // interval self-cancels on an unrecovered 401/403 so a dead session stops beating.
     useEffect(() => {
         const showOnlineStatus = currentUser
             ? normalizeUserSettings(currentUser.settings).privacy.showOnlineStatus
@@ -317,9 +365,17 @@ export function useAppEffects({
     }, [currentUser?.id, currentUser?.settings, authTokenReady]);
 
     // --- Restore session on app load ---
+    // Mount-once ([] deps) and deliberately so: it owns the single supabase
+    // onAuthStateChange subscription for the app's lifetime, so it must never re-run on a
+    // user change. Everything inside therefore reads useAuthStore.getState() rather than the
+    // closed-over `currentUser`. Three stages: fast boot from storage → background
+    // validation against the server → the auth-event handler below.
     useEffect(() => {
         let isMounted = true;
 
+        // Normaliser: profile row (camelCase or snake_case, depending on which endpoint
+        // produced it) + auth user → the app's User. Used by boot, by profile creation, and
+        // by SIGNED_IN, so a field dropped here is dropped on every entry path.
         const userFromProfile = (
             profile: Record<string, unknown>,
             email: string,
@@ -357,6 +413,9 @@ export function useAppEffects({
                 (profile.expectedGraduationYear as User['expectedGraduationYear']) ?? null,
         });
 
+        // Stage 1 — fast boot: paint a signed-in shell from storage before any network call.
+        // Only promotes authTokenReady when the stored access token is still fresh; a
+        // near-expiry token waits for stage 2 so the fan-out does not fire 401s.
         const applyFastBoot = (): boolean => {
             const boot = bootstrapAuthFromStorage();
             if (!boot) return false;
@@ -378,6 +437,15 @@ export function useAppEffects({
             return true;
         };
 
+        // Stage 2 — validate the session for real, behind a 6s race so a hanging /session
+        // cannot wedge boot. Failure is classified, and the classes take different branches:
+        //  - 'network' with a cached user → INCONCLUSIVE. Keep the user signed in; a
+        //    transient outage must never wipe the session or the unsynced work behind it.
+        //  - 'revoked' / 'missing' with a cached user → genuine. Clear auth storage, drop
+        //    currentUser and reset bootstrap state.
+        // On success: adopt the session, refresh it if it expires within 5 minutes, then
+        // reconcile the profile (404 → create one from auth metadata; other errors keep the
+        // cached user; `is_banned`/`account_status: 'banned'` force a sign-out).
         const syncSessionInBackground = async (hadFastBoot: boolean) => {
             try {
                 const resolved = await Promise.race([
@@ -574,6 +642,9 @@ export function useAppEffects({
         }
         void syncSessionInBackground(hadFastBoot);
 
+        // Stage 3 — the auth-event handler. Handles SIGNED_OUT (with spurious-signout
+        // recovery), PASSWORD_RECOVERY (token only, no profile load, so the reset screen is
+        // not treated as a normal sign-in) and SIGNED_IN.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
             if (event === 'SIGNED_OUT') {
                 // A refresh-token 400 — commonly a cross-tab rotation race — can fire
@@ -697,6 +768,8 @@ export function useAppEffects({
     }, []);
 
     // Promote token-ready after login when AuthScreen cached the token before SIGNED_IN fires
+    // Re-runs on currentUser.id / isAuthLoading / authTokenReady; self-terminating, because
+    // the effect's own success flips authTokenReady and the guard then short-circuits.
     useEffect(() => {
         if (!currentUser || isAuthLoading || authTokenReady) return;
         void ensureAuthTokenReady().then((ready) => {
@@ -709,6 +782,9 @@ export function useAppEffects({
     // same browser replayed the previous user's queued test results, flashcard
     // reviews, and qbank scores INTO the new account. Purge foreign queues
     // (storage AND the already-hydrated store copies) before any sync runs.
+    // Re-runs on currentUser.id ONLY, and must stay that way: it has to land before the
+    // sync/persist effects below observe the queue. It clears through getState() rather than
+    // the render-scope arrays, which are the pre-purge snapshot on this same commit.
     useEffect(() => {
         if (!currentUser?.id) return;
         if (ensureOfflineQueueOwner(currentUser.id)) {
@@ -718,6 +794,11 @@ export function useAppEffects({
     }, [currentUser?.id]);
 
     // --- Theme / appearance DOM sync (not privacy/study — avoids re-render storms while Settings is open) ---
+    // Re-runs on currentUser.id plus the appearance/accessibility SUB-OBJECTS only —
+    // depending on the whole settings object would re-apply the DOM on every privacy/study
+    // keystroke while the Settings screen is open. Signed out (or settings not loaded yet)
+    // it falls back to the localStorage 'theme' value, toggling the `dark` class and nothing
+    // else; colour values themselves stay in index.css.
     const appearanceSettings = currentUser?.settings?.appearance;
     const accessibilitySettings = currentUser?.settings?.accessibility;
     useEffect(() => {
@@ -740,6 +821,10 @@ export function useAppEffects({
     }, [currentUser?.id, appearanceSettings, accessibilitySettings, setTheme, setLowDataMode]);
 
     // --- Sync canonical settings from API (cross-device) ---
+    // Re-runs on currentUser.id + authTokenReady (one fetch per signed-in session, not per
+    // settings edit). Last-write-wins by `updatedAt`, ties going to the server. The store is
+    // re-read after the await and id-checked, so a slow response cannot write another
+    // account's settings; `cancelled` covers unmount/user-switch mid-flight.
     useEffect(() => {
         if (!currentUser?.id || !authTokenReady) return;
 
@@ -770,6 +855,9 @@ export function useAppEffects({
     }, [currentUser?.id, authTokenReady]);
 
     // --- Profile setup check (username, and academic identity once per dismissal) ---
+    // Re-runs on currentUser.id / .username / .institutionId — i.e. exactly the fields that
+    // can satisfy the check, so completing setup closes the prompt without a reload.
+    // The onboarding flag is read live from localStorage, not from a dep.
     useEffect(() => {
         if (!currentUser) return;
         // A brand-new account used to meet TWO setup forms back to back: the
@@ -789,6 +877,14 @@ export function useAppEffects({
     }, [currentUser?.id, currentUser?.username, currentUser?.institutionId]);
 
     // --- Data loading ---
+    // The signed-in bootstrap fan-out. Re-runs on currentUser.id / dataLoaded / isAuthLoading
+    // / authTokenReady; `dataLoaded` is what makes it run once per account (handleLogout and
+    // the sign-out paths reset it, which is how a second account re-bootstraps).
+    // Two waves: a critical phase for first paint, then the heavy deferred loads. Results are
+    // re-indexed into a flat `results` array, and each slot is applied independently so one
+    // failed domain degrades that domain only. Every apply is gated on shouldApplyBootstrap()
+    // — cancelled flag plus a live store id check — so a slow fan-out for user A cannot write
+    // into user B's session after a switch.
     useEffect(() => {
         if (!currentUser || dataLoaded || isAuthLoading || !authTokenReady) return;
 
@@ -807,6 +903,8 @@ export function useAppEffects({
             const userId = currentUser.id;
             const currentMonthYear = new Date().toISOString().slice(0, 7);
 
+            // Owner-stamp the budget store first: ensureOwner drops another user's cached
+            // transactions, and only the surviving (owned) rows are pushed to the cloud below.
             useBudgetStore.getState().ensureOwner(userId);
             const scopedTransactions = useBudgetStore.getState().transactions;
 
@@ -846,6 +944,8 @@ export function useAppEffects({
                 syncBudgetTransactionsToCloud(userId, scopedTransactions),
             ]);
 
+            // Flatten both waves into one fixed-order array; the `results[n]` indices below
+            // are positional and must stay in step with this list.
             const results = [
                 criticalResults[0], criticalResults[1], criticalResults[2], criticalResults[3],
                 deferredResults[0], deferredResults[1], deferredResults[2], deferredResults[3],
@@ -900,35 +1000,13 @@ export function useAppEffects({
                 // --- [0] Groups + [1] Unread counts ---
                 const groupsResult = results[0];
                 const unreadResult = results[1];
+                // Remaps the API rows (mixed camel/snake case) and folds unread counts in,
+                // preserving locally-loaded roster/pending-member data that the list endpoint
+                // does not return — so an @mention roster is not blanked by a refresh.
                 if (groupsResult.status === 'fulfilled') {
                     const fetchedGroups = groupsResult.value;
                     const unreadCounts = unreadResult.status === 'fulfilled' ? unreadResult.value : {};
-                    updateGroups((prev) => {
-                        const prevById = new Map(prev.map((g) => [g.id, g]));
-                        return fetchedGroups.map((g: any) => {
-                            const existing = prevById.get(g.id);
-                            return {
-                                id: g.id,
-                                name: g.name,
-                                avatarUrl: g.avatar_url || g.avatarUrl,
-                                description: g.description,
-                                lastMessage: g.last_message || g.lastMessage,
-                                lastMessageTime: g.last_message_time || g.lastMessageTime,
-                                adminIds: g.admin_ids || g.adminIds || [],
-                                permissions: g.permissions || {},
-                                parentId: g.parent_id || g.parentId,
-                                isArchived: g.is_archived ?? g.isArchived ?? false,
-                                inviteId: g.invite_id || g.inviteId,
-                                courseId: g.courseId ?? g.course_id ?? null,
-                                visibility: g.visibility || 'private',
-                                communityId: g.communityId ?? g.community_id ?? null,
-                                unreadCount: unreadCounts[g.id] || 0,
-                                pendingMembers: existing?.pendingMembers || [],
-                                invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
-                                members: existing?.members?.length ? existing.members : [],
-                            };
-                        });
-                    });
+                    updateGroups((prev) => mergeFetchedGroups(fetchedGroups, prev, unreadCounts));
                 } else {
                     console.error('[Data Loading] Groups fetch failed:', groupsResult.reason);
                 }
@@ -1001,6 +1079,9 @@ export function useAppEffects({
                 }
 
                 // --- [6] Test results ---
+                // Cloud history plus any still-unsynced offline results. Dedupe is by id AND
+                // by session start time, because a result synced by another device comes back
+                // with a server id that the local pending copy never saw.
                 if (results[6].status === 'fulfilled') {
                     const cloudResults = results[6].value;
                     // Re-read pendingSyncResults from the store at merge time (localStorage-backed)
@@ -1053,6 +1134,10 @@ export function useAppEffects({
                     }
                 }
 
+                // Both the fulfilled-but-empty and the rejected case retry the dedicated
+                // stats endpoint once; either way the store is left untouched on failure
+                // rather than being overwritten with {}.
+
                 // --- [8] Notifications ---
                 if (results[8].status === 'fulfilled') {
                     const fetchedNotifications = results[8].value;
@@ -1069,6 +1154,10 @@ export function useAppEffects({
                 }
 
                 // --- [10] User preferences ---
+                // Legacy slim prefs row. It only stores a RESOLVED light/dark theme, so it is
+                // never allowed to overwrite a 'system' preference held in full settings.
+                // Also rehydrates budget extras (goals, splits, per-month plans) and, when
+                // there is no cloud row at all, seeds one from local state.
                 if (results[10].status === 'fulfilled') {
                     const cloudPrefs = results[10].value;
                     if (cloudPrefs) {
@@ -1133,6 +1222,9 @@ export function useAppEffects({
                 }
 
                 // --- [11] User budget ---
+                // Cloud row wins; otherwise the legacy 'monthlyBudget' localStorage blob is
+                // adopted and written up once. categoryBudgets always come from the store,
+                // since slot [10] above already hydrated them from the plans payload.
                 if (results[11].status === 'fulfilled') {
                     const cloudBudget = results[11].value;
                     const existing = useBudgetStore.getState().budget;
@@ -1162,6 +1254,8 @@ export function useAppEffects({
                 }
 
                 // --- [12] Transactions sync ---
+                // syncBudgetTransactionsToCloud returns the merged local+cloud set; every row
+                // is re-stamped with this userId so nothing unowned survives the merge.
                 if (results[12].status === 'fulfilled') {
                     const mergedTransactions = results[12].value;
                     const transactionsWithUserId: Transaction[] = mergedTransactions.map((t: any) => ({
@@ -1223,6 +1317,9 @@ export function useAppEffects({
     }, [currentUser?.id, dataLoaded, isAuthLoading, authTokenReady, refreshDashboardGamification, setBootstrapLoad]);
 
     // Sync budget extras (goals, splits, category budgets) — never walletBalance (server-owned)
+    // Re-runs whenever any of those three collections changes identity; the 1.5s timer is a
+    // trailing debounce, so dragging a category slider produces one write, not one per frame.
+    // Gated on dataLoaded so bootstrap's own hydration does not immediately echo back up.
     useEffect(() => {
         if (!currentUser?.id || !dataLoaded) return;
         const timer = setTimeout(() => {
@@ -1238,6 +1335,11 @@ export function useAppEffects({
     // --- Real-time notifications subscription ---
     // Always on — duel/challenge alerts must work even in low-data mode.
     // Wait for authTokenReady so the Realtime socket has a JWT (RLS filters otherwise drop all events).
+    // Re-runs on currentUser.id / authTokenReady / realtimeEpoch — the epoch is in the channel
+    // name, so bumping it tears the old channel down and resubscribes with a fresh token.
+    // INSERT dedupes by id (the same notification can arrive twice across a resubscribe);
+    // challenge notifications are routed to the challenge handler, DM-ish ones trigger a
+    // thread refresh so the chat list badge matches.
     useEffect(() => {
         if (!currentUser || !authTokenReady) return;
 
@@ -1335,6 +1437,8 @@ export function useAppEffects({
     }, [currentUser?.id, authTokenReady, realtimeEpoch, updateNotifications, openModal, onChallengeNotification, refreshDmThreadsForUser, bumpRealtimeEpoch]);
 
     // Manual refresh hook (e.g. after contact-seller creates a DM thread)
+    // Re-runs on currentUser.id; the window event is the escape hatch for code that creates
+    // a thread through the API and cannot wait for the Realtime INSERT to arrive.
     useEffect(() => {
         if (!currentUser?.id) return;
         const onRefresh = () => {
@@ -1345,6 +1449,10 @@ export function useAppEffects({
     }, [currentUser?.id, refreshDmThreadsForUser]);
 
     // New / updated DM threads (contact-seller, first message, message requests).
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode / realtimeEpoch — low-data
+    // mode skips this channel entirely (notifications above stay on regardless).
+    // The subscription is unfiltered, so membership is checked client-side against
+    // participant_ids; both INSERT and UPDATE just trigger a full thread refetch.
     useEffect(() => {
         if (!currentUser || !authTokenReady || lowDataMode) return;
 
@@ -1386,6 +1494,8 @@ export function useAppEffects({
     }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, refreshDmThreadsForUser, bumpRealtimeEpoch]);
 
     // Stable key for membership filtering (does not recreate the DM channel).
+    // The ref is what the message handler reads, so the thread list can change without
+    // tearing down and resubscribing the channel. Re-runs on the joined id string only.
     const dmThreadIdsKey = dmThreads.map((t) => t.id).sort().join(',');
     const dmThreadIdsRef = useRef(new Set<string>());
     useEffect(() => {
@@ -1393,9 +1503,21 @@ export function useAppEffects({
     }, [dmThreadIdsKey]);
 
     // --- Real-time DM messages: one channel for all threads (RLS + client filter) ---
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode / realtimeEpoch. Thread
+    // membership is filtered through dmThreadIdsRef (a ref, so the channel is not recreated
+    // per thread), and an EMPTY set is treated as "don't filter" — otherwise the first
+    // message of a brand-new thread would be dropped before the list has loaded.
     useEffect(() => {
         if (!currentUser || !authTokenReady || lowDataMode) return;
 
+        // Reconciliation order for an INSERT, first match wins:
+        //  1. same id already present → ignore (duplicate delivery across a resubscribe)
+        //  2. a row whose id is this payload's client_message_id → promote it to the server
+        //     id in place, so the optimistic bubble does not duplicate
+        //  3. self-send with a matching optimistic row and NO client_message_id → ignore
+        //  4. otherwise append
+        // An UPDATE patches the row in place and also rewrites any reply preview pointing at
+        // it, so edits/removals propagate into quoted previews.
         const applyDmChange = (
             payload: { new: Record<string, unknown> },
             isUpdate: boolean
@@ -1480,6 +1602,10 @@ export function useAppEffects({
                 return { ...prev, [threadId]: [...existing, message] };
             });
 
+            // Thread-list side effects. An UPDATE re-derives the preview server-side, so it
+            // just refetches; an INSERT patches preview/timestamp/unread locally. Unread only
+            // increments for an incoming message while that thread is NOT on screen, and any
+            // incoming message un-archives the thread.
             if (isUpdate) {
                 void refreshDmThreadsForUser(currentUser.id);
                 return;
@@ -1532,6 +1658,8 @@ export function useAppEffects({
         bumpRealtimeEpoch,
     ]);
 
+    // Same ref pattern as dmThreadIdsRef: joined-group ids for client-side filtering of the
+    // unfiltered messages channel, updated without recreating that channel.
     const groupIdsKey = groups.map((g) => g.id).sort().join(',');
     const groupIdsRef = useRef(new Set<string>());
     useEffect(() => {
@@ -1539,6 +1667,10 @@ export function useAppEffects({
     }, [groupIdsKey]);
 
     // --- Real-time group messages for all joined groups (so chat updates before/with notifications) ---
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode / realtimeEpoch.
+    // Realtime payloads are RAW table rows: no joined profile, so the sender is patched up
+    // from the group roster (name/avatar/username only — the id always stays sender_id, an
+    // auth user id, never a membership-row id).
     useEffect(() => {
         if (!currentUser || !authTokenReady || lowDataMode) return;
 
@@ -1596,6 +1728,10 @@ export function useAppEffects({
                 };
             }
 
+            // Question-message normaliser. A realtime row often omits the question payload,
+            // so each field is kept from the previous copy when the incoming one is empty.
+            // `questionType` is the field that carries the REAL question kind (`type` is just
+            // the MessageType, 'QUESTION'); losing it renders a question with no options.
             const mergeQuestionMessage = (prevMsg: typeof mapped, nextMsg: typeof mapped) => {
                 const merged = { ...prevMsg, ...nextMsg };
                 // Never clobber a full local/question payload with empty remap fields.
@@ -1620,6 +1756,11 @@ export function useAppEffects({
                 return merged;
             };
 
+            // Same reconciliation ladder as the DM path: known id → merge; own send matched
+            // by client_message_id → promote the optimistic row to the server id; own send
+            // matched only by identical text → drop the echo; otherwise append.
+            // An UPDATE for an unknown id is ignored rather than appended — a message the
+            // cache never had must arrive through a fetch, not an edit event.
             updateMessages((prev) => {
                 const existing = prev[groupId] || [];
                 if (isUpdate) {
@@ -1681,6 +1822,9 @@ export function useAppEffects({
                 return { ...prev, [groupId]: [...existing, mapped] };
             });
 
+            // Sidebar preview + unread badge. On an UPDATE the preview is re-derived from the
+            // newest still-visible message (an edit can be a deletion, which must not leave
+            // removed text in the preview); on an INSERT the new message is the preview.
             const latestVisible = isUpdate
                 ? [...(useGroupStore.getState().messages[groupId] || [])]
                     .reverse()
@@ -1744,6 +1888,10 @@ export function useAppEffects({
     }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, updateMessages, bumpRealtimeEpoch]);
 
     // --- Recover missed chat/note events after tab sleep or reconnect ---
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode; fires on tab becoming visible
+    // and on the browser 'online' event, because a socket that slept has a gap no event will
+    // ever fill. Bumps the realtime epoch (fresh channels + JWT), refreshes DM threads and
+    // notes, then re-fetches only the chat currently on screen.
     useEffect(() => {
         if (!currentUser || !authTokenReady) return;
 
@@ -1773,6 +1921,11 @@ export function useAppEffects({
                             clientMessageId:
                                 (message as { clientMessageId?: string }).clientMessageId,
                         }));
+                    // mergeChatMessagesById is INCOMING-WINS, so the server list MUST be the
+                    // second argument: that makes the refresh server-wins per id while
+                    // keeping local-only (pending/failed) rows. Swapping the arguments lets
+                    // the cached copy clobber fresh server rows — reactions and edits would
+                    // silently disappear after a cold start.
                     updateMessages((prev) => ({
                         ...prev,
                         [chat.id]: mergeChatMessagesById(prev[chat.id] || [], list as any),
@@ -1783,6 +1936,9 @@ export function useAppEffects({
                         : undefined;
                     if (!otherUserId) return;
                     const fetched = await fetchDirectMessages(currentUser.id, otherUserId);
+                    // DM normaliser: the REST payload can come back in either camelCase or
+                    // snake_case depending on the endpoint, so every field is read both ways.
+                    // Same server-wins merge order as the group branch above.
                     const mapped: DirectMessage[] = (Array.isArray(fetched) ? fetched : []).map((raw: any) => ({
                         id: raw.id,
                         threadId: raw.threadId || raw.thread_id || chat.id,
@@ -1839,6 +1995,10 @@ export function useAppEffects({
     ]);
 
     // Notes list / collaborator content — pick up shares and remote edits without full reload.
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode / realtimeEpoch. The channel
+    // is wide (every notes / note_collaborators change reaches it, RLS decides what is
+    // visible), so handlers do not inspect payloads at all — they schedule one debounced
+    // (400 ms) reload of the list plus the open note, collapsing bursts of edits.
     useEffect(() => {
         if (!currentUser || !authTokenReady || lowDataMode) return;
 
@@ -1883,6 +2043,16 @@ export function useAppEffects({
     }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, bumpRealtimeEpoch]);
 
     // --- Real-time profile updates subscription ---
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode / realtimeEpoch. Filtered to
+    // this user's own row, so it carries changes made on another device or by the server
+    // (points, badges, avatar). The handler re-reads the store and id-checks before writing.
+    // FIXED (F9): this path used to write `stats` and `settings` STRAIGHT from
+    // the raw DB row, bypassing the `mapUserStatsFromApi` / `normalizeUserSettings`
+    // pair every other entry point uses (see the bootstrap at :392). A profile
+    // UPDATE therefore replaced the normalised settings with raw snake_case JSON
+    // and the mapped stats with unmapped columns — stats read as zero and
+    // settings-derived UI fell back to defaults until the next full profile
+    // fetch. Both now go through the same mappers the bootstrap does.
     useEffect(() => {
         if (!currentUser || !authTokenReady || lowDataMode) return;
 
@@ -1910,8 +2080,10 @@ export function useAppEffects({
                         phoneNumber: updatedProfile.phone,
                         points: updatedProfile.points || 0,
                         badges: updatedProfile.badges || [],
-                        stats: updatedProfile.stats || initialUserStats,
-                        settings: updatedProfile.settings || {},
+                        stats: updatedProfile.stats
+                            ? mapUserStatsFromApi(updatedProfile.stats)
+                            : initialUserStats,
+                        settings: normalizeUserSettings(updatedProfile.settings),
                     });
                 }
             )
@@ -1929,6 +2101,11 @@ export function useAppEffects({
     // --- Real-time group membership subscription ---
     // Keeps the groups list in sync when the user is added to / removed from groups
     // without requiring a full page refresh or manual re-fetch.
+    // Re-runs on currentUser.id / authTokenReady / lowDataMode / realtimeEpoch. Any change to
+    // this user's group_members rows triggers a full groups refetch — the payload alone does
+    // not carry enough to patch the list. The row mapping MUST stay field-for-field in step
+    // with the bootstrap mapping above, and falls back to the existing row for anything the
+    // list endpoint omits.
     useEffect(() => {
         if (!currentUser || !authTokenReady || lowDataMode) return;
 
@@ -1952,40 +2129,12 @@ export function useAppEffects({
                                 () => ({} as Record<string, number>)
                             ),
                         ]);
-                        updateGroups((prev) => {
-                            const prevById = new Map(prev.map((g) => [g.id, g]));
-                            return freshGroups.map((g: any) => {
-                                const existing = prevById.get(g.id);
-                                return {
-                                    id: g.id,
-                                    name: g.name,
-                                    avatarUrl: g.avatar_url || g.avatarUrl,
-                                    description: g.description,
-                                    lastMessage: g.last_message || g.lastMessage,
-                                    lastMessageTime: g.last_message_time || g.lastMessageTime,
-                                    adminIds: g.admin_ids || g.adminIds || [],
-                                    permissions: g.permissions || {},
-                                    parentId: g.parent_id || g.parentId,
-                                    isArchived: g.is_archived ?? g.isArchived ?? false,
-                                    inviteId: g.invite_id || g.inviteId,
-                                    // Same fields as the bootstrap mapping above. Dropping
-                                    // them here blanked `communityId` on every membership
-                                    // change, which emptied the community column right
-                                    // after joining a channel.
-                                    courseId: g.courseId ?? g.course_id ?? existing?.courseId ?? null,
-                                    visibility: g.visibility || existing?.visibility || 'private',
-                                    communityId: g.communityId ?? g.community_id ?? existing?.communityId ?? null,
-                                    memberCount: g.memberCount ?? g.member_count ?? existing?.memberCount,
-                                    questionCount: g.questionCount ?? g.question_count ?? existing?.questionCount,
-                                    tags: g.tags ?? existing?.tags,
-                                    unreadCount: unreadCounts[g.id] || 0,
-                                    pendingMembers: existing?.pendingMembers || [],
-                                    invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
-                                    // Keep loaded member rosters so @mentions keep working.
-                                    members: existing?.members?.length ? existing.members : [],
-                                };
-                            });
-                        });
+                        // Same merge as the bootstrap load above — carrying the
+                        // community fields over is what stops a refresh from
+                        // emptying the community column right after joining a
+                        // channel, and `mergeFetchedGroups` now also carries
+                        // `communitySurface`, which both inline copies dropped.
+                        updateGroups((prev) => mergeFetchedGroups(freshGroups, prev, unreadCounts));
                     } catch (err) {
                         console.error('[Group membership] Real-time refresh failed:', err);
                     }
@@ -2003,10 +2152,33 @@ export function useAppEffects({
     }, [currentUser?.id, authTokenReady, lowDataMode, realtimeEpoch, updateGroups, bumpRealtimeEpoch]);
 
     // --- Persist offline data ---
+    // Mirrors the downloaded offline bundles to localStorage on every change so they survive
+    // a reload with no network. Re-runs on the offlineBundles array identity.
+    // FIXED (F9): the 'offlineBundles' key is not user-scoped, and this effect
+    // had no user gate, so signing out and straight back in as someone else
+    // handed the next account the previous student's downloaded bundles (the
+    // store is read from this key at construction and again by
+    // `initFromStorage`). Two halves close it: `useTestStore.reset()` — which
+    // the sign-out registry calls — now REMOVES this key, and the write below
+    // is gated on there being a signed-in user, so a reset that lands in the
+    // same commit as the account switch cannot be written straight back.
+    // Unlike `pendingSyncResults` below, a bundle is re-downloadable content
+    // and not unsynced student work, so clearing it destroys nothing (F2's
+    // never-purge rule is about the queues, and it still holds for them).
+    // The live store is read for the same reason the queue effect below reads
+    // it: the render snapshot still holds the previous account's array on the
+    // commit where `currentUser` flips.
     useEffect(() => {
-        localStorage.setItem('offlineBundles', JSON.stringify(offlineBundles));
-    }, [offlineBundles]);
+        if (!currentUser) return;
+        localStorage.setItem(
+            'offlineBundles',
+            JSON.stringify(useTestStore.getState().offlineBundles)
+        );
+    }, [offlineBundles, currentUser]);
 
+    // Persists the offline test-result queue and opportunistically backs it up to the cloud.
+    // Deps are [pendingSyncResults, currentUser] — those only SCHEDULE the run; the data
+    // itself is read from the live store, for the reason spelled out below.
     useEffect(() => {
         // Read the LIVE store, never the render snapshot: on the commit where
         // currentUser flips to a new user, this effect's closure still held
@@ -2030,6 +2202,9 @@ export function useAppEffects({
     }, [pendingSyncResults, currentUser]);
 
     // --- Theme sync to DOM (signed-out visitors always see light — landing & auth) ---
+    // Re-runs on theme / currentUser. Toggling the `dark` class IS the whole theme switch;
+    // nothing here writes colour values. The stored 'theme' key is only updated while signed
+    // in, so forcing light for a visitor does not overwrite their saved preference.
     useEffect(() => {
         const effectiveTheme = currentUser ? theme : 'light';
         if (effectiveTheme === 'dark') {
@@ -2053,6 +2228,10 @@ export function useAppEffects({
     );
     const srsUserId = currentUser?.id ?? null;
 
+    // Reads the card list from the store rather than a dep so the callback identity (and
+    // therefore the interval below) does not churn on every review. Four gates before a
+    // toast is shown: reminders enabled, permission granted, throttle window elapsed, and a
+    // claim (beginSrsWebReminderSend) that remount/visibility churn cannot double-fire.
     const checkForDueCardsAndNotify = useCallback(() => {
         if (!srsUserId || !srsRemindersEnabled) return;
         const cards = useFlashcardStore.getState().flashcards;
@@ -2078,6 +2257,8 @@ export function useAppEffects({
         });
     }, [srsUserId, srsRemindersEnabled, setAppMode]);
 
+    // Routes a click on an OS notification (including one delivered by the service worker
+    // while the tab was closed) into the app. Re-runs only if setAppMode changes identity.
     useEffect(() => {
         return onWebNotificationClick((data) => {
             if (data.navigate === 'flashcards') {
@@ -2088,11 +2269,23 @@ export function useAppEffects({
     }, [setAppMode]);
 
     // Keep due-count badge in sync without notifying on every card review.
+    // Re-runs on currentUser.id and the flashcards array identity (every review rewrites it).
+    // FIXED (F9): the early return on an EMPTY card list meant the badge was
+    // never reset — after deleting the last deck, or on a user switch that
+    // cleared the store, the previous count (the previous STUDENT's count, on a
+    // shared browser) stayed on the nav badge until some other write happened
+    // to set it. An empty list is a real answer: zero due.
     useEffect(() => {
-        if (!currentUser || !flashcards.length) return;
-        setDueCardsCount(getCardsDue(flashcards).length);
+        if (!currentUser) {
+            setDueCardsCount(0);
+            return;
+        }
+        setDueCardsCount(flashcards.length ? getCardsDue(flashcards).length : 0);
     }, [currentUser?.id, flashcards, setDueCardsCount]);
 
+    // SRS reminder scheduler. Re-runs on srsUserId / checkForDueCardsAndNotify / lowDataMode.
+    // Two triggers: the tab going HIDDEN (a reminder is only useful in the background) and an
+    // hourly interval — which low-data mode skips entirely, keeping only the visibility hook.
     useEffect(() => {
         if (!srsUserId) return;
 
@@ -2127,6 +2320,11 @@ export function useAppEffects({
         };
     }, [srsUserId, checkForDueCardsAndNotify, lowDataMode]);
     // Auto-sync queued flashcard reviews when back online
+    // Re-runs on currentUser.id / isOnline — the isOnline flip is the trigger; the queue
+    // itself is read through getState() (never a dep) so a newly-purged queue is not
+    // resurrected from a pre-purge render snapshot. Queued review replays skip CAS inside
+    // syncPendingFlashcardReviews, because repeated reviews of one card all carry the same
+    // pre-sync version and would self-409.
     useEffect(() => {
         if (!currentUser?.id || !isOnline) return;
         const pending = useFlashcardStore.getState().pendingFlashcardReviews;
@@ -2149,6 +2347,9 @@ export function useAppEffects({
     }, [currentUser?.id, isOnline]);
 
     // Auto-sync queued offline test results when back online
+    // Same shape as the flashcard sync: triggered by isOnline, queue read via getState().
+    // Reports `remaining` honestly rather than claiming a full sync, and folds back any
+    // gamification the server returned. `cancelled` suppresses the toast after unmount.
     useEffect(() => {
         if (!currentUser?.id || !isOnline) return;
         const pending = useTestStore.getState().pendingSyncResults;

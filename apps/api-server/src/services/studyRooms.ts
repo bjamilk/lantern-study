@@ -6,6 +6,45 @@
  * tonight" lands in one room instead of 23. Roster is pull-based; the client
  * may open ONE Supabase presence channel for the room it is in.
  */
+/**
+ * Purpose: temporary, self-closing study rooms — the Room tab and the
+ * "study together" entry points on a course or community.
+ *
+ * Exports: `StudyRoomsService` (`joinOrCreate`, `list`, `get`, `join`,
+ * `leave`), `getStudyRoomsService` (a process singleton) and
+ * `resetStudyRoomsServiceForTests`. Called from routes/studyRooms.ts.
+ *
+ * What it touches: Supabase tables `study_sessions` (rows with `kind = 'room'`)
+ * and `study_session_participants`, plus a `profiles` embed for roster names
+ * and avatars, and `communities.visibility` for the access guard. It resolves
+ * membership through `communityModeration.resolveActor`. No storage, no
+ * external API. The presence channel name is computed by
+ * `studyRoomPresenceChannel` in @lantern/shared; the channel itself is a
+ * Supabase Realtime channel the CLIENT opens — nothing is published from here.
+ *
+ * Roster and presence model. The roster is the authority and it is
+ * PULL-BASED: a seat is a `study_session_participants` row with `left_at IS
+ * NULL`, and counts and membership come from reading it, never from presence.
+ * Presence is decoration — the client may open ONE Realtime channel for the
+ * room it is in, and a client that never opens one is still fully in the room.
+ * `ensureParticipant` is idempotent: it revives a row whose `left_at` is set
+ * rather than inserting a second one, and tolerates 23505 from a concurrent
+ * insert. `loadRoster` caps at 80 seats. `leave` stamps `left_at` and closes
+ * the room when the last seat empties.
+ *
+ * Lifecycle: rooms are temporary by design. `sweepExpired` piggybacks on room
+ * traffic (10-minute in-process debounce, never on the caller's critical path,
+ * never throws) to close rooms past STUDY_ROOM_MAX_AGE_MS and delete closed
+ * rooms past STUDY_ROOM_PURGE_AFTER_DAYS; participant rows go with them via ON
+ * DELETE CASCADE. `mapRoom` also derives `isActive` from the age, so a room
+ * the sweep has not reached yet still reads as closed.
+ *
+ * Access. This service runs on the service-role client, which bypasses RLS, so
+ * the community predicate lives in `assertCommunityAccess` below and must stay
+ * there. See that helper for what it replaced.
+ * `20260915100000_rls_ownership_and_visibility_hardening.sql` is the schema
+ * half of the same hotfix.
+ */
 import type { SupabaseService } from './supabase';
 import { PublicError } from '../utils/safeError';
 import { logger } from '../utils/logger';
@@ -26,6 +65,52 @@ import {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const TOPIC_MAX = 80;
 const TITLE_MAX = 120;
+
+// --- Community access guard --------------------------------------------------
+// What this closed: the file previously scoped purely by
+// `.eq('community_id', <id the client sent>)` and contained no reference to
+// `community_members` or to `visibility` at all. Any signed-in user holding a
+// private community's UUID could therefore list its rooms, read the full
+// roster, join a room, and inject one through joinOrCreate. The actor is now
+// resolved through the community moderation helper before any scoping happens.
+
+/**
+ * A community-scoped room is only visible to that community.
+ *
+ * `list`, `get`, `join` and `joinOrCreate` used to trust the caller's ids
+ * outright, so any signed-in user could pass a stranger community's id (or a
+ * room id read from anywhere) and get its rooms, its roster, and a seat in
+ * one. Membership is resolved through communityModeration.resolveActor —
+ * the same source the rest of the community surface decides from — and a
+ * community whose visibility is not 'public' requires it.
+ */
+async function assertCommunityAccess(
+  db: any,
+  supabaseService: SupabaseService,
+  userId: string,
+  communityId: string,
+): Promise<void> {
+  const { getCommunityModerationService } = await import('./communityModeration');
+  const actor = await getCommunityModerationService(supabaseService).resolveActor(
+    userId,
+    communityId,
+  );
+  if (actor.isMember || actor.isPlatformAdmin) return;
+
+  const { data, error } = await db
+    .from('communities')
+    .select('visibility')
+    .eq('id', communityId)
+    .maybeSingle();
+  if (error) throw error;
+  if ((data as { visibility?: string } | null)?.visibility === 'public') return;
+
+  throw Object.assign(new PublicError('Join this community to see its study rooms'), {
+    statusCode: 403,
+  });
+}
+
+// --- Validation, row shape and mapping ---------------------------------------
 
 function notFound(message = 'Study room not found'): never {
   throw Object.assign(new PublicError(message), { statusCode: 404 });
@@ -139,6 +224,19 @@ export class StudyRoomsService {
     })();
   }
 
+  // --- Public surface --------------------------------------------------------
+  // joinOrCreate / list / get / join / leave. Each of the first four resolves
+  // the caller's community standing before it scopes or seats anyone: by the
+  // community the caller named (joinOrCreate, list) or by the community the
+  // room belongs to (get, and join through it).
+
+  /**
+   * Take a seat in a matching open room, or open one.
+   *
+   * The community guard runs BEFORE `findReusable`, so a caller who may not
+   * see the community cannot discover its rooms by asking to create one and
+   * being handed an existing room back.
+   */
   async joinOrCreate(userId: string, input: JoinOrCreateStudyRoomInput): Promise<StudyRoomDetail> {
     this.sweepExpired();
     const courseId = uuidOrNull(input.courseId);
@@ -147,6 +245,9 @@ export class StudyRoomsService {
     const topic = trimTopic(input.topic);
     if (!courseId && !communityId) {
       bad('Pick a course (or community) to open a study room');
+    }
+    if (communityId) {
+      await assertCommunityAccess(this.db, this.supabaseService, userId, communityId);
     }
 
     const existing = await this.findReusable(courseId, communityId, topic);
@@ -209,6 +310,9 @@ export class StudyRoomsService {
       'id, title, course_id, community_id, topic_id, topic, kind, created_by, started_at, is_active';
     const communityId = uuidOrNull(opts.communityId);
     const courseId = uuidOrNull(opts.courseId);
+    if (communityId) {
+      await assertCommunityAccess(this.db, this.supabaseService, userId, communityId);
+    }
     // Untyped on purpose: threading PostgREST's builder generics through a
     // helper sends tsc into "excessively deep" territory.
     const scope = (query: any): any => {
@@ -298,13 +402,24 @@ export class StudyRoomsService {
     if (!data) notFound();
 
     const participants = await this.loadRoster(roomId);
+    const joined = participants.some((p) => p.userId === userId);
+
+    // A room inside a community is that community's. Someone already in the
+    // room keeps their seat even if they have since left the community —
+    // only the way IN is gated.
+    const roomCommunityId = (data as SessionRow).community_id;
+    if (roomCommunityId && !joined) {
+      await assertCommunityAccess(this.db, this.supabaseService, userId, roomCommunityId);
+    }
+
     return {
       ...mapRoom(data as SessionRow, participants.length),
       participants,
-      joined: participants.some((p) => p.userId === userId),
+      joined,
     };
   }
 
+  /** Seat the caller. Authorisation is `get`'s: an outsider never reaches here. */
   async join(userId: string, roomId: string): Promise<StudyRoomDetail> {
     const room = await this.get(userId, roomId);
     if (!room.isActive) bad('This study room has closed');
@@ -312,6 +427,12 @@ export class StudyRoomsService {
     return this.get(userId, roomId);
   }
 
+  /**
+   * Give up the seat, and close the room when it was the last one.
+   *
+   * No community check: leaving is always allowed, including for someone who
+   * has since left the community.
+   */
   async leave(userId: string, roomId: string): Promise<{ left: true }> {
     if (!UUID_RE.test(String(roomId))) notFound();
     const now = new Date().toISOString();
@@ -333,6 +454,11 @@ export class StudyRoomsService {
     }
     return { left: true };
   }
+
+  // --- Roster internals ------------------------------------------------------
+  // `findReusable` picks the room joinOrCreate reuses; `ensureParticipant` is
+  // the idempotent seat write; `loadRoster` is the pull-based membership read
+  // the counts and the `joined` flag are derived from.
 
   private async findReusable(
     courseId: string | null,

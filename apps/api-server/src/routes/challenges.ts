@@ -48,7 +48,6 @@ router.post(
 router.get(
   '/',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;

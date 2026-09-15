@@ -1,3 +1,32 @@
+/**
+ * The global error-mapping convention for the API server.
+ *
+ * Exports, mounted in server.ts in this order after every route:
+ * `databaseErrorHandler` → `supabaseErrorHandler` → `errorHandler`, with
+ * `notFoundHandler` ahead of them. Also exports the `ApiError` class every
+ * route throws, `asyncHandler` (the promise wrapper route handlers use),
+ * `corsRejection`, and `rateLimitErrorHandler`.
+ *
+ * Convention: a route signals a client problem by throwing
+ * `new ApiError(message, 4xx)` — `isOperational` true, message rendered to the
+ * client verbatim. Anything else becomes a 500 with `isOperational=false`, and
+ * in production the client sees only "Something went wrong". Upstream errors
+ * carrying their own `status`/`statusCode` keep it, so a body-parser 413 stays
+ * a 413 instead of surfacing as an opaque 500 on lecture uploads.
+ *
+ * An upstream 4xx that is not an ApiError keeps its status but, in production,
+ * NOT its message — raw PostgREST text names columns, constraints and RLS
+ * policies. `GENERIC_CLIENT_MESSAGES` supplies the replacement.
+ *
+ * Postgres and PostgREST codes are translated by `supabaseErrorHandler` before
+ * the generic handler sees them: PGRST116 → 404, 23505 → 409, 42501 → 403,
+ * PGRST301 (or any "connection" message) → 503, PGRST201 → 500. Everything else
+ * falls through untouched and lands on the 500 branch.
+ *
+ * `corsRejection` returns a 403 rather than a bare Error on purpose: the Sentry
+ * express handler files a status-less error as a 500, and the plain Error this
+ * used to be produced 4.4k issues that were all dev servers pointed at prod.
+ */
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
 import { isProductionEnv, redactForLog } from '../utils/safeError';
@@ -28,14 +57,59 @@ export function corsRejection(): ApiError {
   return new ApiError('Not allowed by CORS', 403);
 }
 
+/**
+ * What a production client is told for an upstream 4xx that arrived as a raw
+ * error rather than an `ApiError`. Never the upstream text: a PostgREST 400
+ * names the column, the constraint and the RLS policy it tripped, which is a
+ * free schema map for anyone probing the API.
+ */
+const GENERIC_CLIENT_MESSAGES: Record<number, string> = {
+  400: 'That request was not valid.',
+  401: 'Please sign in and try again.',
+  403: 'You do not have access to that.',
+  404: 'Not found.',
+  405: 'That action is not supported here.',
+  409: 'That conflicts with something that already exists.',
+  422: 'That request was not valid.',
+  429: 'Too many requests. Please try again shortly.',
+};
+
 // Error response interface
 interface ErrorResponse {
   error: string;
   message: string;
+  /**
+   * A stable, machine-readable identifier for the failure, when the thrown
+   * error declares one. Added because two different idempotency outcomes —
+   * "the same key is still in flight" and "the previous attempt with this key
+   * failed" — were both a 409 whose only distinguishing mark was English prose,
+   * which the F7b production message-genericising then replaced. Codes are NOT
+   * genericised: they carry no column, constraint or policy names.
+   *
+   * Only an UPPER_SNAKE identifier is passed through, so a PostgREST/Postgres
+   * code (`23505`, `PGRST201`) never leaks into the contract.
+   */
+  code?: string;
   details?: any;
   timestamp: string;
   path: string;
   requestId?: string;
+}
+
+/**
+ * `code` is part of the API contract only when it looks like one: UPPER_SNAKE
+ * with at least one underscore (ACCOUNT_SUSPENDED, IDEMPOTENCY_CONCURRENT).
+ * The underscore is what keeps PostgREST's own codes out — `PGRST201` is
+ * otherwise indistinguishable from an API code, and it names an internal
+ * PostgREST condition rather than anything a client should branch on.
+ */
+const PUBLIC_ERROR_CODE_RE = /^[A-Z][A-Z0-9]*(?:_[A-Z0-9]+)+$/;
+
+function publicErrorCode(err: unknown): string | undefined {
+  const raw = (err as { code?: unknown })?.code;
+  return typeof raw === 'string' && raw.length <= 64 && PUBLIC_ERROR_CODE_RE.test(raw)
+    ? raw
+    : undefined;
 }
 
 // Global error handler middleware
@@ -107,8 +181,20 @@ export const errorHandler = (
         413,
         true
       );
+    // FIXED (F7b): `err.message` used to be passed straight through for any
+    // upstream 4xx — the isProductionEnv() guard below covers only the 5xx
+    // branch — so a PostgREST or Postgres 4xx reached production clients with its
+    // raw text: column names, constraint names and RLS policy names included.
+    //
+    // This branch is only ever reached by errors that are NOT ApiError, i.e. raw
+    // upstream throws. A route that wants its message shown to the user throws
+    // `new ApiError(message, 4xx)`, which is returned untouched above. So the
+    // message is safe to replace here, and in production it is.
     } else if (statusFromErr && statusFromErr >= 400 && statusFromErr < 500) {
-      error = new ApiError(err.message || 'Bad request', statusFromErr, true);
+      const upstreamMessage = isProductionEnv()
+        ? GENERIC_CLIENT_MESSAGES[statusFromErr] || 'Request could not be completed'
+        : err.message || 'Bad request';
+      error = new ApiError(upstreamMessage, statusFromErr, true);
     } else {
       const publicMessage = isProductionEnv()
         ? 'Something went wrong'
@@ -122,10 +208,13 @@ export const errorHandler = (
     ? 'Something went wrong'
     : apiError.message;
 
-  // Send error response
+  // Send error response. The code is read off the ORIGINAL thrown error, not
+  // the ApiError this handler may have substituted for it above.
+  const code = publicErrorCode(err) ?? publicErrorCode(apiError);
   const errorResponse: ErrorResponse = {
     error: apiError.name || 'Error',
     message: clientMessage,
+    ...(code ? { code } : {}),
     timestamp: new Date().toISOString(),
     path: req.originalUrl,
     requestId: (req as any).requestId,
@@ -141,6 +230,8 @@ export const errorHandler = (
 
   res.status(apiError.statusCode).json(errorResponse);
 };
+
+// ============ Terminal and specialised handlers ============
 
 // 404 handler
 export const notFoundHandler = (
@@ -193,6 +284,10 @@ export const databaseErrorHandler = (
   }
 };
 
+/**
+ * Translates PostgREST and Postgres error codes into ApiErrors. Mounted before
+ * `errorHandler`; anything it does not recognise is forwarded unchanged.
+ */
 // Supabase specific error handler
 export const supabaseErrorHandler = (
   err: any,

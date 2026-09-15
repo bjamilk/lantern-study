@@ -1,3 +1,30 @@
+/**
+ * Home screen: assembles the shared "home regions" spine out of data the app
+ * already holds in stores — it fetches nothing of its own.
+ *
+ * Exports:
+ *  - default `DashboardScreen` — the Home route body (scroll container + right rail).
+ *  - `AcademicSetupBanner` (module-local) — legacy one-line profile nudge.
+ * Touches:
+ *  - stores: `uiStore` (openModal), `notesStore.notes`, `studyResumeStore`
+ *    (`lastActivity`, `recentActivities`), `studySetStore` (`sets`, `lastOpenedId`),
+ *    `companionStore.conversations`.
+ *  - hooks: `useLoginStreak` (daily-bonus banner + local streak).
+ *  - localStorage (via utils): academic-setup dismissal + onboarding-academic flags,
+ *    keyed by `currentUser.id`.
+ *  - shared: `homeRegions`, `primaryHomeAction`, `buildStudySetPath`, `computeStudyStreak`.
+ *  - everything else is delegated to child cards (`HomeStudySets`, `RecentActivities`,
+ *    `CourseReadinessCard`, `ClassWorkCard`, `AiJobsCard`, …) which own their own loads.
+ * Gotchas:
+ *  - Two "due" numbers exist: the store aggregate `dueCardsCount` and the plan total
+ *    `reviewPlanTotalDue`. Everything the student SEES must come from `homeDueTotal`
+ *    (plan-first), or the label and the session it opens disagree.
+ *  - Colours are Tailwind `lantern-*` tokens resolved from `index.css` `:root`/`.dark`;
+ *    the only literal palette here is the daily-bonus gradient (amber-on-white, same in
+ *    both themes by design). Do not inline a token's value.
+ *  - This component is the scroll container (`overflow-y-auto`) for Home. Children that
+ *    clip (`overflow-hidden` cards) must carry `shrink-0` or the flex pass crushes them.
+ */
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   Group,
@@ -200,6 +227,14 @@ export default function DashboardScreen({
   onResumePausedSession,
   onAbandonPausedSession,
 }: DashboardScreenProps) {
+  // --- Local state and derived tallies -------------------------------------
+  // KNOWN ISSUE (tracked, deferred F9: needs a product decision — whether
+  // Home's "take a test" door opens this group picker or keeps going straight
+  // to Study Hub. Wiring the picker changes which surface a student lands on,
+  // which is not a defect fix): `setQuickActionPicker` is only ever called with
+  // `null` (here, and from the modal's close buttons), so the group-picker
+  // modal at the bottom of this file can never open and `onOpenQuickTest` is
+  // reachable only through the checklist's `onTakeTest` fallback.
   const [quickActionPicker, setQuickActionPicker] = useState<'test' | 'study' | null>(null);
   const availableGroups = useMemo(() => groups.filter((g) => !g.isArchived), [groups]);
   const { streakData, showDailyBonus, bonusXP, dismissBonus } = useLoginStreak();
@@ -224,10 +259,14 @@ export default function DashboardScreen({
   const totalTestsTakenOverall = rawTestResults.filter((result) => result?.session?.startTime).length;
   const dashboardScrollRef = useRef<HTMLDivElement>(null);
 
+  // Picker choice → quick test for that group, then close. Only the 'test'
+  // branch does anything; 'study' was never wired.
   const handleQuickActionGroupSelect = useCallback((groupId: string) => {
     if (quickActionPicker === 'test') onOpenQuickTest?.(groupId);
     setQuickActionPicker(null);
   }, [quickActionPicker, onOpenQuickTest]);
+  // --- Store reads. All selectors, no loaders: Home renders whatever the
+  // stores already hold and never triggers a fetch of its own.
   const notes = useNotesStore((s) => s.notes);
   const lastActivity = useStudyResumeStore((s) => s.lastActivity);
   const studySets = useStudySetStore((s) => s.sets);
@@ -384,6 +423,12 @@ export default function DashboardScreen({
     onNavigateToStudyHub?.();
   }, [onNavigatePath, onNavigateToStudyHub]);
 
+  // Load-bearing classes on the scroll shell: `flex-1 min-h-0` lets it shrink
+  // inside the app's flex column (without `min-h-0` the column refuses to
+  // shrink and the page, not this pane, scrolls); `overscroll-y-none` stops the
+  // scroll chaining that otherwise bounces the whole window on trackpads.
+  // `dashboardScrollRef` is attached but currently unread — it is the handle any
+  // future scroll-restore would use.
   return (
     <div
       ref={dashboardScrollRef}
@@ -418,6 +463,13 @@ export default function DashboardScreen({
 
       <AcademicSetupBanner currentUser={currentUser} />
 
+      {/* Two-column spine from `lg:` up, single column below. `minmax(0,1fr)`
+          on the main column and `min-w-0` on its child are what let long titles
+          truncate instead of forcing the grid wider than the viewport — the
+          sidebar already eats most of the width, so the content column is
+          narrow and its cards must wrap on CONTENT width, not on `sm:`/`md:`
+          viewport breakpoints. `lg:items-start` is what lets the rail be
+          sticky (a stretched grid item has nothing to stick within). */}
       <div className="px-4 md:px-8 py-8 w-full">
         <div className="lg:grid lg:grid-cols-[minmax(0,1fr)_20rem] lg:gap-10 lg:items-start space-y-8 lg:space-y-0">
           <div className="space-y-8 min-w-0">
@@ -583,7 +635,16 @@ export default function DashboardScreen({
                 else onNavigateToChat?.();
               }}
               onSetBudget={() => onNavigateToBudget?.()}
-              onOpenLibrary={() => onNavigateToLibrary?.() || onNavigateToFlashcards?.()}
+              // FIXED (F9): both navigations used to fire. The handlers return
+              // `void`, so `onNavigateToLibrary?.()` was always falsy and `||`
+              // ran `onNavigateToFlashcards?.()` as well — the library route
+              // was entered and then immediately replaced by flashcards. The
+              // fallback is now chosen on whether the handler EXISTS, which is
+              // what every sibling here (onCreateDeck, onTakeTest) already did.
+              onOpenLibrary={() => {
+                if (onNavigateToLibrary) onNavigateToLibrary();
+                else onNavigateToFlashcards?.();
+              }}
               onTryCompanion={() => onToggleCompanion?.()}
               onSubmitQuestion={() => onNavigateToChat?.()}
               onExploreMarketplace={() => onNavigateToMarketplace?.()}
@@ -615,6 +676,9 @@ export default function DashboardScreen({
         </div>
       </div>
 
+      {/* Group picker for Quick Test. Currently unreachable — see the KNOWN
+          ISSUE on `quickActionPicker` above. Kept because the checklist path
+          still calls `onOpenQuickTest`, so the picker is the intended UI. */}
       {quickActionPicker && (
         <Modal
           isOpen={Boolean(quickActionPicker)}

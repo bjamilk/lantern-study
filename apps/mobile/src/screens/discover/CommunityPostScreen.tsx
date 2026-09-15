@@ -1,3 +1,22 @@
+/**
+ * Campus stack -> CommunityPost (params: groupId, rootId, optional community
+ * slug/name and board name). One board post with its flat, oldest-first
+ * comments, the post's media, and the post actions (favorite, bookmark,
+ * repost, share, comment).
+ *
+ * Exports: CommunityPostScreen.
+ * Touches: groupStore (messagesCache, fetchThread, patchMessageInState),
+ * boardStore (commentOnPost, bookmarks, repost/undoRepost), authStore,
+ * toastStore; services/api reactions; expo-clipboard and Share;
+ * useLowDataMode.
+ * Gotchas: this is where a post's photo or voice note actually downloads --
+ * the board list only renders a "tap to load" chip. fetchThread does not write
+ * the root into messagesCache, so the root is also held locally in
+ * fetchedRoot, and any optimistic patch must be applied to BOTH or a deep-link
+ * open shows a filled heart with an unchanged count. Board state is subscribed
+ * as primitives and arrays only; an object built inside the selector
+ * re-renders forever. No typing indicators or read receipts here by design.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AccessibilityInfo,

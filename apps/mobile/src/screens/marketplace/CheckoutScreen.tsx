@@ -1,3 +1,21 @@
+/**
+ * `Checkout` route: pick a fulfillment mode per seller group, pick a delivery
+ * address when one is required, and start the single Paystack charge.
+ *
+ * Exports: CheckoutScreen.
+ * Touches: fetchMarketplaceCart, fetchMarketplaceAddresses,
+ * fetchSellerFulfillment and checkoutMarketplaceCart in ../../services/api;
+ * groupCartItems, quoteCheckout and FULFILLMENT_LABELS from
+ * @lantern/shared/marketplace; expo-web-browser to open the Paystack page;
+ * useMarketplaceStore.invalidateShopSummary.
+ *
+ * Gotchas: the total shown is a client-side quote from quoteCheckout — the
+ * server prices the real charge. Mode options are gated on the seller's
+ * fulfillment prefs, and a failed fetchSellerFulfillment silently leaves that
+ * seller with campus meetup only. After opening the Paystack browser the
+ * screen navigates to Orders without waiting for the result, so the order
+ * status comes from the webhook, not from this screen.
+ */
 import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

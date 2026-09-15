@@ -1,3 +1,30 @@
+/**
+ * The `NoteEditor` route: the one screen every note in the library opens into.
+ * Reads or edits the note, hosts the imported-document surfaces (PDF, slides,
+ * photos with OCR, YouTube), the lecture tabs and recorder, the Learn panel
+ * (Smart Notes, flashcards, a test), collaborators, cover and filing.
+ *
+ * Main exports: `NoteEditorScreen` (also the default).
+ * Touches: notesStore (load/save/remove, cover path), companionStore,
+ * lectureRecordingStore, jobsStore, studyGoalsStore, authStore, confirmStore;
+ * services/notes (fetch, summarize, quiz, OCR, YouTube retry, attachment pages),
+ * services/ai, services/jobArtifacts, and the AI-usage subscription. Native:
+ * expo-image-picker; recording hardware lives in the lecture store.
+ *
+ * Gotchas: the note is hydrated into local state ONCE per open
+ * (`lastHydratedNoteIdRef`) — re-applying `selectedNote` on every store update
+ * would erase in-progress typing, and re-deciding read-vs-edit would throw the
+ * student out mid-word. Autosave is debounced 800ms and is deliberately paused
+ * for a few seconds around transcription, which writes the body from the store.
+ * `titleRef`/`bodyRef` exist because the leave-while-recording listener is
+ * registered once per recording and a stale closure would let
+ * `shouldDeleteDoorNoteOnDiscard` delete a note the student renamed mid-take.
+ * `startRecording: true` from the Record door fires once per arrival, guarded by
+ * `startedFromDoorRef` so a re-render or Fast Refresh cannot start a second
+ * recording. The contextual row's actions are registered through
+ * `useScreenActions` as plain (unmemoised) functions, read through a ref, so
+ * they never close over a stale credit count or a swapped note.
+ */
 import { Screen, useScreenActions } from '../../components/layout';
 import { learnTailPadding } from './noteLearnScroll';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';

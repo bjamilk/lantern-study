@@ -8,34 +8,34 @@ import {
   type CampusSegment,
 } from './campusSegments';
 
-const segments = (canSeeCommunities: boolean, marketplaceAccess: boolean | null): CampusSegment[] =>
-  resolveCampusSegments({ canSeeCommunities, marketplaceAccess });
+const segments = (canSeeCommunities: boolean): CampusSegment[] =>
+  resolveCampusSegments({ canSeeCommunities });
 
 describe('resolveCampusSegments', () => {
-  it('draws Communities · Shop · Jobs in that order when everything is open', () => {
-    expect(segments(true, true)).toEqual(['communities', 'shop', 'jobs']);
+  it('draws Communities · Shop · Jobs in that order for a student past the profile gate', () => {
+    expect(segments(true)).toEqual(['communities', 'shop', 'jobs']);
   });
 
-  it('hides Communities when the Discover gate is closed', () => {
-    expect(segments(false, true)).toEqual(['shop', 'jobs']);
+  it('hides Communities when the academic-profile gate is closed', () => {
+    expect(segments(false)).toEqual(['shop', 'jobs']);
   });
 
-  it('hides BOTH Shop and Jobs on a definite pilot refusal — one allowlist covers both', () => {
-    expect(segments(true, false)).toEqual(['communities']);
+  it('shows Shop and Jobs to EVERY account — no pilot allowlist gates them', () => {
+    // Regression guard for V1 (2026-09-15): the founder-only allowlist that
+    // could delete both segments is gone, and no probe may bring it back.
+    expect(segments(false)).toContain('shop');
+    expect(segments(false)).toContain('jobs');
+    expect(segments(true)).toContain('shop');
+    expect(segments(true)).toContain('jobs');
   });
 
-  it('keeps Shop and Jobs while the pilot probe has not answered', () => {
-    // A failed or in-flight probe must never quietly delete a destination.
-    expect(segments(true, null)).toEqual(['communities', 'shop', 'jobs']);
-    expect(segments(false, null)).toEqual(['shop', 'jobs']);
-  });
-
-  it('can legitimately be empty — Campus then owes an honest empty state', () => {
-    expect(segments(false, false)).toEqual([]);
+  it('is never empty, so Campus always has somewhere to land', () => {
+    expect(segments(false).length).toBeGreaterThan(0);
+    expect(segments(true).length).toBeGreaterThan(0);
   });
 
   it('names every segment it can return', () => {
-    for (const segment of segments(true, true)) {
+    for (const segment of segments(true)) {
       expect(CAMPUS_SEGMENT_LABELS[segment]).toBeTruthy();
     }
     expect(CAMPUS_SEGMENT_LABELS.shop).toBe('Shop');
@@ -52,8 +52,8 @@ describe('resolveCampusSegment', () => {
   });
 
   it('falls back to the first available segment when the request is closed', () => {
-    // A legacy navigate('MarketTab') on an account off the pilot must land
-    // somewhere real rather than on a segment with nothing behind it.
+    // A legacy navigate('MarketTab') must land somewhere real rather than on
+    // a segment with nothing behind it.
     expect(resolveCampusSegment('shop', ['communities'])).toBe('communities');
   });
 

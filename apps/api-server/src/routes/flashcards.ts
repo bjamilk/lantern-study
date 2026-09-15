@@ -106,7 +106,6 @@ router.get(
 router.get(
   '/:flashcardId',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -143,7 +142,6 @@ router.get(
 router.get(
   '/:flashcardId/comments',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -170,7 +168,6 @@ router.get(
 router.post(
   '/:flashcardId/comments',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -256,7 +253,6 @@ router.post(
   '/upload-image',
   authMiddleware,
   uploadBurstRateLimit,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -355,7 +351,6 @@ router.post(
 router.put(
   '/:flashcardId',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -450,7 +445,6 @@ router.put(
 router.delete(
   '/:flashcardId',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;

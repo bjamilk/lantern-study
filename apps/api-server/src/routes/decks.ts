@@ -1,3 +1,58 @@
+/**
+ * Flashcard deck routes — CRUD, collaborators, covers, import and export.
+ *
+ * Purpose
+ * - Owns the deck as an object: listing and paging a student's decks, creating
+ *   one (optionally with its cards in a single atomic call), editing it,
+ *   sharing it with collaborators, giving it a cover, and moving it in and out
+ *   of the product via CSV, Anki `.apkg` and the native JSON format. The cards
+ *   themselves belong to `routes/flashcards.ts`.
+ *
+ * Exports
+ * - Default router and `initializeDeckRoutes(supabase, cache)`, called from
+ *   `server.ts` at boot to inject the Supabase and cache services.
+ *
+ * Mount path
+ * - `/api/v1/decks`.
+ *
+ * Auth mode
+ * - `authMiddleware` on every route; no public or optional-auth surface, no
+ *   admin gate.
+ *
+ * Rate-limit tier
+ * - `authenticatedRateLimit` from `authMiddleware` throughout, plus
+ *   `uploadBurstRateLimit` on `POST /:deckId/cover` and `POST /import/apkg`.
+ *
+ * Ownership predicate
+ * - `requireDeckAccess('deckId', <level>)` from `middleware/authorizeResource`,
+ *   with three levels: `read` for reads and exports, `edit` for updates,
+ *   collaborator changes and stat resets, `owner` for delete and cover writes.
+ *   Routes without a `:deckId` (list, create, imports) scope by the token's
+ *   user id instead, and the service layer re-checks with
+ *   `verifyDeckAccess(userId, deckId, level)` on the write itself — the
+ *   middleware is not the only gate, because the service-role client bypasses
+ *   RLS.
+ *
+ * Error-mapping convention
+ * - 404 `'Deck not found or access denied'` is the single answer for both an
+ *   unknown deck and one the caller may not touch, so neither reveals the
+ *   other. `PublicError` (a rejected course or topic) maps to 400 via
+ *   `respondPublicError`. `DeckWithCardsError` is a 500 carrying `rolledBack`.
+ *   `'Access denied'` thrown from the collaborator service becomes a 403.
+ *
+ * Caching
+ * - The list is cached in Redis for 300 s under
+ *   `decks:<userId>:scope:<owned|owned_collab>:<page>:<limit>:profile:<p>:course:<c>:topic:<t>:v2`.
+ *   Every mutation invalidates three key shapes — `decks:user:<id>`,
+ *   `decks:user:<id>*` and `decks:<id>*` — because the legacy `decks:user:`
+ *   patterns do not match the key the list actually writes.
+ *
+ * What it touches
+ * - Supabase tables `decks`, `flashcards` and `deck_collaborators` (plus the
+ *   `create_deck_with_cards` RPC), the `cover-images` storage bucket, Redis
+ *   through `CacheService` and the idempotency middleware, the BullMQ path via
+ *   `runSyncOrEnqueue` for `.apkg` import, and the activity feed.
+ */
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware } from '../middleware/auth';
@@ -58,6 +113,10 @@ export const initializeDeckRoutes = (supabase: SupabaseService, cache: CacheServ
   supabaseService = supabase;
   cacheService = cache;
 };
+
+// ---------------------------------------------------------------------------
+// Deck CRUD
+// ---------------------------------------------------------------------------
 
 router.get(
   '/',
@@ -281,6 +340,10 @@ router.put(
     if (!userId) return;
 
     const { deckId } = req.params;
+    // The destructure IS the field whitelist: whatever else the body carries is
+    // never forwarded. `updateDeck` then whitelists a second time against its
+    // own typed `updates` shape, so an unexpected column cannot be written even
+    // if this list grows.
     const { name, description, isShared, courseId, studySetId, topicId, coverPath } = req.body;
     let updatedDeck;
     try {
@@ -444,11 +507,19 @@ router.delete(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Collaborators and stats
+// ---------------------------------------------------------------------------
+// Defence in depth on the add path: the route gate asks only for `edit`, but
+// `supabaseService.addDeckCollaborator` re-checks `verifyDeckAccess(..., 'owner')`
+// and throws `'Access denied'` — so an editor who reaches the handler still
+// cannot grant a third party access to someone else's deck. The 403 below is
+// that service-level refusal surfacing, not a redundant branch.
+
 router.get(
   '/:deckId/collaborators',
   authMiddleware,
   requireDeckAccess('deckId', 'read'),
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -463,7 +534,6 @@ router.post(
   '/:deckId/collaborators',
   authMiddleware,
   requireDeckAccess('deckId', 'edit'),
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -504,7 +574,6 @@ router.delete(
   '/:deckId/collaborators/:userId',
   authMiddleware,
   requireDeckAccess('deckId', 'edit'),
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const authUserId = requireAuthUserId(req, res);
     if (!authUserId) return;
@@ -526,7 +595,6 @@ router.post(
   '/:deckId/reset',
   authMiddleware,
   requireDeckAccess('deckId', 'edit'),
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -545,11 +613,18 @@ router.post(
   })
 );
 
+// ---------------------------------------------------------------------------
+// Import and export — CSV, Anki .apkg, native JSON
+// ---------------------------------------------------------------------------
+// Exports require only `read`; imports always create a deck owned by the token's
+// user, never one named in the payload. `.apkg` goes through `runSyncOrEnqueue`
+// because parsing a large Anki archive can outlast a request, so this route may
+// answer 202 with a job id instead of 201 with a deck.
+
 router.get(
   '/:deckId/export/csv',
   authMiddleware,
   requireDeckAccess('deckId', 'read'),
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -572,7 +647,6 @@ router.get(
 router.post(
   '/import/csv',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -598,7 +672,6 @@ router.post(
   '/import/apkg',
   authMiddleware,
   uploadBurstRateLimit,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -639,7 +712,6 @@ router.get(
   '/:deckId/export',
   authMiddleware,
   requireDeckAccess('deckId', 'read'),
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;
@@ -656,7 +728,6 @@ router.get(
 router.post(
   '/import',
   authMiddleware,
-  handleValidationErrors,
   asyncHandler(async (req: any, res: any) => {
     const userId = requireAuthUserId(req, res);
     if (!userId) return;

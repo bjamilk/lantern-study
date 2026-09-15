@@ -6,17 +6,44 @@
  * because Hermes (React Native's JS engine) doesn't reliably support navigator.product
  * or new Function(), causing the shared config's platform detection to fail and
  * return localhost URLs which are unreachable from a physical device.
+ *
+ * Purpose: the single Supabase client for the app, plus the endpoint resolution
+ * (Constants.expoConfig.extra → EXPO_PUBLIC_* env → hardcoded cloud defaults)
+ * and the auth helpers every other service builds on.
+ *
+ * Main exports: `supabase`, `API_BASE_URL`, `getAuthHeaders` (the Authorization
+ * + X-Lantern-Surface header pair every API call uses), `readStoredSession`,
+ * `AUTH_STORAGE_KEY`, `resetAuthRefreshBackoff`, the auth actions
+ * (signInWithEmail / signUpWithEmail / signOut / resetPassword /
+ * establishSessionFromAuthUrl / verifySignupOtp / updateAuthPassword /
+ * revokeOtherSessions) and the budget-transaction row helpers.
+ *
+ * Touches: @supabase/supabase-js, `EncryptedSessionStorageAdapter` (Android
+ * session: AsyncStorage bytes inside an envelope, content key in SecureStore),
+ * expo-secure-store via `ExpoSecureStoreAdapter` (iOS session),
+ * utils/deepLinkAllowlist (the auth-link allowlist `establishSessionFromAuthUrl`
+ * enforces), expo-constants, expo-auth-session, the API server's
+ * /api/v1/auth/revoke-other-sessions, and the `budget_transactions` table.
+ *
+ * Session storage is platform-split — see `authStorage` below.
+ *
+ * Boot history: under Expo Go on an Android preview image a raw
+ * `SecureStore.getItemAsync` never resolved and `refreshSession()` froze the JS
+ * thread, hanging the splash. That is why Android auth storage is AsyncStorage
+ * and why nothing on the boot path may call a network-touching auth method
+ * (see `readStoredSession`).
  */
 import { createClient } from '@supabase/supabase-js';
 import type { Session } from '@supabase/supabase-js';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { ExpoSecureStoreAdapter } from './secureStorage';
+import { EncryptedSessionStorageAdapter } from './secureSessionStorage';
 import 'react-native-url-polyfill/auto';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { makeRedirectUri } from 'expo-auth-session';
 import * as QueryParams from 'expo-auth-session/build/QueryParams';
 import { classifyRefreshError, OfflineAuthError } from './authFailure';
+import { isAllowedMobileDeepLink } from '../utils/deepLinkAllowlist';
 import { profileDisplayName } from '../hooks/profileIdentity';
 
 const isAndroidEmulator = () => {
@@ -151,9 +178,15 @@ if (!isDevRuntime && (!supabaseUrl || !supabaseAnonKey || !API_BASE_URL)) {
 
 // Session storage: SecureStore (Keychain) on iOS. On Android, `expo-secure-store`'s
 // native Keystore call can block the JS thread indefinitely during Supabase auth init
-// and hang app boot (observed on emulator images and the dev client), so use
-// AsyncStorage there — it is reliable and still persists the session across launches.
-const authStorage = Platform.OS === 'android' ? AsyncStorage : ExpoSecureStoreAdapter;
+// and hang app boot (observed on emulator images and the dev client), so the SESSION
+// stays in AsyncStorage there — a fast, non-blocking read on the boot path.
+// FIXED (F45): the Android session is no longer a bare AsyncStorage entry. It goes
+// through `EncryptedSessionStorageAdapter`, which keeps a 256-bit content key in
+// SecureStore — read LAZILY, once, behind a 1.5 s timeout whose fallback is "no stored
+// session" — and stores the session AES-256-GCM-encrypted inside a versioned envelope,
+// migrating an existing plaintext entry on first read. See secureSessionStorage.ts for
+// the boot-freeze trap that dictates this split.
+const authStorage = Platform.OS === 'android' ? EncryptedSessionStorageAdapter : ExpoSecureStoreAdapter;
 
 // ─── Auth-refresh transport hardening ───────────────────────────────────────
 // gotrue-js only KEEPS a session when the refresh fails in a way it recognises
@@ -476,7 +509,29 @@ export function getMobileAuthRedirectUri(path: 'reset-password' | 'verify-email'
   return makeRedirectUri({ scheme: 'lanternstudy', path });
 }
 
+/**
+ * Turn an emailed auth deep link (`lanternstudy://reset-password|verify-email`)
+ * into a signed-in session. Accepts either shape gotrue can send: tokens in the
+ * URL fragment (`setSession`) or a PKCE `code` (`exchangeCodeForSession`).
+ * Returns null when the link carries neither; throws the link's own errorCode.
+ *
+ * FIXED (F45): this no longer parses tokens out of whatever it is handed.
+ * A custom scheme is not a trust boundary — any installed app or web page can
+ * send `lanternstudy://reset-password#access_token=…`, and accepting it
+ * silently switched the handset onto the ATTACKER's account, where the student
+ * then typed a new password. Two controls now stand in front of it:
+ *   - the scheme/host allowlist runs HERE, before any token is read, so this
+ *     function is safe even if a future caller forgets to check;
+ *   - the callers must get an explicit "Sign in as <email>?" from the student
+ *     first (`planAuthDeepLink` decides, the screens ask). This function is the
+ *     last step of that flow, never the first.
+ */
 export async function establishSessionFromAuthUrl(url: string) {
+  // Defence in depth: an unallowlisted URL is never parsed for tokens.
+  if (!isAllowedMobileDeepLink(url)) {
+    throw new Error('This link did not come from Lantern Study.');
+  }
+
   const { params, errorCode } = QueryParams.getQueryParams(url);
   if (errorCode) throw new Error(String(errorCode));
 

@@ -1,3 +1,28 @@
+/**
+ * Display URLs for Supabase Storage objects on mobile.
+ *
+ * Purpose: turn whatever was STORED for an image (a bucket/path reference, a
+ * bare cover path, an old and now-expired signed URL, a public URL) into a URL
+ * that works right now, minting signatures on read.
+ *
+ * Main exports: `resolveStorageDisplayUrl` (general), `resolveCoverDisplayUrl`
+ * and `parseCoverStorageRef` (deck/note/study-set covers),
+ * `fetchSignedStorageUrl` (sign one object), `COVER_IMAGE_BUCKET`.
+ *
+ * Touches: POST /api/v1/storage/signed-urls (through `getAuthHeaders` and
+ * `API_BASE_URL`), the shared `signedUrlBatch` batcher and `storageUrl`
+ * parsers, and the in-memory `utils/signedUrlCache`.
+ *
+ * Gotchas:
+ * - A signed URL is a temporary credential, not an address. The server clamps
+ *   every signature to 24h, so a URL frozen into a row (this is what killed
+ *   every chat and board photo a day after posting) is dead by the next day.
+ *   Persist the bucket/path reference and re-sign here on every read.
+ * - Both resolvers return `undefined`, never the input, for a value they cannot
+ *   sign — handing a bare path to `<Image>` draws an empty box over the tile's
+ *   own artwork instead of falling back to it.
+ * - The signing route answers POSITIONALLY; `sign` must not reorder `items`.
+ */
 import {
   isPrivateStorageBucket,
   normalizeStorageUrl,

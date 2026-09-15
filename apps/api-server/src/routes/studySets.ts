@@ -1,4 +1,60 @@
 /**
+ * Study set routes — the folders, sets, plans and covers behind the Study tab.
+ *
+ * Purpose
+ * - A study set is the unit a student organises around: it owns a title, an
+ *   optional course and folder, a tile (hue + glyph), a cover image, an exam
+ *   date, a study plan and its topic statuses. This router is thin — the work
+ *   lives in `services/studySets.ts` and the cover half in
+ *   `services/supabase.ts`.
+ *
+ * Exports
+ * - Default router, `initializeStudySetRoutes(supabase)`, the three validator
+ *   chains (`validateStudySetCreate` / `Patch` / `Id`) and
+ *   `MAX_STUDY_SET_COVER_BYTES`, which the clients import so the limit printed
+ *   under the upload button is the limit the server enforces.
+ *
+ * Mount path
+ * - `/api/v1/users/me/study-sets`. The `me` in the path is literal: there is no
+ *   route here that reads another account's sets.
+ *
+ * Auth mode
+ * - `authMiddleware` on every route, declared per route rather than as
+ *   `router.use`. There is no public, optional-auth or admin surface.
+ *
+ * Rate-limit tier
+ * - `authenticatedRateLimit` from `authMiddleware` for everything, plus
+ *   `uploadBurstRateLimit` on `POST /:setId/cover`.
+ *
+ * Ownership predicate
+ * - Every call is scoped by `user_id`. `requireAuthUserId(req, res)` takes the
+ *   id from the verified token, and that id is the first argument to every
+ *   service method and the WHERE clause of every cover write. Nothing here
+ *   trusts an id from the body or the query, and RLS is not relied on: the
+ *   service-role client bypasses it.
+ *
+ * Error-mapping convention
+ * - `PublicError` from the service is a 400 (`handlePublicError`), including
+ *   "Study set not found" for a set this account does not own — a 404 there
+ *   would confirm the row exists.
+ * - `CoverColumnMissingError` / `SetTileColumnMissingError` are 503 carrying the
+ *   migration filename, because the fix is a hand-applied migration, not a
+ *   client retry.
+ * - `CoverStorageUnavailableError` is 503 with a `detail`; anything else is a
+ *   500 through `clientErrorMessage`, which strips internals.
+ *
+ * What it touches
+ * - Supabase tables behind `getStudySetsService` (study sets, folders, plans,
+ *   topic statuses) and the `cover-images` storage bucket via
+ *   `uploadCoverImage` / `deleteCoverObject`.
+ *
+ * Migration tolerance
+ * - Two migrations here are applied by hand and the API runs on both sides of
+ *   each: reads degrade past a missing tile column so a student still sees
+ *   their sets, while a write that CHOSE a tile answers 503 rather than
+ *   reporting success over a row that never changed.
+ */
+/**
  * /api/v1/users/me/study-sets — personal study sets on the Study tab.
  */
 import { Router, type Response } from 'express';
@@ -39,6 +95,12 @@ const handlePublicError = (err: unknown, res: { status: (code: number) => { json
   return false;
 };
 
+// ---------------------------------------------------------------------------
+// Validator chains
+// ---------------------------------------------------------------------------
+// `optional({ values: 'null' })` is the "send null to clear this" idiom: the
+// field may be absent, or explicitly null, but not an arbitrary type.
+
 export const validateStudySetCreate = [
   body('title').isString().isLength({ min: 1, max: 80 }).withMessage('title must be 1-80 characters'),
   body('description').optional({ values: 'null' }).isString().isLength({ max: 280 }),
@@ -74,6 +136,10 @@ export const validateStudySetPatch = [
 ];
 
 export const validateStudySetId = [param('setId').isUUID().withMessage('setId must be a valid UUID')];
+
+// ---------------------------------------------------------------------------
+// Sets and folders — list, resume, create, read, patch, delete
+// ---------------------------------------------------------------------------
 
 router.get(
   '/',
@@ -355,6 +421,13 @@ router.delete(
     }
   })
 );
+
+// ---------------------------------------------------------------------------
+// Study plan, topic status and recency
+// ---------------------------------------------------------------------------
+// `touch` records that the set was studied (it drives `GET /resume`); the plan
+// routes replace the whole plan rather than patching it, and topic status moves
+// through the fixed unseen -> covered -> mastered vocabulary.
 
 router.post(
   '/:setId/touch',

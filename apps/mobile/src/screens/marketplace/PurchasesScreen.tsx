@@ -1,3 +1,17 @@
+/**
+ * `Purchases` route: the buyer's library of bought digital products (study
+ * packs and question banks), with a per-item "Update" pull when the seller has
+ * published a newer version.
+ *
+ * Exports: PurchasesScreen (named and default).
+ * Touches: fetchMarketplacePurchases, downloadStudyPack and
+ * downloadQuestionBank in ../../services/api; navigates to `ListingDetail`.
+ *
+ * Gotchas: a successful update patches the row locally
+ * (versionAtDownload = version) rather than refetching, and a failed update is
+ * swallowed — the row simply stays marked update-available. A failed load also
+ * renders as an empty library, which reads as "no purchases".
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { ShopHeaderActions } from './components/ShopHeaderActions';
 import { ActivityIndicator, FlatList, Pressable, Text, View } from 'react-native';

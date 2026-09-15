@@ -18,7 +18,7 @@ import {
   featureAccentsLight,
   tileSceneForTool,
 } from '@lantern/shared/design';
-import { tileSceneFills, tileSceneSvgProps } from './tileSceneFills';
+import { homeDoorScene, tileSceneFills, tileSceneSvgProps } from './tileSceneFills';
 import { doorTileLayout } from './doorTileLayout';
 import { SET_ROOM_TILE_ORDER } from '../study/setRoomSections';
 import { STUDY_SET_RECOMMENDED_CARDS } from '@lantern/shared/learning';
@@ -164,5 +164,61 @@ describe('the Overview recommendation tiles', () => {
       expect(TILE_SCENE_NAMES).toContain(scene);
       expect(TILE_SCENES[scene].paths.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("Home's doors and the set room's tiles draw the same picture", () => {
+  // 1.0.60 smoke, light mode: Home's `Record a lecture` drew a PURE WHITE
+  // sheet on the butter panel while the set room's `Lectures` tile drew the
+  // same sheet in the shade. Not two fill rules — Home was not on the scene
+  // path at all. Its door handed the panel a portrait `Illustration`, whose
+  // ground ellipse is either the tile's own tint (invisible) or the surface
+  // (`#ffffff`). This pins the two call sites onto one lookup, so a Home door
+  // and a room tile for the same tool cannot drift again.
+  const HOME_TO_ROOM_TOOL: Record<string, string> = {
+    recordLecture: 'lecture',
+    import: 'import',
+  };
+
+  it('gives a Home door the scene its room tile uses', () => {
+    for (const [doorId, toolId] of Object.entries(HOME_TO_ROOM_TOOL)) {
+      const scene = homeDoorScene(doorId);
+      expect(scene).toBeDefined();
+      expect(scene).toBe(tileSceneForTool(toolId));
+    }
+    // The lectures door specifically, because that is the one that shipped
+    // wrong: door and tile land on the SAME asset, not two of a kind.
+    expect(homeDoorScene('recordLecture')).toBe('lectures');
+  });
+
+  it('draws no scene for a door that has none, rather than guessing one', () => {
+    expect(homeDoorScene('openStudy')).toBeUndefined();
+    expect(homeDoorScene('not-a-door')).toBeUndefined();
+  });
+
+  it('derives identical fills for the same feature in both themes', () => {
+    // `DoorTile` and `SetRoomTile` both hand `TileScene` a scene and a
+    // feature and nothing else, so "identical fills" is this one call made
+    // twice. Asserted per theme, and `recording` is named because it is the
+    // feature that failed: butter tint, olive ink.
+    for (const palette of [
+      { accents: featureAccentsLight, surface: '#ffffff' },
+      { accents: featureAccentsDark, surface: '#101214' },
+    ]) {
+      const accent = palette.accents.recording;
+      const door = tileSceneFills({ ...accent, surface: palette.surface });
+      const roomTile = tileSceneFills({ ...accent, surface: palette.surface });
+      expect(door).toEqual(roomTile);
+      // The bug, stated as a rule: the shadow is NOT the body colour. A
+      // `shade` equal to `fill` is the white-sheet-on-butter regression.
+      expect(door.shade).not.toBe(door.fill);
+      expect(door.fill).toBe(palette.surface);
+      expect(door.shade).not.toBe(accent.tint);
+    }
+    // The exact colour the room tile shipped, so the fix is pinned to what
+    // was verified on device rather than to the formula alone.
+    expect(
+      tileSceneFills({ ...featureAccentsLight.recording, surface: '#ffffff' }).shade
+    ).toBe('#d0c862');
   });
 });

@@ -1,3 +1,12 @@
+/**
+ * Barrel for the mobile marketplace screens: Shop (listings, cart, checkout,
+ * orders, seller tools), study products, and the Jobs section that shares this
+ * folder. The app navigator imports screens from here rather than by file.
+ *
+ * Exports: every *Screen in this directory. ShopBrowseScreen and
+ * ShopAccountScreen are re-exported with `export *`, so their helper exports
+ * come along too.
+ */
 export { MarketplaceScreen } from './MarketplaceScreen';
 
 export { ListingDetailScreen } from './ListingDetailScreen';

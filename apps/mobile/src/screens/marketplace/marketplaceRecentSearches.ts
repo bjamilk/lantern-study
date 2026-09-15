@@ -1,3 +1,16 @@
+/**
+ * Device-local recent Shop search queries, rendered as one-tap chips under the
+ * search box.
+ *
+ * Exports: addRecentMarketplaceSearch, getRecentMarketplaceSearches,
+ * clearRecentMarketplaceSearches.
+ * Touches: AsyncStorage key `lantern_marketplace_recent_searches`; newest
+ * first, case-insensitively deduped, capped at MAX_RECENT (8).
+ *
+ * Gotchas: queries shorter than two characters are dropped silently, and all
+ * failures are swallowed. The key carries no user id, so history survives an
+ * account switch on the same device.
+ */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const RECENT_SEARCHES_KEY = 'lantern_marketplace_recent_searches';

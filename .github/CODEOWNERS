@@ -1,0 +1,39 @@
+# Code owners for Lantern Study.
+#
+# GitHub uses the LAST matching line, so the catch-all comes first and the
+# sharper rules below it win. While @bjamilk is the only account with write
+# access every line resolves to the same person — the per-area lines are
+# placeholders kept ready for the second engineer, so onboarding is one edit
+# rather than an argument about who reviews what.
+#
+# CODEOWNERS only forces review when branch protection says "Require review
+# from Code Owners", which needs GitHub Pro or an organisation. Until then this
+# file documents ownership and shows up as a reviewer suggestion.
+# See docs/PIPELINE.md § Branch protection.
+
+*                               @bjamilk
+
+# Schema. Applied by hand against the linked Supabase project; a bad file here
+# cannot be rolled back by reverting the commit.
+/supabase/migrations/           @bjamilk
+
+# The pipeline itself, and anything that can reach production.
+/.github/                       @bjamilk
+/render.yaml                    @bjamilk
+/render.scale.yaml              @bjamilk
+/scripts/check-secrets.sh       @bjamilk
+/scripts/check-migrations.mjs   @bjamilk
+/scripts/check-merge-provenance.mjs @bjamilk
+
+# Money. Payment, payout and fee logic.
+/apps/api-server/src/services/marketplacePayments.ts @bjamilk
+/apps/api-server/src/services/paystack*              @bjamilk
+
+# Auth and security middleware.
+/apps/api-server/src/middleware/ @bjamilk
+
+# App surfaces.
+/apps/api-server/               @bjamilk
+/apps/web/                      @bjamilk
+/apps/mobile/                   @bjamilk
+/packages/shared/               @bjamilk

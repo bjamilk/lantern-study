@@ -1,5 +1,5 @@
 import { getAuthHeaders, getApiRoot, withApiCredentials } from './supabase';
-import { handleApiAuthFailure } from './sessionHandler';
+import { attemptSilentSessionRefresh } from './sessionHandler';
 
 /** Gate for the presence heartbeat effect — must match lifecycle/gamification auth readiness. */
 export function shouldRunPresenceHeartbeat(opts: {
@@ -42,6 +42,14 @@ export function getStudyIntent(): StudyIntent | null {
  * POST presence heartbeat.
  * Returns false when there is no bearer token or an unrecovered 401/403
  * (caller should stop the interval so we don't spam Unauthorized).
+ *
+ * FIXED (SW) [Sentry WEB-17]: this beat must NEVER end a session. It used to
+ * call `handleApiAuthFailure`, which signs the user out when the refresh it
+ * runs does not succeed — so an "online status" ping every two minutes was one
+ * failed refresh away from logging a student out mid-note. A 401 here now
+ * schedules exactly ONE silent refresh (shared with every other caller) and,
+ * whatever the answer, only stops the interval. The next real API call is what
+ * decides whether the session is actually over.
  */
 export async function sendPresenceHeartbeat(): Promise<boolean> {
   try {
@@ -64,14 +72,14 @@ export async function sendPresenceHeartbeat(): Promise<boolean> {
     let response = await doFetch();
     if (!response) return false;
 
-    if (response.status === 401 || response.status === 403) {
-      if (await handleApiAuthFailure(response.status)) {
-        response = await doFetch();
-        if (!response) return false;
-        if (response.status === 401 || response.status === 403) return false;
-      } else {
-        return false;
-      }
+    if (response.status === 403) return false;
+
+    if (response.status === 401) {
+      // ONE refresh attempt, no sign-out, no second 401 chased.
+      const refreshed = await attemptSilentSessionRefresh();
+      if (!refreshed) return false;
+      response = await doFetch();
+      if (!response || response.status === 401 || response.status === 403) return false;
     }
 
     return true;

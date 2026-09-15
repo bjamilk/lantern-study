@@ -10,7 +10,28 @@
  * Two consumers share this module so they cannot disagree:
  *   - `contrast.test.ts` (jest, in this package) checks the TOKENS;
  *   - `scripts/design/contrast.mjs` checks what `index.css` actually ships
- *     and diffs it against the tokens.
+ *
+ * CONSUMERS: `./contrast.test.ts` (jest, this package) checks the TOKENS;
+ * `scripts/design/contrast.mjs` (root script `npm run design:contrast`) checks
+ * what `index.css` actually ships and diffs it against the tokens; and
+ * `../settings/appearanceEffects.ts` uses the `ensure*` helpers at runtime to
+ * keep a student-chosen accent legible. Not used by the api.
+ *
+ * TWO KINDS OF FUNCTION HERE, AND THEY ARE NOT THE SAME:
+ *   - MEASURE (relativeLuminance, contrastRatio, allContrastChecks,
+ *     failingChecks) — used by the gates; they report, they do not change.
+ *   - REPAIR (ensureTextContrastOn, ensureFillContrast, ensureAaPair) — used at
+ *     runtime; they DARKEN OR LIGHTEN a colour until it passes. Repair is for
+ *     colours a student picked, which we cannot check at build time. Do not
+ *     reach for repair to paper over a token that fails the gate — fix the
+ *     token.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT (`npm run build` first). A new
+ * subpath needs a package.json "exports" entry and an api tsconfig "paths"
+ * entry; mobile jest maps `@lantern/shared/*` subpaths separately. The web
+ * turbo build enforces strict `noUncheckedIndexedAccess`. AA_NORMAL (4.5) is
+ * the default because most Lantern text is small; AA_LARGE (3) applies only to
+ * genuinely large text and to non-text UI.
  */
 
 import {
@@ -32,6 +53,10 @@ function srgbToLinear(channel: number): number {
 }
 
 /** '#0f766e' | '#f0a' -> [r, g, b]; an 8-digit hex keeps only its RGB. */
+// ---------------------------------------------------------------------------
+// Measurement primitives
+// ---------------------------------------------------------------------------
+
 export function parseHex(hex: string): [number, number, number] {
   const raw = hex.trim().replace('#', '');
   const full =
@@ -132,6 +157,12 @@ function check(subject: string, ground: string, fg: string, bg: string): Contras
  * reading surface. Palette text tokens are checked on the page ground and the
  * card surface.
  */
+// ---------------------------------------------------------------------------
+// The gate: every ink against every ground it is painted on
+// ---------------------------------------------------------------------------
+// This is what the tests and the CI script enumerate. A new token that is ever
+// used as text must appear in TEXT_PALETTE_KEYS or it is silently unchecked.
+
 export function allContrastChecks(): ContrastCheck[] {
   const out: ContrastCheck[] = [];
 
@@ -278,6 +309,13 @@ function hexFromRgb(r: number, g: number, b: number): string {
  * an ink against the raw hex ignores the surface showing through and
  * overstates the ratio; this is the compositing the eye does.
  */
+// ---------------------------------------------------------------------------
+// Runtime repair
+// ---------------------------------------------------------------------------
+// For colours we cannot check at build time — chiefly the accent a student
+// chooses in Settings. These walk a colour toward the required ratio rather
+// than rejecting the student's choice outright.
+
 export function compositeOver(fg: string, base: string): string {
   const raw = fg.trim().replace('#', '');
   const alpha = raw.length === 8 ? parseInt(raw.slice(6, 8), 16) / 255 : 1;

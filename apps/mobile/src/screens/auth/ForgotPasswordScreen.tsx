@@ -1,3 +1,12 @@
+/**
+ * Auth stack -> ForgotPassword. Takes an email address and asks Supabase to
+ * send a password-reset link, then offers a cooldown-gated resend.
+ *
+ * Exports: ForgotPasswordScreen (named).
+ * Touches: services/supabase resetPassword(); RESEND_COOLDOWN_SECONDS from
+ * @lantern/shared; useCookieNoticeBottomInset so the first-run cookie overlay
+ * does not cover the footer buttons. No store writes: all state is local.
+ */
 import { COMPOSER_KEYBOARD_BEHAVIOR } from '../../components/chat/composerKeyboardBehavior';
 import React, { useEffect, useState } from 'react';
 import {

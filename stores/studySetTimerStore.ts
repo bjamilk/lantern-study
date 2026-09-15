@@ -21,6 +21,31 @@
  *
  * Keyed BY SET, like the phone's: one shared clock would mean starting a
  * session in Pharmacology and finding Anatomy already half spent.
+ *
+ * Exports: `useStudySetTimerStore` (`timers` keyed by set id; `toggle`,
+ * `start`, `reset`), the stable `selectStudySetTimer(setId)` selector factory,
+ * the pure helpers (`createStudyTimer`, `isStudyTimerRunning`,
+ * `studyTimerRemaining`, `isStudyTimerExpired`, `toggleStudyTimer`,
+ * `resetStudyTimer`, `formatStudyTimer`, `studyTimerAccessibilityLabel`,
+ * `pruneStudyTimers`, `clearExpiredStudyTimers`) and the constants
+ * (`STUDY_TIMER_DEFAULT_SECONDS`, `DEFAULT_STUDY_TIMER_KEY`,
+ * `STUDY_TIMER_PRESET_MINUTES`, `IDLE_STUDY_TIMER`).
+ *
+ * Touches: zustand `persist` over localStorage key `lantern-study-set-timers`,
+ * through a storage shim that degrades to an in-memory Map where localStorage
+ * is absent or blocked. No network, no other store.
+ *
+ * Gotchas:
+ *  - The key is not user-scoped and there is no purge action, so a sign-out
+ *    leaves the previous student's running clocks for the next account.
+ *  - Never store a countdown. State is `baseSeconds` + `startedAtMs`, and
+ *    "remaining" is derived from `Date.now()` — the whole reason it is safe to
+ *    persist. The clock is wall-clock, so a device time change moves it.
+ *  - Read a set's timer through `selectStudySetTimer`, which falls back to the
+ *    frozen shared `IDLE_STUDY_TIMER`. Calling `createStudyTimer()` inside a
+ *    selector returns a new object each render and re-renders forever.
+ *  - `merge` retires runs that expired while the tab was closed, so "Time's up"
+ *    is only ever shown about a run someone was present for.
  */
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';

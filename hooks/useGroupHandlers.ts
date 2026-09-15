@@ -1,3 +1,34 @@
+/**
+ * Chat + group handler barrel for the web app: chat selection and message loading, group and
+ * DM sending with optimistic reconciliation, message edit/remove, question submission and
+ * voting, group CRUD and membership/admin management, and the notification list handlers.
+ *
+ * Exports: useGroupHandlers({ users }) — the handler bundle App.tsx spreads into the chat
+ *  screens, plus `unreadAnchorAt` (where to draw the "new messages" divider) and
+ *  `addNotification` (reused by the test/game handler barrels).
+ * Touches: authStore, groupStore (groups, messages, dmThreads, directMessages, userVotes,
+ *  notifications, dmHistoryClearedAtByThread), uiStore (selectedChat, modals, appMode);
+ *  services/supabase for groups, messages, DMs, votes, invites, admin and notification
+ *  endpoints; confirmStore and toastStore for user-facing prompts.
+ * Gotchas:
+ *  - Refresh merges use `mergeChatMessagesById(cached, serverList)`, which is incoming-wins
+ *    and therefore SERVER-WINS only in that argument order; it keeps local-only (pending)
+ *    rows. Swapping the arguments lets the cache clobber fresh server rows.
+ *  - Optimistic sends are keyed by a clientMessageId minted through a DeliveryIntentRegistry,
+ *    so a retry of the same text reuses the same id and the server can dedupe. On failure the
+ *    error is classified: an UNCERTAIN delivery error keeps the intent (markUncertain) so a
+ *    retry cannot double-post; any other error clears it.
+ *  - Module-level `sendingGroupIds` / `sendingThreadIds` / `submittingQuestionGroupIds` /
+ *    `votingMessageIds` are in-flight guards shared across every mount of this hook. The two
+ *    SEND locks THROW `MessageSendBusyError` when held (exported here) — they must never
+ *    return silently, because the composer clears its text before awaiting and restores it
+ *    only from a rejection (E3 H16).
+ *  - Fetches are sequence-guarded (`groupMessagesFetchSeqRef`, `dmFetchSeqRef`) and
+ *    re-checked against the live selectedChat, so a slow response for a chat the user has
+ *    left never writes into the chat now on screen.
+ *  - Questions are messages: `type` is MessageType.QUESTION and the real kind lives in
+ *    `questionType`.
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, QuestionStatus, ChatItem, MatchingItem, DiagramLabel } from '../types';
@@ -19,6 +50,7 @@ import {
     isUncertainDeliveryError,
     reconcileDeliveredItem,
 } from '@lantern/shared/utils';
+import { mapGroupMemberRow, mapGroupRow, mapGroupRows } from '@lantern/shared/groups';
 import { BADGE_DEFINITIONS } from '../gamification';
 import {
     createGroup, fetchGroups, fetchGroupMembers, addGroupMember, addGroupMembersBatch,
@@ -40,9 +72,26 @@ import { useToastStore } from '../stores/toastStore';
 import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
+import { mergeFetchedGroups } from '../utils/groupListMerge';
 
+// Module-level (not per-mount) in-flight guards: a remount must not let the same send,
+// question submit or vote fire twice. The two DeliveryIntentRegistry instances hold the
+// clientMessageId minted for each distinct payload so a retry reuses it instead of posting
+// a second copy.
 const sendingGroupIds = new Set<string>();
 const sendingThreadIds = new Set<string>();
+
+/**
+ * Thrown when a send is refused because one is already in flight for the same
+ * group or DM thread (E3 H16). The composer catches it, restores the text the
+ * student typed and shows this sentence — silence used to eat the message.
+ */
+export class MessageSendBusyError extends Error {
+    constructor(message = 'Still sending your last message — your text was kept, try again in a moment.') {
+        super(message);
+        this.name = 'MessageSendBusyError';
+    }
+}
 const submittingQuestionGroupIds = new Set<string>();
 const votingMessageIds = new Set<string>();
 const groupDeliveryIntents = new DeliveryIntentRegistry();
@@ -52,19 +101,16 @@ interface UseGroupHandlersParams {
     users: User[];
 }
 
-function mapApiGroupMembers(fetchedMembers: any[]): User[] {
-    return (fetchedMembers || []).map((m: any) => ({
-        id: m.id,
-        name: m.name,
-        username: m.username,
-        email: m.email,
-        avatarUrl: m.avatar_url || m.avatarUrl,
-        points: m.points || 0,
-        badges: m.badges || [],
-        stats: m.stats || {},
-    }));
+// ── Normalisers ───────────────────────────────────────────────────────────────
+// Roster rows come back in mixed camel/snake case depending on the endpoint —
+// `mapGroupMemberRow` (@lantern/shared/groups) owns that, and the same call
+// runs on mobile.
+function mapApiGroupMembers(fetchedMembers: any[], adminIds: readonly string[] = []): User[] {
+    return (fetchedMembers || []).map((m: any) => mapGroupMemberRow(m, adminIds));
 }
 
+// Maps a page of API messages, dropping (not throwing on) any row mapMessageFromApi rejects
+// — one malformed message must not blank the whole conversation.
 function normalizeFetchedMessages(raw: unknown): Message[] {
     const list = Array.isArray(raw) ? raw : [];
     return list
@@ -79,6 +125,9 @@ function normalizeFetchedMessages(raw: unknown): Message[] {
         .filter((message): message is Message => message != null);
 }
 
+// DM normaliser. Reads every field in both cases, unwraps the sender whether it arrives as
+// `sender`, `profiles`, or a one-element array, and blanks the text of a removed message so
+// no client can render deleted content from a cached payload.
 function mapDirectMessageFromApi(raw: any, threadId: string): DirectMessage {
     const sender = raw.sender || raw.profiles || null;
     const senderObj = Array.isArray(sender) ? sender[0] : sender;
@@ -114,7 +163,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const markedReadChatIdRef = useRef<string | null>(null);
     const { currentUser, setCurrentUser } = useAuthStore();
     const {
-        groups, setGroups, updateGroups,
+        groups, updateGroups,
         messages, updateMessages,
         dmThreads, updateDmThreads,
         directMessages, updateDirectMessages,
@@ -130,6 +179,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         lowDataMode
     } = useUIStore();
 
+    // ── Notifications ─────────────────────────────────────────────────────────
+    // Creates an untyped notification for the current user and appends it locally so it shows
+    // without waiting for the Realtime INSERT. Swallows failures — a notification that could
+    // not be written must never fail the action that triggered it.
     const addNotification = useCallback(async (message: string) => {
         if (!currentUser) return;
         try {
@@ -151,6 +204,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
      * stays where it is; the caller navigates to the community's channel URL.
      * Without it, selecting anything closes the community column and goes to
      * the chat screen, as it always has.
+     *
+     * Selecting a GROUP kicks off votes + roster fetches; mark-as-read is deliberately NOT
+     * done here (the selectedChat effect below owns it, so deep links and list taps take one
+     * path). Selecting a DM marks it read and loads history, sequence-guarded via
+     * dmFetchSeqRef and re-checked against the live selectedChat before writing.
      */
     const handleSelectChat = useCallback((chat: ChatItem, options?: { keepSurface?: boolean }) => {
         setSelectedChat(chat);
@@ -223,6 +281,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, []);
 
     // Clear unread anchor when leaving or switching chats so the next open re-anchors.
+    // Re-runs on selectedChat.id / .chatType; markedReadChatIdRef is what stops a re-render
+    // of the SAME chat from re-marking it read and losing the "new messages" divider.
     useEffect(() => {
         if (!selectedChat) {
             markedReadChatIdRef.current = null;
@@ -235,11 +295,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, [selectedChat?.id, selectedChat?.chatType]);
 
     // Load messages when a chat is selected (covers deep links / refresh, not only list taps).
+    // Re-runs on selectedChat.id / .chatType / currentUser.id / lowDataMode (lowDataMode
+    // changes the page size). This is the single mark-as-read + unread-anchor path.
     useEffect(() => {
         if (!selectedChat || !currentUser) return;
 
         let cancelled = false;
 
+        // A deep link can land before session bootstrap finishes, so poll for a usable token
+        // (24 x 250 ms) plus one late retry rather than failing the load outright. Giving up
+        // is silent and non-destructive — the next selection or tab focus retries.
         const waitForAuthToken = async (): Promise<boolean> => {
             for (let attempt = 0; attempt < 24; attempt += 1) {
                 if (cancelled) return false;
@@ -323,6 +388,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         });
                 }
 
+                // Peer resolution, three fallbacks deep: the selection's own participantIds,
+                // then the store's thread row, then the composite thread id itself
+                // (`<idA>-<idB>`) for the case where the threads list has not loaded yet.
+                // If all three fail, refresh the threads list and retry the fetch once.
                 const threadFromStore = useGroupStore.getState().dmThreads.find((t) => t.id === threadId);
                 const participantIds =
                     (Array.isArray((selectedChat as DMThread).participantIds) &&
@@ -341,6 +410,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
                 if (otherUserId) {
                     const requestId = ++dmFetchSeqRef.current;
+                    // One retry after 400 ms: a DM fetch racing session bootstrap fails once
+                    // and succeeds on the second attempt. A second failure is only logged —
+                    // the cached thread stays on screen rather than being blanked.
                     const loadMessages = async () => {
                         try {
                             return await fetchDirectMessages(currentUser.id, otherUserId!);
@@ -411,6 +483,12 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         };
     }, [selectedChat?.id, selectedChat?.chatType, currentUser?.id, lowDataMode, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages]);
 
+    // ── DM threads ────────────────────────────────────────────────────────────
+    // Opens (or invents) a conversation with another user. The thread id is the two user ids
+    // sorted and joined, so both sides derive the same id without a round trip. A thread that
+    // does not exist yet is created LOCALLY with clientPending: true — the server row is not
+    // written until the first message is sent. The peer profile is looked up in three places
+    // (users list, group rosters, then a profile fetch) before giving up.
     const handleInitiateDm = useCallback(async (otherUserId: string) => {
         if (!currentUser || !otherUserId || otherUserId === currentUser.id) return;
 
@@ -473,13 +551,22 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, dmThreads, users, groups, updateDmThreads, handleSelectChat]);
 
+    // DM send. Order: guard the thread against a concurrent send, resolve the thread (store
+    // first, then the live selection, so a clientPending thread can still be sent to), mint a
+    // clientMessageId from the delivery registry keyed on {text, replyTo}, append the
+    // optimistic bubble (bumping the thread-root reply count), patch the thread preview, then
+    // POST. On success reconcileDeliveredItem swaps the optimistic row for the confirmed one
+    // by clientMessageId; the threads and history refetches that follow are background-only
+    // so the composer is never blocked.
     const handleSendDm = useCallback(async (
         threadId: string,
         text: string,
         options?: { replyToMessageId?: string }
     ) => {
         if (!currentUser) return;
-        if (sendingThreadIds.has(threadId)) return;
+        // FIXED (F1) [E3 H16, high]: same silent-discard bug as the group path — the DM
+        // composer clears its text before awaiting, so a busy return lost it.
+        if (sendingThreadIds.has(threadId)) throw new MessageSendBusyError();
         sendingThreadIds.add(threadId);
 
         const selected = useUIStore.getState().selectedChat;
@@ -642,6 +729,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                     console.warn('[DM] Failed to refresh messages after send:', err);
                 });
         } catch (error) {
+            // Error classes: an UNCERTAIN delivery error (the request may have landed —
+            // timeout, aborted fetch) keeps the intent so a retry reuses the same
+            // clientMessageId and the server dedupes it; any definite failure clears it so a
+            // retry mints a fresh id.
+            // FIXED (F9): both branches delete the optimistic bubble, and this
+            // handler used to SWALLOW the error behind an alert(). The composer
+            // clears `inputText` before awaiting and restores it only in its
+            // catch, so a transient network failure lost the typed message
+            // entirely — nothing on screen, nothing to retry from. The error is
+            // now rethrown after the rollback, which is the same contract the
+            // busy lock already uses (MessageSendBusyError, F1): the composer
+            // puts the text and the attached photo back and shows the reason.
+            // The alert is gone with it — the composer states the failure.
             console.error('Failed to send DM:', error);
             if (isUncertainDeliveryError(error)) {
                 dmDeliveryIntents.markUncertain(
@@ -656,13 +756,17 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 ...prev,
                 [threadId]: (prev[threadId] || []).filter(m => m.id !== optimisticMessage.id),
             }));
-            const message = error instanceof Error ? error.message : 'Failed to send direct message';
-            alert(message);
+            throw error instanceof Error
+                ? error
+                : new Error('Failed to send direct message');
         } finally {
             sendingThreadIds.delete(threadId);
         }
     }, [currentUser, dmThreads, updateDirectMessages, updateDmThreads, setSelectedChat]);
 
+    // Local-only projection of a message-request decision (open/pending/declined) that the
+    // request UI has already persisted; patches both the list row and the open selection so
+    // the banner updates without a refetch.
     const handleDmThreadStatusChange = useCallback(
         (
             threadId: string,
@@ -693,6 +797,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         [updateDmThreads, setSelectedChat]
     );
 
+    // ── Message edit / remove ─────────────────────────────────────────────────
+    // Applies an already-persisted edit/removal to local state for either chat kind. Besides
+    // patching the message itself it rewrites every reply PREVIEW that quotes it (so an edit
+    // or deletion propagates into quoted bubbles) and re-derives the conversation preview
+    // from the newest still-visible message, skipping removed and archived ones.
     const applyChatMutation = useCallback((
         chat: ChatItem,
         payload: ChatMessageMutationPayload
@@ -773,6 +882,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         ));
     }, [updateDirectMessages, updateDmThreads, updateGroups, updateMessages]);
 
+    // Edit and remove are server-first (no optimistic write) and rethrow, so the composer /
+    // menu can surface the failure; the chat kind is read from the LIVE selection.
     const handleEditChatMessage = useCallback(async (
         messageId: string,
         content: string
@@ -796,6 +907,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         return payload;
     }, [applyChatMutation]);
 
+    // Delete / archive / unarchive a thread: all three are optimistic-first (store mutated
+    // immediately), then persisted; a server failure is reported by toast but NOT rolled
+    // back, so the list can disagree with the server until the next threads refresh.
     const handleDeleteDmThread = useCallback(async (threadId: string) => {
         if (!currentUser) return;
         const { removeDmThread, markDmHistoryCleared } = useGroupStore.getState();
@@ -869,6 +983,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         setSubgroupParentId(undefined);
     }, [closeModal, setSubgroupParentId]);
 
+    // ── Group creation ────────────────────────────────────────────────────────
+    // Subgroup: created with no members (the creator only), appended locally and opened right
+    // away; the emails string is kept as `memberEmails` for the invite UI, not sent as members.
     const handleCreateSubGroup = useCallback(async (name: string, description: string, memberEmailsStr: string, parentId?: string, courseId?: string | null) => {
         if (!currentUser) return;
       
@@ -911,6 +1028,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, updateGroups, handleSelectChat, updateMessages, handleCloseCreateGroupModal]);
 
+    // Full group creation. Avatar upload is best-effort and never fails the create (the group
+    // already exists by then). Afterwards the whole groups list is refetched and remapped —
+    // field-for-field the same mapping as the bootstrap and membership-realtime paths — and
+    // navigation is DEFERRED into pendingCreatedGroupRef so the create screen can show its
+    // invite-link step before handleEnterCreatedGroup opens the chat.
     const handleCreateGroup = useCallback(async (details: { name: string; description: string; avatarFile: File | null; memberIds: string[]; permissions: GroupPermissions; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null; communitySurface?: 'board' | 'study_group' }) => {
         if (!currentUser) return;
 
@@ -959,26 +1081,15 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
             const mappedMembers = mapApiGroupMembers(fetchedMembers);
 
+            // The row → `Group` mapping is `mapGroupRows` (@lantern/shared/groups);
+            // only the merge with local state (unread, pending members, an
+            // already-loaded roster) belongs here.
             updateGroups((prev) => {
                 const prevById = new Map(prev.map((g) => [g.id, g]));
-                return fetchedGroups.map((g: any) => {
+                return mapGroupRows(fetchedGroups).map((g) => {
                     const existing = prevById.get(g.id);
                     return {
-                        id: g.id,
-                        name: g.name,
-                        avatarUrl: g.avatar_url || g.avatarUrl,
-                        description: g.description,
-                        lastMessage: g.last_message || g.lastMessage,
-                        lastMessageTime: g.last_message_time || g.lastMessageTime,
-                        adminIds: g.admin_ids || g.adminIds || [],
-                        permissions: g.permissions || {},
-                        parentId: g.parent_id || g.parentId,
-                        isArchived: g.is_archived ?? g.isArchived ?? false,
-                        inviteId: g.invite_id || g.inviteId,
-                        courseId: g.courseId ?? g.course_id ?? null,
-                        visibility: g.visibility || 'private',
-                        communityId: g.communityId ?? g.community_id ?? null,
-                        communitySurface: g.communitySurface ?? g.community_surface ?? null,
+                        ...g,
                         unreadCount: existing?.unreadCount || 0,
                         pendingMembers: existing?.pendingMembers || [],
                         invitedPhoneNumbers: existing?.invitedPhoneNumbers || [],
@@ -989,23 +1100,20 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 });
             });
             
+            // What the creator just asked for is the fallback for anything the
+            // create response omits (a pre-migration server answers without
+            // `community_surface`, and the row is written before we see it).
             const mappedNewGroup = {
-                id: newGroup.id,
-                name: newGroup.name,
-                avatarUrl: newGroup.avatar_url || newGroup.avatarUrl,
-                description: newGroup.description,
-                lastMessage: newGroup.last_message || newGroup.lastMessage,
-                lastMessageTime: newGroup.last_message_time || newGroup.lastMessageTime,
-                adminIds: newGroup.admin_ids || newGroup.adminIds || [currentUser.id],
-                permissions: newGroup.permissions,
-                parentId: newGroup.parent_id || newGroup.parentId,
-                isArchived: newGroup.is_archived || newGroup.isArchived || false,
-                inviteId: newGroup.invite_id || newGroup.inviteId,
-                courseId: newGroup.courseId ?? newGroup.course_id ?? details.courseId ?? null,
-                visibility: newGroup.visibility || details.visibility || 'private',
-                communityId: newGroup.communityId ?? newGroup.community_id ?? details.communityId ?? null,
-                communitySurface:
-                    newGroup.communitySurface ?? newGroup.community_surface ?? details.communitySurface ?? null,
+                ...mapGroupRow(newGroup, {
+                    viewerId: currentUser.id,
+                    fallback: {
+                        adminIds: [currentUser.id],
+                        courseId: details.courseId ?? null,
+                        visibility: details.visibility,
+                        communityId: details.communityId ?? null,
+                        communitySurface: details.communitySurface ?? null,
+                    },
+                }),
                 unreadCount: 0,
                 pendingMembers: [],
                 invitedPhoneNumbers: [],
@@ -1017,6 +1125,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             updateMessages(prev => ({ ...prev, [newGroup.id]: [] }));
             pendingCreatedGroupRef.current = mappedNewGroup;
 
+            // Gamification is server-owned: syncGamificationProgress returns the authoritative
+            // points/badges/stats and any newly awarded badges to announce. `updatedStats`
+            // below is a leftover local projection and is not used.
             if (currentUser) {
                 const updatedStats = {
                     ...currentUser.stats,
@@ -1052,6 +1163,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, setCurrentUser, updateGroups, updateMessages, addNotification]);
 
+    // Second half of the deferred navigation: prefers the fully-mapped group stashed by
+    // handleCreateGroup, and falls back to a minimal shell if the ref was already consumed
+    // (e.g. a reload between the two steps).
     const handleEnterCreatedGroup = useCallback((summary: { id: string; name: string; inviteId: string }) => {
         const pending = pendingCreatedGroupRef.current;
         const group =
@@ -1073,6 +1187,13 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         setAppMode(AppMode.CHAT);
     }, [currentUser, handleSelectChat, setAppMode]);
 
+    // ── Questions ─────────────────────────────────────────────────────────────
+    // Posts a question as a chat message. A question is a Message whose `type` is
+    // MessageType.QUESTION; the actual kind (MCQ, matching, diagram, …) rides in
+    // `questionType` and every downstream reader must use that field, not `type`.
+    // Before sending, the group's loaded messages are scanned for a case-insensitive stem
+    // match — a hit diverts to the duplicate modal instead of posting. Unlike text sends this
+    // is server-first (no optimistic bubble); the delivery intent still guards a retry.
     const handleQuestionSubmit = useCallback(async (
         stem: string, 
         explanation: string, 
@@ -1203,6 +1324,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, selectedChat, messages, updateMessages, setCurrentUser, openModal, closeModal, setDuplicateInfo, addNotification]);
 
+    // ── Read receipts ─────────────────────────────────────────────────────────
+    // Applies a peer's read watermark to the messages THIS user sent in the open chat.
+    // DMs are exact (one peer, so the watermark decides sent/read). Groups have no per-user
+    // seen set, so the count is advanced by one peer per watermark, capped at the roster size
+    // minus self — a best-effort approximation, not an exact seen-by list.
     const onPeerChatRead = useCallback((payload: { userId: string; lastReadAt: string }) => {
         const chat = useUIStore.getState().selectedChat;
         if (!chat || !currentUser) return;
@@ -1258,6 +1384,12 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         });
     }, [currentUser, groups, updateDirectMessages, updateMessages]);
 
+    // ── Text send ─────────────────────────────────────────────────────────────
+    // Group path: snapshot the previous preview for rollback, mint/reuse the optimistic id
+    // from the delivery registry (fingerprinted on text + replyTo + mentions), append the
+    // bubble and bump the sidebar preview, then POST. On success the optimistic row is
+    // replaced via reconcileDeliveredItem, keeping the local sender when the API response
+    // omits the joined profile. DM path just delegates to handleSendDm.
     const onSendMessage = useCallback(async (
         text: string,
         options?: { replyToMessageId?: string; mentionedUserIds?: string[] }
@@ -1265,7 +1397,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         if (!currentUser || !selectedChat) return;
 
         if (selectedChat.chatType === 'group') {
-            if (sendingGroupIds.has(selectedChat.id)) return;
+            // Per-group send lock, held for the whole optimistic-send round trip.
+            // FIXED (F1) [E3 H16, high]: the lock now THROWS MessageSendBusyError
+            // instead of returning silently. MessageInputBar clears the composer text
+            // before awaiting and restores it in `catch`, and ChatWindow binds two
+            // composers (main + thread) to this one handler — so the silent return used
+            // to discard typed text outright when a send from the thread raced a main
+            // send: no message, no error, no restore. Throwing restores the text and
+            // shows the reason. (Keying the lock per client message id instead of per
+            // group is still the better shape and is deliberately NOT done here.)
+            if (sendingGroupIds.has(selectedChat.id)) throw new MessageSendBusyError();
             sendingGroupIds.add(selectedChat.id);
 
             const groupBefore = groups.find(g => g.id === selectedChat.id);
@@ -1279,10 +1420,17 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                 replyToMessageId: options?.replyToMessageId || null,
                 mentionedUserIds: [...(options?.mentionedUserIds || [])].sort(),
             });
+            // FIXED (F1) [E3 M3, medium]: the id factory is now
+            // `createOptimisticClientMessageId` (temp- prefix), matching the DM path.
+            // Every merge path recognises a local row by `isTempMessageId`, so the old
+            // bare `uuidv4` produced optimistic rows indistinguishable from server rows:
+            // mergeChatMessagesById kept them, and a lost or raced send confirmation left
+            // a PERMANENT duplicate. See the matching paging fix in
+            // handleLoadMoreMessages, which now filters with isTempMessageId.
             const optimisticId = groupDeliveryIntents.resolve(
                 deliveryScope,
                 deliveryFingerprint,
-                uuidv4
+                () => createOptimisticClientMessageId(uuidv4)
             );
             const existingGroupMsgs = useGroupStore.getState().messages[selectedChat.id] || [];
             const parent = options?.replyToMessageId
@@ -1380,6 +1528,16 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
 
                 // Group message notifications are created server-side after the message is persisted.
             } catch (error) {
+                // Same error split as the DM path: uncertain delivery keeps the intent so a
+                // retry reuses the id; anything else clears it. The sidebar preview is rolled
+                // back to the pre-send values captured above.
+                // FIXED (F9): the optimistic message is deleted, and the only
+                // signal used to be a notification — the handler swallowed the
+                // error, so the composer (which clears its box before awaiting
+                // and restores only in `catch`) lost the typed text with no
+                // failed bubble to retry from. The error is rethrown after the
+                // rollback, the same contract the busy lock uses; the composer
+                // restores the text and the photo and shows the reason.
                 console.error('Error sending message to server:', error);
                 if (isUncertainDeliveryError(error)) {
                     groupDeliveryIntents.markUncertain(
@@ -1403,7 +1561,7 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
                         ? { ...g, lastMessage: prevLastMessage, lastMessageTime: prevLastMessageTime }
                         : g
                 ));
-                void addNotification('Message failed to send. Please try again.');
+                throw error instanceof Error ? error : new Error('Message failed to send. Please try again.');
             } finally {
                 sendingGroupIds.delete(selectedChat.id);
             }
@@ -1414,6 +1572,21 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, selectedChat, groups, updateMessages, updateGroups, handleSendDm, addNotification]);
 
+    // ── Voting / verification ─────────────────────────────────────────────────
+    // Server-first (no optimistic count): tapping the vote you already hold REMOVES it,
+    // otherwise it replaces the previous one. The response's counts win; the local +/- maths
+    // is only a fallback for older API builds that return no counts. Reaching the verified /
+    // rejected threshold notifies the author (self-notifications go through addNotification,
+    // others through createNotification), and the PUT to updateQuestionStatus is only a
+    // fallback for responses that omit questionStatus — the server already persists it.
+    // FIXED (F9 · E3 M1): `groupMessages` is captured from the render-scope
+    // store BEFORE the vote round trip, and the whole array used to be written
+    // back afterwards — a peer message that arrived over Realtime mid-request
+    // was replaced by the pre-vote snapshot and DISAPPEARED from the
+    // conversation until the next fetch. Both this handler and onFlagAsSimilar
+    // now patch the single message by id inside the functional update, so the
+    // snapshot is only ever used to compute the new counts. The `messages` dep
+    // stays: the snapshot is still what the counts are derived from.
     const onVoteQuestion = useCallback(async (messageId: string, voteType: 'up' | 'down') => {
         if (!selectedChat || selectedChat.chatType !== 'group' || !currentUser) return;
         if (votingMessageIds.has(messageId)) return;
@@ -1515,13 +1688,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             }
         }
         
-        const updatedMessages = [...groupMessages];
-        updatedMessages[messageIndex] = updatedMessage;
-
-        updateMessages(prev => ({ ...prev, [selectedChat.id]: updatedMessages }));
+        // Patch the ONE message by id in the list as it stands now. The
+        // pre-request snapshot is only used to compute the new counts.
+        updateMessages(prev => ({
+            ...prev,
+            [selectedChat.id]: (prev[selectedChat.id] || []).map(m =>
+                m.id === messageId ? updatedMessage : m
+            ),
+        }));
         updateUserVotes(prev => ({ ...prev, [messageId]: newUserVote }));
     }, [selectedChat, currentUser, messages, userVotes, groups, updateMessages, updateUserVotes, addNotification]);
 
+    // Duplicate-question resolution: upvote the original instead of posting a second copy
+    // (skipped if this user already upvoted it), then re-sync the server-owned points.
     const handleUpvoteDuplicateAndClose = useCallback((existingQuestionId: string) => {
         if (!selectedChat || selectedChat.chatType !== 'group') return;
         
@@ -1548,6 +1727,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         setDuplicateInfo(null);
     }, [selectedChat, currentUser, userVotes, setCurrentUser, onVoteQuestion, addNotification, closeModal, setDuplicateInfo]);
 
+    // "Flag as similar" toggle. The flag list is persisted first; once it reaches 5% of the
+    // roster (rounded up) the message is auto-archived LOCALLY — the archive flag itself is
+    // not written back, so it does not survive a refetch.
     const onFlagAsSimilar = useCallback(async (messageId: string, groupId: string) => {
         if (!currentUser) return;
 
@@ -1581,10 +1763,11 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             updatedMessage.isArchived = true;
         }
 
-        const updatedMessages = [...groupMessages];
-        updatedMessages[messageIndex] = updatedMessage;
-        
-        updateMessages(prev => ({ ...prev, [groupId]: updatedMessages }));
+        // Patch by id against the CURRENT list (see onVoteQuestion).
+        updateMessages(prev => ({
+            ...prev,
+            [groupId]: (prev[groupId] || []).map(m => (m.id === messageId ? updatedMessage : m)),
+        }));
     }, [currentUser, groups, messages, updateMessages]);
 
     const onOpenCreateSubGroupModal = useCallback((parentId: string) => {
@@ -1592,6 +1775,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         openModal('createGroup');
     }, [setSubgroupParentId, openModal]);
 
+    // ── Group settings ────────────────────────────────────────────────────────
+    // Server-first, then patch both the list row and the open selection. `communityId` uses
+    // an `'communityId' in discovery` check rather than a truthiness test so an explicit null
+    // (detach from community) is sent, while an absent key leaves it unchanged.
     const handleUpdateGroupDetails = useCallback(async (
         groupId: string,
         name: string,
@@ -1635,6 +1822,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [selectedChat, updateGroups, setSelectedChat]);
 
+    // Strips the data-URL prefix and uploads the raw base64 with its real content type; the
+    // stored value is always the returned URL, never the data URL. Rethrows so the picker can
+    // show the failure.
     const handleUpdateGroupAvatar = useCallback(async (groupId: string, avatarDataUrl: string) => {
         try {
             const base64Data = avatarDataUrl.includes(',')
@@ -1668,6 +1858,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [selectedChat, updateGroups, setSelectedChat]);
 
+    // ── Membership & admin ────────────────────────────────────────────────────
+    // Roster writes always go to BOTH the groups list and the open selection, which hold
+    // separate copies; updating only one leaves @mentions or the member sheet stale.
     const applyGroupMembersToState = useCallback((groupId: string, mappedMembers: User[]) => {
         updateGroups(prevGroups => prevGroups.map(g =>
             g.id === groupId ? { ...g, members: mappedMembers } : g
@@ -1687,6 +1880,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         return mappedMembers;
     }, [applyGroupMembersToState]);
 
+    // Batch invite. Invites are PENDING until accepted, so the roster is refetched rather
+    // than optimistically extended — an invitee must not appear as a member. A response with
+    // neither invited nor already-pending entries is treated as a failure and rethrown.
     const handleInviteMembers = useCallback(async (groupId: string, userIdsToAdd: string[]) => {
         if (userIdsToAdd.length === 0) {
             closeModal('addMembers');
@@ -1717,6 +1913,15 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [applyGroupMembersToState, closeModal]);
 
+    // Accepting an invite refetches the whole list and folds it into the one on
+    // screen, then overwrites the roster of the group just joined.
+    // FIXED (F9): this used to be a hand-written full REPLACE (`setGroups`) of a
+    // sixth inline copy of the group mapper, with `unreadCount: 0` hardcoded on
+    // every row — so accepting one invite wiped the unread badge on every OTHER
+    // group until the next unread-count fetch, and dropped `communitySurface`
+    // the way the two copies R2 deleted did. It now goes through the shared
+    // `mergeFetchedGroups`, carrying each group's existing unread count over
+    // rather than issuing a second request for counts that have not changed.
     const handleAcceptGroupInvite = useCallback(async (groupId: string) => {
         if (!currentUser) throw new Error('Not signed in');
         const group = await acceptGroupInvite(groupId);
@@ -1725,33 +1930,29 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
             fetchGroupMembers(groupId, { bustCache: true }),
         ]);
         const mappedMembers = mapApiGroupMembers(fetchedMembers);
-        setGroups(fetchedGroups.map((g: any) => ({
-            id: g.id,
-            name: g.name,
-            avatarUrl: g.avatar_url || g.avatarUrl,
-            description: g.description,
-            lastMessage: g.last_message || g.lastMessage,
-            lastMessageTime: g.last_message_time || g.lastMessageTime,
-            adminIds: g.admin_ids || g.adminIds || [],
-            permissions: g.permissions || {},
-            parentId: g.parent_id || g.parentId,
-            isArchived: g.is_archived ?? g.isArchived ?? false,
-            inviteId: g.invite_id || g.inviteId,
-            courseId: g.courseId ?? g.course_id ?? null,
-            visibility: g.visibility || 'private',
-            communityId: g.communityId ?? g.community_id ?? null,
-            unreadCount: 0,
-            pendingMembers: [],
-            invitedPhoneNumbers: [],
-            members: g.id === groupId ? mappedMembers : (groups.find((x) => x.id === g.id)?.members || []),
-        })));
+        updateGroups((prev) => {
+            const carriedUnread = Object.fromEntries(
+                prev.map((g) => [g.id, g.unreadCount || 0])
+            ) as Record<string, number>;
+            return mergeFetchedGroups(fetchedGroups, prev, carriedUnread).map((g) =>
+                g.id === groupId ? { ...g, members: mappedMembers } : g
+            );
+        });
         return group;
-    }, [currentUser, groups, setGroups]);
+    }, [currentUser, updateGroups]);
 
     const handleDeclineGroupInvite = useCallback(async (groupId: string) => {
         await declineGroupInvite(groupId);
     }, []);
 
+    // KNOWN ISSUE (tracked, deferred F9: needs a schema change — the API has no
+    // group-invite revoke endpoint at all. `routes/groups.ts` exposes create /
+    // accept / decline and nothing that cancels a pending invite, and the email
+    // and phone invitations are not even stored as rows a client could address.
+    // Communities have `revokeInvite` (routes/communities.ts:207); groups have
+    // no equivalent to call): both revoke handlers only filter the invitee out
+    // of local state after the confirm — there is no server call, so the
+    // invitation is still live and the entry reappears on the next groups fetch.
     const handleRevokeInvitation = useCallback(async (groupId: string, email: string) => {
         if (!(await confirmDialog(planRevokeInvitationConfirm({ invitee: email })))) return;
         updateGroups(prev => prev.map(g => {
@@ -1767,6 +1968,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         updateGroups(prev => prev.map(g => g.id === groupId ? { ...g, invitedPhoneNumbers: (g.invitedPhoneNumbers || []).filter(p => p !== phoneNumber) } : g));
     }, [updateGroups]);
 
+    // Promote / demote: server-first, and local state is only patched from the adminIds the
+    // server returns. Demote refuses to remove the last admin (the same rule the leave and
+    // remove-member handlers enforce), and notifies the affected user unless it is self.
     const handlePromoteToAdmin = useCallback(async (groupId: string, userId: string) => {
         const group = groups.find(g => g.id === groupId);
         const user = users.find(u => u.id === userId);
@@ -1829,6 +2033,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [groups, users, currentUser, selectedChat, updateGroups, setSelectedChat]);
 
+    // Remove member: never self, never the last admin, always confirmed. Server-first; on
+    // success the member is dropped from both the roster and adminIds locally.
     const handleRemoveGroupMember = useCallback(async (groupId: string, userId: string) => {
         if (!currentUser || userId === currentUser.id) return;
         const group = groups.find((g) => g.id === groupId) ||
@@ -1885,6 +2091,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, groups, users, selectedChat, updateGroups, setSelectedChat]);
 
+    // Leave: blocked for the sole admin (a group must never be left adminless), confirmed,
+    // then server-first. On success the group and its cached messages are dropped and the
+    // chat is deselected if it was open.
     const handleLeaveGroup = useCallback(async (groupId: string) => {
         if (!currentUser) return;
         const group = groups.find((g) => g.id === groupId) ||
@@ -1935,6 +2144,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, groups, selectedChat, updateGroups, updateMessages, setSelectedChat, closeModal]);
 
+    // ── Group deletion / archive ──────────────────────────────────────────────
+    // Recursive descendant walk — deleting a group must take its whole subgroup subtree, not
+    // just its direct children. Also used by the test launcher to gather source groups.
     const getAllSubgroupIDs = useCallback((parentId: string, allGroups: Group[]): string[] => {
         const subgroupIDs: string[] = [];
         const directSubgroups = allGroups.filter(g => g.parentId === parentId);
@@ -1945,6 +2157,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         return subgroupIDs;
     }, []);
 
+    // Deletes the group and every descendant, sequentially so a failure part-way leaves the
+    // rest intact and the local state untouched (the store is only pruned after the loop).
+    // Member notifications are fire-and-forget and each is individually caught.
     const handleDeleteGroup = useCallback(async (groupId: string) => {
         const group = groups.find(g => g.id === groupId);
         if (!(await confirmDialog(planDeleteGroupConfirm({ name: group?.name })))) return;
@@ -1993,6 +2208,8 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [groups, currentUser, selectedChat, getAllSubgroupIDs, updateGroups, updateMessages, setSelectedChat, closeModal]);
 
+    // Archive toggle: server-first, then patch the list and the open selection. Unlike
+    // delete, this does not cascade to subgroups.
     const handleToggleArchiveGroup = useCallback(async (groupId: string) => {
         const group = groups.find(g => g.id === groupId);
         if (!group) return;
@@ -2033,6 +2250,18 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [groups, currentUser, selectedChat, updateGroups, setSelectedChat]);
 
+    // Join-request approve / reject.
+    // KNOWN ISSUE (tracked, deferred F9 · E3 M2: needs a schema change AND a
+    // product decision. There is no group join-request table or endpoint — the
+    // API has no join-request route, and `pendingMembers` is hardcoded `[]` by
+    // every group mapper, so the GroupInfoModal section these drive can never
+    // render. E3 M2's own advice is "wire to real endpoints, or delete the
+    // handlers, props and the modal section": which of those happens is a
+    // product call about whether private groups get a join-request flow at all,
+    // and both halves reach outside this lane's files): both handlers move the
+    // pending member around in LOCAL state only and send a notification — there
+    // is no membership API call, so an approved member is not actually added to
+    // the group and the pending row returns on the next groups fetch.
     const handleApproveMember = useCallback((groupId: string, userId: string) => {
         updateGroups(prev => prev.map(g => {
             if (g.id === groupId) {
@@ -2080,6 +2309,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [groups, users, currentUser, updateGroups]);
 
+    // ── Modal openers ─────────────────────────────────────────────────────────
+    // Thin wrappers; the only non-trivial one is group info, which busts the roster cache on
+    // open so the member sheet is never showing a stale list. The test/study/challenge
+    // openers differ only in the mode they stamp before opening the shared config sheet.
     const onOpenQuestionModal = useCallback(() => openModal('question'), [openModal]);
     const onOpenGroupInfoModal = useCallback(() => {
         if (selectedChat?.chatType === 'group') {
@@ -2106,6 +2339,10 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         openModal('testConfig');
     }, [setChallengeOpponent, setActiveTestConfigMode, openModal]);
 
+    // ── Notification list ─────────────────────────────────────────────────────
+    // Single-read is optimistic (the badge must drop instantly); mark-all and clear-all are
+    // server-first so the list is only emptied once the server agrees. All three swallow
+    // failures and log.
     const handleMarkNotificationAsRead = useCallback(async (notificationId: string) => {
         if (!currentUser) return;
         // Optimistically update UI immediately
@@ -2131,11 +2368,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         } catch (error) { console.error('Failed to clear all notifications:', error); }
     }, [currentUser, setNotifications]);
 
+    // ── History paging ────────────────────────────────────────────────────────
+    // Group pager: cursor-based on the timestamp of the oldest NON-optimistic message, then
+    // prepends only ids not already present. Returns the page size so the scroller knows
+    // whether it hit the top.
     const handleLoadMoreMessages = useCallback(async (groupId: string) => {
         const currentMsgs = messages[groupId] || [];
         if (currentMsgs.length === 0) return 0;
         
-        const oldestRealMessage = currentMsgs.find(m => !m.id.startsWith('optimistic-'));
+        // FIXED (F1) [E3 M3]: `startsWith('optimistic-')` matched nothing the app ever
+        // mints — group optimistic rows carry a temp- id now, DM rows always did — so an
+        // optimistic row could become the paging cursor and re-fetch the newest page
+        // forever. isTempMessageId covers every local-row prefix.
+        const oldestRealMessage = currentMsgs.find(m => !isTempMessageId(String(m.id)));
         if (!oldestRealMessage) return 0;
 
         const beforeCursor = oldestRealMessage.timestamp instanceof Date 
@@ -2221,6 +2466,9 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser?.id, lowDataMode, updateDirectMessages]);
 
+    // Tri-state, and the distinction matters: `undefined` means the mark-as-read round trip
+    // has not answered yet, so the divider must not be drawn OR ruled out; `null` means there
+    // was no prior marker (nothing unread); a string is the watermark to anchor on.
     // undefined = mark-as-read still pending; null = no prior marker / fully read.
     const unreadAnchorAt: string | null | undefined =
         selectedChat && chatUnreadAnchor?.chatId === selectedChat.id

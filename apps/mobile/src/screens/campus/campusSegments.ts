@@ -5,10 +5,10 @@
  * see components/layout/tabRouting.ts for the same rationale.
  *
  * The rule this file enforces: a segment is HIDDEN while its gate is closed,
- * so Campus never shows a segment with nothing behind it. Both gates are
- * three-valued in practice — allowed, refused, or not answered yet — and the
- * "not answered yet" case must keep the segment visible: a failed or in-flight
- * probe must never quietly delete a destination.
+ * so Campus never shows a segment with nothing behind it. Shop and Jobs have no
+ * gate any more (2026-09-15 — the private-pilot allowlist is gone), so
+ * Communities is the only segment that can be missing, and only for a student
+ * whose profile does not yet name an institution and a programme.
  */
 
 export type CampusSegment = 'communities' | 'shop' | 'jobs';
@@ -22,36 +22,25 @@ export const CAMPUS_SEGMENT_LABELS: Record<CampusSegment, string> = {
 
 export interface CampusGateState {
   /**
-   * The Discover hub's platform-admin gate AND the `communities` section flag,
+   * The shared academic-profile gate AND the `communities` section flag,
    * already resolved by the caller (both are synchronous).
    */
   canSeeCommunities: boolean;
-  /**
-   * The marketplace private-pilot answer: `true` allowed, `false` refused,
-   * `null` while the probe is in flight or after it failed. One allowlist
-   * covers Shop and Jobs, so one answer gates both.
-   */
-  marketplaceAccess: boolean | null;
 }
 
 /**
  * The segments this account may see, in the order Campus draws them.
  *
- * Empty is a legitimate answer — a student on no pilot and outside the
- * Discover gate has nothing here yet — and the screen owes them an honest
- * empty state rather than a bar of dead tabs.
+ * Never empty: Shop and Jobs are open to every viewer, so the bar always has
+ * somewhere to go even before a profile names an institution.
  */
 export function resolveCampusSegments({
   canSeeCommunities,
-  marketplaceAccess,
 }: CampusGateState): CampusSegment[] {
   const segments: CampusSegment[] = [];
   if (canSeeCommunities) segments.push('communities');
-  // `null` (unknown) keeps both visible; only a definite `false` hides them.
-  if (marketplaceAccess !== false) {
-    segments.push('shop');
-    segments.push('jobs');
-  }
+  segments.push('shop');
+  segments.push('jobs');
   return segments;
 }
 

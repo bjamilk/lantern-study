@@ -170,7 +170,6 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/screens/marketplace/ListingClassifier.tsx': 14,
   'src/screens/marketplace/ListingDetailScreen.tsx': 66,
   'src/screens/marketplace/MakeOfferScreen.tsx': 8,
-  'src/screens/marketplace/MarketplaceGate.tsx': 6,
   'src/screens/marketplace/MarketplaceScreen.tsx': 51,
   'src/screens/marketplace/MyJobApplicationsScreen.tsx': 29,
   'src/screens/marketplace/MyJobPostingsScreen.tsx': 26,

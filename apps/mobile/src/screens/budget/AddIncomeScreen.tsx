@@ -1,3 +1,13 @@
+/**
+ * Budget stack -> AddIncome. The income twin of AddExpenseScreen: amount,
+ * source category, optional description, date; saves and pops back.
+ *
+ * Exports: AddIncomeScreen (default).
+ * Touches: budgetStore.addTransaction ({ type: 'INCOME' }) and INCOME_CATEGORIES;
+ * authStore for the user id; BudgetDatePicker; useScreenBottomPadding.
+ * Note: the date is normalised with toDateOnlyLocal so the entry keeps the
+ * local calendar day.
+ */
 // ===========================================
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Add Income Screen

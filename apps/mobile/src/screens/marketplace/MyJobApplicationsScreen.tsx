@@ -1,3 +1,23 @@
+/**
+ * `MyJobApplications` route: the candidate's applications, split into active
+ * and closed, plus the shared applicant profile and any live interview or
+ * offer attached to an application.
+ *
+ * Exports: MyJobApplicationsScreen (named and default).
+ * Touches: fetchMyJobApplications, fetchJobApplicantProfile,
+ * saveJobApplicantProfile, fetchMyJobInterviews, fetchMyJobOffers,
+ * fetchJobApplicationResumeUrl and updateJobApplicationStatus in
+ * ../../services/jobsBoard; JobOfferCard, JobInterviewInvite and
+ * ResumeUploadField; Linking to open a resume URL.
+ *
+ * Gotchas: interviews and offers are fetched once for the whole list and
+ * reduced to the newest live one per application — cancelled and completed
+ * interviews and withdrawn offers are excluded, but declined ones are kept so
+ * the candidate can see their own answer. Accepting an offer also moves the
+ * application to hired, so applyOfferUpdate reloads instead of patching. A
+ * failed profile save is swallowed but keeps the draft. The resume URL is
+ * fetched at the moment of opening rather than held on the card.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,

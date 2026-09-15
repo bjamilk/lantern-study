@@ -1,3 +1,30 @@
+/**
+ * `OrderDetail` route: one order end to end — amount, status pill and next
+ * step, the sale-progress timeline, and every action the viewer's side can
+ * take (pay, upload proof, confirm payment, mark ready or shipped, confirm
+ * received, cancel, dispute, share receipt, leave a review).
+ *
+ * Exports: OrderDetailScreen.
+ * Touches: fetchMarketplaceOrder, updateMarketplaceOrder, requestOrderPayment,
+ * submitOrderPaymentProof, resumeMarketplaceOrderCheckout,
+ * verifyMarketplacePayment and addMarketplaceReview in ../../services/api;
+ * uploadMarketplaceImage; expo-image-picker and expo-web-browser;
+ * useMarketplaceStore (invalidateShopSummary, fetchShopSummary,
+ * fetchMyListings, fetchSellerStats); OpenDisputeModal; the orderDetailState
+ * helpers.
+ *
+ * Gotchas: this screen is a deep-link target (marketplace/orders/:orderId), so
+ * on a cold start it can be the only route — Back goes through orderBackTarget
+ * and falls back to the Orders list, because goBack() would be a no-op. A
+ * Paystack return arrives as route params (paymentReturn / payment / reference
+ * / trxref) and triggers verifyMarketplacePayment, so the param change, not a
+ * focus event, is what confirms payment. The timeline treats only a paid_at
+ * stamp or the 'paid' status as evidence of payment — payment_id is written
+ * when a session is initialized and survives abandonment. runAction takes
+ * `rethrow` so the dispute modal can render its own failure instead of closing
+ * as though the dispute were filed. Confirming payment is deliberately not
+ * gated on an uploaded proof, since cash at pickup has no receipt.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import { ActivityIndicator, Image, KeyboardAvoidingView, Modal, Pressable, ScrollView, Share, Text, TextInput, View } from 'react-native';

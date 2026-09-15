@@ -1,6 +1,9 @@
 import * as Sentry from '@sentry/react';
 import { scrubSentryEvent } from '@lantern/shared/utils';
 
+/** Injected by apps/web/vite.config.ts `define`; absent under vitest/dev. */
+declare const __APP_RELEASE__: string | undefined;
+
 let initialized = false;
 
 function parseSampleRate(raw: string | undefined, fallback: number): number {
@@ -17,6 +20,78 @@ function parseSampleRate(raw: string | undefined, fallback: number): number {
 const PRODUCTION_DSN =
   'https://f9f73b72618fd0f91c68355d1427c029@o4511609954893824.ingest.us.sentry.io/4511610106806272';
 
+/** The slice of a Sentry event this module reasons about. */
+export interface SentryLikeEvent {
+  message?: string;
+  request?: { url?: string };
+  exception?: { values?: Array<{ type?: string; value?: string }> };
+  contexts?: { response?: { status_code?: number } };
+}
+
+/**
+ * Statuses the web client ALREADY handles and explains to the user. None of
+ * them is an incident, and `httpClientIntegration` files every one of them.
+ *
+ *  401 — expiry / a guest touching an authed route. services/sessionHandler.ts
+ *        owns the reaction; the *unexpected sign-out* message (below) is the
+ *        alarm that matters, not the individual 401.
+ *  403 — permission, suspension (ACCOUNT_SUSPENDED renders its own notice).
+ *  408 — our own timeout sentence, already in `ignoreErrors`.
+ *  429 — rate limiting; the UI says "try again in a moment".
+ *  502/503/504 — Render cold start / restart / an upstream blip. The API's own
+ *        Sentry project sees the server side of these with a stack trace; a
+ *        duplicate client-side copy only buries real crashes.
+ */
+const EXPECTED_HTTP_STATUSES = new Set([401, 403, 408, 429, 502, 503, 504]);
+
+/** Supabase answers 400 here by design in cookie mode (Sentry WEB-18). */
+function isExpectedAuthTokenFailure(url: string | undefined, status: number | undefined): boolean {
+  if (!url || status !== 400) return false;
+  return /\/auth\/v1\/token/.test(url);
+}
+
+function eventStatusCode(event: SentryLikeEvent): number | undefined {
+  const fromContext = event.contexts?.response?.status_code;
+  if (typeof fromContext === 'number') return fromContext;
+  // captureConsoleIntegration and the F1/R1 `ApiClientError` both carry the
+  // status in the SENTENCE ("… (status: 429)" / "HTTP Client Error with status
+  // code: 401"), which is the only place it survives a console.error.
+  const text =
+    event.message ||
+    event.exception?.values?.map((v) => v.value ?? '').join(' ') ||
+    '';
+  const match = /status(?:\s+code)?:?\s*(\d{3})/i.exec(text);
+  return match ? Number(match[1]) : undefined;
+}
+
+/**
+ * FIXED (SW) [Sentry WEB-1K / WEB-1M / WEB-1Q / WEB-1T / WEB-18]: raw
+ * `HTTP Client Error with status code: …` events for conditions the app
+ * deliberately reaches and recovers from. Exported for the unit test.
+ */
+export function isExpectedClientCondition(event: SentryLikeEvent): boolean {
+  const status = eventStatusCode(event);
+  if (status === undefined) return false;
+  const url = event.request?.url;
+  if (isExpectedAuthTokenFailure(url, status)) return true;
+  return EXPECTED_HTTP_STATUSES.has(status);
+}
+
+/**
+ * `lantern-study-web@<package version>+<commit>`.
+ *
+ * FIXED (SW): web events carried NO release, so a Sentry issue could not be
+ * told apart from a stale bundle a user's service worker was still serving —
+ * and web deploys here are manual/CI-raced (see the web-deploy-traps note).
+ * `__APP_RELEASE__` is defined by apps/web/vite.config.ts at build time from
+ * the same commit marker `/health` exposes for the API.
+ */
+function resolveRelease(): string | undefined {
+  if (import.meta.env.VITE_SENTRY_RELEASE) return import.meta.env.VITE_SENTRY_RELEASE as string;
+  const injected = typeof __APP_RELEASE__ === 'string' ? __APP_RELEASE__ : '';
+  return injected || undefined;
+}
+
 export function initSentry(): void {
   const isProd = import.meta.env.PROD;
   const dsn = import.meta.env.VITE_SENTRY_DSN || (isProd ? PRODUCTION_DSN : '');
@@ -25,7 +100,7 @@ export function initSentry(): void {
   Sentry.init({
     dsn,
     environment: import.meta.env.MODE,
-    release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
+    release: resolveRelease(),
     tracesSampleRate: parseSampleRate(
       import.meta.env.VITE_SENTRY_TRACES_SAMPLE_RATE,
       isProd ? 0.01 : 0
@@ -75,6 +150,7 @@ export function initSentry(): void {
       /HTTP error! status: 429/,
     ],
     beforeSend(event) {
+      if (isExpectedClientCondition(event as unknown as SentryLikeEvent)) return null;
       return scrubSentryEvent(event as unknown as Record<string, unknown>) as unknown as typeof event;
     },
   });

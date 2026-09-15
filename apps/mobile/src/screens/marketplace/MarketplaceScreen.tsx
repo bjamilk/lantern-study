@@ -1,3 +1,33 @@
+/**
+ * `MarketplaceHome` route: Shop home — the search chrome, department row and
+ * tabs, the taxonomy breadcrumb, the filters and alerts panels, the home rails
+ * (continue shopping, on sale, your campus, your courses, shops) and the
+ * listing grid.
+ *
+ * Exports: MarketplaceScreen.
+ * Touches: nearly all of useMarketplaceStore (listings, filters, saved
+ * searches, favorites, shops, fetchListings/fetchShops/fetchShopSummary);
+ * fetchMarketplaceListings, fetchMarketplaceListing, fetchMarketplaceCampuses
+ * and checkSavedSearchMatches in ../../services/api; useShopBadges;
+ * useSettingsStore for the saved campus; the recently-viewed and
+ * recent-searches AsyncStorage helpers; productAnalytics (lazily imported);
+ * marketplaceSearchChrome for the derived header state; useChrome for the
+ * scroll-away chrome.
+ *
+ * Gotchas: the debounced refetch effect must list EVERY store filter in its
+ * deps — the setters only mark the list loading, so a filter missing from that
+ * list leaves the grid on skeletons permanently. `searchExpanded` is derived
+ * every render (searchOpen || a non-empty store query), never stored, so the
+ * box cannot unmount under the finger; the hardware-back handler that
+ * collapses it is focus-scoped because BackHandler listeners are global and
+ * LIFO and this screen stays mounted under ListingDetail and Cart.
+ * fetchListings blanks `listings` when a page-1 request starts, so a failed
+ * load would otherwise read as "No listings found" — lastGoodListings plus
+ * resolveListState is what keeps a failure from making a claim about the
+ * market, and `failed` deliberately outranks `empty`. The grid is also
+ * filtered client-side on top of the server query, and a custom: category
+ * matches every department rather than none.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,

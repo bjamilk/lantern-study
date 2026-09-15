@@ -1,3 +1,11 @@
+/**
+ * Refusal state for the community gate, rendered in place of Discover or a
+ * community page. The copy is the shared COMMUNITY_GATE_COPY, which says the
+ * profile needs an institution and a programme rather than "coming soon".
+ *
+ * Exports: DiscoverComingSoon (named and default). Optional onBack/backLabel
+ * for the escape link. Presentational: no store, no network.
+ */
 import React from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { COMMUNITY_GATE_COPY } from '@lantern/shared/network';

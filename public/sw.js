@@ -9,6 +9,20 @@
  *   - Navigation: network-first; cache index.html only after successful HTML response
  *   - API / Supabase: never intercepted
  * CACHE_NAME is replaced at build time (__BUILD_ID__).
+ *
+ * Registered from index.tsx. Exports nothing — it is a worker script, wired up
+ * entirely through the install / activate / fetch / notificationclick listeners
+ * below. Touches: the Cache Storage bucket named by CACHE_NAME, and
+ * postMessage('notification-click') back to an open client.
+ *
+ * Gotchas:
+ *  - A bumped CACHE_NAME is NOT evidence that a new JS bundle shipped: the
+ *    build id is generated per build, not derived from bundle content. Verify a
+ *    deploy by comparing the served index-*.js hash, never by this string.
+ *  - The whole worker is inert on localhost (IS_LOCAL_DEV) — offline behaviour
+ *    cannot be tested against the dev server, only against a built/served app.
+ *  - Nothing here intercepts API or Supabase traffic (isApiRequest), so offline
+ *    data durability comes from the app's own offline queues, not from the SW.
  */
 
 const CACHE_NAME = 'lantern-__BUILD_ID__';
@@ -82,6 +96,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(precacheAppShell());
 });
 
+// On activation, delete every cache except the current build's and take control
+// of open pages immediately. This is why a failed install must NOT promote a new
+// SW: activate is unconditional and would drop the last working offline shell.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
@@ -141,6 +158,9 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+// Push/notification taps: prefer handing the payload to an already-open tab via
+// postMessage (the app routes on 'notification-click') and only openWindow when
+// no client exists, so a tap never spawns a duplicate app window.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const data = event.notification.data || {};

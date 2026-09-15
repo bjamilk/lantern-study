@@ -3,8 +3,8 @@
  * packs):
  * - non-digital orders return false and are untouched
  * - the order's listing_kind selects the delivering service
- * - delivery, completion, and payout each run; a failure in one never blocks
- *   the others (delivery self-heals via restore; payout via forcePayoutForOrder)
+ * - a delivery failure halts the chain: no completion, no payout, so the money
+ *   stays refundable (payout failure alone still self-heals via forcePayoutForOrder)
  */
 const mockGrantBank = jest.fn();
 const mockGrantPack = jest.fn();
@@ -119,12 +119,16 @@ describe('fulfillDigitalOrderAfterPayment', () => {
     );
   });
 
-  it('still completes and pays out when delivery fails', async () => {
+  it('stops before completion and payout when delivery fails', async () => {
+    // The buyer has nothing. Completing the order and paying the seller would
+    // put the money past auto-refund for goods that were never delivered, so
+    // the order stays open and the payment stays 'paid' (refundable) until a
+    // later attempt delivers.
     mockGrantPack.mockRejectedValue(new Error('deck store down'));
     const { self, releaseEscrow, transferSellerPayout } = makeSelf(ORDER, 'study_pack');
     await expect(run(self)).resolves.toBe(true);
-    expect(releaseEscrow).toHaveBeenCalled();
-    expect(transferSellerPayout).toHaveBeenCalled();
+    expect(releaseEscrow).not.toHaveBeenCalled();
+    expect(transferSellerPayout).not.toHaveBeenCalled();
   });
 
   it('still reports digital when payout fails (payment stays recoverable)', async () => {

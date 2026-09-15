@@ -1,3 +1,46 @@
+/**
+ * The app's global bottom bar: the five destinations, plus the slot the
+ * section's contextual row is drawn in.
+ *
+ * Purpose: draw Home · Study · Chat · Campus · Profile as an idle-glyph row
+ * with one hugging ink pill on the current destination, and host the
+ * contextual row directly above them (or, for a `replace` row, in their place).
+ *
+ * Main exports:
+ * - `BottomTabBar` — the bar itself; presentational, and it decides nothing
+ *   about navigation. `onTabPress` and the `above` slot are the caller's
+ *   (RootNavigator's CustomTabBar).
+ * - `useTabBarClearance(extra)` — bottom padding a screen needs so its last row
+ *   clears the bar, the contextual row and the system nav.
+ * - `BOTTOM_TAB_BAR_CONTENT_HEIGHT`, and the `TabKey` / `BottomTabKey` types.
+ *
+ * Touches: no stores, no API, no persistence. Theme (`useTheme`),
+ * `ChromeContext` (only to ask whether a contextual row is present, for the
+ * clearance sum), safe-area insets, and React Native's `LayoutAnimation` /
+ * `UIManager` for the row re-flow. All of the geometry is planned by the pure,
+ * unit-tested modules next door (tabPillLayout.ts, screenInsets.ts,
+ * contextualBarLayout.ts, tabIcons.ts) — this file spends what they return and
+ * holds one piece of state of its own, the measured bar width.
+ *
+ * Gotchas:
+ * - `LayoutAnimation` is queued during RENDER, not in an effect: it configures
+ *   the NEXT commit, and an effect runs after that commit has laid out. See
+ *   `queueTabPillReflow`.
+ * - The Android `setLayoutAnimationEnabledExperimental` flag is set once here at
+ *   module load; ContextualBar.tsx relies on this file having done it and does
+ *   not set it again.
+ * - `hideTabs` is decided by the CALLER, never derived here from the registry —
+ *   presence of the contextual row also depends on the soft keyboard, and
+ *   deriving it locally leaves a student typing inside a set with no bottom
+ *   navigation at all.
+ * - The bar deliberately has no elevation and no shadow (hairline only). Adding
+ *   elevation back would make it beat sibling order on Android and paint over
+ *   whatever is drawn near it — the trap the top bar and drawer hit during the
+ *   Aug 28 shell restructure.
+ * - Adding or removing a hook in this file while the app is running redboxes
+ *   with "Rendered more hooks than during the previous render"; that is Fast
+ *   Refresh, not the edit. Force-stop and relaunch before believing it.
+ */
 import React from 'react';
 import {
   LayoutAnimation,

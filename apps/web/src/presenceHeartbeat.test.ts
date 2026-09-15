@@ -21,7 +21,9 @@ vi.mock('../../../services/sessionHandler', async () => {
   };
 });
 
-import { getAuthHeaders } from '../../../services/supabase';
+// Static, not `await import()` inside a test: a dynamic import charges the
+// module graph's load time to that test's 5s budget and fails under load.
+import { getAuthHeaders, supabase } from '../../../services/supabase';
 import {
   handleApiAuthFailure,
   resetSessionExpiredGuard,
@@ -83,7 +85,10 @@ describe('sendPresenceHeartbeat', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('stops retrying after an unrecovered 401 (session expiry)', async () => {
+  // FIXED (SW) [Sentry WEB-17]: a heartbeat 401 schedules ONE refresh and stops
+  // the interval. It must never sign the user out — that is what turned a
+  // two-minute online-status ping into 57 "Unexpected sign-out" events.
+  it('a 401 tries one refresh and never signs the user out', async () => {
     const onExpired = vi.fn();
     setSessionExpiredHandler(onExpired);
     vi.mocked(getAuthHeaders).mockResolvedValue({
@@ -92,20 +97,39 @@ describe('sendPresenceHeartbeat', () => {
     });
     vi.mocked(fetch).mockResolvedValue({ status: 401, ok: false } as Response);
 
-    // Make refresh fail so handleApiAuthFailure notifies and returns false.
-    const { supabase } = await import('../../../services/supabase');
     vi.mocked(supabase.auth.refreshSession).mockResolvedValue({
       data: { session: null },
       error: { message: 'Invalid Refresh Token', status: 401 } as any,
     } as any);
 
     await expect(sendPresenceHeartbeat()).resolves.toBe(false);
-    expect(onExpired).toHaveBeenCalledTimes(1);
+    expect(onExpired).not.toHaveBeenCalled();
+    // One beat, one refresh attempt, no retry storm.
     expect(fetch).toHaveBeenCalledTimes(1);
+    expect(supabase.auth.refreshSession).toHaveBeenCalledTimes(1);
 
-    // Guard is latched — further 401s must not spam recovery.
+    // A real API call still owns the sign-out decision.
     await expect(handleApiAuthFailure(401)).resolves.toBe(false);
     expect(onExpired).toHaveBeenCalledTimes(1);
+  });
+
+  // A transient refresh failure (API 503 / cold start / wifi) is not a
+  // revocation: the session survives and the next call retries.
+  it('does not sign out when the refresh is merely unavailable', async () => {
+    const onExpired = vi.fn();
+    setSessionExpiredHandler(onExpired);
+    vi.mocked(getAuthHeaders).mockResolvedValue({
+      Authorization: 'Bearer token',
+      'Content-Type': 'application/json',
+    });
+    vi.mocked(fetch).mockResolvedValue({ status: 401, ok: false } as Response);
+
+    vi.mocked(supabase.auth.refreshSession).mockRejectedValue(new Error('Failed to fetch'));
+
+    await expect(sendPresenceHeartbeat()).resolves.toBe(false);
+    expect(onExpired).not.toHaveBeenCalled();
+    await expect(handleApiAuthFailure(401)).resolves.toBe(false);
+    expect(onExpired).not.toHaveBeenCalled();
   });
 
   it('retries once after a successful session refresh', async () => {
@@ -117,7 +141,6 @@ describe('sendPresenceHeartbeat', () => {
       .mockResolvedValueOnce({ status: 401, ok: false } as Response)
       .mockResolvedValueOnce({ status: 200, ok: true } as Response);
 
-    const { supabase } = await import('../../../services/supabase');
     vi.mocked(supabase.auth.refreshSession).mockResolvedValue({
       data: {
         session: {

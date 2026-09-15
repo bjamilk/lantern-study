@@ -1,6 +1,73 @@
+/**
+ * The web app's entire data layer: one configured supabase-js client plus the
+ * flat catalogue of `fetch` wrappers that every hook, store and screen calls.
+ *
+ * Shape of the file (top to bottom):
+ *  1. Client construction — URL/anon key from `@lantern/shared` config, the
+ *     cookie-mode `global.fetch` interceptor, and `fetchWithTimeout` (now a
+ *     thin alias over `services/apiFetch.ts`).
+ *  2. Auth plumbing — the in-memory token cache, `getAuthHeaders`, session
+ *     resolve/clear, storage scrubbing, signed storage URLs.
+ *  3. Domain API groups, each fronting `${getApiRoot()}/api/v1/...` on the
+ *     Express BFF (apps/api-server): groups & chat, community boards, DMs,
+ *     flashcards/decks, test sessions & results, question stats, dashboard,
+ *     profiles & account lifecycle, notifications, marketplace (listings,
+ *     orders, offers, payments, cart, shops, question banks, study packs,
+ *     creators), Phase 3/4 network (communities, discovery, feed, presence,
+ *     mastery, referrals, campus pages, study rooms), AI draft factory,
+ *     offline bundles, settings/preferences/budget, the pending-results queue,
+ *     and the Supabase-direct email/password endpoints at the very bottom.
+ *
+ * Two auth modes, chosen by `isCookieAuthEnabled()` (web prod is cookie mode):
+ *  - Cookie mode: the real refresh token never reaches the browser. supabase-js
+ *    keeps a MEMORY session (`memoryAuthStorage`) whose `refresh_token` is the
+ *    literal string 'cookie-managed', `autoRefreshToken`/`persistSession` are
+ *    off, and refreshes are proxied to the BFF by `supabaseFetch` (below).
+ *    Requests carry `credentials: 'include'` (see `withApiCredentials`).
+ *  - Legacy token mode: supabase-js persists to localStorage under
+ *    `sb-*-auth-token` and refreshes itself; requests carry a Bearer header.
+ * Both modes funnel through `getAuthHeaders()`, which prefers the module-level
+ * `_cachedAccessToken` and only falls back to the network when it is empty.
+ *
+ * Touches: Supabase PostgREST + storage + realtime via `supabase`; localStorage
+ *  (`sb-*-auth-token`, `auth-storage-v2`, `lantern_recently_viewed`, the
+ *  marketplace caches); the module-level signed-URL cache in
+ *  `utils/signedUrlCache`; `services/authCookieSession` (circular — imported
+ *  dynamically inside the interceptor); `services/sessionHandler`,
+ *  `services/accountSuspension`, `services/sentry`.
+ * ONE transport (R1). Every BFF call that needs a timeout or an auth retry goes
+ * through `services/apiFetch.ts`, directly or via the `fetchWithTimeout` alias.
+ * Before R1 this file carried SIX policies: `fetchWithTimeout`'s own, plus five
+ * hand-rolled "call → classify → call again" pairs (`fetchGroups`,
+ * `upsertUserQuestionStat`, `fetchUserQuestionStats`, `fetchAccountLifecycle`,
+ * `fetchUserSettings`) that disagreed about budgets and about whether a 403 may
+ * be refreshed — one of them was the unbounded recursion of E3 C4. They are all
+ * gone; `apiFetch` applies `services/sessionHandler`'s single policy (F1).
+ * The bare `fetch(...)` calls that remain below are the ones that never had a
+ * timeout or a retry: they are left bare deliberately, because giving them
+ * either would be a behaviour change, not a refactor.
+ *
+ * Gotchas:
+ *  - Almost everything here goes through the BFF, NOT PostgREST. Direct
+ *    `supabase.from(...)` use is the exception and is called out where it
+ *    happens; those calls are the ones RLS and embed ambiguity apply to.
+ *  - Any SECOND supabase client created anywhere in the app must be given the
+ *    same `global.fetch` (`supabaseFetch`), or cookie-mode refreshes on that
+ *    client sign the user out.
+ *  - `_cachedAccessToken !== null` is used as "this viewer ever had a session"
+ *    in the 401 path; clearing it changes guest behaviour on public pages.
+ *  - Comments marked `KNOWN ISSUE (tracked)` anywhere in the web app are real,
+ *    reproduced defects left in place deliberately — do not "fix" them
+ *    silently. A marker that has been dealt with is rewritten as
+ *    `FIXED (<lane>)` and says what changed; one that is staying carries its
+ *    reason inline (`KNOWN ISSUE (tracked, deferred <lane>: …)`). This file
+ *    has none left of its own.
+ */
 import { createClient } from '@supabase/supabase-js'
 import { markIntentionalSignOut } from './sentry';
+import { apiFetch } from './apiFetch';
 import { withStudySetId } from './testSessionPayload';
+import { withPurchaseIntent } from './marketplacePurchaseIntent';
 import { Deck, Group, UserQuestionStats } from '../types'
 import {
   getSupabaseUrl,
@@ -11,6 +78,7 @@ import {
   SUPABASE_INVALID_API_KEY_USER_MESSAGE,
 } from '@lantern/shared'
 import { mapUserFromApi, mapFlashcardsFromApi } from '@lantern/shared/utils/apiMappers'
+import { mapGroupRows } from '@lantern/shared/groups'
 import { UNFILED_COURSE_ID } from '../utils/libraryArchive'
 import {
   listingsCacheKey,
@@ -82,6 +150,9 @@ if (
   console.warn(`[Lantern] ${SUPABASE_INVALID_API_KEY_USER_MESSAGE}`)
 }
 
+// Builds the Error that `retryUncertainDelivery` (shared) inspects: it retries
+// only when `deliveryUncertain` is set, i.e. 408 or any 5xx — the cases where
+// the write may actually have landed. 4xx is a definite rejection, never retried.
 async function createDeliveryResponseError(
   response: Response,
   fallbackMessage: string
@@ -109,8 +180,26 @@ async function createDeliveryResponseError(
 // while the HttpOnly cookie session is still valid (Sentry WEB-17/WEB-18,
 // 90+ events). Route those refreshes through the cookie BFF instead,
 // single-flight so concurrent triggers share one /refresh call.
+//
+// Three branches out of the BFF call, all load-bearing:
+//   BFF 401/403  → synthesise a 400 invalid_grant, which is exactly what
+//                  gotrue-js treats as "refresh token is dead" → SIGNED_OUT.
+//                  This is the ONLY path that may sign a user out.
+//   BFF !ok      → `throw new TypeError('Failed to fetch')`. Deliberate, not a
+//                  bug: gotrue-js classifies a thrown TypeError as a network
+//                  error and KEEPS the session for a later retry. Returning a
+//                  5xx Response instead would be read as a failed refresh.
+//   BFF ok       → a gotrue-shaped 200 carrying the new session, with
+//                  refresh_token forced back to 'cookie-managed' so the next
+//                  internal refresh is intercepted here again.
+// A missing access_token on a 200 also takes the TypeError branch (keep the
+// session rather than sign out over a malformed body).
 let cookieBffRefreshInFlight: Promise<Response> | null = null;
 
+// Every request from the supabase client passes through here; only POSTs to
+// /auth/v1/token whose body contains the 'cookie-managed' placeholder are
+// diverted. Everything else (PostgREST, storage, real refreshes in legacy
+// token mode) is handed straight to the global fetch.
 const supabaseFetch: typeof fetch = (input, init) => {
   if (!cookieAuthEnabled) return fetch(input as RequestInfo, init);
   const url =
@@ -150,9 +239,15 @@ const supabaseFetch: typeof fetch = (input, init) => {
       cookieBffRefreshInFlight = null;
     });
   }
+  // `.clone()` per caller: a Response body can only be read once, and every
+  // concurrent refresh trigger shares this single in-flight Response.
   return cookieBffRefreshInFlight.then((r) => r.clone());
 };
 
+// The single client the whole web app shares. In cookie mode the session lives
+// only in memory and only the BFF can refresh it, so auto-refresh and
+// persistence are both disabled; `detectSessionInUrl` stays on in both modes
+// for the OAuth / email-confirmation redirect hash.
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     autoRefreshToken: !cookieAuthEnabled,
@@ -173,95 +268,29 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 })
 
-// Helper function to fetch with timeout and optional 401 retry
-const fetchWithTimeout = async (
+// REFACTORED (R1): the transport itself now lives in `services/apiFetch.ts` —
+// this is a thin, signature-compatible alias so the ~60 call sites below (and
+// F3's money calls, whose `Idempotency-Key` header passes through untouched)
+// did not have to change. Everything it used to do by hand it still does, in
+// the same order, in one place:
+//  - AbortController timeout surfacing as `Error('Request timed out')`, NOT an
+//    AbortError, so callers cannot distinguish it from a server-side timeout;
+//  - the non-blocking ACCOUNT_SUSPENDED sniff on any 403;
+//  - TERMINAL_AUTH_CODE (SESSION_REVOKED / ACCOUNT_BANNED / ACCOUNT_DEACTIVATED)
+//    → sign out once with that reason, no refresh, no retry;
+//  - 401 with no cached token → returned untouched (a guest hitting an authed
+//    endpoint must not trigger the "session expired" redirect);
+//  - otherwise ONE retry, gated by `handleApiAuthFailure` (F1), replaying with
+//    fresh auth headers layered over the caller's.
+// The one thing that moved: the refresh is no longer hand-rolled here, so it
+// shares sessionHandler's single-flight and its once-per-session expiry latch.
+// Pass `allowRetry = false` to opt out of the auth retry, as before.
+const fetchWithTimeout = (
   url: string,
   options: RequestInit,
   timeoutMs: number = 8000,
   allowRetry = true
-): Promise<Response> => {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  
-  try {
-    const response = await fetch(url, {
-      ...withApiCredentials(options),
-      signal: controller.signal
-    });
-    clearTimeout(timeoutId);
-
-    // A suspended account gets 403 { code: 'ACCOUNT_SUSPENDED' } on every
-    // authenticated call and keeps its session; record it so App.tsx can show
-    // the blocking notice (see services/accountSuspension.ts). Non-blocking.
-    if (response.status === 403) {
-      void import('./accountSuspension').then(({ noteSuspendedResponse }) => noteSuspendedResponse(response));
-    }
-
-    if (response.status === 401 && allowRetry) {
-      let authCode: string | undefined;
-      try {
-        const clone = response.clone();
-        const body = (await clone.json().catch(() => ({}))) as { code?: string };
-        authCode = body.code;
-      } catch {
-        authCode = undefined;
-      }
-      if (authCode === 'SESSION_REVOKED' || authCode === 'ACCOUNT_BANNED' || authCode === 'ACCOUNT_DEACTIVATED') {
-        const { notifySessionExpired } = await import('./sessionHandler');
-        notifySessionExpired();
-        return response;
-      }
-      // A guest never had a session, so a 401 here is just an endpoint that
-      // needs auth — "session expired" (and its redirect off public pages)
-      // must only fire for viewers who actually held a token. Signed-in users
-      // always have _cachedAccessToken warmed by getAuthHeaders in both auth
-      // modes before any call can 401.
-      const hadSession = _cachedAccessToken !== null;
-      if (!hadSession) {
-        return response;
-      }
-      let refreshed = false;
-      if (cookieAuthEnabled) {
-        const session = await refreshCookieSession();
-        if (session?.access_token) {
-          _cachedAccessToken = session.access_token;
-          refreshed = true;
-        }
-      } else {
-        try {
-          const { data } = await supabase.auth.refreshSession();
-          if (data.session?.access_token) {
-            _cachedAccessToken = data.session.access_token;
-            refreshed = true;
-          }
-        } catch {
-          // ignore refresh failure
-        }
-      }
-      if (refreshed) {
-        const headers = await getAuthHeaders();
-        const retryOptions: RequestInit = {
-          ...options,
-          headers: {
-            ...(options.headers as Record<string, string> | undefined),
-            ...headers,
-          },
-        };
-        return fetchWithTimeout(url, retryOptions, timeoutMs, false);
-      }
-      const { notifySessionExpired } = await import('./sessionHandler');
-      notifySessionExpired();
-    }
-
-    return response;
-  } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
-      throw new Error('Request timed out');
-    }
-    throw error;
-  }
-};
+): Promise<Response> => apiFetch(url, options, { timeoutMs, allowAuthRetry: allowRetry });
 
 // ─── Cached Auth Token Layer ───────────────────────────────────────────────────
 // Instead of calling supabase.auth.getSession() on every API request (which can
@@ -270,13 +299,36 @@ const fetchWithTimeout = async (
 let _cachedAccessToken: string | null = null;
 let _cachedUserId: string | null = null;
 
+/**
+ * "Has this viewer EVER held a token in this page's life?" — the guard
+ * `services/apiFetch.ts` uses to tell a guest's 401 ("this endpoint needs
+ * auth") from a signed-in user's 401 ("your session died"). Only the second
+ * may notify session-expiry and redirect off a public page. Signed-in users
+ * always have this warmed by `getAuthHeaders` in both auth modes before any
+ * call can 401.
+ */
+export const hasCachedAccessToken = (): boolean => _cachedAccessToken !== null;
+
 /** Call this from the auth initialization flow to populate the in-memory cache. */
-export const setCachedAuthToken = (token: string | null, userId?: string | null) => {
+export const setCachedAuthToken =(token: string | null, userId?: string | null) => {
   _cachedAccessToken = token;
   if (userId !== undefined) {
     _cachedUserId = userId;
   }
+  // FIXED (F1) [E3 H13]: a real token means the session is alive again, so the
+  // cookie-restore budget re-opens — sign-in after a failed boot must not stay
+  // stuck behind the give-up counter for the rest of the page's life.
+  if (token) {
+    reopenCookieRestoreBudget();
+  }
 };
+
+/**
+ * The offline-queue owner stamp (`OWNER_KEY` in services/offlineQueueOwner.ts,
+ * duplicated here rather than imported so that module's ownership semantics stay
+ * owned by it alone). Never cleared on logout — see the note in the wipe below.
+ */
+const OFFLINE_QUEUE_OWNER_KEY = 'lantern_offline_owner';
 
 /** Remove all client-side auth/session footprints (localStorage, sessionStorage, cookies). */
 export function clearAllClientAuthStorage(): void {
@@ -288,7 +340,17 @@ export function clearAllClientAuthStorage(): void {
     // ignore
   }
   // Preserve cookie consent (`lantern_cookie_*`) — it is not session data.
+  // FIXED (F1) [E3 C5, the "offline queues" bug]: also preserve
+  // `lantern_offline_owner`. It matches the `lantern_` prefix, so this wipe used
+  // to DELETE the owner stamp while leaving `pendingSyncResults` (which does not
+  // match) behind — and `ensureOfflineQueueOwner`'s "no stamp at all" branch
+  // then adopted the previous student's queue for whoever signed in next and
+  // replayed their test results into the new account. The stamp is the guard
+  // that makes the purge possible; it is not session data and must survive a
+  // sign-out. Queue-ownership semantics themselves live in
+  // services/offlineQueueOwner.ts and are untouched here.
   Object.keys(localStorage).forEach((key) => {
+    if (key === OFFLINE_QUEUE_OWNER_KEY) return;
     if (shouldClearClientStorageKeyOnLogout(key)) {
       localStorage.removeItem(key);
     }
@@ -387,9 +449,25 @@ export async function apiLogoutSession(): Promise<void> {
   } catch {
     // Never block a sign-out on a cache.
   }
+  // FIXED (F1) [E3 H14, high]: every user-scoped store is torn down here, from
+  // the ONE registry in stores/userScopedStoreReset.ts, because this function is
+  // the single path both the explicit logout (useAuthHandlers.handleLogout) and
+  // the session-expired handler (App.tsx) go through. Dynamic import: stores
+  // import this module, so a static one would close the cycle.
+  try {
+    const { resetAllUserScopedStores } = await import('../stores/userScopedStoreReset');
+    resetAllUserScopedStores();
+  } catch (e) {
+    console.warn('User-scoped store reset failed during logout:', e);
+  }
   clearAllClientAuthStorage();
 }
 
+// ─── Legacy (token-mode) localStorage readers ───────────────────────────────
+// These scan for the supabase-js key `sb-<project-ref>-auth-token` rather than
+// computing it, so they keep working if the project ref changes. In COOKIE mode
+// nothing writes those keys, so they all return null — callers must not read a
+// null here as "signed out".
 /** Read the token from localStorage (Supabase SDK keys). */
 export const getTokenFromLocalStorage = (): string | null => {
   if (typeof window === 'undefined') return null;
@@ -488,6 +566,11 @@ export type SessionResolveResult =
   | { ok: false; reason: SessionResolveFailure };
 
 /** Restore the client session from cookies or local tokens without signing out on transient errors. */
+// The reason code is what the caller acts on: only 'revoked' may sign the user
+// out. 'network' means "unknown, keep the user where they are" and 'missing'
+// means there was never a session to restore. In token mode a refresh error is
+// classified 'revoked' only on a 401 or an invalid/expired/refresh message —
+// anything else (including a thrown fetch) falls through to 'network'.
 export async function resolveClientSession(): Promise<SessionResolveResult> {
   if (isCookieAuthEnabled()) {
     // Users from before the cookie-mode default still hold a full session in
@@ -586,21 +669,55 @@ const getSessionWithTimeout = async (timeoutMs: number = 2000) => {
 // against a session that never landed. Share one in-flight restore, and stop
 // after a bounded number of failures instead of looping forever.
 const MAX_COOKIE_RESTORE_ATTEMPTS = 3;
+/**
+ * FIXED (F1) [E3 H13, high]: the budget used to be per PAGE LOAD and was never
+ * re-opened, so three failures during a Render cold start or a wifi drop meant
+ * `getAuthHeaders` sent no Authorization for the rest of the session and the
+ * user just saw empty screens until a manual reload. Three things re-open it
+ * now: a cooldown (the budget expires COOLDOWN_MS after the last failure), the
+ * `online` / `visibilitychange` events, and any successful token set
+ * (`setCachedAuthToken` with a token — i.e. sign-in and every successful
+ * restore). A successful restore still zeroes the counter directly below.
+ */
+const COOKIE_RESTORE_COOLDOWN_MS = 30_000;
 let cookieRestoreInFlight: Promise<string | null> | null = null;
 let cookieRestoreFailures = 0;
+let cookieRestoreLastFailureAt = 0;
 
-/** Test/boot hook: forget the per-page-load restore budget. */
+/** Test/boot hook: forget the restore budget. */
 export function resetCookieRestoreState(): void {
   cookieRestoreInFlight = null;
   cookieRestoreFailures = 0;
+  cookieRestoreLastFailureAt = 0;
+}
+
+/** Re-open the give-up budget (declaration, so `setCachedAuthToken` above can call it). */
+function reopenCookieRestoreBudget(): void {
+  cookieRestoreFailures = 0;
+  cookieRestoreLastFailureAt = 0;
+}
+
+// Reconnect / tab-focus re-opens the budget: the reason the restores failed
+// (offline, cold API) is exactly the thing these events say has changed.
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', reopenCookieRestoreBudget);
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') reopenCookieRestoreBudget();
+  });
 }
 
 async function restoreCookieTokenSingleFlight(): Promise<string | null> {
   if (_cachedAccessToken) return _cachedAccessToken;
   if (cookieRestoreInFlight) return cookieRestoreInFlight;
   if (cookieRestoreFailures >= MAX_COOKIE_RESTORE_ATTEMPTS) {
-    // Give up honestly rather than hammer the BFF for the rest of the page life.
-    return null;
+    // FIXED (F1) [E3 H13, high]: still give up rather than hammer the BFF, but
+    // only until the cooldown passes — then the budget re-opens and the next
+    // call tries again. `online` / `visibilitychange` / a successful
+    // `setCachedAuthToken` re-open it immediately (see the constant above).
+    if (Date.now() - cookieRestoreLastFailureAt < COOKIE_RESTORE_COOLDOWN_MS) {
+      return null;
+    }
+    cookieRestoreFailures = 0;
   }
 
   cookieRestoreInFlight = (async () => {
@@ -624,9 +741,12 @@ async function restoreCookieTokenSingleFlight(): Promise<string | null> {
     .then((resolved) => {
       if (resolved) {
         _cachedAccessToken = resolved;
+        // A later SUCCESS re-opens the budget in full (E3 H13).
         cookieRestoreFailures = 0;
+        cookieRestoreLastFailureAt = 0;
       } else {
         cookieRestoreFailures += 1;
+        cookieRestoreLastFailureAt = Date.now();
       }
       return resolved;
     })
@@ -640,6 +760,14 @@ async function restoreCookieTokenSingleFlight(): Promise<string | null> {
 // Helper function to get authenticated headers
 // Uses cached token for instant resolution (~0ms) on the hot path.
 // Only calls getSession() on the very first cold call when no cache/localStorage token exists.
+// Five ordered steps; steps 2, 4 and 5 are legacy-token-mode only, step 3 is
+// cookie-mode only. The cookie-mode branch is deliberately the ONLY async work
+// in that mode and is single-flighted (see above) — every boot fetch calls this
+// concurrently, and a per-caller restore is what produced the 2026-09-12
+// request storm.
+// NOTE: on failure this resolves with headers that have NO Authorization rather
+// than throwing, so the call proceeds and 401s. Use `getRequiredAuthHeaders`
+// (below) when a missing token should fail fast instead.
 export const getAuthHeaders = async (): Promise<Record<string, string>> => {
   const cookieMode = isCookieAuthEnabled();
   // 1. FAST PATH: Check in-memory cache (instant, no async)
@@ -846,6 +974,12 @@ export async function ensureNotesUploadSession(): Promise<{ userId: string }> {
 
 // For local development, the keys are default, but in production, set env vars.
 
+// ══════════════════════════════════════════════════════════════════════════
+// GROUPS (study groups, community boards, and their membership/invites)
+// All of this is BFF-backed (`/api/v1/groups/**`); nothing here touches
+// PostgREST, so group visibility is enforced by the server, not by RLS.
+// ══════════════════════════════════════════════════════════════════════════
+
 export const createGroup = async (groupData: { name: string; description: string; avatar_url?: string; permissions: any; invite_id: string; parent_id?: string; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null; communitySurface?: 'board' | 'study_group' }, userId: string, memberIds: string[]) => {
   console.log('Creating group with data:', groupData, 'userId:', userId, 'memberIds:', memberIds);
   
@@ -865,54 +999,49 @@ export const createGroup = async (groupData: { name: string; description: string
   return result.data;
 };
 
+// Normalises the API's mixed snake_case/camelCase group rows into `Group`.
+// REFACTORED (R2): the field-by-field resolution is no longer spelled out here
+// — `mapGroupRow` in `@lantern/shared/groups` owns it, and it is the same
+// mapping the API server and mobile now run. This function keeps only what is
+// web-shaped: `pendingMembers` (a web-only field the list endpoint never
+// returns) and dropping the shared mapper's extras the web `Group` has no room
+// for.
 export function mapGroupListFromApi(
   items: any[],
   unreadCounts: Record<string, number> = {},
 ): Group[] {
-  return (items || []).map((g: any) => ({
-    id: g.id,
-    name: g.name,
-    avatarUrl: g.avatar_url || g.avatarUrl,
-    description: g.description,
-    lastMessage: g.last_message || g.lastMessage,
-    lastMessageTime: g.last_message_time || g.lastMessageTime,
-    adminIds: g.admin_ids || g.adminIds || [],
-    permissions: g.permissions || {},
-    parentId: g.parent_id || g.parentId,
-    isArchived: g.is_archived ?? g.isArchived ?? false,
-    inviteId: g.invite_id || g.inviteId,
-    courseId: g.courseId !== undefined ? g.courseId : (g.course_id ?? null),
-    visibility: g.visibility || 'private',
-    communityId: g.communityId !== undefined ? g.communityId : (g.community_id ?? null),
-    // Which surface the group renders as inside a community (spec §1).
-    // Absent (undefined) before the 20260903120000 migration — NULL means
-    // 'board', so `isCommunityBoard` reads a legacy channel correctly.
-    communitySurface:
-      g.communitySurface !== undefined ? g.communitySurface : (g.community_surface ?? null),
-    unreadCount: unreadCounts[g.id] ?? g.unread_count ?? g.unreadCount ?? 0,
+  return mapGroupRows(items, { unreadCounts }).map((g) => ({
+    ...g,
     pendingMembers: [],
-    invitedPhoneNumbers: [],
-    members: Array.isArray(g.members) ? g.members : [],
-  }));
+  })) as Group[];
 }
 
+// Returns [] (not an error) when there is no session, so the groups screen
+// renders empty during a cold boot instead of flashing a failure.
+// FIXED (F1) [E3 C4, critical]: this used to recurse into itself on any 401/403
+// with no budget, so a suspended account (403 ACCOUNT_SUSPENDED on a VALID
+// session) looped refresh → 403 → refresh forever, pinning the tab.
+// REFACTORED (R1): the budget, the classifier and the replay are no longer
+// spelled out here at all — `apiFetch` owns them, so this function keeps only
+// its own degradation rule ("auth trouble ⇒ empty list, never an error toast").
+// The `attempt` parameter is gone; nothing outside ever passed it.
 export const fetchGroups = async (userId: string): Promise<Group[]> => {
   console.log('Fetching groups for user:', userId);
 
   if (!(await hasValidSession())) {
     return [];
   }
-  
-  const response = await fetch(`${getApiRoot()}/api/v1/groups`, {
-    method: 'GET',
-    headers: await getAuthHeaders(),
-  });
+
+  // `timeoutMs: null` — this call was a bare `fetch` before R1 and had no
+  // deadline; adding one here would turn a slow cold start into a thrown
+  // `Request timed out` the groups screen has never had to handle.
+  const response = await apiFetch(
+    `${getApiRoot()}/api/v1/groups`,
+    { method: 'GET', headers: await getAuthHeaders() },
+    { timeoutMs: null }
+  );
 
   if (response.status === 401 || response.status === 403) {
-    const { handleApiAuthFailure } = await import('./sessionHandler');
-    if (await handleApiAuthFailure(response.status)) {
-      return fetchGroups(userId);
-    }
     return [];
   }
 
@@ -926,6 +1055,9 @@ export const fetchGroups = async (userId: string): Promise<Group[]> => {
   return mapGroupListFromApi(result.data);
 };
 
+// `bustCache` appends a throwaway `_=<now>` param ON TOP of `cache: 'no-store'`
+// — the param is what defeats an intermediate/CDN cache after a membership
+// change, since no-store only governs the browser's own HTTP cache.
 export const fetchGroupMembers = async (groupId: string, options?: { bustCache?: boolean }) => {
   console.log('Fetching members for group:', groupId);
   
@@ -954,6 +1086,11 @@ export const fetchGroupMembers = async (groupId: string, options?: { bustCache?:
   return result.data;
 };
 
+// Membership writes pre-flight the session and force a refresh first: the
+// server silently drops an unauthenticated add, so failing loudly here is
+// better than a member who never appears. NOTE the refresh is
+// `supabase.auth.refreshSession()` directly — in cookie mode that is the
+// intercepted placeholder path, which resolves from the BFF.
 export const addGroupMember = async (groupId: string, userId: string) => {
   console.log('Adding member to group:', groupId, 'userId:', userId);
   
@@ -981,6 +1118,9 @@ export const addGroupMember = async (groupId: string, userId: string) => {
   return result.data;
 };
 
+// Partial success is normal and is REPORTED, not thrown: the result buckets
+// every id into invited / added / alreadyMembers / alreadyPending / failed, so
+// the caller must inspect `failed` rather than assume a 2xx meant everyone.
 export const addGroupMembersBatch = async (groupId: string, userIds: string[]) => {
   console.log('Batch inviting members to group:', groupId, 'count:', userIds.length);
   
@@ -1016,6 +1156,7 @@ export const addGroupMembersBatch = async (groupId: string, userIds: string[]) =
   };
 };
 
+// ─── Group invites (pending list, accept/decline, invite-link preview/join) ──
 export const fetchPendingGroupInvites = async () => {
   const response = await fetch(`${getApiRoot()}/api/v1/groups/invites/pending`, {
     headers: await getAuthHeaders(),
@@ -1123,6 +1264,17 @@ export const joinGroupByInvite = async (inviteId: string) => {
   return result.data;
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// CHAT MESSAGES (group chat + community board posts share the `messages` row)
+// ══════════════════════════════════════════════════════════════════════════
+
+// The body is built ONCE, outside `request`, so the retry replays byte-identical
+// bytes — including `clientMessageId`, which is what makes the replay idempotent
+// server-side. `retryUncertainDelivery` only retries the 408/5xx errors minted
+// by `createDeliveryResponseError`; 401/403 throws a plain Error and so is
+// never retried. Optional fields are spread conditionally so an absent option
+// is omitted rather than sent as undefined/null (which the server would treat
+// as "clear this").
 export const sendMessage = async (
   groupId: string,
   userId: string,
@@ -1187,6 +1339,14 @@ export const sendMessage = async (
  * Emoji reactions. One endpoint pair serves group messages and DMs — the
  * server resolves which the id belongs to and authorizes accordingly.
  * Returns the authoritative counts; realtime delivers everyone else's.
+ *
+ * HISTORY (do not re-introduce): these used to write `message_reactions`
+ * through PostgREST with `.upsert(..., { onConflict: 'message_id,user_id,emoji' })`.
+ * That unique index is PARTIAL, which PostgREST cannot target, so every
+ * reaction 500'd with 42P10 from 1.0.44 until the write moved behind
+ * `/api/v1/messages/:id/reactions`. Both functions below are LIVE
+ * (components/ChatWindow.tsx, components/community/CommunityBoard.tsx) and
+ * carry no upsert — keep them on the BFF endpoint.
  */
 export const addMessageReaction = async (messageId: string, emoji: string) => {
   const response = await fetch(
@@ -1299,6 +1459,10 @@ export const removeVote = async (messageId: string, userId: string) => {
   }
 };
 
+// Two pagination modes on one endpoint: `page`/`limit` offsets for the initial
+// load, `before` (a cursor timestamp) for scroll-back. Passing both lets the
+// server decide; callers use one or the other. A non-array `data` is coerced to
+// [] so a degraded response cannot crash the message list.
 export const fetchMessages = async (groupId: string, page?: number, limit?: number, before?: string) => {
   console.log('Fetching messages for group:', groupId, { page, limit, before });
   
@@ -1584,6 +1748,7 @@ export const importMessageBookmarks = async (
   return { imported: Number((body as any)?.data?.imported ?? 0), serverBacked: true };
 };
 
+// ─── Message read/edit/remove (shared by group chat and DMs) ────────────────
 export const fetchDmThread = async (threadId: string, rootId: string) => {
   const response = await fetch(
     `${getApiRoot()}/api/v1/messages/dm/${encodeURIComponent(threadId)}/thread/${encodeURIComponent(rootId)}`,
@@ -1613,6 +1778,10 @@ export type ChatMessageMutationPayload = {
   isRemoved?: boolean;
 };
 
+// One transport for the four edit/remove wrappers below; the only difference
+// between group and DM is the path prefix (`dm-message/`). A DELETE sends no
+// body at all — the server treats a removal as a tombstone (`isRemoved`), so
+// the returned payload still carries the row, not null.
 const mutateChatMessage = async (
   path: string,
   method: 'PUT' | 'DELETE',
@@ -1645,6 +1814,9 @@ export const editDirectMessage = (messageId: string, content: string) =>
 export const removeDirectMessage = (messageId: string) =>
   mutateChatMessage(`dm-message/${encodeURIComponent(messageId)}`, 'DELETE');
 
+// ─── Q&A voting / moderation flags on messages ──────────────────────────────
+// Swallows every failure into {}: the viewer's own vote highlight is cosmetic,
+// and the counts on each message row are authoritative anyway.
 export const fetchUserVotesForGroup = async (groupId: string, userId: string): Promise<Record<string, 'up' | 'down'>> => {
   console.log('Fetching user votes for group:', groupId, 'userId:', userId);
   try {
@@ -1726,6 +1898,12 @@ export const updateQuestionStatus = async (messageId: string, questionStatus: st
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// FLASHCARDS — decks, cards, collaborators, FSRS reviews, import/export
+// Both list endpoints are page-capped by the server and are paged to
+// exhaustion here (DECK_API_PAGE_SIZE / FLASHCARD_API_PAGE_SIZE); a single
+// request silently returns only the first page.
+// ══════════════════════════════════════════════════════════════════════════
 // --- Flashcard Functions ---
 
 export const createDeck = async (deckData: { name: string; description?: string; isShared?: boolean; courseId?: string | null; topicId?: string | null }, userId: string) => {
@@ -1831,6 +2009,8 @@ export const fetchDecks = async (userId: string, options?: { includeShared?: boo
       const result = await response.json();
       const rows = Array.isArray(result.data) ? result.data : [];
       collected.push(...rows);
+      // Short page = last page. A full page whose rows are all duplicates would
+      // loop, but the server keyset guarantees strictly-increasing offsets.
       if (rows.length < DECK_API_PAGE_SIZE) break;
       page += 1;
     }
@@ -1866,6 +2046,7 @@ export const updateDeck = async (deckId: string, updates: { name?: string; descr
   }
 };
 
+// ─── User directory (member pickers, @-mention autocomplete) ────────────────
 export const fetchUsers = async (search?: string, options?: { page?: number; limit?: number }) => {
   console.log('Fetching users', 'search:', search);
   try {
@@ -1892,6 +2073,9 @@ export const fetchUsers = async (search?: string, options?: { page?: number; lim
   }
 };
 
+// Short-circuits below 2 characters (measured AFTER stripping leading @), so
+// typing "@" alone never fires a request. The result is re-shaped into
+// snake_case because callers here predate the camelCase API rows.
 export const searchUsers = async (query: string, limit: number = 20) => {
   try {
     // Preserve leading @ so the API can prefer username matches for @queries.
@@ -1926,6 +2110,7 @@ export const searchUsers = async (query: string, limit: number = 20) => {
   }
 };
 
+// ─── Deck sharing (collaborators) ───────────────────────────────────────────
 export const fetchDeckCollaborators = async (deckId: string) => {
   console.log('Fetching collaborators for deck:', deckId);
   try {
@@ -2097,6 +2282,11 @@ export const addFlashcardComment = async (flashcardId: string, userId: string, c
   }
 };
 
+// Defaults to limit=1000 so most callers get a whole deck in one request, but
+// the server still caps a page at FLASHCARD_API_PAGE_SIZE (100) — asking for
+// 1000 does NOT guarantee 1000 rows. Use `fetchAllFlashcards` when
+// completeness matters. 401/403 returns [] rather than throwing, matching
+// `fetchDecks`, so a cold-boot race renders empty instead of erroring.
 export const fetchFlashcards = async (
   deckId?: string,
   userId?: string,
@@ -2151,6 +2341,8 @@ export const fetchFlashcards = async (
 /** API caps page size at 100 — paginate until all cards are loaded, then normalize SRS. */
 export const FLASHCARD_API_PAGE_SIZE = 100;
 
+// The only path that also runs `mapFlashcardsFromApi` (shared), which is what
+// normalises SRS/FSRS fields — rows straight out of `fetchFlashcards` are raw.
 export const fetchAllFlashcards = async (deckId?: string, userId?: string) => {
   const collected: any[] = [];
   let page = 1;
@@ -2208,6 +2400,16 @@ export const updateFlashcard = async (flashcardId: string, updates: {
   }
 };
 
+// Grades one card. `expectedVersion` is optimistic concurrency (CAS): omit it
+// and the server applies the grade unconditionally. Queued OFFLINE replays
+// omit it on purpose — every review of the same card queued offline carries the
+// same pre-sync version, so sending it made the second and later replays
+// self-409.
+// Two error shapes come out of here, both load-bearing for the sync queue:
+//  - 409 / code 'version_conflict' → `err.code = 'version_conflict'` with the
+//    server's current row on `err.current`, so the caller can re-base.
+//  - anything else → `err.status` carries the HTTP status so the queue can tell
+//    a permanent rejection (404 card gone) from a transient one.
 export const reviewFlashcard = async (
   flashcardId: string,
   rating: 'again' | 'hard' | 'good' | 'easy',
@@ -2395,6 +2597,14 @@ export const importDeckApkg = async (apkgBase64: string, userId: string) => {
   return result.data;
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// TESTS — sessions, submitted results, and the history/detail reads
+// A "session" is the attempt (config + questions + answers); a "result" is the
+// scored row created from it. The offline replay in services/offlineTestSync.ts
+// calls createTestSession then createTestResult in that order, and classifies
+// failures by the `status` (and `code`) PROPERTY on the thrown error, falling
+// back to the `status: NNN` message format below (G4 · H14).
+// ══════════════════════════════════════════════════════════════════════════
 // --- Test Sessions and Results ---
 
 export const createTestSession = async (sessionData: {
@@ -2428,7 +2638,19 @@ export const createTestSession = async (sessionData: {
         (typeof errorBody.message === 'string' && errorBody.message) ||
         (typeof errorBody.error === 'string' && errorBody.error) ||
         `HTTP error! status: ${response.status}`;
-      throw new Error(message);
+      // FIXED (G4 · H14): the STATUS and CODE travel on the error, not only in
+      // the message. The offline replay classifies transient (keep and retry)
+      // against permanent (set aside) by status; when the server sends a
+      // normal JSON error body the message carries no status, so every
+      // rejection read as transient and ONE bad row wedged the whole FIFO
+      // queue forever. The message still gets `(status: NNN)` appended for the
+      // older classifiers that scrape it (see `ApiClientError`).
+      const err = new Error(
+        /status:\s*\d/.test(message) ? message : `${message} (status: ${response.status})`
+      ) as Error & { status?: number; code?: string };
+      err.status = response.status;
+      if (typeof errorBody.code === 'string' && errorBody.code) err.code = errorBody.code;
+      throw err;
     }
 
     const result = await response.json();
@@ -2440,6 +2662,9 @@ export const createTestSession = async (sessionData: {
   }
 };
 
+// Submit, not a generic PATCH: only the answers are sent (as an ARRAY — the
+// `user_answers` map is flattened with Object.values) and `end_time` in the
+// signature is ignored, the server stamps it.
 export const updateTestSession = async (sessionId: string, updates: {
   user_answers?: Record<string, any>;
   end_time?: string;
@@ -2516,6 +2741,10 @@ export type FetchTestResultsOptions = {
   topicId?: string | null;
 };
 
+// `lean` list rows arrive without a `session`, and are passed through untouched.
+// When a session IS present, `normalizeTestResultSession` (shared) is what
+// repairs question/answer shapes — including message-backed questions, whose
+// real kind lives in `questionType`, not `type`.
 function mapTestResultItem(item: any) {
   if (!item?.session) return item;
   const normalized = normalizeTestResultSession(item.session);
@@ -2582,6 +2811,12 @@ export const fetchTestResultsPage = async (
   return { data, pagination };
 };
 
+// Two behaviours behind one name:
+//  - `options.page` set → exactly that page (delegates once).
+//  - `options.page` absent → walks EVERY page (default 500/page, hard stop at
+//    100 pages = 50k rows) so all-time charts see full history. The loop also
+//    stops on an empty page, so a server that reports hasMore forever cannot
+//    spin more than `maxPages` times.
 export const fetchTestResults = async (userId: string, options?: FetchTestResultsOptions) => {
   console.log('Fetching test results for user:', userId);
   try {
@@ -2628,6 +2863,13 @@ export const fetchTestResults = async (userId: string, options?: FetchTestResult
 };
 
 /** Full session payload for Analyze/Review when list rows are lean. */
+// Accepts BOTH response shapes this endpoint family returns: an already-nested
+// `{ session }` result row (passed to `mapTestResultItem`), or a flat camelCase
+// session row, which is re-wrapped into the result shape here. In the flat case
+// score / totalQuestions / correctAnswersCount are RECOMPUTED from the answers
+// whenever the row does not carry them, so an un-scored session still renders.
+// Returns null on every failure — callers treat null as "not available", so a
+// genuine error and a missing session are indistinguishable to them.
 export const fetchTestSessionById = async (sessionId: string): Promise<any | null> => {
   try {
     if (!(await hasValidSession()) || !sessionId) return null;
@@ -2698,6 +2940,12 @@ export const fetchTestSessionById = async (sessionId: string): Promise<any | nul
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// USER QUESTION STATS — per-question attempt tallies behind the analytics
+// Both calls retry ONCE through `apiFetch` (which applies the sessionHandler
+// policy: refresh, replay once, never on a 403) and then
+// give up; the read degrades to {} while the write rethrows.
+// ══════════════════════════════════════════════════════════════════════════
 // --- User Question Stats ---
 
 export const upsertUserQuestionStat = async (userId: string, questionId: string, stat: {
@@ -2722,22 +2970,15 @@ export const upsertUserQuestionStat = async (userId: string, questionId: string,
     lastAttempted: stat.lastAttempted,
   });
 
-  const doFetch = async () =>
-    fetch(`${getApiRoot()}/api/v1/user-stats`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-      body,
-    });
-
   try {
-    let response = await doFetch();
-
-    if (response.status === 401 || response.status === 403) {
-      const { handleApiAuthFailure } = await import('./sessionHandler');
-      if (await handleApiAuthFailure(response.status)) {
-        response = await doFetch();
-      }
-    }
+    // REFACTORED (R1): the hand-rolled "call, classify, call again" pair is now
+    // one `apiFetch`. Identical semantics: one retry after a refresh, never on
+    // a 403, and the same untouched Response for the error branch below.
+    const response = await apiFetch(
+      `${getApiRoot()}/api/v1/user-stats`,
+      { method: 'POST', headers: await getAuthHeaders(), body },
+      { timeoutMs: null }
+    );
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({} as Record<string, string>));
@@ -2752,47 +2993,28 @@ export const upsertUserQuestionStat = async (userId: string, questionId: string,
   }
 };
 
+// Three failure classes, three different answers:
+//  - 401/403 (after one refresh retry) → {} and a debug log; auth is simply
+//    not ready yet during boot.
+//  - network error / TypeError 'Failed to fetch' → {} silently (API down).
+//  - any other non-ok → throws.
+// REFACTORED (R1): the row-mapping block used to be duplicated verbatim in the
+// retry branch — two copies that could (and did) drift, so a changed field
+// silently went missing only on the retry path. `apiFetch` replays the request
+// internally, so there is now ONE response and ONE mapping block.
 export const fetchUserQuestionStats = async (userId: string) => {
   try {
     if (!(await hasValidSession())) {
       return {} as UserQuestionStats;
     }
 
-    const response = await fetch(`${getApiRoot()}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
-      method: 'GET',
-      headers: await getAuthHeaders(),
-    });
+    const response = await apiFetch(
+      `${getApiRoot()}/api/v1/user-stats/${encodeURIComponent(userId)}`,
+      { method: 'GET', headers: await getAuthHeaders() },
+      { timeoutMs: null }
+    );
 
     if (response.status === 401 || response.status === 403) {
-      const { handleApiAuthFailure } = await import('./sessionHandler');
-      if (await handleApiAuthFailure(response.status)) {
-        const retry = await fetch(`${getApiRoot()}/api/v1/user-stats/${encodeURIComponent(userId)}`, {
-          method: 'GET',
-          headers: await getAuthHeaders(),
-        });
-        if (retry.status === 401 || retry.status === 403) {
-          console.debug('Auth not ready for user-stats, returning empty');
-          return {} as UserQuestionStats;
-        }
-        if (!retry.ok) {
-          throw new Error(`HTTP error! status: ${retry.status}`);
-        }
-        const retryResult = await retry.json();
-        const retryStats: UserQuestionStats = {};
-        if (retryResult.data && Array.isArray(retryResult.data)) {
-          retryResult.data.forEach((stat: any) => {
-            if (!stat?.question_id) return;
-            retryStats[stat.question_id] = {
-              correctAttempts: stat.correct_attempts || 0,
-              incorrectAttempts: stat.incorrect_attempts || 0,
-              lastAttempted: stat.last_attempted || null,
-              stem: stat.question_stem || stat.questionStem || stat.stem || null,
-              groupName: stat.group_name || stat.groupName || null,
-            };
-          });
-        }
-        return retryStats;
-      }
       console.debug('Auth not ready for user-stats, returning empty');
       return {} as UserQuestionStats;
     }
@@ -2873,6 +3095,9 @@ export const fetchDashboardSummary = async (): Promise<{
     });
 
     // null => server failed to load stats; do not coerce to {}.
+    // Returning null here discards the testResults just mapped above, on
+    // purpose: the caller then re-fetches BOTH halves individually rather than
+    // rendering analytics against stats that silently read as "no attempts".
     if (data.userQuestionStats === null) {
       return null;
     }
@@ -2903,8 +3128,19 @@ export const fetchDashboardSummary = async (): Promise<{
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// PROFILES & ACCOUNT LIFECYCLE
+// Everything that WRITES an account uses `getRequiredAuthHeaders`, which
+// throws 'Authentication required' rather than sending an anonymous request;
+// the reads use plain `getAuthHeaders` and degrade instead.
+// Lifecycle: deactivate (soft, grace period) → reactivate, or
+// delete (scheduled) / delete-immediate (password-confirmed, irreversible).
+// ══════════════════════════════════════════════════════════════════════════
 // --- Profile/User Functions ---
 
+// 404 is expected — it is how "profile not created yet" reads during signup —
+// so it is rethrown WITHOUT the console.error the other statuses get. 403 is
+// tapped for ACCOUNT_SUSPENDED before rethrowing.
 export const fetchUserProfile = async (userId: string) => {
   console.log('Fetching user profile for user:', userId);
   try {
@@ -3006,6 +3242,9 @@ export const createUserProfile = async (profileData: {
   }
 };
 
+// Returns false rather than throwing, so a caller cannot tell a refusal from a
+// network failure. `deleteUserAccountImmediate` (below) is the password-gated
+// hard delete and DOES throw with the server's message.
 export const deleteUserAccount = async (userId: string): Promise<boolean> => {
   try {
     const headers = await getRequiredAuthHeaders();
@@ -3075,6 +3314,9 @@ export const reactivateUserAccount = async (userId: string): Promise<void> => {
   }
 };
 
+// Drives the "your account is paused / will be deleted on X" banner. Always
+// resolves — null means "unknown", which the banner reads as "nothing to show",
+// so a failure here never falsely tells a user their account is fine.
 export const fetchAccountLifecycle = async (userId: string): Promise<{
   status: 'active' | 'deactivated';
   deactivatedAt?: string | null;
@@ -3083,19 +3325,12 @@ export const fetchAccountLifecycle = async (userId: string): Promise<{
   gracePeriodDays: number;
 } | null> => {
   try {
-    const doFetch = async () => {
-      const headers = await getAuthHeaders();
-      return fetch(`${getApiRoot()}/api/v1/users/${userId}/lifecycle`, { headers });
-    };
-    let response = await doFetch();
-    if (response.status === 401 || response.status === 403) {
-      const { handleApiAuthFailure } = await import('./sessionHandler');
-      if (await handleApiAuthFailure(response.status)) {
-        response = await doFetch();
-      } else {
-        return null;
-      }
-    }
+    // REFACTORED (R1): one `apiFetch` in place of the call/classify/call pair.
+    const response = await apiFetch(
+      `${getApiRoot()}/api/v1/users/${userId}/lifecycle`,
+      { headers: await getAuthHeaders() },
+      { timeoutMs: null }
+    );
     if (!response.ok) return null;
     const json = await response.json();
     return json.data ?? null;
@@ -3145,6 +3380,10 @@ export const exportUserAccountData = async (userId: string): Promise<Record<stri
   }
 };
 
+// Deliberately UNAUTHENTICATED (no getAuthHeaders) — it runs during signup
+// before a session exists. Only an explicit `available === true` counts as
+// free, so an unexpected body shape blocks the name rather than allowing a
+// collision.
 export const checkUsernameAvailability = async (username: string): Promise<boolean> => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/users/check-username/${encodeURIComponent(username)}`, {
@@ -3187,6 +3426,10 @@ export const updateUsername = async (userId: string, username: string, firstName
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// NOTIFICATIONS — the bell feed. The list read is capped at 100 server-side
+// and has no pagination here; older notifications are simply not reachable.
+// ══════════════════════════════════════════════════════════════════════════
 // --- Notification Functions ---
 
 export const createNotification = async (notificationData: {
@@ -3222,6 +3465,9 @@ export const createNotification = async (notificationData: {
   }
 };
 
+// Same three-way degradation as `fetchUserQuestionStats`: no session or
+// 401/403 → [], network error → [] silently, any other non-ok → throws.
+// `userId` is unused in the request — the server scopes by the bearer token.
 export const fetchNotifications = async (userId: string) => {
   try {
     if (!(await hasValidSession())) {
@@ -3348,6 +3594,8 @@ export const deleteAllNotifications = async (userId: string) => {
   }
 };
 
+// ─── Group admin (delete/update, promote/demote, remove member, leave) ──────
+// Physically separated from the GROUPS block above; same `/api/v1/groups` API.
 export const deleteGroup = async (groupId: string) => {
   console.log('Deleting group:', groupId);
   try {
@@ -3368,6 +3616,9 @@ export const deleteGroup = async (groupId: string) => {
   }
 };
 
+// The first four fields are passed straight through (an `undefined` is dropped
+// by JSON.stringify anyway); the three NULLABLE ones use conditional spread so
+// an explicit null — "unfile this group" — is transmitted instead of skipped.
 export const updateGroup = async (groupId: string, updates: { name?: string; description?: string; isArchived?: boolean; avatarUrl?: string; courseId?: string | null; visibility?: 'private' | 'community' | 'public'; communityId?: string | null }) => {
   console.log('Updating group:', groupId, 'updates:', updates);
   try {
@@ -3457,6 +3708,22 @@ export const leaveGroup = async (groupId: string) => {
   return true;
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// MARKETPLACE — the largest group in this file. Sub-blocks, in order:
+//   listings CRUD · access gate · reviews/reports · seller dashboard ·
+//   favorites · inquiries · offers · orders & payments · seller tooling
+//   (analytics, coupons, campaigns, payout profile) · cart & addresses ·
+//   saved searches · custom categories · similar listings · question banks ·
+//   study packs · purchases · creators · shops.
+// Conventions across the block:
+//  - Reads normalise through `normalizeListingRecord` / `normalizeInquiryRecord`
+//    / `normalizeOfferRecord` / `normalizeFavoriteRecord` (utils/storageUrl),
+//    which rewrite storage paths into usable URLs.
+//  - Browse reads go through `marketplaceListingsCache` and can throw
+//    `RateLimitError` (429) — the ONLY error class the browse grid special-cases.
+//  - Errors from write endpoints carry `.status` so forms can render a 400/403
+//    inline; 403 bodies are also sniffed for ACCOUNT_SUSPENDED.
+// ══════════════════════════════════════════════════════════════════════════
 // --- Marketplace Functions ---
 
 export const createMarketplaceListing = async (listingData: {
@@ -3484,9 +3751,17 @@ export const createMarketplaceListing = async (listingData: {
 }) => {
   console.log('Creating marketplace listing:', listingData.title);
   try {
+    // FIXED (F3): the route is behind
+    // `idempotencyMiddleware({ operation: 'marketplace_create_listing' })` but
+    // the web never sent a key, so a retry after an uncertain failure published
+    // the listing twice. One key per create INTENT (this seller's title, price
+    // and category), rotated once the create resolves.
+    return await withPurchaseIntent(
+      `create_listing:${listingData.category}:${listingData.title}:${listingData.price ?? ''}`,
+      async (idempotencyKey) => {
     const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings`, {
       method: 'POST',
-      headers: await getAuthHeaders(),
+      headers: { ...(await getAuthHeaders()), 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(listingData),
     });
 
@@ -3517,6 +3792,8 @@ export const createMarketplaceListing = async (listingData: {
 
     console.log('Listing created:', result.data);
     return result.data;
+      }
+    );
   } catch (error) {
     console.error('Error creating listing:', error);
     throw error;
@@ -3578,6 +3855,9 @@ export const fetchMarketplaceListingsPage = async (filters: {
   /** `compact` returns card-shaped rows (first image only) for the browse grid. */
   responseProfile?: 'compact' | 'full';
 } = {}): Promise<{ data: any[]; pagination: { page: number; limit: number; total: number } }> => {
+  // The cache is keyed on the WHOLE filter object, so any new filter field
+  // automatically gets its own entry — but a filter that is not serialised into
+  // `queryParams` below would share a key with a different result set.
   const cacheKey = listingsCacheKey(filters as Record<string, unknown>);
 
   type ListingsPage = { data: any[]; pagination: { page: number; limit: number; total: number } };
@@ -3750,55 +4030,6 @@ export const addMarketplaceReview = async (listingId: string, review: { rating: 
 };
 
 /**
- * Marketplace private-pilot probe: whether the current viewer may see the
- * goods marketplace at all. The server enforces the gate with 403s
- * regardless; this only decides which UI to render. Cached briefly per
- * viewer so route changes don't refetch.
- */
-let marketplaceAccessCache: { viewerKey: string; enabled: boolean; at: number } | null = null;
-
-/** Clear a cached verdict — call when the session changes underneath us. */
-export const resetMarketplaceAccessCache = (): void => {
-  marketplaceAccessCache = null;
-};
-
-/**
- * Answers "may this viewer see the marketplace?", or throws if it could not
- * find out. Those are different things and the caller must keep them apart:
- * an unanswerable probe is not a denial.
- */
-export const fetchMarketplaceAccess = async (viewerKey: string = 'anon'): Promise<boolean> => {
-  const now = Date.now();
-  if (
-    marketplaceAccessCache &&
-    marketplaceAccessCache.viewerKey === viewerKey &&
-    now - marketplaceAccessCache.at < 5 * 60_000
-  ) {
-    return marketplaceAccessCache.enabled;
-  }
-  // 5s was half the app's usual budget, so a cold Render dyno aborted here and
-  // the abort was then rendered as "you are not on the pilot".
-  const response = await fetchWithTimeout(
-    `${getApiRoot()}/api/v1/marketplace/access`,
-    { method: 'GET', headers: await getAuthHeaders() },
-    10000
-  );
-  const payload = await response.json().catch(() => null);
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || 'Could not check marketplace availability');
-  }
-  const enabled = payload.data?.enabled === true;
-  // A signed-in viewer whose token had not restored yet gets the anonymous
-  // answer. Caching that would pin a real account to "no" for five minutes,
-  // so treat it as not-an-answer instead.
-  if (!enabled && viewerKey !== 'anon' && payload.data?.authenticated === false) {
-    throw new Error('Could not check marketplace availability');
-  }
-  marketplaceAccessCache = { viewerKey, enabled, at: now };
-  return enabled;
-};
-
-/**
  * Mark / unmark a review as helpful. The control only renders when the API
  * returned a helpfulCount for the review, so pre-migration 503s are
  * unreachable from the UI.
@@ -3870,6 +4101,11 @@ export const initiateMarketplaceTransaction = async (listingId: string, amount: 
 };
 
 // ============ SELLER DASHBOARD FUNCTIONS ============
+// Note the split policy in this block: the two READS below swallow every
+// failure ([] / null), so the dashboard shows "no listings / no stats" when the
+// API is actually down, while `updateListingStatus` and the favorites reads
+// propagate. Do not "make it consistent" without checking each caller's empty
+// state first.
 
 export const fetchMyListings = async (status?: string) => {
   console.log('Fetching my listings', { status });
@@ -4011,6 +4247,9 @@ export const removeFromFavorites = async (listingId: string) => {
   }
 };
 
+// Any failure (including 401 while auth is still restoring) reads as "not
+// favorited", so the heart renders empty. Safe because the write endpoints are
+// idempotent — a mis-rendered empty heart cannot create a duplicate favorite.
 export const checkIfFavorited = async (listingId: string): Promise<boolean> => {
   try {
     const response = await fetch(`${getApiRoot()}/api/v1/marketplace/favorites/${listingId}/check`, {
@@ -4130,40 +4369,66 @@ export const getInquiryByThread = async (threadId: string) => {
   }
 };
 
+// ─── Offers / negotiation ───────────────────────────────────────────────────
+// Writes (`createOffer`, `respondToOffer`) throw; every READ in this block
+// degrades to [] on any non-ok, so a failed load is indistinguishable from
+// "no offers yet". Only `fetchOffers` normalises its rows
+// (`normalizeOfferRecord`) — the listing-scoped reads return raw API shapes.
 // --- Marketplace Offers ---
 
+// FIXED (F3): an offer is a commitment to pay, and the route is behind
+// `idempotencyMiddleware({ operation: 'marketplace_create_offer' })`, but the
+// web sent no key — so a retry after an uncertain failure posted a second offer
+// on the same listing. The key is now owned by the intent (this listing, this
+// amount) and rotated only once the offer lands.
 export const createOffer = async (listingId: string, amount: number, message?: string) => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers`, {
-      method: 'POST',
-      headers: await getAuthHeaders(),
-      body: JSON.stringify({ listingId, amount, message }),
-    });
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'Failed to create offer');
-    }
-    const result = await response.json();
-    return result.data;
+    return await withPurchaseIntent(
+      `create_offer:${listingId}:${amount}`,
+      async (idempotencyKey) => {
+        const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers`, {
+          method: 'POST',
+          headers: { ...(await getAuthHeaders()), 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({ listingId, amount, message }),
+        });
+        if (!response.ok) {
+          throw await marketplaceMoneyError(response, 'Failed to create offer');
+        }
+        const result = await response.json();
+        return result.data;
+      }
+    );
   } catch (error) {
     console.error('Error creating offer:', error);
     throw error;
   }
 };
 
+// FIXED (F3): `accept` is the money action — the route runs
+// `withIdempotency(..., 'marketplace_offer_accept', ...)` around an atomic
+// accept-and-create-order RPC plus a Paystack session. The web sent no key, so
+// the server fell back to a key derived from the offer id alone; that is stable
+// enough, but a retry after a FAILED attempt then hits the 10-minute failure
+// marker with no way to present a fresh key. Owning the key here means a retry
+// of the same intent replays, and a genuinely new attempt after a terminal
+// rejection gets a new key.
 export const respondToOffer = async (offerId: string, action: 'accept' | 'decline' | 'counter' | 'withdraw', counterAmount?: number) => {
   try {
-    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers/${offerId}`, {
-      method: 'PUT',
-      headers: await getAuthHeaders(),
-      body: JSON.stringify({ action, counterAmount }),
-    });
-    if (!response.ok) {
-      const err = await response.json();
-      throw new Error(err.error || 'Failed to respond to offer');
-    }
-    const result = await response.json();
-    return result.data;
+    return await withPurchaseIntent(
+      `offer_respond:${offerId}:${action}:${counterAmount ?? ''}`,
+      async (idempotencyKey) => {
+        const response = await fetch(`${getApiRoot()}/api/v1/marketplace/offers/${offerId}`, {
+          method: 'PUT',
+          headers: { ...(await getAuthHeaders()), 'Idempotency-Key': idempotencyKey },
+          body: JSON.stringify({ action, counterAmount }),
+        });
+        if (!response.ok) {
+          throw await marketplaceMoneyError(response, 'Failed to respond to offer');
+        }
+        const result = await response.json();
+        return result.data;
+      }
+    );
   } catch (error) {
     console.error('Error responding to offer:', error);
     throw error;
@@ -4215,6 +4480,12 @@ export const fetchNegotiationHistory = async (listingId: string) => {
   }
 };
 
+// ─── Orders (the money path) ────────────────────────────────────────────────
+// `updateMarketplaceOrder` is a single PATCH whose `action` selects the state
+// transition (ship / confirm / open_dispute / …); the extra fields are only
+// read for the action they belong to and are ignored otherwise, so sending a
+// stale field cannot move the order sideways. Order reads throw rather than
+// degrade — an empty orders list must never be shown because a fetch failed.
 export const fetchMarketplaceOrders = async (role: 'buyer' | 'seller' = 'buyer') => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/orders?role=${role}`,
@@ -4294,6 +4565,9 @@ export const requestOrderPayment = async (orderId: string) => {
   return result.data;
 };
 
+// ─── Seller tooling: analytics, buyer segments, coupons, preferences ────────
+// All reads here return null/[] on failure (dashboards render an empty card);
+// all writes throw with the server's `error` copy.
 export const fetchSellerAnalytics = async () => {
   const response = await fetchWithTimeout(
     `${getApiRoot()}/api/v1/marketplace/analytics/seller`,
@@ -4504,30 +4778,73 @@ export const checkSavedSearchMatches = async (searchId: string, peek = false) =>
   return result.data || { count: 0, listings: [] };
 };
 
-export const boostMarketplaceListing = async (listingId: string, durationHours: number = 72) => {
-  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/boost`, {
-    method: 'POST',
-    headers: await getAuthHeaders(),
-    body: JSON.stringify({ durationHours }),
+// FIXED (F3): a boost is a paid promotion, keyed by the intent (this listing,
+// this duration) so a retry cannot buy two boosts.
+export const boostMarketplaceListing = async (listingId: string, durationHours: number = 72) =>
+  withPurchaseIntent(`boost:${listingId}:${durationHours}`, async (idempotencyKey) => {
+    const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/boost`, {
+      method: 'POST',
+      headers: { ...(await getAuthHeaders()), 'Idempotency-Key': idempotencyKey },
+      body: JSON.stringify({ durationHours }),
+    });
+
+    if (!response.ok) {
+      throw await marketplaceMoneyError(response, 'Failed to boost listing');
+    }
+
+    const result = await response.json();
+    return result.data;
   });
 
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to boost listing');
-  }
-
-  const result = await response.json();
-  return result.data;
-};
+// ─── Checkout & Paystack ────────────────────────────────────────────────────
+// Amounts cross the wire in KOBO (integer minor units), never naira floats.
+// The service fee is folded INTO the price the buyer sees: `totalChargeKobo` is
+// what Paystack charges and `itemAmountKobo` + `serviceFeeKobo` decompose it.
+// Buy-now may return an order alone (offline/manual payment) or an order plus
+// `authorizationUrl`/`accessCode` to hand to Paystack — the caller must handle
+// both. `verifyMarketplacePayment` is the client-side confirmation after
+// redirect; the webhook is still the authority on whether the order is paid.
+/**
+ * FIXED (F3): the error a money call throws now carries the HTTP status.
+ *
+ * Every checkout helper below used to throw `new Error(err.error)`, a bare
+ * Error with nothing on it, so a caller could not tell a 409 ("the same
+ * idempotency key is still in flight — retry it") from a 400 the buyer has to
+ * fix. `withPurchaseIntent` reads `status` to decide whether the purchase
+ * intent is over (rotate the key) or still live (keep it), so the status has to
+ * survive the throw.
+ */
+async function marketplaceMoneyError(response: Response, fallback: string): Promise<Error> {
+  const body: any = await response.json().catch(() => ({}));
+  // Route-level rejections send `{success:false, error:'<sentence>'}`; the
+  // global handler sends `{error:'Error', message:'<sentence>'}` — prefer the
+  // sentence over the class label either way.
+  const label = typeof body?.error === 'string' ? body.error : '';
+  const generic = label === '' || label === 'Error' || label === 'ApiError';
+  const err = new Error(
+    (generic ? body?.message : label) || label || body?.message || fallback
+  ) as Error & { status?: number };
+  err.status = response.status;
+  return err;
+}
 
 export const buyMarketplaceListingNow = async (
   listingId: string,
   couponCode?: string,
   quantity?: number
-) => {
+) =>
+  // FIXED (F3): one idempotency key per purchase INTENT (this listing, this
+  // quantity, this coupon), reused on every retry and rotated only once the
+  // purchase resolves. The web used to send no `Idempotency-Key` at all, so a
+  // buyer who retried after a timeout relied entirely on the server's fallback
+  // key — a content hash bucketed into 5-minute windows, which stops deduping
+  // the moment the retry crosses a bucket boundary.
+  withPurchaseIntent(
+    `buy_now:${listingId}:${quantity ?? 1}:${couponCode ?? ''}`,
+    async (idempotencyKey) => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/listings/${listingId}/buy-now`, {
     method: 'POST',
-    headers: await getAuthHeaders(),
+    headers: { ...(await getAuthHeaders()), 'Idempotency-Key': idempotencyKey },
     body: JSON.stringify({
       ...(couponCode ? { couponCode } : {}),
       ...(quantity != null && quantity > 0 ? { quantity } : {}),
@@ -4535,8 +4852,7 @@ export const buyMarketplaceListingNow = async (
   });
 
   if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || 'Failed to complete purchase');
+    throw await marketplaceMoneyError(response, 'Failed to complete purchase');
   }
 
   const result = await response.json();
@@ -4552,7 +4868,8 @@ export const buyMarketplaceListingNow = async (
       totalChargeKobo: number;
     };
   };
-};
+    }
+  );
 
 export const fetchMarketplacePaymentsConfig = async () => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/payments/config`, {
@@ -4588,6 +4905,8 @@ export const verifyMarketplacePayment = async (reference: string) => {
   return result.data;
 };
 
+// Re-opens checkout on an order that already exists (buyer abandoned the
+// Paystack page). Mints a FRESH reference rather than reusing the old one.
 export const resumeMarketplaceOrderCheckout = async (orderId: string) => {
   const response = await fetch(
     `${getApiRoot()}/api/v1/marketplace/orders/${encodeURIComponent(orderId)}/checkout`,
@@ -4613,6 +4932,9 @@ export const resumeMarketplaceOrderCheckout = async (orderId: string) => {
   };
 };
 
+// ─── Seller payout profile (the gate on going live with real money) ─────────
+// Bank details are sent to the BFF, which resolves them with Paystack; nothing
+// here persists an account number locally.
 export const fetchSellerPayoutProfile = async () => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/seller/payout-profile`, {
     method: 'GET',
@@ -4656,6 +4978,10 @@ export const fetchPaystackBanks = async () => {
   return result.data as Array<{ name: string; code: string }>;
 };
 
+// ─── Cart & delivery addresses ──────────────────────────────────────────────
+// The cart is SERVER-side state (not localStorage), so it follows the account
+// across devices; every mutation returns the whole recomputed cart, which is
+// why callers replace their state from the response rather than patching it.
 export const fetchMarketplaceCart = async () => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart`, {
     method: 'GET',
@@ -4726,22 +5052,35 @@ export const clearMarketplaceCart = async () => {
   return result.data;
 };
 
+// One cart can span several sellers, so checkout takes a fulfillment choice
+// PER SELLER (`groups`) and produces one order per seller.
 export const checkoutMarketplaceCart = async (input?: {
   groups?: Array<{ sellerId: string; fulfillmentMode: string; meetingLocation?: string }>;
   addressId?: string | null;
-}) => {
-  const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/checkout`, {
-    method: 'POST',
-    headers: await getAuthHeaders(),
-    body: JSON.stringify(input || {}),
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.error || 'Checkout failed');
-  }
-  const result = await response.json();
-  return result.data;
-};
+}) =>
+  // FIXED (F3): one idempotency key per checkout INTENT. The cart itself lives
+  // only on the server, so the intent is named by the choices this checkout
+  // makes over it (per-seller fulfillment + delivery address); the key survives
+  // a timeout or a reload mid-payment and is rotated only once the checkout
+  // resolves, so a retry cannot produce a second set of orders.
+  withPurchaseIntent(
+    `cart_checkout:${input?.addressId ?? ''}:${(input?.groups ?? [])
+      .map((g) => `${g.sellerId}:${g.fulfillmentMode}`)
+      .sort()
+      .join(',')}`,
+    async (idempotencyKey) => {
+      const response = await fetch(`${getApiRoot()}/api/v1/marketplace/cart/checkout`, {
+        method: 'POST',
+        headers: { ...(await getAuthHeaders()), 'Idempotency-Key': idempotencyKey },
+        body: JSON.stringify(input || {}),
+      });
+      if (!response.ok) {
+        throw await marketplaceMoneyError(response, 'Checkout failed');
+      }
+      const result = await response.json();
+      return result.data;
+    }
+  );
 
 export const fetchMarketplaceAddresses = async () => {
   const response = await fetch(`${getApiRoot()}/api/v1/marketplace/addresses`, {
@@ -4885,6 +5224,10 @@ export const deleteSavedSearch = async (id: string) => {
 
 // --- Custom Categories ---
 
+// Both calls in this block are deliberately UNAUTHENTICATED (no getAuthHeaders)
+// — they run in the public browse/compose flows before sign-in. Both also
+// swallow every failure into an empty result, so the pickers just show fewer
+// options rather than erroring.
 export const fetchCustomCategories = async () => {
   try {
     const response = await fetchWithTimeout(`${getApiRoot()}/api/v1/marketplace/categories/custom`, {
@@ -4956,6 +5299,15 @@ export const fetchSimilarListings = async (listingId: string) => {
 
 // --- Batched listing detail (listing + isFavorited + similar in one request) ---
 
+// ─── Question banks (digital study product #1) ──────────────────────────────
+// A bank is a listing plus a versioned question snapshot. Lifecycle: publish →
+// (buy or free download) → `downloadQuestionBank` materialises an OFFLINE
+// BUNDLE on the device → attempts post scores (queued in
+// services/pendingQuestionBankScores.ts when offline) → the seller republishes
+// with `updateQuestionBankContent`, bumping `version`, which is what
+// `fetchQuestionBankUpdates` compares against each local bundle.
+// Publish/update REQUIRE `attestation: true` (rights) — the API 400s without
+// it, and both surface `.status` so the form can show that inline.
 export interface MarketplaceQuestionBankMeta {
   questionCount: number;
   version: number;
@@ -5080,7 +5432,18 @@ export const recordQuestionBankScore = async (
   );
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
-    throw new Error((err as any).error || 'Failed to record score');
+    // FIXED (F1) [E3 L4]: stamp the HTTP status on the error. The pending-score
+    // queue counts an attempt ONLY when a status is present, so a transport
+    // failure (offline, DNS, timeout — which throws before this point and
+    // carries no status) can no longer burn the retry budget and delete a
+    // legitimate score unsent. Same contract offlineFlashcardSync reads.
+    // The message carries the status too, because the queue's classifier reads
+    // it out of the message ("… status: 400"); the property is the same contract
+    // offlineFlashcardSync reads. Both, so either classifier works.
+    const base = (err as any).error || 'Failed to record score';
+    const error = new Error(`${base} (status: ${response.status})`) as Error & { status?: number };
+    error.status = response.status;
+    throw error;
   }
   return (await response.json()).data;
 };
@@ -5195,6 +5558,10 @@ export const restoreQuestionBanks = async (): Promise<{ restored: number }> => {
 };
 
 // ── Study packs (digital study products: guide + summaries + flashcards + questions) ──
+// Same lifecycle as question banks above, but delivery is MULTI-PART: a
+// download materialises up to three local artefacts (bundle / deck / note), so
+// `deliveredRefs` on a purchase can hold any combination and each field is
+// independently nullable.
 
 export interface MarketplaceStudyPackMeta {
   counts: StudyPackCounts;
@@ -5374,6 +5741,9 @@ export const fetchMarketplacePurchases = async (): Promise<MarketplacePurchase[]
 };
 
 // ── Creators (Phase 2 · J) ──
+// Follow/unfollow are the SAME path with POST/DELETE and live under
+// `/api/v1/users/:id/follow`, not `/creators` — the creator profile is just a
+// marketplace-shaped read of a user.
 
 export interface CreatorProfile {
   id: string;
@@ -5916,8 +6286,7 @@ export const fetchAiHealth = async (): Promise<{
 };
 
 export const fetchMarketplaceListingFull = async (
-  listingId: string,
-  userId?: string
+  listingId: string
 ): Promise<{
   listing: any;
   isFavorited: boolean;
@@ -5926,9 +6295,14 @@ export const fetchMarketplaceListingFull = async (
   questionBank?: MarketplaceQuestionBankMeta | null;
   studyPack?: MarketplaceStudyPackMeta | null;
 }> => {
-  const params = userId ? `` : '';
+  // FIXED (F9): this used to accept a `userId` and build `const params =
+  // userId ? `` : ''` — both branches empty, so no query string was ever
+  // appended and the argument did nothing. The viewer-scoped fields
+  // (isFavorited, canReview, owned) are derived from the bearer token, and the
+  // parameter only made it look as though a caller could ask on someone
+  // else's behalf. It is gone rather than wired.
   const response = await fetchWithTimeout(
-    `${getApiRoot()}/api/v1/marketplace/listings/${listingId}/full${params}`,
+    `${getApiRoot()}/api/v1/marketplace/listings/${listingId}/full`,
     { method: 'GET', headers: await getAuthHeaders() },
     8000
   );
@@ -6011,6 +6385,12 @@ export const fetchMarketplaceShops = async (params?: {
 };
 
 // --- Recently Viewed (localStorage) ---
+// Purely device-local: a list of listing ids, most-recent-first, re-inserted on
+// each view (so a repeat view moves to the front) and capped at 20. The key
+// starts with `lantern_`, so `shouldClearClientStorageKeyOnLogout` wipes it on
+// sign-out — it does not leak across accounts on a shared browser. The ids are
+// hydrated into listings by `fetchMarketplaceListingsByIds`, which drops any
+// that are gone.
 
 const RECENTLY_VIEWED_KEY = 'lantern_recently_viewed';
 const MAX_RECENTLY_VIEWED = 20;
@@ -6053,6 +6433,16 @@ export const removeRecentlyViewed = (listingIds: string[]) => {
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// IMAGE UPLOADS — all go to the BFF as base64 JSON, never multipart, because
+// the server re-validates the MAGIC BYTES (SEC-07) before storing.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Compress (best-effort; falls back to the original on any canvas failure),
+// read as a data: URL, and derive the content type from the data URL's own
+// prefix rather than `File.type` — see the block comment below. Rejects
+// anything outside JPEG/PNG/GIF/WebP with a user-readable message, so callers
+// do not have to pre-validate.
 async function fileToBase64Payload(
   file: File,
   options?: { maxWidth?: number; maxHeight?: number; quality?: number },
@@ -6191,6 +6581,10 @@ export const uploadMarketplaceImage = async (
   return json.data as { url: string; path: string; storageUrl?: string };
 };
 
+// The ONE storage call in this file that bypasses the BFF: it deletes straight
+// from the `marketplace-images` bucket through supabase-js, so whether the
+// caller is allowed to remove that object is decided by STORAGE RLS, not by
+// any server-side ownership check.
 export const deleteMarketplaceImage = async (filePath: string) => {
   console.log('Deleting marketplace image:', filePath);
   try {
@@ -6209,8 +6603,18 @@ export const deleteMarketplaceImage = async (filePath: string) => {
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// DIRECT MESSAGES — threads, sending, blocking, message requests, unread
+// counts, mutes, and the audio/image attachment uploads.
+// Reads here THROW rather than degrade (`AUTH_NOT_READY` / `AUTH_UNAUTHORIZED`
+// are sentinel messages callers match on): an empty array would be rendered as
+// "no conversations" and would overwrite a loaded inbox.
+// ══════════════════════════════════════════════════════════════════════════
 // --- Direct Message Functions ---
 
+// Retries ONCE, after 400ms, and only when the error message matches the
+// transient set (auth-bootstrap, network, 502/503/504). Any other failure —
+// including a 4xx — propagates on the first attempt.
 export const fetchDirectMessages = async (userId: string, otherUserId: string, options: { page?: number; limit?: number } = {}) => {
   console.log('Fetching direct messages between:', userId, 'and:', otherUserId);
   const run = async () => {
@@ -6296,6 +6700,9 @@ export const fetchDmThreads = async (_userId: string) => {
   }
 };
 
+// Mirrors `sendMessage` for groups: the body is serialised once so the
+// `retryUncertainDelivery` replay is byte-identical and `clientMessageId` makes
+// it idempotent. Only 408/5xx (via `createDeliveryResponseError`) are retried.
 export const sendDirectMessage = async (
   senderId: string,
   recipientId: string,
@@ -6417,6 +6824,12 @@ export const declineDmMessageRequest = async (threadId: string) => {
   return result.data;
 };
 
+// ─── Unread counts and read receipts (groups + DMs) ─────────────────────────
+// The four reads/writes below NEVER throw: a badge is cosmetic, and a thrown
+// error during boot would take out the whole chat list.
+// `previousLastReadAt` is returned so a caller can UNDO an accidental mark-read
+// (the "New messages" divider re-anchors to it); it is read from either the
+// envelope root or `data`, because the two endpoints disagree on shape.
 // Fetch unread counts for all groups
 export const fetchGroupUnreadCounts = async (userId: string): Promise<Record<string, number>> => {
   try {
@@ -6645,6 +7058,11 @@ export const unarchiveDmThread = async (threadId: string, _userId: string): Prom
   }
 };
 
+// ─── Mutes (per DM thread and per group; identical shape, different paths) ───
+// Every one of the six wrappers resolves to null on failure. null is NOT
+// "unmuted" — callers must render an unknown mute state rather than showing the
+// bell as on. `parseMuteResponse` also returns null for a 2xx whose body lacks
+// a boolean `muted`, so a malformed response cannot be mistaken for a verdict.
 export type ChatMuteStatus = { muted: boolean; mutedUntil: string | null };
 
 async function parseMuteResponse(response: Response): Promise<ChatMuteStatus | null> {
@@ -6832,6 +7250,12 @@ export const deleteOfflineBundle = async (userId: string, bundleId: string): Pro
 };
 
 // Sync local offline bundles with server (merge strategy)
+// UNION by bundleId, local wins on a tie — bundle content is immutable once
+// downloaded, so there is nothing to reconcile field-by-field. Local-only
+// bundles are uploaded SERIALLY inside the loop (one await per bundle), and a
+// failed upload is swallowed by `saveOfflineBundle` returning false, so the
+// merge still succeeds and that bundle is retried on the next sync. Any throw
+// returns the local list unchanged — never an empty one.
 export const syncOfflineBundles = async (
   userId: string, 
   localBundles: OfflineBundleData[]
@@ -6877,6 +7301,14 @@ export const syncOfflineBundles = async (
 // ============================================
 // USER SETTINGS (nested schema — web + mobile)
 // ============================================
+// Optimistic concurrency with a module-level version cache
+// (`lastKnownSettingsVersion`) plus a serialising promise chain
+// (`settingsSaveQueue`). Both must be reset on logout via
+// `clearLastKnownSettingsVersion`, or the next account's first PUT carries the
+// previous user's version.
+// Writes are PATCHES by category: the server deep-merges what is sent onto the
+// latest row, which is what makes the 409 retry safe — the same patch is
+// replayed against the newer version rather than re-sending a whole stale blob.
 
 export type SaveUserSettingsResult = {
   ok: boolean;
@@ -6896,22 +7328,14 @@ export const fetchUserSettings = async (userId: string): Promise<UserSettings | 
   try {
     if (!(await hasValidSession())) return null;
 
-    const doFetch = async () =>
-      fetch(`${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`, {
-        method: 'GET',
-        headers: await getAuthHeaders(),
-      });
-
-    let response = await doFetch();
-
-    if (response.status === 401 || response.status === 403) {
-      const { handleApiAuthFailure } = await import('./sessionHandler');
-      if (await handleApiAuthFailure(response.status)) {
-        response = await doFetch();
-      } else {
-        return null;
-      }
-    }
+    // REFACTORED (R1): one `apiFetch` in place of the call/classify/call pair.
+    // The 401/403/404 → null branch below already covered "retry did not help",
+    // so dropping the early `return null` changes nothing.
+    const response = await apiFetch(
+      `${getApiRoot()}/api/v1/users/${encodeURIComponent(userId)}/settings`,
+      { method: 'GET', headers: await getAuthHeaders() },
+      { timeoutMs: null }
+    );
 
     if (response.status === 401 || response.status === 403 || response.status === 404) {
       return null;
@@ -6944,6 +7368,14 @@ export const saveUserSettings = async (
   return result.ok;
 };
 
+// Up to 3 attempts. A 409 re-reads the current version — preferably from the
+// conflict body, otherwise with a follow-up GET — and replays the SAME patch.
+// Exhausting the attempts returns `{ ok: false, conflict: true }` plus the
+// server's settings, so the caller can rebase rather than silently lose the
+// edit; every other failure returns a bare `{ ok: false }`.
+// The whole run is appended to `settingsSaveQueue` (with `run` as BOTH
+// handlers, so a rejected predecessor does not stall the chain) — concurrent
+// theme / checklist / tips saves would otherwise all race the same version.
 export const saveUserSettingsDetailed = async (
   userId: string,
   settingsOrPatch: UserSettings | Record<string, unknown>,
@@ -7043,6 +7475,13 @@ export const saveUserSettingsDetailed = async (
 // ============================================
 // USER PREFERENCES SYNC (Theme, Settings)
 // ============================================
+// SEPARATE from USER SETTINGS above — a different table and endpoint
+// (`/api/v1/preferences`), with no CAS version and last-write-wins. `theme` is
+// a column; everything else rides the `preferences` JSONB. `themePreference`
+// ('system' included) is the canonical appearance choice and is validated
+// against the three literals on read, so a junk value degrades to undefined.
+// The write SPREADS the existing `preferences` object, so a caller that passes
+// a stale copy silently reverts other keys.
 
 export interface UserPreferences {
   theme: 'light' | 'dark';
@@ -7115,14 +7554,28 @@ export const saveUserPreferences = async (userId: string, prefs: UserPreferences
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      console.error('Error saving user preferences:', error);
+      // FIXED (SW) [Sentry WEB-1R]: this logged the parsed BODY, which Sentry
+      // renders as "[object Object]" — five events that said nothing at all.
+      // Log a sentence with the status in it, and treat the expected statuses
+      // (expiry, suspension, rate limit) as warnings so they do not file.
+      const body = await response.json().catch(() => ({} as Record<string, unknown>));
+      const detail =
+        (typeof body?.error === 'string' && body.error) ||
+        (typeof body?.message === 'string' && body.message) ||
+        response.statusText ||
+        'request failed';
+      const line = `Error saving user preferences: HTTP ${response.status} ${detail}`;
+      if ([401, 403, 429].includes(response.status)) console.warn(line);
+      else console.error(line);
       return false;
     }
 
     return true;
   } catch (error) {
-    console.error('Error saving user preferences:', error);
+    console.error(
+      'Error saving user preferences:',
+      error instanceof Error ? error.message : String(error)
+    );
     return false;
   }
 };
@@ -7212,9 +7665,19 @@ export const saveUserBudget = async (userId: string, budget: BudgetData): Promis
   }
 };
 
+const BUDGET_TRANSACTIONS_KEY = 'budget:GET:/transactions';
+
 export const fetchBudgetTransactions = async (userId: string): Promise<TransactionData[]> => {
   try {
     if (!userId) return [];
+    // FIXED (SW) [Sentry WEB-1H, 78 events in one afternoon]: the Budget screen
+    // refetches on open, on focus and on visibilitychange, so once the
+    // authenticated limiter said 429 every one of those asked again and logged
+    // again. Sit out the window the server named; the store keeps showing what
+    // it already has, which is the same thing an empty [] would have produced.
+    const { dedupe, isRateLimited, noteRateLimited } = await import('./requestThrottle');
+    if (isRateLimited(BUDGET_TRANSACTIONS_KEY)) return [];
+
     const headers = await getAuthHeaders();
     if (!headers.Authorization) {
       console.warn('No valid session available for fetching budget transactions.');
@@ -7222,21 +7685,40 @@ export const fetchBudgetTransactions = async (userId: string): Promise<Transacti
     }
 
     // The route is self-scoped server-side; no client-side user matching needed.
-    const response = await fetch(
-      `${getApiRoot()}/api/v1/budget/transactions`,
-      withApiCredentials({ headers })
-    );
+    // Deduped: a focus event and a visibilitychange arrive together and used to
+    // open two identical requests.
+    // The BODY is read inside dedupe, not outside it: a Response can only be
+    // consumed once, so sharing the Response itself would break the second
+    // caller with "body already read".
+    const response = await dedupe(BUDGET_TRANSACTIONS_KEY, async () => {
+      const res = await fetch(
+        `${getApiRoot()}/api/v1/budget/transactions`,
+        withApiCredentials({ headers })
+      );
+      return {
+        ok: res.ok,
+        status: res.status,
+        retryAfter: res.headers?.get?.('Retry-After') ?? null,
+        payload: res.ok ? await res.json().catch(() => ({})) : {},
+      };
+    });
     if (!response.ok) {
-      // 401/403 = session expiry / suspension, both handled elsewhere — a
-      // console.error here files a Sentry issue for an expected condition.
+      // 401/403 = session expiry / suspension, 429 = the server asking us to
+      // slow down; all three are handled elsewhere, and a console.error here
+      // files a Sentry issue per attempt for an expected condition.
       if (response.status === 401 || response.status === 403) {
         console.warn('Skipping budget transactions fetch: HTTP', response.status);
+      } else if (response.status === 429) {
+        const wait = noteRateLimited(BUDGET_TRANSACTIONS_KEY, response.retryAfter);
+        console.warn(
+          `[Budget] transactions rate limited; backing off ${Math.ceil(wait / 1000)}s`
+        );
       } else {
         console.error('Error fetching budget transactions: HTTP', response.status);
       }
       return [];
     }
-    const body = await response.json().catch(() => ({}));
+    const body = response.payload as { data?: unknown };
     const rows: Array<Record<string, unknown>> = Array.isArray(body?.data) ? body.data : [];
 
     return rows.map(t => ({
@@ -7294,6 +7776,10 @@ export const deleteBudgetTransaction = async (transactionId: string): Promise<bo
   }
 };
 
+// Same union-by-id merge as `syncOfflineBundles`, local-wins, then sorted
+// newest-first. It only UPLOADS local-only rows — a transaction deleted on
+// another device is re-created here, because absence from the server list is
+// indistinguishable from "not synced yet".
 export const syncBudgetTransactionsToCloud = async (
   userId: string,
   localTransactions: TransactionData[]
@@ -7338,6 +7824,17 @@ export const syncBudgetTransactionsToCloud = async (
 // ============================================
 // PENDING SYNC RESULTS (Offline Test Results)
 // ============================================
+// The only block in this file that still talks to PostgREST DIRECTLY
+// (`supabase.from('pending_sync_results')`), so access is governed by RLS, not
+// by the BFF — which is also why `savePendingSyncResult` passes an explicit
+// `user_id` and the reads filter on it client-side.
+// The upsert's `onConflict: 'id'` targets the PRIMARY KEY (a plain unique
+// index), so it is safe; the same option against a PARTIAL unique index is what
+// used to 42P10 on message reactions.
+// Every function here swallows its error and returns false/[]; the durable
+// queue the replay actually reads is the local one in
+// `useTestStore.pendingSyncResults` (see services/offlineTestSync.ts), so a
+// failure to mirror it server-side does not lose the result.
 
 export interface PendingSyncResult {
   id: string;
@@ -7477,6 +7974,17 @@ export const syncPendingResultsToCloud = async (
   }
 };
 
+// ══════════════════════════════════════════════════════════════════════════
+// EMAIL VERIFICATION & PASSWORD RESET
+// The only calls in this file that go to Supabase GoTrue directly rather than
+// the BFF, because these flows mint and consume Supabase's own email tokens.
+// They still ride `supabaseFetch`, so a cookie-mode refresh triggered here is
+// intercepted like any other. All four rethrow the raw supabase-js error.
+// The redirect origin is taken from `window.location.origin` at call time, so
+// whatever host the user is on must be in the project's allowed redirect list.
+// `updateAuthPassword` changes the password but does NOT invalidate other
+// sessions — callers pair it with `revokeOtherSessions()` above.
+// ══════════════════════════════════════════════════════════════════════════
 // --- Email verification & password reset ---
 
 export function getWebAuthRedirectOrigin(): string {

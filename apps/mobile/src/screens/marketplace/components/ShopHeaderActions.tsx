@@ -1,3 +1,15 @@
+/**
+ * Cart and You icons with live badges, mounted in the header of every Shop
+ * screen that paints its own header.
+ *
+ * Exports: ShopHeaderActions.
+ * Touches: useShopBadges for both counts; navigates to `Cart` and
+ * `ShopAccount` through the `navigate` prop.
+ *
+ * Gotchas: this is a slot, not a navigator header, so a screen that forgets to
+ * mount it is silently inconsistent and no test catches it. Pass `hide` for
+ * the screen you are already on.
+ */
 import React from 'react';
 import { Pressable, View } from 'react-native';
 import { Badge } from '../../../components/ui';

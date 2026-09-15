@@ -1,6 +1,28 @@
 // ===========================================
 // Lantern Study Mobile - Test Results Screen
 // ===========================================
+/**
+ * The `TestResults` route, presented as a fullScreenModal: the score card for
+ * one attempt, an honest correct/incorrect/unanswered tally, per-question
+ * review with confidence badges and provenance chips, and the exits — Done,
+ * Try Again, Practice wrong answers, Detailed Analysis.
+ *
+ * Main exports: the default `TestResultsScreen`.
+ * Touches: testStore (`hydrateAttemptDetail`, `startTest`, `startQuestionSet`),
+ * authStore, AIExplainModal (POST /ai/explain-answer, one credit per tap). The
+ * exit planners live in ./testSessionExit and the review rules in
+ * ./confidenceReveal. No native modules beyond RN's BackHandler.
+ *
+ * Gotchas: leaving this screen is never a plain `goBack()` — a session reached
+ * by nested navigate makes these results the Study stack's only route, so the
+ * planners decide between pop, popTo, a tab return, or a reset, and the Study
+ * stack is always reset BEFORE any tab switch or the results outlive their
+ * session as the tab's root. Unanswered is not incorrect: `tallyAttempt` keeps
+ * the three counts apart and a practice sitting shows no pass/fail at all.
+ * Retake follows the same two-step launch as the tests list (snapshot set
+ * first, source test second) and `replace`s this screen so BACK cannot reach a
+ * stale score.
+ */
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {

@@ -1,6 +1,36 @@
 // ===========================================
 // Lantern Study - Shared API Client Factory
 // ===========================================
+//
+// PURPOSE
+//   The single `fetch` wrapper every call to the Lantern API goes through.
+//   It owns four things that must never diverge between platforms: the base
+//   URL + `/api/v1` prefix, the auth-header/credentials handshake, the 401
+//   refresh-and-retry dance, and the translation of a non-2xx response into a
+//   typed Error a screen can show a student. Endpoint modules (./endpoints,
+//   ./companion) are thin callers on top of the ApiClient this returns.
+//
+// CONSUMERS
+//   web    — builds one client with `credentials: 'include'`, because the web
+//            session lives in httpOnly cookies minted by the Cloudflare Pages
+//            BFF; its getAuthHeaders returns a placeholder, not a real token.
+//   mobile — builds one client with a real Supabase bearer token and a
+//            `refreshAuth` backed by the Supabase session.
+//   api    — does NOT use this; the server talks to Supabase directly.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT. Run `npm run build` in
+//     packages/shared before typechecking or running the apps, or consumers
+//     resolve a stale `dist/` and you will debug a bug you already fixed.
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`;
+//     any indexed read added here must be narrowed before use.
+//   - `refreshAuth` is deliberately tri-state (`true` / `false` / `'transient'`).
+//     A boolean cannot distinguish "the session was revoked" from "the auth
+//     server was unreachable", and collapsing the two is exactly what signed
+//     students out on every flaky connection. Do not simplify it back.
+//   - Errors thrown from here carry `status`, and may carry `code`,
+//     `suspendedUntil` and `deliveryUncertain`. Callers that retry MUST check
+//     `deliveryUncertain` before assuming the write did not land.
 
 import { parseRetryAfterMs, RateLimitError } from './marketplaceCache';
 import { VersionConflictError } from './versionConflict';
@@ -35,6 +65,15 @@ function buildHeaders(
   return merged;
 }
 
+// ---------------------------------------------------------------------------
+// Offline-vs-revoked 401 vocabulary
+// ---------------------------------------------------------------------------
+// The distinction these three exports encode is the whole reason mobile stopped
+// signing students out (and discarding their unsynced work) on a dropped
+// connection. An "offline auth error" means: we could neither verify nor
+// disprove the session, so we kept it. Screens should show the message and let
+// the student retry; they must NOT treat it as a sign-out.
+
 export type AuthHeadersProvider = () => Promise<Record<string, string>>;
 
 /**
@@ -67,6 +106,14 @@ export function isOfflineAuthError(error: unknown): error is OfflineAuthError {
     (error as { status?: unknown }).status === 401
   );
 }
+
+// ---------------------------------------------------------------------------
+// Client configuration + the client surface
+// ---------------------------------------------------------------------------
+// One ApiClient per app, built once at boot. `request` is what almost every
+// caller wants (it unwraps the API's `{ data }` envelope); `requestRaw` is for
+// the handful of endpoints that return a bare body or need the envelope's
+// siblings (pagination, meta).
 
 export interface ApiClientConfig {
   getBaseUrl: () => string;
@@ -117,15 +164,40 @@ const fetchWithTimeout = async (
   }
 };
 
+// ---------------------------------------------------------------------------
+// The factory
+// ---------------------------------------------------------------------------
+// Request lifecycle, in order:
+//   1. resolve auth headers, strip Content-Type for FormData
+//   2. fetch with an AbortController timeout
+//   3. 401 -> definitive codes sign out; otherwise refresh once and retry, or
+//      raise an offline 401 when nothing is proven
+//   4. non-2xx -> 429 becomes RateLimitError, 409 becomes VersionConflictError,
+//      everything else becomes an Error carrying status/code/deliveryUncertain
+//   5. 2xx -> parsed JSON
+
 export function createApiClient(config: ApiClientConfig): ApiClient {
   const defaultTimeout = config.defaultTimeoutMs ?? 10000;
 
-  const requestRaw = async <T>(
+  /**
+   * The ONE request core: auth headers, timeout, the 401 refresh/sign-out
+   * policy, and the non-2xx → typed-Error mapping. It returns the raw ok
+   * `Response`; the parser is the caller's (`requestRaw` reads JSON,
+   * `requestText` reads text).
+   *
+   * FIXED (F9 · E3 L2): `requestText` used to be a SECOND copy of the fetch
+   * that skipped all of this — no refresh, no SESSION_REVOKED, no
+   * offline-vs-revoked distinction — and collapsed every failure into a bare
+   * `HTTP error <status>` with no `status`/`code` on the Error. A student with
+   * a just-expired token exporting a deck to CSV got a number and no recovery
+   * on a perfectly good connection. Both parsers share this core now.
+   */
+  const requestResponse = async (
     endpoint: string,
     options: RequestInit = {},
     timeoutMs = defaultTimeout,
     allowRetry = true
-  ): Promise<T> => {
+  ): Promise<Response> => {
     const headers = await config.getAuthHeaders();
     const response = await fetchWithTimeout(
       `${config.getBaseUrl()}/api/v1${endpoint}`,
@@ -164,7 +236,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       if (allowRetry && config.refreshAuth) {
         const refreshed = await config.refreshAuth();
         if (refreshed === true) {
-          return requestRaw<T>(endpoint, options, timeoutMs, false);
+          return requestResponse(endpoint, options, timeoutMs, false);
         }
         if (refreshed === 'transient') {
           // Unreachable auth server: nothing is proven, so the session stays.
@@ -199,9 +271,21 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
           code?: string;
           data?: unknown;
         };
+        // `error` is preferred when it is a sentence, but the global API error
+        // handler puts the error CLASS NAME there ('Error') and the sentence in
+        // `message` — so a 409 from the idempotency layer used to surface as
+        // the bare word "Error". Same exception list as the general branch
+        // below; the body's own `code` is carried through instead of being
+        // flattened to 'version_conflict'.
+        const label = errBody.error;
+        const isClassLabel = !label || label === 'Error' || label === 'ApiError';
         throw new VersionConflictError(
-          errBody.error || errBody.message || 'Resource was updated elsewhere',
-          errBody.data ?? null
+          (isClassLabel ? errBody.message : label) ||
+            errBody.error ||
+            errBody.message ||
+            'Resource was updated elsewhere',
+          errBody.data ?? null,
+          errBody.code
         );
       }
       const errBody = error as {
@@ -244,6 +328,15 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       throw requestError;
     }
 
+    return response;
+  };
+
+  const requestRaw = async <T>(
+    endpoint: string,
+    options: RequestInit = {},
+    timeoutMs = defaultTimeout
+  ): Promise<T> => {
+    const response = await requestResponse(endpoint, options, timeoutMs);
     return response.json() as Promise<T>;
   };
 
@@ -256,24 +349,13 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
     return result.data;
   };
 
+  /** Same core as `requestRaw` (see there), parsed as text. */
   const requestText = async (
     endpoint: string,
     options: RequestInit = {},
     timeoutMs = defaultTimeout
   ): Promise<string> => {
-    const headers = await config.getAuthHeaders();
-    const response = await fetchWithTimeout(
-      `${config.getBaseUrl()}/api/v1${endpoint}`,
-      {
-        ...options,
-        credentials: options.credentials ?? config.credentials ?? 'same-origin',
-        headers: buildHeaders(headers, options),
-      },
-      timeoutMs
-    );
-    if (!response.ok) {
-      throw new Error(`HTTP error ${response.status}`);
-    }
+    const response = await requestResponse(endpoint, options, timeoutMs);
     return response.text();
   };
 

@@ -18,6 +18,7 @@
 import React from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import { DoorTile } from '../ui/DoorTile';
+import { homeDoorScene } from '../ui/tileSceneFills';
 import { T } from '../ui';
 import {
   HOME_QUICK_ACTIONS,
@@ -66,6 +67,13 @@ export function HomeQuickActions({ onAction }: HomeQuickActionsProps) {
             key={spec.id}
             feature={spec.feature}
             icon={spec.icon}
+            // The panel's picture. A door with a SCENE takes the scene path,
+            // which is the one the set room's tiles take, so the same feature
+            // is drawn in the same two colours on both screens. Without that
+            // the illustration below it painted its ground ellipse in the
+            // surface — a white sheet on the butter pastel in light, where the
+            // set room's `Lectures` tile drew the shade (1.0.60 smoke).
+            scene={homeDoorScene(spec.id)}
             illustration={spec.illustration}
             title={spec.label}
             width={tileWidth}

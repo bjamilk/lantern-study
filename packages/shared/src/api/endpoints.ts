@@ -1,3 +1,48 @@
+// ===========================================
+// Lantern Study - Shared API Endpoint Map
+// ===========================================
+//
+// PURPOSE
+//   One typed function per Lantern API route, in a single object built by
+//   `createApiEndpoints(client)`. This file IS the client-side contract for
+//   `apps/api-server`: if a route exists on the server and is used by a
+//   screen, its caller lives here. Nothing in here holds state or makes
+//   product decisions — it shapes a request, names a return type, and hands
+//   the call to the ApiClient from ./client.
+//
+// CONSUMERS
+//   web + mobile — both build the endpoint map once at boot over their own
+//                  ApiClient and expose it through their API provider/hook.
+//   api          — no. The server owns the routes these call.
+//
+// HOW IT IS ORGANISED
+//   `createApiEndpoints` returns one flat object, divided by
+//   `// ========== SECTION ==========` banners that follow the product areas
+//   (decks, flashcards, profiles, chat, tests, marketplace, budget, classes,
+//   jobs board...). Callers are flat by design: `api.fetchDecks(...)`, not
+//   `api.decks.fetch(...)`. Keep new functions inside the banner that matches
+//   their route prefix rather than appending at the end.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT — run `npm run build` in
+//     packages/shared before typechecking web/mobile, or you will be reading
+//     a stale `dist/` and chasing a bug you already fixed.
+//   - Adding a NEW SUBPATH under src/ is a three-file change: the file, an
+//     `exports` entry in packages/shared/package.json, and a `paths` entry in
+//     apps/api-server/tsconfig.json. Mobile jest additionally maps
+//     `@lantern/shared/*` subpaths — a subpath only a test imports produces a
+//     CI-only TS2307 that `jest --no-cache` reproduces locally.
+//   - The web turbo build runs with strict `noUncheckedIndexedAccess`, so any
+//     indexed read added here must be narrowed before use.
+//   - `client.request` unwraps the API's `{ data }` envelope; `requestRaw`
+//     does not. Picking the wrong one yields `undefined` at runtime with a
+//     perfectly happy typechecker, so match the server route's shape.
+//   - Response types here are hand-written and NOT generated from the server.
+//     They drift silently. When a field reads as undefined at runtime, check
+//     the route in apps/api-server/src/routes before trusting this file.
+//   - Mutating money/creation routes send an `Idempotency-Key`. See the note
+//     on the marketplace section about the default-key defect.
+
 import type { ApiClient } from "./client";
 import { createIdempotencyKey } from "./idempotency";
 import {
@@ -259,6 +304,11 @@ export function createApiEndpoints(client: ApiClient) {
 
   return {
     // ========== DECK API ==========
+    // Flashcard decks: the container a student's cards live in. Decks may be
+    // filed under a course and a topic; pass the literal string 'null' to
+    // filter for "unfiled". `createDeckWithCards` is the one to use for any
+    // AI-generated deck — the two-call flow strands an empty deck when the app
+    // dies mid-generation.
 
     fetchDecks: (
       userId: string,
@@ -484,6 +534,10 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== FLASHCARD API ==========
+    // Individual cards plus the FSRS review loop (see ../flashcards for the
+    // scheduler itself and its plain-language labels). Review submissions are
+    // the highest-volume write in the product and are queued offline through
+    // ../sync, so these must stay safe to replay.
 
     fetchFlashcards: async (
       deckId?: string,
@@ -714,6 +768,11 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     // ========== COVER IMAGES (decks + notes) ==========
+    // Cover-art upload/clear for decks and notes. These send multipart
+    // FormData, which is why ./client strips Content-Type for FormData bodies
+    // — forcing it breaks the boundary and React Native fails with a bare
+    // "Network request failed". Stored objects are signed on read; see
+    // ../utils/storageUrl for why a URL must be re-signed, not cached.
 
     /**
      * Set a deck/note cover.
@@ -775,6 +834,11 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     // ========== USER PROFILE API ==========
+    // The student's own profile and other students' public profiles: display
+    // name, avatar, campus/course academic identity (see ../academic), and the
+    // trust/verification fields the network surfaces. Public profile reads go
+    // through routes that use the service role and therefore bypass RLS — the
+    // route, not the database, decides what a stranger may see.
 
     fetchUserProfile: (userId: string) =>
       apiRequest<{
@@ -979,6 +1043,10 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== GROUPS API ==========
+    // Study groups: create/join/leave, membership roster, group metadata.
+    // Distinct from communities (campus-wide, further down in the marketplace
+    // banner) and from DMs. Membership is the gate for every group read, so a
+    // dropped membership must invalidate the realtime subscription too.
 
     fetchGroups: (
       userId: string,
@@ -1205,6 +1273,10 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== MESSAGES API ==========
+    // Group chat messages: page, send, edit, delete. Realtime delivery is a
+    // Supabase subscription owned by the apps; these calls are the durable
+    // path and the backfill after a reconnect. Attachment URLs are signed and
+    // expire — re-sign on render rather than persisting the signed URL.
 
     fetchMessages: async (
       groupId: string,
@@ -1327,6 +1399,9 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     // ========== COMMUNITY BOARDS ==========
+    // The board (post/answer) surface inside groups and communities, plus
+    // message pinning. Board posts carry a `kind` that drives how they render;
+    // treat an unknown kind as the default rather than hiding the post.
 
     /**
      * One page of board posts: roots only, newest first. Use
@@ -1466,6 +1541,10 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     // ========== DIRECT MESSAGES API ==========
+    // One-to-one threads. Separate storage and separate routes from group
+    // messages — a thread is addressed by the pair of users, a group message
+    // by the group. Marketplace inquiries piggyback on DM threads, which is
+    // why `fetchInquiryByThread` exists in the marketplace section.
 
     fetchDMThreads: (userId: string) =>
       apiRequest<
@@ -1679,6 +1758,11 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== TESTS API ==========
+    // Tests, quizzes and exam-mode attempts: create a personal test, start and
+    // resume an attempt, submit answers, read results. Resume derivation is
+    // the delicate part — the attempt's answered state is tri-state (unseen /
+    // seen / locked) and mobile has two start paths into the same screen, so
+    // any change here must keep both paths deriving the same resume point.
 
     fetchTests: (
       userId: string,
@@ -1793,6 +1877,14 @@ export function createApiEndpoints(client: ApiClient) {
         }),
       }),
 
+    /**
+     * FIXED (F2): carries the attempt's `Idempotency-Key`. The key is minted
+     * ONCE when the result is queued (`@lantern/shared/offlineQueue`) and
+     * re-read on every retry — a fresh key per attempt is the same as none,
+     * and writes a second result row for one sitting. When the caller sends
+     * none the server derives its own from the session id, which is already
+     * unique per attempt.
+     */
     submitTestResult: (
       sessionId: string,
       result: {
@@ -1800,6 +1892,7 @@ export function createApiEndpoints(client: ApiClient) {
         correctAnswersCount: number;
         totalQuestions: number;
       },
+      options?: { idempotencyKey?: string | null },
     ) =>
       apiRequest<{
         session_id: string;
@@ -1808,6 +1901,9 @@ export function createApiEndpoints(client: ApiClient) {
         total_questions: number;
       }>(`/tests/${sessionId}/results`, {
         method: "POST",
+        ...(options?.idempotencyKey
+          ? { headers: { "Idempotency-Key": options.idempotencyKey } }
+          : {}),
         body: JSON.stringify(result),
       }),
 
@@ -1943,6 +2039,14 @@ export function createApiEndpoints(client: ApiClient) {
       }>(`/tests?${params.toString()}`);
     },
 
+    /**
+     * FIXED (F2 · E3 C6/H11): the no-`sessionId` branch CREATES a session, so
+     * an unkeyed retry wrote a second session for one offline sitting —
+     * duplicate attempts in History, points awarded twice. It now sends the
+     * attempt's `Idempotency-Key`, minted once at enqueue by
+     * `@lantern/shared/offlineQueue` and re-read (never re-minted) on retry, so
+     * a replay is served the FIRST session back instead of creating another.
+     */
     saveTestResult: (
       userId: string,
       data: {
@@ -1956,6 +2060,8 @@ export function createApiEndpoints(client: ApiClient) {
         totalQuestions: number;
         startTime?: string;
         endTime?: string;
+        /** Stable per attempt. See the note above. */
+        idempotencyKey?: string | null;
       },
     ) => {
       if (data.sessionId) {
@@ -1981,6 +2087,9 @@ export function createApiEndpoints(client: ApiClient) {
         score?: number;
       }>("/tests", {
         method: "POST",
+        ...(data.idempotencyKey
+          ? { headers: { "Idempotency-Key": data.idempotencyKey } }
+          : {}),
         body: JSON.stringify({
           config: data.config || {},
           questions: data.questions || [],
@@ -1989,6 +2098,9 @@ export function createApiEndpoints(client: ApiClient) {
           end_time: data.endTime || new Date().toISOString(),
           score: data.score,
           userId,
+          // Header-less clients (web's raw-fetch data layer) send the same key
+          // in the body; the route reads it as its fallback.
+          ...(data.idempotencyKey ? { idempotencyKey: data.idempotencyKey } : {}),
         }),
       });
     },
@@ -2055,6 +2167,9 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== USER QUESTION STATS API ==========
+    // Per-question correctness history, the raw material behind mastery and
+    // exam readiness. `isQuestionStatEligible` above is the filter: generated
+    // and ad-hoc question ids must not pollute the long-term stats.
 
     fetchUserQuestionStats: (userId: string) =>
       apiRequest<
@@ -2067,6 +2182,10 @@ export function createApiEndpoints(client: ApiClient) {
       >(`/user-stats/${encodeURIComponent(userId)}`),
 
     // ========== DASHBOARD AGGREGATE API ==========
+    // The single roll-up call Home makes at boot so the dashboard is one
+    // request rather than a dozen. ../dashboard/homeSections decides what is
+    // shown from this payload — including hiding a section outright when there
+    // is genuinely nothing to show, rather than rendering an empty promise.
 
     /** One round trip for everything the dashboard needs (self only). */
     fetchDashboardSummary: (options?: {
@@ -2119,6 +2238,8 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     // ========== NOTIFICATIONS API ==========
+    // In-app notification list and read state. Push delivery is separate
+    // (mobile registers its token elsewhere); this is the durable inbox.
 
     fetchNotifications: (userId: string) =>
       apiRequest<
@@ -2182,6 +2303,10 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     // ========== GAMIFICATION API ==========
+    // Points, badges, streaks and leaderboards. Honesty rule: the client never
+    // mints its own points — it asks the server to award them and re-reads.
+    // A locally-incremented counter that the server disagrees with is how a
+    // student ends up watching their streak go backwards.
 
     fetchGamificationStats: (userId: string) =>
       apiRequest<{
@@ -2242,6 +2367,40 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== MARKETPLACE API ==========
+    // The largest block in the file, and really six neighbourhoods that grew
+    // together. In order:
+    //   1. browse + listing CRUD + favourites + inquiries + reviews
+    //   2. moderation: reports, appeals, strikes, admin queues
+    //   3. offers, buy-now, and the digital goods (question banks, study packs)
+    //   4. communities, discovery, presence, feed, mastery/readiness,
+    //      referrals and study rooms — the academic-network surface
+    //   5. payments: Paystack config/verify, seller payout profiles, cart,
+    //      addresses, orders, coupons, seller analytics
+    //   6. media uploads (listing, chat image/audio, question images)
+    //
+    // Pricing honesty: the hand-over fee is INSIDE the displayed price — the
+    // buyer pays the list price and the seller receives 95%. Never add a fee
+    // on top at checkout. See ../marketplace/fees for the one calculator.
+    //
+    // KNOWN ISSUE (tracked, deferred F9: refactor-stage item already planned —
+    // E3 structure refactor #2, "make idempotency non-optional at the money
+    // boundary". Closing it here alone would not fix anything: the same defect
+    // has three ends that must move together — this default, the server's
+    // 5-minute wall-clock fallback (routes/marketplace.ts, E3 H2) and mobile's
+    // `undefined` at the call sites (marketplaceStore, E3 H10) — and making
+    // the parameter REQUIRED is a breaking signature change across the mobile
+    // tree, which is outside this lane. The web half is already protected: F3's
+    // `services/marketplacePurchaseIntent.ts` mints one stable key per purchase
+    // intent and threads it through every retry):
+    // several mutating money endpoints fall back to a
+    // RANDOM default idempotency key when the caller passes none —
+    // `buyNowListing`, `checkoutMarketplaceCart`, `createMarketplaceOffer`,
+    // `boostListing`, and the budget writes further down. A random key makes
+    // the header decorative: a user-initiated retry of a charge generates a
+    // fresh key, so the server cannot recognise it as the same intent and can
+    // charge twice. The key must be derived from the intent (cart id + cart
+    // version, listing id + buyer, offer id) and held stable across retries,
+    // the way `createDeckWithCards` derives its key from the job id.
 
     fetchMarketplaceListings: async (
       filters: {
@@ -2424,11 +2583,6 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     /**
-     * Marketplace private-pilot probe: whether the current viewer may see the
-     * goods marketplace at all. The server enforces the gate with 403s
-     * (code MARKETPLACE_PRIVATE) regardless; this only drives which UI to show.
-     */
-    /**
      * Every Shop badge and the seller's payout balances, one request. The
      * client used to make eight and count them itself; this is the server's
      * count, with the same status sets (see services/marketplaceSummary.ts).
@@ -2457,13 +2611,16 @@ export function createApiEndpoints(client: ApiClient) {
         };
       }>("/marketplace/summary", {}, 10000),
 
+    /**
+     * Legacy availability probe. The marketplace is open to every viewer
+     * (2026-09-15) and the server always answers `enabled: true`; the endpoint
+     * and this binding are kept only so already-installed mobile builds, which
+     * treat a missing probe as "could not check" and wall off every commerce
+     * screen, open up without an update. New code must not gate on it.
+     *
+     * @deprecated Nothing gates on marketplace access any more.
+     */
     fetchMarketplaceAccess: () =>
-      // `authenticated` reports whether the server actually saw a credential;
-      // without it, an anonymous-race answer is indistinguishable from a real
-      // denial. The 5s budget was half the client default and turned a Render
-      // cold start into "you are not on the pilot" — a probe timing out must
-      // never decide access, so it gets the normal budget and the caller
-      // treats a failure as unknown.
       apiRequest<{ enabled: boolean; authenticated?: boolean }>(
         "/marketplace/access",
         {},
@@ -2896,6 +3053,13 @@ export function createApiEndpoints(client: ApiClient) {
         }>
       >(`/marketplace/listings/${listingId}/similar`, {}, 5000),
 
+    // ----- Moderation: reports, appeals, strikes, admin queues -----
+    // Student-facing reporting plus the admin console's queues. `reportContent`
+    // is the generic path (any target type); the listing-specific one predates
+    // it. Rights attestation is required on publish — clients must send
+    // `attestation`; the server rejects the upload otherwise. A suspended
+    // account gets `ACCOUNT_SUSPENDED` with `suspendedUntil` on the Error.
+
     reportMarketplaceListing: (
       listingId: string,
       report: { reason: string; details?: string },
@@ -3022,6 +3186,11 @@ export function createApiEndpoints(client: ApiClient) {
         method: "POST",
         body: JSON.stringify(body),
       }),
+
+    // ----- Offers and direct purchase -----
+    // Offer/counter-offer negotiation, then buy-now. Offer acceptance and
+    // buy-now both create an order server-side inside a single transaction —
+    // the client never assembles an order itself.
 
     createMarketplaceOffer: (
       listingId: string,
@@ -3175,6 +3344,13 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     /** Free banks and owner re-downloads; delivers into offline_bundles. */
+    // ----- Digital goods: question banks and study packs -----
+    // The creator-marketplace core. A purchase grants an entitlement; the
+    // download endpoint checks it and returns content. Drafts, publishing,
+    // content updates, per-buyer update feeds, scores and leaderboards live
+    // here. Restore endpoints re-grant what a student already paid for after a
+    // reinstall — never charge twice for a restore.
+
     downloadQuestionBank: (listingId: string) =>
       apiRequest<{ bundleId: string; questionCount: number }>(
         `/marketplace/listings/${listingId}/question-bank/download`,
@@ -3568,6 +3744,22 @@ export function createApiEndpoints(client: ApiClient) {
     // -----------------------------------------------------------------
 
     /** The caller's own communities (auto-derived + joined). */
+    // ----- Communities, discovery, presence, feed, mastery, referrals -----
+    // The academic-network surface, physically inside the marketplace banner
+    // for historical reasons. Covers communities and their channels/lounges,
+    // roles and moderation actions, invites, discovery of groups/people/
+    // communities, study presence and study rooms, the activity feed, the
+    // mastery graph and exam/course readiness, and referrals.
+    //
+    // A campus that has not been switched on returns `NOT_ENABLED`; use
+    // `isNotEnabledError` and the COMMUNITY_NOT_ENABLED_COPY defined at the
+    // top of this file rather than showing a raw error — "not switched on yet"
+    // is a state, not a failure.
+    //
+    // Roster reads embed the member's profile. A second foreign key between
+    // two tables makes PostgREST's embed ambiguous and it silently returns
+    // nothing — a migration is not safe just because its SQL is.
+
     fetchMyCommunities: () => apiRequest<MyCommunity[]>('/communities', {}, 10000),
 
     /**
@@ -4039,6 +4231,12 @@ export function createApiEndpoints(client: ApiClient) {
       apiRequest<{ following: false }>(`/users/${userId}/follow`, { method: 'DELETE' }, 10000),
 
     /** The seller's earnings ledger (Phase 2 · I). Owner-only server-side. */
+    // ----- Payments: Paystack, payouts, seller money -----
+    // Paystack config and post-checkout verification, plus the seller payout
+    // profile (bank account) that gates going live as a seller. The webhook is
+    // the source of truth for a completed charge, not this verify call — verify
+    // is the client nudging the server to reconcile early.
+
     fetchSellerPayments: (page = 1) =>
       apiRequest<
         Array<{
@@ -4108,6 +4306,13 @@ export function createApiEndpoints(client: ApiClient) {
         {},
         10000,
       ),
+
+    // ----- Cart, addresses, orders, coupons, seller tooling -----
+    // Checkout flow and everything after it: cart mutation, delivery
+    // addresses, order state, fulfilment, coupons, seller analytics/campaigns
+    // and onboarding. `resumeMarketplaceOrderCheckout` exists because a
+    // student can close the app mid-payment; the order survives and is
+    // resumable rather than orphaned.
 
     fetchMarketplaceCart: () =>
       apiRequest<import("../types").MarketplaceCartItem[]>(
@@ -4446,6 +4651,11 @@ export function createApiEndpoints(client: ApiClient) {
         },
       }),
 
+    // ----- Media uploads -----
+    // All multipart. The upload returns a storage ref, not a usable URL —
+    // display URLs are signed on read and expire (chat/board photos died after
+    // 24h when a signed URL was frozen into a row). See ../utils/storageUrl.
+
     uploadMarketplaceImage: (payload: {
       fileName: string;
       base64Data: string;
@@ -4565,6 +4775,11 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     // ========== BUDGET API ==========
+    // Campus Budget: the monthly budget document, transactions, and savings
+    // goals. Money-shaped but entirely local to the student — no payment
+    // processor is involved, so a bad write costs a wrong number, not a wrong
+    // charge. The idempotency defect noted above applies to the transaction
+    // and goal-contribution writes here as well.
 
     /**
      * The server answers 200 with a null payload for a month that was never
@@ -4723,6 +4938,9 @@ export function createApiEndpoints(client: ApiClient) {
       }>("/budget/awards/under-budget", { method: "POST", body: "{}" }),
 
     // ========== OFFLINE BUNDLES API ==========
+    // Downloadable study bundles for offline use: list, save, delete. The
+    // offline queue in ../sync is the other half of the offline story — this
+    // is the content, that is the pending work.
 
     fetchOfflineBundles: (userId: string) =>
       apiRequest<
@@ -4770,6 +4988,8 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     // ========== CHALLENGES API ==========
+    // Peer study challenges: create, accept, decline, track. Social pressure
+    // feature, not a money feature.
 
     createChallenge: (payload: {
       groupId: string;
@@ -4835,6 +5055,9 @@ export function createApiEndpoints(client: ApiClient) {
       ),
 
     // ========== PREFERENCES API ==========
+    // Server-persisted user preferences (the ones that must follow a student
+    // across devices), plus the campus list the marketplace filters by. Purely
+    // local presentation settings live in ../settings instead.
 
     fetchUserPreferences: (userId: string) =>
       apiRequest<{
@@ -4914,6 +5137,10 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== ACADEMIC: COURSES + MY COURSES (/api/v1/courses, /api/v1/users/me/courses) ==========
+    // The academic spine: the shared course catalogue and the student's
+    // enrolments. Course codes and academic years are normalised in
+    // ../academic — send normalised values, because matching across campuses
+    // depends on it.
     // Shapes pinned by docs/phase1-academic-identity-contract.md §2/§3.
 
     /** Search the shared course catalogue (canonical first, then by code). */
@@ -5070,6 +5297,10 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== CLASSES (/api/v1/classes) ==========
+    // Instructor-run classes: join codes, roster, sections, assignments,
+    // materials and analytics, plus the institution/LMS surface. Role matters
+    // on nearly every call — instructor and student see different shapes of
+    // the same class.
     fetchMyClasses: (role?: "instructor" | "student" | "all") => {
       const params = new URLSearchParams();
       if (role && role !== "all") params.set("role", role);
@@ -5237,6 +5468,9 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== CONCEPTS (/api/v1/concepts) ==========
+    // The concept vocabulary and the links between concepts and content — the
+    // graph mastery and readiness are computed over. Concept slugs are
+    // normalised in ../learning; do not invent slugs client-side.
     // Thin clients for the knowledge-network vocabulary (Phase 1 · C). The
     // concept-tagging UI is Phase 3 P; shapes pinned by
     // docs/phase1-learning-events-contract.md §2.
@@ -5281,6 +5515,8 @@ export function createApiEndpoints(client: ApiClient) {
       }),
 
     // ========== LIBRARY ARCHIVE (/api/v1/library) ==========
+    // The student's saved library: overview and search across everything they
+    // have kept (notes, sets, purchased packs). Read-mostly.
     // Shapes pinned by docs/phase1-library-archive-contract.md §1.
 
     /** The Library tree: years → courses (with enrolment + counts) + unfiled counts, in one round trip. */
@@ -5317,6 +5553,10 @@ export function createApiEndpoints(client: ApiClient) {
     },
 
     // ========== JOBS BOARD API (/api/v1/jobs-board) ==========
+    // Campus jobs: postings, applications, and the employer side. Deadlines
+    // are enforced server-side — the client must not accept an application for
+    // a closed posting just because its cached copy still looks open. Shared
+    // jobs vocabulary lives in ../jobs.
 
     fetchJobPostings: (
       filters: {

@@ -5,6 +5,18 @@
  * a personal set; a course is optional filing. This module is the activity
  * list, Turn-into targets, and the pure helpers both clients use to fill that
  * room.
+
+ *
+ * CONSUMERS: web + mobile (the set room and course workspace screens). Not the api.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT — run `npm run build` in
+ * packages/shared before typechecking or running web/mobile, or consumers
+ * resolve a stale `dist/`. A NEW subpath under src/ needs three things: the
+ * file, a `packages/shared/package.json` "exports" entry, and an
+ * `apps/api-server/tsconfig.json` "paths" entry; mobile jest maps
+ * `@lantern/shared/*` subpaths separately, so a subpath imported only by a
+ * test produces a CI-only TS2307 (reproduce with `jest --no-cache`). The web
+ * turbo build compiles with strict `noUncheckedIndexedAccess`.
  */
 import type { FeatureKey } from '../design';
 import { AI_CREDIT_COSTS, AI_FEATURE_CREDIT_COST, formatCreditCost } from '../utils/aiCredits';
@@ -67,6 +79,14 @@ export interface WorkspaceActivity {
  * ship. `later` is visible so the graph is complete, and the clients refuse
  * the tap with a later-wave line rather than a missing screen.
  */
+// ---------------------------------------------------------------------------
+// The activity list: what you can do inside a set or course
+// ---------------------------------------------------------------------------
+// One row per activity, each with the icon both platforms have, a promise
+// sentence, and a `ready`/`later` status. `later` activities are SHOWN and
+// honestly marked rather than hidden — a student should be able to see where
+// the product is going without being lied to about what works today.
+
 export const WORKSPACE_ACTIVITIES: readonly WorkspaceActivity[] = [
   {
     id: 'notes',
@@ -182,6 +202,14 @@ export interface TurnIntoTarget {
   feature: FeatureKey;
 }
 
+// ---------------------------------------------------------------------------
+// Turn-into: converting one artefact into another
+// ---------------------------------------------------------------------------
+// Notes -> flashcards, notes -> quiz, and so on. Each target has an AI credit
+// cost taken from ../utils/aiCredits (the single source of truth shared with
+// the server) and formatted for display, so the price a student sees before
+// tapping is the price the server actually charges.
+
 export const TURN_INTO_TARGETS: readonly TurnIntoTarget[] = [
   {
     id: 'cards',
@@ -267,6 +295,12 @@ export function formatTurnIntoCost(id: TurnIntoTargetId): string {
   return cost === 0 ? 'no AI use' : formatCreditCost(cost);
 }
 
+// ---------------------------------------------------------------------------
+// Recents (local only)
+// ---------------------------------------------------------------------------
+// A short most-recently-used list persisted under WORKSPACE_RECENTS_STORAGE_KEY
+// on the device. Never synced — it is a convenience, not user data.
+
 export interface WorkspaceRecent {
   courseId: string;
   openedAt: number;
@@ -287,6 +321,14 @@ export function upsertWorkspaceRecent(
   const next = [{ courseId: id, openedAt }, ...list.filter((row) => row.courseId !== id)];
   return next.slice(0, max);
 }
+
+// ---------------------------------------------------------------------------
+// Filing and counting
+// ---------------------------------------------------------------------------
+// Which course an item is filed under (tolerating both camelCase and the
+// snake_case the API returns), and the count/label derivations the workspace
+// header shows. Counts are formatted, never invented: a zero is rendered as
+// absence rather than as "0 notes".
 
 export function filedCourseId(item: {
   courseId?: string | null;
@@ -367,6 +409,13 @@ export function isWalkableAttachment(attachment: {
 }): boolean {
   return Boolean(attachment.id && WALKABLE_TYPES.has(String(attachment.type)));
 }
+
+// ---------------------------------------------------------------------------
+// Scope: the same screen, for a set or for a course
+// ---------------------------------------------------------------------------
+// The workspace renders over either a personal study set or a course. The copy
+// differs by one noun, so the noun is a parameter and SCOPED_COPY holds the
+// pairs — that is cheaper than two copies of every string drifting apart.
 
 export type WorkspaceScope = 'set' | 'course';
 

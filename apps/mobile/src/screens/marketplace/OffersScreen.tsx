@@ -1,3 +1,21 @@
+/**
+ * `Offers` route: offers received and sent, with accept / decline / counter /
+ * withdraw, plus a Pay now path for an accepted offer's order.
+ *
+ * Exports: OffersScreen.
+ * Touches: useMarketplaceStore (buyerOffers, sellerOffers, fetchOffers,
+ * respondToOffer, fetchShopSummary); resumeMarketplaceOrderCheckout in
+ * ../../services/api; canRespondToOffer, canWithdrawOffer and
+ * getOfferProposedBy from @lantern/shared; expo-web-browser, imported lazily
+ * at the point of payment; StickyActionBar for the counter-offer bar.
+ *
+ * Gotchas: an offer past expires_at is treated as dead client-side and its
+ * action buttons are hidden, because the server 409s any accept or counter. A
+ * failed action always reloads, since a conflict means the card is stale.
+ * useFocusEffect reloads both sides on every focus so a buyer who dismissed
+ * the Paystack browser comes back to a card that offers Pay now. The counter
+ * amount is seeded at 90% of the offer.
+ */
 import React, { useCallback, useEffect, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
 import {

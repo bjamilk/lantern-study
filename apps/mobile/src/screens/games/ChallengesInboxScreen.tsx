@@ -1,3 +1,19 @@
+/**
+ * The `ChallengesInbox` route: 1v1 duel challenges grouped into Incoming, Sent,
+ * Active and Recent. Accept or decline an invitation, play an accepted duel, or
+ * open a completed one's result.
+ *
+ * Main exports: the default `ChallengesInboxScreen`.
+ * Touches: authStore (the current user, and who is challenger vs opponent),
+ * gameStore `startChallengePlay`; services/challenges `fetchChallenges`,
+ * `acceptChallenge`, `declineChallenge`. No native modules.
+ *
+ * Gotchas: the list polls every 10s while focused, and a silent poll never
+ * touches the loading flag or the rows on failure — repeat errors are logged
+ * once (`lastLoadErrorRef`) so a dropped connection cannot bury a real API
+ * problem. `startChallengePlay` decides the destination: a session already
+ * complete or awaiting the opponent goes to GameResult, not into a round.
+ */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import {

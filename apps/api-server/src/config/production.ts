@@ -1,75 +1,12 @@
-import express, { Express, Request, Response, NextFunction } from 'express';
-import compression from 'compression';
-import { 
-  securityHeaders, 
-  corsConfig, 
-  requestIdMiddleware,
-  sanitizationMiddleware,
-} from '../middleware/security';
+import { Express } from 'express';
 import { globalErrorHandler, notFoundHandler } from '../middleware/productionErrorHandler';
 import { logger } from '../services/logger';
-import healthRoutes from '../routes/health';
 import { markServerShuttingDown } from '../middleware/loadShed';
 
-/**
- * Apply production middleware stack to Express app
- * Call this before mounting routes
- */
-export function applyProductionMiddleware(app: Express): void {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
-  // ============ SECURITY ============
-  
-  // Request ID for tracking
-  app.use(requestIdMiddleware);
-  
-  // Security headers (Helmet)
-  app.use(securityHeaders);
-  
-  // CORS
-  app.use(corsConfig);
-  
-  // Compression (gzip)
-  app.use(compression({
-    level: 6,
-    threshold: 1024, // Only compress responses > 1KB
-    filter: (req, res) => {
-      if (req.headers['x-no-compression']) {
-        return false;
-      }
-      return compression.filter(req, res);
-    },
-  }));
-  
-  // Body parsing with limits
-  app.use(express.json({ 
-    limit: '10mb',
-    strict: true,
-  }));
-  app.use(express.urlencoded({ 
-    extended: true, 
-    limit: '10mb',
-  }));
-  
-  // Input sanitization (XSS prevention)
-  app.use(sanitizationMiddleware);
-  
-  // Request logging
-  app.use(logger.requestLogger());
-  
-  // Rate limiting: see middleware/rateLimit.ts (mounted in server.ts)
-  
-  // ============ HEALTH CHECKS ============
-  
-  // Mount health routes at root level (no auth required)
-  app.use('/', healthRoutes);
-  
-  logger.info('Production middleware applied', {
-    environment: process.env.NODE_ENV,
-    compression: true,
-    rateLimiting: isProduction,
-  });
-}
+// NOTE: `applyProductionMiddleware` used to live here — a second, never-mounted
+// middleware stack (laxer CORS, a flat 10mb JSON parser, its own sanitiser mount).
+// Nothing imported it; server.ts builds the real stack. It was deleted so nobody
+// resurrects the weaker configuration by calling it.
 
 /**
  * Apply error handlers after all routes
@@ -194,7 +131,6 @@ export const productionConfig = {
 };
 
 export default {
-  applyProductionMiddleware,
   applyErrorHandlers,
   setupGracefulShutdown,
   validateEnvironment,

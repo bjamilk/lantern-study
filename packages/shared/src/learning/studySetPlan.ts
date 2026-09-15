@@ -1,5 +1,17 @@
 /**
  * Topic plan for a study set — units, topics, modes, and the next recommendation.
+
+ *
+ * CONSUMERS: web + mobile (the plan panel and the set room's next-up), plus ../study/planTimeline which renders these rows. Not the api.
+ *
+ * GOTCHAS: `packages/shared` is consumed BUILT — run `npm run build` in
+ * packages/shared before typechecking or running web/mobile, or consumers
+ * resolve a stale `dist/`. A NEW subpath under src/ needs three things: the
+ * file, a `packages/shared/package.json` "exports" entry, and an
+ * `apps/api-server/tsconfig.json` "paths" entry; mobile jest maps
+ * `@lantern/shared/*` subpaths separately, so a subpath imported only by a
+ * test produces a CI-only TS2307 (reproduce with `jest --no-cache`). The web
+ * turbo build compiles with strict `noUncheckedIndexedAccess`.
  */
 export type StudySetMode = 'cram' | 'standard' | 'comprehensive';
 
@@ -27,6 +39,13 @@ export interface StudySetPlanProgress {
   covered: number;
   mastered: number;
 }
+
+// ---------------------------------------------------------------------------
+// Progress and the next recommendation
+// ---------------------------------------------------------------------------
+// Topics are tri-state: unseen -> covered -> mastered. Progress is derived from
+// the rows, never stored separately, so it cannot disagree with them.
+// `pickRecommendedTopic` chooses the single topic to send the student to next.
 
 export function studySetPlanProgress(topics: readonly StudySetTopic[]): StudySetPlanProgress {
   return {
@@ -90,11 +109,23 @@ export function topicsFromReadingNotes(
   return { unit, topics };
 }
 
+// ---------------------------------------------------------------------------
+// Modes
+// ---------------------------------------------------------------------------
+// cram / standard / comprehensive. Each carries the promise sentence shown to
+// the student when they pick it.
+
 export const STUDY_SET_MODES: readonly { id: StudySetMode; label: string; promise: string }[] = [
   { id: 'cram', label: 'Cram', promise: 'Fewer topics, exam-weighted' },
   { id: 'standard', label: 'Standard', promise: 'Next uncovered topic' },
   { id: 'comprehensive', label: 'Comprehensive', promise: 'Mastery required before moving on' },
 ];
+
+// ---------------------------------------------------------------------------
+// Units: grouping topics into a syllabus shape
+// ---------------------------------------------------------------------------
+// Topic rows carry their unit id; these rebuild the unit -> topics tree, label
+// it, and derive units from the source materials when a plan is first built.
 
 export function unitsForTopics(
   units: readonly StudySetUnit[],

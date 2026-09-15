@@ -4,6 +4,18 @@
  * semester). Mirrors the web Settings → Academic section
  * (docs/phase1-academic-identity-contract.md §4/§5).
  */
+/**
+ * Exports: AcademicSettingsScreen (default).
+ * Touches: services/academic loadAcademicProfile / saveAcademicProfile (PUT
+ * /users/:id) / getMyActiveCourses / addMyCourse / removeMyCourseEnrolment /
+ * setMyCourseExamDate / archiveAcademicYear; authStore (user and the cached
+ * academicProfile); useInstitutions for the campus picker; validation helpers
+ * in utils/courseSelection.
+ * Notes: the profile fields are edited locally and written on Save, while each
+ * course action writes immediately and reloads the list. Removing a course
+ * and archiving the year both confirm first, and both say what happens to the
+ * student's notes and decks.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,

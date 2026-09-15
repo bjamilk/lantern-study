@@ -1,3 +1,14 @@
+/**
+ * Budget stack -> AddExpense. Modal-style form for one expense: amount,
+ * category tile, optional description, date. Saves and pops straight back.
+ *
+ * Exports: AddExpenseScreen (default).
+ * Touches: budgetStore.addTransaction ({ type: 'EXPENSE' }) and its isLoading;
+ * EXPENSE_CATEGORIES from the same store; authStore for the user id;
+ * BudgetDatePicker; useScreenBottomPadding for tab-bar clearance.
+ * Note: the date is normalised with toDateOnlyLocal, so a transaction keeps
+ * the student's local calendar day rather than a UTC-shifted one.
+ */
 // ===========================================
 import { toDateOnlyLocal } from '@lantern/shared/utils/dateOnly';
 // Lantern Study Mobile - Add Expense Screen

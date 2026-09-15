@@ -1,3 +1,12 @@
+/**
+ * Single-slot transient toast message for the app-level toast host.
+ *
+ * Main export: `useToastStore` — `showToast(message, type)` and
+ * `dismissToast()`. No queue and no auto-dismiss timer here: a second
+ * `showToast` replaces the first, and the host component owns the timeout.
+ *
+ * Touches: zustand only.
+ */
 import { create } from 'zustand';
 
 export type ToastType = 'success' | 'error' | 'info';

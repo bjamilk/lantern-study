@@ -1,3 +1,25 @@
+/**
+ * The Flashcards deck list — the standalone screen and, with `embedded`, the
+ * Library's Flashcards tab. Creates decks, imports cards, and carries the
+ * per-row action sheet (study, generate, offline, share, move, delete).
+ *
+ * Main exports: `FlashcardsScreen` (also the default). `DeckCard` is local.
+ * Touches: flashcardStore (decks, cached cards, offline marks, cover path),
+ * authStore, uiStore (the Library course/topic filter), confirmStore;
+ * services/api `exportDeck`, services/academic `courseHasTopics`, and the
+ * job-progress sheet for AI generation. Native: the share sheet via
+ * utils/shareFile; the file pickers live inside the import sheets.
+ * Presentation rules (title, subtitle, study-first order) come from ./deckList.
+ *
+ * Gotchas: the course/topic filter narrows client-side on the `course_id` /
+ * `topic_id` each row carries, deliberately, so the shared store keeps the full
+ * list for other readers. `UNFILED_COURSE_ID` and `UNTOPICED_TOPIC_ID` are
+ * filter sentinels (the latter is the truthy string 'null'), never real ids to
+ * file under. Two import doors exist and are not the same price — the AI note
+ * import costs a credit, the cards import is free. Moving a deck to another
+ * course always clears its topic. Sheets are sequenced with `SHEET_DISMISS_MS`
+ * so two modals are never on screen at once.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,

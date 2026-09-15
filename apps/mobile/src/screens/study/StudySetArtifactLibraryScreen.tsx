@@ -11,6 +11,17 @@
  * that threw the student out to the set picker; now it navigates in place —
  * "All" is this set's shelf, a folder tile opens that folder's sets, and Back
  * returns to All instead of leaving the screen.
+ *
+ * Route: `StudySetLibrary` in the Study stack.
+ * Main exports: `StudySetArtifactLibraryScreen` and the `ArtifactKind` union.
+ * Touches: notesStore, flashcardStore, testStore, studySetStore, authStore, and
+ * setRoomUiStore (where the visible tab is published for the set row's pill).
+ * No services and no native modules; everything is refetched on focus.
+ *
+ * Gotchas: the `kind` param is a one-way inbox — it is read and adopted through
+ * navigation/segmentParamSync and never written back. Publishing the tab into
+ * the params crash-looped build 205 with a maximum-update-depth loop, which is
+ * why the visible tab goes to the store instead.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackHandler, Pressable, ScrollView, View, useWindowDimensions } from 'react-native';

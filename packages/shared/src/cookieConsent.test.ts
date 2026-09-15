@@ -54,5 +54,16 @@ describe('cookieConsent protocol', () => {
     expect(shouldClearClientStorageKeyOnLogout('auth-storage-v2')).toBe(true);
     expect(shouldClearClientStorageKeyOnLogout('theme')).toBe(false);
   });
+
+  // FIXED (F2 · E3 C5): the wipe used to take the owner stamp (it starts
+  // `lantern_`) and leave the queue it guards, so the next account adopted the
+  // previous student's finished tests.
+  it('preserves the offline-queue owner stamp across logout', () => {
+    expect(shouldClearClientStorageKeyOnLogout('lantern_offline_owner')).toBe(false);
+    expect(shouldClearClientStorageKeyOnLogout('lantern_offline_owner_era')).toBe(false);
+    expect(
+      shouldClearClientStorageKeyOnLogout('lantern_offline_quarantine:pendingSyncResults:user-a')
+    ).toBe(false);
+  });
 });
 

@@ -1,5 +1,6 @@
 # Logs
 logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -71,3 +72,10 @@ DerivedData/
 apps/mobile/build-*.apk
 apps/mobile/build-*.tar.gz
 apps/mobile/build-ios-sim-*.tar.gz
+
+# Local scratch / debugging artifacts (never commit)
+tmp_*
+temp_*
+.tmp-home/
+.wrangler/
+*.tar.gz

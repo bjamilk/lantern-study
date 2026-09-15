@@ -2,6 +2,28 @@
  * My courses (enrolments) — the archive spine every course picker, chip row
  * and the Academic settings section read from. Loaded lazily on first use and
  * refreshed after every write so all surfaces agree.
+ *
+ * Exports: `useAcademicStore` — `myCourses` (active + archived enrolments) and
+ * `knownCourses` (a label cache for course ids that are not enrolments).
+ * Actions: `loadMyCourses` (lazy, single-flight via a module-level `inflight`),
+ * `replaceMyCourses` / `addMyCourse` / `removeMyCourse` / `updateMyCourse` /
+ * `archiveSemester` (all write then force-reload), `rememberCourses`,
+ * `resolveCourse`, `reset`.
+ *
+ * Touches: services/academic (`GET/PUT /users/me/courses`, the per-course PATCH
+ * and DELETE, and the archive-semester call) and utils/academicSetup. Nothing
+ * is persisted — the list is memory-only and refetched each page load.
+ *
+ * Gotchas:
+ *  - `PUT /users/me/courses` has SET semantics: ids you omit for that year are
+ *    DELETED. `addMyCourse` therefore re-sends the year's archived ids and
+ *    re-archives them afterwards; see the comment there before touching it.
+ *  - `inflight` is module-level. `reset()` clears it, so sign-out must call
+ *    `reset()` — otherwise an in-flight load resolves after the switch and
+ *    hands the next account the previous student's courses.
+ *  - `resolveCourse` falls back to `knownCourses`, which is never scoped or
+ *    invalidated: a renamed course keeps its old label until something calls
+ *    `rememberCourses` with the new row.
  */
 import { create } from 'zustand';
 import type { Course, UserCourse } from '../types';

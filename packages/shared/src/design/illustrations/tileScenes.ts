@@ -2,6 +2,25 @@
 // Lantern Study - Room tile scenes (StudyFetch parity, SF7)
 // ===========================================
 //
+// CONSUMERS: web's room recommendation card and mobile's room tile panel. Not
+// used by the api. Re-exported from `./index.ts`, so `@lantern/shared/design`
+// gets both records. Guarded by `./tileScenes.test.ts`.
+//
+// NOT the same shape as `./index.ts`'s ILLUSTRATIONS: landscape rather than
+// square, several filled shapes rather than one, fill role per path. Keep them
+// as two records — widening `Illustration` to cover both would give the ten
+// spot drawings a fill role they do not have.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking or running web/mobile, or consumers
+//     resolve a stale `dist/`.
+//   - A NEW subpath under src/ needs the file, a `packages/shared/package.json`
+//     "exports" entry, AND an `apps/api-server/tsconfig.json` "paths" entry.
+//     Mobile jest maps `@lantern/shared/*` subpaths separately, so a subpath
+//     imported only by a test fails CI-only with TS2307 (`jest --no-cache`).
+//   - The web turbo build compiles with strict `noUncheckedIndexedAccess`.
+//
 // Twelve flat two-tone SCENES for the study room's tiles. They are NOT the ten
 // spot illustrations beside them in `./index.ts`, and the difference is the
 // reason they need their own record rather than a wider `Illustration`:
@@ -271,6 +290,13 @@ export const TILE_SCENE_NAMES = Object.keys(TILE_SCENES) as TileSceneName[];
  * `SET_ROOM_TILE_ID`, web asserts every `OWN_WAY_TOOL_ORDER` id either has a
  * scene or is one of the two that deliberately does not.
  */
+// ---------------------------------------------------------------------------
+// Tool -> scene mapping
+// ---------------------------------------------------------------------------
+// Which scene a given study tool's tile shows. `tileSceneForTool` returns
+// undefined for an unknown tool rather than guessing a scene — a tile with no
+// art is better than a tile with the wrong art.
+
 export type TileSceneToolId =
   | 'import'
   | 'quiz'
@@ -333,6 +359,13 @@ export function tileSceneForTool(toolId: string): TileSceneName | undefined {
  * as a second object; `tileScenes.test.ts` pins that as a contrast band rather
  * than as a hex, so a token can move without silently flattening the shadow.
  */
+// ---------------------------------------------------------------------------
+// Two-tone fill derivation
+// ---------------------------------------------------------------------------
+// A scene is painted from ONE caller-supplied accent: `fill` uses it, `shade`
+// uses it mixed toward ink by TILE_SHADE_INK_MIX. That is why a scene stays
+// coherent in both themes from a single prop.
+
 export const TILE_SHADE_INK_MIX = 0.26;
 
 /**

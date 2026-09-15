@@ -1,3 +1,25 @@
+/**
+ * The `DeckDetail` route: one deck — its cover and stats, the study-mode doors
+ * (review, cram, timed drill, match, learn), the card list, and the Manage
+ * sheet (add/generate cards, offline, export/import, sell, move, reset, delete).
+ *
+ * Main exports: `DeckDetailScreen` (also the default).
+ * Touches: flashcardStore (cards, deck CRUD, offline marks, cover path),
+ * authStore, featureTipStore, confirmStore; services/api
+ * `exportDeck`/`exportDeckCsv`/`importDeck`/`importDeckCsv`/`importDeckApkg`/
+ * `resetDeckStatistics` and services/academic `courseHasTopics`. Native:
+ * expo-document-picker, expo-file-system/legacy, and the share sheet via
+ * utils/shareFile.
+ *
+ * Gotchas: only one modal may be on screen at a time — the Manage sheet's
+ * slide-out has to finish before another opens, which is what the
+ * `SHEET_DISMISS_MS` timeouts are for; overlapping windows are the cover ANR.
+ * There is one ActionSheet for both platforms because Android's alert silently
+ * drops buttons past the third. Moving a deck to another course always clears
+ * its topic, since the server rejects a topic from a different course. Cloze
+ * and image-occlusion rows must send null front/back — empty strings fail the
+ * `check_flashcard_fields` constraint.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,

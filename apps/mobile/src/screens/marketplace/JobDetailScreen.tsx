@@ -1,3 +1,23 @@
+/**
+ * `JobDetail` route: one job posting — overview, description, the in-app apply
+ * form (screening answers, message, resume), the external-apply path, safety
+ * notes and a report sheet.
+ *
+ * Exports: JobDetailScreen (named and default).
+ * Touches: fetchJobPosting, fetchJobApplicantProfile, applyToJob,
+ * setJobPostingSaved, trackJobExternalApply and reportJobPosting in
+ * ../../services/jobsBoard; ResumeUploadField; isJobPostingPubliclyVisible and
+ * the job format helpers from @lantern/shared; Linking for the external URL.
+ *
+ * Gotchas: the apply form is gated on four conditions at once — not already
+ * applied, deadline not passed, status publicly visible, and an applyMode of
+ * in_app or both. Required screening answers are checked client-side before
+ * applyToJob; the server may still answer `existing`, which is surfaced as
+ * "You already applied" rather than an error. Save is optimistic and rolled
+ * back on failure. `hasApplied` is set locally after an external-apply click
+ * too, so the card reflects the click, not a confirmed application. The report
+ * sheet preselects no reason and keeps Submit disabled until one is picked.
+ */
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,

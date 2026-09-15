@@ -1,3 +1,35 @@
+/**
+ * Study sets and their folders — the "rooms" the Study section is organised
+ * into, with a per-user localStorage cache so the list paints before the
+ * network answers.
+ *
+ * Exports: `useStudySetStore` (`sets`, `folders`, `loaded`, `loading`,
+ * `loadError`, `lastOpenedId`, `picker`; actions `loadSets`, `createSet`,
+ * `updateSet`, `removeSet`, `resolveSet`, `touchOpened`, `openPicker` /
+ * `closePicker`, `loadFolders`, `createFolder`, `removeFolder`), the cache-key
+ * helper `studySetCacheKey(userId)`, and the test hook
+ * `__resetStudySetInflightForTests`.
+ *
+ * Touches: services/academic (the study-set and folder CRUD plus `touchStudySet`),
+ * `useAuthStore` for the current user id, and two localStorage keys — the
+ * USER-SCOPED cache `lantern.studySets.cache:<userId>` and the un-scoped
+ * `lantern.lastStudySetId`.
+ *
+ * Gotchas:
+ *  - The cache is written on every mutation and read only on a cold first load,
+ *    so it can paint a stale list for a moment; the network result overwrites
+ *    it. It is keyed by user id, so it cannot leak across accounts — but
+ *    `lantern.lastStudySetId` is NOT, so the next account's "last opened" can
+ *    point at a set it cannot see (`resolveSet` returns null for it).
+ *  - There is no `reset()`. `inflight`, `sets` and `loaded` are module/store
+ *    state that survives a sign-out within the same page load; a user switch
+ *    must force-reload.
+ *  - `loadSets` REJECTS on failure after setting `loadError` — callers must
+ *    catch. An empty `sets` is only honest once `loaded` is true and
+ *    `loadError` is null.
+ *  - `loadFolders` swallows its error and stores `[]`, so a failed folder fetch
+ *    is indistinguishable from having no folders.
+ */
 import { create } from 'zustand';
 import type { StudySet, StudySetFolder } from '@lantern/shared';
 import {

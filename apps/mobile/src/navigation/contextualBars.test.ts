@@ -240,7 +240,9 @@ describe('every key is a route the chrome can actually observe', () => {
     // entry becomes dead data that reads like a decision.
     const source = fs.readFileSync(CAMPUS_SCREEN, 'utf8');
     expect(source).toMatch(/active === 'shop'/);
-    expect(source).toMatch(/<GatedShop/);
+    // Rendered directly since V1 (2026-09-15): it used to be `<GatedShop`, the
+    // private-pilot HOC that is now deleted.
+    expect(source).toMatch(/<MarketplaceScreen/);
   });
 
   it('publishes the visible segment where the chrome can read it (source scan)', () => {

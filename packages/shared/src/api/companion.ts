@@ -1,6 +1,52 @@
 // ===========================================
 // Lantern Study - Shared AI Companion Client
 // ===========================================
+//
+// PURPOSE
+//   Everything the "Lantern" AI companion needs on the client side, in one
+//   file: the mode vocabulary, the Guided-mode state machine, citation and
+//   error normalisation, and the transport for /api/v1/ai/companion.
+//
+//   The companion is NOT a thin chat box. Guided mode is a multi-turn lesson
+//   whose state (topic, step, outstanding check question) must survive a
+//   remount, a Fast Refresh, and a process death on mobile. That state machine
+//   lives here — deliberately pure and testable — so web and mobile cannot
+//   drift on what "step 3 of this lesson" means.
+//
+// CONSUMERS
+//   web + mobile — both build a companion client over their AIClientConfig.
+//   api          — no; the server owns prompts, provider routing and billing.
+//
+// WHAT A STUDENT PAYS
+//   `companionSendMessage` / `companionSendMessageStream` are the billable
+//   calls: one turn = one AI use, Guided included (GUIDED_COST_NOTE says so in
+//   the UI, and that promise must stay true). Everything else here — history,
+//   conversations, feedback, analytics — is free. Remaining-use headers are
+//   parsed off every response by parseGlobalAIUsageFromHeaders and pushed to
+//   `config.onUsageUpdate`, which is what keeps the credit badge honest; pass
+//   `trackUsage: false` only for calls that genuinely do not spend.
+//
+// ASYNC (202) PATH
+//   A companion call may answer 202 with a `jobId` instead of a reply, when
+//   the server queued the work on BullMQ. `companionRequest` transparently
+//   polls the job to completion via ../jobs/jobClient, so callers see one
+//   promise either way. A job that fails refunds the credit server-side — the
+//   client must not refund or re-charge anything itself.
+//
+// GOTCHAS
+//   - `packages/shared` is consumed BUILT: run `npm run build` in
+//     packages/shared before typechecking web/mobile, or you are testing a
+//     stale dist/.
+//   - Adding a new subpath under src/ needs a packages/shared/package.json
+//     `exports` entry AND an apps/api-server tsconfig `paths` entry; mobile
+//     jest maps `@lantern/shared/*` subpaths separately, so a subpath imported
+//     only by a test fails in CI with TS2307 (reproduce: `jest --no-cache`).
+//   - The web turbo build is strict about `noUncheckedIndexedAccess`.
+//   - This file does NOT go through ./client — it calls fetch directly,
+//     because it needs the raw Response for usage headers, the 202 job body
+//     and the streaming path. It therefore does NOT get client.ts's 401
+//     refresh-and-retry. Keep that in mind when a companion call is the first
+//     request after a long background.
 
 import type {
   CompanionAction,
@@ -21,6 +67,15 @@ import { JobStillRunningError, createJobClient } from '../jobs/jobClient';
  * re-validates it, and an unknown value there falls back to `explain` rather
  * than reaching the system prompt.
  */
+// ---------------------------------------------------------------------------
+// Modes: the four ways Lantern can answer
+// ---------------------------------------------------------------------------
+// explain / quiz_me / socratic / guided. This list is the wire contract; the
+// server re-validates it and falls back to `explain` on anything unknown, so
+// `normalizeCompanionMode` mirrors that fallback rather than throwing. Labels
+// are here (not in each app) so the two clients cannot show different words
+// for the same mode.
+
 export const COMPANION_MODES: readonly CompanionMode[] = [
   'explain',
   'quiz_me',
@@ -54,6 +109,16 @@ export function normalizeCompanionMode(value: unknown): CompanionMode {
  * one step at a time and suggests what to do next. Claiming it navigates for
  * you would be a product-control promise the implementation cannot keep.
  */
+// ---------------------------------------------------------------------------
+// Guided mode: the promise, the goal picker, the seed prompt
+// ---------------------------------------------------------------------------
+// Guided turns the companion into a step-by-step lesson. `buildGuidedGoals`
+// assembles what to offer the student from what we already know they are
+// studying — continuing an open lesson ranks above starting a new one — and
+// `guidedSeedPrompt` turns the chosen goal into the first message. The copy
+// constants live here because the cost promise (one turn, one use) is a claim
+// the UI makes and the billing must honour.
+
 export const GUIDED_MODE_PROMISE =
   'Lantern teaches one step at a time and checks you have got it before moving on.';
 
@@ -427,6 +492,14 @@ export function guidedFreeTextPrompt(text: string): string {
  * Read a citation off a wire payload. Anything malformed becomes null: a
  * source chip that points nowhere is worse than no chip at all.
  */
+// ---------------------------------------------------------------------------
+// Citations
+// ---------------------------------------------------------------------------
+// The model's citations arrive untrusted and loosely shaped. Normalise to null
+// rather than rendering a half-formed source: a citation the student cannot
+// open is worse than no citation, because it implies a grounding that is not
+// there.
+
 export function normalizeCompanionCitation(raw: unknown): CompanionCitation | null {
   if (!raw || typeof raw !== 'object') return null;
   const c = raw as { noteId?: unknown; noteTitle?: unknown; excerpts?: unknown };
@@ -452,6 +525,13 @@ export function normalizeCompanionCitation(raw: unknown): CompanionCitation | nu
  * which is exactly what the "Add image" upload showed on the phone. When the
  * label is one of these, the sentence in `message` is the one to show.
  */
+// ---------------------------------------------------------------------------
+// Error text
+// ---------------------------------------------------------------------------
+// Same rule as ./client: prefer the sentence written for a student over the
+// label naming a class of failure. `Validation Error` and friends tell the
+// student nothing, so when the body carries both, the specific `message` wins.
+
 const GENERIC_ERROR_LABELS = new Set([
   'error',
   'apierror',
@@ -510,6 +590,15 @@ function historyQuery(opts?: {
   const qs = params.toString();
   return qs ? `?${qs}` : '';
 }
+
+// ---------------------------------------------------------------------------
+// Transport
+// ---------------------------------------------------------------------------
+// One client over /api/v1/ai/companion. `companionRequest` handles the 202 ->
+// poll-the-job path and usage-header parsing for every call below.
+// Billable: companionSendMessage, companionSendMessageStream.
+// Free: uploads, conversations, history, clear, feedback, analytics, group
+// summary (the last is billed on its own route, not as a companion turn).
 
 export function createCompanionClient(config: AIClientConfig) {
   const companionRequest = async <T>(

@@ -1,3 +1,20 @@
+/**
+ * `Cart` route: the buyer's cart, grouped by seller, with per-line quantity
+ * controls and a pinned totals bar leading to Checkout.
+ *
+ * Exports: CartScreen.
+ * Touches: fetchMarketplaceCart, updateMarketplaceCartItem and
+ * removeMarketplaceCartItem in ../../services/api; groupCartItems from
+ * @lantern/shared/marketplace; resolveListingDisplayPrice from shared utils;
+ * useMarketplaceStore.setCartCount, which keeps the header badge in step.
+ *
+ * Gotchas: totals are computed on the client from the listing's effective
+ * price, so they are a preview — the server prices the order at checkout. A
+ * listing with a null `quantity` is treated as stock-less and pinned to qty 1
+ * with no stepper. Every mutation re-fetches the whole cart rather than
+ * patching state. Under the buyer-pays-list fee model the prices shown are
+ * what the buyer pays; the hand-over fee is already inside them.
+ */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,

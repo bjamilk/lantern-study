@@ -1,3 +1,54 @@
+/**
+ * Signed-URL minting for private Supabase Storage objects.
+ *
+ * Purpose
+ * - Nothing in this product stores a signed URL. Signed URLs expire (24 h
+ *   maximum), so a persisted one is a broken image tomorrow — that was the
+ *   chat/board photo outage. Every record stores the bucket and object PATH,
+ *   and clients call these two routes to turn paths into URLs they can render
+ *   right now.
+ *
+ * Exports
+ * - Default router, plus `initializeStorageRoutes(supabase)` called from
+ *   `server.ts` at boot. Callers are the web and mobile clients: covers,
+ *   flashcard and question images, note files, chat and board photos,
+ *   marketplace images.
+ *
+ * Mount path
+ * - `/api/v1/storage`.
+ *
+ * Auth mode
+ * - `POST /signed-url` — `authMiddleware`. A single object always needs a
+ *   signed-in requester.
+ * - `POST /signed-urls` — `optionalAuthMiddleware`, so an anonymous visitor can
+ *   batch-sign the objects that are public by policy (active marketplace
+ *   listing images, published shop covers). `req.user?.id ?? null` is passed
+ *   straight to the ACL, which refuses everything owner-scoped for `null`.
+ *
+ * Rate-limit tier
+ * - `authenticatedRateLimit` + `storageBurstRateLimit` on both routes
+ *   (`storageRateLimits`). The burst limiter is what keeps a grid of 40 images
+ *   from becoming a sustained signing loop.
+ *
+ * Ownership predicate
+ * - Delegated, one object at a time, to `supabaseService.canAccessStorageObject`
+ *   in `services/supabase.ts`. That function is the bucket ACL: it denies by
+ *   default for any bucket not on the private allowlist, rejects traversal in
+ *   the path, treats the first path segment as the owner id, and then applies
+ *   per-bucket rules (marketplace listing status, flashcard and question image
+ *   reachability, group membership for chat objects). This router never reads a
+ *   table itself.
+ *
+ * Error-mapping convention
+ * - Single: 400 for a missing `bucket`/`path`, 403 for a denied object.
+ * - Batch: always 200. Each item carries its own outcome — `error:
+ *   'invalid_reference'` or `'access_denied'` with `signedUrl: null` — because
+ *   one unreadable thumbnail must not fail the other 39.
+ *
+ * What it touches
+ * - Supabase Storage only (private buckets), through
+ *   `createSignedStorageUrlWithVariant`. No database write, no external API.
+ */
 import { Router, type Response } from 'express';
 import { asyncHandler } from '../middleware/errorHandler';
 import { authMiddleware, optionalAuthMiddleware } from '../middleware/auth';
@@ -20,6 +71,11 @@ const storageRateLimits: import('express').RequestHandler[] = [
   storageBurstRateLimit,
 ];
 
+/**
+ * `thumb` asks for the derived thumbnail next to the object; anything else,
+ * including an absent or malformed value, means the original. The ACL is always
+ * checked against the ORIGINAL path, so a variant can never widen access.
+ */
 function parseStorageVariant(value: unknown): 'thumb' | 'original' {
   return value === 'thumb' ? 'thumb' : 'original';
 }
@@ -44,8 +100,14 @@ router.post(
       return res.status(403).json({ success: false, error: 'Access denied' });
     }
 
+    // FIXED (F10): the clamp is now given the BUCKET, and its no-argument
+    // default is one hour rather than the 24 h maximum. Clients send no
+    // `expiresInSeconds`, so every URL this route minted used to live a full
+    // day — including `job-resumes`, where the object is an applicant's CV.
+    // Sensitive buckets are capped at an hour even when a caller asks for more.
     const ttl = clampSignedUrlTtl(
-      typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined
+      typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined,
+      bucket
     );
     const displayVariant = parseStorageVariant(variant);
     const signedUrl = await supabaseService.createSignedStorageUrlWithVariant(
@@ -74,10 +136,17 @@ router.post(
       return res.status(400).json({ success: false, error: 'Maximum 40 items per request' });
     }
 
-    const ttl = clampSignedUrlTtl(
-      typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined
-    );
+    // FIXED (F10): the requested TTL is carried unclamped and clamped PER ITEM
+    // below, once the item's bucket is known — a batch can mix buckets, and one
+    // clamp here would give a CV in `job-resumes` whatever ceiling the rest of
+    // the batch earned.
+    const requestedTtl = typeof expiresInSeconds === 'number' ? expiresInSeconds : undefined;
     const displayVariant = parseStorageVariant(variant);
+    // Items are signed concurrently but authorised INDIVIDUALLY: one
+    // `canAccessStorageObject` call per object, no batching of the predicate.
+    // An item may arrive as a bucket+path pair or as a stale signed URL a
+    // client held on to; `resolveStorageReference` parses either back into a
+    // bucket and path before the ACL sees it.
     const signed = await Promise.all(
       items.map(async (item: { bucket?: string; path?: string; url?: string; variant?: string }) => {
         const resolved = supabaseService.resolveStorageReference(item.bucket, item.path, item.url);
@@ -92,7 +161,7 @@ router.post(
         const signedUrl = await supabaseService.createSignedStorageUrlWithVariant(
           resolved.bucket,
           resolved.path,
-          ttl,
+          clampSignedUrlTtl(requestedTtl, resolved.bucket),
           itemVariant,
         );
         return { ...resolved, signedUrl, variant: itemVariant };

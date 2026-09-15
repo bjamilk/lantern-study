@@ -5,6 +5,7 @@
  * Strictly necessary storage always runs. Optional categories default OFF and are not
  * loaded until the user opts in — and only once corresponding technologies are deployed.
  */
+import { isOfflineQueuePreservedKey } from './offlineQueue';
 
 export const COOKIE_PREFS_STORAGE_KEY = 'lantern_cookie_prefs_v2';
 /** Legacy one-shot dismiss flag from the essential-only notice. */
@@ -188,6 +189,12 @@ export function isCookieConsentStorageKey(key: string): boolean {
  */
 export function shouldClearClientStorageKeyOnLogout(key: string): boolean {
   if (isCookieConsentStorageKey(key)) return false;
+  // FIXED (F2): the offline-queue owner stamp, its era marker and the
+  // quarantine buckets are device facts and OTHER accounts' unsynced work, not
+  // session data. Wiping the stamp while leaving the queue it guards is how
+  // E3 C5 worked — the next account signed in, found no stamp, and replayed
+  // the previous student's finished tests into its own history.
+  if (isOfflineQueuePreservedKey(key)) return false;
   // Keep analytics ids across logout when the user previously opted in (cleared on consent revoke).
   if (key === 'lantern_analytics_anon_id' || key === 'lantern_analytics_session_id') return false;
   return (

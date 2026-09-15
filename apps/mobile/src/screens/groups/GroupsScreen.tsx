@@ -1,3 +1,24 @@
+/**
+ * Chat tab root (ChatStack -> GroupsList): the chat inbox. One list of DMs,
+ * group chats and their sub-groups, plus archived chats, pending group invites
+ * and message requests, with a universal search bar (chat names, message
+ * history, people) and multi-select actions (pin, mute, archive, leave).
+ *
+ * Exports: GroupsScreen (named and default).
+ * Touches: groupStore (groups, DM threads, unread, archive/leave),
+ * communityStore (to recognise lounges), authStore, toastStore, confirmStore;
+ * services/api fetchPendingGroupInvites / accept / decline, searchUsers,
+ * searchMessages, muteGroupChat, muteDmThread; AsyncStorage for device-local
+ * pins; useNetworkStatus, useLowDataMode, ChromeContext, BackHandler.
+ * Gotchas: community BOARD groups are filtered out of this list -- they belong
+ * to the community page. Pins are device-local (no server field) and keyed by
+ * user id. The reconnect auto-retry fires ONCE per reconnection, latched in a
+ * ref: fetchGroups clears and re-sets listError, so an unlatched retry would
+ * loop forever when Wi-Fi is up but Lantern is not (rule and test in
+ * reconnectRetry.ts). Server-backed search halves swallow their own errors and
+ * record that they failed, so "no results" is never claimed for a request that
+ * did not happen; resolveListState keeps failure above empty and no-match.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,

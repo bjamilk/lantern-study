@@ -1,3 +1,13 @@
+/**
+ * Budget stack -> SetCategoryBudget. Per-category monthly limits, edited as a
+ * single list and saved together.
+ *
+ * Exports: SetCategoryBudgetScreen (default).
+ * Touches: budgetStore budget / fetchBudget / setBudget; authStore user id.
+ * Gotcha: setBudget's second argument is the overall monthly cap. This screen
+ * re-sends the existing budget.monthlyLimit unchanged; passing the sum of the
+ * category budgets there would silently replace the student's real cap.
+ */
 import React, { useEffect, useState } from 'react';
 import { View, Text, ScrollView, TextInput } from 'react-native';
 import { appAlert } from '../../components/ui/appDialog';

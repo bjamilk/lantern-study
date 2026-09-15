@@ -107,18 +107,17 @@ export const planPendingQbankScoresLoad = <T extends ScopedPendingQuestionBankSc
 };
 
 /**
- * Keys to delete for a sign-out.
+ * Keys to delete for a sign-out: NONE, for either reason.
  *
- * `user`    — the student asked; drop their queued scores and the legacy key.
- * `revoked` — the server ended the session. Their unflushed scores MUST
- *             survive, and so must any other account's on this handset.
+ * FIXED (G4 · H12): a `user` sign-out used to drop this account's queued
+ * scores and the pre-split legacy key — unsynced work, which the shared
+ * offline-queue policy (`@lantern/shared/offlineQueue`) never deletes, and a
+ * legacy key that may hold a different account's un-migrated scores. Queued
+ * scores are owner-stamped and migrated per user on read, so leaving them is
+ * safe: this owner's next sign-in flushes them, another account's does not
+ * see them.
  */
 export const pendingQbankScoreKeysToClearOnSignOut = (
-  reason: 'user' | 'revoked',
-  userId: string | null | undefined
-): string[] => {
-  if (reason !== 'user') return [];
-  const keys = [PENDING_QBANK_SCORES_LEGACY_KEY];
-  if (userId) keys.push(pendingQbankScoresKey(userId));
-  return keys;
-};
+  _reason: 'user' | 'revoked',
+  _userId: string | null | undefined
+): string[] => [];

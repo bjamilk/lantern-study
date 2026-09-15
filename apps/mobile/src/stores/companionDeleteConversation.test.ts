@@ -37,9 +37,13 @@ jest.mock('@react-native-async-storage/async-storage', () => ({
 }));
 
 import { useCompanionStore } from './companionStore';
+import { setUserScopeId } from './userScopedState';
 
-const CONVERSATION_KEY = 'lantern_companion_conversation_id';
-const NOTE_KEY = 'lantern_companion_note_context';
+// Companion persistence is keyed per account (F8).
+const USER_ID = 'user-a';
+void setUserScopeId(USER_ID);
+const CONVERSATION_KEY = `lantern_companion_conversation_id:${USER_ID}`;
+const NOTE_KEY = `lantern_companion_note_context:${USER_ID}`;
 
 const rows = [
   { id: 'c1', title: 'Mitosis', updatedAt: '2026-09-01T00:00:00.000Z' },

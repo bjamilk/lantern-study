@@ -52,6 +52,33 @@
  * imports below are erased (a type, and a predicate from a file that itself has
  * no runtime imports), so mobile jest's node environment can test all of it.
  *
+ * THE ONE-WAY RULE. Every function here is a pure read of `(focusedRoute,
+ * focusedParams)`. Those two come from React Navigation's own state —
+ * RootNavigator's `CustomTabBar` walks the focused chain and publishes them
+ * into the chrome context — so the ROUTE is the source of truth and the bar is
+ * a projection of it. The flow is route → bar, and only that way:
+ *
+ * - Nothing in this file mutates anything. `specForRoute`, `activeItem`,
+ *   `accentForRoute`, `contextualBarMode` and `planContextualPress` return
+ *   values; they never call `setParams`, never touch a store, and never
+ *   navigate. A press produces a PLAN that a caller carries out.
+ * - A bar must never write its own state back into the route it was derived
+ *   from. Doing so closes the loop — the route re-renders the bar, which
+ *   re-writes the route — and React Navigation rebuilds `route.params` on every
+ *   navigate, so each lap is a fresh object and nothing ever settles. That is
+ *   the `Maximum update depth exceeded` crash documented in
+ *   navigation/segmentParamSync.ts, and the reason the mirror it describes was
+ *   removed.
+ * - The screen's side of the same rule: a door's ask arrives as a param, is
+ *   adopted ONCE (segmentParamSync.ts, keyed by a ticket), and what the screen
+ *   is actually showing is published to a store (stores/setRoomUiStore) — never
+ *   back into the params. The param is an inbox, not a mirror.
+ * - The one exception, and it is guarded: `Campus` has three segments inside a
+ *   single route, so `CONTEXTUAL_BAR_SEGMENTS` below needs a param the route
+ *   would not otherwise carry, and CampusScreen publishes the visible segment
+ *   into its own params under `shouldPublishCampusSegment` — a rule that keeps
+ *   exactly one writer per event and never overwrites an unadopted request.
+ *
  * FOUNDER SCOPE: six registries live here now — Study and Shop, and deck
  * detail, the note editor, the walk-through and a community page. Every one of
  * them sits ABOVE the global bar (see the header).

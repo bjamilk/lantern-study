@@ -1,3 +1,17 @@
+/**
+ * Small formatting and icon helpers shared by every marketplace screen, plus
+ * the one shared image component.
+ *
+ * Exports: formatPrice (naira, "Free" at or below zero), timeAgo,
+ * ListingImage, isOwnListing, categoryIcon, taxonomyIcon.
+ * Touches: @lantern/shared/utils (normalizeStorageUrl, formatDisplayDate),
+ * the MarketplaceListing type from ../../stores, and AppIcon.
+ *
+ * Gotchas: isOwnListing checks both `user_id` and `seller_id` because listing
+ * rows carry either depending on how they were created. ListingImage falls
+ * back to a placeholder icon on load error, which is also what a signed
+ * storage URL that has expired looks like.
+ */
 import React, { useState } from 'react';
 import { Image, View } from 'react-native';
 import { normalizeStorageUrl } from '@lantern/shared/utils';

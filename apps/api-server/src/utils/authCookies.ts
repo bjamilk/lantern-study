@@ -1,3 +1,21 @@
+/**
+ * The single definition of the session cookies and how they are set, read and
+ * cleared.
+ *
+ * Exports `ACCESS_COOKIE` / `REFRESH_COOKIE` (the names), `setAuthCookies`,
+ * `clearAuthCookies`, `readAccessCookie` and `readRefreshCookie`. Called by
+ * routes/auth.ts on login, exchange, refresh and sign-out, by the auth
+ * middleware when it reads a cookie-borne credential, and by server.ts's CORS
+ * delegate to detect whether a request carries a cookie credential.
+ *
+ * Touches nothing but the HTTP response: the cookies carry Supabase gotrue
+ * tokens. Both are httpOnly, and `secure` plus `SameSite=None` in production.
+ *
+ * The refresh cookie is scoped to `/api/v1/auth` so it is never attached to
+ * ordinary API calls; only the auth routes can see it. `clearAuthCookies` must
+ * clear each cookie with the same path it was set with, or the browser keeps
+ * the old cookie and sign-out appears not to take.
+ */
 import type { CookieOptions, Response } from 'express';
 
 export const ACCESS_COOKIE = 'lantern_access';
@@ -20,6 +38,10 @@ function baseCookieOptions(maxAgeMs: number): CookieOptions {
   };
 }
 
+// --- Write ---
+// The access cookie's lifetime tracks the token's own expiry (floored at 60s so
+// a short-lived token still produces a usable cookie); the refresh cookie lives
+// 30 days and is path-scoped to the auth routes.
 export function setAuthCookies(
   res: Response,
   accessToken: string,
@@ -45,6 +67,10 @@ export function clearAuthCookies(res: Response): void {
   res.clearCookie(REFRESH_COOKIE, { ...clearOpts, path: '/api/v1/auth' });
 }
 
+// --- Read ---
+// Both readers return null for a blank or whitespace-only value so callers can
+// treat "cookie present but empty" as "no credential" rather than sending an
+// empty string on to the token verifier.
 export function readAccessCookie(cookies: Record<string, string | undefined>): string | null {
   const value = cookies[ACCESS_COOKIE];
   return typeof value === 'string' && value.trim() ? value.trim() : null;

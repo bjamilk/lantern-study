@@ -1,3 +1,25 @@
+/**
+ * Chat stack -> DirectMessage (params: threadId, recipientId, recipientName).
+ * One-to-one conversation: message list, composer, reactions, replies and
+ * threads, stars, a pinned message, wallpaper, forwarding, block/mute/archive/
+ * delete -- plus the marketplace Offers tab, where a listing inquiry's order
+ * runs its pay / mark-ready / confirm-received lifecycle inside the chat.
+ *
+ * Exports: DirectMessageScreen (named and default).
+ * Touches: groupStore DM slice (directMessages, dmThreads, send/edit/remove/
+ * retry, read marks, threads, archive/unarchive/delete, activeDmThreadId),
+ * authStore, toastStore; services/api DM block and mute status, block/unblock,
+ * fetchInquiryByThread and fetchOrderForInquiry; AsyncStorage for the draft,
+ * device-local stars and the pinned message (keyed by user id and thread);
+ * typing indicator, read receipts, image attach, wallpaper.
+ * Gotchas: the thread is registered as groupStore.activeDmThreadId on mount
+ * and cleared on unmount only if it is still the active one. Returning to the
+ * foreground refetches the thread, because realtime is missed while
+ * backgrounded. A missing inquiry or order endpoint is swallowed on purpose --
+ * a plain DM must show no order banner. Removed messages are filtered through
+ * shouldRenderRemovedMessage, and handlers read messagesRef so they need not
+ * depend on the message array.
+ */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AccessibilityInfo,

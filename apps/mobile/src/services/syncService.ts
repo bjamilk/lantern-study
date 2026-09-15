@@ -1,6 +1,37 @@
 /**
  * Mobile Sync Service
  * Manages offline-first sync using the shared SyncQueue
+ *
+ * Purpose: the device's one offline-first write path. Stores enqueue an
+ * operation instead of calling the API; this service persists the queue per
+ * account, decides when to drain it (reconnect, foreground, 5-minute timer,
+ * SyncManager's own 30s tick), and owns the entity handlers that replay each
+ * operation against the API. It also owns the app's Supabase realtime channels.
+ *
+ * Main exports: the `syncService` singleton — `initialize`, `shutdown`,
+ * `queueOperation`, `registerHandler`, `syncNow`, `setActiveUser`,
+ * `onStatusChange`, `removeQueuedOperations`, and the `subscribeTo*` /
+ * `unsubscribe*` realtime helpers.
+ *
+ * Touches: AsyncStorage (queue persistence via `AsyncStorageAdapter`, plus the
+ * one-shot purge flag), @react-native-community/netinfo, react-native AppState,
+ * the shared `SyncQueue`/`SyncManager`, `services/api`, Supabase realtime, and
+ * — lazily, to break import cycles — authStore, flashcardStore and
+ * `services/importedDeck`.
+ *
+ * Invariants:
+ * - The queue is per account. `setActiveUser(null)` means signed out: nothing
+ *   is held in memory and nothing is processed, so no operation can replay
+ *   under the wrong session. Account switches are serialised through
+ *   `activeUserChain` because they do storage I/O.
+ * - A handler's return value is a verdict, not a status: `true` REMOVES the
+ *   operation, `false` means "the server refused, retry it", and a THROW stops
+ *   the run without burning a retry. Transient errors must therefore be
+ *   rethrown (`isTransientSyncError`) or a dead connection silently eats the
+ *   student's work; permanent 4xx errors must be dropped or they revive on
+ *   every reconnect forever.
+ * - Anything that changes the pending count outside SyncManager (enqueue,
+ *   account switch, purge, a dropped operation) has to call `emitStatus()`.
  */
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo, { NetInfoState } from '@react-native-community/netinfo';
@@ -13,6 +44,7 @@ import {
   IStorageAdapter,
   isTransientSyncError,
 } from '@lantern/shared';
+import { resultIdempotencyKey } from '@lantern/shared/offlineQueue';
 import * as api from './api';
 import { supabase, saveBudgetTransaction, deleteBudgetTransaction } from './supabase';
 import {
@@ -26,6 +58,11 @@ import {
 // ASYNC STORAGE ADAPTER
 // ============================================
 
+/**
+ * Backs the shared `SyncQueue` with AsyncStorage. Note `clear()` wipes the
+ * WHOLE AsyncStorage namespace, not just queue keys — the queue removes its own
+ * entries by key and never calls it.
+ */
 class AsyncStorageAdapter implements IStorageAdapter {
   async getItem(key: string): Promise<string | null> {
     return AsyncStorage.getItem(key);
@@ -280,6 +317,12 @@ class SyncService {
 
   /**
    * Handle retry with exponential backoff
+   *
+   * Currently unreferenced: every registered handler is retried by the shared
+   * SyncQueue instead, and this helper (with `getRetryDelay` and
+   * `retryAttempts`) is a parallel mechanism nothing invokes. Recursive, and it
+   * sleeps in-process, so a caller would hold the awaiting path for up to the
+   * sum of five delays.
    */
   private async retryWithBackoff(operationId: string, operation: () => Promise<boolean>): Promise<boolean> {
     const attempts = this.retryAttempts.get(operationId) || 0;
@@ -316,6 +359,18 @@ class SyncService {
 
   /**
    * Register sync handlers for each entity type
+   *
+   * Called once from `initialize`, BEFORE the queue is loaded, so a replay can
+   * never find an entity type with no handler. Each handler is the replay of
+   * one queued operation and follows the same three-verdict contract: rethrow a
+   * transient error (the run stops, the operation keeps its retries), return
+   * `false` for a failure worth retrying, return `true` when the operation is
+   * finished with — including when it is being deliberately dropped, since a
+   * `true` result removes it from the queue.
+   *
+   * Handlers run offline-first, which means they run LATE and possibly more
+   * than once: they must not assume the local entity still exists, and a
+   * partially-applied multi-step handler will repeat its first step on retry.
    */
   private registerSyncHandlers(): void {
     // Flashcard handler
@@ -500,6 +555,16 @@ class SyncService {
     });
 
     // Test result handler
+    // Replays a test taken offline as two calls: create the session, then
+    // submit its score.
+    //
+    // FIXED (F2): the replay is keyed. The key rides on the queued payload
+    // (minted once when the submit failed) or, failing that, is derived
+    // deterministically from the operation's own id — either way it is
+    // IDENTICAL on every retry, which is the whole point. Without it
+    // `saveTestResult` minted a new session each time, so a submit that failed
+    // (or a process that died between the two calls) wrote a second session
+    // for one offline attempt: duplicate History rows, points awarded twice.
     this.queue.registerHandler('test_result', async (op: SyncOperation) => {
       try {
         switch (op.operation) {
@@ -513,14 +578,26 @@ class SyncService {
               startTime?: string;
               endTime?: string;
               config?: unknown;
+              idempotencyKey?: string;
             };
-            const savedSession = await api.saveTestResult(op.userId, payload);
+            const idempotencyKey = resultIdempotencyKey(
+              { id: op.entityId, userId: op.userId, idempotencyKey: payload.idempotencyKey },
+              { userId: op.userId }
+            );
+            const savedSession = await api.saveTestResult(op.userId, {
+              ...payload,
+              idempotencyKey,
+            });
             if (savedSession?.id) {
-              await api.submitTestResult(savedSession.id, {
-                score: payload.score,
-                correctAnswersCount: payload.correctAnswersCount,
-                totalQuestions: payload.totalQuestions,
-              });
+              await api.submitTestResult(
+                savedSession.id,
+                {
+                  score: payload.score,
+                  correctAnswersCount: payload.correctAnswersCount,
+                  totalQuestions: payload.totalQuestions,
+                },
+                { idempotencyKey }
+              );
             }
             break;
           }
@@ -550,7 +627,13 @@ class SyncService {
                 location?: string;
                 campus_id: string;
                 images?: string[];
-              }
+              },
+              // FIXED (F2): without a key the endpoint minted a random one per
+              // call, so a queued create that already landed was published a
+              // SECOND time on the next replay. The queued op's own id is
+              // stable across every retry, which is exactly what the key needs
+              // to be (the API accepts the header on marketplace_create_listing).
+              `listing-create:${op.entityId}`.slice(0, 128)
             );
             break;
           case 'update':
@@ -801,6 +884,15 @@ class SyncService {
 
   /**
    * Subscribe to realtime updates for a table
+   *
+   * Channels are keyed `table:column:value` and deduped by that key, so calling
+   * this twice for the same filter is a no-op rather than a second channel —
+   * which also means the FIRST caller's callbacks win and a later caller's are
+   * dropped silently. Callers own teardown via `unsubscribe(channelName)`;
+   * `shutdown()` removes every channel.
+   *
+   * Rows arrive straight from Postgres and are subject to RLS, not to this
+   * service: a filter is a subscription narrowing, never an access check.
    */
   subscribeToTable(
     tableName: string,
