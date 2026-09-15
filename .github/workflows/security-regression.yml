@@ -84,6 +84,7 @@ jobs:
       # expression" or "expected denial, got status=200" -- which reads like a
       # real security failure and is not one. Diagnose it once, up front.
       - name: Preflight - VITE_SUPABASE_URL is a Supabase project API URL
+        id: preflight
         shell: bash
         env:
           SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
@@ -125,7 +126,7 @@ jobs:
           echo "Preflight OK: the target speaks PostgREST."
 
       - name: F-01 marketplace offers PoC
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f01-marketplace-offers.ps1
 
@@ -143,12 +144,12 @@ jobs:
       # enforces again, with no other change. The five PoCs that talk only to
       # PostgREST run either way and still prove what they prove.
       - name: F-02 profile avatar IDOR PoC
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.write_env.outputs.has_api_base == 'true' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' && steps.write_env.outputs.has_api_base == 'true' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-f02-profile-avatar-idor.ps1
 
       - name: F-02 profile avatar IDOR PoC (SKIPPED - no API target)
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.write_env.outputs.has_api_base != 'true' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' && steps.write_env.outputs.has_api_base != 'true' }}
         shell: bash
         run: |
           echo "::warning title=F-02 avatar IDOR PoC SKIPPED::VITE_SUPABASE_API_BASE_URL is not set, so the profile-avatar IDOR proof did NOT run. This job being green does not mean F-02 is fixed."
@@ -164,22 +165,22 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Auth-02 marketplace inquiries PoC
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-auth02-marketplace-inquiries.ps1
 
       - name: RLS privilege battery
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/verify-rls-privileges.ps1
 
       - name: SEC-01/02/03 Phase 0 RLS PoC
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-sec01-03-rls-phase0.ps1
 
       - name: Phase 3 DEFINER EXECUTE PoC
-        if: ${{ !cancelled() && steps.write_env.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
         shell: pwsh
         run: pwsh -NoProfile -ExecutionPolicy Bypass -File ./scripts/poc-phase3-definer-execute.ps1
 
