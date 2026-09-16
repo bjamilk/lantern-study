@@ -46,7 +46,7 @@ import {
 } from '@lantern/shared/chat';
 import { ChatGalleryModal } from './chat/ChatGalleryModal';
 import { ChatHeader } from './chat/ChatHeader';
-import { MessageRow } from './chat/MessageRow';
+import { MessageList } from './chat/MessageList';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
@@ -1667,100 +1667,50 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </span>
         </button>
       )}
-      {/* `relative` anchors the "N new messages" pill over the list. The scroller
-          needs both `flex-1` and `min-h-0`: without `min-h-0` its automatic
-          minimum height is the full message list, so the pane grows instead of
-          scrolling and the composer is pushed off-screen. */}
-      <div className="relative flex-1 min-h-0 flex flex-col">
-      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
-        {isLoadingMore && (
-          <div className="flex justify-center py-2" aria-live="polite">
-            <div className="w-5 h-5 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
-            <span className="sr-only">Loading older messages</span>
-          </div>
-        )}
-        {visibleMessages.map((msg, idx) => (
-          <MessageRow
-            key={msg.id}
-            message={msg}
-            previousMessage={idx > 0 ? visibleMessages[idx - 1] : null}
-            isFirstUnread={firstUnreadId === msg.id}
-            firstUnreadRef={firstUnreadRef}
-            registerNode={registerMessageNode}
-            onScrollToMessage={scrollToMessageNode}
-            currentUserVote={userVotes[msg.id]}
-            myReactions={myReactions[msg.id]}
-            starred={starredIds.has(msg.id)}
-            pinned={pinnedMessageId === msg.id}
-            currentUser={currentUser}
-            chatId={chat.id}
-            isGroup={isGroup}
-            group={group}
-            communityHost={communityHost}
-            handleToggleReaction={handleToggleReaction}
-            onVoteQuestion={onVoteQuestion}
-            onFlagAsSimilar={onFlagAsSimilar}
-            handleOpenThread={handleOpenThread}
-            beginEditingMessage={beginEditingMessage}
-            handleRemoveMessage={handleRemoveMessage}
-            handleCopyMessage={handleCopyMessage}
-            handleToggleStar={handleToggleStar}
-            handleTogglePin={handleTogglePin}
-            setReportTarget={setReportTarget}
-            setEditingMessage={setEditingMessage}
-            setReplyTo={setReplyTo}
-            setForwardMessage={setForwardMessage}
-            setSeedMentionUsername={setSeedMentionUsername}
-          />
-        ))}
-        <div ref={messagesEndRef} />
-        {visibleMessages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            {awaitingMessages ? (
-              <>
-                <div className="w-10 h-10 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin mb-4" />
-                <p className="text-sm text-lantern-text-secondary">Loading messages…</p>
-              </>
-            ) : (
-              <>
-                <div className="w-16 h-16 rounded-2xl bg-lantern-background-secondary/60 dark:bg-lantern-surface flex items-center justify-center mb-4">
-                  <AppIcon name="chatbubbles" size={32} className="text-lantern-text-tertiary" />
-                </div>
-                <h3 className="text-base font-semibold text-lantern-text mb-1">
-                  {isArchived
-                    ? 'This group is archived'
-                    : starredOnly
-                      ? 'No starred messages yet'
-                      : threadSearch.trim().length >= 2
-                        ? 'No matches'
-                        : 'No messages yet'}
-                </h3>
-                <p className="text-sm text-lantern-text-secondary max-w-xs">
-                  {isArchived
-                    ? 'Unarchive the group to resume the conversation.'
-                    : starredOnly
-                      ? 'Long-press or open a message menu and tap Star to keep it here.'
-                      : threadSearch.trim().length >= 2
-                        ? 'Try a different search.'
-                        : isGroup
-                          ? `Be the first to write in ${name}.`
-                          : `Say hi to ${name}.`}
-                </p>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      {newMessagesBelow > 0 && (
-        <button
-          type="button"
-          onClick={() => scrollToBottom('smooth')}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-lantern-primary text-white text-xs font-semibold shadow-lg hover:bg-lantern-primary-dark transition-colors"
-        >
-          ↓ {newMessagesBelow} new message{newMessagesBelow === 1 ? '' : 's'}
-        </button>
-      )}
-      </div>
+      <MessageList
+        visibleMessages={visibleMessages}
+        messagesContainerRef={messagesContainerRef}
+        messagesEndRef={messagesEndRef}
+        firstUnreadRef={firstUnreadRef}
+        handleScroll={handleScroll}
+        isLoadingMore={isLoadingMore}
+        awaitingMessages={awaitingMessages}
+        newMessagesBelow={newMessagesBelow}
+        scrollToBottom={scrollToBottom}
+        firstUnreadId={firstUnreadId}
+        isArchived={isArchived}
+        isGroup={isGroup}
+        starredOnly={starredOnly}
+        threadSearch={threadSearch}
+        name={name}
+        userVotes={userVotes}
+        myReactions={myReactions}
+        starredIds={starredIds}
+        pinnedMessageId={pinnedMessageId}
+        registerNode={registerMessageNode}
+        onScrollToMessage={scrollToMessageNode}
+        rowProps={{
+          currentUser,
+          chatId: chat.id,
+          isGroup,
+          group,
+          communityHost,
+          handleToggleReaction,
+          onVoteQuestion,
+          onFlagAsSimilar,
+          handleOpenThread,
+          beginEditingMessage,
+          handleRemoveMessage,
+          handleCopyMessage,
+          handleToggleStar,
+          handleTogglePin,
+          setReportTarget,
+          setEditingMessage,
+          setReplyTo,
+          setForwardMessage,
+          setSeedMentionUsername,
+        }}
+      />
       {/* Composer slot — mutually exclusive states, in precedence order:
           archived group → blocked DM → declined request → the real composer
           (which may itself be preceded by the accept/decline request banner).
