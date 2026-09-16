@@ -210,7 +210,8 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/screens/settings/SettingsScreen.tsx': 21,
   'src/screens/study/StudyRoomScreen.tsx': 10,
   'src/screens/tests/TestAnalysisScreen.tsx': 4,
-  'src/screens/tests/TestTakingScreen.tsx': 44,
+  'src/screens/tests/TestTakingScreen.styles.ts': 43,
+  'src/screens/tests/TestTakingScreen.tsx': 1,
 };
 
 /** Total budget across the tree — the number Wave T+1 has to bring down. */
