@@ -89,9 +89,18 @@
 import { logger } from "../../utils/logger";
 import {
   BOARD_COMMENT_NOTIFY_MAX,
+  BOARD_POST_KIND_DEFAULT,
+  BOARD_POST_SUBJECT_MAX,
+  BOARD_REPOST_CLIENT_ID_PREFIX,
+  COMMUNITY_MODERATION_COPY,
   boardPostDeepLinkPath,
+  canPinOnBoard,
+  canPostBoardKind,
+  isBoardImageUrlAllowed,
   isCommunityBoard,
+  normalizeBoardPostKind,
   resolveCommunityRole,
+  type BoardPostKind,
   type CommunityRole,
 } from "@lantern/shared/network";
 import {
@@ -103,11 +112,15 @@ import {
   filterMessagesAfterDmHistoryCutoff,
   readDmHistoryClearedAt,
 } from "@lantern/shared/utils/dmHistoryCutoff";
+import { parseStorageObjectUrl } from "@lantern/shared/utils/storageUrl";
 
 import { cacheService } from "../cache";
 import {
+  hasMessageBoardColumns,
+  hasMessagePostKind,
   isMissingColumnError,
   markMessageBoardColumnsMissing,
+  markMessagePostKindMissing,
   markMessageReactionsColumnMissing,
   messageColumns,
   reactionColumns,
@@ -115,11 +128,26 @@ import {
 import { Group, Message, User } from "../../types";
 
 import type { DataClient } from "./client";
+import { assertNotMutedInCommunity } from "./communityMute";
 import {
   mapChatMessageRow,
   mapProfileSender,
   resolveNestedProfile,
 } from "./mappers";
+
+/**
+ * Why a pin did or did not happen. The route maps each to its own code so the
+ * client can say the true thing: 503 the migration is not applied yet, 400 the
+ * group is not a board, 403 the caller may not pin, 404 no such message or no
+ * access to it.
+ */
+export type MessagePinResult =
+  | { status: "ok"; message: Record<string, unknown> }
+  | { status: "unavailable" }
+  | { status: "not_found" }
+  | { status: "not_board" }
+  | { status: "not_pinnable" }
+  | { status: "forbidden" };
 
 /**
  * `@all` and `@username` mentions, lower-cased and de-duplicated. Module scope
@@ -1289,3 +1317,661 @@ export async function notifyBoardCommentRecipients(
   );
 }
 
+export async function sendMessage(
+  db: DataClient,
+  deps: Pick<ChatSendDeps, "resolveBoardContext" | "resolveGroupMentionUserIds" | "resolveThreadRootForReply" | "findGroupMessageByClientId" | "resolveCommunityRoleFor" | "incrementUserStatsAndAwardBadges" | "notifyGroupMessageRecipients" | "notifyMentionedUsers" | "notifyReplyRecipient" | "notifyBoardCommentRecipients" | "attachReplyPreview">,
+  groupId: string,
+  userId: string,
+  content: string,
+  clientMessageId?: string,
+  options?: {
+    replyToMessageId?: string;
+    mentionedUserIds?: string[];
+    /** Board post title. Dropped (not rejected) pre-migration. */
+    subject?: string | null;
+    /**
+     * A board post's ONE photo, written to `messages.image_url` so a title,
+     * a body and a photo are ONE row (§5.2). The column has existed since
+     * 20251117020518 and no message path writes it today, so this is the
+     * FIRST encoding, not a third one — legacy markdown posts keep
+     * rendering through `parseChatImageUrl` / `splitBoardBody`.
+     *
+     * Re-validated here against the caller and the board, because the path
+     * IS the ACL. The route rejects a bad url with 400; this gate is what
+     * stops a board's photo column being written from a chat send.
+     */
+    imageUrl?: string | null;
+    /**
+     * What a board post IS: discussion | question | announcement | event
+     * (20260908120000). Ignored off a board, dropped (not rejected)
+     * pre-migration, and REFUSED with a 403 when the sender may not post
+     * that kind — `announcement` is moderators-only.
+     */
+    postKind?: string | null;
+  },
+): Promise<any> {
+  let messageData: any;
+  let isQuestion = false;
+  /**
+   * `client_message_id` is client-supplied, and `repost:<id>` is the third
+   * clause of the repost discriminator (`isBoardRepostRow`). Refuse the
+   * prefix on the ORDINARY send path so it cannot be forged onto a comment
+   * that later loses `thread_root_id` to ON DELETE SET NULL, and so a
+   * crafted send cannot squat the unique-index slot a real repost needs.
+   * Reposts are written by `createBoardRepost`, never here.
+   */
+  if (
+    typeof clientMessageId === "string" &&
+    clientMessageId.startsWith(BOARD_REPOST_CLIENT_ID_PREFIX)
+  ) {
+    logger.warn("sendMessage: refused a reserved repost client_message_id", {
+      groupId,
+      userId,
+    });
+    clientMessageId = undefined;
+  }
+  const replyToMessageId =
+    typeof options?.replyToMessageId === "string" && options.replyToMessageId
+      ? options.replyToMessageId
+      : undefined;
+
+  const board = await deps.resolveBoardContext(groupId);
+  // A muted member reads everything and writes nothing — on the board, in
+  // the lounge and in every channel. Checked before any parsing so a mute
+  // cannot be sidestepped by the shape of the payload.
+  await assertNotMutedInCommunity(db, userId, board.communityId);
+
+  /**
+   * The whole safety property of a board (spec §3.4): a post whose body
+   * happens to be JSON must NOT become a QUESTION. Skipping the parse keeps
+   * type='TEXT', leaves question_data null, never fires the
+   * groups.question_count trigger, and stops routes/messages.ts writing a
+   * group_question_posted learning event — that branch tests the type.
+   */
+  if (board.isBoard) {
+    logger.info("sendMessage: board post, question parsing skipped", {
+      groupId,
+    });
+  } else {
+    // First, try to parse as JSON to check if it's a question
+    try {
+      messageData = JSON.parse(content);
+      isQuestion = messageData.type === "QUESTION" || messageData.questionStem;
+      logger.info("sendMessage: Parsed content as JSON", {
+        isQuestion,
+        type: messageData.type,
+        hasQuestionStem: !!messageData.questionStem,
+      });
+    } catch (parseError) {
+      // Not JSON, treat as text message
+      logger.info("sendMessage: Content is plain text");
+      isQuestion = false;
+    }
+  }
+
+  const mentionSource = isQuestion
+    ? String(messageData?.questionStem || content)
+    : content;
+  const mentionedUserIds = await deps.resolveGroupMentionUserIds(
+    groupId,
+    userId,
+    mentionSource,
+    options?.mentionedUserIds,
+  );
+
+  let threadRootId: string | undefined;
+  if (replyToMessageId) {
+    threadRootId = await deps.resolveThreadRootForReply(
+      "messages",
+      replyToMessageId,
+      {
+        groupId,
+      },
+    );
+  }
+
+  if (isQuestion) {
+    // Question message
+    logger.info("sendMessage: Inserting QUESTION message", {
+      groupId,
+      userId,
+      questionStem: messageData.questionStem?.substring(0, 50),
+      questionType: messageData.questionType,
+    });
+
+    const insertBase: Record<string, unknown> = {
+      group_id: groupId,
+      sender_id: userId,
+      mentioned_user_ids: mentionedUserIds,
+    };
+    if (clientMessageId) {
+      insertBase.client_message_id = clientMessageId;
+    }
+    if (replyToMessageId) {
+      insertBase.reply_to_message_id = replyToMessageId;
+    }
+    if (threadRootId) {
+      insertBase.thread_root_id = threadRootId;
+    }
+
+    const { data, error } = await db
+      .from("messages")
+      .insert({
+        ...insertBase,
+        type: "QUESTION",
+        question_data: messageData,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      if (error.code === "23505" && clientMessageId) {
+        const existing = await deps.findGroupMessageByClientId(
+          groupId,
+          userId,
+          clientMessageId,
+        );
+        if (existing) return existing;
+      }
+      logger.error("sendMessage: Failed to insert QUESTION message", {
+        error,
+      });
+      throw error;
+    }
+
+    logger.info("sendMessage: QUESTION message inserted successfully", {
+      messageId: data.id,
+      timestamp: data.timestamp,
+    });
+
+    // Invalidate cache
+    await cacheService.invalidateGroupCache(groupId);
+
+    await deps.incrementUserStatsAndAwardBadges(userId, {
+      questionsCreated: 1,
+    }).catch((err) => {
+      logger.warn("Failed to increment questionsCreated gamification", {
+        userId,
+        err,
+      });
+    });
+
+    const questionPreview = messageData.questionStem
+      ? `New question: ${String(messageData.questionStem).substring(0, 50)}`
+      : "posted a new question";
+    void db
+      .from("groups")
+      .update({
+        last_message: questionPreview,
+        last_message_time: data.timestamp || new Date().toISOString(),
+      })
+      .eq("id", groupId);
+    const mentionedEveryone =
+      extractMentionUsernames(mentionSource).includes("all");
+    void deps.notifyGroupMessageRecipients({
+      groupId,
+      senderId: userId,
+      content: questionPreview,
+      messageId: data.id,
+      excludeUserIds: mentionedUserIds,
+    }).catch((err) => {
+      logger.error("Failed to notify group message recipients", {
+        err,
+        groupId,
+        messageId: data.id,
+      });
+    });
+    void deps.notifyMentionedUsers({
+      groupId,
+      senderId: userId,
+      messageId: data.id,
+      mentionedUserIds,
+      preview: questionPreview,
+      mentionedEveryone,
+    });
+    if (replyToMessageId) {
+      void deps.notifyReplyRecipient({
+        groupId,
+        senderId: userId,
+        messageId: data.id,
+        replyToMessageId,
+        preview: questionPreview,
+        skipUserIds: mentionedUserIds,
+      });
+    }
+
+    const withReply = await deps.attachReplyPreview(data);
+    return {
+      ...withReply,
+      threadRootId: withReply.thread_root_id || undefined,
+      replyCount: 0,
+      receiptStatus: "sent" as const,
+      seenByCount: 0,
+      seenByTotal: 0,
+    };
+  } else {
+    // Text message
+    logger.info("sendMessage: Inserting TEXT message", { groupId, userId });
+
+    const insertBase: Record<string, unknown> = {
+      group_id: groupId,
+      sender_id: userId,
+      mentioned_user_ids: mentionedUserIds,
+    };
+    if (clientMessageId) {
+      insertBase.client_message_id = clientMessageId;
+    }
+    if (replyToMessageId) {
+      insertBase.reply_to_message_id = replyToMessageId;
+    }
+    if (threadRootId) {
+      insertBase.thread_root_id = threadRootId;
+    }
+
+    // A board post's optional title. Pre-migration the column does not
+    // exist and the title is DROPPED, not rejected (spec §3.1).
+    const subject =
+      typeof options?.subject === "string" && options.subject.trim()
+        ? options.subject.trim().slice(0, BOARD_POST_SUBJECT_MAX)
+        : null;
+    const withSubject = !!subject && (await hasMessageBoardColumns(db));
+
+    /**
+     * The post's kind. Only meaningful on a board — a group chat message
+     * has no kind, and writing one there would put a badge on a chat
+     * bubble. An `announcement` is moderators-only and pins itself, so the
+     * role is resolved here (the one query it costs is paid only by the
+     * rare announcement), and the cap is enforced after the insert.
+     */
+    const requestedKind = board.isBoard
+      ? normalizeBoardPostKind(options?.postKind)
+      : BOARD_POST_KIND_DEFAULT;
+    let postKind: BoardPostKind = requestedKind;
+    if (requestedKind === "announcement") {
+      const role = await deps.resolveCommunityRoleFor(
+        userId,
+        board.communityId,
+        board.communityCreatedBy,
+      );
+      if (!canPostBoardKind(role, "announcement")) {
+        throw Object.assign(
+          new Error(COMMUNITY_MODERATION_COPY.restrictedKind),
+          { statusCode: 403 },
+        );
+      }
+    }
+    const withPostKind =
+      board.isBoard &&
+      postKind !== BOARD_POST_KIND_DEFAULT &&
+      (await hasMessagePostKind(db));
+    if (!withPostKind) postKind = BOARD_POST_KIND_DEFAULT;
+    // An announcement pins itself. Pre-migration `withPostKind` is false, so
+    // it degrades to an ordinary post rather than an unlabelled pin that
+    // nothing can find again.
+    const announcementPin =
+      withPostKind && requestedKind === "announcement" ? new Date().toISOString() : null;
+    /**
+     * `image_url` is written on BOARDS ONLY this phase: group chat and DMs
+     * keep sending a photo as its own markdown message, and widening that
+     * here would change how every existing chat bubble renders. The path
+     * check is repeated (the route already ran it) because this is the last
+     * gate before the column is written.
+     */
+    const attachedImageUrl =
+      board.isBoard &&
+      typeof options?.imageUrl === "string" &&
+      isBoardImageUrlAllowed({
+        url: options.imageUrl,
+        userId,
+        groupId,
+        parse: parseStorageObjectUrl,
+      })
+        ? options.imageUrl
+        : null;
+    const insertText = (includeSubject: boolean, includeKind: boolean) =>
+      (db as any)
+        .from("messages")
+        .insert({
+          ...insertBase,
+          type: "TEXT",
+          text: content,
+          ...(includeSubject ? { subject } : {}),
+          ...(includeKind
+            ? {
+                post_kind: postKind,
+                ...(announcementPin
+                  ? { pinned_at: announcementPin, pinned_by: userId }
+                  : {}),
+              }
+            : {}),
+          ...(attachedImageUrl ? { image_url: attachedImageUrl } : {}),
+        })
+        .select()
+        .single();
+
+    let { data, error } = await insertText(withSubject, withPostKind);
+    if (error && withPostKind && isMissingColumnError(error)) {
+      // 20260908120000 is not applied: keep the post, drop the kind.
+      markMessagePostKindMissing();
+      ({ data, error } = await insertText(withSubject, false));
+    }
+    if (error && withSubject && isMissingColumnError(error)) {
+      markMessageBoardColumnsMissing();
+      ({ data, error } = await insertText(false, false));
+    }
+
+    if (error) {
+      if (error.code === "23505" && clientMessageId) {
+        const existing = await deps.findGroupMessageByClientId(
+          groupId,
+          userId,
+          clientMessageId,
+        );
+        if (existing) return existing;
+      }
+      logger.error("sendMessage: Failed to insert TEXT message", { error });
+      throw error;
+    }
+
+    logger.info("sendMessage: TEXT message inserted successfully", {
+      messageId: data.id,
+    });
+
+    // Keep group list preview in sync for recipients who have not opened the chat yet.
+    void db
+      .from("groups")
+      .update({
+        last_message: content,
+        last_message_time: data.timestamp || new Date().toISOString(),
+      })
+      .eq("id", groupId)
+      .then(({ error: groupUpdateError }) => {
+        if (groupUpdateError) {
+          logger.warn("Failed to update group last_message after send", {
+            groupId,
+            error: groupUpdateError,
+          });
+        }
+      });
+
+    const mentionedEveryone =
+      extractMentionUsernames(content).includes("all");
+    /**
+     * Notification policy (§0a decision 3, §3.9). A BOARD post issues NO
+     * per-post fan-out: `notifyGroupMessageRecipients` inserts one
+     * notification plus one push per non-sender member, which on a
+     * community-scale board is a campus-wide push per post. The unread
+     * badge is the Phase 1 signal. Mentions still notify immediately, and a
+     * comment notifies the thread instead — both into the community, never
+     * into Chat.
+     */
+    // A mention inside a COMMENT must open the post that holds it, so the
+    // link carries the thread root when there is one (§8.2).
+    const boardLink = board.isBoard
+      ? boardPostDeepLinkPath(board.communitySlug, groupId, threadRootId ?? data.id)
+      : undefined;
+
+    if (!board.isBoard) {
+      void deps.notifyGroupMessageRecipients({
+        groupId,
+        senderId: userId,
+        content,
+        messageId: data.id,
+        excludeUserIds: mentionedUserIds,
+      }).catch((err) => {
+        logger.error("Failed to notify group message recipients", {
+          err,
+          groupId,
+          messageId: data.id,
+        });
+      });
+    }
+    void deps.notifyMentionedUsers({
+      groupId,
+      senderId: userId,
+      messageId: data.id,
+      mentionedUserIds,
+      preview: content,
+      mentionedEveryone,
+      link: boardLink,
+    });
+    if (board.isBoard) {
+      if (threadRootId) {
+        void deps.notifyBoardCommentRecipients({
+          groupId,
+          senderId: userId,
+          messageId: data.id,
+          threadRootId,
+          preview: content,
+          skipUserIds: mentionedUserIds,
+          communitySlug: board.communitySlug,
+        }).catch((err) => {
+          logger.warn("Failed to notify board comment recipients", {
+            err,
+            groupId,
+            messageId: data.id,
+          });
+        });
+      }
+    } else if (replyToMessageId) {
+      void deps.notifyReplyRecipient({
+        groupId,
+        senderId: userId,
+        messageId: data.id,
+        replyToMessageId,
+        preview: content,
+        skipUserIds: mentionedUserIds,
+      });
+    }
+
+    // Invalidate cache
+    await cacheService.invalidateGroupCache(groupId);
+
+    const withReply = await deps.attachReplyPreview(data);
+    return {
+      ...withReply,
+      threadRootId: withReply.thread_root_id || undefined,
+      replyCount: 0,
+      receiptStatus: "sent" as const,
+      seenByCount: 0,
+      seenByTotal: 0,
+    };
+  }
+}
+
+/**
+ * The board's one pinned post, whatever page it is on — that is the whole
+ * reason it has its own endpoint. Pre-migration the columns do not exist and
+ * this answers null rather than 500ing the board (spec §3.5).
+ *
+ * Access is enforced by the caller (`getGroupById(groupId, userId)`), the
+ * same way GET /messages/group/:groupId does it.
+ */
+export async function getPinnedMessage(
+  db: DataClient,
+  deps: Pick<ChatSendDeps, "normalizeMessageRecord">,
+  groupId: string,
+): Promise<Message | null> {
+  if (!groupId) return null;
+  if (!(await hasMessageBoardColumns(db))) return null;
+
+  const baseSelect = `
+    id,
+    group_id,
+    sender_id,
+    type,
+    text,
+    subject,
+    pinned_at,
+    pinned_by,
+    question_data,
+    timestamp,
+    edited_at,
+    removed_at,
+    upvotes,
+    downvotes,
+    image_url,
+    client_message_id,
+    reply_to_message_id,
+    mentioned_user_ids,
+    thread_root_id,
+    profiles!sender_id (
+      id,
+      name,
+      username,
+      avatar_url
+    )
+  `;
+  // The pinned strip renders the same card as the board list, so it needs
+  // the same reaction counts (20260830120000, which may not be applied).
+  const select = await reactionColumns(db, baseSelect);
+  const runPinned = (columns: string) =>
+    (db as any)
+      .from("messages")
+      .select(columns)
+      .eq("group_id", groupId)
+      .not("pinned_at", "is", null)
+      // A pin outlives the post it points at: `remove_chat_message` predates
+      // `pinned_at` and never clears it, and a comment can carry a pin from a
+      // hand-crafted PUT. Neither belongs on the board's PINNED strip.
+      .is("removed_at", null)
+      .is("thread_root_id", null)
+      .order("pinned_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+  let { data, error } = await runPinned(select);
+  if (error && isMissingColumnError(error) && select !== baseSelect) {
+    // `reactions` (20260830120000) is the only optional column this query
+    // adds — the board columns were already probed above — so drop it and
+    // keep the pin rather than losing titles and pins process-wide.
+    markMessageReactionsColumnMissing();
+    ({ data, error } = await runPinned(baseSelect));
+  }
+
+  if (error) {
+    if (isMissingColumnError(error)) {
+      markMessageBoardColumnsMissing();
+      return null;
+    }
+    throw error;
+  }
+  if (!data) return null;
+
+  const msg = data as any;
+  return {
+    id: msg.id,
+    groupId: msg.group_id,
+    sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
+    senderId: msg.sender_id,
+    timestamp: msg.timestamp
+      ? new Date(msg.timestamp).toISOString()
+      : new Date().toISOString(),
+    upvotes: msg.upvotes || 0,
+    downvotes: msg.downvotes || 0,
+    ...deps.normalizeMessageRecord(msg),
+  } as Message;
+}
+
+/**
+ * Pin or unpin a board post (spec §3.6). One pin per board, cleared
+ * server-side and enforced by the unique partial index — a 23505 means
+ * another pin landed between the clear and the set, so we clear and retry
+ * once rather than handing the client a conflict it cannot act on.
+ *
+ * Returns a status the route maps to a code, so the reason ("not a board",
+ * "not a moderator", "migration not applied") is never collapsed into 500.
+ */
+export async function setMessagePin(
+  db: DataClient,
+  deps: Pick<ChatSendDeps, "getGroupById" | "resolveBoardContext" | "communityMemberRole">,
+  messageId: string,
+  userId: string,
+  pinned: boolean,
+): Promise<MessagePinResult> {
+  if (!(await hasMessageBoardColumns(db))) {
+    return { status: "unavailable" };
+  }
+
+  const { data: row, error: readError } = await db
+    .from("messages")
+    .select("id, group_id, removed_at, thread_root_id")
+    .eq("id", messageId)
+    .maybeSingle();
+  if (readError) {
+    if (isMissingColumnError(readError)) {
+      markMessageBoardColumnsMissing();
+      return { status: "unavailable" };
+    }
+    throw readError;
+  }
+  const target = row as {
+    group_id?: string;
+    removed_at?: string | null;
+    thread_root_id?: string | null;
+  } | null;
+  const groupId = target?.group_id;
+  if (!groupId) return { status: "not_found" };
+
+  // Only a live root post can BE pinned. Unpinning stays allowed on both, so
+  // a pin left behind by a deletion is still clearable.
+  if (pinned && (target?.removed_at || target?.thread_root_id)) {
+    return { status: "not_pinnable" };
+  }
+
+  // Same access rule as reading the board: membership, or 404.
+  const group = await deps.getGroupById(groupId, userId);
+  if (!group) return { status: "not_found" };
+
+  const board = await deps.resolveBoardContext(groupId);
+  if (!board.isBoard) return { status: "not_board" };
+
+  const role = board.communityId
+    ? resolveCommunityRole(
+        await deps.communityMemberRole(board.communityId, userId),
+        userId,
+        board.communityCreatedBy,
+      )
+    : null;
+  if (!canPinOnBoard({ role, adminIds: group.adminIds || [], userId })) {
+    return { status: "forbidden" };
+  }
+
+  const clearPins = () =>
+    (db as any)
+      .from("messages")
+      .update({ pinned_at: null, pinned_by: null })
+      .eq("group_id", groupId)
+      .not("pinned_at", "is", null);
+
+  const applyPin = () =>
+    (db as any)
+      .from("messages")
+      .update(
+        pinned
+          ? { pinned_at: new Date().toISOString(), pinned_by: userId }
+          : { pinned_at: null, pinned_by: null },
+      )
+      .eq("id", messageId)
+      .select()
+      .single();
+
+  if (pinned) await clearPins();
+  let { data, error } = await applyPin();
+  if (error && (error as { code?: string }).code === "23505" && pinned) {
+    await clearPins();
+    ({ data, error } = await applyPin());
+  }
+  if (error) {
+    if (isMissingColumnError(error)) {
+      markMessageBoardColumnsMissing();
+      return { status: "unavailable" };
+    }
+    throw error;
+  }
+
+  await cacheService.deletePattern(`messages:group:${groupId}:*`);
+  await cacheService.delete(`message:raw:${messageId}`);
+
+  return { status: "ok", message: data };
+}

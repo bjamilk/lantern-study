@@ -687,18 +687,17 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/studySets.ts::columns': 5,
       // The chat section's parameter-fed select wrappers, moved verbatim out
       // of `services/supabase.ts` with the section by monolith lane M1f step
-      // 17: `getGroupThread`'s `runThread(columns)` (the reactions /
-      // board-columns capability ladder, read three times), and the three
-      // `select` wrappers behind `attachReplyPreview`,
+      // 17: `getGroupThread`'s `runThread(columns)` and `getPinnedMessage`'s
+      // `runPinned(columns)` — the reactions / board-columns capability
+      // ladders — and the three `select` wrappers behind `attachReplyPreview`,
       // `attachReplyPreviewsBatch` and `resolveThreadRootForReply`, whose
       // argument is a ternary between two literals in the same file. Every
       // branch that embeds names `profiles!sender_id` / `profiles:sender_id`,
       // the named form, so nothing bare hides behind the parameter. The rows
-      // moved with the code: `services/supabase.ts::columns` drops from 4 to 1
-      // and `::select` from 3 to zero.
-      'services/data/chatSend.ts::columns': 3,
+      // moved with the code: `services/supabase.ts::columns` drops from 4 to
+      // zero and `::select` from 3 to zero.
+      'services/data/chatSend.ts::columns': 4,
       'services/data/chatSend.ts::select': 3,
-      'services/supabase.ts::columns': 1,
     });
   });
 
