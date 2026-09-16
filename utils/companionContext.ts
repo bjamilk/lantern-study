@@ -11,6 +11,14 @@
  *    reads became the argument object and nothing else changed.
  *  - `noteContext` is capped at 6,000 characters because a note body has no
  *    length bound, and every character here is sent to the model.
+ *  - `weakTopics` used to read `result.tagBreakdown`, a field nothing on this
+ *    path produces, so it was always empty (#70). It is now tallied from the
+ *    data the web actually has — `session.questions` + `session.userAnswers`
+ *    — under the same rules the server companion uses
+ *    (apps/api-server/src/services/companionWeakTopics.ts): untagged
+ *    questions fall under "General", a tag needs 3 answered questions before
+ *    it can be called weak, weak is under 60% accuracy, weakest first, five
+ *    at most, from the 10 most recent sessions.
  *  - The game and offline `currentScreen` cases used to name `AppMode.GAME`
  *    and `AppMode.OFFLINE`, neither of which is an enum member, so both read
  *    as `undefined` and never matched (#69). They now name the live members
@@ -33,6 +41,65 @@ import type {
 import type { Group } from '../types';
 import { getNoteStudyContent } from '@lantern/shared';
 import { parseAppRoute } from './appRoutes';
+
+/** A tag needs this many answered questions before it can be called weak. */
+export const WEAK_TOPIC_MIN_QUESTIONS = 3;
+/** Accuracy strictly below this (0..1) is weak. */
+export const WEAK_TOPIC_MAX_ACCURACY = 0.6;
+/** How many weak topics the companion context carries. */
+export const WEAK_TOPIC_LIMIT = 5;
+/** Sessions tallied — keeps the companion on current standing, not all-time. */
+export const WEAK_TOPIC_SESSION_LIMIT = 10;
+
+/** Explicit tags, else "General" — the same bucket the dashboards show. */
+function questionTags(question: { tags?: string[] | null }): string[] {
+    const tags = new Set<string>();
+    for (const tag of question.tags ?? []) {
+        if (typeof tag !== 'string') continue;
+        const trimmed = tag.trim();
+        if (trimmed) tags.add(trimmed);
+    }
+    return tags.size > 0 ? [...tags] : ['General'];
+}
+
+/**
+ * Tags the student is weak on, weakest first, from their most recent sessions.
+ *
+ * `testResults` is oldest-first on this path (the last entry is the newest
+ * test), so the newest sessions are taken from the end.
+ */
+export function deriveWeakTopics(testResults: TestResult[]): string[] {
+    const breakdown = new Map<string, { total: number; correct: number }>();
+
+    for (const result of testResults.slice(-WEAK_TOPIC_SESSION_LIMIT)) {
+        const questions = result?.session?.questions;
+        const answers = result?.session?.userAnswers;
+        if (!Array.isArray(questions) || !answers) continue;
+
+        for (const question of questions) {
+            if (!question || typeof question.id !== 'string') continue;
+            const answer = answers[question.id];
+            // Same rule as the dashboard: an answer record means the question
+            // was attempted; isCorrect decides the tally.
+            if (!answer) continue;
+
+            for (const tag of questionTags(question)) {
+                const entry = breakdown.get(tag) ?? { total: 0, correct: 0 };
+                entry.total++;
+                if (answer.isCorrect) entry.correct++;
+                breakdown.set(tag, entry);
+            }
+        }
+    }
+
+    return [...breakdown.entries()]
+        .filter(([, stats]) => stats.total >= WEAK_TOPIC_MIN_QUESTIONS)
+        .map(([tag, stats]) => ({ tag, accuracy: stats.correct / stats.total }))
+        .filter(({ accuracy }) => accuracy < WEAK_TOPIC_MAX_ACCURACY)
+        .sort((a, b) => a.accuracy - b.accuracy || a.tag.localeCompare(b.tag))
+        .slice(0, WEAK_TOPIC_LIMIT)
+        .map(({ tag }) => tag);
+}
 
 /** Exactly what App.tsx's memo closed over. */
 export interface CompanionContextInput {
@@ -69,17 +136,7 @@ export function buildCompanionContext({
     studyGoal,
     pathname,
 }: CompanionContextInput) {
-    // KNOWN ISSUE (tracked, found during M7): `tagBreakdown` is not on the
-    // `TestResult` type, only on the rows the API actually returns, so this
-    // read was never type-checked (App.tsx is in no tsc project). The cast
-    // keeps exactly the runtime behaviour — present: use it, absent: no weak
-    // topics — while letting the module compile now that it is reachable from
-    // apps/web. Declaring the field on TestResult is a type change, not a move.
-    const tagged = testResults as Array<TestResult & { tagBreakdown?: Record<string, { correct: number; total: number }> }>;
-    const weakTopics = tagged.flatMap(r => r.tagBreakdown ? Object.entries(r.tagBreakdown)
-        .filter(([, s]: [string, any]) => s.total > 0 && s.correct / s.total < 0.6)
-        .map(([tag]) => tag) : []);
-    const uniqueWeak = [...new Set(weakTopics)].slice(0, 5);
+    const uniqueWeak = deriveWeakTopics(testResults);
     const recentScore = testResults.length > 0
         ? `Last test: ${Math.round(testResults[testResults.length - 1]!.score)}%`
         : undefined;
