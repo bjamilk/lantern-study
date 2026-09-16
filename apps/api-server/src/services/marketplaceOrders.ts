@@ -1575,10 +1575,18 @@ export class MarketplaceOrdersService {
     adminNote?: string,
     resolvedBy?: string
   ): Promise<MarketplaceOrderRow> {
+    // Typed, not just worded (#72): the admin console's dispute endpoint used
+    // to pick its status by substring-matching these messages, so rewording
+    // either one silently downgraded an actionable 4xx to "server error".
+    // The status travels WITH the error now.
     const order = await this.getOrderByIdAdmin(orderId);
-    if (!order) throw new PublicError('Order not found');
+    if (!order) {
+      throw Object.assign(new PublicError('Order not found'), { statusCode: 404 });
+    }
     if (order.status !== 'disputed') {
-      throw new PublicError('Only disputed orders can be resolved by admin');
+      throw Object.assign(new PublicError('Only disputed orders can be resolved by admin'), {
+        statusCode: 400,
+      });
     }
 
     // Phase 3 N: record WHO the dispute went against before the status moves.
