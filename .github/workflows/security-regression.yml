@@ -58,12 +58,36 @@ jobs:
           fi
           echo "All PoC credentials present."
 
+      # The PoCs build every request as "$SupabaseUrl/rest/v1/..." or
+      # "$SupabaseUrl/auth/v1/...", so VITE_SUPABASE_URL must be the project
+      # ORIGIN. A secret holding the REST URL (https://<ref>.supabase.co/rest/v1)
+      # makes the probe request /rest/v1/rest/v1/ and PostgREST answers 404
+      # PGRST125 "Invalid path specified in request URL" -- a path error that
+      # says nothing about credentials. Normalise here so one tidy-up fixes all
+      # six scripts, and say so, so the secret itself gets tidied too.
       - name: Write ephemeral .env for PoC scripts
         id: write_env
         shell: bash
+        env:
+          RAW_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
         run: |
+          url="$RAW_SUPABASE_URL"
+          url="${url%/}"
+          for suffix in /rest/v1 /auth/v1 /storage/v1 /realtime/v1 /functions/v1; do
+            case "$url" in
+              *"$suffix")
+                url="${url%$suffix}"
+                stripped="$suffix"
+                ;;
+            esac
+          done
+          url="${url%/}"
+          if [ -n "${stripped:-}" ]; then
+            echo "::notice title=VITE_SUPABASE_URL was normalised::The secret ends in '$stripped'. The PoCs append their own service paths, so it was stripped for this run. Please edit the secret to the bare project URL (https://<project-ref>.supabase.co) so the two cannot drift."
+          fi
+          echo "supabase_url=$url" >> "$GITHUB_OUTPUT"
           cat > .env <<EOF
-          VITE_SUPABASE_URL=${{ secrets.VITE_SUPABASE_URL }}
+          VITE_SUPABASE_URL=$url
           VITE_SUPABASE_ANON_KEY=${{ secrets.VITE_SUPABASE_ANON_KEY }}
           VITE_API_BASE_URL=${{ secrets.VITE_SUPABASE_API_BASE_URL }}
           EOF
@@ -87,7 +111,7 @@ jobs:
         id: preflight
         shell: bash
         env:
-          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+          SUPABASE_URL: ${{ steps.write_env.outputs.supabase_url }}
           ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
         run: |
           url="${SUPABASE_URL%/}"
@@ -98,32 +122,60 @@ jobs:
               exit 1
               ;;
           esac
-          # PostgREST answers the root with JSON (OpenAPI) and an application/json
-          # content type. Anything else -- HTML, a redirect to a login page -- means
-          # this host is not the project's API.
+          # What this probe can and cannot conclude:
+          #
+          #   non-JSON body      -> not PostgREST at all (HTML: dashboard, a
+          #                         login redirect, some other app). Wrong host.
+          #   JSON body          -> we ARE talking to PostgREST. That is the
+          #                         thing being established here, and it holds
+          #                         whether the status is 200 (the OpenAPI
+          #                         document) or an error. Do not read a status
+          #                         code as a verdict on the host.
+          #   404 / PGRST125     -> a PATH problem, not a credential one.
+          #   401 / 403          -> a KEY problem.
+          #
+          # The earlier version collapsed the last two into "the anon key is
+          # probably wrong", which sent the founder looking at the right secret
+          # for the wrong reason.
           code=$(curl -sS -o /tmp/preflight.body -w '%{http_code}' \
             -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
             "$url/rest/v1/" || echo 000)
-          head -c 1 /tmp/preflight.body > /tmp/preflight.first || true
-          first=$(cat /tmp/preflight.first 2>/dev/null || echo '')
+          first=$(head -c 1 /tmp/preflight.body 2>/dev/null || echo '')
+          body=$(head -c 300 /tmp/preflight.body 2>/dev/null || echo '')
           if [ "$first" != "{" ] && [ "$first" != "[" ]; then
             echo "::error::VITE_SUPABASE_URL does not serve PostgREST. GET <url>/rest/v1/ returned HTTP $code with a non-JSON body."
             echo "First 300 bytes of the response (the URL itself is masked as a secret):"
-            head -c 300 /tmp/preflight.body || true
-            echo ""
+            echo "$body"
             echo "Set VITE_SUPABASE_URL to the STAGING project's API URL: https://<project-ref>.supabase.co"
             exit 1
           fi
-          # A JSON body means we did reach PostgREST. A non-200 then means the
-          # anon key does not belong to this project, which is its own bug and
-          # would make every PoC's "blocked" result meaningless.
-          if [ "$code" != "200" ]; then
-            echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned HTTP $code. VITE_SUPABASE_ANON_KEY probably does not belong to the project in VITE_SUPABASE_URL."
-            head -c 300 /tmp/preflight.body || true
-            echo ""
-            exit 1
-          fi
-          echo "Preflight OK: the target speaks PostgREST."
+          case "$body" in
+            *PGRST125*)
+              echo "::error::PostgREST returned PGRST125 (Invalid path specified in request URL). VITE_SUPABASE_URL probably includes a service path such as /rest/v1; it must be the bare project URL https://<project-ref>.supabase.co."
+              exit 1
+              ;;
+          esac
+          case "$code" in
+            2*)
+              echo "Preflight OK: the target speaks PostgREST (HTTP $code)."
+              ;;
+            401|403)
+              echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned HTTP $code. VITE_SUPABASE_ANON_KEY probably does not belong to the project in VITE_SUPABASE_URL."
+              echo "$body"
+              exit 1
+              ;;
+            404)
+              echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned HTTP 404 - a path problem, not a credential one. VITE_SUPABASE_URL probably includes a service path (e.g. it ends in /rest/v1), so the request went to /rest/v1/rest/v1/."
+              echo "Set the secret to the bare project URL: https://<project-ref>.supabase.co"
+              echo "$body"
+              exit 1
+              ;;
+            *)
+              echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned an unexpected HTTP $code."
+              echo "$body"
+              exit 1
+              ;;
+          esac
 
       - name: F-01 marketplace offers PoC
         if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
