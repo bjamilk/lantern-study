@@ -44,6 +44,15 @@ moving that source moves the trigger.
   `--force` when verifying.
 - **A stale `packages/shared/dist` makes the API typecheck pass on code that does not
   compile.** Rebuild shared before trusting it.
+- **Your editor does not show the errors CI enforces for root web files.** VS Code
+  resolves `App.tsx`, `components/`, `hooks/`, `stores/`, `services/`, `utils/` and
+  `design-system/` against the repo-root `tsconfig.json`, which sets no `strict` and no
+  `include`. CI holds the same files to `apps/web/tsconfig.typecheck.json` — strict, plus
+  `noUncheckedIndexedAccess` — via `scripts/check-web-typecheck.mjs`. Code that looks clean
+  in the IDE can fail the `web (build + vitest)` job, and the strict errors you are meant to
+  be paying down are invisible. Run `node scripts/check-web-typecheck.mjs` (or
+  `npx tsc -p apps/web/tsconfig.typecheck.json --noEmit` for the raw list) before pushing.
+  Making the root config strict was measured and rejected — see `.vscode/settings.json`.
 
 ## House rules
 
