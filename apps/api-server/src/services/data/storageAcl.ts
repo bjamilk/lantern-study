@@ -57,10 +57,9 @@ import {
 
 import { clampSignedUrlTtl } from "../../utils/fileValidation";
 
-import type { DataClient } from "./client";
+import { COVER_IMAGE_BUCKET } from "./coverImages";
 
-/** Bucket for deck/note covers. Created by the service role on first upload. */
-const COVER_IMAGE_BUCKET = "cover-images";
+import type { DataClient } from "./client";
 
 /** All `canAccessFlashcardImage` needs: the deck read/edit predicate. */
 export type FlashcardImageDeps = {

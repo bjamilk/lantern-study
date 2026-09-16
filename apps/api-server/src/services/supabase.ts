@@ -99,7 +99,25 @@ import {
   mapProfileSender,
   resolveNestedProfile,
 } from "./data/mappers";
+import {
+  COVER_IMAGE_BUCKET,
+  COVER_IMAGE_MIGRATION,
+  COVER_TABLE_BY_KIND,
+  CoverColumnMissingError,
+  CoverStorageUnavailableError,
+  isMissingCoverPathColumn,
+} from "./data/coverImages";
+export {
+  COVER_IMAGE_BUCKET,
+  COVER_IMAGE_MIGRATION,
+  COVER_TABLE_BY_KIND,
+  CoverColumnMissingError,
+  CoverStorageUnavailableError,
+  isMissingCoverPathColumn,
+};
 import * as academicData from "./data/academic";
+import * as decksData from "./data/decks";
+import { writeWithTopicFallback } from "./data/academic";
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
@@ -447,99 +465,15 @@ export function resolveStudySetIdFromConfigLike(payload: any): string | null {
   return null;
 }
 
-async function writeWithTopicFallback(
-  run: (payload: Record<string, any>) => PromiseLike<any>,
-  payload: Record<string, any>,
-): Promise<any> {
-  const result = await run(payload);
-  if (result?.error && "study_set_id" in payload && isMissingStudySetColumn(result.error)) {
-    logger.warn(
-      "study_set_id missing — write retried without it (apply 20260911120000_study_sets.sql)",
-    );
-    const { study_set_id: _droppedSet, ...withoutSet } = payload;
-    return writeWithTopicFallback(run, withoutSet);
-  }
-  if (!result?.error || !("topic_id" in payload) || !isMissingTopicColumn(result.error)) {
-    return result;
-  }
-  logger.warn(
-    "topic_id missing — write retried without it (apply 20260826120000_course_topics.sql)",
-  );
-  const { topic_id: _dropped, ...rest } = payload;
-  return run(rest);
-}
+// `writeWithTopicFallback` moved to `data/academic.ts` (monolith lane M1b,
+// step 7): it is the write half of the course/topic filing that module owns,
+// and `data/decks.ts` needs it too. Imported above; 14 call sites unchanged.
 
-// ============ COVER IMAGES (decks + notes) ============
-
-/** Bucket for deck/note covers. Created by the service role on first upload. */
-export const COVER_IMAGE_BUCKET = "cover-images";
-
-/** Named so a 503 can tell the operator exactly what to apply. */
-export const COVER_IMAGE_MIGRATION = "20260913120000_cover_images.sql";
-
-/**
- * The cover_path column is missing, i.e. the migration above has not been
- * applied to this database. Callers answer 503 rather than 500 so the client
- * can say "not available yet" instead of "something broke".
- */
-export function isMissingCoverPathColumn(
-  error:
-    | { code?: string; message?: string; details?: string; hint?: string }
-    | null
-    | undefined,
-): boolean {
-  if (!error) return false;
-  // PostgREST and Postgres describe the same absence two different ways, and
-  // the column name can arrive in `details`/`hint` rather than `message`:
-  //   - UPDATE through PostgREST: PGRST204 "Could not find the 'cover_path'
-  //     column of 'study_sets' in the schema cache" (NOT a Postgres code);
-  //   - SELECT that reaches Postgres: 42703 "column decks.cover_path does not
-  //     exist".
-  // Matching only one of them is how a missing migration became a blank 500.
-  const code = String((error as { code?: unknown }).code ?? "");
-  const text =
-    `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
-  if (!text.includes("cover_path")) return false;
-  return (
-    code === "PGRST204" ||
-    code === "42703" ||
-    text.includes("schema cache") ||
-    text.includes("does not exist")
-  );
-}
-
-export class CoverColumnMissingError extends Error {
-  readonly migration = COVER_IMAGE_MIGRATION;
-  constructor() {
-    super("Covers need a server update — try again later");
-    this.name = "CoverColumnMissingError";
-  }
-}
-
-/**
- * Storage could not take the bytes: the bucket is absent and could not be
- * created, its policy refuses the write, or the object name collided. A
- * distinct error so the route says "storage", not the blanket 500 that made
- * a missing bucket and a missing column look identical from the client.
- */
-export class CoverStorageUnavailableError extends Error {
-  readonly detail: string;
-  constructor(detail: string) {
-    super("Cover storage is not ready");
-    this.name = "CoverStorageUnavailableError";
-    this.detail = detail;
-  }
-}
-
-/** The table each cover kind writes its column on. */
-export const COVER_TABLE_BY_KIND: Record<
-  "deck" | "note" | "study-set",
-  "decks" | "notes" | "study_sets"
-> = {
-  deck: "decks",
-  note: "notes",
-  "study-set": "study_sets",
-};
+// The COVER IMAGES block (bucket + migration names, the missing-column
+// predicate, the two typed errors, the kind->table map) moved to
+// `data/coverImages.ts` (monolith lane M1b, step 7) so `data/decks.ts` can
+// use it without importing this file. Re-exported below, unchanged, for
+// `routes/notes.ts` and `coverImages.test.ts`.
 
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
 // Known listing kinds, mirroring the DB CHECK constraint on
@@ -3539,6 +3473,20 @@ export class SupabaseService {
   // Concurrent edits raise `VersionConflictError` rather than last-write-wins,
   // so a collaborator never silently overwrites another's edit.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1b, step 7): the bodies now live in
+  // `data/decks.ts`. The deck ACCESS gate (`verifyDeckAccess`,
+  // `getAccessibleDeckIds`, `getDeckForUser`) is not there yet — it sits
+  // inside the OFFLINE BUNDLES banner below, misfiled, and moves with that
+  // section — so it, and the course/topic resolvers, are injected as `deps`.
+  //
+  // The literal is written out INLINE at all eleven call sites, and it MUST
+  // stay that way. Several `supabase.*.test.ts` suites invoke these methods
+  // through `SupabaseService.prototype.<m>.call({ supabase }, …)` on a bare
+  // stand-in that never ran a constructor, so an instance field holding the
+  // deps reads as `undefined` there (it fails exactly this way — try it). The
+  // arrows also read `this.<method>` at CALL time, so a `jest.spyOn` still
+  // intercepts.
+
   async createDeck(
     deckData: {
       name: string;
@@ -3550,32 +3498,21 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any> {
-    const topicId = await this.resolveArtefactTopic({
-      topicId: deckData.topicId,
-      courseId: deckData.courseId,
-    });
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("decks").insert(row).select().single(),
+    return decksData.createDeck(
+      this.supabase,
       {
-        name: deckData.name,
-        description: deckData.description || "",
-        user_id: userId,
-        is_shared: deckData.isShared ?? false,
-        course_id: deckData.courseId || null,
-        ...(deckData.studySetId !== undefined ? { study_set_id: deckData.studySetId || null } : {}),
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
       },
+      deckData,
+      userId,
     );
-
-    if (error) {
-      logger.error("Error creating deck:", { error, deckData, userId });
-      throw new Error(error.message || "Failed to create deck");
-    }
-
-    // Cache the new deck
-    await cacheService.set(`deck:${data.id}`, data, 1800); // 30 minutes
-
-    return data;
   }
 
   /**
@@ -3600,73 +3537,22 @@ export class SupabaseService {
     cards: NormalizedDeckCard[],
     userId: string,
   ): Promise<{ deck: any; flashcards: any[]; atomic: boolean }> {
-    // Resolved before anything is written: a topic that belongs to another
-    // course is a PublicError (400), not a half-written deck.
-    const topicId = await this.resolveArtefactTopic({
-      topicId: deckData.topicId,
-      courseId: deckData.courseId,
-    });
-
-    const rpcResult = await this.tryCreateDeckWithCardsRpc(deckData, topicId, cards, userId);
-    if (rpcResult) {
-      if (deckData.studySetId) {
-        await this.updateDeck(rpcResult.deckId, { studySetId: deckData.studySetId }, userId);
-      }
-      await this.invalidateDeckCaches(userId, rpcResult.deckId);
-      const deck = await this.getDeckRow(rpcResult.deckId);
-      const flashcards = await this.getDeckCardRows(rpcResult.deckId);
-      return { deck, flashcards, atomic: true };
-    }
-
-    // ---- Compensating path (RPC not present on this database) ----
-    const { data: deck, error: deckError } = await writeWithTopicFallback(
-      (row) => this.supabase.from("decks").insert(row).select().single(),
+    return decksData.createDeckWithCards(
+      this.supabase,
       {
-        name: deckData.name,
-        description: deckData.description || "",
-        user_id: userId,
-        is_shared: deckData.isShared ?? false,
-        course_id: deckData.courseId || null,
-        ...(deckData.studySetId !== undefined ? { study_set_id: deckData.studySetId || null } : {}),
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
       },
+      deckData,
+      cards,
+      userId,
     );
-
-    if (deckError || !deck) {
-      logger.error("Error creating deck (with-cards)", { error: deckError, userId });
-      throw new DeckWithCardsError(
-        "DECK_WRITE_FAILED",
-        deckError?.message || "Failed to create deck",
-        true,
-      );
-    }
-
-    const { data: inserted, error: cardsError } = await this.supabase
-      .from("flashcards")
-      .insert(cards.map((card) => cardToFlashcardRow(card, deck.id)))
-      .select();
-
-    // A partial insert is the same failure as none: PostgREST inserts the array
-    // in one statement, so any error means zero rows landed.
-    if (cardsError || !inserted || inserted.length !== cards.length) {
-      const rolledBack = await this.deleteDeckRowBestEffort(deck.id);
-      logger.error("Cards failed after deck insert — deck removed", {
-        error: cardsError,
-        deckId: deck.id,
-        rolledBack,
-        expected: cards.length,
-        inserted: inserted?.length ?? 0,
-      });
-      await this.invalidateDeckCaches(userId, deck.id);
-      throw new DeckWithCardsError(
-        "CARD_WRITE_FAILED",
-        cardsError?.message || "Failed to save the deck's cards",
-        rolledBack,
-      );
-    }
-
-    await this.invalidateDeckCaches(userId, deck.id);
-    return { deck, flashcards: inserted, atomic: false };
   }
 
   /**
@@ -3686,43 +3572,22 @@ export class SupabaseService {
     cards: NormalizedDeckCard[],
     userId: string,
   ): Promise<{ deck: any; flashcards: any[]; atomic: boolean } | null> {
-    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
-    if (!canEdit) return null;
-
-    // The FULL row, not fetchDeckRecord's projection: the client merges what
-    // comes back over its local copy, and a row missing `topic_id` would file
-    // the student's deck under no topic until the next refetch.
-    const { data: deck, error: deckError } = await this.supabase
-      .from("decks")
-      .select("*")
-      .eq("id", deckId)
-      .maybeSingle();
-    if (deckError) throw deckError;
-    if (!deck) return null;
-
-    const { data: inserted, error: cardsError } = await this.supabase
-      .from("flashcards")
-      .insert(cards.map((card) => cardToFlashcardRow(card, deckId)))
-      .select();
-
-    if (cardsError || !inserted || inserted.length !== cards.length) {
-      logger.error("Cards failed for existing deck", {
-        error: cardsError,
-        deckId,
-        expected: cards.length,
-        inserted: inserted?.length ?? 0,
-      });
-      // One statement: an error means zero rows landed, so the deck is
-      // exactly as the student left it.
-      throw new DeckWithCardsError(
-        "CARD_WRITE_FAILED",
-        cardsError?.message || "Failed to save the deck's cards",
-        true,
-      );
-    }
-
-    await this.invalidateDeckCaches(userId, deckId);
-    return { deck, flashcards: inserted, atomic: true };
+    return decksData.addCardsToExistingDeck(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      cards,
+      userId,
+    );
   }
 
   /** Returns null when this database has no `create_deck_with_cards` yet. */
@@ -3737,82 +3602,43 @@ export class SupabaseService {
     cards: NormalizedDeckCard[],
     userId: string,
   ): Promise<{ deckId: string } | null> {
-    const { data, error } = await this.supabase.rpc("create_deck_with_cards", {
-      p_owner: userId,
-      p_deck: {
-        name: deckData.name,
-        description: deckData.description || "",
-        is_shared: deckData.isShared ?? false,
-        course_id: deckData.courseId || null,
-        ...(topicId ? { topic_id: topicId } : {}),
-      },
-      p_cards: cards.map((card) => ({
-        type: card.type,
-        front: card.front,
-        back: card.back,
-        clozeText: card.clozeText,
-        imageUrl: card.imageUrl,
-        occlusionData: card.occlusionData,
-        tags: card.tags,
-      })),
-    });
-
-    if (error) {
-      if (isMissingRpcError(error)) return null;
-      logger.error("create_deck_with_cards RPC failed", { error, userId });
-      // The function is transactional: an error means nothing was written.
-      throw new DeckWithCardsError(
-        "CARD_WRITE_FAILED",
-        error.message || "Failed to create deck",
-        true,
-      );
-    }
-
-    const deckId =
-      (data as any)?.deckId || (data as any)?.deck_id || (Array.isArray(data) ? data[0]?.deckId : null);
-    if (!deckId) {
-      throw new DeckWithCardsError("CARD_WRITE_FAILED", "Failed to create deck", true);
-    }
-    return { deckId: String(deckId) };
+    return decksData.tryCreateDeckWithCardsRpc(
+      this.supabase,
+      deckData,
+      topicId,
+      cards,
+      userId,
+    );
   }
 
   private async getDeckRow(deckId: string): Promise<any> {
-    const { data } = await this.supabase
-      .from("decks")
-      .select("*")
-      .eq("id", deckId)
-      .maybeSingle();
-    return data || { id: deckId };
+    return decksData.getDeckRow(
+      this.supabase,
+      deckId,
+    );
   }
 
   private async getDeckCardRows(deckId: string): Promise<any[]> {
-    const { data } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("deck_id", deckId);
-    return data || [];
+    return decksData.getDeckCardRows(
+      this.supabase,
+      deckId,
+    );
   }
 
   /** Best effort: report whether the orphan deck row is actually gone. */
   private async deleteDeckRowBestEffort(deckId: string): Promise<boolean> {
-    try {
-      const { error } = await this.supabase.from("decks").delete().eq("id", deckId);
-      return !error;
-    } catch (err) {
-      logger.error("Failed to remove partial deck", { deckId, err });
-      return false;
-    }
+    return decksData.deleteDeckRowBestEffort(
+      this.supabase,
+      deckId,
+    );
   }
 
   private async invalidateDeckCaches(userId: string, deckId?: string): Promise<void> {
-    if (deckId) {
-      await cacheService.delete(`deck:${deckId}`);
-      await cacheService.deletePattern(`deck:${deckId}:user:*`);
-    }
-    await cacheService.delete(`decks:user:${userId}`);
-    await cacheService.deletePattern(`decks:user:${userId}*`);
-    await cacheService.deletePattern(`decks:${userId}*`);
-    await cacheService.deletePattern("flashcards:*");
+    return decksData.invalidateDeckCaches(
+      this.supabase,
+      userId,
+      deckId,
+    );
   }
 
   async getDecks(
@@ -3828,148 +3654,46 @@ export class SupabaseService {
       topicFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
-    const page = Math.max(1, options.page || 1);
-    const limit = Math.min(
-      SupabaseService.MAX_DECK_PAGE_SIZE,
-      Math.max(1, options.limit || SupabaseService.DEFAULT_DECK_PAGE_SIZE),
+    return decksData.getDecks(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+      includeShared,
+      options,
     );
-    const profile = this.getResponseProfile(options.responseProfile);
-    const offset = (page - 1) * limit;
-    // v2: includeShared means owned + collaborator decks — never every globally shared deck.
-    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:course:${courseFilterKey(options.courseFilter)}:topic:${courseFilterKey(options.topicFilter)}:v2`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const baseSelectClause =
-      profile === "compact"
-        ? "id, name, user_id, is_shared, course_id, study_set_id, created_at, study_count"
-        // study_count (Phase 3 M) is selected so "studied by N" can render;
-        // without it the counter is written but never readable by a client.
-        //
-        // study_set_id is projected for the same reason: the mappers already
-        // read it, so omitting it here made EVERY deck arrive as
-        // `studySetId: null` — a study set's Cards grid could never match its
-        // own decks, however correctly they had been filed.
-        : "id, name, description, user_id, is_shared, course_id, study_set_id, created_at, study_count";
-
-    let accessibleIds: string[] | null = null;
-    if (includeShared) {
-      // Owned decks + decks where the user is an explicit collaborator.
-      // Do NOT list every is_shared=true deck in the product (that leaked other users' libraries).
-      accessibleIds = await this.getAccessibleDeckIds(userId);
-      if (accessibleIds.length === 0) {
-        await cacheService.set(cacheKey, [], 1800);
-        return [];
-      }
-    }
-
-    // topic_id is projected (and filtered) only while it exists — naming a
-    // column the migration has not added yet 42703s the whole deck list.
-    // Same rule as topic_id: project cover_path only while it exists, or the
-    // whole deck list 42703s before the migration is applied.
-    let withCover = true;
-    const runQuery = (withTopic: boolean) => {
-      const selectClause = withCover
-        ? `${baseSelectClause}, cover_path`
-        : baseSelectClause;
-      let query = this.supabase
-        .from("decks")
-        .select(withTopic ? `${selectClause}, topic_id` : selectClause)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
-      query = applyCourseFilter(query, "course_id", options.courseFilter);
-      if (withTopic) {
-        query = applyCourseFilter(query, "topic_id", options.topicFilter);
-      }
-      return accessibleIds
-        ? query.in("id", accessibleIds)
-        : query.eq("user_id", userId);
-    };
-
-    let { data, error }: { data: any; error: any } = await runQuery(true);
-    if (error && isMissingCoverPathColumn(error)) {
-      withCover = false;
-      ({ data, error } = await runQuery(true));
-    }
-    if (error && isMissingTopicColumn(error)) {
-      // No deck can carry a topic before the migration: a named topic matches
-      // nothing, and "no topic" matches every deck.
-      if (options.topicFilter?.kind === "course") {
-        await cacheService.set(cacheKey, [], 1800);
-        return [];
-      }
-      ({ data, error } = await runQuery(false));
-    }
-
-    if (error) throw error;
-
-    const decks = (
-      (data || []) as unknown as Array<{ id: string; [key: string]: unknown }>
-    ).filter((d) => d && typeof d.id === "string" && d.id);
-    const deckIds = decks.map((d) => d.id);
-    const cardCountByDeck: Record<string, number> = {};
-
-    if (deckIds.length > 0) {
-      const { data: cardRows, error: countError } = await this.supabase
-        .from("flashcards")
-        .select("deck_id")
-        .in("deck_id", deckIds);
-
-      if (!countError && cardRows) {
-        for (const row of cardRows) {
-          const deckId = row.deck_id as string;
-          cardCountByDeck[deckId] = (cardCountByDeck[deckId] || 0) + 1;
-        }
-      }
-    }
-
-    const decksWithCounts = decks.map((d) => ({
-      ...d,
-      card_count: cardCountByDeck[d.id] || 0,
-      // Raw storage path; the client re-signs it through /storage/signed-urls.
-      coverPath: normalizeCoverRef((d as any).cover_path ?? null),
-    }));
-
-    await cacheService.set(cacheKey, decksWithCounts, 1800); // 30 minutes
-    return decksWithCounts;
   }
 
   async getSharedDecks(): Promise<any[]> {
-    const cacheKey = `decks:shared`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("decks")
-      .select("*")
-      .eq("is_shared", true)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return decksData.getSharedDecks(
+      this.supabase,
+    );
   }
 
   async getDeckCollaborators(deckId: string, userId: string): Promise<any[]> {
-    const hasAccess = await this.verifyDeckAccess(userId, deckId, "read");
-    if (!hasAccess) return [];
-
-    const cacheKey = `deck_collaborators:${deckId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("deck_collaborators")
-      .select(
-        "user_id, role, added_at, profiles!deck_collaborators_user_id_fkey(id, name, avatar_url)",
-      )
-      .eq("deck_id", deckId);
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 300);
-    return data;
+    return decksData.getDeckCollaborators(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async addDeckCollaborator(
@@ -3978,20 +3702,23 @@ export class SupabaseService {
     role: string = "editor",
     requesterId?: string,
   ): Promise<any> {
-    const actorId = requesterId || userId;
-    const canManage = await this.verifyDeckAccess(actorId, deckId, "owner");
-    if (!canManage) throw new Error("Access denied");
-
-    const { data, error } = await this.supabase
-      .from("deck_collaborators")
-      .insert({ deck_id: deckId, user_id: userId, role })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await cacheService.delete(`deck_collaborators:${deckId}`);
-    return data;
+    return decksData.addDeckCollaborator(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+      role,
+      requesterId,
+    );
   }
 
   async removeDeckCollaborator(
@@ -3999,43 +3726,29 @@ export class SupabaseService {
     userId: string,
     requesterId?: string,
   ): Promise<boolean> {
-    const actorId = requesterId || userId;
-    const isOwner = await this.verifyDeckAccess(actorId, deckId, "owner");
-    if (!isOwner && actorId !== userId) throw new Error("Access denied");
-
-    const { error } = await this.supabase
-      .from("deck_collaborators")
-      .delete()
-      .eq("deck_id", deckId)
-      .eq("user_id", userId);
-
-    if (error) throw error;
-
-    await cacheService.delete(`deck_collaborators:${deckId}`);
-    return true;
+    return decksData.removeDeckCollaborator(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+      requesterId,
+    );
   }
 
   async getDeck(deckId: string): Promise<any | null> {
-    const cacheKey = `deck:${deckId}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("decks")
-      // course_id/study_set_id: where the deck is filed. Without them a single
-      // deck read answered `courseId: null, studySetId: null` for every deck,
-      // whatever the row said.
-      .select("id, name, description, user_id, is_shared, course_id, study_set_id, created_at")
-      .eq("id", deckId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return decksData.getDeck(
+      this.supabase,
+      deckId,
+    );
   }
 
   async updateDeck(
@@ -4051,177 +3764,66 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any | null> {
-    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
-    if (!canEdit) return null;
-
-    // Validated against the course the deck ENDS UP with; moving or unfiling
-    // the deck takes its topic with it.
-    const topicId = await this.resolveArtefactTopicPatch("decks", deckId, updates);
-
-    const { data, error } = await writeWithTopicFallback(
-      (payload) =>
-        this.supabase
-          .from("decks")
-          .update(payload)
-          .eq("id", deckId)
-          .select()
-          .single(),
+    return decksData.updateDeck(
+      this.supabase,
       {
-        name: updates.name,
-        description: updates.description,
-        is_public: updates.isPublic,
-        is_shared: updates.isShared,
-        // undefined = untouched (dropped by JSON), null = cleared
-        course_id: updates.courseId === undefined ? undefined : updates.courseId || null,
-        study_set_id: updates.studySetId === undefined ? undefined : updates.studySetId || null,
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
       },
+      deckId,
+      updates,
+      userId,
     );
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    // Update cache
-    await cacheService.set(`deck:${deckId}`, data, 1800);
-    await cacheService.deletePattern(`deck:${deckId}:user:*`);
-
-    return data;
   }
 
   async deleteDeck(deckId: string, userId: string): Promise<boolean> {
-    const isOwner = await this.verifyDeckAccess(userId, deckId, "owner");
-    if (!isOwner) return false;
-
-    const { error } = await this.supabase
-      .from("decks")
-      .delete()
-      .eq("id", deckId);
-
-    if (error) throw error;
-
-    // Clear cache
-    await cacheService.delete(`deck:${deckId}`);
-    await cacheService.deletePattern(`deck:${deckId}:user:*`);
-    await cacheService.deletePattern(`decks:user:*`);
-
-    return true;
+    return decksData.deleteDeck(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async exportDeck(deckId: string, userId: string): Promise<any | null> {
-    const deck = await this.getDeckForUser(deckId, userId);
-    if (!deck) return null;
-
-    const { data: flashcards, error } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("deck_id", deckId)
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      deck,
-      flashcards: flashcards || [],
-    };
+    return decksData.exportDeck(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async importDeck(importData: any, userId: string): Promise<any> {
-    // Always create exactly one new deck owned by the authenticated user.
-    // Never honor foreign user_id / deck id / is_shared from the payload.
-    const deckName =
-      typeof importData?.deck?.name === "string" && importData.deck.name.trim()
-        ? importData.deck.name.trim().slice(0, 200)
-        : "Imported Deck";
-    const deckDescription =
-      typeof importData?.deck?.description === "string"
-        ? importData.deck.description.slice(0, 2000)
-        : "";
-
-    const { data: newDeck, error: deckError } = await this.supabase
-      .from("decks")
-      .insert({
-        name: deckName,
-        description: deckDescription,
-        user_id: userId,
-        is_shared: false,
-      })
-      .select()
-      .single();
-
-    if (deckError) {
-      logger.error("Error creating deck during import:", deckError);
-      throw deckError;
-    }
-
-    // Import flashcards (removed user_id as it doesn't exist in flashcards schema)
-    if (importData.flashcards && importData.flashcards.length > 0) {
-      const flashcardsToInsert = importData.flashcards.map((card: any) => {
-        const cardType = card.type || "BASIC";
-        const insertData: any = {
-          deck_id: newDeck.id,
-          type: cardType,
-        };
-
-        if (cardType === "CLOZE") {
-          insertData.cloze_text = card.clozeText || card.cloze_text;
-        } else if (cardType === "IMAGE_OCCLUSION") {
-          insertData.front = card.front;
-          insertData.back = card.back;
-          const occlusionData = card.occlusion_data || card.occlusionData;
-          if (occlusionData) {
-            insertData.occlusion_data = occlusionData;
-          }
-        } else {
-          insertData.front = card.front;
-          insertData.back = card.back;
-        }
-
-        const imageUrl = card.image_url || card.imageUrl;
-        if (imageUrl) {
-          insertData.image_url = imageUrl;
-        }
-
-        if (card.tags && card.tags.length > 0) {
-          insertData.tags = card.tags;
-        }
-
-        return insertData;
-      });
-
-      const { error: cardsError } = await this.supabase
-        .from("flashcards")
-        .insert(flashcardsToInsert);
-
-      if (cardsError) {
-        logger.error("Error importing flashcards:", cardsError);
-        throw cardsError;
-      }
-    }
-
-    // Invalidate user's deck cache so the new deck shows up
-    await cacheService.delete(`decks:user:${userId}`);
-    await cacheService.deletePattern(`decks:user:${userId}*`);
-    await cacheService.deletePattern(`decks:${userId}*`);
-
-    // Invalidate flashcard caches so newly imported cards show up
-    await cacheService.deletePattern("flashcards:*");
-
-    // Cache the new deck
-    await cacheService.set(`deck:${newDeck.id}`, newDeck, 1800);
-
-    // fetch back the inserted cards so callers can update state immediately
-    let insertedFlashcards: any[] = [];
-    if (importData.flashcards && importData.flashcards.length > 0) {
-      const { data: cards } = await this.supabase
-        .from("flashcards")
-        .select("*")
-        .eq("deck_id", newDeck.id);
-      insertedFlashcards = cards || [];
-    }
-
-    return { deck: newDeck, flashcards: insertedFlashcards };
+    return decksData.importDeck(
+      this.supabase,
+      importData,
+      userId,
+    );
   }
 
   /**
@@ -4247,51 +3849,11 @@ export class SupabaseService {
       tags?: unknown;
     }>,
   ): Promise<void> {
-    const { error: deleteError } = await this.supabase
-      .from("flashcards")
-      .delete()
-      .eq("deck_id", deckId);
-    if (deleteError) {
-      logger.error("Error clearing deck cards for replacement:", deleteError);
-      throw deleteError;
-    }
-
-    if (cards && cards.length > 0) {
-      const rows = cards.map((card) => {
-        const cardType = card.type || "BASIC";
-        const insertData: any = { deck_id: deckId, type: cardType };
-        if (cardType === "CLOZE") {
-          insertData.cloze_text = card.clozeText || card.cloze_text;
-        } else if (cardType === "IMAGE_OCCLUSION") {
-          insertData.front = card.front;
-          insertData.back = card.back;
-          const occlusionData = card.occlusion_data || card.occlusionData;
-          if (occlusionData) insertData.occlusion_data = occlusionData;
-        } else {
-          insertData.front = card.front;
-          insertData.back = card.back;
-        }
-        const imageUrl = card.image_url || card.imageUrl;
-        if (imageUrl) insertData.image_url = imageUrl;
-        if (Array.isArray(card.tags) && card.tags.length > 0) {
-          insertData.tags = card.tags;
-        }
-        return insertData;
-      });
-      const { error: insertError } = await this.supabase
-        .from("flashcards")
-        .insert(rows);
-      if (insertError) {
-        logger.error("Error inserting replacement deck cards:", insertError);
-        throw insertError;
-      }
-    }
-
-    await cacheService.deletePattern("flashcards:*");
-    await cacheService.delete(`deck:${deckId}`);
-    // The per-user deck list bakes in a computed card_count, so it must be
-    // rebuilt after the card set changes (same broad pattern importDeck uses).
-    await cacheService.deletePattern(`decks:user:*`);
+    return decksData.replaceDeckCards(
+      this.supabase,
+      deckId,
+      cards,
+    );
   }
 
   async createFlashcard(flashcardData: {
@@ -4305,60 +3867,20 @@ export class SupabaseService {
     tags?: string[];
     userId?: string;
   }): Promise<any> {
-    const cardType = flashcardData.type || "BASIC";
-
-    if (!flashcardData.userId) {
-      throw new Error("Authentication required");
-    }
-    const canEdit = await this.verifyDeckAccess(
-      flashcardData.userId,
-      flashcardData.deckId,
-      "edit",
+    return decksData.createFlashcard(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardData,
     );
-    if (!canEdit) {
-      throw new Error("Deck not found or access denied");
-    }
-
-    const insertData: any = {
-      deck_id: flashcardData.deckId,
-      type: cardType,
-    };
-
-    if (cardType === "CLOZE") {
-      // CLOZE cards must have cloze_text and front/back must be NULL per DB constraint
-      insertData.cloze_text = flashcardData.clozeText;
-      // front and back are left as NULL for CLOZE cards
-    } else {
-      // For BASIC and IMAGE_OCCLUSION, allow an optional image URL.
-      insertData.front = flashcardData.front;
-      insertData.back =
-        cardType === "IMAGE_OCCLUSION" ? null : flashcardData.back;
-      insertData.image_url = flashcardData.imageUrl;
-    }
-
-    if (cardType === "IMAGE_OCCLUSION") {
-      insertData.occlusion_data = flashcardData.occlusionData;
-    }
-
-    if (flashcardData.tags && flashcardData.tags.length > 0) {
-      insertData.tags = flashcardData.tags;
-    }
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .insert(insertData)
-      .select()
-      .single();
-
-    if (error) {
-      logger.error("Error creating flashcard:", { error, flashcardData });
-      throw new Error(error.message || "Failed to create flashcard");
-    }
-
-    // Invalidate deck cache
-    await cacheService.deletePattern(`flashcards:*`);
-
-    return data;
   }
 
   // ===========================================================================
