@@ -21,12 +21,32 @@
  *  - `hooks/chat/useMessageActions.ts` for reactions, stars, pins and copy —
  *    which is where the reaction endpoints and the device-local localStorage
  *    marks now live.
+ *
+ * What this file still owns, after lanes M8 and M8b: the props, the thread
+ * panel's fetch and focus, the composer/thread reset, and the wiring that hands
+ * every other concern to a module. The map:
+ *
+ *   components/chat/ChatHeader.tsx        the header bar
+ *   components/chat/ChatHeaderMenu.tsx    its overflow menu
+ *   components/chat/MessageList.tsx       the scrolling list
+ *   components/chat/MessageRow.tsx        one row of it
+ *   components/chat/ConversationPane.tsx  the banners and the composer slot
+ *   components/chat/ThreadPanel.tsx       the thread side panel
+ *   components/chat/ChatHomeScreen.tsx    the `chat === null` screen
+ *   components/chat/OffersPanel.tsx       the marketplace Offers tab
+ *   hooks/chat/useChatComposer.ts         reply / edit / mention state
+ *   hooks/chat/useMessageActions.ts       reactions, stars, pins, copy
+ *   hooks/chat/useChatScroll.ts           anchor, auto-scroll, paging
+ *   hooks/chat/useChatRealtime.ts         typing and read broadcasts
+ *   hooks/chat/useDmRelationship.ts       request, block, mute
+ *   hooks/chat/useMarketplaceOffers.ts    inquiry, offers, order
+ *
  * Gotchas:
  *  - EVERY hook must stay above the `if (!chat)` early return. Opening a chat from the
  *    empty state otherwise changes the hook count (React error #310).
- *  - Auto-scroll is conditional on `isNearBottomRef` / own-message; the initial position
- *    is decided once per chat id by `initialAnchorDoneRef` and must wait for
- *    `unreadAnchorAt !== undefined`, which is the "mark-as-read has reported" signal.
+ *  - The hook CALL ORDER here is load-bearing, and three of the hooks argue for
+ *    their own position in their banners. `useChatScroll` in particular must be
+ *    called after the chat-reset effect below, never before it.
  *  - Colours are `lantern-*` tokens plus Tailwind palette steps with explicit `dark:`
  *    pairs; there is no JS theme branch here and none should be added.
  */
@@ -59,7 +79,7 @@ import { useToastStore } from '../stores/toastStore';
 import { Group, Message, User, DMThread, ChatItem, MessageReplyPreview } from '../types';
 import ReportContentModal from './moderation/ReportContentModal';
 import type { ContentReportTargetType } from '@lantern/shared';
-import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
+import { type SendMessageOptions } from './MessageInputBar';
 import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
@@ -73,7 +93,6 @@ import {
   type QuestionVisibilityMode,
 } from '@lantern/shared/utils';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
-import { AppIcon } from './ui/AppIcon';
 
 
 interface ChatWindowProps {
