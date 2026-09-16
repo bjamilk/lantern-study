@@ -60,19 +60,21 @@ export function respondLegacyAdminError(res: any, err: any): void {
 }
 
 /**
- * `PATCH /marketplace/orders/:id/dispute` classified by message text, because
- * `resolveDisputeAsAdmin` throws plain Errors rather than typed ones.
+ * `PATCH /marketplace/orders/:id/dispute`, classified by TYPE.
  *
- * KNOWN ISSUE (tracked, found during M4): sniffing 'not found' / 'Only
- * disputed' out of an error message is fragile — a reworded message in
- * `marketplaceOrders` silently turns a 404 into a 500. The fix is a typed
- * error in that service, which belongs to the marketplace lane, not here.
+ * It used to sniff 'not found' / 'Only disputed' out of the message text,
+ * because `resolveDisputeAsAdmin` threw untyped errors: rewording a message in
+ * `marketplaceOrders` silently turned an actionable 404 or 400 into "server
+ * error", with no test failing at the throw site (#72). That service now
+ * throws `PublicError` carrying its own `statusCode`, so the status travels
+ * with the error and this mapping is the moderation one — a PublicError keeps
+ * its status (or 400), anything else is a scrubbed 500.
+ *
+ * It stays a named export so the route keeps declaring which policy it takes;
+ * it can be collapsed into `moderationRoute` when the route is moved.
  */
-export function respondDisputeError(res: any, err: any): void {
-  const message = clientErrorMessage(err);
-  const status = message.includes('not found') ? 404 : message.includes('Only disputed') ? 400 : 500;
-  res.status(status).json({ success: false, error: message });
-}
+export const respondDisputeError: AdminErrorResponder = (res, err) =>
+  respondModerationError(res, err);
 
 /**
  * `POST /users/:id/badge`: awardBadge raises 400 (unknown badge id) / 404 (no

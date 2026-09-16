@@ -19,8 +19,10 @@
  *                 table, which is the point.
  *   moderation    `respondModerationError` — a PublicError keeps its own
  *                 statusCode (or 400), everything else is a 500.
- *   dispute       `PATCH /marketplace/orders/:id/dispute` — 404/400/500 by
- *                 message text.
+ *   dispute       `PATCH /marketplace/orders/:id/dispute` — the moderation
+ *                 rule, reached by TYPE: `resolveDisputeAsAdmin` throws a
+ *                 PublicError carrying its own statusCode (404 / 400). It used
+ *                 to be picked by substring-matching the message text (#72).
  *   badge         `POST /users/:id/badge` — `err.statusCode` when it is a
  *                 client-side one, else 500.
  *
@@ -251,17 +253,47 @@ describe('admin router error convention', () => {
     });
   });
 
-  it('gives the dispute resolver its three statuses by message text', async () => {
+  it('gives the dispute resolver its statuses by error TYPE, not message text', async () => {
     const handler = routes.find((r) => r.key === 'PATCH /marketplace/orders/:id/dispute')!.handler;
 
-    const notFound = await driveIntoFailure(handler, new Error('Order not found'));
+    // The two the service raises, with the statuses it stamps on them.
+    const notFound = await driveIntoFailure(
+      handler,
+      Object.assign(new PublicError('Order not found'), { statusCode: 404 })
+    );
     expect(notFound.statusCode).toBe(404);
+    expect(notFound.body).toEqual({ success: false, error: 'Order not found' });
 
-    const notDisputed = await driveIntoFailure(handler, new Error('Only disputed orders can be resolved'));
+    const notDisputed = await driveIntoFailure(
+      handler,
+      Object.assign(new PublicError('Only disputed orders can be resolved by admin'), {
+        statusCode: 400,
+      })
+    );
     expect(notDisputed.statusCode).toBe(400);
 
+    // A PublicError with no status of its own is still the caller's fault.
+    const untyped = await driveIntoFailure(handler, new PublicError('Order is closed'));
+    expect(untyped.statusCode).toBe(400);
+
+    // A genuine outage stays a 500 with a scrubbed message.
     const other = await driveIntoFailure(handler, new Error('escrow write failed'));
     expect(other.statusCode).toBe(500);
+  });
+
+  it('no longer reads the status out of the words in a message', async () => {
+    // The regression #72 describes: rewording 'Order not found' downgraded a
+    // 404 to a 500. Message text now decides nothing — only the type does.
+    const handler = routes.find((r) => r.key === 'PATCH /marketplace/orders/:id/dispute')!.handler;
+
+    const reworded = await driveIntoFailure(
+      handler,
+      Object.assign(new PublicError('No such order'), { statusCode: 404 })
+    );
+    expect(reworded.statusCode).toBe(404);
+
+    const soundsLike404 = await driveIntoFailure(handler, new Error('escrow ledger not found'));
+    expect(soundsLike404.statusCode).toBe(500);
   });
 
   it('gives the badge route its own status, and refuses a 5xx from the service', async () => {
