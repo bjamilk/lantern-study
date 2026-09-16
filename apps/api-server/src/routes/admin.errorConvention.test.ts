@@ -11,12 +11,16 @@
  * the exact status and body it produces, against the mapping each route had
  * before the conversion:
  *
- *   flat 500      the older routes' inline catch — `{success:false, error:
- *                 clientErrorMessage(err)}` at 500 for everything, INCLUDING a
- *                 PublicError. That under-reports a genuine 4xx; it is pinned
- *                 here as it was, because step 2 converted control flow, not
- *                 statuses. A future change that fixes it has to change this
- *                 table, which is the point.
+ *   legacy        the older routes — `{success:false, error:
+ *                 clientErrorMessage(err)}` at 500, EXCEPT for a PublicError
+ *                 that states a 4xx statusCode of its own, which keeps it.
+ *                 Until #73 this was a flat 500 for EVERYTHING, a PublicError
+ *                 included: an admin who sent a bad id or hit a validation
+ *                 rule was told the server broke, and monitoring counted it as
+ *                 a 5xx. Fixing it is a deliberate edit to this table — every
+ *                 route marked `legacy` below now answers 404 rather than 500
+ *                 in the PublicError case, and the commit that made the change
+ *                 lists them.
  *   moderation    `respondModerationError` — a PublicError keeps its own
  *                 statusCode (or 400), everything else is a 500.
  *   dispute       `PATCH /marketplace/orders/:id/dispute` — the moderation
@@ -55,7 +59,7 @@ import type { Router } from 'express';
 import router, { initializeAdminRoutes, adminErrorHandler } from './admin';
 import { PublicError } from '../utils/safeError';
 
-type Mapping = 'flat500' | 'moderation' | 'dispute' | 'badge';
+type Mapping = 'legacy' | 'moderation' | 'dispute' | 'badge';
 
 /**
  * Every route in the surface and the error mapping it carried before the
@@ -63,53 +67,53 @@ type Mapping = 'flat500' | 'moderation' | 'dispute' | 'badge';
  * inventory's count, asserted below so the two guards cannot drift apart.
  */
 const EXPECTED_MAPPING: Record<string, Mapping> = {
-  'GET /ai/provider-probe': 'flat500',
-  'GET /stats': 'flat500',
-  'GET /users': 'flat500',
-  'PATCH /users/:id/status': 'flat500',
+  'GET /ai/provider-probe': 'legacy',
+  'GET /stats': 'legacy',
+  'GET /users': 'legacy',
+  'PATCH /users/:id/status': 'legacy',
   'POST /users/:id/strikes': 'moderation',
   'GET /users/:id/strikes': 'moderation',
-  'PATCH /users/:id/role': 'flat500',
-  'GET /marketplace/listings': 'flat500',
-  'DELETE /marketplace/listings/:id': 'flat500',
-  'PATCH /marketplace/listings/:id': 'flat500',
-  'GET /learning-connections': 'flat500',
-  'GET /marketplace/orders': 'flat500',
+  'PATCH /users/:id/role': 'legacy',
+  'GET /marketplace/listings': 'legacy',
+  'DELETE /marketplace/listings/:id': 'legacy',
+  'PATCH /marketplace/listings/:id': 'legacy',
+  'GET /learning-connections': 'legacy',
+  'GET /marketplace/orders': 'legacy',
   'PATCH /marketplace/orders/:id/dispute': 'dispute',
   'GET /reports': 'moderation',
   'PUT /reports/:id': 'moderation',
   'GET /appeals': 'moderation',
   'PUT /marketplace/listings/:id/appeal': 'moderation',
-  'GET /analytics': 'flat500',
-  'GET /ai-analytics': 'flat500',
-  'GET /ai-tokens': 'flat500',
-  'GET /events': 'flat500',
-  'GET /ai-analytics/users': 'flat500',
-  'GET /activity': 'flat500',
-  'GET /audit': 'flat500',
-  'GET /users/:id': 'flat500',
-  'POST /notifications': 'flat500',
-  'POST /notifications/bulk': 'flat500',
-  'POST /users/:id/points': 'flat500',
+  'GET /analytics': 'legacy',
+  'GET /ai-analytics': 'legacy',
+  'GET /ai-tokens': 'legacy',
+  'GET /events': 'legacy',
+  'GET /ai-analytics/users': 'legacy',
+  'GET /activity': 'legacy',
+  'GET /audit': 'legacy',
+  'GET /users/:id': 'legacy',
+  'POST /notifications': 'legacy',
+  'POST /notifications/bulk': 'legacy',
+  'POST /users/:id/points': 'legacy',
   'POST /users/:id/badge': 'badge',
-  'GET /groups': 'flat500',
-  'PATCH /groups/:id': 'flat500',
-  'GET /messages': 'flat500',
-  'DELETE /messages/:id': 'flat500',
-  'GET /decks': 'flat500',
-  'DELETE /decks/:id': 'flat500',
-  'GET /offline/summary': 'flat500',
-  'POST /ai/quota/reset': 'flat500',
-  'GET /ai/companion/:userId': 'flat500',
-  'GET /ai/quota/:userId': 'flat500',
-  'GET /jobs/postings': 'flat500',
-  'PATCH /jobs/postings/:id': 'flat500',
-  'DELETE /jobs/postings/:id': 'flat500',
-  'GET /jobs/companies': 'flat500',
-  'PATCH /jobs/companies/:id/verification': 'flat500',
+  'GET /groups': 'legacy',
+  'PATCH /groups/:id': 'legacy',
+  'GET /messages': 'legacy',
+  'DELETE /messages/:id': 'legacy',
+  'GET /decks': 'legacy',
+  'DELETE /decks/:id': 'legacy',
+  'GET /offline/summary': 'legacy',
+  'POST /ai/quota/reset': 'legacy',
+  'GET /ai/companion/:userId': 'legacy',
+  'GET /ai/quota/:userId': 'legacy',
+  'GET /jobs/postings': 'legacy',
+  'PATCH /jobs/postings/:id': 'legacy',
+  'DELETE /jobs/postings/:id': 'legacy',
+  'GET /jobs/companies': 'legacy',
+  'PATCH /jobs/companies/:id/verification': 'legacy',
   'GET /jobs/reports': 'moderation',
   'PATCH /jobs/reports/:id': 'moderation',
-  'PATCH /jobs/postings/:id/school-approval': 'flat500',
+  'PATCH /jobs/postings/:id/school-approval': 'legacy',
 };
 
 /** The route family each key belongs to, so a failure names the console tab. */
@@ -243,14 +247,46 @@ describe('admin router error convention', () => {
       expect(res.body).toEqual({ success: false, error: 'kaboom' });
     });
 
-    it(`maps a PublicError the way its pre-conversion catch did (${mapping})`, async () => {
+    it(`lets a PublicError keep the 4xx it states (${mapping})`, async () => {
       const err = Object.assign(new PublicError('Report not found'), { statusCode: 404 });
       const res = await driveIntoFailure(route().handler, err);
-      const expectedStatus =
-        mapping === 'moderation' || mapping === 'badge' ? 404 : mapping === 'dispute' ? 404 : 500;
-      expect(res.statusCode).toBe(expectedStatus);
+      // Every mapping now honours an explicit client-side status. Before #73
+      // the `legacy` routes answered 500 here — 37 of the 47.
+      expect(res.statusCode).toBe(404);
       expect(res.body).toEqual({ success: false, error: 'Report not found' });
     });
+  });
+
+  it('keeps the legacy mapping stricter than the moderation one (#73)', async () => {
+    // `GET /users` stands in for the 37 routes on `adminRoute`: only a
+    // PublicError that STATES a 4xx is believed. Everything else is still the
+    // scrubbed 500, so the fix cannot turn an outage into a client error.
+    const handler = routes.find((r) => r.key === 'GET /users')!.handler;
+
+    const stated = await driveIntoFailure(
+      handler,
+      Object.assign(new PublicError('Role is not assignable'), { statusCode: 400 })
+    );
+    expect(stated.statusCode).toBe(400);
+    expect(stated.body).toEqual({ success: false, error: 'Role is not assignable' });
+
+    // No statusCode: still a 500 here (the moderation mapping would say 400).
+    const untyped = await driveIntoFailure(handler, new PublicError('Order is closed'));
+    expect(untyped.statusCode).toBe(500);
+
+    // A statusCode on a plain Error is not a client-safe claim.
+    const plain = await driveIntoFailure(
+      handler,
+      Object.assign(new Error('postgrest exploded'), { statusCode: 404 })
+    );
+    expect(plain.statusCode).toBe(500);
+
+    // A service echoing an upstream 5xx never becomes this response's status.
+    const upstream = await driveIntoFailure(
+      handler,
+      Object.assign(new PublicError('Payments provider unavailable'), { statusCode: 503 })
+    );
+    expect(upstream.statusCode).toBe(500);
   });
 
   it('gives the dispute resolver its statuses by error TYPE, not message text', async () => {
