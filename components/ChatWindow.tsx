@@ -42,6 +42,7 @@ import { ChatHeader } from './chat/ChatHeader';
 import { MessageList } from './chat/MessageList';
 import { selectVisibleMessages, selectVisibleThreadMessages } from './chat/visibleMessages';
 import { useMessageActions } from '../hooks/chat/useMessageActions';
+import { useChatComposer } from '../hooks/chat/useChatComposer';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
@@ -292,17 +293,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [awaitingMessages, setAwaitingMessages] = useState(false);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
-  const [replyTo, setReplyTo] = useState<MessageReplyPreview | null>(null);
-  const [seedMentionUsername, setSeedMentionUsername] = useState<string | null>(null);
-  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
-  const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
-  const [threadEditingMessage, setThreadEditingMessage] = useState<{ id: string; text: string } | null>(null);
-  // Separate mention seed for the thread composer so tapping an author's name
-  // seeds only the visible composer (main vs thread), not both at once.
-  const [threadSeedMentionUsername, setThreadSeedMentionUsername] = useState<string | null>(null);
   const [starredOnly, setStarredOnly] = useState(false);
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
   const [threadSearch, setThreadSearch] = useState('');
@@ -503,6 +496,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
+  /**
+   * The main and thread composers: reply/edit/mention-seed state, and the four
+   * handlers that act on it. Called exactly where its state used to be declared
+   * — it registers no effect, so nothing about effect order moved.
+   */
+  const {
+    replyTo,
+    setReplyTo,
+    seedMentionUsername,
+    setSeedMentionUsername,
+    editingMessage,
+    setEditingMessage,
+    threadReplyTo,
+    setThreadReplyTo,
+    threadEditingMessage,
+    setThreadEditingMessage,
+    threadSeedMentionUsername,
+    setThreadSeedMentionUsername,
+    handleComposerSend,
+    handleThreadSend,
+    beginEditingMessage,
+    handleRemoveMessage,
+  } = useChatComposer({
+    onSendMessage,
+    onEditMessage,
+    onRemoveMessage,
+    threadRootId,
+    loadThread,
+  });
+
   useEffect(() => {
     if (!threadRootId) {
       setThreadMessages([]);
@@ -548,70 +571,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setThreadRootId(rootId);
   };
 
-  // One composer serves both send and edit: an active `editingMessage` turns the
-  // submit into an edit. The optimistic message row and its failure handling
-  // belong to `onSendMessage` in the shell, not to this component.
-  const handleComposerSend = async (text: string, options?: SendMessageOptions) => {
-    if (!editingMessage) {
-      await onSendMessage(text, options);
-      return;
-    }
-    await onEditMessage(editingMessage.id, text);
-    useToastStore.getState().showToast('Message updated', 'success');
-    if (threadRootId) void loadThread(threadRootId);
-  };
-
-  const handleThreadSend = async (text: string, options?: SendMessageOptions) => {
-    if (threadEditingMessage) {
-      await onEditMessage(threadEditingMessage.id, text);
-      useToastStore.getState().showToast('Message updated', 'success');
-      if (threadRootId) await loadThread(threadRootId);
-      return;
-    }
-    // Reply target, most specific first. The `|| threadRootId` fallback is what
-    // guarantees a thread reply never escapes into the main conversation.
-    const replyId = options?.replyToMessageId || threadReplyTo?.id || threadRootId || undefined;
-    await onSendMessage(text, { ...options, replyToMessageId: replyId });
-    if (threadRootId) {
-      // Brief delay so the new message is queryable, then refresh panel + bump feed counts
-      window.setTimeout(() => void loadThread(threadRootId), 350);
-    }
-  };
-
-  const beginEditingMessage = (message: Message, inThread = false) => {
-    if (!message.text) return;
-    if (inThread) {
-      setThreadReplyTo(null);
-      setThreadEditingMessage({ id: message.id, text: message.text });
-      return;
-    }
-    setReplyTo(null);
-    setEditingMessage({ id: message.id, text: message.text });
-  };
-
-  const handleRemoveMessage = async (message: Message, inThread = false) => {
-    const confirmed = await confirmDialog({
-      title: 'Remove message?',
-      message:
-        'This will remove the message for everyone. It cannot be restored in chat, but an audit record will be retained.',
-      danger: true,
-      confirmLabel: 'Remove',
-    });
-    if (!confirmed) return;
-
-    try {
-      await onRemoveMessage(message.id);
-      if (editingMessage?.id === message.id) setEditingMessage(null);
-      if (threadEditingMessage?.id === message.id) setThreadEditingMessage(null);
-      if (inThread && threadRootId) await loadThread(threadRootId);
-      useToastStore.getState().showToast('Message removed', 'success');
-    } catch (error) {
-      useToastStore.getState().showToast(
-        error instanceof Error ? error.message : 'Could not remove message',
-        'error'
-      );
-    }
-  };
 
   // Scroll handler, two jobs: track "am I near the bottom" (which decides
   // whether a new message scrolls or only bumps the pill), and page in older

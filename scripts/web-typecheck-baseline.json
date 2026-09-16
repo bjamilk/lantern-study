@@ -1,8 +1,8 @@
 {
   "//": "Frozen set of pre-existing type errors in the web app root graph. See scripts/check-web-typecheck.mjs. This file may only shrink: fix errors, then run `node scripts/check-web-typecheck.mjs --update`.",
   "project": "apps/web/tsconfig.typecheck.json",
-  "total": 833,
-  "fileCount": 169,
+  "total": 834,
+  "fileCount": 170,
   "errors": {
     "App.tsx TS2304 Cannot find name 'Group'.": 2,
     "App.tsx TS2322 Type 'Promise<typeof import(\"<repo>/components/AIToolsHub\")>' is not assignable to type 'Promise<ModuleWithDefault<ComponentType<unknown>>>'.": 1,
@@ -349,6 +349,7 @@
     "components/ui/heroiconsMigration.test.ts TS2532 Object is possibly 'undefined'.": 2,
     "components/walkthrough/WalkthroughScreen.test.tsx TS7016 Could not find a declaration file for module 'react-dom/server'. '<repo>/node_modules/react-dom/server.node.js' implicitly has an 'any' type.": 1,
     "components/walkthrough/WalkthroughScreen.tsx TS2532 Object is possibly 'undefined'.": 5,
+    "hooks/chat/useChatComposer.test.tsx TS7016 Could not find a declaration file for module 'react-dom/client'. '<repo>/node_modules/react-dom/client.js' implicitly has an 'any' type.": 1,
     "hooks/chat/useMessageActions.test.tsx TS7016 Could not find a declaration file for module 'react-dom/client'. '<repo>/node_modules/react-dom/client.js' implicitly has an 'any' type.": 1,
     "hooks/effects/appEffectsOrder.test.ts TS2532 Object is possibly 'undefined'.": 1,
     "hooks/effects/testing/hookHarness.ts TS18048 'slot' is possibly 'undefined'.": 1,
