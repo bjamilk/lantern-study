@@ -352,7 +352,11 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // --- supabase.ts membership joins not adjacent to the outage table pattern.
   //     group_members->groups and note_collaborators->notes are single-FK today.
   'services/supabase.ts::achievements': 2,
-  'services/supabase.ts::groups': 3,
+  'services/supabase.ts::groups': 2,
+  // `getUserGroups`' group_members->groups embed, moved verbatim out of
+  // supabase.ts into the users repository (monolith lane M1b, step 6). Same
+  // query, new file: the row moved with it rather than the count changing.
+  'services/data/users.ts::groups': 1,
   'services/supabase.ts::notes': 1,
   'services/supabase.ts::test_results': 4,
 
