@@ -32,7 +32,7 @@
  *  - Theme is applied by toggling the `dark` class only; colour values live in index.css.
  */
 import { useEffect, useCallback, useState, useRef, type Dispatch, type SetStateAction } from 'react';
-import { AppMode, OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
+import { OfflineSessionBundle, TransactionType, Transaction, User } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { reportUnexpectedSignOut, wasRecentIntentionalSignOut } from '../services/sentry';
 import { useGroupStore } from '../stores/groupStore';
@@ -106,8 +106,8 @@ import { saveBudgetExtras } from '../services/budgetExtrasSync';
 import { normalizeMonthlyPlans, readPlanForMonth } from '@lantern/shared/utils';
 import { fetchBudgetWalletData } from '../services/budgetApi';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
+import { useDeepLinkConsumption } from './effects/useDeepLinkConsumption';
 import { DirectMessage } from '../types';
-import { onWebNotificationClick } from '../utils/webNotifications';
 import { useToastStore } from '../stores/toastStore';
 import {
   INITIAL_BOOTSTRAP_LOAD_STATE,
@@ -181,7 +181,7 @@ export function useAppEffects({
     } = useFlashcardStore();
     const { transactions, setTransactions, budget, setBudget, savingsGoals, expenseSplits, walletBalance, setSavingsGoals, setExpenseSplits, setWalletBalance } = useBudgetStore();
     const {
-        setTheme, setAppMode,
+        setTheme,
         openModal, lowDataMode, setLowDataMode,
         selectedChat,
     } = useUIStore();
@@ -2120,16 +2120,8 @@ export function useAppEffects({
     // --- Theme sync to DOM (signed-out visitors always see light — landing & auth) ---
     useThemeDomSync({ currentUser });
 
-    // Routes a click on an OS notification (including one delivered by the service worker
-    // while the tab was closed) into the app. Re-runs only if setAppMode changes identity.
-    useEffect(() => {
-        return onWebNotificationClick((data) => {
-            if (data.navigate === 'flashcards') {
-                window.focus();
-                setAppMode(AppMode.FLASHCARDS);
-            }
-        });
-    }, [setAppMode]);
+    // --- Deep-link entry: an OS / service-worker notification click ---
+    useDeepLinkConsumption();
 
     // --- SRS Notifications: the due-cards badge and the reminder scheduler ---
     useSrsReminders({ currentUser });
