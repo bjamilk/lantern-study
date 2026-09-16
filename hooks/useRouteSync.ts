@@ -119,6 +119,10 @@ export function useRouteSync() {
       }
       if (result.mode) {
         useUIStore.getState().setAppModeDirect(result.mode);
+        // "Has ever opened" for the Home onboarding checklist (issue #68).
+        // This is the one place every routed landing passes through, and the
+        // checklist only renders on Home, so it could never see these itself.
+        useUIStore.getState().markSurfaceVisited(currentUserId, result.mode);
       }
     });
 

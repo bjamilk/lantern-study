@@ -23,6 +23,16 @@ import { MessageType, QuestionStatus } from '../../types';
 
 vi.mock('react', () => reactMock);
 
+const toastDeps = vi.hoisted(() => ({ showToast: vi.fn() }));
+
+vi.mock('../../stores/toastStore', () => {
+    const state = { showToast: toastDeps.showToast };
+    const hook = (() => state) as (() => typeof state) & { getState: () => typeof state };
+    hook.getState = () => state;
+    return { useToastStore: hook };
+});
+
+
 const tx = vi.hoisted(() => ({
     voteQuestion: vi.fn(async (..._args: unknown[]) => ({ upvotes: 7, downvotes: 1 }) as any),
     removeVote: vi.fn(async (..._args: unknown[]) => ({ upvotes: 5, downvotes: 1 }) as any),
@@ -123,13 +133,12 @@ function mount(options: {
     } as Harness;
 }
 
-// Both failure paths in this hook call the browser's blocking `alert()` (see the
-// KNOWN ISSUE in useVoteHandlers.ts). The web suite runs in plain Node, which has
-// none, so a failure path would throw before reaching the assertion.
-(globalThis as { alert?: (message?: unknown) => void }).alert = () => {};
+// Both failure paths report through the app's toast store (issue #71 — they used
+// to call the browser's blocking `alert()`), so the suite asserts on the toast.
 
 beforeEach(() => {
     for (const fn of Object.values(tx)) fn.mockClear();
+    toastDeps.showToast.mockClear();
 });
 
 describe('useVoteHandlers', () => {
@@ -207,6 +216,21 @@ describe('useVoteHandlers', () => {
         await harness.result.onFlagAsSimilar('msg-1', 'group-1');
 
         expect(harness.messages['group-1']?.[0]?.flaggedAsSimilarUserIds).toBeUndefined();
+        expect(toastDeps.showToast).toHaveBeenCalledWith(
+            'Failed to flag message. Please try again.',
+            'error'
+        );
+    });
+
+    it('reports a failed vote through the toast store, not a blocking alert', async () => {
+        const harness = mount();
+        tx.voteQuestion.mockRejectedValueOnce(new Error('offline'));
+        await harness.result.onVoteQuestion('msg-1', 'up');
+
+        expect(toastDeps.showToast).toHaveBeenCalledWith(
+            'Failed to vote. Please try again.',
+            'error'
+        );
     });
 
     it('upvotes the duplicate original only when this student has not upvoted it', () => {
