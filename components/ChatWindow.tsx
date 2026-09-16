@@ -48,6 +48,8 @@ import { OffersPanel } from './chat/OffersPanel';
 import { ThreadPanel } from './chat/ThreadPanel';
 import { ChatHomeScreen } from './chat/ChatHomeScreen';
 import { useMarketplaceOffers } from '../hooks/chat/useMarketplaceOffers';
+import { useChatScroll } from '../hooks/chat/useChatScroll';
+import { useChatRealtime } from '../hooks/chat/useChatRealtime';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
@@ -151,8 +153,6 @@ interface ChatWindowProps {
 // How close to the bottom still counts as "following the conversation": inside
 // this band a new message scrolls you down, outside it the "N new messages"
 // pill appears instead.
-const NEAR_BOTTOM_PX = 120;
-
 const ChatWindow: React.FC<ChatWindowProps> = ({
   chat, messages: messagesProp, currentUser, userVotes,
   onSendMessage, onEditMessage, onRemoveMessage, onOpenQuestionModal, onOpenGroupInfoModal,
@@ -246,9 +246,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [chat, currentUser.id, peerPresence]);
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const updateMessageInState = useGroupStore((state) => state.updateMessageInState);
   const showToast = useToastStore((state) => state.showToast);
@@ -260,26 +257,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     id: string;
     label?: string;
   } | null>(null);
-  // --- Scroll bookkeeping. These are refs, not state, because the scroll
-  // handler and the live-message effect read them during the same commit that
-  // would be setting them; a state round-trip would act on stale values.
-  // `initialAnchorDoneRef` holds the chat id whose opening position has already
-  // been decided, which is what makes the anchor once-per-conversation.
-  const prevMessageCountRef = useRef(messages.length);
-  const lastMessageIdRef = useRef<string | null>(null);
-  const isNearBottomRef = useRef(true);
-  const initialAnchorDoneRef = useRef<string | null>(null);
-
   // --- Conversation view state. All of it is per-chat and reset by the
   // `chat?.id` effect below; none of it is persisted except starred/pinned,
   // which are device-local localStorage marks.
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
-  const typingTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const [hasMore, setHasMore] = useState(true);
-  const [awaitingMessages, setAwaitingMessages] = useState(false);
-  const [newMessagesBelow, setNewMessagesBelow] = useState(0);
-  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -335,14 +315,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const threadCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
-  // Reset loading/hasMore/scroll state when the chat changes
+  // What the list actually renders, in filter order: archived-out, removed
+  // tombstone policy (a removed message still renders when something replies to
+  // it), the group question-visibility mode, the starred-only view, then the
+  // in-chat search (2+ chars). EVERY scroll and unread computation below works on
+  // this array, not on `messages` — the divider must sit at the first unread row
+  // the reader can actually see.
+  const isGroupChat = chat?.chatType === 'group';
+  const visibleMessages = useMemo(
+    () =>
+      selectVisibleMessages({
+        messages,
+        isGroupChat,
+        questionVisibilityMode,
+        starredOnly,
+        starredIds,
+        threadSearch,
+      }),
+    [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
+  );
+  // Declared here, above the chat-reset effect, because `useChatScroll` below
+  // takes it — and that hook has to be called AFTER the reset effect, never
+  // before it. Moving a pure `useMemo` earlier changes no behaviour: every one
+  // of its inputs is already declared above this point.
+
+  // Reset composer and thread state when the chat changes. The scroll half of
+  // this effect moved to `hooks/chat/useChatScroll.ts`, which registers its own
+  // `chat?.id` effect directly after this one — see that file's banner.
   // Driven by `chat?.id` alone — a re-render of the same conversation must not
   // clear a reply draft, close an open thread or re-arm the scroll anchor.
   useEffect(() => {
-    setHasMore(true);
-    setIsLoadingMore(false);
-    setNewMessagesBelow(0);
-    setFirstUnreadId(null);
     setReplyTo(null);
     setEditingMessage(null);
     setThreadRootId(null);
@@ -350,19 +352,32 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setThreadReplyTo(null);
     setThreadEditingMessage(null);
     messageNodeRefs.current = {};
-    isNearBottomRef.current = true;
-    initialAnchorDoneRef.current = null;
-    if (chat) {
-      setAwaitingMessages(true);
-    }
   }, [chat?.id]);
 
-  // First messages have arrived → drop the "Loading messages…" state.
-  useEffect(() => {
-    if (messages.length > 0) {
-      setAwaitingMessages(false);
-    }
-  }, [messages.length, chat?.id]);
+  /**
+   * The conversation's scroll position: the unread anchor, auto-scroll, the
+   * "N new messages" pill and older-history paging. Called directly after the
+   * reset effect above, which is the placement its banner argues for.
+   */
+  const {
+    messagesEndRef,
+    messagesContainerRef,
+    firstUnreadRef,
+    isLoadingMore,
+    awaitingMessages,
+    newMessagesBelow,
+    firstUnreadId,
+    scrollToBottom,
+    handleScroll,
+  } = useChatScroll({
+    chat,
+    currentUserId: currentUser.id,
+    messagesLength: messages.length,
+    visibleMessages,
+    unreadAnchorAt,
+    onLoadMoreMessages,
+    onLoadMoreDirectMessages,
+  });
 
   // Overflow menu closes → collapse its submenus, so reopening it starts at the
   // top level. Opening pre-expands the question filter only when a non-default
@@ -376,75 +391,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setQuestionFiltersOpen(questionVisibilityMode !== 'all');
   }, [isDropdownOpen, questionVisibilityMode]);
 
-  // Backstop for the loading state: an empty conversation never sets
-  // `messages.length > 0`, so without this the spinner would run forever
-  // instead of settling into "No messages yet".
-  useEffect(() => {
-    if (!chat) return;
-    const timer = window.setTimeout(() => setAwaitingMessages(false), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [chat?.id]);
-
-  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-
-  // Typing indicators via Supabase broadcast
-  // Subscription setup/teardown, keyed on `chat.id`: one broadcast channel per
-  // conversation. Each peer's id is held for 3s by a per-user timer that a fresh
-  // broadcast resets. TEARDOWN must clear every timer, empty the id list and
-  // remove the channel — otherwise a stale "X is typing…" follows you into the
-  // next conversation.
-  useEffect(() => {
-    if (!chat?.id) return;
-    const channel = supabase.channel(`typing:${chat.id}`);
-    typingChannelRef.current = channel;
-    channel
-      .on('broadcast', { event: 'typing' }, ({ payload }) => {
-        const userId = payload?.userId as string | undefined;
-        if (!userId || userId === currentUser.id) return;
-        setTypingUserIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
-        if (typingTimeoutsRef.current[userId]) clearTimeout(typingTimeoutsRef.current[userId]);
-        typingTimeoutsRef.current[userId] = setTimeout(() => {
-          setTypingUserIds((prev) => prev.filter((id) => id !== userId));
-          delete typingTimeoutsRef.current[userId];
-        }, 3000);
-      })
-      .subscribe();
-    return () => {
-      Object.values(typingTimeoutsRef.current).forEach(clearTimeout);
-      typingTimeoutsRef.current = {};
-      setTypingUserIds([]);
-      typingChannelRef.current = null;
-      void supabase.removeChannel(channel);
-    };
-  }, [chat?.id, currentUser.id]);
-
-  const broadcastTyping = () => {
-    void typingChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'typing',
-      payload: { userId: currentUser.id },
-    });
-  };
-
-  // Peer mark-read broadcasts → refresh blue ticks on own messages
-  // A second channel per conversation, skipped entirely in low-data mode
-  // (`lowDataMode` is a dep, so toggling it subscribes/unsubscribes). Own
-  // broadcasts are ignored; the shell applies the watermark via `onPeerChatRead`.
-  useEffect(() => {
-    if (!chat?.id || lowDataMode) return;
-    const channel = supabase.channel(`chat-read:${chat.id}`);
-    channel
-      .on('broadcast', { event: 'read' }, ({ payload }) => {
-        const userId = payload?.userId as string | undefined;
-        const lastReadAt = payload?.lastReadAt as string | undefined;
-        if (!userId || !lastReadAt || userId === currentUser.id) return;
-        onPeerChatRead?.({ userId, lastReadAt });
-      })
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [chat?.id, currentUser.id, lowDataMode, onPeerChatRead]);
+  /**
+   * Typing and read-receipt broadcasts. Called exactly where `typingChannelRef`
+   * was declared, so both of its effects keep their position in the effect
+   * order; `typingUserIds` and its timeout map moved down here with them.
+   */
+  const { typingUserIds, broadcastTyping } = useChatRealtime({
+    chatId: chat?.id,
+    currentUserId: currentUser.id,
+    lowDataMode,
+    onPeerChatRead,
+  });
 
   // --- Thread side panel. Threads are NOT part of `messages`: they are fetched
   // whole per root id and kept in `threadMessages`, so every mutation inside the
@@ -559,57 +516,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
 
-  // Scroll handler, two jobs: track "am I near the bottom" (which decides
-  // whether a new message scrolls or only bumps the pill), and page in older
-  // history at the very top. The scroll position is restored by height delta
-  // after a page loads, so the list does not jump under the reader; `hasMore`
-  // latches false on an empty page or a chat type with no pager.
-  const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
-    const nearBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
-    isNearBottomRef.current = nearBottom;
-    if (nearBottom && newMessagesBelow > 0) {
-      setNewMessagesBelow(0);
-    }
-
-    // Load more when scrolled to the top (groups and DMs both page older history)
-    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat) {
-      const loadOlder =
-        chat.chatType === 'group'
-          ? onLoadMoreMessages
-          : chat.chatType === 'dm'
-            ? onLoadMoreDirectMessages
-            : undefined;
-      if (!loadOlder) {
-        // No pager for this chat type — stop implying more history exists.
-        setHasMore(false);
-        return;
-      }
-      setIsLoadingMore(true);
-      const prevScrollHeight = container.scrollHeight;
-
-      try {
-        const count = await loadOlder(chat.id);
-        if (count === 0) {
-          setHasMore(false);
-        } else {
-          // Restore scroll position to prevent jumping
-          requestAnimationFrame(() => {
-            if (container) {
-              container.scrollTop = container.scrollHeight - prevScrollHeight;
-            }
-          });
-        }
-      } catch (err) {
-        console.error('Error loading older messages:', err);
-      } finally {
-        setIsLoadingMore(false);
-      }
-    }
-  };
-
   // tree state used for mobile grouping
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
 
@@ -649,33 +555,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
 
 
 
-  // Scrolling to the end also clears the pill and re-arms "near bottom", so the
-  // two never disagree about where the reader is.
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
-    setNewMessagesBelow(0);
-    isNearBottomRef.current = true;
-  };
-
-  // What the list actually renders, in filter order: archived-out, removed
-  // tombstone policy (a removed message still renders when something replies to
-  // it), the group question-visibility mode, the starred-only view, then the
-  // in-chat search (2+ chars). EVERY scroll and unread computation below works on
-  // this array, not on `messages` — the divider must sit at the first unread row
-  // the reader can actually see.
-  const isGroupChat = chat?.chatType === 'group';
-  const visibleMessages = useMemo(
-    () =>
-      selectVisibleMessages({
-        messages,
-        isGroupChat,
-        questionVisibilityMode,
-        starredOnly,
-        starredIds,
-        threadSearch,
-      }),
-    [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
-  );
   const visibleThreadMessages = useMemo(
     () => selectVisibleThreadMessages(threadMessages, isGroupChat),
     [isGroupChat, threadMessages]
@@ -697,98 +576,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       !container || container.scrollHeight - container.scrollTop - container.clientHeight < 160;
     if (nearBottom) end.scrollIntoView({ block: 'end' });
   }, [threadRootId, threadLoading, visibleThreadMessages.length]);
-
-  // Compute first unread once the prior marker and messages are available (group + DM).
-  // `unreadAnchorAt === undefined` means "not reported yet" and must WAIT;
-  // `null` means fully read. Own messages can never be the first unread.
-  useEffect(() => {
-    if (!chat?.id) {
-      setFirstUnreadId(null);
-      return;
-    }
-    if (unreadAnchorAt === undefined) return;
-    if (visibleMessages.length === 0) return;
-
-    if (unreadAnchorAt == null) {
-      setFirstUnreadId(null);
-      return;
-    }
-
-    const anchorMs = new Date(unreadAnchorAt).getTime();
-    if (Number.isNaN(anchorMs)) {
-      setFirstUnreadId(null);
-      return;
-    }
-
-    const first = visibleMessages.find((msg) => {
-      const senderId = msg.sender?.id;
-      if (senderId && senderId === currentUser.id) return false;
-      const ts = new Date(msg.timestamp).getTime();
-      return !Number.isNaN(ts) && ts > anchorMs;
-    });
-    setFirstUnreadId(first?.id ?? null);
-  }, [chat?.id, unreadAnchorAt, visibleMessages, currentUser.id]);
-
-  // Initial open: scroll to first unread (or bottom when fully read).
-  // Runs at most once per chat id (`initialAnchorDoneRef`), and it also seeds
-  // `lastMessageIdRef`/`prevMessageCountRef` so the live-update effect below can
-  // tell "the list just mounted" from "a new message arrived".
-  useEffect(() => {
-    if (!chat?.id) return;
-    if (visibleMessages.length === 0) return;
-    if (initialAnchorDoneRef.current === chat.id) return;
-
-    // Wait until mark-as-read has reported a marker (null = none / fully read).
-    if (unreadAnchorAt === undefined) return;
-    // Wait a tick so the unread divider DOM node exists when needed.
-    const timer = window.setTimeout(() => {
-      if (initialAnchorDoneRef.current === chat.id) return;
-      initialAnchorDoneRef.current = chat.id;
-      lastMessageIdRef.current =
-        visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1].id : null;
-      prevMessageCountRef.current = visibleMessages.length;
-
-      if (firstUnreadId && firstUnreadRef.current) {
-        firstUnreadRef.current.scrollIntoView({ behavior: 'auto', block: 'start' });
-        isNearBottomRef.current = false;
-      } else {
-        scrollToBottom('auto');
-      }
-    }, 50);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat?.id, visibleMessages.length, firstUnreadId, unreadAnchorAt]);
-
-  // Live updates: only auto-scroll when near bottom or the new message is ours.
-  // Driven by the identity of the LAST id in `visibleMessages`: an edit, a
-  // reaction or a filter change re-runs this effect but exits at the first guard,
-  // so only a genuinely new tail message scrolls or increments the pill.
-  useEffect(() => {
-    const last = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : null;
-    const lastId = last?.id ?? null;
-    if (!lastId || lastId === lastMessageIdRef.current) {
-      lastMessageIdRef.current = lastId;
-      prevMessageCountRef.current = visibleMessages.length;
-      return;
-    }
-
-    // Skip the very first paint for a chat — handled by the initial-anchor effect.
-    if (initialAnchorDoneRef.current !== chat?.id) {
-      lastMessageIdRef.current = lastId;
-      prevMessageCountRef.current = visibleMessages.length;
-      return;
-    }
-
-    const isOwn = last?.sender?.id === currentUser.id;
-    if (isOwn || isNearBottomRef.current) {
-      scrollToBottom('smooth');
-    } else {
-      const added = Math.max(1, visibleMessages.length - prevMessageCountRef.current);
-      setNewMessagesBelow((n) => n + added);
-    }
-    lastMessageIdRef.current = lastId;
-    prevMessageCountRef.current = visibleMessages.length;
-  }, [visibleMessages, currentUser.id, chat?.id]);
 
   // All hooks below must stay above the `if (!chat)` return — opening a chat
   // from the empty state must not change hook count (React #310).
