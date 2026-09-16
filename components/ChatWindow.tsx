@@ -47,6 +47,7 @@ import {
 import { ChatGalleryModal } from './chat/ChatGalleryModal';
 import { ChatHeader } from './chat/ChatHeader';
 import { MessageList } from './chat/MessageList';
+import { selectVisibleMessages, selectVisibleThreadMessages } from './chat/visibleMessages';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
@@ -76,10 +77,8 @@ import {
   canWithdrawOffer,
   getOfferProposedBy,
   resolveGroupChatSenderLabel,
-  shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 import {
-  CHAT_MUTE_DURATIONS,
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
@@ -111,8 +110,6 @@ import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import {
   mapMessagesFromApi,
-  QUESTION_VISIBILITY_MODE_OPTIONS,
-  messagePassesQuestionVisibility,
   type QuestionVisibilityMode,
 } from '@lantern/shared/utils';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
@@ -970,29 +967,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const isGroupChat = chat?.chatType === 'group';
   const visibleMessages = useMemo(
     () =>
-      messages.filter((msg) => {
-        if (isGroupChat && msg.isArchived) return false;
-        if (!shouldRenderRemovedMessage(msg, messages)) return false;
-        if (isGroupChat && !messagePassesQuestionVisibility(msg, questionVisibilityMode)) {
-          return false;
-        }
-        if (starredOnly && !starredIds.has(msg.id)) return false;
-        const query = threadSearch.trim().toLowerCase();
-        if (query.length >= 2) {
-          const hay = `${msg.text || ''} ${msg.questionStem || ''}`.toLowerCase();
-          if (!hay.includes(query)) return false;
-        }
-        return true;
+      selectVisibleMessages({
+        messages,
+        isGroupChat,
+        questionVisibilityMode,
+        starredOnly,
+        starredIds,
+        threadSearch,
       }),
     [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
   );
   const visibleThreadMessages = useMemo(
-    () =>
-      threadMessages.filter(
-        (message) =>
-          !(isGroupChat && message.isArchived) &&
-          shouldRenderRemovedMessage(message, threadMessages)
-      ),
+    () => selectVisibleThreadMessages(threadMessages, isGroupChat),
     [isGroupChat, threadMessages]
   );
   const threadRootMessage =
