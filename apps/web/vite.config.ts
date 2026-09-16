@@ -206,6 +206,9 @@ export default defineConfig(({ mode }) => {
         globals: true,
         include: [
           'apps/web/src/**/*.test.{ts,tsx}',
+          // hooks/ was omitted, so the app-effects composition root had no
+          // suite that could run at all.
+          'hooks/**/*.test.{ts,tsx}',
           'components/**/*.test.{ts,tsx}',
           // utils/ was omitted, so utils/xhrHeaders.test.ts had never run.
           'utils/**/*.test.{ts,tsx}',
