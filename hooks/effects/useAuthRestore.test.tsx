@@ -90,6 +90,13 @@ vi.mock('../../services/supabase', () => ({
     clearClientAuthSession: fx.clearClientAuthSession,
     clearAllClientAuthStorage: fx.clearAllClientAuthStorage,
     getStoredSessionExpiresAt: fx.getStoredSessionExpiresAt,
+    // Not used by this hook. It is here because the mock REPLACES the module:
+    // anything else in the graph that reads an export this factory omits dies
+    // at import time with "No <name> export is defined on the mock". That is
+    // what happened when utils/appNavigation.ts started importing the notes
+    // store, which reaches services/ai.ts -> services/jobPoll.ts, and that
+    // module destructures `getAuthHeaders` at module scope.
+    getAuthHeaders: async () => ({}),
 }));
 vi.mock('../../services/authCookieSession', () => ({
     isCookieAuthEnabled: fx.isCookieAuthEnabled,

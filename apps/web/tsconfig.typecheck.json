@@ -1,0 +1,59 @@
+// Typecheck config for the web app's ROOT-LEVEL source graph.
+//
+// Why this file exists: the web app's package lives in apps/web but its source
+// does not — vite.config.ts sets `root` to the REPO ROOT, so App.tsx, index.tsx,
+// components/, hooks/, stores/, services/, utils/ and design-system/ are the
+// real inputs. apps/web/tsconfig.json `include`s only `src`, and the build is
+// `tsc && vite build`, where vite/esbuild strips types without checking them.
+// Net effect: that entire graph — the bulk of the web app — was type-checked by
+// NOTHING, in the build or in CI. Pulling it into tsc surfaced 853 pre-existing
+// errors, including a real navigation bug (utils/appNavigation.ts read
+// `selectedNote` off the UI store, which has no such field).
+//
+// Compiler options: inherited verbatim from ./tsconfig.json, so this graph is
+// held to exactly the same bar as apps/web/src — strict, plus
+// noUncheckedIndexedAccess from tsconfig.base.json. Two deliberate additions:
+//   - `@/*` → repo root, matching vite.config.ts's `'@': rootDir` alias.
+//   - `vite/client` + `vitest/globals` types, because these files read
+//     `import.meta.env` and the co-located suites run under vitest with
+//     `globals: true` (apps/web/vite.config.ts).
+//
+// Gotcha: do NOT fold these paths into apps/web/tsconfig.json `include`. That
+// config backs `npm run build`, and 800-odd pre-existing errors there would
+// fail every web build and every deploy. The pre-existing set is held flat by
+// scripts/web-typecheck-baseline.json and enforced by
+// scripts/check-web-typecheck.mjs (CI job `web (build + vitest)`); the baseline
+// may only shrink.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "vite/client", "vitest/globals"],
+    "paths": {
+      "@shared/*": ["../../packages/shared/src/*"],
+      "@/*": ["../../*"]
+    }
+  },
+  "include": [
+    "../../App.tsx",
+    "../../index.tsx",
+    "../../types.ts",
+    "../../gamification.ts",
+    "../../env-bootstrap.ts",
+    "../../hooks",
+    "../../stores",
+    "../../components",
+    "../../services",
+    "../../utils",
+    "../../design-system"
+  ],
+  // Belt and braces: the include list is explicit directories, so none of these
+  // can be swept in by accident — but a future widening should not resurrect
+  // agent worktrees or build output as "app source".
+  "exclude": [
+    "../../node_modules",
+    "../../.claude/**",
+    "../../**/dist/**",
+    "../../apps/**",
+    "../../packages/**"
+  ]
+}
