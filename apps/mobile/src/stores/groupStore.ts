@@ -40,7 +40,6 @@
 //   read-only question cards on mobile.
 
 import { create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { registerUserScoped } from './userScopedState';
 import { isBoardPostKind, type BoardPostKind } from '@lantern/shared/network';
 import {
@@ -125,11 +124,6 @@ async function acquireSendSlot(
 }
 const deliveryIntents = new DeliveryIntentRegistry();
 
-// Storage keys
-const GROUPS_STORAGE_KEY = 'lantern_groups';
-const MESSAGES_STORAGE_KEY = 'lantern_messages';
-
-
 // Row -> model mapping and the pure list rules moved to `group/mapping.ts`
 // (lane M2). `mapApiMessage` stays re-exported from here: the board store
 // imports it from this path and it must remain the ONE message mapper.
@@ -148,117 +142,24 @@ import {
   stripOptimisticDuplicates,
 } from './group/mapping';
 
-// ---------------------------------------------------------------------------
-// FIXED (F8): bounding the message cache
-// ---------------------------------------------------------------------------
-
-/** Conversations kept in the cache. Beyond this, the least recently used go. */
-export const MESSAGES_CACHE_MAX_CONVERSATIONS = 30;
-/** Messages kept per conversation. The NEWEST are the ones kept. */
-export const MESSAGES_CACHE_MAX_PER_CONVERSATION = 200;
-
-/**
- * Which conversations were touched most recently, newest tick first.
- *
- * Recency is what "least recently used" needs and no message carries it: a
- * thread opened today may hold a month-old last message. Every read/write path
- * that means "the student is in this conversation" stamps a tick here; a
- * conversation with no tick (restored from disk, never opened this launch)
- * falls back to the time of its newest message.
- */
-const messagesCacheRecency = new Map<string, number>();
-let messagesCacheTick = 0;
-
-/** Forget all recency. Used by the sign-out sweep below. */
-export const clearMessagesCacheRecency = (): void => {
-  messagesCacheRecency.clear();
-  messagesCacheTick = 0;
-};
-
-/** Mark a conversation as just used. Cheap enough to call on every touch. */
-export const touchMessagesCache = (conversationId?: string | null): void => {
-  if (conversationId) messagesCacheRecency.set(conversationId, ++messagesCacheTick);
-};
-
-const newestMessageTime = (list: Message[]): number => {
-  let newest = 0;
-  for (const m of list) {
-    const t = Date.parse(m?.createdAt ?? '');
-    if (Number.isFinite(t) && t > newest) newest = t;
-  }
-  return newest;
-};
-
-/** A message that has not reached the server yet is never evicted. */
-const isUndelivered = (m: Message): boolean =>
-  m?.deliveryState === 'pending' || m?.deliveryState === 'failed';
-
-/** Newest `max` messages, plus every undelivered row whatever its age. */
-const trimConversation = (list: Message[], max: number): Message[] => {
-  if (list.length <= max) return list;
-  const byTime = [...list].sort(
-    (a, b) => (Date.parse(a?.createdAt ?? '') || 0) - (Date.parse(b?.createdAt ?? '') || 0)
-  );
-  const keep = new Set(byTime.slice(-max));
-  for (const m of list) if (isUndelivered(m)) keep.add(m);
-  // Preserve the caller's ordering — the thread renders straight from this.
-  return list.filter((m) => keep.has(m));
-};
-
-/**
- * Bound the cache: at most N conversations, at most M messages in each.
- *
- * It used to be unbounded — every fetch, realtime event and page added rows
- * and nothing ever evicted — so a long-lived process grew without limit and
- * `saveToStorage` serialised the whole thing to one AsyncStorage blob on every
- * send. `pinned` (the open thread, the open DM, the selected group) is kept
- * regardless of recency: evicting what is on screen would blank it.
- *
- * Pure, and returns the SAME object when nothing needs dropping, so callers
- * can use it as a no-op guard.
- */
-export const boundMessagesCache = (
-  cache: Record<string, Message[]>,
-  pinned: (string | null | undefined)[] = [],
-  limits: { maxConversations?: number; maxPerConversation?: number } = {}
-): Record<string, Message[]> => {
-  const maxConversations = limits.maxConversations ?? MESSAGES_CACHE_MAX_CONVERSATIONS;
-  const maxPer = limits.maxPerConversation ?? MESSAGES_CACHE_MAX_PER_CONVERSATION;
-  const keepIds = new Set(pinned.filter((id): id is string => !!id && id in cache));
-
-  const ids = Object.keys(cache);
-  if (ids.length > maxConversations) {
-    const ranked = ids
-      .filter((id) => !keepIds.has(id))
-      .sort(
-        (a, b) =>
-          (messagesCacheRecency.get(b) ?? 0) - (messagesCacheRecency.get(a) ?? 0) ||
-          newestMessageTime(cache[b] || []) - newestMessageTime(cache[a] || [])
-      );
-    for (const id of ranked) {
-      if (keepIds.size >= maxConversations) break;
-      keepIds.add(id);
-    }
-  } else {
-    ids.forEach((id) => keepIds.add(id));
-  }
-
-  let changed = keepIds.size !== ids.length;
-  const next: Record<string, Message[]> = {};
-  for (const id of ids) {
-    if (!keepIds.has(id)) continue;
-    const list = cache[id] || [];
-    const trimmed = trimConversation(list, maxPer);
-    if (trimmed !== list) changed = true;
-    next[id] = trimmed;
-  }
-  if (!changed) return cache;
-  // Nothing may be remembered about a conversation that is no longer cached.
-  for (const id of messagesCacheRecency.keys()) {
-    if (!keepIds.has(id)) messagesCacheRecency.delete(id);
-  }
-  return next;
-};
+// The two AsyncStorage blobs and the F8 cache bound moved to
+// `group/persistence.ts` (lane M2). The eviction helpers stay re-exported
+// from here: `messagesCacheBound.test.ts` and several screens import them
+// from this path.
+export {
+  boundMessagesCache,
+  clearMessagesCacheRecency,
+  touchMessagesCache,
+  MESSAGES_CACHE_MAX_CONVERSATIONS,
+  MESSAGES_CACHE_MAX_PER_CONVERSATION,
+} from './group/persistence';
+import {
+  boundMessagesCache,
+  clearMessagesCacheRecency,
+  readChatBlobs,
+  touchMessagesCache,
+  writeChatBlobs,
+} from './group/persistence';
 
 export const useGroupStore = create<GroupState>((set, get) => ({
   groups: [],
@@ -283,10 +184,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   // Load cached data from AsyncStorage
   loadFromStorage: async () => {
     try {
-      const [groupsJson, messagesJson] = await Promise.all([
-        AsyncStorage.getItem(GROUPS_STORAGE_KEY),
-        AsyncStorage.getItem(MESSAGES_STORAGE_KEY),
-      ]);
+      const [groupsJson, messagesJson] = await readChatBlobs();
       
       if (groupsJson) {
         set({ groups: JSON.parse(groupsJson) });
@@ -323,10 +221,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       ]);
       if (bounded !== state.messagesCache) set({ messagesCache: bounded });
       const groups = state.groups;
-      await Promise.all([
-        AsyncStorage.setItem(GROUPS_STORAGE_KEY, JSON.stringify(groups)),
-        AsyncStorage.setItem(MESSAGES_STORAGE_KEY, JSON.stringify(bounded)),
-      ]);
+      await writeChatBlobs(groups, bounded);
     } catch (error) {
       console.error('[GroupStore] Failed to save to storage:', error);
     }
