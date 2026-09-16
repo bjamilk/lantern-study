@@ -46,10 +46,10 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/BudgetTrackerScreen.tsx': 69,
   'components/CampusScreen.tsx': 14,
   'components/ChallengesInboxModal.tsx': 15,
-  // The ChatWindow decomposition (lane M8) split this file's 80 into five:
-  // 65 here and 15 across components/chat/* below. Nothing was added — the
-  // ledger's total is unchanged, and every one of these moved verbatim.
-  'components/ChatWindow.tsx': 65,
+  // The ChatWindow decomposition (lanes M8 and M8b) split this file's 80 across
+  // components/chat/* below. Nothing was added at any step — the ledger's total
+  // is unchanged, and every one of these moved verbatim. The shell itself is
+  // now clean and has no entry at all.
   'components/CollaboratorsModal.tsx': 11,
   'components/ContactForm.tsx': 12,
   'components/CookieNoticeBanner.tsx': 18,
@@ -171,9 +171,13 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/budget/BudgetQuickLinks.tsx': 4,
   'components/chat/ChatHeader.tsx': 7,
   'components/chat/ChatHeaderMenu.tsx': 2,
+  'components/chat/ChatHomeScreen.tsx': 3,
+  'components/chat/ConversationPane.tsx': 10,
   'components/chat/MessageList.tsx': 4,
   'components/chat/MessageReactions.tsx': 3,
   'components/chat/MessageRow.tsx': 2,
+  'components/chat/OffersPanel.tsx': 49,
+  'components/chat/ThreadPanel.tsx': 3,
   'components/community/BoardComposer.tsx': 4,
   'components/community/BoardPostCard.tsx': 19,
   'components/community/BoardPostPanel.tsx': 12,
