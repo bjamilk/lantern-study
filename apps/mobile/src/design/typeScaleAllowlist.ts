@@ -52,7 +52,8 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/components/SwipeableFlashcard.tsx': 7,
   'src/components/SyncStatusIndicator.tsx': 5,
   'src/components/TestAnalysisContent.tsx': 21,
-  'src/components/TestConfigModal.tsx': 27,
+  'src/components/TestConfigModal.styles.ts': 26,
+  'src/components/TestConfigModal.tsx': 1,
   'src/components/ThemedComponents.tsx': 2,
   'src/components/TopicPicker.tsx': 9,
   'src/components/UsernameRequiredModal.tsx': 12,
@@ -210,7 +211,8 @@ export const TYPE_SCALE_ALLOWLIST: Record<string, number> = {
   'src/screens/settings/SettingsScreen.tsx': 21,
   'src/screens/study/StudyRoomScreen.tsx': 10,
   'src/screens/tests/TestAnalysisScreen.tsx': 4,
-  'src/screens/tests/TestTakingScreen.tsx': 44,
+  'src/screens/tests/TestTakingScreen.styles.ts': 43,
+  'src/screens/tests/TestTakingScreen.tsx': 1,
 };
 
 /** Total budget across the tree — the number Wave T+1 has to bring down. */
