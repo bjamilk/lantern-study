@@ -25,6 +25,7 @@ import { reconcileDeliveredItem, isUncertainDeliveryError } from '@lantern/share
 import { BADGE_DEFINITIONS } from '../../gamification';
 import { sendMessage } from '../../services/supabase';
 import { syncGamificationProgress } from '../../services/gamificationStreak';
+import { useToastStore } from '../../stores/toastStore';
 import { groupDeliveryIntents, submittingQuestionGroupIds } from './deliveryIntents';
 import type { AddNotification, AuthStoreState, GroupStoreState, UIStoreState } from './types';
 
@@ -177,7 +178,7 @@ export function useBoardHandlers({
                     );
                 }
             }
-            alert('Failed to submit question. Please try again.');
+            useToastStore.getState().showToast('Failed to submit question. Please try again.', 'error');
         } finally {
             submittingQuestionGroupIds.delete(groupId);
         }
