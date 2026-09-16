@@ -1,4 +1,5 @@
 import { User } from '../types';
+import { initialUserStats } from '@lantern/shared/utils';
 
 export {
     initialUserStats,
@@ -15,6 +16,11 @@ export {
 } from '@lantern/shared/utils';
 
 // --- MOCK DATA ---
+// Each `stats` below spreads `initialUserStats` first: UserStats grew
+// listingsCreated / listingsSold / fiveStarReviews / offersMade when the
+// marketplace badges landed, and these DEV-only literals were never updated.
+// Nothing complained because the root app graph was in no tsconfig `include`
+// until apps/web/tsconfig.typecheck.json.
 export const MOCK_USERS: User[] = import.meta.env.DEV ? [
   {
     id: '550e8400-e29b-41d4-a716-446655440000',
@@ -25,7 +31,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     phoneNumber: '123-456-7890',
     points: 1250,
     badges: [],
-    stats: { testsCompleted: 5, questionsCreated: 10, groupsCreated: 2, highScoreTests: 3, perfectScoreTests: 1, gamesWon: 2 },
+    stats: { ...initialUserStats, testsCompleted: 5, questionsCreated: 10, groupsCreated: 2, highScoreTests: 3, perfectScoreTests: 1, gamesWon: 2 },
   },
   {
     id: '550e8400-e29b-41d4-a716-446655440001',
@@ -36,7 +42,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     phoneNumber: '234-567-8901',
     points: 800,
     badges: [],
-    stats: { testsCompleted: 3, questionsCreated: 5, groupsCreated: 1, highScoreTests: 1, perfectScoreTests: 0, gamesWon: 1 },
+    stats: { ...initialUserStats, testsCompleted: 3, questionsCreated: 5, groupsCreated: 1, highScoreTests: 1, perfectScoreTests: 0, gamesWon: 1 },
   },
   {
     id: '550e8400-e29b-41d4-a716-446655440002',
@@ -47,7 +53,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     phoneNumber: '345-678-9012',
     points: 200,
     badges: [],
-    stats: { testsCompleted: 1, questionsCreated: 2, groupsCreated: 0, highScoreTests: 0, perfectScoreTests: 0, gamesWon: 0 },
+    stats: { ...initialUserStats, testsCompleted: 1, questionsCreated: 2, groupsCreated: 0, highScoreTests: 0, perfectScoreTests: 0, gamesWon: 0 },
   },
    {
     id: '550e8400-e29b-41d4-a716-446655440003',
@@ -58,7 +64,7 @@ export const MOCK_USERS: User[] = import.meta.env.DEV ? [
     phoneNumber: '456-789-0123',
     points: 2500,
     badges: [],
-    stats: { testsCompleted: 10, questionsCreated: 15, groupsCreated: 3, highScoreTests: 8, perfectScoreTests: 2, gamesWon: 5 },
+    stats: { ...initialUserStats, testsCompleted: 10, questionsCreated: 15, groupsCreated: 3, highScoreTests: 8, perfectScoreTests: 2, gamesWon: 5 },
   }
 ] : [];
 

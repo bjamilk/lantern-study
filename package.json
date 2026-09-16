@@ -17,6 +17,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "typecheck:root": "node scripts/check-web-typecheck.mjs",
     "clean": "turbo run clean && rm -rf node_modules",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "design:contrast": "node scripts/design/contrast.mjs",

@@ -1,6 +1,7 @@
 import type { NavigateFunction } from 'react-router-dom';
 import { AppMode } from '../types';
 import { useUIStore } from '../stores/uiStore';
+import { useNotesStore } from '../stores/notesStore';
 import {
   AppRouteParams,
   buildAppPath,
@@ -79,8 +80,15 @@ export function buildParamsFromState(mode: AppMode): AppRouteParams {
     case AppMode.MARKETPLACE_JOB_DETAIL:
     case AppMode.JOB_EMPLOYER_PIPELINE:
       return state.selectedJobId ? { jobId: state.selectedJobId } : {};
-    case AppMode.NOTE_EDITOR:
-      return state.selectedNote ? { noteId: state.selectedNote.id } : {};
+    case AppMode.NOTE_EDITOR: {
+      // FIXED (M6): this read `state.selectedNote` off the UI store, which has
+      // no such field — the open note lives in `useNotesStore`. It was always
+      // `undefined`, so /notes/:id never got its id and the NOTE_EDITOR path
+      // collapsed to the bare route. Nothing caught it because the root app
+      // graph was outside every tsconfig `include` until now.
+      const { selectedNote } = useNotesStore.getState();
+      return selectedNote ? { noteId: selectedNote.id } : {};
+    }
     case AppMode.LIBRARY:
       return { libraryTab: state.libraryTab };
     case AppMode.STUDY_ROOM:
