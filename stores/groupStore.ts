@@ -168,7 +168,9 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
   updateMessageInState: (messageId, updates) => set((state) => {
     const newMessages = { ...state.messages };
     for (const groupId in newMessages) {
-      newMessages[groupId] = newMessages[groupId].map(m =>
+      // `?? []` never fires — `for…in` only yields keys that exist — but
+      // noUncheckedIndexedAccess types every index read as possibly undefined.
+      newMessages[groupId] = (newMessages[groupId] ?? []).map(m =>
         m.id === messageId ? { ...m, ...updates } : m
       );
     }
@@ -184,9 +186,12 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
         nextCutoffs[thread.id] = thread.historyClearedAt;
       }
       const cutoff = nextCutoffs[thread.id] || thread.historyClearedAt || null;
-      if (cutoff && nextDirectMessages[thread.id]) {
+      // Hoisted so the truthiness check narrows the value itself: TS does not
+      // carry a narrowing on `obj[key]` across a second index read.
+      const threadMessages = nextDirectMessages[thread.id];
+      if (cutoff && threadMessages) {
         nextDirectMessages[thread.id] = filterMessagesAfterDmHistoryCutoff(
-          nextDirectMessages[thread.id],
+          threadMessages,
           cutoff,
         );
       }
@@ -209,9 +214,12 @@ export const useGroupStore = create<GroupState>()((set, get) => ({
         nextCutoffs[thread.id] = thread.historyClearedAt;
       }
       const cutoff = nextCutoffs[thread.id] || thread.historyClearedAt || null;
-      if (cutoff && nextDirectMessages[thread.id]) {
+      // Hoisted so the truthiness check narrows the value itself: TS does not
+      // carry a narrowing on `obj[key]` across a second index read.
+      const threadMessages = nextDirectMessages[thread.id];
+      if (cutoff && threadMessages) {
         nextDirectMessages[thread.id] = filterMessagesAfterDmHistoryCutoff(
-          nextDirectMessages[thread.id],
+          threadMessages,
           cutoff,
         );
       }
