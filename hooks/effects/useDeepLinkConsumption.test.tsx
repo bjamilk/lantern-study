@@ -27,13 +27,13 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/uiStore', () => ({ useUIStore: () => fx.uiState }));
-vi.mock('../../../../utils/webNotifications', () => ({
+vi.mock('../../stores/uiStore', () => ({ useUIStore: () => fx.uiState }));
+vi.mock('../../utils/webNotifications', () => ({
     onWebNotificationClick: fx.onWebNotificationClick,
 }));
 
-import { useDeepLinkConsumption } from '../../../../hooks/effects/useDeepLinkConsumption';
-import { AppMode } from '../../../../types';
+import { useDeepLinkConsumption } from './useDeepLinkConsumption';
+import { AppMode } from '../../types';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

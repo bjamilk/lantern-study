@@ -37,20 +37,20 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
-vi.mock('../../../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
-vi.mock('../../../../services/supabase', () => ({
+vi.mock('../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
+vi.mock('../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
+vi.mock('../../services/supabase', () => ({
     ensureAuthTokenReady: fx.ensureAuthTokenReady,
     fetchUserProfile: fx.fetchUserProfile,
 }));
-vi.mock('../../../../services/gamificationStreak', () => ({
+vi.mock('../../services/gamificationStreak', () => ({
     fetchDailyQuests: fx.fetchDailyQuests,
     recordLoginStreak: fx.recordLoginStreak,
     fetchStudyActivity: fx.fetchStudyActivity,
     syncGamificationProgress: fx.syncGamificationProgress,
 }));
 
-import { useGamificationRefresh } from '../../../../hooks/effects/useGamificationRefresh';
+import { useGamificationRefresh } from './useGamificationRefresh';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

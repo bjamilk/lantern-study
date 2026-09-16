@@ -96,20 +96,20 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/groupStore', () => ({ useGroupStore: fx.store(fx.groupState) }));
-vi.mock('../../../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
-vi.mock('../../../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
-vi.mock('../../../../stores/notesStore', () => ({ useNotesStore: fx.store(fx.notesState) }));
-vi.mock('../../../../services/supabase', () => ({
+vi.mock('../../stores/groupStore', () => ({ useGroupStore: fx.store(fx.groupState) }));
+vi.mock('../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
+vi.mock('../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
+vi.mock('../../stores/notesStore', () => ({ useNotesStore: fx.store(fx.notesState) }));
+vi.mock('../../services/supabase', () => ({
     supabase: fx.supabase,
     fetchGroups: fx.fetchGroups,
     fetchGroupUnreadCounts: fx.fetchGroupUnreadCounts,
     fetchMessages: fx.fetchMessages,
     fetchDirectMessages: fx.fetchDirectMessages,
 }));
-vi.mock('../../../../utils/groupListMerge', () => ({ mergeFetchedGroups: fx.mergeFetchedGroups }));
+vi.mock('../../utils/groupListMerge', () => ({ mergeFetchedGroups: fx.mergeFetchedGroups }));
 
-import { useRealtimeSubscriptions } from '../../../../hooks/effects/useRealtimeSubscriptions';
+import { useRealtimeSubscriptions } from './useRealtimeSubscriptions';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

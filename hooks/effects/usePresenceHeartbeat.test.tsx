@@ -21,12 +21,12 @@ const fx = vi.hoisted(() => ({
     shouldRunPresenceHeartbeat: vi.fn((..._args: unknown[]) => true),
 }));
 
-vi.mock('../../../../services/presenceHeartbeat', () => ({
+vi.mock('../../services/presenceHeartbeat', () => ({
     sendPresenceHeartbeat: fx.sendPresenceHeartbeat,
     shouldRunPresenceHeartbeat: fx.shouldRunPresenceHeartbeat,
 }));
 
-import { usePresenceHeartbeat } from '../../../../hooks/effects/usePresenceHeartbeat';
+import { usePresenceHeartbeat } from './usePresenceHeartbeat';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

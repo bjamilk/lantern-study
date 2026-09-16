@@ -50,8 +50,9 @@ interface EffectIdentity {
 /** Identify the `useEffect` that starts at `at`: its banner and its deps. */
 function identityAt(source: string, at: number): EffectIdentity {
     const match = EFFECT_CLOSE.exec(source.slice(at));
+    // `match[1]` is '' for a `[]` dependency array, which is a real answer.
     const deps = match
-        ? match[1]
+        ? (match[1] ?? '')
               .replace(/\/\/[^\n]*/g, '')
               .split(',')
               .map((entry) => entry.trim())
@@ -61,10 +62,10 @@ function identityAt(source: string, at: number): EffectIdentity {
 
     const linesAbove = source.slice(0, at).split('\n');
     let index = linesAbove.length - 1;
-    while (index >= 0 && linesAbove[index].trim() === '') index--;
+    while (index >= 0 && (linesAbove[index] ?? '').trim() === '') index--;
     const banner: string[] = [];
-    while (index >= 0 && linesAbove[index].trim().startsWith('//')) {
-        banner.unshift(linesAbove[index].trim().replace(/^\/\/\s?/, ''));
+    while (index >= 0 && (linesAbove[index] ?? '').trim().startsWith('//')) {
+        banner.unshift((linesAbove[index] ?? '').trim().replace(/^\/\/\s?/, ''));
         index--;
     }
 
@@ -95,8 +96,8 @@ function composedEffectOrder(): EffectIdentity[] {
     const moduleOf = new Map<string, string>();
     const importRe = /import\s*\{([^}]*)\}\s*from\s*'\.\/effects\/([\w]+)'/g;
     for (const match of source.matchAll(importRe)) {
-        const file = path.join(REPO_ROOT, 'hooks/effects', `${match[2]}.ts`);
-        for (const name of match[1].split(',').map((entry) => entry.trim()).filter(Boolean)) {
+        const file = path.join(REPO_ROOT, 'hooks/effects', `${match[2] ?? ''}.ts`);
+        for (const name of (match[1] ?? '').split(',').map((entry) => entry.trim()).filter(Boolean)) {
             moduleOf.set(name, fs.existsSync(file) ? file : `${file}x`);
         }
     }
@@ -115,7 +116,7 @@ function composedEffectOrder(): EffectIdentity[] {
         }
         if (candidates.length === 0) break;
         candidates.sort((a, b) => a.at - b.at);
-        const next = candidates[0];
+        const next = candidates[0]!;
 
         if (next.hook) {
             ordered.push(...effectsInSource(read(moduleOf.get(next.hook)!)));
@@ -138,7 +139,7 @@ function parameterKeys(): string[] {
         .split(',')
         .map((entry) => entry.replace(/\/\/[^\n]*/g, '').trim())
         .filter(Boolean)
-        .map((entry) => entry.split(/[:=]/)[0].trim());
+        .map((entry) => (entry.split(/[:=]/)[0] ?? '').trim());
 }
 
 /** The keys of the object the composer returns. */
@@ -151,7 +152,7 @@ function returnedKeys(): string[] {
         .split(',')
         .map((entry) => entry.replace(/\/\/[^\n]*/g, '').trim())
         .filter(Boolean)
-        .map((entry) => entry.split(':')[0].trim());
+        .map((entry) => (entry.split(':')[0] ?? '').trim());
 }
 
 /** Frozen against the untouched 2,409-line `hooks/useAppEffects.ts`. */

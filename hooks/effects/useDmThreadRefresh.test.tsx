@@ -26,14 +26,14 @@ const fx = vi.hoisted(() => ({
     mergeDmThreadLists: vi.fn((_prev: unknown, next: unknown, _mode: string) => next),
 }));
 
-vi.mock('../../../../stores/groupStore', () => ({
+vi.mock('../../stores/groupStore', () => ({
     useGroupStore: () => ({ updateDmThreads: fx.updateDmThreads }),
 }));
-vi.mock('../../../../services/supabase', () => ({
+vi.mock('../../services/supabase', () => ({
     fetchDmThreads: fx.fetchDmThreads,
     fetchDMUnreadCounts: fx.fetchDMUnreadCounts,
 }));
-vi.mock('../../../../utils/dmThreads', () => ({
+vi.mock('../../utils/dmThreads', () => ({
     mapDmThreadFromApi: fx.mapDmThreadFromApi,
     mergeDmThreadLists: fx.mergeDmThreadLists,
 }));
@@ -41,7 +41,7 @@ vi.mock('../../../../utils/dmThreads', () => ({
 import {
     useDmThreadRefresh,
     mapFetchedDmThreads,
-} from '../../../../hooks/effects/useDmThreadRefresh';
+} from './useDmThreadRefresh';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

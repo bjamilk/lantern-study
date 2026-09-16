@@ -41,11 +41,11 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/flashcardStore', () => ({
+vi.mock('../../stores/flashcardStore', () => ({
     useFlashcardStore: fx.store(fx.flashcardState),
 }));
-vi.mock('../../../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
-vi.mock('../../../../utils/webNotifications', () => ({
+vi.mock('../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
+vi.mock('../../utils/webNotifications', () => ({
     getWebNotificationPermission: fx.getWebNotificationPermission,
     requestWebNotificationPermission: fx.requestWebNotificationPermission,
     shouldSendSrsWebReminder: fx.shouldSendSrsWebReminder,
@@ -58,7 +58,7 @@ vi.mock('@lantern/shared/utils', async (importOriginal) => {
     return { ...actual, getCardsDue: fx.getCardsDue };
 });
 
-import { useSrsReminders } from '../../../../hooks/effects/useSrsReminders';
+import { useSrsReminders } from './useSrsReminders';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

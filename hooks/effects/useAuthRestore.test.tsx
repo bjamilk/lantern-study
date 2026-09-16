@@ -76,8 +76,8 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
-vi.mock('../../../../services/supabase', () => ({
+vi.mock('../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
+vi.mock('../../services/supabase', () => ({
     supabase: fx.supabase,
     setCachedAuthToken: fx.setCachedAuthToken,
     fetchUserProfile: fx.fetchUserProfile,
@@ -91,24 +91,24 @@ vi.mock('../../../../services/supabase', () => ({
     clearAllClientAuthStorage: fx.clearAllClientAuthStorage,
     getStoredSessionExpiresAt: fx.getStoredSessionExpiresAt,
 }));
-vi.mock('../../../../services/authCookieSession', () => ({
+vi.mock('../../services/authCookieSession', () => ({
     isCookieAuthEnabled: fx.isCookieAuthEnabled,
     exchangeCookieSession: fx.exchangeCookieSession,
     refreshCookieSession: fx.refreshCookieSession,
 }));
-vi.mock('../../../../services/sentry', () => ({
+vi.mock('../../services/sentry', () => ({
     reportUnexpectedSignOut: fx.reportUnexpectedSignOut,
     wasRecentIntentionalSignOut: fx.wasRecentIntentionalSignOut,
 }));
-vi.mock('../../../../services/sessionHandler', () => ({
+vi.mock('../../services/sessionHandler', () => ({
     resetSessionExpiredGuard: fx.resetSessionExpiredGuard,
 }));
-vi.mock('../../../../utils/authBootstrap', () => ({
+vi.mock('../../utils/authBootstrap', () => ({
     isAccessTokenFreshEnough: fx.isAccessTokenFreshEnough,
     shouldRestorePersistedAuthUser: fx.shouldRestorePersistedAuthUser,
 }));
 
-import { useAuthRestore } from '../../../../hooks/effects/useAuthRestore';
+import { useAuthRestore } from './useAuthRestore';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

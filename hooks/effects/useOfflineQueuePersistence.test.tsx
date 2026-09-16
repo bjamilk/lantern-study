@@ -22,7 +22,7 @@ const { liveTestStore, renderSnapshot } = vi.hoisted(() => ({
     renderSnapshot: { offlineBundles: [] as unknown[], pendingSyncResults: [] as unknown[] },
 }));
 
-vi.mock('../../../../stores/testStore', () => {
+vi.mock('../../stores/testStore', () => {
     const useTestStore = () => renderSnapshot;
     useTestStore.getState = () => liveTestStore;
     return { useTestStore };
@@ -32,10 +32,10 @@ const { savePendingSyncResult, isOfflineQueueOwner } = vi.hoisted(() => ({
     savePendingSyncResult: vi.fn((..._args: unknown[]) => Promise.resolve()),
     isOfflineQueueOwner: vi.fn((..._args: unknown[]) => true),
 }));
-vi.mock('../../../../services/supabase', () => ({ savePendingSyncResult }));
-vi.mock('../../../../services/offlineQueueOwner', () => ({ isOfflineQueueOwner }));
+vi.mock('../../services/supabase', () => ({ savePendingSyncResult }));
+vi.mock('../../services/offlineQueueOwner', () => ({ isOfflineQueueOwner }));
 
-import { useOfflineQueuePersistence } from '../../../../hooks/effects/useOfflineQueuePersistence';
+import { useOfflineQueuePersistence } from './useOfflineQueuePersistence';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

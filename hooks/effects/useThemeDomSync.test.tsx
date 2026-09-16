@@ -12,11 +12,11 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const uiState = { theme: 'light' as 'light' | 'dark' };
-vi.mock('../../../../stores/uiStore', () => ({
+vi.mock('../../stores/uiStore', () => ({
     useUIStore: () => uiState,
 }));
 
-import { useThemeDomSync } from '../../../../hooks/effects/useThemeDomSync';
+import { useThemeDomSync } from './useThemeDomSync';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

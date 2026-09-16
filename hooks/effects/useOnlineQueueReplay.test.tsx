@@ -42,21 +42,21 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
-vi.mock('../../../../stores/flashcardStore', () => ({
+vi.mock('../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
+vi.mock('../../stores/flashcardStore', () => ({
     useFlashcardStore: fx.store(fx.flashcardState),
 }));
-vi.mock('../../../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
-vi.mock('../../../../stores/toastStore', () => ({ useToastStore: fx.store(fx.toastState) }));
-vi.mock('../../../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
-vi.mock('../../../../services/offlineFlashcardSync', () => ({
+vi.mock('../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
+vi.mock('../../stores/toastStore', () => ({ useToastStore: fx.store(fx.toastState) }));
+vi.mock('../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
+vi.mock('../../services/offlineFlashcardSync', () => ({
     syncPendingFlashcardReviews: fx.syncPendingFlashcardReviews,
 }));
-vi.mock('../../../../services/offlineTestSync', () => ({
+vi.mock('../../services/offlineTestSync', () => ({
     syncPendingTestResults: fx.syncPendingTestResults,
 }));
 
-import { useOnlineQueueReplay } from '../../../../hooks/effects/useOnlineQueueReplay';
+import { useOnlineQueueReplay } from './useOnlineQueueReplay';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

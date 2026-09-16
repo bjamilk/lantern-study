@@ -100,17 +100,17 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
-vi.mock('../../../../stores/groupStore', () => ({ useGroupStore: fx.store(fx.groupState) }));
-vi.mock('../../../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
-vi.mock('../../../../stores/flashcardStore', () => ({
+vi.mock('../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
+vi.mock('../../stores/groupStore', () => ({ useGroupStore: fx.store(fx.groupState) }));
+vi.mock('../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
+vi.mock('../../stores/flashcardStore', () => ({
     useFlashcardStore: fx.store(fx.flashcardState),
 }));
-vi.mock('../../../../stores/budgetStore', () => ({ useBudgetStore: fx.store(fx.budgetState) }));
-vi.mock('../../../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
-vi.mock('../../../../stores/notesStore', () => ({ useNotesStore: fx.store(fx.notesState) }));
-vi.mock('../../../../stores/toastStore', () => ({ useToastStore: fx.store(fx.toastState) }));
-vi.mock('../../../../services/supabase', () => ({
+vi.mock('../../stores/budgetStore', () => ({ useBudgetStore: fx.store(fx.budgetState) }));
+vi.mock('../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
+vi.mock('../../stores/notesStore', () => ({ useNotesStore: fx.store(fx.notesState) }));
+vi.mock('../../stores/toastStore', () => ({ useToastStore: fx.store(fx.toastState) }));
+vi.mock('../../services/supabase', () => ({
     ensureAuthTokenReady: fx.ensureAuthTokenReady,
     fetchGroups: fx.fetchGroups,
     fetchGroupUnreadCounts: fx.fetchGroupUnreadCounts,
@@ -131,17 +131,17 @@ vi.mock('../../../../services/supabase', () => ({
     syncBudgetTransactionsToCloud: fx.syncBudgetTransactionsToCloud,
     syncPendingResultsToCloud: fx.syncPendingResultsToCloud,
 }));
-vi.mock('../../../../services/budgetApi', () => ({
+vi.mock('../../services/budgetApi', () => ({
     fetchBudgetWalletData: fx.fetchBudgetWalletData,
 }));
-vi.mock('../../../../services/budgetExtrasSync', () => ({ saveBudgetExtras: fx.saveBudgetExtras }));
-vi.mock('../../../../utils/groupListMerge', () => ({ mergeFetchedGroups: fx.mergeFetchedGroups }));
-vi.mock('../../../../utils/dmThreads', () => ({
+vi.mock('../../services/budgetExtrasSync', () => ({ saveBudgetExtras: fx.saveBudgetExtras }));
+vi.mock('../../utils/groupListMerge', () => ({ mergeFetchedGroups: fx.mergeFetchedGroups }));
+vi.mock('../../utils/dmThreads', () => ({
     mapDmThreadFromApi: (row: unknown) => row,
     mergeDmThreadLists: fx.mergeDmThreadLists,
 }));
 
-import { useBootstrapFanout } from '../../../../hooks/effects/useBootstrapFanout';
+import { useBootstrapFanout } from './useBootstrapFanout';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

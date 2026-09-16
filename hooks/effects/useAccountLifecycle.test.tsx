@@ -40,25 +40,25 @@ const fx = vi.hoisted(() => {
     };
 });
 
-vi.mock('../../../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
-vi.mock('../../../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
-vi.mock('../../../../stores/flashcardStore', () => ({
+vi.mock('../../stores/authStore', () => ({ useAuthStore: fx.store(fx.authState) }));
+vi.mock('../../stores/testStore', () => ({ useTestStore: fx.store(fx.testState) }));
+vi.mock('../../stores/flashcardStore', () => ({
     useFlashcardStore: fx.store(fx.flashcardState),
 }));
-vi.mock('../../../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
-vi.mock('../../../../services/supabase', () => ({ fetchUserSettings: fx.fetchUserSettings }));
-vi.mock('../../../../services/offlineQueueOwner', () => ({
+vi.mock('../../stores/uiStore', () => ({ useUIStore: fx.store(fx.uiState) }));
+vi.mock('../../services/supabase', () => ({ fetchUserSettings: fx.fetchUserSettings }));
+vi.mock('../../services/offlineQueueOwner', () => ({
     ensureOfflineQueueOwner: fx.ensureOfflineQueueOwner,
 }));
-vi.mock('../../../../utils/applyUserSettingsToDom', () => ({
+vi.mock('../../utils/applyUserSettingsToDom', () => ({
     applyUserSettingsToDom: fx.applyUserSettingsToDom,
 }));
-vi.mock('../../../../utils/academicSetup', () => ({
+vi.mock('../../utils/academicSetup', () => ({
     shouldOpenAcademicSetup: fx.shouldOpenAcademicSetup,
     readAcademicSetupDismissed: fx.readAcademicSetupDismissed,
 }));
 
-import { useAccountLifecycle } from '../../../../hooks/effects/useAccountLifecycle';
+import { useAccountLifecycle } from './useAccountLifecycle';
 import { ONBOARDING_COMPLETE_STORAGE_KEY } from '@lantern/shared/settings';
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
