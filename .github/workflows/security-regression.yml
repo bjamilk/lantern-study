@@ -190,15 +190,42 @@ jobs:
               both)   curl -sS -o /tmp/pf.body -w '%{http_code}' -H "apikey: $2" -H "Authorization: Bearer $2" "$1" || echo 000 ;;
             esac
           }
-          # marketplace_campuses is a table every PoC needs anyway, and PostgREST
-          # applies RLS by filtering rows -- it does not reject a valid key -- so
-          # an empty array here is still a passing answer about the key.
+          # An error body says which of two different things went wrong. The
+          # distinction is the whole point: "Invalid API key" / a JWT error means
+          # the key was REFUSED, while a Postgres SQLSTATE (42501 permission
+          # denied, 42P01 undefined table) means the key was ACCEPTED and
+          # PostgREST got as far as the database -- credentials fine, schema or
+          # privileges incomplete. Reporting the second as the first sends people
+          # to rotate a perfectly good key.
+          verdict_of() {
+            case "$1" in
+              *'Invalid API key'*|*'No API key found'*|*'JWSError'*|*'JWTExpired'*|*'invalid JWT'*|*'bad_jwt'*)
+                echo "KEY REFUSED" ;;
+              *'"code":"42501"'*|*'permission denied'*)
+                echo "credentials OK; missing GRANT (schema/privileges incomplete)" ;;
+              *'"code":"42P01"'*|*'does not exist'*|*'PGRST205'*)
+                echo "credentials OK; object missing (migrations incomplete)" ;;
+              *'"code":"PGRST'*|*'"code":"4'*|*'"code":"5'*)
+                echo "credentials OK; database-level error" ;;
+              *) echo "" ;;
+            esac
+          }
+
+          # INFORMATIONAL ONLY -- deliberately not a gate. See the verdict below:
+          # anon being refused SELECT on a table is a statement about grants,
+          # which is this suite's subject matter, not a statement about the key.
           anon_target="$url/rest/v1/marketplace_campuses?select=id&limit=1"
           echo "Anon key against $anon_target (project $url_ref):"
           for mode in apikey bearer both; do
             c=$(hdr_probe "$anon_target" "$ANON_KEY" "$mode")
-            echo "  apikey+bearer mode '$mode': HTTP $c $(head -c 160 /tmp/pf.body 2>/dev/null)"
-            eval "anon_$mode=$c"
+            b=$(head -c 200 /tmp/pf.body 2>/dev/null || echo '')
+            v=$(verdict_of "$b")
+            echo "  mode '$mode': HTTP $c  -> ${v:-OK}"
+            echo "    $b"
+            eval "anon_$mode=\$c"
+            # Quote inside the eval: a response body contains spaces and quotes,
+            # and an unquoted assignment would word-split it into a syntax error.
+            eval "anon_body_$mode=\"\$b\""
           done
 
           echo "Service-role key against <url>/auth/v1/admin/users (expect 200):"
@@ -212,7 +239,7 @@ jobs:
 
           case "$anon_kind" in
             "new-style publishable")
-              if [ "${anon_both:-0}" != "200" ] && [ "${anon_apikey:-0}" = "200" ]; then
+              if [ "${anon_bearer:-0}" = "401" ] && [ "${anon_apikey:-0}" != "401" ]; then
                 echo "::error::VITE_SUPABASE_ANON_KEY is a new-style publishable key. It works in the apikey header but not as an Authorization Bearer token -- new-style keys are not JWTs -- and the PoC scripts send it as both."
                 echo "Two ways out, both legitimate:"
                 echo "  a) Give CI this project's LEGACY anon key (Settings > API > Legacy API keys; enable them if hidden)."
@@ -222,17 +249,101 @@ jobs:
               ;;
           esac
 
-          if [ "${anon_both:-0}" != "200" ]; then
-            case "${anon_both:-0}" in
-              401|403) echo "::error::The anon key was refused (HTTP $anon_both) with the headers the PoCs actually send. Every PoC signs in with this key, so a mismatch would make each 'blocked' result meaningless." ;;
-              404)     echo "::error::marketplace_campuses does not exist on project $url_ref (HTTP 404). Apply the migrations to the staging project; the PoCs need this table." ;;
-              *)       echo "::error::The anon probe returned an unexpected HTTP $anon_both." ;;
-            esac
+          # Is the anon KEY valid? That is a GoTrue question, not a PostgREST one.
+          #
+          # The previous revision gated on anon being able to SELECT
+          # marketplace_campuses and failed the job when it could not. The body
+          # said why: PostgreSQL 42501, "Grant the required privileges ... GRANT
+          # SELECT ON public.marketplace_campuses". That is an authorisation
+          # answer from an ACCEPTED key -- an unauthenticated request gets
+          # "Invalid API key" or "No API key found" instead. Worse, anon having
+          # no grant on that table is plausibly the CORRECT hardened state on a
+          # project with the Phase 0 RLS migrations applied, and judging that is
+          # the RLS battery's job, not the preflight's. A preflight that fails
+          # the build for a security control working as intended is a preflight
+          # that teaches people to ignore it.
+          #
+          # /auth/v1/settings is GoTrue's public endpoint: it answers 200 to any
+          # valid anon key and 401 to an invalid one, with no grants involved.
+          anon_settings=$(curl -sS -o /tmp/pf.body -w '%{http_code}' \
+            -H "apikey: $ANON_KEY" "$url/auth/v1/settings" || echo 000)
+          echo "Anon key against <url>/auth/v1/settings: HTTP $anon_settings"
+          if [ "$anon_settings" != "200" ]; then
+            echo "::error::VITE_SUPABASE_ANON_KEY was rejected by GoTrue (HTTP $anon_settings). The key itself is not valid for project $url_ref."
+            head -c 300 /tmp/pf.body 2>/dev/null || true
+            echo ""
             exit 1
           fi
+          # The anon key was ACCEPTED above if the failure was a Postgres error
+          # rather than an API-key error. Say so explicitly.
+          anon_kind_verdict=$(verdict_of "${anon_body_both:-}")
+          case "$anon_kind_verdict" in
+            "KEY REFUSED")
+              echo "::error::VITE_SUPABASE_ANON_KEY was refused by PostgREST. The key is not valid for project $url_ref."
+              exit 1 ;;
+            "") : ;;
+            *) echo "Anon key against PostgREST: $anon_kind_verdict" ;;
+          esac
 
-          if [ "$svc" != "200" ]; then
-            echo "::error::SUPABASE_SERVICE_ROLE_KEY was refused by the admin API (HTTP $svc). The PoCs seed and clean up with it; without it they cannot run."
+          # ================= schema readiness =================
+          # Separate from credentials, and labelled as such. These probes use the
+          # SERVICE key, which bypasses RLS and holds every grant, so a failure
+          # here is about the schema itself and nothing else.
+          echo ""
+          echo "=== Schema readiness on project $url_ref (service key; RLS bypassed) ==="
+          ready=1
+          check() { # $1 label, $2 path
+            c=$(curl -sS -o /tmp/pf.body -w '%{http_code}' \
+              -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+              "$url$2" || echo 000)
+            b=$(head -c 200 /tmp/pf.body 2>/dev/null || echo '')
+            case "$c" in
+              2*) echo "  [ok]   $1" ;;
+              *)  echo "  [FAIL] $1 -- HTTP $c"
+                  echo "         $b"
+                  ready=0 ;;
+            esac
+          }
+          check "marketplace_campuses exists"            "/rest/v1/marketplace_campuses?select=id&limit=1"
+          check "marketplace_campuses has an ACTIVE row" "/rest/v1/marketplace_campuses?select=id&active=eq.true&limit=1"
+          check "marketplace_orders.payout_attempt"      "/rest/v1/marketplace_orders?select=payout_attempt&limit=0"
+          check "marketplace_offers.proposed_by"         "/rest/v1/marketplace_offers?select=proposed_by&limit=0"
+          check "marketplace_listings exists"            "/rest/v1/marketplace_listings?select=id&limit=0"
+          check "profiles exists"                        "/rest/v1/profiles?select=id&limit=0"
+          check "groups exists"                          "/rest/v1/groups?select=id&limit=0"
+          check "dm_threads exists"                      "/rest/v1/dm_threads?select=id&limit=0"
+
+          # An active campus row is seed data, not schema: PostgREST answers 200
+          # with [] when the table is there but empty, so check the payload too.
+          c=$(curl -sS -o /tmp/pf.body -w '%{http_code}' \
+            -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+            "$url/rest/v1/marketplace_campuses?select=id&active=eq.true&limit=1" || echo 000)
+          if [ "$c" = "200" ] && [ "$(head -c 200 /tmp/pf.body)" = "[]" ]; then
+            echo "  [FAIL] marketplace_campuses has no active row (table exists, 0 rows)"
+            echo "         F-01 and Auth-02 seed a listing against one. Re-apply"
+            echo "         supabase/migrations/20260705120000_marketplace_location.sql."
+            ready=0
+          fi
+
+          # Table count, for comparison with production. The OpenAPI document
+          # lists one path per exposed table, so its key count is the table count.
+          openapi=$(curl -sS -o /tmp/pf.openapi -w '%{http_code}' \
+            -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+            "$url/rest/v1/" || echo 000)
+          if [ "$openapi" = "200" ]; then
+            n=$(jq -r '[.paths | keys[] | select(. != "/")] | length' /tmp/pf.openapi 2>/dev/null || echo '?')
+            echo "  public tables/views exposed by PostgREST: $n  (compare with production)"
+          else
+            echo "  could not read the OpenAPI document (HTTP $openapi) -- table count unavailable"
+          fi
+
+          # anon grants are reported, never gated: anon lacking SELECT is very
+          # possibly the hardening these PoCs exist to verify. The RLS battery
+          # judges it; the preflight only says what it saw.
+          echo "  anon SELECT on marketplace_campuses: ${anon_kind_verdict:-permitted}"
+
+          if [ "$ready" != "1" ]; then
+            echo "::error::Schema readiness FAILED on project $url_ref -- the item(s) marked [FAIL] above are missing. The staging project's migrations are incomplete, so the PoCs would fail for reasons unrelated to security. Re-apply the migrations, then check grants with: select table_name, privilege_type from information_schema.role_table_grants where grantee in ('anon','authenticated') order by 1;"
             exit 1
           fi
 
