@@ -116,8 +116,88 @@ function readLiteral(src: string, start: number): { value: string; next: number 
 }
 
 /**
- * Names bound to a string literal anywhere in the file, so a select passed by
- * NAME can still be read. Covers the four idioms this codebase uses:
+ * One `const NAME = '<literal>'` and the brace block it is visible in.
+ * `scopeEnd` is `Infinity` for a module-scope binding.
+ */
+type LiteralBinding = { name: string; value: string; scopeStart: number; scopeEnd: number };
+
+/**
+ * The brace blocks of a file, as `[openIndex, closeIndex]` pairs, so a binding
+ * and a `.select()` call can be placed relative to each other. Braces inside
+ * strings, template placeholders, comments and regex literals are skipped —
+ * a `/\{/` or a `// {` would otherwise desynchronise every scope after it.
+ */
+function blockRanges(src: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const open: number[] = [];
+  let prev = '';
+  let i = 0;
+  while (i < src.length) {
+    const c = src[i];
+    if (c === '/' && src[i + 1] === '/') {
+      const nl = src.indexOf('\n', i);
+      i = nl === -1 ? src.length : nl;
+      continue;
+    }
+    if (c === '/' && src[i + 1] === '*') {
+      const end = src.indexOf('*/', i + 2);
+      i = end === -1 ? src.length : end + 2;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') {
+      i = readLiteral(src, i).next;
+      prev = 'x';
+      continue;
+    }
+    // A `/` that cannot follow a value starts a regex literal, not a division.
+    if (c === '/' && !/[\w$)\]]/.test(prev)) {
+      let j = i + 1;
+      let inClass = false;
+      let closed = false;
+      while (j < src.length && src[j] !== '\n') {
+        if (src[j] === '\\') {
+          j += 2;
+          continue;
+        }
+        if (src[j] === '[') inClass = true;
+        else if (src[j] === ']') inClass = false;
+        else if (src[j] === '/' && !inClass) {
+          closed = true;
+          break;
+        }
+        j++;
+      }
+      if (closed) {
+        i = j + 1;
+        prev = 'x';
+        continue;
+      }
+    }
+    if (c === '{') open.push(i);
+    else if (c === '}') {
+      const start = open.pop();
+      if (start !== undefined) ranges.push([start, i]);
+    }
+    if (!/\s/.test(c)) prev = c;
+    i++;
+  }
+  return ranges;
+}
+
+/** The innermost brace block containing `pos`, or module scope. */
+function enclosingScope(ranges: Array<[number, number]>, pos: number): [number, number] {
+  let best: [number, number] | null = null;
+  for (const range of ranges) {
+    if (range[0] > pos || range[1] < pos) continue;
+    if (!best || range[1] - range[0] < best[1] - best[0]) best = range;
+  }
+  return best ?? [0, Number.POSITIVE_INFINITY];
+}
+
+/**
+ * Names bound to a string literal in the file, WITH the scope each is visible
+ * in, so a select passed by NAME can still be read. Covers the four idioms
+ * this codebase uses:
  *   const MEMBER_SELECT = '...'            (module const)
  *   private orderSelect = `...`            (class property)
  *   const rosterColumns = (withMute) => `...`   (arrow returning the columns)
@@ -125,17 +205,48 @@ function readLiteral(src: string, start: number): { value: string; next: number 
  * Without this, `.select(SECTION_SELECT_BASE)` / `.select(rosterColumns(x))`
  * are invisible — and `rosterColumns` is the ACTUAL query the roster outage
  * broke, so the guard would have missed its own motivating bug.
+ *
+ * Bindings are keyed by (name, scope) rather than by name alone. A flat
+ * last-one-wins map collapsed two different `const selectClause = …` in one
+ * file into a single entry, so a select passed by that name was scanned
+ * against whichever literal the regex happened to see last — in an 18k-line
+ * file that is easy to hit, and `getFlashcards` was resolved through an
+ * unrelated chat select for as long as both lived in `services/supabase.ts`.
  */
-function literalBindings(src: string): Record<string, string> {
-  const out: Record<string, string> = {};
+function literalBindings(src: string): LiteralBinding[] {
+  const ranges = blockRanges(src);
+  const out: LiteralBinding[] = [];
   const re =
     /(?:const|let|var|readonly|private|public|protected)\s+([A-Za-z_$][\w$]*)\s*(?::[^=\n]*)?=\s*(?:(?:async\s*)?\([^)]*\)\s*(?::\s*[^=\n]*)?=>\s*)?(?=['"`])/g;
   let m: RegExpExecArray | null;
   while ((m = re.exec(src)) !== null) {
     const quoteAt = m.index + m[0].length;
-    out[m[1]] = readLiteral(src, quoteAt).value;
+    const [scopeStart, scopeEnd] = enclosingScope(ranges, m.index);
+    out.push({ name: m[1], value: readLiteral(src, quoteAt).value, scopeStart, scopeEnd });
   }
   return out;
+}
+
+/**
+ * The literal a name refers to AT `pos`: the binding whose enclosing scope is
+ * the nearest one containing the call site. A name with more than one
+ * candidate in that nearest scope is deliberately left UNRESOLVED (undefined)
+ * rather than guessed, so the guard fails loudly — landing in the frozen
+ * `unresolved` ledger — instead of silently checking the wrong columns.
+ */
+function resolveBinding(
+  bindings: LiteralBinding[],
+  name: string,
+  pos: number,
+): string | undefined {
+  const inScope = bindings.filter(
+    (b) => b.name === name && b.scopeStart <= pos && pos <= b.scopeEnd,
+  );
+  if (inScope.length === 0) return undefined;
+  const span = (b: LiteralBinding) => b.scopeEnd - b.scopeStart;
+  const nearest = Math.min(...inScope.map(span));
+  const candidates = inScope.filter((b) => span(b) === nearest);
+  return candidates.length === 1 ? candidates[0].value : undefined;
 }
 
 /** Names exported from ANY api source file, for a select imported across files. */
@@ -185,16 +296,9 @@ function argumentRegion(src: string, start: number): { text: string; end: number
  * `columns` holds what could be read; `unresolved` names the arguments that
  * yielded nothing, so a new embed cannot hide behind an unreadable argument.
  */
-// KNOWN ISSUE (tracked, found during M1c): `literalBindings` is a FLAT,
-// last-one-wins map per file, so two different `const selectClause = …` in the
-// same file collapse into one entry and a select passed by that name resolves
-// to whichever literal the regex saw last. In an 18k-line file that is easy to
-// hit — `getFlashcards` was silently "resolved" through an unrelated chat
-// select for as long as both lived in `services/supabase.ts`. The guard still
-// never reports a bare embed it cannot see (an unreadable name lands in
-// `unresolved` and the frozen ledger), but a MIS-resolved name is scanned
-// against the wrong columns. Keying bindings by (name, scope) would fix it;
-// out of scope for a behaviour-preserving move.
+// A name in the argument is resolved AT THE CALL SITE, through the binding
+// whose scope encloses it (see `resolveBinding`), so two same-named locals in
+// one file no longer collapse into one another.
 function scanSelects(src: string): { columns: string[]; unresolved: string[] } {
   const bindings = literalBindings(src);
   const exported = exportedLiteralBindings();
@@ -220,9 +324,10 @@ function scanSelects(src: string): { columns: string[]; unresolved: string[] } {
       }
       j++;
     }
-    // Names in the argument that are bound to a literal elsewhere.
+    // Names in the argument that are bound to a literal elsewhere, resolved
+    // against the binding that is in scope AT this call site.
     for (const m of region.text.matchAll(/[A-Za-z_$][\w$]*/g)) {
-      const bound = bindings[m[0]] ?? exported[m[0]];
+      const bound = resolveBinding(bindings, m[0], start + (m.index ?? 0)) ?? exported[m[0]];
       if (bound !== undefined) found.push(bound);
     }
     if (found.length) columns.push(...found);
@@ -234,7 +339,9 @@ function scanSelects(src: string): { columns: string[]; unresolved: string[] } {
   // where they are DEFINED instead: any name holding column-list text is
   // scanned wherever it is bound, so a bare embed added to `baseSelect` or
   // `GROUP_CHANNEL_COLUMNS` is caught even though its `.select()` is indirect.
-  for (const [name, value] of Object.entries(bindings)) {
+  // Every binding is read, not one per name: two same-named column lists in a
+  // file are two different selects, and both must be scanned.
+  for (const { name, value } of bindings) {
     if (/(select|columns|cols|embed)$/i.test(name)) columns.push(value);
   }
   return { columns, unresolved };
@@ -421,6 +528,67 @@ describe('the scanner sees real embeds', () => {
   });
 });
 
+describe('a select name resolves through the binding that is in scope', () => {
+  it('keeps two same-named locals in one file apart', () => {
+    const src = [
+      'function board() {',
+      "  const selectClause = 'id, profiles:sender_id(name)';",
+      '  return q.select(selectClause);',
+      '}',
+      'function listings() {',
+      "  const selectClause = 'id, marketplace_listings(title)';",
+      '  return q.select(selectClause);',
+      '}',
+    ].join('\n');
+    expect(scanSelects(src)).toEqual({
+      columns: ['id, profiles:sender_id(name)', 'id, marketplace_listings(title)'],
+      unresolved: [],
+    });
+  });
+
+  it('prefers the nearest binding and falls back to module scope', () => {
+    const src = [
+      "const clause = 'id, groups!inner(id)';",
+      'function inner() {',
+      "  const clause = 'id, group_id(name)';",
+      '  return q.select(clause);',
+      '}',
+      'q.select(clause);',
+    ].join('\n');
+    expect(scanSelects(src).columns).toEqual([
+      'id, group_id(name)',
+      'id, groups!inner(id)',
+    ]);
+  });
+
+  it('reports a name with more than one candidate in scope as unresolved, never guessed', () => {
+    const src = [
+      "const clause = 'id, a(b)';",
+      "const clause = 'id, c(d)';",
+      'q.select(clause);',
+    ].join('\n');
+    expect(scanSelects(src)).toEqual({ columns: [], unresolved: ['clause'] });
+  });
+
+  it('does not lose scope to a brace inside a comment, string or regex literal', () => {
+    const src = [
+      '// {',
+      'const RE = /[{]/;',
+      "const brace = '{';",
+      "const clause = 'id, groups!inner(id)';",
+      'function inner() {',
+      "  const clause = 'id, group_id(name)';",
+      '  return q.select(clause);',
+      '}',
+      'q.select(clause);',
+    ].join('\n');
+    expect(scanSelects(src).columns).toEqual([
+      'id, group_id(name)',
+      'id, groups!inner(id)',
+    ]);
+  });
+});
+
 describe('no bare PostgREST embed escapes disambiguation', () => {
   const bare = scanBareEmbeds();
 
@@ -474,7 +642,8 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // the method out of `services/supabase.ts`, where an UNRELATED
       // `const selectClause = \`...\`` in the chat section (line ~8548) happened
       // to bind the same name to a literal and masked it. The select itself is
-      // unchanged; see the KNOWN ISSUE on `scanSelects` about that masking.
+      // unchanged; scoped bindings now stop that masking everywhere (see
+      // `resolveBinding`).
       // groups' `getGroups` (`runList(selectClause)`) and `getGroupById`
       // (`readOne(columns)`, called twice) — the `community_surface`
       // capability ladders, which run the same query with and without the
@@ -497,6 +666,19 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/studySets.ts::columns': 5,
       'services/supabase.ts::columns': 4,
       'services/supabase.ts::select': 3,
+      // `getGroupMessages`' `runPage(selectClause)` — the same
+      // parameter-fed-wrapper idiom as the rows above: the column list is a
+      // ternary between two template literals bound to `baseSelectClause`, so
+      // the binding scan (which reads `const x = '<literal>'` only) cannot
+      // follow it. Both branches embed `profiles!sender_id (...)`, the column
+      // form, so nothing bare hides there.
+      //
+      // It appears in this ledger only once bindings are keyed by (name,
+      // scope): the flat map used to resolve this wrapper's `selectClause`
+      // through the LAST `const selectClause` in the file — the marketplace
+      // fallback-search select in `buildFallbackQuery` — so the board's page
+      // query was being scanned against marketplace listing columns.
+      'services/supabase.ts::selectClause': 1,
     });
   });
 

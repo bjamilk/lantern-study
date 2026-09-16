@@ -17,11 +17,12 @@
  * Three mappings, chosen per route, AT the route, by the wrapper it is
  * registered with:
  *
- *   adminRoute(fn)       the older routes' mapping — everything is a 500 with
- *                        a scrubbed `clientErrorMessage`, INCLUDING a
- *                        PublicError. That under-reports a genuine 4xx, and it
- *                        is kept exactly as it was: M4 converted control flow,
- *                        not statuses. Prefer `moderationRoute` for new routes.
+ *   adminRoute(fn)       the older routes' mapping — a scrubbed
+ *                        `clientErrorMessage` at 500, EXCEPT for a PublicError
+ *                        that states a 4xx statusCode of its own, which keeps
+ *                        it (#73). Prefer `moderationRoute` for new routes: it
+ *                        also treats a PublicError with no statusCode as the
+ *                        caller's fault (400).
  *   moderationRoute(fn)  `respondModerationError` — a service PublicError
  *                        keeps its own statusCode (or 400).
  *   mappedRoute(m, fn)   a route-specific mapping. Two routes have one: the
@@ -54,25 +55,49 @@ export function respondModerationError(res: any, err: any): void {
   res.status(500).json({ success: false, error: clientErrorMessage(err) });
 }
 
-/** The older routes' mapping: every failure is a 500 with a scrubbed message. */
+/**
+ * The older routes' mapping (#73). A service `PublicError` that states its own
+ * client-side status keeps it; everything else is still a scrubbed 500.
+ *
+ * It used to flatten EVERYTHING to 500, a PublicError included, so an admin
+ * who sent a bad id or hit a validation rule was told the server broke and
+ * monitoring counted the failure as a 5xx. M4 converted control flow only and
+ * kept that; this is the status fix it deferred.
+ *
+ * It stays stricter than `respondModerationError` in two ways, so the change
+ * is confined to errors that explicitly asked for a 4xx: a PublicError with no
+ * statusCode is still a 500 here (rather than the moderation default of 400),
+ * and a statusCode outside the 4xx range — a service echoing its upstream 503,
+ * say — never becomes the response's status.
+ */
 export function respondLegacyAdminError(res: any, err: any): void {
-  res.status(500).json({ success: false, error: clientErrorMessage(err) });
+  const statusCode = (err as { statusCode?: unknown })?.statusCode;
+  const clientStatus =
+    err instanceof PublicError &&
+    typeof statusCode === 'number' &&
+    statusCode >= 400 &&
+    statusCode < 500
+      ? statusCode
+      : 500;
+  res.status(clientStatus).json({ success: false, error: clientErrorMessage(err) });
 }
 
 /**
- * `PATCH /marketplace/orders/:id/dispute` classified by message text, because
- * `resolveDisputeAsAdmin` throws plain Errors rather than typed ones.
+ * `PATCH /marketplace/orders/:id/dispute`, classified by TYPE.
  *
- * KNOWN ISSUE (tracked, found during M4): sniffing 'not found' / 'Only
- * disputed' out of an error message is fragile — a reworded message in
- * `marketplaceOrders` silently turns a 404 into a 500. The fix is a typed
- * error in that service, which belongs to the marketplace lane, not here.
+ * It used to sniff 'not found' / 'Only disputed' out of the message text,
+ * because `resolveDisputeAsAdmin` threw untyped errors: rewording a message in
+ * `marketplaceOrders` silently turned an actionable 404 or 400 into "server
+ * error", with no test failing at the throw site (#72). That service now
+ * throws `PublicError` carrying its own `statusCode`, so the status travels
+ * with the error and this mapping is the moderation one — a PublicError keeps
+ * its status (or 400), anything else is a scrubbed 500.
+ *
+ * It stays a named export so the route keeps declaring which policy it takes;
+ * it can be collapsed into `moderationRoute` when the route is moved.
  */
-export function respondDisputeError(res: any, err: any): void {
-  const message = clientErrorMessage(err);
-  const status = message.includes('not found') ? 404 : message.includes('Only disputed') ? 400 : 500;
-  res.status(status).json({ success: false, error: message });
-}
+export const respondDisputeError: AdminErrorResponder = (res, err) =>
+  respondModerationError(res, err);
 
 /**
  * `POST /users/:id/badge`: awardBadge raises 400 (unknown badge id) / 404 (no

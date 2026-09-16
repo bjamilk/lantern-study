@@ -9,8 +9,8 @@
  * and the question-pool loader — which is the only real duplication in the
  * 42k-line target set (`TEAM-S1-api-structure.md` §2). Three copies of a
  * serialiser is three places for a field to be added and two places for it to
- * be forgotten, and that is exactly what had already happened here (see the
- * KNOWN ISSUE below).
+ * be forgotten, and that is exactly what had already happened here: the
+ * question-pool copy dropped `senderId` (#76, fixed in `mapChatMessageRow`).
  *
  * ## What it touches
  *
@@ -72,22 +72,28 @@ export function resolveNestedProfile(
  * `Message` DTO apart from the content itself, which arrives already parsed in
  * `normalized`.
  *
- * KNOWN ISSUE (tracked, found during monolith lane M1): the three copies this
- * replaces were NOT identical. The group-message page loader and the thread
- * loader both emit `senderId`; the question-pool loader
- * (`getGroupQuestionPool`) omits it, so a question read from the pool carries
- * a `sender.id` but no top-level `senderId`. That looks like a copy-paste
- * omission rather than a decision, but this extraction is behaviour-preserving
- * so the difference is kept exactly, behind `options.includeSenderId`, instead
- * of being quietly fixed here. Adding the field is a one-line change once
- * someone has checked what the question-pool clients do with it.
+ * `senderId` is emitted for EVERY row (#76). The three copies this replaces
+ * were not identical: the group-message page loader and the thread loader both
+ * emitted it, while the question-pool loader omitted it, so the same message
+ * answered with or without a top-level `senderId` depending on which endpoint
+ * it arrived from — and every client check on it ("is this mine", author-only
+ * edit/delete, mention resolution) branched on the endpoint rather than on the
+ * message. Lane M1 kept that difference behind `options.includeSenderId`
+ * because the extraction was behaviour-preserving; the client audit found
+ * nothing that reads the ABSENCE of `senderId` as a marker (every use compares
+ * it to the viewer's id), so the field is now always present.
  */
 export function mapChatMessageRow(
   row: any,
   normalized: Partial<Message> & { type: "TEXT" | "QUESTION" },
-  options: { includeSenderId?: boolean } = {},
+  /**
+   * @deprecated No-op, kept only so the one remaining
+   * `{ includeSenderId: false }` call site in `services/supabase.ts` (the
+   * question-pool loader, owned by the chat lane) still compiles. Delete the
+   * argument there and this parameter with it.
+   */
+  _options: { includeSenderId?: boolean } = {},
 ): Message {
-  const { includeSenderId = true } = options;
   return {
     id: row.id,
     groupId: row.group_id,
@@ -95,7 +101,7 @@ export function mapChatMessageRow(
       resolveNestedProfile(row.profiles),
       row.sender_id,
     ),
-    ...(includeSenderId ? { senderId: row.sender_id } : {}),
+    senderId: row.sender_id,
     timestamp: row.timestamp
       ? new Date(row.timestamp).toISOString()
       : new Date().toISOString(),
