@@ -11,10 +11,10 @@
  * opponent), the active community + its presence, `isOnline`, `lowDataMode`,
  * `importProgress`, and the `libraryTab` / `budgetTab` selections.
  *
- * Touches: zustand `persist`, localStorage key `ui-storage`. Only six fields
+ * Touches: zustand `persist`, localStorage key `ui-storage`. Only seven fields
  * are persisted (`theme`, `isSidebarExpanded`, `isChatsSectionExpanded`,
- * `lowDataMode`, `libraryTab`, `isLibraryRailCollapsed`) — everything else is
- * per-page-load. It also writes the `dark` class on `document.documentElement`
+ * `lowDataMode`, `libraryTab`, `isLibraryRailCollapsed`, `visitedSurfaces`) —
+ * everything else is per-page-load. It also writes the `dark` class on `document.documentElement`
  * and registers window `online`/`offline` listeners at module scope.
  *
  * Gotchas:
@@ -31,6 +31,11 @@
  *    by the sign-out path.
  *  - `isLibraryRailOpen` (small-screen panel) and `isLibraryRailCollapsed`
  *    (desktop icon strip) are separate on purpose; only the latter persists.
+ *  - `visitedSurfaces` is the ONE exception to "persisted fields are device
+ *    preferences": it is account data, so it is keyed by user id inside the
+ *    shared record rather than living in the unscoped top level. It records
+ *    "has ever opened", so nothing ever clears an entry — not even sign-out,
+ *    which is why it must never hold anything but these booleans.
  */
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
@@ -59,12 +64,56 @@ export interface StudyRoomJoin {
   communityId?: string | null;
 }
 
+/**
+ * The three onboarding-checklist surfaces whose "has ever opened" the app has
+ * to remember, because the checklist only renders on Home and can therefore
+ * never observe the student standing on any of them (issue #68).
+ */
+export type VisitedSurface = 'library' | 'marketplace' | 'offline';
+
+/** Which checklist surface an app mode counts as, or `null` for none. */
+export function visitedSurfaceForMode(mode: AppMode): VisitedSurface | null {
+  switch (mode) {
+    case AppMode.LIBRARY:
+    case AppMode.NOTES:
+    case AppMode.FLASHCARDS:
+      return 'library';
+    case AppMode.MARKETPLACE:
+    case AppMode.MARKETPLACE_LISTING_DETAIL:
+      return 'marketplace';
+    case AppMode.OFFLINE_MODE:
+      return 'offline';
+    default:
+      return null;
+  }
+}
+
+export type VisitedSurfaceRecord = Record<string, Partial<Record<VisitedSurface, boolean>>>;
+
+/** Pure read of the record, so the Home checklist and its test share one rule. */
+export function hasVisitedSurface(
+  visited: VisitedSurfaceRecord | undefined,
+  userId: string | null | undefined,
+  surface: VisitedSurface
+): boolean {
+  if (!userId) return false;
+  return Boolean(visited?.[userId]?.[surface]);
+}
+
 interface UIState {
   // App Mode
   appMode: AppMode;
   /** Sets mode without URL navigation (used by route sync). */
   setAppModeDirect: (mode: AppMode) => void;
   setAppMode: (mode: AppMode) => void;
+
+  /**
+   * Per-user "has ever opened this surface" record, keyed by user id. Written
+   * by `markSurfaceVisited` on every mode the route sync lands on; read by the
+   * Home onboarding checklist.
+   */
+  visitedSurfaces: VisitedSurfaceRecord;
+  markSurfaceVisited: (userId: string | null | undefined, mode: AppMode) => void;
   
   // Selected Chat
   selectedChat: ChatItem | null;
@@ -300,6 +349,20 @@ export const useUIStore = create<UIState>()(
       // App Mode
       appMode: AppMode.CHAT,
       setAppModeDirect: (mode) => set({ appMode: mode }),
+
+      visitedSurfaces: {},
+      markSurfaceVisited: (userId, mode) => {
+        const surface = visitedSurfaceForMode(mode);
+        if (!userId || !surface) return;
+        const current = get().visitedSurfaces;
+        if (current[userId]?.[surface]) return;
+        set({
+          visitedSurfaces: {
+            ...current,
+            [userId]: { ...current[userId], [surface]: true },
+          },
+        });
+      },
       setAppMode: (mode) => {
         if (isEphemeralAppMode(mode)) {
           set({ appMode: mode });
@@ -472,6 +535,7 @@ export const useUIStore = create<UIState>()(
         lowDataMode: state.lowDataMode,
         libraryTab: state.libraryTab,
         isLibraryRailCollapsed: state.isLibraryRailCollapsed,
+        visitedSurfaces: state.visitedSurfaces,
       }),
     }
   )
