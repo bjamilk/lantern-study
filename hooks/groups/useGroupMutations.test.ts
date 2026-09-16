@@ -80,8 +80,8 @@ vi.mock('../../stores/uiStore', () => {
 const { renderHook } = await import('../effects/testing/hookHarness');
 const { useGroupMutations } = await import('./useGroupMutations');
 
-// Several failure paths report through the browser's blocking alert(); plain Node has none.
-(globalThis as { alert?: (message?: unknown) => void }).alert = () => {};
+// Every failure path reports through the app's toast store (issue #71 — several
+// used to call the browser's blocking `alert()`).
 
 const CURRENT_USER = { id: 'user-1', name: 'Ada', stats: {}, points: 0, badges: [] } as any;
 
@@ -199,6 +199,22 @@ describe('useGroupMutations', () => {
         const { harness } = mount({ groups: [group({ adminIds: ['user-2'] })] });
         await harness.result.handleDemoteAdmin('group-1', 'user-2');
         expect(tx.demoteGroupAdmin).not.toHaveBeenCalled();
+        expect(deps.showToast).toHaveBeenCalledWith(
+            'Cannot demote the only admin of the group.',
+            'error'
+        );
+    });
+
+    it('reports promote and demote failures through the toast store, not a blocking alert', async () => {
+        const { harness } = mount();
+        tx.promoteGroupAdmin.mockRejectedValueOnce(new Error('offline'));
+        await harness.result.handlePromoteToAdmin('group-1', 'user-2');
+        expect(deps.showToast).toHaveBeenCalledWith('Failed to promote member to admin.', 'error');
+
+        deps.showToast.mockClear();
+        tx.demoteGroupAdmin.mockRejectedValueOnce(new Error('offline'));
+        await harness.result.handleDemoteAdmin('group-1', 'user-2');
+        expect(deps.showToast).toHaveBeenCalledWith('Failed to demote admin.', 'error');
     });
 
     it('refuses to let the only admin leave, without reaching the server', async () => {

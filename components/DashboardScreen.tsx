@@ -64,7 +64,6 @@ import { HomeRecentMaterials } from './dashboard/HomeRecentMaterials';
 import { RecentActivities } from './dashboard/RecentActivities';
 import { CourseReadinessCard } from './CourseReadinessCard';
 import AiJobsCard from './jobs/AiJobsCard';
-import Modal from './ui/Modal';
 import {
   readAcademicSetupDismissed,
   markAcademicSetupDismissed,
@@ -228,15 +227,6 @@ export default function DashboardScreen({
   onAbandonPausedSession,
 }: DashboardScreenProps) {
   // --- Local state and derived tallies -------------------------------------
-  // KNOWN ISSUE (tracked, deferred F9: needs a product decision — whether
-  // Home's "take a test" door opens this group picker or keeps going straight
-  // to Study Hub. Wiring the picker changes which surface a student lands on,
-  // which is not a defect fix): `setQuickActionPicker` is only ever called with
-  // `null` (here, and from the modal's close buttons), so the group-picker
-  // modal at the bottom of this file can never open and `onOpenQuickTest` is
-  // reachable only through the checklist's `onTakeTest` fallback.
-  const [quickActionPicker, setQuickActionPicker] = useState<'test' | 'study' | null>(null);
-  const availableGroups = useMemo(() => groups.filter((g) => !g.isArchived), [groups]);
   const { streakData, showDailyBonus, bonusXP, dismissBonus } = useLoginStreak();
   const studyActivityStreak = useMemo(
     () => computeStudyStreak(studyActivityDays).current,
@@ -259,12 +249,6 @@ export default function DashboardScreen({
   const totalTestsTakenOverall = rawTestResults.filter((result) => result?.session?.startTime).length;
   const dashboardScrollRef = useRef<HTMLDivElement>(null);
 
-  // Picker choice → quick test for that group, then close. Only the 'test'
-  // branch does anything; 'study' was never wired.
-  const handleQuickActionGroupSelect = useCallback((groupId: string) => {
-    if (quickActionPicker === 'test') onOpenQuickTest?.(groupId);
-    setQuickActionPicker(null);
-  }, [quickActionPicker, onOpenQuickTest]);
   // --- Store reads. All selectors, no loaders: Home renders whatever the
   // stores already hold and never triggers a fetch of its own.
   const notes = useNotesStore((s) => s.notes);
@@ -675,70 +659,6 @@ export default function DashboardScreen({
           </aside>
         </div>
       </div>
-
-      {/* Group picker for Quick Test. Currently unreachable — see the KNOWN
-          ISSUE on `quickActionPicker` above. Kept because the checklist path
-          still calls `onOpenQuickTest`, so the picker is the intended UI. */}
-      {quickActionPicker && (
-        <Modal
-          isOpen={Boolean(quickActionPicker)}
-          onClose={() => setQuickActionPicker(null)}
-          ariaLabelledBy="quick-action-group-picker-title"
-          maxWidthClass="max-w-md"
-          alignClass="items-end sm:items-center justify-center"
-          backdropClassName="backdrop-blur-sm"
-          panelClassName="!p-0 overflow-hidden border border-lantern-border bg-lantern-surface rounded-lantern-xl"
-        >
-          <div className="w-full">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-lantern-border">
-              <div className="flex items-center gap-2">
-                <AppIcon name="flash" size={20} filled className="text-yellow-500" />
-                <h2 id="quick-action-group-picker-title" className="text-body font-semibold text-lantern-text">
-                  Select a group for Quick Test
-                </h2>
-              </div>
-              <button
-                onClick={() => setQuickActionPicker(null)}
-                className="p-1.5 rounded-lantern hover:bg-lantern-background-secondary transition-colors"
-                aria-label="Close"
-              >
-                <AppIcon name="close" size={20} className="text-lantern-text-secondary" />
-              </button>
-            </div>
-            <div className="max-h-72 overflow-y-auto divide-y divide-lantern-border">
-              {availableGroups.length === 0 ? (
-                <p className="text-center text-body text-lantern-text-tertiary py-8">
-                  No groups available. Join or create a group first.
-                </p>
-              ) : (
-                availableGroups.map((group) => (
-                  <button
-                    key={group.id}
-                    onClick={() => handleQuickActionGroupSelect(group.id)}
-                    className="w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-lantern-background-secondary transition-colors"
-                  >
-                    {group.avatarUrl ? (
-                      <img
-                        src={group.avatarUrl}
-                        alt={group.name}
-                        className="w-9 h-9 rounded-full object-cover flex-shrink-0"
-                      />
-                    ) : (
-                      <div className="w-9 h-9 rounded-full bg-lantern-primary-background flex items-center justify-center flex-shrink-0">
-                        <AppIcon name="people" size={20} filled className="text-lantern-primary-text" />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="text-body font-semibold text-lantern-text truncate">{group.name}</p>
-                    </div>
-                    <AppIcon name="flash" size={16} filled className="text-yellow-400 flex-shrink-0" />
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

@@ -23,6 +23,16 @@ import { MessageType, QuestionType } from '../../types';
 
 vi.mock('react', () => reactMock);
 
+const toastDeps = vi.hoisted(() => ({ showToast: vi.fn() }));
+
+vi.mock('../../stores/toastStore', () => {
+    const state = { showToast: toastDeps.showToast };
+    const hook = (() => state) as (() => typeof state) & { getState: () => typeof state };
+    hook.getState = () => state;
+    return { useToastStore: hook };
+});
+
+
 const tx = vi.hoisted(() => ({
     sendMessage: vi.fn(async (..._args: unknown[]) => ({ id: 'server-1', timestamp: '2026-09-15T00:00:00.000Z' }) as any),
     syncGamificationProgress: vi.fn(async () => ({ points: 3, badges: [], stats: {}, awardedBadges: [] }) as any),
@@ -37,8 +47,8 @@ const { renderHook } = await import('../effects/testing/hookHarness');
 const { useBoardHandlers } = await import('./useBoardHandlers');
 const { groupDeliveryIntents } = await import('./deliveryIntents');
 
-// The failure path reports through the browser's blocking alert(); plain Node has none.
-(globalThis as { alert?: (message?: unknown) => void }).alert = () => {};
+// The failure path reports through the app's toast store (issue #71 — it used to
+// call the browser's blocking `alert()`).
 
 const CURRENT_USER = { id: 'user-1', name: 'Ada', stats: {}, points: 0, badges: [] } as any;
 
@@ -77,6 +87,7 @@ const submit = (fn: any, stem = 'What is a mole?') =>
 beforeEach(() => {
     tx.sendMessage.mockClear().mockResolvedValue({ id: 'server-1', timestamp: '2026-09-15T00:00:00.000Z' });
     tx.syncGamificationProgress.mockClear();
+    toastDeps.showToast.mockClear();
 });
 
 describe('useBoardHandlers', () => {
@@ -144,6 +155,17 @@ describe('useBoardHandlers', () => {
 
         expect(state.messages['group-1']?.map((m: any) => m.id)).toEqual(['server-1']);
         expect(closeModal).toHaveBeenCalledWith('question');
+    });
+
+    it('reports a failed submit through the toast store, not a blocking alert', async () => {
+        const { harness } = mount();
+        tx.sendMessage.mockRejectedValueOnce(new Error('rejected'));
+        await submit(harness.result.handleQuestionSubmit);
+
+        expect(toastDeps.showToast).toHaveBeenCalledWith(
+            'Failed to submit question. Please try again.',
+            'error'
+        );
     });
 
     it('shares the group delivery-intent registry with the message composer', () => {

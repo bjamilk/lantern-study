@@ -24,6 +24,7 @@ import {
     removeVote, voteQuestion, updateMessage, updateQuestionStatus, createNotification,
 } from '../../services/supabase';
 import { syncGamificationProgress } from '../../services/gamificationStreak';
+import { useToastStore } from '../../stores/toastStore';
 import type { AddNotification, AuthStoreState, GroupStoreState, UIStoreState } from './types';
 
 // Module-level (not per-mount) in-flight guard: a remount must not let the same
@@ -113,11 +114,7 @@ export function useVoteHandlers({
             }
         } catch (error) {
             console.error('Error voting:', error);
-            // KNOWN ISSUE (tracked, found during M9): this handler and onFlagAsSimilar
-            // report failure through the browser's blocking `alert()`, while the rest of
-            // the app uses the toast store. Moved verbatim; not changed here because a
-            // decomposition PR must not change what a student sees.
-            alert('Failed to vote. Please try again.');
+            useToastStore.getState().showToast('Failed to vote. Please try again.', 'error');
             return;
         } finally {
             votingMessageIds.delete(messageId);
@@ -234,7 +231,7 @@ export function useVoteHandlers({
             await updateMessage(messageId, { flagged_as_similar_user_ids: newFlags });
         } catch (error) {
             console.error('Error flagging message:', error);
-            alert('Failed to flag message. Please try again.');
+            useToastStore.getState().showToast('Failed to flag message. Please try again.', 'error');
             return;
         }
 

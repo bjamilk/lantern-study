@@ -72,7 +72,7 @@ import { useGroupStore } from '../stores/groupStore';
 import { useLectureRecordingStore } from '../stores/lectureRecordingStore';
 import { useNotesStore } from '../stores/notesStore';
 import { useStudySetStore } from '../stores/studySetStore';
-import { useUIStore } from '../stores/uiStore';
+import { useUIStore, hasVisitedSurface } from '../stores/uiStore';
 import type { ActiveCommunity, StudyRoomJoin } from '../stores/uiStore';
 import {
     SHOP_COURSES_PATH,
@@ -823,11 +823,12 @@ export const SCREEN_REGISTRY: Record<AppMode, ScreenEntry> = {
             theme, testResults, groups, currentUser, studyActivityDays, navigateTo,
             handleOpenCreateDeckModal, setCreateGroupReturnMode, openStudyDestination, decks,
             handleSelectDeck, noteHandlers, openModal, handleRecordLecture, navigateToPath,
-            toggleCompanion, budget, transactions, appMode, isCompanionOpen, messages,
+            toggleCompanion, budget, transactions, isCompanionOpen, messages,
             setShowImportAndStudy, handleFlashcardStudy, serverStreak, dueCardsCount, homeReviewPlan,
             handleOpenQuickTest, activeTestSession, activeStudySession, handleResumeSession,
             pausedSessions, handleResumePausedSession, handleAbandonPausedSession
         } = ctx;
+        const { visitedSurfaces } = useUIStore.getState();
         return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser}
             studyActivityDays={studyActivityDays}
             onNavigateToChat={() => navigateTo(AppMode.CHAT)}
@@ -860,23 +861,21 @@ export const SCREEN_REGISTRY: Record<AppMode, ScreenEntry> = {
             onToggleCompanion={toggleCompanion}
             deckCount={decks.length}
             hasBudgetSet={!!(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
-            // KNOWN ISSUE (tracked, found during M7): this and the two
-            // `hasExploredMarketplace` / `hasTriedOffline` props below are
-            // always FALSE. They are only evaluated while the dashboard is on
-            // screen, i.e. while `appMode` is DASHBOARD, so the onboarding
-            // checklist can never tick "opened the library", "explored the
-            // shop" or "tried offline". The switch hid it (TypeScript reported
-            // the comparisons as having no overlap, but App.tsx is not in any
-            // tsc project — see the note in apps/web/vite.config.ts). Left
-            // exactly as it behaved; fixing it needs a visited-mode record,
-            // which is a behaviour change.
-            hasOpenedLibrary={appMode === AppMode.LIBRARY || appMode === AppMode.NOTES || appMode === AppMode.FLASHCARDS}
+            // FIXED (#68): these three used to compare the CURRENT `appMode`
+            // against library / shop / offline, and this entry only runs while
+            // the mode is DASHBOARD — so all three were false by construction
+            // and the checklist could never complete. They now read the
+            // per-user "has ever opened" record `useRouteSync` writes on every
+            // routed landing. `getState()` rather than a selector is enough: a
+            // flag can only change while the student is on ANOTHER surface, so
+            // Home has already re-rendered by the time one does.
+            hasOpenedLibrary={hasVisitedSurface(visitedSurfaces, currentUser.id, 'library')}
             hasTriedCompanion={isCompanionOpen}
             hasSubmittedQuestion={Object.values(messages).some((list) =>
               Array.isArray(list) && list.some((m: any) => m?.senderId === currentUser.id && m?.type === MessageType.QUESTION)
             )}
-            hasExploredMarketplace={appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL}
-            hasTriedOffline={appMode === AppMode.OFFLINE_MODE}
+            hasExploredMarketplace={hasVisitedSurface(visitedSurfaces, currentUser.id, 'marketplace')}
+            hasTriedOffline={hasVisitedSurface(visitedSurfaces, currentUser.id, 'offline')}
             onNavigateToNotes={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
             onOpenImportAndStudy={() => setShowImportAndStudy(true)}
             onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
