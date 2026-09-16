@@ -117,6 +117,21 @@ describe('buildCompanionContext — what the model is told', () => {
         ).toBe('Active test session');
     });
 
+    it('names the game and offline screens (#69 — these cases never matched)', () => {
+        // The switch used to say `AppMode.GAME` / `AppMode.OFFLINE`, neither of
+        // which is an enum member, so both read as `undefined` and the
+        // companion was told nothing on those two screens.
+        expect(
+            buildCompanionContext({ ...base, appMode: AppMode.GAME_ACTIVE }).currentScreen,
+        ).toBe('Multiplayer quiz game');
+        expect(
+            buildCompanionContext({ ...base, appMode: AppMode.GAME_RESULTS }).currentScreen,
+        ).toBe('Multiplayer quiz game results');
+        expect(
+            buildCompanionContext({ ...base, appMode: AppMode.OFFLINE_MODE }).currentScreen,
+        ).toBe('Offline mode');
+    });
+
     it('caps the note it sends at 6000 characters', () => {
         const context = buildCompanionContext({
             ...base,

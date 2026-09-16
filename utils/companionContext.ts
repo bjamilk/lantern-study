@@ -11,12 +11,10 @@
  *    reads became the argument object and nothing else changed.
  *  - `noteContext` is capped at 6,000 characters because a note body has no
  *    length bound, and every character here is sent to the model.
- *  - KNOWN ISSUE (tracked, found during M7): `currentScreen` has cases for
- *    `AppMode.GAME` and `AppMode.OFFLINE`, neither of which is a member of the
- *    enum — they are `undefined` at runtime, so those two comparisons are
- *    always false and the companion is never told the student is in a game or
- *    offline. The live modes are GAME_ACTIVE and OFFLINE_MODE. Left as-is:
- *    changing what the model is told is a behaviour change, not a move.
+ *  - The game and offline `currentScreen` cases used to name `AppMode.GAME`
+ *    and `AppMode.OFFLINE`, neither of which is an enum member, so both read
+ *    as `undefined` and never matched (#69). They now name the live members
+ *    GAME_ACTIVE, GAME_RESULTS and OFFLINE_MODE.
  */
 import { AppMode, TransactionType } from '../types';
 import type {
@@ -35,9 +33,6 @@ import type {
 import type { Group } from '../types';
 import { getNoteStudyContent } from '@lantern/shared';
 import { parseAppRoute } from './appRoutes';
-
-/** The two `currentScreen` cases that name modes the enum does not have. */
-const DEAD_MODES = AppMode as unknown as { GAME?: AppMode; OFFLINE?: AppMode };
 
 /** Exactly what App.tsx's memo closed over. */
 export interface CompanionContextInput {
@@ -114,15 +109,11 @@ export function buildCompanionContext({
                 case AppMode.FLASHCARDS: return selectedDeck ? `Flashcards – deck: ${selectedDeck.name}` : 'Flashcards (deck list)';
                 case AppMode.TEST_ACTIVE: return 'Active test session';
                 case AppMode.STUDY_ACTIVE: return 'Active study session';
-                // KNOWN ISSUE (tracked, found during M7): see the banner — GAME and
-                // OFFLINE are not AppMode members, so these two cases are
-                // `case undefined:` and never match. Kept, through an explicit
-                // lookup rather than a member access, so the intent stays
-                // visible and the module compiles; behaviour is unchanged.
-                case DEAD_MODES.GAME: return 'Multiplayer quiz game';
+                case AppMode.GAME_ACTIVE: return 'Multiplayer quiz game';
+                case AppMode.GAME_RESULTS: return 'Multiplayer quiz game results';
                 case AppMode.MARKETPLACE: return 'Marketplace';
                 case AppMode.BUDGET_TRACKER: return 'Budget Tracker';
-                case DEAD_MODES.OFFLINE: return 'Offline mode';
+                case AppMode.OFFLINE_MODE: return 'Offline mode';
                 case AppMode.NOTES: return 'Notes library';
                 case AppMode.NOTE_EDITOR: return selectedNote ? `Note: ${selectedNote.title}` : 'Note editor';
                 case AppMode.COURSE_WORKSPACE: return selectedNote ? `Course – ${selectedNote.title}` : 'Course workspace';
