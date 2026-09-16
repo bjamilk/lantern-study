@@ -72,7 +72,7 @@ function mount(options: { messages?: Record<string, any[]>; selectedChat?: any }
 
 /** Submit the simplest possible MCQ; only `stem` varies between cases. */
 const submit = (fn: any, stem = 'What is a mole?') =>
-    fn(stem, 'Because Avogadro.', QuestionType.MULTIPLE_CHOICE, [], ['a']);
+    fn(stem, 'Because Avogadro.', QuestionType.MULTIPLE_CHOICE_SINGLE, [], ['a']);
 
 beforeEach(() => {
     tx.sendMessage.mockClear().mockResolvedValue({ id: 'server-1', timestamp: '2026-09-15T00:00:00.000Z' });
@@ -98,7 +98,7 @@ describe('useBoardHandlers', () => {
         const payload = JSON.parse(content as string);
         // A question is a message: `type` is QUESTION, the real kind is `questionType`.
         expect(payload.type).toBe(MessageType.QUESTION);
-        expect(payload.questionType).toBe(QuestionType.MULTIPLE_CHOICE);
+        expect(payload.questionType).toBe(QuestionType.MULTIPLE_CHOICE_SINGLE);
         expect(payload.questionStem).toBe('What is a mole?');
     });
 
