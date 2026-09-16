@@ -11,13 +11,13 @@
  *    `hooks/useAppEffects.ts` and `hooks/useGroupHandlers.ts`). It writes back only
  *    through the `onSendMessage` / `onEditMessage` / `onRemoveMessage` callbacks and
  *    `groupStore.updateMessageInState` (reaction counts).
- *  - services/supabase: threads (`fetchGroupThread` / `fetchDmThread`), DM
- *    request accept/decline, block + mute status, presence (`fetchUserProfile`).
- *    The marketplace set moved with the Offers tab — see
- *    `hooks/chat/useMarketplaceOffers.ts` and `components/chat/OffersPanel.tsx`.
- *  - supabase realtime BROADCAST channels: `typing:<chatId>` and `chat-read:<chatId>`.
+ *  - services/supabase: threads (`fetchGroupThread` / `fetchDmThread`) and
+ *    presence (`fetchUserProfile`). The marketplace set moved with the Offers
+ *    tab (`hooks/chat/useMarketplaceOffers.ts`), the DM request/block/mute set
+ *    with `hooks/chat/useDmRelationship.ts`.
+ *  - supabase realtime BROADCAST channels, through `hooks/chat/useChatRealtime.ts`.
  *  - stores: `uiStore.lowDataMode`, `communityStore.myCommunities`, `toastStore`,
- *    `confirmStore.confirmDialog`, `useBudgetHandlers`.
+ *    `useBudgetHandlers`.
  *  - `hooks/chat/useMessageActions.ts` for reactions, stars, pins and copy —
  *    which is where the reaction endpoints and the device-local localStorage
  *    marks now live.
@@ -50,11 +50,11 @@ import { ChatHomeScreen } from './chat/ChatHomeScreen';
 import { useMarketplaceOffers } from '../hooks/chat/useMarketplaceOffers';
 import { useChatScroll } from '../hooks/chat/useChatScroll';
 import { useChatRealtime } from '../hooks/chat/useChatRealtime';
+import { useDmRelationship } from '../hooks/chat/useDmRelationship';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
-import { confirmDialog } from '../stores/confirmStore';
 import { Group, Message, User, DMThread, ChatItem, MessageReplyPreview } from '../types';
 import ReportContentModal from './moderation/ReportContentModal';
 import type { ContentReportTargetType } from '@lantern/shared';
@@ -63,27 +63,8 @@ import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSepa
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
 import { resolveGroupChatSenderLabel } from '@lantern/shared/utils';
-import {
-  formatMuteUntilLabel,
-  type ChatMuteDurationId,
-} from '@lantern/shared';
 import { isCommunityBoard } from '@lantern/shared/network';
-import {
-  supabase,
-  fetchGroupThread,
-  fetchDmThread,
-  acceptDmMessageRequest,
-  declineDmMessageRequest,
-  getDmBlockStatus,
-  blockUser,
-  unblockUser,
-  getDmMuteStatus,
-  muteDmThread,
-  unmuteDmThread,
-  getGroupMuteStatus,
-  muteGroupChat,
-  unmuteGroupChat,
-} from '../services/supabase';
+import { supabase, fetchGroupThread, fetchDmThread } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import {
@@ -608,125 +589,35 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     return members;
   }, [isGroup, isGroupAdminForMentions, groupMemberListForMentions, currentUser.id]);
 
-  const dmThreadForHooks =
-    chat && chat.chatType !== 'group' ? (chat as DMThread & { chatType?: 'dm' }) : null;
-  const [dmRequestStatus, setDmRequestStatus] = useState<'open' | 'pending' | 'declined'>('open');
-  const [dmRequestBusy, setDmRequestBusy] = useState(false);
-  const [dmBlocked, setDmBlocked] = useState(false);
-  const [iBlockedThem, setIBlockedThem] = useState(false);
-  const [dmBlockBusy, setDmBlockBusy] = useState(false);
-  const [chatMuted, setChatMuted] = useState(false);
-  const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
-  const [muteBusy, setMuteBusy] = useState(false);
-
-  const dmPeerId =
-    dmThreadForHooks && Array.isArray(dmThreadForHooks.participantIds)
-      ? dmThreadForHooks.participantIds.find((id) => id !== currentUser.id)
-      : undefined;
-
-  useEffect(() => {
-    setDmRequestStatus(dmThreadForHooks?.status || 'open');
-  }, [dmThreadForHooks?.id, dmThreadForHooks?.status]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!dmPeerId || isGroup || !chat) {
-      setDmBlocked(false);
-      setIBlockedThem(false);
-      return;
-    }
-    void getDmBlockStatus(currentUser.id, dmPeerId)
-      .then((status) => {
-        if (cancelled) return;
-        setDmBlocked(!!status.blocked);
-        setIBlockedThem(!!status.iBlockedThem);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDmBlocked(false);
-        setIBlockedThem(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser.id, dmPeerId, isGroup, chat?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!chat) {
-      setChatMuted(false);
-      setChatMutedUntil(null);
-      return;
-    }
-    const load = isGroup
-      ? getGroupMuteStatus(chat.id)
-      : getDmMuteStatus(chat.id);
-    void load
-      .then((status) => {
-        if (cancelled) return;
-        setChatMuted(!!status?.muted);
-        setChatMutedUntil(status?.mutedUntil ?? null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setChatMuted(false);
-        setChatMutedUntil(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [chat?.id, isGroup]);
-
+  /**
+   * Request / block / mute: the three server-backed facts about the other side
+   * of this conversation, and the five actions that change them. Called exactly
+   * where `dmThreadForHooks` used to be declared, so its three effects keep
+   * their position in the shell's effect order.
+   */
+  const {
+    dmThread,
+    dmPeerId,
+    dmRequestStatus,
+    dmRequestBusy,
+    dmBlocked,
+    iBlockedThem,
+    dmBlockBusy,
+    chatMuted,
+    muteBusy,
+    muteUntilLabel,
+    handleMuteFor,
+    handleUnmute,
+    handleAcceptDmRequest,
+    handleDeclineDmRequest,
+    handleToggleDmBlock,
+  } = useDmRelationship({ chat, currentUser, isGroup, onDmThreadStatusChange });
   const scrollToMessageId = (messageId: string) => {
     messageNodeRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
 
   const galleryItems = useMemo(() => collectChatGalleryItems(messages), [messages]);
   const pinnedMessage = pinnedMessageId ? messages.find((m) => m.id === pinnedMessageId) : undefined;
-
-  const handleMuteFor = async (duration: ChatMuteDurationId) => {
-    if (!chat || muteBusy) return;
-    setMuteBusy(true);
-    try {
-      const status = isGroup
-        ? await muteGroupChat(chat.id, duration)
-        : await muteDmThread(chat.id, duration);
-      if (!status?.muted) {
-        useToastStore.getState().showToast('Could not mute notifications.', 'error');
-        return;
-      }
-      setChatMuted(true);
-      setChatMutedUntil(status.mutedUntil);
-      const untilLabel = formatMuteUntilLabel(status.mutedUntil);
-      useToastStore.getState().showToast(
-        untilLabel ? `Notifications muted until ${untilLabel}.` : 'Notifications muted.',
-        'success'
-      );
-    } finally {
-      setMuteBusy(false);
-    }
-  };
-
-  const handleUnmute = async () => {
-    if (!chat || muteBusy) return;
-    setMuteBusy(true);
-    try {
-      const status = isGroup
-        ? await unmuteGroupChat(chat.id)
-        : await unmuteDmThread(chat.id);
-      if (!status || status.muted) {
-        useToastStore.getState().showToast('Could not unmute notifications.', 'error');
-        return;
-      }
-      setChatMuted(false);
-      setChatMutedUntil(null);
-      useToastStore.getState().showToast('Notifications unmuted.', 'success');
-    } finally {
-      setMuteBusy(false);
-    }
-  };
-
-  const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
 
   // No conversation selected. NOTHING below this line may call a hook — see the
   // file header (React #310). Desktop gets the chat-home pane; small screens get
@@ -793,7 +684,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     : '';
 
   const isArchived = isGroup ? group.isArchived : (chat as any).isArchived;
-  const dmThread = dmThreadForHooks;
 
   const dmPresenceLabel = !isGroup && resolvedPeerPresence
     ? formatChatPresenceLine(resolvedPeerPresence.settings, resolvedPeerPresence.lastSeenAt).label
@@ -821,70 +711,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     dmThread.requestedBy &&
     dmThread.requestedBy !== currentUser.id;
 
-  const handleAcceptDmRequest = async () => {
-    if (!dmThread?.id || dmRequestBusy) return;
-    setDmRequestBusy(true);
-    try {
-      await acceptDmMessageRequest(dmThread.id);
-      setDmRequestStatus('open');
-      onDmThreadStatusChange?.(dmThread.id, { status: 'open', requestedBy: null });
-      useToastStore.getState().showToast('Message request accepted', 'success');
-    } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not accept request', 'error');
-    } finally {
-      setDmRequestBusy(false);
-    }
-  };
-
-  const handleDeclineDmRequest = async () => {
-    if (!dmThread?.id || dmRequestBusy) return;
-    setDmRequestBusy(true);
-    try {
-      await declineDmMessageRequest(dmThread.id);
-      setDmRequestStatus('declined');
-      onDmThreadStatusChange?.(dmThread.id, {
-        status: 'declined',
-        requestedBy: dmThread.requestedBy ?? null,
-      });
-      useToastStore.getState().showToast('Message request declined', 'success');
-    } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not decline request', 'error');
-    } finally {
-      setDmRequestBusy(false);
-    }
-  };
-
-  const handleToggleDmBlock = async () => {
-    if (!dmPeerId || dmBlockBusy) return;
-    if (!iBlockedThem) {
-      const ok = await confirmDialog({
-        title: 'Block user',
-        message: `Block ${name}? They won’t be able to message you, and you won’t be able to message them until you unblock.`,
-        confirmLabel: 'Block',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    setDmBlockBusy(true);
-    try {
-      if (iBlockedThem) {
-        await unblockUser(currentUser.id, dmPeerId);
-        setIBlockedThem(false);
-        const status = await getDmBlockStatus(currentUser.id, dmPeerId);
-        setDmBlocked(!!status.blocked);
-        useToastStore.getState().showToast('User unblocked', 'success');
-      } else {
-        await blockUser(currentUser.id, dmPeerId);
-        setIBlockedThem(true);
-        setDmBlocked(true);
-        useToastStore.getState().showToast('User blocked', 'success');
-      }
-    } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not update block', 'error');
-    } finally {
-      setDmBlockBusy(false);
-    }
-  };
 
   // The conversation itself, extracted so it can be rendered either bare or
   // inside the marketplace Tabs without duplicating the list, composer and all
@@ -1011,7 +837,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <button
               type="button"
               disabled={dmBlockBusy}
-              onClick={() => void handleToggleDmBlock()}
+              onClick={() => void handleToggleDmBlock(name)}
               className="px-3 py-1.5 rounded-lg text-sm font-semibold border border-lantern-border text-lantern-text hover:bg-lantern-surface disabled:opacity-60"
             >
               Unblock
@@ -1175,7 +1001,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         onArchiveDmThread={onArchiveDmThread}
         onUnarchiveDmThread={onUnarchiveDmThread}
         onDeleteDmThread={onDeleteDmThread}
-        handleToggleDmBlock={handleToggleDmBlock}
+        handleToggleDmBlock={() => handleToggleDmBlock(name)}
         iBlockedThem={iBlockedThem}
       />
 

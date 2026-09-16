@@ -72,6 +72,7 @@ const EXTRACTED_MODULES: string[] = [
   'components/chat/ChatHomeScreen.tsx',
   'hooks/chat/useChatScroll.ts',
   'hooks/chat/useChatRealtime.ts',
+  'hooks/chat/useDmRelationship.ts',
 ];
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
