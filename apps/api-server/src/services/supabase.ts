@@ -118,11 +118,35 @@ export {
 import * as academicData from "./data/academic";
 import * as decksData from "./data/decks";
 import * as uploadsData from "./data/uploads";
-import { writeWithTopicFallback } from "./data/academic";
+import {
+  resolveCourseIdFromConfigLike,
+  resolveStudySetIdFromConfigLike,
+  topicFilterApplies,
+  writeWithTopicFallback,
+} from "./data/academic";
+export { resolveStudySetIdFromConfigLike };
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
+import * as gamificationData from "./data/gamification";
+import type { GamificationSyncResult } from "./data/gamification";
+import * as groupsData from "./data/groups";
 import * as notificationsData from "./data/notifications";
+import * as testsData from "./data/tests";
+import {
+  buildAttemptTally,
+  buildTestProvenance,
+  mapTestListRow,
+  normalizeSourceNoteTitle,
+  topicIdOf,
+} from "./data/testMappers";
+export {
+  buildAttemptTally,
+  buildTestProvenance,
+  mapTestListRow,
+  normalizeSourceNoteTitle,
+};
+import * as offlineBundlesData from "./data/offlineBundles";
 import * as storageAclData from "./data/storageAcl";
 import * as usersData from "./data/users";
 import {
@@ -300,12 +324,9 @@ import { IMMUTABLE_IMAGE_CACHE_CONTROL } from "./imageProcessing";
 
 type UserStats = typeof initialUserStats;
 
-type GamificationSyncResult = {
-  points: number;
-  badges: User["badges"];
-  stats: UserStats;
-  awardedBadges: User["badges"];
-};
+// `GamificationSyncResult` moved to `data/gamification.ts` (monolith lane M1c,
+// step 12) with the three methods that were its only users. Type-imported
+// above for the delegations' return types.
 
 
 export type ChatMessageMutationStatus =
@@ -388,20 +409,9 @@ export type BoardBookmarkPage = {
 // `data/users.ts` (monolith lane M1b, step 6) with the USERS AND PROFILES
 // section, their only caller. They stay module-private to the data layer.
 
-/**
- * Course reference carried on test/bundle payloads: top-level `courseId` wins,
- * else `config.courseId`. Anything that is not a UUID is ignored (null).
- */
-const COURSE_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function resolveCourseIdFromConfigLike(
-  payload: { courseId?: unknown; config?: { courseId?: unknown } | null } | null | undefined,
-): string | null {
-  const candidate = payload?.courseId ?? payload?.config?.courseId ?? null;
-  return typeof candidate === "string" && COURSE_UUID_RE.test(candidate)
-    ? candidate
-    : null;
-}
+// `resolveCourseIdFromConfigLike` moved to `data/academic.ts` (monolith lane
+// M1c, step 9): the OFFLINE BUNDLES and TESTS sections are its only callers
+// and they now land in two different data modules. Imported above.
 
 /**
  * Topic reference on the same payloads. Returned RAW, unlike the course above:
@@ -415,20 +425,10 @@ function resolveTopicIdFromConfigLike(
   return payload?.config?.topicId;
 }
 
-/**
- * `topicId` rides on an artefact only once the column exists: absent means
- * "topics are not available yet", null means "no topic". Same rule as
- * LibrarySearchResult.topicId, so a client has one thing to branch on.
- */
-function topicIdOf(row: any): { topicId?: string | null } {
-  return row && typeof row === "object" && "topic_id" in row
-    ? { topicId: row.topic_id ?? null }
-    : {};
-}
-
-/** A topic filter only narrows a query when it names one; none/invalid do not. */
-const topicFilterApplies = (filter: CourseFilter | undefined): boolean =>
-  filter?.kind === "course" || filter?.kind === "unfiled";
+// `topicIdOf` and `topicFilterApplies` moved to `data/testMappers.ts` and
+// `data/academic.ts` respectively (monolith lane M1c, step 11), so
+// `data/tests.ts` can read them without importing this file back. Both are
+// imported above; the remaining call sites here are unchanged.
 
 /**
  * Run a write, retrying it without `topic_id` when that column is not there
@@ -437,25 +437,9 @@ const topicFilterApplies = (filter: CourseFilter | undefined): boolean =>
  * reach here is a clear, and clearing a column that does not exist is a no-op.
  * A missing topic must never fail the note/deck/test/listing it rode in on.
  */
-/**
- * Pull a study set id off a create payload, wherever the client put it.
- *
- * Mirrors `resolveCourseIdFromConfigLike`: a set may arrive top-level
- * (`studySetId` / `study_set_id`) or on the nested `config`, and a session must
- * be filed the same way whichever door it came through.
- */
-export function resolveStudySetIdFromConfigLike(payload: any): string | null {
-  const candidates = [
-    payload?.studySetId,
-    payload?.study_set_id,
-    payload?.config?.studySetId,
-    payload?.config?.study_set_id,
-  ];
-  for (const value of candidates) {
-    if (typeof value === "string" && value.trim()) return value.trim();
-  }
-  return null;
-}
+// `resolveStudySetIdFromConfigLike` moved to `data/academic.ts` (monolith lane
+// M1c, step 11) beside its course twin. Re-exported below so
+// `studySetIdFromConfig.test.ts` keeps importing it from this path.
 
 // `writeWithTopicFallback` moved to `data/academic.ts` (monolith lane M1b,
 // step 7): it is the write half of the course/topic filing that module owns,
@@ -593,213 +577,11 @@ async function assertSellerListingUpdateAllowed(
   if (refusal) throw listingStateError(refusal, 403);
 }
 
-/**
- * A source-note title as clients may print it: a non-empty trimmed string, or
- * null. Anything else (undefined, "", a number a bad write left in config)
- * becomes null so no client ever interpolates it into "From undefined".
- */
-export function normalizeSourceNoteTitle(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 200) : null;
-}
-
-/**
- * Where a session came from, resolved once here so no client has to know the
- * config key names. Every field is a string or null — never absent — so
- * "From <title>" renders or does not, and never prints "From undefined".
- *
- * Precedence is note → deck → group: a quiz generated from a note that also
- * carries a groupId is a note quiz, because that is the source a student
- * recognises.
- */
-export function buildTestProvenance(session: any): {
-  noteId: string | null;
-  deckId: string | null;
-  groupId: string | null;
-  title: string | null;
-} {
-  const config = (session?.config && typeof session.config === "object" ? session.config : {}) as any;
-  const noteId = typeof config.sourceNoteId === "string" && config.sourceNoteId ? config.sourceNoteId : null;
-  const deckId = typeof config.sourceDeckId === "string" && config.sourceDeckId ? config.sourceDeckId : null;
-  const groupId = typeof config.groupId === "string" && config.groupId ? config.groupId : null;
-  const title = noteId
-    ? normalizeSourceNoteTitle(config.sourceNoteTitle)
-    : deckId
-      ? normalizeSourceNoteTitle(config.sourceDeckTitle)
-      : groupId
-        ? normalizeSourceNoteTitle(config.groupName)
-        : null;
-  return { noteId, deckId, groupId, title };
-}
-
-/**
- * Correct / incorrect / unanswered for one stored session row, plus the same
- * split by reported confidence. Never throws and never returns undefined: a
- * session with no questions tallies to all zeroes, which a client can render.
- *
- * Unanswered is its own number on purpose — see `tallyTestAttempt`.
- */
-export function buildAttemptTally(session: any) {
-  const questions = Array.isArray(session?.questions) ? session.questions : [];
-  return tallyTestAttempt(
-    questions,
-    coerceRawUserAnswers(session?.user_answers ?? session?.userAnswers, questions) as Record<
-      string,
-      unknown
-    >,
-  );
-}
-
-/**
- * One row of GET /api/v1/tests, as every client reads it.
- *
- * Pure and exported because this shape is a contract, not an implementation
- * detail: mobile's "Available Tests" list reads the FLAT fields and web reads
- * the nested `session`, and a personal test that satisfies only one of them
- * is invisible on the other side.
- */
-export function mapTestListRow(session: any, lean: boolean): any {
-  const result = Array.isArray(session.test_results)
-    ? session.test_results[0]
-    : session.test_results;
-  const questions = Array.isArray(session.questions)
-    ? session.questions
-    : [];
-  const answers = coerceRawUserAnswers(session.user_answers, questions);
-  const answeredCount = Object.keys(answers).length;
-  const sessionStatus = session.status ||
-    (session.end_time ? "completed" : "in_progress");
-
-  // Fold per-answer timings into a sum and a count. Lean responses drop
-  // user_answers, so without these the dashboards cannot compute
-  // "Avg / question" or total study time and render a dash. Answers with
-  // no recorded time are excluded from both, so the client can divide
-  // them directly. Kept as sum+count rather than a pre-divided average so
-  // the client can weight correctly when it aggregates across tests.
-  let timeSpentSeconds = 0;
-  let questionsWithTime = 0;
-  for (const answer of Object.values(answers) as any[]) {
-    const spent = answer?.timeSpentSeconds ?? answer?.time_spent_seconds;
-    if (typeof spent === "number" && Number.isFinite(spent)) {
-      timeSpentSeconds += spent;
-      questionsWithTime++;
-    }
-  }
-
-  if (
-    lean &&
-    (sessionStatus === "paused" || sessionStatus === "in_progress")
-  ) {
-    return {
-      id: session.id,
-      sessionKind: session.session_kind || "test",
-      status: sessionStatus,
-      title:
-        session.title ||
-        session.config?.groupName ||
-        (session.session_kind === "study" ? "Study session" : "Test"),
-      answeredCount,
-      totalQuestions: questions.length,
-      currentQuestionIndex: session.current_question_index || 0,
-      remainingTimeSeconds: session.remaining_time_seconds ?? null,
-      startTime: session.start_time || new Date().toISOString(),
-      updatedAt: session.updated_at || session.start_time || new Date().toISOString(),
-      pausedAt: session.paused_at ?? null,
-      groupId: session.config?.groupId ?? null,
-      sourceNoteId: session.config?.sourceNoteId ?? null,
-      sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
-      provenance: buildTestProvenance(session),
-    };
-  }
-
-  // A launchable test: unfinished and carrying questions — exactly what the
-  // mobile "Available Tests" tab lists.
-  const launchable = !session.end_time && questions.length > 0;
-
-  return {
-    id: session.id,
-    // --- Flat mirror: the "Available Tests" contract ---------------------
-    //
-    // The nested `session` below is what web reads. Mobile reads the FLAT row
-    // — `t.questions`, `t.config`, `t.end_time` — so every personal test was
-    // filtered out before it was ever drawn: its questions sat one level in,
-    // `questions.length` was 0, and a quiz saved from a note appeared nowhere
-    // while "No Tests Available" stayed on screen. Same data, one more shape.
-    //
-    // `questions` is mirrored ONLY for a launchable session; a page of
-    // completed history would otherwise carry every question twice.
-    config: session.config || {},
-    questions: lean || !launchable ? [] : questions,
-    title:
-      session.title ||
-      session.config?.name ||
-      session.config?.title ||
-      null,
-    status: sessionStatus,
-    /** What a client may DO with it, independent of the db status. */
-    availability: launchable
-      ? sessionStatus === "paused"
-        ? "paused"
-        : "available"
-      : session.end_time
-        ? "completed"
-        : "empty",
-    session_kind: session.session_kind || "test",
-    sessionKind: session.session_kind || "test",
-    questionCount: questions.length || session.config?.numberOfQuestions || 0,
-    /** Provenance for a quiz generated from a note (config.sourceNoteId). */
-    sourceNoteId: session.config?.sourceNoteId ?? null,
-    /**
-     * The note's own title, persisted into config at creation and backfilled
-     * on read when absent. The list prints "From <title>" under a note quiz,
-     * so a missing field rendered the literal "From undefined" on device
-     * (build 159). Always a string or null — never absent, never undefined.
-     */
-    sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
-    sourceDeckId: session.config?.sourceDeckId ?? null,
-    sourceDeckTitle: normalizeSourceNoteTitle(session.config?.sourceDeckTitle),
-    sourceJobId: session.config?.sourceJobId ?? null,
-    /** @see buildTestProvenance — one object instead of four config lookups. */
-    provenance: buildTestProvenance(session),
-    start_time: session.start_time ?? null,
-    end_time: session.end_time ?? null,
-    // test_sessions has no `created_at` column: `start_time` (DEFAULT NOW()
-    // on insert) is the row's creation date and what the list sorts by. Named
-    // `created_at` because that is the field shipped clients read.
-    created_at: session.start_time ?? session.updated_at ?? null,
-    updated_at: session.updated_at ?? null,
-    // ---------------------------------------------------------------
-    session: {
-      id: session.id,
-      config: session.config || {},
-      questions: lean ? [] : questions,
-      userAnswers: lean ? {} : answers,
-      currentQuestionIndex: session.current_question_index || 0,
-      startTime: session.start_time
-        ? new Date(session.start_time)
-        : new Date(),
-      endTime: session.end_time
-        ? new Date(session.end_time)
-        : undefined,
-      isOffline: session.is_offline || false,
-      sessionKind: session.session_kind || "test",
-      status: sessionStatus,
-      title: session.title || undefined,
-      updatedAt: session.updated_at || undefined,
-      pausedAt: session.paused_at || undefined,
-      remainingTime: session.remaining_time_seconds ?? undefined,
-    },
-    score: result?.score || 0,
-    totalQuestions:
-      result?.total_questions ||
-      questions.length ||
-      0,
-    correctAnswersCount: result?.correct_answers_count || 0,
-    timeSpentSeconds,
-    questionsWithTime,
-  };
-}
+// `normalizeSourceNoteTitle`, `buildTestProvenance`, `buildAttemptTally` and
+// `mapTestListRow` moved to `data/testMappers.ts` (monolith lane M1c, step 11)
+// so `data/tests.ts` can use them without importing this file back. Imported
+// above and re-exported below: every importer, and the public-surface freeze,
+// sees exactly the same four names.
 
 /**
  * A live community mute (20260908120000) blocks EVERY write into that
@@ -854,12 +636,13 @@ export { isTransientAuthError } from "./data/client";
 export class SupabaseService {
   private supabase;
   private supabaseUrl: string;
-  private static readonly DEFAULT_GROUP_PAGE_SIZE = 20;
-  private static readonly MAX_GROUP_PAGE_SIZE = 50;
+  // DEFAULT_GROUP_PAGE_SIZE / MAX_GROUP_PAGE_SIZE moved to `data/groups.ts`
+  // (monolith lane M1c, step 10) with `getGroups`, their only reader.
   private static readonly DEFAULT_DECK_PAGE_SIZE = 20;
   private static readonly MAX_DECK_PAGE_SIZE = 50;
-  private static readonly DEFAULT_FLASHCARD_PAGE_SIZE = 50;
-  private static readonly MAX_FLASHCARD_PAGE_SIZE = 100;
+  // DEFAULT_FLASHCARD_PAGE_SIZE / MAX_FLASHCARD_PAGE_SIZE moved to
+  // `data/offlineBundles.ts` (monolith lane M1c, step 9) with `getFlashcards`,
+  // their only reader.
   private static readonly DEFAULT_MESSAGE_PAGE_SIZE = 50;
   private static readonly MAX_MESSAGE_PAGE_SIZE = 100;
 
@@ -1404,6 +1187,19 @@ export class SupabaseService {
   // class; list caches are keyed `groups:list:*` and every membership change
   // clears them by pattern alongside the per-group and per-user caches.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 10): the bodies now live in
+  // `data/groups.ts`. `DEFAULT_GROUP_PAGE_SIZE`, `MAX_GROUP_PAGE_SIZE` and
+  // `GROUP_COLUMNS_BASE` moved with them — nothing outside the section read
+  // any of the three.
+  //
+  // Eight of these call a sibling predicate. The `deps` literal is written out
+  // INLINE at those eight call sites, and it MUST stay that way: suites across
+  // `routes/messages.*`, `routes/groups.*`, `supabase.bookmarks.test.ts` and
+  // `storageAccess.test.ts` stub exactly these predicates on a stand-in and
+  // drive the entry point through `SupabaseService.prototype.<m>.call(self, …)`.
+  // An instance field holding the deps reads as `undefined` there, and the
+  // arrows read `this.<method>` at CALL time so a `jest.spyOn` still
+  // intercepts.
   // Group Methods for API Routes
   async getGroups(
     options: {
@@ -1416,170 +1212,24 @@ export class SupabaseService {
       responseProfile?: "compact" | "full";
     } = {},
   ): Promise<Group[]> {
-    const {
-      page = 1,
-      limit = SupabaseService.DEFAULT_GROUP_PAGE_SIZE,
-      search,
-      sortBy = "created_at",
-      sortOrder = "desc",
-      userId,
-      responseProfile = "full",
-    } = options;
-    const profile = this.getResponseProfile(responseProfile);
-    const safeLimit = Math.min(
-      SupabaseService.MAX_GROUP_PAGE_SIZE,
-      Math.max(1, limit),
-    );
-    const safePage = Math.max(1, page);
-    const offset = (safePage - 1) * safeLimit;
-
-    const cacheKey = `groups:list:${safePage}:${safeLimit}:${search || ""}:${sortBy}:${sortOrder}:${userId || ""}:profile:${profile}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // community_surface rides along on BOTH profiles: the chat list
-        // filters boards out of Chat with it (spec §4.5), and the compact
-        // profile is exactly what that list fetches.
-        const baseClause =
-          profile === "compact"
-            ? "id, name, avatar_url, last_message_time, is_archived, community_id"
-            : "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at";
-
-        let memberGroupIds: string[] | null = null;
-        if (userId) {
-          // Only return groups where the user is an active (non-pending) member
-          const { data: memberGroups, error: memberError } = await this.supabase
-            .from("group_members")
-            .select("group_id")
-            .eq("user_id", userId)
-            .eq("pending", false);
-
-          if (memberError) throw memberError;
-
-          memberGroupIds = memberGroups?.map((mg) => mg.group_id) || [];
-          if (memberGroupIds.length === 0) return [];
-        }
-
-        const runList = async (selectClause: string) => {
-          let query = (this.supabase as any)
-            .from("groups")
-            .select(selectClause)
-            .range(offset, offset + safeLimit - 1);
-          if (search) query = query.ilike("name", `%${search}%`);
-          if (memberGroupIds) query = query.in("id", memberGroupIds);
-          return query.order(sortBy, { ascending: sortOrder === "asc" });
-        };
-
-        // The group list is the hottest read in the app: a stale capability
-        // probe must degrade it, never 500 it.
-        let { data, error } = await runList(
-          await groupColumns(this.supabase, baseClause),
-        );
-        if (error && isMissingColumnError(error)) {
-          markGroupCommunitySurfaceMissing();
-          ({ data, error } = await runList(baseClause));
-        }
-        if (error) throw error;
-
-        const groupIds = (data || []).map((item: any) => item.id);
-        const memberCounts: Record<string, number> = {};
-
-        if (groupIds.length > 0) {
-          const { data: memberRows, error: memberCountError } =
-            await this.supabase
-              .from("group_members")
-              .select("group_id")
-              .in("group_id", groupIds);
-
-          if (!memberCountError && memberRows) {
-            memberRows.forEach((row: { group_id: string }) => {
-              memberCounts[row.group_id] =
-                (memberCounts[row.group_id] || 0) + 1;
-            });
-          }
-        }
-
-        // Snake_case row -> `Group`, through the one shared mapper.
-        // `memberCounts` was counted separately above; `|| 0` keeps the
-        // pre-refactor promise that this endpoint always answers a number.
-        return (data || []).map((item: any) =>
-          toServerGroupPayload(item, {
-            memberCounts: { [item.id]: memberCounts[item.id] || 0 },
-          }),
-        ) as Group[];
+    return groupsData.getGroups(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
       },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+      options,
+    );
   }
 
-  /**
-   * Every column a group row carries on the wire. `community_surface` is
-   * appended only once 20260903120000 is applied — pre-migration the column
-   * does not exist and NULL (= board) is the right answer anyway.
-   */
-  private static readonly GROUP_COLUMNS_BASE =
-    "id, name, description, avatar_url, last_message, last_message_time, admin_ids, permissions, parent_id, is_archived, invite_id, course_id, visibility, community_id, created_at";
-
   async getGroupById(groupId: string, userId?: string): Promise<Group | null> {
-    const base = SupabaseService.GROUP_COLUMNS_BASE;
-    if (!userId) {
-      const readOne = (columns: string) =>
-        (this.supabase as any)
-          .from("groups")
-          .select(columns)
-          .eq("id", groupId)
-          .maybeSingle();
-      let { data, error } = await readOne(await groupColumns(this.supabase, base));
-      if (error && isMissingColumnError(error)) {
-        markGroupCommunitySurfaceMissing();
-        ({ data, error } = await readOne(base));
-      }
-      if (error) throw error;
-      if (!data) return null;
-      return toServerGroupPayload(data) as Group;
-    }
-
-    const cacheKey = `group:${groupId}:user:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const readOne = (columns: string) =>
-          (this.supabase as any)
-            .from("groups")
-            .select(columns)
-            .eq("id", groupId)
-            .single();
-        let { data, error } = await readOne(await groupColumns(this.supabase, base));
-        if (error && isMissingColumnError(error)) {
-          markGroupCommunitySurfaceMissing();
-          ({ data, error } = await readOne(base));
-        }
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        // Check if user has active (non-pending) membership
-        if (userId) {
-          const { data: membership, error: memberError } = await this.supabase
-            .from("group_members")
-            .select("user_id, pending")
-            .eq("group_id", groupId)
-            .eq("user_id", userId)
-            .single();
-
-          if (memberError && memberError.code !== "PGRST116") throw memberError;
-          if (!membership || membership.pending === true) return null;
-        }
-
-        // Transform snake_case to camelCase
-        return toServerGroupPayload(data, { viewerId: userId }) as Group;
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return groupsData.getGroupById(this.supabase, groupId, userId);
   }
 
   async createGroup(
@@ -1587,186 +1237,47 @@ export class SupabaseService {
     userId: string,
     memberIds: string[] = [],
   ): Promise<Group> {
-    const discovery = resolveGroupDiscovery({
-      visibility: groupData.visibility,
-      communityId: groupData.communityId,
-    });
-    /**
-     * Which surface this group renders as inside its community. Only
-     * meaningful with a community_id, and only written once the column
-     * exists — pre-migration NULL means board, which is the default anyway,
-     * and 'study_group' is refused at the route with a 503 (spec §3.1).
-     */
-    const surface: "board" | "study_group" | null = discovery.communityId
-      ? groupData.communitySurface === "study_group"
-        ? "study_group"
-        : "board"
-      : null;
-    const baseInsert: Record<string, unknown> = {
-      name: groupData.name,
-      description: groupData.description,
-      avatar_url: groupData.avatarUrl,
-      admin_ids: [userId],
-      permissions: groupData.permissions || {},
-      invite_id: groupData.inviteId,
-      parent_id: groupData.parentId,
-      course_id: groupData.courseId || null,
-      visibility: discovery.visibility,
-      community_id: discovery.communityId,
-      is_archived: false,
-    };
-    const insertGroup = (row: Record<string, unknown>) =>
-      (this.supabase as any).from("groups").insert(row).select().single();
-    const withSurface =
-      surface && (await hasGroupCommunitySurface(this.supabase))
-        ? { ...baseInsert, community_surface: surface }
-        : baseInsert;
-    let { data, error } = await insertGroup(withSurface);
-    if (error && withSurface !== baseInsert && isMissingColumnError(error)) {
-      markGroupCommunitySurfaceMissing();
-      ({ data, error } = await insertGroup(baseInsert));
-    }
-
-    if (error) throw error;
-
-    // If this is a subgroup, add all parent group members to the subgroup
-    const allMemberIds = [userId, ...memberIds];
-
-    if (groupData.parentId) {
-      // Fetch parent group members
-      const { data: parentMembers, error: parentError } = await this.supabase
-        .from("group_members")
-        .select("user_id")
-        .eq("group_id", groupData.parentId);
-
-      if (!parentError && parentMembers) {
-        const parentMemberIds = parentMembers.map((m) => m.user_id);
-        // Add parent members that aren't already in the list
-        for (const parentMemberId of parentMemberIds) {
-          if (!allMemberIds.includes(parentMemberId)) {
-            allMemberIds.push(parentMemberId);
-          }
-        }
-      }
-    }
-
-    // Creator + inherited parent members join immediately; explicitly invited users stay pending until they accept.
-    const explicitInviteSet = new Set(memberIds.filter((id) => id !== userId));
-    const membersToInsert = allMemberIds.map((id) => ({
-      group_id: data.id,
-      user_id: id,
-      pending: explicitInviteSet.has(id),
-    }));
-
-    const { error: memberError } = await this.supabase
-      .from("group_members")
-      .insert(membersToInsert);
-
-    if (memberError) throw memberError;
-
-    // Invalidate caches
-    await cacheService.invalidateUserCache(userId);
-    for (const memberId of memberIds) {
-      await cacheService.invalidateUserCache(memberId);
-    }
-    await cacheService.deletePattern("groups:list:*");
-
-    await this.incrementUserStatsAndAwardBadges(userId, {
-      groupsCreated: 1,
-    }).catch((err) => {
-      logger.warn("Failed to increment groupsCreated gamification", {
-        userId,
-        err,
-      });
-    });
-
-    // Transform snake_case to camelCase. The discovery trio is what we just
-    // asked the database for, so it wins over a row that may predate the
-    // `community_surface` column.
-    return {
-      ...toServerGroupPayload(data, {
-        viewerId: userId,
-        fallback: {
-          visibility: discovery.visibility,
-          communityId: discovery.communityId,
-          communitySurface: surface,
-        },
-      }),
-      visibility: discovery.visibility,
-      communityId: discovery.communityId,
-      communitySurface: data.community_surface ?? surface,
-      pendingInviteUserIds: Array.from(explicitInviteSet),
-    } as Group & { pendingInviteUserIds?: string[] };
+    return groupsData.createGroup(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      groupData,
+      userId,
+      memberIds,
+    );
   }
 
   async updateGroup(
     groupId: string,
     updates: Partial<Group>,
   ): Promise<Group | null> {
-    const dbUpdates: Record<string, unknown> = {};
-    if (updates.name !== undefined) dbUpdates.name = updates.name;
-    if (updates.description !== undefined) dbUpdates.description = updates.description;
-    if (updates.avatarUrl !== undefined) dbUpdates.avatar_url = updates.avatarUrl;
-    if (updates.permissions !== undefined) dbUpdates.permissions = updates.permissions;
-    if (updates.inviteId !== undefined) dbUpdates.invite_id = updates.inviteId;
-    if (updates.parentId !== undefined) dbUpdates.parent_id = updates.parentId;
-    if (updates.isArchived !== undefined) dbUpdates.is_archived = updates.isArchived;
-    if (updates.adminIds !== undefined) dbUpdates.admin_ids = updates.adminIds;
-    if (updates.courseId !== undefined) dbUpdates.course_id = updates.courseId || null;
-    // Phase 3 L discovery fields. A group is private by default; making it
-    // discoverable is an explicit, admin-only act.
-    if (updates.visibility !== undefined || updates.communityId !== undefined) {
-      const discovery = resolveGroupDiscovery({
-        visibility: updates.visibility ?? "private",
-        communityId: updates.communityId,
-      });
-      dbUpdates.visibility = discovery.visibility;
-      dbUpdates.community_id = discovery.communityId;
-    }
-    if (updates.tags !== undefined) dbUpdates.tags = Array.isArray(updates.tags) ? updates.tags : [];
-
-    if (Object.keys(dbUpdates).length === 0) {
-      return this.getGroupById(groupId);
-    }
-
-    const { data, error } = await this.supabase
-      .from("groups")
-      .update(dbUpdates)
-      .eq("id", groupId)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    // Invalidate caches. The board context is keyed outside `group:<id>:*` on
-    // purpose (every send would otherwise blow it), so clear it explicitly —
-    // moving a group between communities changes its surface.
-    await cacheService.invalidateGroupCache(groupId);
-    await cacheService.delete(`board:context:${groupId}`);
-    await cacheService.deletePattern("groups:list:*");
-
-    // Transform snake_case to camelCase
-    return toServerGroupPayload(data) as Group;
+    return groupsData.updateGroup(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      groupId,
+      updates,
+    );
   }
 
   async getGroupByInviteId(inviteId: string): Promise<Group | null> {
-    const { data, error } = await this.supabase
-      .from("groups")
-      .select("*")
-      .eq("invite_id", inviteId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    // Was the one copy that dropped visibility/communityId/communitySurface,
-    // so a group opened from an invite link lost its community surface.
-    return toServerGroupPayload(data) as Group;
+    return groupsData.getGroupByInviteId(this.supabase, inviteId);
   }
 
   /**
@@ -1779,34 +1290,22 @@ export class SupabaseService {
     userId: string,
     options: { pending?: boolean } = {},
   ): Promise<Group | null> {
-    const pending = options.pending !== false;
-
-    const { error: memberError } = await this.supabase
-      .from("group_members")
-      .insert({
-        group_id: groupId,
-        user_id: userId,
-        pending,
-      });
-
-    if (memberError) {
-      if (memberError.code === "23505") {
-        // Already a row — invite again leaves pending as-is; self-join accepts a pending invite.
-        if (!pending) {
-          const accepted = await this.acceptGroupInvite(groupId, userId);
-          if (accepted) return await this.getGroupById(groupId, userId);
-          return await this.getGroupById(groupId, userId);
-        }
-        return null;
-      }
-      throw memberError;
-    }
-
-    await cacheService.invalidateGroupCache(groupId);
-    await cacheService.invalidateUserCache(userId);
-    await cacheService.deletePattern("groups:list:*");
-
-    return pending ? null : await this.getGroupById(groupId, userId);
+    return groupsData.addGroupMember(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      groupId,
+      userId,
+      options,
+    );
   }
 
   /** Bulk invite members as pending (invitee must accept). */
@@ -1818,86 +1317,15 @@ export class SupabaseService {
     alreadyMembers: string[];
     alreadyPending: string[];
   }> {
-    const uniqueIds = [...new Set(userIds.filter(Boolean))];
-    if (!uniqueIds.length) {
-      return { invited: [], alreadyMembers: [], alreadyPending: [] };
-    }
-
-    const { data: existing, error: checkError } = await this.supabase
-      .from("group_members")
-      .select("user_id, pending")
-      .eq("group_id", groupId)
-      .in("user_id", uniqueIds);
-
-    if (checkError) throw checkError;
-
-    const alreadyMembers: string[] = [];
-    const alreadyPending: string[] = [];
-    const existingSet = new Set<string>();
-    for (const row of existing || []) {
-      existingSet.add(row.user_id);
-      if (row.pending === true) alreadyPending.push(row.user_id);
-      else alreadyMembers.push(row.user_id);
-    }
-    const toInvite = uniqueIds.filter((id) => !existingSet.has(id));
-
-    if (toInvite.length) {
-      const { error: insertError } = await this.supabase
-        .from("group_members")
-        .upsert(
-          toInvite.map((user_id) => ({
-            group_id: groupId,
-            user_id,
-            pending: true,
-          })),
-          { onConflict: "group_id,user_id", ignoreDuplicates: true },
-        );
-      if (insertError) throw insertError;
-
-      await cacheService.invalidateGroupCache(groupId);
-      await cacheService.invalidateGlobalCache("groups:list:*");
-      for (const memberId of toInvite) {
-        await cacheService.invalidateUserCache(memberId);
-      }
-    }
-
-    return { invited: toInvite, alreadyMembers, alreadyPending };
+    return groupsData.addGroupMembersBatch(this.supabase, groupId, userIds);
   }
 
   async acceptGroupInvite(groupId: string, userId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from("group_members")
-      .update({ pending: false, joined_at: new Date().toISOString() })
-      .eq("group_id", groupId)
-      .eq("user_id", userId)
-      .eq("pending", true)
-      .select("user_id");
-
-    if (error) throw error;
-    if (!data?.length) return false;
-
-    await cacheService.invalidateGroupCache(groupId);
-    await cacheService.invalidateUserCache(userId);
-    await cacheService.deletePattern("groups:list:*");
-    return true;
+    return groupsData.acceptGroupInvite(this.supabase, groupId, userId);
   }
 
   async declineGroupInvite(groupId: string, userId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", userId)
-      .eq("pending", true)
-      .select("user_id");
-
-    if (error) throw error;
-    if (!data?.length) return false;
-
-    await cacheService.invalidateGroupCache(groupId);
-    await cacheService.invalidateUserCache(userId);
-    await cacheService.deletePattern("groups:list:*");
-    return true;
+    return groupsData.declineGroupInvite(this.supabase, groupId, userId);
   }
 
   async getPendingGroupInvitesForUser(userId: string): Promise<
@@ -1908,48 +1336,18 @@ export class SupabaseService {
       invitedAt?: string;
     }>
   > {
-    const { data, error } = await this.supabase
-      .from("group_members")
-      .select("group_id, joined_at, groups(id, name, avatar_url)")
-      .eq("user_id", userId)
-      .eq("pending", true);
-
-    if (error) throw error;
-
-    return (data || []).map((row: any) => ({
-      groupId: row.group_id,
-      groupName: row.groups?.name || "Group",
-      avatarUrl: row.groups?.avatar_url,
-      invitedAt: row.joined_at,
-    }));
+    return groupsData.getPendingGroupInvitesForUser(this.supabase, userId);
   }
 
   async isGroupMember(groupId: string, userId: string): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from("group_members")
-      .select("user_id, pending")
-      .eq("group_id", groupId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (error && error.code !== "PGRST116") throw error;
-    return !!data && data.pending !== true;
+    return groupsData.isGroupMember(this.supabase, groupId, userId);
   }
 
   async isDmThreadParticipant(
     threadId: string,
     userId: string,
   ): Promise<boolean> {
-    const { data, error } = await this.supabase
-      .from("dm_threads")
-      .select("participant_ids")
-      .eq("id", threadId)
-      .maybeSingle();
-    if (error && error.code !== "PGRST116") throw error;
-    const ids = Array.isArray(data?.participant_ids)
-      ? data!.participant_ids
-      : [];
-    return ids.includes(userId);
+    return groupsData.isDmThreadParticipant(this.supabase, threadId, userId);
   }
 
   /**
@@ -1961,16 +1359,21 @@ export class SupabaseService {
     messageId: string,
     userId: string,
   ): Promise<{ id: string; threadId: string } | null> {
-    const { data, error } = await this.supabase
-      .from("dm_messages")
-      .select("id, thread_id")
-      .eq("id", messageId)
-      .maybeSingle();
-    if (error && error.code !== "PGRST116") throw error;
-    if (!data) return null;
-    const threadId = String((data as any).thread_id);
-    const allowed = await this.isDmThreadParticipant(threadId, userId);
-    return allowed ? { id: String((data as any).id), threadId } : null;
+    return groupsData.getAuthorizedDmMessage(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      messageId,
+      userId,
+    );
   }
 
   /**
@@ -1981,37 +1384,7 @@ export class SupabaseService {
     viewerId: string,
     peerId: string,
   ): Promise<boolean> {
-    if (!viewerId || !peerId || viewerId === peerId) return viewerId === peerId;
-    const threadId = [viewerId, peerId].sort().join("-");
-    const { data: dm, error: dmError } = await this.supabase
-      .from("dm_threads")
-      .select("id")
-      .eq("id", threadId)
-      .maybeSingle();
-    if (dmError && dmError.code !== "PGRST116") throw dmError;
-    if (dm) return true;
-
-    const { data: shared, error: sharedError } = await this.supabase
-      .from("group_members")
-      .select("group_id")
-      .eq("user_id", viewerId)
-      .eq("pending", false);
-    if (sharedError) throw sharedError;
-    const groupIds = (shared || []).map(
-      (row: { group_id: string }) => row.group_id,
-    );
-    if (groupIds.length === 0) return false;
-
-    const { data: peerMembership, error: peerError } = await this.supabase
-      .from("group_members")
-      .select("group_id")
-      .eq("user_id", peerId)
-      .eq("pending", false)
-      .in("group_id", groupIds)
-      .limit(1)
-      .maybeSingle();
-    if (peerError && peerError.code !== "PGRST116") throw peerError;
-    return !!peerMembership;
+    return groupsData.canViewPeerChatAvatar(this.supabase, viewerId, peerId);
   }
 
   /**
@@ -2028,34 +1401,28 @@ export class SupabaseService {
     sender_id: string;
     type: string;
   } | null> {
-    const { data, error } = await this.supabase
-      .from("messages")
-      .select("id, group_id, sender_id, type")
-      .eq("id", messageId)
-      .maybeSingle();
-
-    if (error && error.code !== "PGRST116") throw error;
-    if (!data?.group_id) return null;
-
-    const { data: membership, error: memberError } = await this.supabase
-      .from("group_members")
-      .select("user_id, pending")
-      .eq("group_id", data.group_id)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (memberError && memberError.code !== "PGRST116") throw memberError;
-    if (!membership || membership.pending === true) return null;
-
-    return data;
+    return groupsData.getAuthorizedGroupMessage(
+      this.supabase,
+      messageId,
+      userId,
+    );
   }
 
   async isGroupAdmin(groupId: string, userId: string): Promise<boolean> {
-    const group = await this.getGroupById(groupId);
-    if (!group) return false;
-    return (
-      (group.adminIds || []).includes(userId) ||
-      !!(group.permissions && group.permissions[userId]?.admin)
+    return groupsData.isGroupAdmin(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      groupId,
+      userId,
     );
   }
 
@@ -2065,231 +1432,58 @@ export class SupabaseService {
     targetUserId: string,
     link?: string,
   ): Promise<boolean> {
-    if (!link) return false;
-
-    const groupMatch = link.match(/^\/chat\/([0-9a-f-]{36})$/i);
-    if (groupMatch) {
-      const groupId = groupMatch[1];
-      const group = await this.getGroupById(groupId);
-      if (!group) return false;
-
-      const isAdmin =
-        (group.adminIds || []).includes(requestingUserId) ||
-        !!(group.permissions && group.permissions[requestingUserId]?.admin);
-
-      const requesterIsMember = await this.isGroupMember(
-        groupId,
-        requestingUserId,
-      );
-      if (!requesterIsMember && !isAdmin) return false;
-
-      if (isAdmin) return true;
-
-      return this.isGroupMember(groupId, targetUserId);
-    }
-
-    if (link === "/dashboard" || link.startsWith("/dashboard")) {
-      const { data, error } = await this.supabase
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", targetUserId);
-
-      if (error) throw error;
-      for (const row of data || []) {
-        const group = await this.getGroupById(row.group_id);
-        if ((group?.adminIds || []).includes(requestingUserId)) return true;
-      }
-      return false;
-    }
-
-    return false;
+    return groupsData.canNotifyUser(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      requestingUserId,
+      targetUserId,
+      link,
+    );
   }
 
   async removeGroupMember(
     groupId: string,
     userId: string,
   ): Promise<Group | null> {
-    const group = await this.getGroupById(groupId);
-
-    const { error } = await this.supabase
-      .from("group_members")
-      .delete()
-      .eq("group_id", groupId)
-      .eq("user_id", userId);
-
-    if (error) throw error;
-
-    // Keep admin_ids in sync when an admin leaves or is removed.
-    if (group?.adminIds?.includes(userId)) {
-      const nextAdminIds = group.adminIds.filter((id) => id !== userId);
-      const { error: adminError } = await this.supabase
-        .from("groups")
-        .update({ admin_ids: nextAdminIds })
-        .eq("id", groupId);
-      if (adminError) throw adminError;
-    }
-
-    // Invalidate caches
-    await cacheService.invalidateGroupCache(groupId);
-    await cacheService.invalidateUserCache(userId);
-    await cacheService.deletePattern("groups:list:*");
-
-    return await this.getGroupById(groupId);
+    return groupsData.removeGroupMember(
+      this.supabase,
+      {
+        getGroupById: (id, uid) => this.getGroupById(id, uid),
+        isGroupMember: (id, uid) => this.isGroupMember(id, uid),
+        isDmThreadParticipant: (tid, uid) =>
+          this.isDmThreadParticipant(tid, uid),
+        acceptGroupInvite: (id, uid) => this.acceptGroupInvite(id, uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+      },
+      groupId,
+      userId,
+    );
   }
 
   async deleteGroup(groupId: string): Promise<void> {
-    // Cascade removes members/messages. Intentionally do NOT purge test_sessions:
-    // group id lives in config JSONB with no FK, and product keeps orphan history
-    // for the user's Recent Tests (Group performance simply drops missing groups).
-    const { error } = await this.supabase
-      .from("groups")
-      .delete()
-      .eq("id", groupId);
-
-    if (error) {
-      logger.error(`Error deleting group ${groupId}:`, error);
-      throw error;
-    }
-
-    logger.info(
-      `Group ${groupId} deleted. Members/messages cascaded; test history retained.`,
-    );
-
-    // Invalidate relevant caches
-    await cacheService.invalidateGroupCache(groupId);
-    await cacheService.deletePattern("groups:list:*");
+    return groupsData.deleteGroup(this.supabase, groupId);
   }
 
   async getGroupMembers(
     groupId: string,
     options: { page?: number; limit?: number; requestingUserId?: string } = {},
   ): Promise<User[]> {
-    const { page = 1, limit = 50, requestingUserId } = options;
-    const offset = (page - 1) * limit;
-
-    // SEC-04: partition by viewer; payload stays public-only (phone/settings attached after).
-    const cacheKey = `group:members:${groupId}:${page}:${limit}:${requestingUserId || "anon"}`;
-
-    const publicMembers = await cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data: memberData, error: memberError } = await this.supabase
-          .from("group_members")
-          .select("user_id")
-          .eq("group_id", groupId)
-          .eq("pending", false)
-          .range(offset, offset + limit - 1);
-
-        if (memberError) {
-          logger.error("Error fetching group members:", memberError);
-          throw memberError;
-        }
-
-        if (!memberData || memberData.length === 0) {
-          return [];
-        }
-
-        const userIds = memberData.map((m) => m.user_id);
-        const { data: profileData, error: profileError } = await this.supabase
-          .from("profiles")
-          .select("id, name, username, avatar_url, points, stats, badges")
-          .in("id", userIds);
-
-        if (profileError) {
-          logger.error("Error fetching member profiles:", profileError);
-          throw profileError;
-        }
-
-        return (profileData || []).map((profile: any) => ({
-          id: profile.id,
-          name: profile.name,
-          username: profile.username,
-          avatarUrl: profile.avatar_url,
-          points: profile.points || 0,
-          stats: profile.stats || {},
-          badges: profile.badges || [],
-        }));
-      },
-      { ttl: 300 },
-    );
-
-    if (!requestingUserId) return publicMembers as User[];
-
-    const selfInPage = publicMembers.some(
-      (m: any) => m.id === requestingUserId,
-    );
-    if (!selfInPage) return publicMembers as User[];
-
-    const { data: selfProfile, error: selfError } = await this.supabase
-      .from("profiles")
-      .select("phone, settings")
-      .eq("id", requestingUserId)
-      .maybeSingle();
-
-    if (selfError) {
-      logger.error("Error fetching self member profile:", selfError);
-      throw selfError;
-    }
-
-    return (publicMembers as User[]).map((member: any) => {
-      if (member.id !== requestingUserId) return member;
-      return {
-        ...member,
-        phoneNumber: selfProfile?.phone,
-        settings: selfProfile?.settings,
-      };
-    });
+    return groupsData.getGroupMembers(this.supabase, groupId, options);
   }
 
   async getGroupStats(groupId: string): Promise<any> {
-    const cacheKey = `group:stats:${groupId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get member count
-        const { count: memberCount, error: memberError } = await this.supabase
-          .from("group_members")
-          .select("user_id", { count: "exact", head: true })
-          .eq("group_id", groupId);
-
-        // Get message count
-        const { count: messageCount, error: messageError } = await this.supabase
-          .from("messages")
-          .select("id", { count: "exact", head: true })
-          .eq("group_id", groupId);
-
-        // Get recent activity
-        const { data: recentMessages, error: recentError } = await this.supabase
-          .from("messages")
-          .select("timestamp")
-          .eq("group_id", groupId)
-          .is("removed_at", null)
-          .eq("is_archived", false)
-          .order("timestamp", { ascending: false })
-          .limit(10);
-
-        if (memberError || messageError || recentError) {
-          throw memberError || messageError || recentError;
-        }
-
-        const lastActivity =
-          recentMessages && recentMessages.length > 0
-            ? new Date(recentMessages[0].timestamp)
-            : null;
-
-        return {
-          groupId,
-          memberCount: memberCount || 0,
-          messageCount: messageCount || 0,
-          lastActivity,
-          isActive:
-            lastActivity &&
-            Date.now() - lastActivity.getTime() < 7 * 24 * 60 * 60 * 1000, // Active if activity in last 7 days
-        };
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return groupsData.getGroupStats(this.supabase, groupId);
   }
 
   // ===========================================================================
@@ -4184,6 +3378,20 @@ export class SupabaseService {
   // target is the plain `(user_id, bundle_id)` unique index, so re-saving a
   // bundle replaces the snapshot rather than accumulating copies.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 9): the bodies now live in
+  // `data/offlineBundles.ts`. Only the first three methods are really about
+  // bundles — the deck access gate, the flashcard row layer and the
+  // per-question stats drifted under this banner years ago and move as one
+  // unit so the plan's step boundary stays honest. See that module's banner.
+  //
+  // Several of these methods call each other. The `deps` literal is written
+  // out INLINE at all nine call sites that need it, and it MUST stay that way.
+  // `supabase.resetDeck.test.ts`, `learningEvents.test.ts` and
+  // `supabase.deckWithCards.test.ts` stub these methods on a bare stand-in and
+  // drive the entry point through `SupabaseService.prototype.<m>.call(self, …)`;
+  // an instance field holding the deps reads as `undefined` there, and the
+  // arrows read `this.<method>` at CALL time so a `jest.spyOn` still
+  // intercepts.
   // Offline bundle persistence
   async getOfflineBundles(
     userId: string,
@@ -4192,126 +3400,28 @@ export class SupabaseService {
       courseFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
-    let query = this.supabase
-      .from("offline_bundles")
-      .select("*")
-      .eq("user_id", userId)
-      .order("downloaded_at", { ascending: false });
-    query = applyCourseFilter(query, "course_id", options.courseFilter);
-
-    const { data, error } = await query;
-
-    if (error) {
-      logger.error("Error fetching offline bundles:", { error, userId });
-      throw error;
-    }
-
-    return data || [];
+    return offlineBundlesData.getOfflineBundles(this.supabase, userId, options);
   }
 
   async saveOfflineBundle(userId: string, bundle: any): Promise<void> {
-    // Course lives in BOTH the column (filterable) and config.courseId (the
-    // shape the offline runtime already round-trips).
-    const courseId = resolveCourseIdFromConfigLike(bundle);
-    const config = { ...(bundle.config || {}) };
-    if (courseId) config.courseId = courseId;
-    else if (bundle.courseId === null) delete config.courseId;
-    const insert = {
-      user_id: userId,
-      bundle_id: bundle.bundleId,
-      config,
-      course_id: courseId,
-      questions: bundle.questions || [],
-      group_name: bundle.groupName || null,
-      display_name: bundle.displayName ?? null,
-      downloaded_at: bundle.downloadedAt || new Date().toISOString(),
-    };
-
-    const { data, error } = await this.supabase
-      .from("offline_bundles")
-      .upsert(insert, { onConflict: "user_id,bundle_id" });
-
-    if (error) {
-      logger.error("Error saving offline bundle:", {
-        error,
-        userId,
-        bundleId: bundle.bundleId,
-      });
-      throw error;
-    }
-
-    return;
+    return offlineBundlesData.saveOfflineBundle(this.supabase, userId, bundle);
   }
 
   async deleteOfflineBundle(userId: string, bundleId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("offline_bundles")
-      .delete()
-      .eq("user_id", userId)
-      .eq("bundle_id", bundleId);
-
-    if (error) {
-      logger.error("Error deleting offline bundle:", {
-        error,
-        userId,
-        bundleId,
-      });
-      throw error;
-    }
-
-    return;
+    return offlineBundlesData.deleteOfflineBundle(
+      this.supabase,
+      userId,
+      bundleId,
+    );
   }
 
   async getAccessibleDeckIds(userId: string): Promise<string[]> {
-    const [
-      { data: ownedDecks, error: ownedError },
-      { data: collaboratorRows, error: collabError },
-    ] = await Promise.all([
-      this.supabase.from("decks").select("id").eq("user_id", userId),
-      this.supabase
-        .from("deck_collaborators")
-        .select("deck_id")
-        .eq("user_id", userId),
-    ]);
-
-    if (ownedError) throw ownedError;
-    if (collabError) throw collabError;
-
-    const ids = new Set<string>();
-    for (const deck of ownedDecks || []) ids.add(deck.id);
-    for (const row of collaboratorRows || []) {
-      if (row.deck_id) ids.add(row.deck_id);
-    }
-    return Array.from(ids);
+    return offlineBundlesData.getAccessibleDeckIds(this.supabase, userId);
   }
 
   /** Internal fetch — no access check. */
   private async fetchDeckRecord(deckId: string): Promise<any | null> {
-    // study_set_id: this record is what a deck read is answered from, and a
-    // projection that omits the column reports every deck as unfiled.
-    const BASE =
-      "id, name, description, user_id, is_shared, course_id, study_set_id, created_at";
-    const run = (withCover: boolean) =>
-      this.supabase
-        .from("decks")
-        .select(withCover ? `${BASE}, cover_path` : BASE)
-        .eq("id", deckId)
-        .maybeSingle();
-
-    // cover_path is projected only while it exists — naming a column the
-    // migration has not added yet 42703s EVERY deck read, and deck reads gate
-    // access checks, so that would take the whole flashcards feature down.
-    let { data, error }: { data: any; error: any } = await run(true);
-    if (error && isMissingCoverPathColumn(error)) {
-      ({ data, error } = await run(false));
-    }
-
-    if (error) throw error;
-    if (!data) return null;
-    return {
-      ...data,
-      coverPath: normalizeCoverRef((data as any).cover_path ?? null),
-    };
+    return offlineBundlesData.fetchDeckRecord(this.supabase, deckId);
   }
 
   async verifyDeckAccess(
@@ -4319,67 +3429,73 @@ export class SupabaseService {
     deckId: string,
     level: "read" | "edit" | "owner" = "read",
   ): Promise<boolean> {
-    const deck = await this.fetchDeckRecord(deckId);
-    if (!deck) return false;
-
-    const isOwner = deck.user_id === userId;
-    if (level === "owner") return isOwner;
-    if (isOwner) return true;
-
-    const { data: collab, error: collabError } = await this.supabase
-      .from("deck_collaborators")
-      .select("role")
-      .eq("deck_id", deckId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (collabError) throw collabError;
-
-    if (collab) {
-      if (level === "read") return true;
-      if (level === "edit")
-        return collab.role === "editor" || collab.role === "owner";
-    }
-
-    if (level === "read" && deck.is_shared) return true;
-    return false;
+    return offlineBundlesData.verifyDeckAccess(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+      deckId,
+      level,
+    );
   }
 
   async getDeckForUser(deckId: string, userId: string): Promise<any | null> {
-    const cacheKey = `deck:${deckId}:user:${userId}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached !== null) return cached;
-
-    const hasAccess = await this.verifyDeckAccess(userId, deckId, "read");
-    if (!hasAccess) return null;
-
-    const deck = await this.fetchDeckRecord(deckId);
-    if (deck) await cacheService.set(cacheKey, deck, 1800);
-    return deck;
+    return offlineBundlesData.getDeckForUser(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async getFlashcardForUser(
     flashcardId: string,
     userId: string,
   ): Promise<any | null> {
-    const cacheKey = `flashcard:${flashcardId}:user:${userId}`;
-    const cached = await cacheService.get<any>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("id", flashcardId)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    const hasAccess = await this.verifyDeckAccess(userId, data.deck_id, "read");
-    if (!hasAccess) return null;
-
-    await cacheService.set(cacheKey, data, 1800);
-    return data;
+    return offlineBundlesData.getFlashcardForUser(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardId,
+      userId,
+    );
   }
 
   async getFlashcards(
@@ -4391,85 +3507,34 @@ export class SupabaseService {
       responseProfile?: "compact" | "full";
     },
   ): Promise<any[]> {
-    const {
-      page = 1,
-      limit = SupabaseService.DEFAULT_FLASHCARD_PAGE_SIZE,
-      responseProfile = "full",
-    } = options || {};
-    const profile = this.getResponseProfile(responseProfile);
-    const safeLimit = Math.min(
-      SupabaseService.MAX_FLASHCARD_PAGE_SIZE,
-      Math.max(1, limit),
+    return offlineBundlesData.getFlashcards(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+      deckId,
+      options,
     );
-    const safePage = Math.max(1, page);
-    const offset = (safePage - 1) * safeLimit;
-
-    const selectClause =
-      profile === "compact"
-        ? "id, deck_id, type, front, image_url, tags, created_at, version, updated_at"
-        : "id, deck_id, type, front, back, cloze_text, image_url, occlusion_data, srs_data, tags, created_at, version, updated_at";
-
-    const accessibleDeckIds = await this.getAccessibleDeckIds(userId);
-
-    if (accessibleDeckIds.length === 0) {
-      return [];
-    }
-
-    let query = this.supabase
-      .from("flashcards")
-      .select(selectClause)
-      .in("deck_id", accessibleDeckIds)
-      .order("created_at", { ascending: false });
-
-    if (deckId) {
-      if (!accessibleDeckIds.includes(deckId)) {
-        return [];
-      }
-      query = query.eq("deck_id", deckId);
-    }
-
-    const { data, error } = await query.range(offset, offset + safeLimit - 1);
-
-    if (error) throw error;
-
-    return data || [];
   }
 
   async getFlashcard(flashcardId: string): Promise<any | null> {
-    const cacheKey = `flashcard:${flashcardId}`;
-    const cached = await cacheService.get<any>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("id", flashcardId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return offlineBundlesData.getFlashcard(this.supabase, flashcardId);
   }
 
   async getFlashcardComments(flashcardId: string): Promise<any[]> {
-    const cacheKey = `flashcard_comments:${flashcardId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("flashcard_comments")
-      .select("*")
-      .eq("flashcard_id", flashcardId)
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 300);
-    return data;
+    return offlineBundlesData.getFlashcardComments(this.supabase, flashcardId);
   }
 
   async addFlashcardComment(
@@ -4477,16 +3542,12 @@ export class SupabaseService {
     userId: string,
     comment: string,
   ): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("flashcard_comments")
-      .insert({ flashcard_id: flashcardId, user_id: userId, comment })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await cacheService.delete(`flashcard_comments:${flashcardId}`);
-    return data;
+    return offlineBundlesData.addFlashcardComment(
+      this.supabase,
+      flashcardId,
+      userId,
+      comment,
+    );
   }
 
   async reviewFlashcard(
@@ -4501,116 +3562,27 @@ export class SupabaseService {
       occurredAt?: string | null;
     } = {},
   ): Promise<any | null> {
-    const existing = await this.getFlashcardForUser(flashcardId, userId);
-    if (!existing) return null;
-
-    const canEdit = await this.verifyDeckAccess(
-      userId,
-      existing.deck_id,
-      "edit",
-    );
-    if (!canEdit) return null;
-
-    const prefs = await this.getUserPreferences(userId);
-    const settings = normalizeUserSettings(
-      prefs?.preferences ?? prefs?.settings ?? {},
-    );
-    const newSrsData = calculateFsrsData(existing.srs_data, rating, {
-      maxInterval: getSrsMaxInterval(settings.study),
-    });
-
-    const expectedVersion =
-      options.expectedVersion != null &&
-      Number.isFinite(Number(options.expectedVersion))
-        ? Number(options.expectedVersion)
-        : Number(existing.version) || 1;
-    const updated = await this.updateFlashcard(
+    return offlineBundlesData.reviewFlashcard(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
       flashcardId,
-      { srsData: newSrsData },
       userId,
-      { expectedVersion },
+      rating,
+      options,
     );
-
-    // learning_events: card_reviewed with the FSRS state before/after. Only
-    // after the CAS write landed (a 409 throws above and emits nothing).
-    // recordLearningEvent never throws — the review never fails on telemetry.
-    if (updated) {
-      // One round trip for BOTH the course id (telemetry, as before) and the
-      // deck owner (needed by the two Phase 3 writes below) — same query count
-      // this path had previously.
-      const deckMeta = await lookupDeckOwnerAndCourse(this, existing.deck_id);
-
-      await recordLearningEvent(
-        this,
-        buildCardReviewedEvent({
-          userId,
-          flashcardId,
-          deckId: existing.deck_id,
-          courseId: deckMeta.courseId,
-          rating,
-          srsBefore: existing.srs_data ?? null,
-          srsAfter: updated.srs_data ?? newSrsData,
-          surface: options.surface ?? "api",
-          occurredAt: options.occurredAt ?? null,
-        }),
-      );
-
-      // Keep the mastery graph's card-side numbers (due counts, maturity)
-      // moving with reviews, not only test submissions. The service debounces
-      // (30s), so a 60-card session costs a couple of refreshes, and
-      // refresh() never throws — a stale graph must not fail a review.
-      try {
-        const { getTopicMasteryService } = await import("./topicMastery");
-        getTopicMasteryService(this).refreshAsync(userId);
-      } catch {
-        /* mastery refresh is best-effort */
-      }
-
-      // Phase 3 M + O — "this person studied this deck", at most once per
-      // window per (deck, user).
-      //
-      // This is the hottest path in the app: it fires on EVERY graded card, so
-      // a realistic session is 20-100 calls of which exactly one is useful.
-      // record_deck_study is idempotent (it counts distinct people, not
-      // sessions), so an unguarded call would be correct but would burn a
-      // round trip per card. The cache key is set only AFTER the work resolves,
-      // so a transient failure retries on the next card instead of being
-      // suppressed for the whole window.
-      if (deckMeta.ownerId && deckMeta.ownerId !== userId) {
-        const studyKey = `deck_study:${existing.deck_id}:${userId}`;
-        void (async () => {
-          try {
-            if (await cacheService.get(studyKey)) return;
-            // supabase-js RESOLVES on a PostgREST/Postgres error rather than
-            // rejecting, so the result must be inspected. Without this the
-            // catch below never fires, the key is stamped anyway, and the
-            // "transient failures self-heal on the next card" promise in the
-            // comment above is silently false for a full 6 hours.
-            const { error: studyError } = await this.supabase.rpc("record_deck_study", {
-              p_deck_id: existing.deck_id,
-              p_user_id: userId,
-            });
-            if (studyError) throw studyError;
-            const { getLearningConnectionsService } = await import("./learningConnections");
-            await getLearningConnectionsService(this).record({
-              // The deck's OWNER is the actor — their deck taught someone.
-              // `userId` here is the STUDIER and is the beneficiary; passing it
-              // as actorId would invert the metric.
-              actorId: deckMeta.ownerId as string,
-              beneficiaryId: userId,
-              kind: "deck_collaborated",
-              objectType: "deck",
-              objectId: existing.deck_id,
-              courseId: deckMeta.courseId,
-            });
-            await cacheService.set(studyKey, 1, 6 * 60 * 60);
-          } catch {
-            /* best-effort: a counter must never fail a review */
-          }
-        })();
-      }
-    }
-    return updated;
   }
 
   async updateFlashcard(
@@ -4627,100 +3599,52 @@ export class SupabaseService {
     userId?: string,
     options: { expectedVersion?: number } = {},
   ): Promise<any | null> {
-    const existing = userId
-      ? await this.getFlashcardForUser(flashcardId, userId)
-      : await this.getFlashcard(flashcardId);
-    if (!existing) return null;
-    if (userId) {
-      const canEdit = await this.verifyDeckAccess(
-        userId,
-        existing.deck_id,
-        "edit",
-      );
-      if (!canEdit) return null;
-    }
-
-    // Build update object with only defined fields.
-    // CLOZE rows require front/back NULL (check_flashcard_fields); clients often
-    // send front:'' which must not be written as an empty string.
-    const updateData: any = buildFlashcardUpdateData(existing.type, updates);
-
-    // If no fields to update, just return the current flashcard
-    if (Object.keys(updateData).length === 0) {
-      return existing;
-    }
-
-    const expectedVersion =
-      options.expectedVersion != null
-        ? Number(options.expectedVersion)
-        : Number(existing.version) || 1;
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .update(updateData)
-      .eq("id", flashcardId)
-      .eq("version", expectedVersion)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      logger.error("Error updating flashcard:", {
-        error,
-        flashcardId,
-        updates,
-      });
-      throw new Error(error.message || "Failed to update flashcard");
-    }
-
-    if (!data) {
-      const current = userId
-        ? await this.getFlashcardForUser(flashcardId, userId)
-        : await this.getFlashcard(flashcardId);
-      throw new VersionConflictError(
-        "Flashcard was updated by another request. Retry the review.",
-        current,
-      );
-    }
-
-    // Update cache and invalidate deck cache
-    await cacheService.set(`flashcard:${flashcardId}`, data, 1800);
-    if (userId)
-      await cacheService.delete(`flashcard:${flashcardId}:user:${userId}`);
-    await cacheService.deletePattern(`flashcards:*`);
-
-    return data;
+    return offlineBundlesData.updateFlashcard(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardId,
+      updates,
+      userId,
+      options,
+    );
   }
 
   async deleteFlashcard(
     flashcardId: string,
     userId?: string,
   ): Promise<boolean> {
-    const flashcard = userId
-      ? await this.getFlashcardForUser(flashcardId, userId)
-      : await this.getFlashcard(flashcardId);
-    if (!flashcard) return false;
-    if (userId) {
-      const canEdit = await this.verifyDeckAccess(
-        userId,
-        flashcard.deck_id,
-        "edit",
-      );
-      if (!canEdit) return false;
-    }
-
-    const { error } = await this.supabase
-      .from("flashcards")
-      .delete()
-      .eq("id", flashcardId);
-
-    if (error) throw error;
-
-    // Clear caches
-    await cacheService.delete(`flashcard:${flashcardId}`);
-    await cacheService.deletePattern(`flashcards:*`);
-
-    return true;
+    return offlineBundlesData.deleteFlashcard(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardId,
+      userId,
+    );
   }
 
   /**
@@ -4728,79 +3652,28 @@ export class SupabaseService {
    * render "Questions to review" even when lean test history omits questions.
    */
   private async attachQuestionStatStems(rows: any[]): Promise<any[]> {
-    if (!rows.length) return rows;
-    const questionIds = [
-      ...new Set(
-        rows
-          .map((row) => row?.question_id || row?.questionId)
-          .filter((id): id is string => typeof id === "string" && !!id),
-      ),
-    ];
-    if (!questionIds.length) return rows;
-
-    const { data: messages, error } = await this.supabase
-      .from("messages")
-      .select("id, group_id, text, question_data, groups:group_id(name)")
-      .in("id", questionIds);
-
-    if (error) {
-      logger.warn("Failed to attach question stems for user stats", { error });
-      return rows;
-    }
-
-    const byId = new Map<string, any>();
-    (messages || []).forEach((msg: any) => {
-      if (msg?.id) byId.set(msg.id, msg);
-    });
-
-    return rows.map((row) => {
-      const questionId = row?.question_id || row?.questionId;
-      const msg = questionId ? byId.get(questionId) : null;
-      if (!msg) return row;
-      const qd =
-        msg.question_data && typeof msg.question_data === "object"
-          ? msg.question_data
-          : {};
-      const stem =
-        (typeof qd.questionStem === "string" && qd.questionStem) ||
-        (typeof qd.question === "string" && qd.question) ||
-        (typeof qd.text === "string" && qd.text) ||
-        (typeof msg.text === "string" && msg.text) ||
-        null;
-      const groupProfile = Array.isArray(msg.groups)
-        ? msg.groups[0]
-        : msg.groups;
-      const groupName =
-        (typeof groupProfile?.name === "string" && groupProfile.name) || null;
-      return {
-        ...row,
-        question_stem: stem,
-        group_id: msg.group_id || row.group_id || null,
-        group_name: groupName,
-      };
-    });
+    return offlineBundlesData.attachQuestionStatStems(this.supabase, rows);
   }
 
   async getUserQuestionStats(userId: string): Promise<any[]> {
-    const cacheKey = `user-stats:${userId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    let rows: any[];
-    if (cached !== null && cached !== undefined) {
-      rows = Array.isArray(cached) ? cached : [];
-    } else {
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .select("*")
-        .eq("user_id", userId)
-        .order("last_attempted", { ascending: false });
-
-      if (error) throw error;
-
-      rows = Array.isArray(data) ? data : [];
-      await cacheService.set(cacheKey, rows, 1800); // 30 minutes
-    }
-
-    return this.attachQuestionStatStems(rows);
+    return offlineBundlesData.getUserQuestionStats(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+    );
   }
 
   async updateUserQuestionStats(
@@ -4812,86 +3685,23 @@ export class SupabaseService {
       last_attempted?: Date;
     },
   ): Promise<any> {
-    // Check if stats exist
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_question_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("question_id", questionId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    let result;
-    if (existing) {
-      // Update existing stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .update({
-          correct_attempts:
-            stats.correct_attempts !== undefined
-              ? stats.correct_attempts
-              : existing.correct_attempts,
-          incorrect_attempts:
-            stats.incorrect_attempts !== undefined
-              ? stats.incorrect_attempts
-              : existing.incorrect_attempts,
-          last_attempted: stats.last_attempted || existing.last_attempted,
-        })
-        .eq("user_id", userId)
-        .eq("question_id", questionId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    } else {
-      // Create new stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .insert({
-          user_id: userId,
-          question_id: questionId,
-          correct_attempts: stats.correct_attempts || 0,
-          incorrect_attempts: stats.incorrect_attempts || 0,
-          last_attempted: stats.last_attempted || new Date(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    }
-
-    // Invalidate both cache key shapes used by summary + dedicated routes.
-    await cacheService.delete(`user-stats:${userId}`);
-    await cacheService.delete(`user:question-stats:${userId}`);
-
-    return result;
+    return offlineBundlesData.updateUserQuestionStats(
+      this.supabase,
+      userId,
+      questionId,
+      stats,
+    );
   }
 
   async getUserQuestionStat(
     userId: string,
     questionId: string,
   ): Promise<any | null> {
-    const cacheKey = `user-stat:${userId}:${questionId}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached !== null) return cached as any;
-
-    const { data, error } = await this.supabase
-      .from("user_question_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("question_id", questionId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return offlineBundlesData.getUserQuestionStat(
+      this.supabase,
+      userId,
+      questionId,
+    );
   }
 
   async upsertUserQuestionStat(
@@ -4903,98 +3713,34 @@ export class SupabaseService {
       lastAttempted?: Date;
     },
   ): Promise<any> {
-    // Check if stats exist
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_question_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("question_id", questionId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    let result;
-    if (existing) {
-      // Update existing stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .update({
-          correct_attempts:
-            stats.correctAttempts !== undefined
-              ? stats.correctAttempts
-              : existing.correct_attempts,
-          incorrect_attempts:
-            stats.incorrectAttempts !== undefined
-              ? stats.incorrectAttempts
-              : existing.incorrect_attempts,
-          last_attempted: stats.lastAttempted || existing.last_attempted,
-        })
-        .eq("user_id", userId)
-        .eq("question_id", questionId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    } else {
-      // Create new stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .insert({
-          user_id: userId,
-          question_id: questionId,
-          correct_attempts: stats.correctAttempts || 0,
-          incorrect_attempts: stats.incorrectAttempts || 0,
-          last_attempted: stats.lastAttempted || new Date(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    }
-
-    // Invalidate both cache key shapes used by summary + dedicated routes.
-    await cacheService.delete(`user-stats:${userId}`);
-    await cacheService.delete(`user:question-stats:${userId}`);
-
-    return result;
+    return offlineBundlesData.upsertUserQuestionStat(
+      this.supabase,
+      userId,
+      questionId,
+      stats,
+    );
   }
 
   async resetDeckStatistics(deckId: string, userId: string): Promise<any> {
-    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
-    if (!canEdit) throw new Error("Deck not found or access denied");
-
-    // clear srs_data on all cards in deck so they appear new again
-    const { error: cardError } = await this.supabase
-      .from("flashcards")
-      .update({ srs_data: {} })
-      .eq("deck_id", deckId);
-
-    if (cardError) throw cardError;
-
-    // Reviews read the card (and its version) through the per-card caches
-    // (`flashcard:{id}` and `flashcard:{id}:user:{userId}`). The bulk update
-    // above just changed every card underneath those entries, so a review
-    // graded after a reset would validate against a stale version and be
-    // dropped. Purge each card's cache entries so the next read is fresh.
-    const { data: deckCards, error: deckCardsError } = await this.supabase
-      .from("flashcards")
-      .select("id")
-      .eq("deck_id", deckId);
-    if (deckCardsError) throw deckCardsError;
-    await Promise.all(
-      ((deckCards || []) as Array<{ id: string }>).flatMap((card) => [
-        cacheService.delete(`flashcard:${card.id}`),
-        cacheService.deletePattern(`flashcard:${card.id}:user:*`),
-      ]),
+    return offlineBundlesData.resetDeckStatistics(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
     );
-
-    // also invalidate any related cache entries
-    await cacheService.deletePattern(`flashcards:*`);
-    await cacheService.delete(`deck:${deckId}`);
-
-    return { success: true };
   }
 
   // ===========================================================================
@@ -5835,6 +4581,20 @@ export class SupabaseService {
   // `getTestById` makes it inside its loader safely because its cache key is
   // per-user (see the notifications banner above for the version that was not).
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 11): the bodies now live in
+  // `data/tests.ts`, and the pure row->DTO shapes they share with this file
+  // (`normalizeSourceNoteTitle`, `buildTestProvenance`, `buildAttemptTally`,
+  // `mapTestListRow`, `topicIdOf`) moved to `data/testMappers.ts`, which this
+  // file imports and re-exports so no importer and no export name changes.
+  //
+  // Fifteen of these call a sibling or a method still in the monolith. The
+  // `deps` literal is written out INLINE at those fifteen call sites, and it
+  // MUST stay that way: `routes/tests.*`, `testProvenance.test.ts`,
+  // `testDraftLifecycle.test.ts` and `learningEvents.test.ts` stub exactly
+  // these on a stand-in and drive the entry point through
+  // `SupabaseService.prototype.<m>.call(self, …)`. An instance field holding
+  // the deps reads as `undefined` there, and the arrows read `this.<method>`
+  // at CALL time so a `jest.spyOn` still intercepts.
   // Test Methods for API Routes
   async getUserTests(
     userId: string,
@@ -5863,232 +4623,41 @@ export class SupabaseService {
       studySetId?: string;
     } = {},
   ): Promise<{ tests: any[]; total: number }> {
-    const {
-      page = 1,
-      limit = 20,
-      status,
-      courseFilter,
-      topicFilter,
-      lean = false,
-      sort = "newest",
-      from,
-      to,
-      studySetId,
-    } = options;
-    const offset = (page - 1) * limit;
-    const sortKey = sort || "newest";
-    const fromKey = from || "";
-    const toKey = to || "";
-
-    // studySetId is part of the key: without it a filtered page and an
-    // unfiltered one would share a cache entry and serve each other's rows.
-    const cacheKey = `tests:${userId}:${page}:${limit}:${status || ""}:course:${courseFilterKey(courseFilter)}:topic:${courseFilterKey(topicFilter)}:set:${studySetId || ""}:${lean ? "lean" : "full"}:${sortKey}:${fromKey}:${toKey}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Completed lean history only needs scores + config for charts, so omit
-        // the questions so all-time pagination stays payload-light. user_answers
-        // IS read, because the dashboard's "Avg / question" and total study time
-        // are derived from per-answer timings — but it is folded into two numbers
-        // below and never sent to the client, so the response stays lean.
-        const completedLean = lean && status === "completed";
-        const selectCols = lean
-          ? `
-          id,
-          start_time,
-          end_time,
-          is_offline,
-          config,
-          course_id,
-          status,
-          session_kind,
-          current_question_index,
-          remaining_time_seconds,
-          paused_at,
-          updated_at,
-          title,
-          ${studySetId ? "study_set_id," : ""}
-          ${completedLean ? "" : "questions,"}
-          user_answers,
-          test_results (
-            score,
-            correct_answers_count,
-            total_questions
-          )
-        `
-          : `
-          *,
-          test_results (
-            score,
-            correct_answers_count,
-            total_questions
-          )
-        `;
-
-        let query = this.supabase
-          .from("test_sessions")
-          .select(selectCols, { count: "exact" })
-          .eq("user_id", userId);
-
-        if (status === "completed") {
-          query = query.eq("status", "completed");
-        } else if (status === "paused") {
-          query = query.eq("status", "paused");
-        } else if (status === "in_progress") {
-          query = query.in("status", ["in_progress", "paused"]);
-        } else if (status === "not_started") {
-          query = query.is("start_time", null);
-        } else if (status === "abandoned") {
-          query = query.eq("status", "abandoned");
-        }
-
-        query = applyCourseFilter(query, "course_id", courseFilter);
-        query = applyCourseFilter(query, "topic_id", topicFilter);
-        if (studySetId) {
-          query = query.eq("study_set_id", studySetId);
-        }
-
-        if (from) {
-          query = query.gte("start_time", from);
-        }
-        if (to) {
-          query = query.lte("start_time", to);
-        }
-
-        const orderByUpdated =
-          status === "paused" || status === "in_progress";
-        if (sortKey === "oldest") {
-          query = query.order(
-            orderByUpdated ? "updated_at" : "start_time",
-            { ascending: true },
-          );
-        } else if (sortKey === "highestScore") {
-          // Prefer score from joined test_results; fall back below if PostgREST rejects the order.
-          query = query
-            .order("score", {
-              referencedTable: "test_results",
-              ascending: false,
-              nullsFirst: false,
-            })
-            .order("start_time", { ascending: false });
-        } else {
-          query = query.order(
-            orderByUpdated ? "updated_at" : "start_time",
-            { ascending: false },
-          );
-        }
-
-        let { data, error, count } = await query.range(
-          offset,
-          offset + limit - 1,
-        );
-
-        if (error && sortKey === "highestScore") {
-          logger.warn("highestScore order failed; falling back to newest", {
-            error: error.message,
-          });
-          let fallback = this.supabase
-            .from("test_sessions")
-            .select(selectCols, { count: "exact" })
-            .eq("user_id", userId);
-          if (status === "completed") fallback = fallback.eq("status", "completed");
-          else if (status === "paused") fallback = fallback.eq("status", "paused");
-          else if (status === "in_progress") {
-            fallback = fallback.in("status", ["in_progress", "paused"]);
-          } else if (status === "not_started")
-            fallback = fallback.is("start_time", null);
-          else if (status === "abandoned")
-            fallback = fallback.eq("status", "abandoned");
-          fallback = applyCourseFilter(fallback, "course_id", courseFilter);
-          fallback = applyCourseFilter(fallback, "topic_id", topicFilter);
-          if (studySetId) fallback = fallback.eq("study_set_id", studySetId);
-          if (from) fallback = fallback.gte("start_time", from);
-          if (to) fallback = fallback.lte("start_time", to);
-          const retry = await fallback
-            .order("start_time", { ascending: false })
-            .range(offset, offset + limit - 1);
-          data = retry.data;
-          error = retry.error;
-          count = retry.count;
-          if (!error && Array.isArray(data)) {
-            data = [...data].sort((a: any, b: any) => {
-              const aScore = Array.isArray(a.test_results)
-                ? a.test_results[0]?.score
-                : a.test_results?.score;
-              const bScore = Array.isArray(b.test_results)
-                ? b.test_results[0]?.score
-                : b.test_results?.score;
-              return (bScore || 0) - (aScore || 0);
-            });
-          }
-        }
-
-        // Before 20260911120000_study_sets.sql no session can be filed to a
-        // set, so a set filter matches nothing. Empty is the honest answer;
-        // dropping the filter would hand back every test the user owns.
-        if (error && studySetId && isMissingStudySetColumn(error)) {
-          logger.warn(
-            "study_set_id missing on test_sessions — set filter matched nothing (apply 20260911120000_study_sets.sql)",
-          );
-          return { tests: [], total: 0 };
-        }
-
-        if (error && topicFilterApplies(topicFilter) && isMissingTopicColumn(error)) {
-          // No session can carry a topic before the migration: a named topic
-          // matches nothing, and "no topic" matches every session.
-          if (topicFilter?.kind === "course") return { tests: [], total: 0 };
-          return this.getUserTests(userId, { ...options, topicFilter: undefined });
-        }
-
-        if (error) throw error;
-
-        const tests = (data || []).map((session: any) =>
-          mapTestListRow(session, lean),
-        );
-
-        // Rows saved before the title was persisted at creation carry only
-        // the note id. One batched query per page fills them in, and the
-        // result is cached with the page, so this costs nothing on a hit.
-        await this.attachSourceNoteTitles(tests, userId);
-
-        return {
-          tests,
-          total: typeof count === "number" ? count : tests.length,
-        };
+    return testsData.getUserTests(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid, options) =>
+          this.createTestResult(id, resultData, uid, options),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
-      { ttl: 300 },
+      userId,
+      options,
     );
   }
 
   async getTestById(testId: string, userId?: string): Promise<any | null> {
-    const cacheKey = userId
-      ? `test:${testId}:user:${userId}`
-      : `test:${testId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select("*")
-          .eq("id", testId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        // Check if test belongs to user
-        if (userId && data.user_id !== userId) {
-          return null; // Access denied
-        }
-
-        return data;
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return testsData.getTestById(
+      this.supabase,
+      testId,
+      userId,
+    );
   }
 
   /**
@@ -6108,99 +4677,63 @@ export class SupabaseService {
     testId: string,
     userId: string,
   ): Promise<{ session: any; access: "owner" | "group" } | null> {
-    const owned = await this.getTestById(testId, userId);
-    if (owned) return { session: owned, access: "owner" };
-
-    // Not the owner. The only other readable case is a group session whose
-    // group this caller belongs to; everything else stays a 404.
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .select("*")
-      .eq("id", testId)
-      .maybeSingle();
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-    if (!data) return null;
-
-    const groupId = data.config?.groupId;
-    if (typeof groupId !== "string" || !groupId) return null;
-    if (!(await this.isGroupMember(groupId, userId))) return null;
-
-    return { session: data, access: "group" };
+    return testsData.resolveTestSessionForCaller(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      userId,
+    );
   }
 
   async createTest(testConfig: any, userId: string): Promise<any> {
-    // Check if this is a completed test session (has questions and user_answers)
-    const isCompletedSession =
-      testConfig.questions && testConfig.questions.length > 0;
-
-    const courseId = resolveCourseIdFromConfigLike(testConfig);
-    // Topic is validated against the course this session is filed under, so a
-    // wrong-course topic 400s before anything is written.
-    const topicId = await this.resolveArtefactTopic({
-      topicId: resolveTopicIdFromConfigLike(testConfig),
-      courseId,
-    });
-
-    /**
-     * The set this session was taken in.
-     *
-     * Read from the top-level field OR from the config, because the config is
-     * what every client create path already sends and the two doors must file
-     * a session the same way. Without this, `POST /tests` wrote no
-     * `study_set_id` at all: live, all 77 of an account's sessions had none,
-     * so every set room's Test tab — which lists by set — was permanently
-     * empty. `writeWithTopicFallback` drops the column if the study-sets
-     * migration has not been applied yet.
-     */
-    const studySetId = resolveStudySetIdFromConfigLike(testConfig);
-
-    const insertData: any = {
-      user_id: userId,
-      course_id: courseId,
-      ...(topicId !== undefined ? { topic_id: topicId } : {}),
-      ...(studySetId ? { study_set_id: studySetId } : {}),
-    };
-
-    if (isCompletedSession) {
-      // This is a completed test being saved
-      insertData.config = testConfig.config || testConfig;
-      insertData.questions = testConfig.questions || [];
-      insertData.user_answers = testConfig.user_answers || {};
-      insertData.start_time = testConfig.start_time;
-      insertData.end_time = testConfig.end_time;
-      insertData.is_offline = testConfig.is_offline || false;
-      insertData.status = "completed";
-      insertData.session_kind = testConfig.session_kind || testConfig.sessionKind || "test";
-      insertData.title = testConfig.title || null;
-      insertData.current_question_index =
-        typeof testConfig.current_question_index === "number"
-          ? testConfig.current_question_index
-          : 0;
-      insertData.updated_at = new Date().toISOString();
-    } else {
-      // This is a new test configuration
-      insertData.config = testConfig;
-      insertData.questions = [];
-      insertData.user_answers = {};
-      insertData.status = "in_progress";
-      insertData.session_kind = "test";
-      insertData.updated_at = new Date().toISOString();
-    }
-
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
-      insertData,
+    return testsData.createTest(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testConfig,
+      userId,
     );
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.deletePattern(`tests:${userId}:*`);
-
-    return data;
   }
 
   /**
@@ -6227,142 +4760,40 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any> {
-    const courseId =
-      typeof payload.courseId === "string" && payload.courseId ? payload.courseId : null;
-    const topicId = await this.resolveArtefactTopic({
-      topicId: payload.topicId,
-      courseId,
-    });
-
-    const sourceNoteId =
-      typeof payload.sourceNoteId === "string" && payload.sourceNoteId
-        ? payload.sourceNoteId
-        : null;
-    // Resolve the note's title ONCE, here, so every later read is a plain
-    // config read. The client prints "From <title>" under a note quiz; without
-    // this the field was absent and the list rendered "From undefined".
-    // A client-supplied title is only a fallback, and only for a note the
-    // caller actually linked: it is never trusted over the note's own row.
-    const sourceNoteTitle = sourceNoteId
-      ? (await this.fetchNoteTitles([sourceNoteId], userId)).get(sourceNoteId) ??
-        normalizeSourceNoteTitle((payload.config as any)?.sourceNoteTitle)
-      : null;
-
-    // Same rule as the note above, one source over: the deck's OWN name wins
-    // over anything the client sent, and is resolved once at creation so every
-    // later read is a plain config read.
-    const sourceDeckId =
-      typeof payload.sourceDeckId === "string" && payload.sourceDeckId
-        ? payload.sourceDeckId
-        : null;
-    const sourceDeckTitle = sourceDeckId
-      ? ((await this.fetchDeckTitles([sourceDeckId], userId)).get(sourceDeckId) ??
-        normalizeSourceNoteTitle((payload.config as any)?.sourceDeckTitle))
-      : null;
-
-    const config = {
-      ...(payload.config && typeof payload.config === "object" ? payload.config : {}),
-      title: payload.title,
-      // The mobile Tests list names a session from `config.name` (then
-      // `testName`); without it a refetch renamed every note quiz "Untitled
-      // Test" the moment it left the client-side insert behind.
-      name: payload.title,
-      numberOfQuestions: payload.questions.length,
-      courseId,
-      // Provenance lives in config, not a column: no migration is needed for
-      // the note link, and the client reads it straight back off the session.
-      ...(sourceNoteId ? { sourceNoteId } : {}),
-      // Always written, so a client-supplied value can never outlive the
-      // resolved one (or survive on a test that links to no note at all).
-      sourceNoteTitle,
-      ...(sourceDeckId ? { sourceDeckId } : {}),
-      sourceDeckTitle,
-      ...(payload.sourceJobId ? { sourceJobId: payload.sourceJobId } : {}),
-      source: sourceNoteId
-        ? "note"
-        : sourceDeckId
-          ? "deck"
-          : (payload.config as any)?.source || "personal",
-    };
-
-    const studySetId =
-      typeof payload.studySetId === "string" && payload.studySetId ? payload.studySetId : null;
-
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
+    return testsData.createPersonalTest(
+      this.supabase,
       {
-        user_id: userId,
-        course_id: courseId,
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
-        ...(studySetId ? { study_set_id: studySetId } : {}),
-        config,
-        questions: payload.questions,
-        user_answers: {},
-        // No end_time and a non-empty question list is exactly what the mobile
-        // Tests list filters for; anything else would silently not appear.
-        status: "in_progress",
-        session_kind: "test",
-        title: payload.title,
-        current_question_index: 0,
-        is_offline: false,
-        updated_at: new Date().toISOString(),
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
+      payload,
+      userId,
     );
-
-    if (error) throw error;
-
-    await cacheService.deletePattern(`tests:${userId}:*`);
-
-    return data;
   }
 
   mapTestSessionRowToClient(session: any) {
-    const questions = Array.isArray(session.questions) ? session.questions : [];
-    // Legacy submit stored Object.values(userAnswers) as a JSON array; draft
-    // complete stores a Record. Coerce both so history hydrate keeps answers.
-    const answers = coerceRawUserAnswers(
-      session.user_answers ?? session.userAnswers,
-      questions,
+    return testsData.mapTestSessionRowToClient(
+      this.supabase,
+      session,
     );
-    return {
-      id: session.id,
-      config: session.config || {},
-      courseId: session.course_id ?? session.config?.courseId ?? null,
-      studySetId: session.study_set_id ?? session.config?.studySetId ?? null,
-      ...topicIdOf(session),
-      questions,
-      userAnswers: answers,
-      currentQuestionIndex: session.current_question_index || 0,
-      startTime: session.start_time ? new Date(session.start_time) : new Date(),
-      endTime: session.end_time ? new Date(session.end_time) : undefined,
-      remainingTime:
-        typeof session.remaining_time_seconds === "number"
-          ? session.remaining_time_seconds
-          : undefined,
-      isOffline: session.is_offline || false,
-      sessionKind: session.session_kind || "test",
-      status: session.status || "in_progress",
-      title: session.title || undefined,
-      updatedAt: session.updated_at || undefined,
-      pausedAt: session.paused_at || undefined,
-      userId: session.user_id,
-      // Everything a launch needs without a second read: how many questions
-      // there are, and where the test came from. `sourceNoteId` is how a
-      // generated quiz links back to the note that produced it.
-      questionCount: questions.length || session.config?.numberOfQuestions || 0,
-      sourceNoteId: session.config?.sourceNoteId ?? null,
-      /** @see mapTestListRow — same contract: a string or null, never absent. */
-      sourceNoteTitle: normalizeSourceNoteTitle(session.config?.sourceNoteTitle),
-      sourceDeckId: session.config?.sourceDeckId ?? null,
-      sourceDeckTitle: normalizeSourceNoteTitle(session.config?.sourceDeckTitle),
-      sourceJobId: session.config?.sourceJobId ?? null,
-      /**
-       * Resolved source of the session — {noteId, deckId, groupId, title}, each
-       * a string or null. This is what a retake reads to name what it is
-       * relaunching; it never has to parse `config` itself.
-       */
-      provenance: buildTestProvenance(session),
-    };
   }
 
   /**
@@ -6375,30 +4806,11 @@ export class SupabaseService {
     noteIds: string[],
     userId: string,
   ): Promise<Map<string, string>> {
-    const titles = new Map<string, string>();
-    const ids = Array.from(
-      new Set(noteIds.filter((id): id is string => typeof id === "string" && !!id)),
+    return testsData.fetchNoteTitles(
+      this.supabase,
+      noteIds,
+      userId,
     );
-    if (ids.length === 0 || !userId) return titles;
-    try {
-      const { data, error } = await this.supabase
-        .from("notes")
-        .select("id, title")
-        .eq("user_id", userId)
-        .in("id", ids);
-      if (error) throw error;
-      for (const note of (data || []) as any[]) {
-        const title = normalizeSourceNoteTitle(note?.title);
-        if (note?.id && title) titles.set(String(note.id), title);
-      }
-    } catch (err) {
-      logger.warn("Could not resolve source note titles", {
-        userId,
-        count: ids.length,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return titles;
   }
 
   /**
@@ -6411,30 +4823,11 @@ export class SupabaseService {
     deckIds: string[],
     userId: string,
   ): Promise<Map<string, string>> {
-    const titles = new Map<string, string>();
-    const ids = Array.from(
-      new Set(deckIds.filter((id): id is string => typeof id === "string" && !!id)),
+    return testsData.fetchDeckTitles(
+      this.supabase,
+      deckIds,
+      userId,
     );
-    if (ids.length === 0 || !userId) return titles;
-    try {
-      const { data, error } = await this.supabase
-        .from("decks")
-        .select("id, name")
-        .eq("user_id", userId)
-        .in("id", ids);
-      if (error) throw error;
-      for (const deck of (data || []) as any[]) {
-        const title = normalizeSourceNoteTitle(deck?.name);
-        if (deck?.id && title) titles.set(String(deck.id), title);
-      }
-    } catch (err) {
-      logger.warn("Could not resolve source deck titles", {
-        userId,
-        count: ids.length,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-    return titles;
   }
 
   /**
@@ -6446,15 +4839,33 @@ export class SupabaseService {
     source: { noteId?: string | null; deckId?: string | null },
     userId: string,
   ): Promise<string | null> {
-    if (typeof source.noteId === "string" && source.noteId) {
-      const found = (await this.fetchNoteTitles([source.noteId], userId)).get(source.noteId);
-      if (found) return found;
-    }
-    if (typeof source.deckId === "string" && source.deckId) {
-      const found = (await this.fetchDeckTitles([source.deckId], userId)).get(source.deckId);
-      if (found) return found;
-    }
-    return null;
+    return testsData.resolvePersonalTestSourceTitle(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      source,
+      userId,
+    );
   }
 
   /**
@@ -6465,22 +4876,33 @@ export class SupabaseService {
   async attachSourceNoteTitles<
     T extends { sourceNoteId?: string | null; sourceNoteTitle?: string | null },
   >(rows: T[], userId: string): Promise<T[]> {
-    const missing = rows.filter(
-      (row) =>
-        row &&
-        typeof row.sourceNoteId === "string" &&
-        !!row.sourceNoteId &&
-        !row.sourceNoteTitle,
-    );
-    if (missing.length === 0) return rows;
-    const titles = await this.fetchNoteTitles(
-      missing.map((row) => row.sourceNoteId as string),
+    return testsData.attachSourceNoteTitles(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      rows,
       userId,
     );
-    for (const row of missing) {
-      row.sourceNoteTitle = titles.get(row.sourceNoteId as string) ?? null;
-    }
-    return rows;
   }
 
   async createTestDraft(
@@ -6504,46 +4926,33 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any> {
-    const now = new Date().toISOString();
-    const courseId = resolveCourseIdFromConfigLike(payload);
-    // A paused session belongs to the room it was started in, exactly as a
-    // finished one does — otherwise resuming it would move it out of the set.
-    const studySetId = resolveStudySetIdFromConfigLike(payload);
-    const topicId = await this.resolveArtefactTopic({
-      topicId: resolveTopicIdFromConfigLike(payload),
-      courseId,
-    });
-    const insertData: any = {
-      user_id: userId,
-      config: payload.config || {},
-      course_id: courseId,
-      ...(topicId !== undefined ? { topic_id: topicId } : {}),
-      ...(studySetId ? { study_set_id: studySetId } : {}),
-      questions: Array.isArray(payload.questions) ? payload.questions : [],
-      user_answers: payload.user_answers || {},
-      start_time: payload.start_time || now,
-      end_time: null,
-      is_offline: payload.is_offline || false,
-      status: "in_progress",
-      session_kind: payload.session_kind === "study" ? "study" : "test",
-      current_question_index: Math.max(0, payload.current_question_index || 0),
-      remaining_time_seconds:
-        typeof payload.remaining_time_seconds === "number"
-          ? payload.remaining_time_seconds
-          : null,
-      title: payload.title || null,
-      updated_at: now,
-      paused_at: null,
-    };
-
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("test_sessions").insert(row).select().single(),
-      insertData,
+    return testsData.createTestDraft(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      payload,
+      userId,
     );
-
-    if (error) throw error;
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    return this.mapTestSessionRowToClient(data);
   }
 
   async updateTestDraft(
@@ -6558,62 +4967,34 @@ export class SupabaseService {
       config?: Record<string, unknown>;
     },
   ): Promise<any | null> {
-    const existing = await this.getTestById(draftId, userId);
-    if (!existing) return null;
-    if (existing.status === "completed" || existing.status === "abandoned") {
-      throw new Error("Cannot update a finished session");
-    }
-    if (existing.end_time) {
-      throw new Error("Cannot update a finished session");
-    }
-
-    const now = new Date().toISOString();
-    const patch: any = { updated_at: now };
-    // Answers pass through untouched EXCEPT `confidence`, which is validated
-    // down to 'sure' | 'unsure' or removed. An unrecognised value stored here
-    // would be read back as a confidence level of its own by every analysis.
-    if (updates.user_answers !== undefined) {
-      patch.user_answers = sanitizeAnswerConfidences(updates.user_answers);
-    }
-    if (typeof updates.current_question_index === "number") {
-      patch.current_question_index = Math.max(0, updates.current_question_index);
-    }
-    if (updates.remaining_time_seconds !== undefined) {
-      patch.remaining_time_seconds = updates.remaining_time_seconds;
-    }
-    if (updates.title !== undefined) patch.title = updates.title;
-    if (updates.config && typeof updates.config === "object" && !Array.isArray(updates.config)) {
-      const existingConfig =
-        existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
-          ? existing.config
-          : {};
-      patch.config = { ...existingConfig, ...updates.config };
-    }
-    if (updates.status === "paused") {
-      patch.status = "paused";
-      patch.paused_at = now;
-    } else if (updates.status === "in_progress") {
-      patch.status = "in_progress";
-      patch.paused_at = null;
-    }
-
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update(patch)
-      .eq("id", draftId)
-      .eq("user_id", userId)
-      .in("status", ["in_progress", "paused"])
-      .is("end_time", null)
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    await cacheService.delete(`test:${draftId}`);
-    await cacheService.delete(`test:${draftId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    return this.mapTestSessionRowToClient(data);
+    return testsData.updateTestDraft(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      draftId,
+      userId,
+      updates,
+    );
   }
 
   async completeTestDraft(
@@ -6631,163 +5012,72 @@ export class SupabaseService {
       surface?: LearningSurface;
     },
   ): Promise<any> {
-    const existing = await this.getTestById(draftId, userId);
-    if (!existing) throw new Error("Session not found");
-    if (existing.status === "completed") {
-      throw new Error("Session already completed");
-    }
-    if (existing.status === "abandoned") {
-      throw new Error("Session was abandoned");
-    }
-
-    const now = new Date().toISOString();
-    const answers = sanitizeAnswerConfidences(
-      options?.user_answers ?? existing.user_answers ?? {},
-    );
-    const sessionKind = existing.session_kind === "study" ? "study" : "test";
-    const existingConfig =
-      existing.config && typeof existing.config === "object" && !Array.isArray(existing.config)
-        ? existing.config
-        : {};
-    const configPatch =
-      options?.config && typeof options.config === "object" && !Array.isArray(options.config)
-        ? options.config
-        : null;
-    const nextConfig = configPatch ? { ...existingConfig, ...configPatch } : existingConfig;
-
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        user_answers: answers,
-        end_time: now,
-        status: "completed",
-        updated_at: now,
-        remaining_time_seconds: null,
-        paused_at: null,
-        ...(configPatch ? { config: nextConfig } : {}),
-      })
-      .eq("id", draftId)
-      .eq("user_id", userId)
-      .in("status", ["in_progress", "paused"])
-      .is("end_time", null)
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) throw new Error("Session already completed");
-
-    await cacheService.delete(`test:${draftId}`);
-    await cacheService.delete(`test:${draftId}:user:${userId}`);
-
-    if (sessionKind === "study") {
-      // Study sessions still affect lean history lists / draft caches.
-      await cacheService.deletePattern(`tests:${userId}:*`);
-      // learning_events: study sessions never reach createTestResult, so emit
-      // their question_answered rows here (same once-per-session guard).
-      await recordTestSessionAnswers(this, {
-        session: data,
-        userId,
-        surface: options?.surface ?? "api",
-      });
-      return {
-        session: this.mapTestSessionRowToClient(data),
-        sessionKind: "study",
-        score: null,
-        totalQuestions: Array.isArray(data.questions) ? data.questions.length : 0,
-        correctAnswersCount: null,
-      };
-    }
-
-    // createTestResult invalidates tests:${userId}:* after the score row lands.
-    const result = await this.createTestResult(
-      draftId,
+    return testsData.completeTestDraft(
+      this.supabase,
       {
-        score: options?.score ?? 0,
-        correctAnswersCount: options?.correctAnswersCount ?? 0,
-        totalQuestions:
-          options?.totalQuestions ??
-          (Array.isArray(data.questions) ? data.questions.length : 0),
-        activityDate: options?.activityDate,
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
+      draftId,
       userId,
-      { surface: options?.surface ?? "api" },
+      options,
     );
-
-    return {
-      session: this.mapTestSessionRowToClient(data),
-      sessionKind: "test",
-      ...result,
-    };
   }
 
   async abandonTestDraft(draftId: string, userId: string): Promise<boolean> {
-    const now = new Date().toISOString();
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        status: "abandoned",
-        updated_at: now,
-        remaining_time_seconds: null,
-      })
-      .eq("id", draftId)
-      .eq("user_id", userId)
-      .in("status", ["in_progress", "paused"])
-      .is("end_time", null)
-      .select("id")
-      .maybeSingle();
-
-    if (error) throw error;
-    await cacheService.delete(`test:${draftId}`);
-    await cacheService.delete(`test:${draftId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    return !!data;
+    return testsData.abandonTestDraft(
+      this.supabase,
+      draftId,
+      userId,
+    );
   }
 
   async startTest(testId: string, userId: string): Promise<any | null> {
-    // Get test first
-    const test = await this.getTestById(testId, userId);
-    if (!test) return null;
-
-    // Check if test has already been started (has questions)
-    if (test.questions && test.questions.length > 0) {
-      throw new Error("Test has already been started");
-    }
-
-    // Generate questions based on config (simplified - in real app this would be more complex)
-    const questions = this.generateTestQuestions(test.config);
-
-    // RC-04: only the first start wins; empty questions array is the CAS precondition.
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        start_time: new Date().toISOString(),
-        questions,
-      })
-      .eq("id", testId)
-      .eq("user_id", userId)
-      .eq("questions", [])
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-
-    if (!data) {
-      // Bypass stale pre-start cache from the concurrent loser path.
-      await cacheService.delete(`test:${testId}`);
-      await cacheService.delete(`test:${testId}:user:${userId}`);
-      const existing = await this.getTestById(testId, userId);
-      if (existing?.questions && existing.questions.length > 0) {
-        return existing;
-      }
-      throw new Error("Test has already been started");
-    }
-
-    // Invalidate caches
-    await cacheService.delete(`test:${testId}`);
-    await cacheService.delete(`test:${testId}:user:${userId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-
-    return data;
+    return testsData.startTest(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      userId,
+    );
   }
 
   async submitTest(
@@ -6795,66 +5085,34 @@ export class SupabaseService {
     userId: string,
     answers: any[],
   ): Promise<any> {
-    // Get test first
-    const test = await this.getTestById(testId, userId);
-    if (!test) throw new Error("Test not found");
-
-    // Calculate score
-    const score = this.calculateTestScore(test.questions, answers);
-    const correctAnswers = Math.round((score / 100) * test.questions.length);
-
-    // Atomic complete: only the first concurrent submit wins (CONC-02).
-    const { data, error } = await this.supabase
-      .from("test_sessions")
-      .update({
-        end_time: new Date().toISOString(),
-        // Array form preserved; only `confidence` is validated. @see sanitizeAnswerConfidences
-        user_answers: sanitizeAnswerConfidences(answers),
-        status: "completed",
-        updated_at: new Date().toISOString(),
-        remaining_time_seconds: null,
-        paused_at: null,
-      })
-      .eq("id", testId)
-      .eq("user_id", userId)
-      .is("end_time", null)
-      .select()
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) {
-      throw new Error("Test has already been completed");
-    }
-
-    // Upsert result — UNIQUE(session_id) prevents duplicates under races.
-    const { error: resultError } = await this.supabase
-      .from("test_results")
-      .upsert(
-        {
-          session_id: testId,
-          score,
-          total_questions: test.questions.length,
-          correct_answers_count: correctAnswers,
-        },
-        { onConflict: "session_id", ignoreDuplicates: true },
-      );
-
-    if (resultError) throw resultError;
-
-    // Update user stats
-    await this.updateUserStats(userId, score);
-
-    // Invalidate caches
-    await cacheService.delete(`test:${testId}`);
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    await cacheService.delete(`user:stats:${userId}`);
-
-    return {
-      test: data,
-      score,
-      totalQuestions: test.questions.length,
-      correctAnswers,
-    };
+    return testsData.submitTest(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      userId,
+      answers,
+    );
   }
 
   async createTestResult(
@@ -6871,361 +5129,160 @@ export class SupabaseService {
       surface?: LearningSurface;
     } = {},
   ): Promise<any> {
-    let score = resultData.score;
-    let correctAnswersCount = resultData.correctAnswersCount;
-    let totalQuestions = resultData.totalQuestions;
-
-    const test = userId
-      ? await this.getTestById(testId, userId)
-      : await this.getTestById(testId);
-    if (test?.questions?.length && test.user_answers?.length) {
-      score = this.calculateTestScore(test.questions, test.user_answers);
-      totalQuestions = test.questions.length;
-      correctAnswersCount = Math.round((score / 100) * totalQuestions);
-    }
-
-    const { data, error } = await this.supabase
-      .from("test_results")
-      .upsert(
-        {
-          session_id: testId,
-          score,
-          correct_answers_count: correctAnswersCount,
-          total_questions: totalQuestions,
-        },
-        { onConflict: "session_id" },
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // learning_events: one question_answered per attempted answer. This is the
-    // single function both completion paths call (completeTestDraft and
-    // POST /tests/:id/results), and recordTestSessionAnswers dedupes on
-    // (user_id, session_id) so a session never emits twice. Never throws.
-    const eventUserId = userId || (test?.user_id as string | undefined);
-    if (test && eventUserId) {
-      await recordTestSessionAnswers(this, {
-        session: test,
-        userId: eventUserId,
-        surface: options.surface ?? "api",
-      });
-    }
-
-    // Invalidate caches. Dashboard Group Performance is built from lean completed
-    // history (`tests:${userId}:*` / `/dashboard/summary`), so drop those AFTER
-    // the result row exists — earlier deletes race with a refill that still
-    // lacks score/correctAnswersCount.
-    await cacheService.delete(`test:results:${testId}`);
-    if (userId) {
-      await cacheService.deletePattern(`tests:${userId}:*`);
-      await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
-      await cacheService.delete(`tests:stats:subject:${userId}`);
-    }
-
-    let gamification:
-      | {
-          points: number;
-          badges: User["badges"];
-          stats: UserStats;
-          awardedBadges: User["badges"];
-        }
-      | undefined;
-    if (userId) {
-      try {
-        gamification = await this.applyTestCompletionGamification(
-          userId,
-          resultData.activityDate,
-        );
-        await cacheService.invalidateUserCache(userId);
-      } catch (err) {
-        logger.warn("Test result gamification sync failed", {
-          userId,
-          testId,
-          err,
-        });
-      }
-    }
-
-    return gamification ? { ...data, gamification } : data;
+    return testsData.createTestResult(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      testId,
+      resultData,
+      userId,
+      options,
+    );
   }
 
   async getTestResults(testId: string, userId?: string): Promise<any | null> {
-    const cacheKey = `test:results:${testId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_results")
-          .select("*")
-          .eq("session_id", testId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        // Check access if userId provided
-        const test = userId
-          ? await this.getTestById(testId, userId)
-          : await this.getTestById(testId);
-        if (userId && !test) return null;
-
-        // `correct_answers_count` alone cannot tell a client whether the rest
-        // were wrong or never reached, so every results screen guessed
-        // (total - correct) and called them all missed. The tally splits the
-        // three apart, and carries the confidence the student reported.
-        return { ...data, tally: buildAttemptTally(test) };
+    return testsData.getTestResults(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+      testId,
+      userId,
+    );
   }
 
   async getTestQuestions(testId: string, userId?: string): Promise<any[]> {
-    const cacheKey = `test:questions:${testId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const test = await this.getTestById(testId, userId);
-        if (!test) return [];
-
-        return test.questions || [];
+    return testsData.getTestQuestions(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
       },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+      testId,
+      userId,
+    );
   }
 
   async deleteTest(testId: string): Promise<boolean> {
-    // Delete test results first
-    const { error: resultsError } = await this.supabase
-      .from("test_results")
-      .delete()
-      .eq("session_id", testId);
-
-    if (resultsError) throw resultsError;
-
-    // Delete the test session
-    const { error } = await this.supabase
-      .from("test_sessions")
-      .delete()
-      .eq("id", testId);
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.delete(`test:${testId}`);
-    await cacheService.delete(`test:results:${testId}`);
-    await cacheService.delete(`test:questions:${testId}`);
-    await cacheService.deletePattern(`tests:*`);
-
-    return true;
+    return testsData.deleteTest(
+      this.supabase,
+      testId,
+    );
   }
 
   async deleteCompletedTestSession(
     sessionId: string,
     userId: string,
   ): Promise<boolean> {
-    const { data: session, error: fetchError } = await this.supabase
-      .from("test_sessions")
-      .select("id, user_id, end_time")
-      .eq("id", sessionId)
-      .maybeSingle();
-
-    if (fetchError) throw fetchError;
-    if (!session || session.user_id !== userId) return false;
-    if (!session.end_time) {
-      throw new Error("Cannot delete an in-progress test session");
-    }
-
-    return this.deleteTest(sessionId);
+    return testsData.deleteCompletedTestSession(
+      this.supabase,
+      {
+        service: this,
+        getTestById: (id, uid) => this.getTestById(id, uid),
+        getUserTests: (uid, options) => this.getUserTests(uid, options),
+        attachSourceNoteTitles: (rows, uid) =>
+          this.attachSourceNoteTitles(rows, uid),
+        mapTestSessionRowToClient: (session) =>
+          this.mapTestSessionRowToClient(session),
+        fetchNoteTitles: (ids, uid) => this.fetchNoteTitles(ids, uid),
+        fetchDeckTitles: (ids, uid) => this.fetchDeckTitles(ids, uid),
+        createTestResult: (id, resultData, uid) =>
+          this.createTestResult(id, resultData, uid),
+        deleteTest: (id) => this.deleteTest(id),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        generateTestQuestions: (config) => this.generateTestQuestions(config),
+        calculateTestScore: (questions, answers) =>
+          this.calculateTestScore(questions, answers),
+        updateUserStats: (uid, score) => this.updateUserStats(uid, score),
+        applyTestCompletionGamification: (uid, activityDate) =>
+          this.applyTestCompletionGamification(uid, activityDate),
+      },
+      sessionId,
+      userId,
+    );
   }
 
   async clearCompletedTestHistory(userId: string): Promise<number> {
-    const { data: sessions, error } = await this.supabase
-      .from("test_sessions")
-      .select("id")
-      .eq("user_id", userId)
-      .not("end_time", "is", null);
-
-    if (error) throw error;
-    if (!sessions?.length) return 0;
-
-    const sessionIds = sessions.map((row: { id: string }) => row.id);
-
-    const { error: resultsError } = await this.supabase
-      .from("test_results")
-      .delete()
-      .in("session_id", sessionIds);
-
-    if (resultsError) throw resultsError;
-
-    const { error: sessionsError } = await this.supabase
-      .from("test_sessions")
-      .delete()
-      .in("id", sessionIds);
-
-    if (sessionsError) throw sessionsError;
-
-    for (const sessionId of sessionIds) {
-      await cacheService.delete(`test:${sessionId}`);
-      await cacheService.delete(`test:results:${sessionId}`);
-      await cacheService.delete(`test:questions:${sessionId}`);
-    }
-    await cacheService.deletePattern(`tests:${userId}:*`);
-    await cacheService.delete(`user:${userId}:test-results`);
-    await cacheService.delete(`tests:stats:subject:${userId}`);
-    await cacheService.deletePattern(`tests:stats:performance:${userId}:*`);
-    await cacheService.delete(`user:stats:${userId}`);
-
-    return sessionIds.length;
+    return testsData.clearCompletedTestHistory(
+      this.supabase,
+      userId,
+    );
   }
 
   async getSubjectStats(userId: string): Promise<any> {
-    const cacheKey = `tests:stats:subject:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select(
-            `
-          config,
-          course_id,
-          test_results (score)
-        `,
-          )
-          .eq("user_id", userId)
-          .not("end_time", "is", null); // Only completed tests
-
-        if (error) throw error;
-
-        // Group by course (test_sessions.course_id; label = course code).
-        // Sessions without a course fall into "General". config.subject was
-        // never written by any client, so it is no longer consulted.
-        const courseIds = Array.from(
-          new Set(
-            (data || [])
-              .map((test: any) => test.course_id ?? test.config?.courseId)
-              .filter((id: unknown): id is string => typeof id === "string" && id.length > 0),
-          ),
-        );
-        const courseLabels = new Map<string, string>();
-        if (courseIds.length > 0) {
-          const { data: courseRows, error: courseError } = await this.supabase
-            .from("courses")
-            .select("id, code")
-            .in("id", courseIds);
-          if (!courseError && courseRows) {
-            for (const row of courseRows as Array<{ id: string; code: string }>) {
-              courseLabels.set(row.id, row.code);
-            }
-          }
-        }
-
-        const subjectStats: { [key: string]: any } = {};
-        data?.forEach((test: any) => {
-          const courseId: string | null =
-            test.course_id ?? test.config?.courseId ?? null;
-          const subject =
-            (courseId && courseLabels.get(courseId)) || "General";
-          const key = courseId && courseLabels.has(courseId) ? courseId : "general";
-          const score = test.test_results?.[0]?.score;
-          if (score !== undefined) {
-            if (!subjectStats[key]) {
-              subjectStats[key] = {
-                subject,
-                courseId: courseId && courseLabels.has(courseId) ? courseId : null,
-                testsTaken: 0,
-                averageScore: 0,
-                scores: [],
-              };
-            }
-            subjectStats[key].testsTaken++;
-            subjectStats[key].scores.push(score);
-          }
-        });
-
-        // Calculate averages
-        Object.values(subjectStats).forEach((stats: any) => {
-          stats.averageScore =
-            stats.scores.reduce(
-              (sum: number, score: number) => sum + score,
-              0,
-            ) / stats.scores.length;
-          delete stats.scores;
-        });
-
-        return Object.values(subjectStats);
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return testsData.getSubjectStats(
+      this.supabase,
+      userId,
+    );
   }
 
   async getPerformanceStats(
     userId: string,
     period: string = "month",
   ): Promise<any> {
-    const cacheKey = `tests:stats:performance:${userId}:${period}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Calculate date range based on period
-        const now = new Date();
-        let startDate: Date;
-
-        switch (period) {
-          case "week":
-            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-          case "month":
-            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            break;
-          case "year":
-            startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-            break;
-          default:
-            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-        }
-
-        const { data, error } = await this.supabase
-          .from("test_sessions")
-          .select(
-            `
-          start_time,
-          test_results (score)
-        `,
-          )
-          .eq("user_id", userId)
-          .not("end_time", "is", null) // Only completed tests
-          .gte("start_time", startDate.toISOString());
-
-        if (error) throw error;
-
-        const scores =
-          data
-            ?.map((test: any) => test.test_results?.[0]?.score)
-            .filter((score) => score !== undefined) || [];
-        const averageScore =
-          scores.length > 0
-            ? scores.reduce((sum, score) => sum + score, 0) / scores.length
-            : 0;
-
-        return {
-          period,
-          testsTaken: scores.length,
-          averageScore: Math.round(averageScore * 100) / 100,
-          highestScore: scores.length > 0 ? Math.max(...scores) : 0,
-          lowestScore: scores.length > 0 ? Math.min(...scores) : 0,
-        };
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return testsData.getPerformanceStats(
+      this.supabase,
+      userId,
+      period,
+    );
   }
 
   async getTestTemplates(
@@ -7236,34 +5293,10 @@ export class SupabaseService {
       difficulty?: string;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20, subject, difficulty } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `tests:templates:${page}:${limit}:${subject || ""}:${difficulty || ""}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase.from("test_templates").select("*");
-
-        if (subject) {
-          query = query.eq("subject", subject);
-        }
-
-        if (difficulty) {
-          query = query.eq("difficulty", difficulty);
-        }
-
-        const { data, error } = await query
-          .order("created_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+    return testsData.getTestTemplates(
+      this.supabase,
+      options,
+    );
   }
 
   // ===========================================================================
@@ -7289,6 +5322,18 @@ export class SupabaseService {
   // calls on submit, so scoring a test awards points, badges, streak and
   // activity in one place.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 12): the bodies now live in
+  // `data/gamification.ts`, and the `GamificationSyncResult` type moved with
+  // them (type-imported back above for these return types).
+  //
+  // Nine of these call a sibling or a profile method. The `deps` literal is
+  // written out INLINE at those nine call sites, and it MUST stay that way:
+  // `supabase.awardBadge.test.ts`, `badgeStatsRecompute.test.ts`,
+  // `supabase.boardMessages.test.ts` and `learningEvents.test.ts` stub exactly
+  // these on a stand-in and drive the entry point through
+  // `SupabaseService.prototype.<m>.call(self, …)`. An instance field holding
+  // the deps reads as `undefined` there, and the arrows read `this.<method>`
+  // at CALL time so a `jest.spyOn` still intercepts.
   // Gamification Methods for API Routes
   async getLeaderboard(
     options: {
@@ -7300,57 +5345,10 @@ export class SupabaseService {
       ambassador?: boolean;
     } = {},
   ): Promise<any[]> {
-    const {
-      page = 1,
-      limit = 50,
-      timeframe = "all",
-      metric = "points",
-      institutionId,
-      ambassador,
-    } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:leaderboard:${page}:${limit}:${timeframe}:${metric}:${institutionId || ""}:${ambassador ? "1" : "0"}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase
-          .from("profiles")
-          .select("id, name, avatar_url, points, stats, is_ambassador, institution_id")
-          .order("points", { ascending: false });
-
-        if (ambassador) {
-          query = query.eq("is_ambassador", true);
-        }
-        if (institutionId) {
-          query = query.eq("institution_id", institutionId);
-        }
-
-        // Apply timeframe filtering if needed (simplified)
-        if (timeframe !== "all") {
-          // In a real implementation, you'd filter based on recent activity
-          // For now, just return all users
-        }
-
-        const { data, error } = await query.range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return (data || []).map((user: any, index: number) => ({
-          rank: offset + index + 1,
-          user: {
-            id: user.id,
-            name: user.name,
-            avatarUrl: user.avatar_url,
-            points: user.points || 0,
-            stats: user.stats || {},
-            campusAmbassador: user.is_ambassador ? 1 : 0,
-          },
-        }));
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return gamificationData.getLeaderboard(
+      this.supabase,
+      options,
+    );
   }
 
   async getAchievements(
@@ -7360,30 +5358,10 @@ export class SupabaseService {
       category?: string;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20, category } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:achievements:${page}:${limit}:${category || ""}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase.from("achievements").select("*");
-
-        if (category) {
-          query = query.eq("category", category);
-        }
-
-        const { data, error } = await query
-          .order("created_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 1800 },
-    ); // Cache for 30 minutes
+    return gamificationData.getAchievements(
+      this.supabase,
+      options,
+    );
   }
 
   async getUserAchievements(
@@ -7393,38 +5371,11 @@ export class SupabaseService {
       limit?: number;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20 } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `gamification:user:achievements:${userId}:${page}:${limit}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("user_achievements")
-          .select(
-            `
-          *,
-          achievements (*)
-        `,
-          )
-          .eq("user_id", userId)
-          .order("unlocked_at", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return (
-          data?.map((ua: any) => ({
-            ...ua.achievements,
-            unlockedAt: ua.unlocked_at,
-            progress: ua.progress,
-          })) || []
-        );
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return gamificationData.getUserAchievements(
+      this.supabase,
+      userId,
+      options,
+    );
   }
 
   async awardPoints(
@@ -7433,192 +5384,78 @@ export class SupabaseService {
     reason: string,
     source?: string,
   ): Promise<any> {
-    // Get current points
-    const { data: user, error: userError } = await this.supabase
-      .from("profiles")
-      .select("points")
-      .eq("id", userId)
-      .single();
-
-    if (userError) throw userError;
-
-    const currentPoints = user?.points || 0;
-    const newPoints = currentPoints + points;
-
-    // Update user points
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .update({ points: newPoints })
-      .eq("id", userId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Optional audit log — table may not exist on older deployments
-    const { error: logError } = await this.supabase
-      .from("points_transactions")
-      .insert({
-        user_id: userId,
-        points,
-        reason,
-        source: source || "manual",
-      });
-
-    if (logError) {
-      logger.warn("points_transactions insert skipped", {
-        userId,
-        code: logError.code,
-        message: logError.message,
-      });
-    }
-
-    // Invalidate caches
-    await cacheService.deletePattern(`gamification:leaderboard:*`);
-    await cacheService.delete(`user:stats:${userId}`);
-    await cacheService.deletePattern(
-      `gamification:user:achievements:${userId}:*`,
-    );
-
-    return {
+    return gamificationData.awardPoints(
+      this.supabase,
       userId,
-      pointsAwarded: points,
-      newTotal: newPoints,
+      points,
       reason,
       source,
-    };
+    );
   }
 
   async awardAchievement(userId: string, achievementId: string): Promise<any> {
-    // Check if user already has this achievement
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_achievements")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("achievement_id", achievementId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    if (existing) {
-      throw new Error("User already has this achievement");
-    }
-
-    // Award the achievement
-    const { data, error } = await this.supabase
-      .from("user_achievements")
-      .insert({
-        user_id: userId,
-        achievement_id: achievementId,
-        unlocked_at: new Date().toISOString(),
-        progress: 100,
-      })
-      .select(
-        `
-        *,
-        achievements (*)
-      `,
-      )
-      .single();
-
-    if (error) throw error;
-
-    // Award points for achievement if configured
-    const achievement = data.achievements;
-    if (achievement.points_reward) {
-      await this.awardPoints(
-        userId,
-        achievement.points_reward,
-        `Achievement unlocked: ${achievement.name}`,
-        "achievement",
-      );
-    }
-
-    // Invalidate caches
-    await cacheService.deletePattern(
-      `gamification:user:achievements:${userId}:*`,
+    return gamificationData.awardAchievement(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      achievementId,
     );
-
-    return {
-      ...achievement,
-      unlockedAt: data.unlocked_at,
-      progress: data.progress,
-    };
   }
 
   async getUserProgress(userId: string): Promise<any> {
-    const cacheKey = `gamification:user:progress:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get user stats
-        const user = await this.getUserById(userId);
-        if (!user) throw new Error("User not found");
-
-        // Get achievements progress
-        const { data: achievements, error: achError } = await this.supabase
-          .from("user_achievements")
-          .select("achievement_id, progress")
-          .eq("user_id", userId);
-
-        if (achError) throw achError;
-
-        // Get level info
-        const level = await this.getUserLevel(userId);
-
-        return {
-          userId,
-          points: user.points || 0,
-          level: level.currentLevel,
-          achievementsUnlocked: achievements?.length || 0,
-          nextLevelPoints: level.nextLevelPoints,
-          progressToNextLevel: level.progressToNextLevel,
-          stats: user.stats || {},
-        };
+    return gamificationData.getUserProgress(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
       },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+      userId,
+    );
   }
 
   async getGamificationStats(): Promise<any> {
-    const cacheKey = "gamification:stats";
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get total users
-        const { count: totalUsers, error: usersError } = await this.supabase
-          .from("profiles")
-          .select("id", { count: "exact", head: true });
-
-        // Get total achievements unlocked
-        const { count: totalAchievements, error: achError } =
-          await this.supabase
-            .from("user_achievements")
-            .select("id", { count: "exact", head: true });
-
-        // Get total points awarded
-        const { data: pointsData, error: pointsError } = await this.supabase
-          .from("profiles")
-          .select("points");
-
-        if (usersError || achError || pointsError) {
-          throw usersError || achError || pointsError;
-        }
-
-        const totalPoints =
-          pointsData?.reduce((sum, user) => sum + (user.points || 0), 0) || 0;
-
-        return {
-          totalUsers: totalUsers || 0,
-          totalAchievements: totalAchievements || 0,
-          totalPoints,
-          averagePointsPerUser: totalUsers ? totalPoints / totalUsers : 0,
-        };
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return gamificationData.getGamificationStats(
+      this.supabase,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -7645,19 +5482,10 @@ export class SupabaseService {
       category?: string;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20, category } = options;
-    if (category) return [];
-    const offset = (Math.max(1, page) - 1) * Math.max(1, limit);
-    return Object.values(BADGE_DEFINITIONS)
-      .map((def) => ({
-        id: def.id,
-        name: def.baseName,
-        description: def.baseDescription(def.levels[0]?.threshold ?? 0),
-        icon: def.icon,
-        metric: def.metric,
-        levels: def.levels,
-      }))
-      .slice(offset, offset + Math.max(1, limit));
+    return gamificationData.getBadges(
+      this.supabase,
+      options,
+    );
   }
 
   /** Badges the user holds, newest first, straight from profiles.badges. */
@@ -7668,23 +5496,11 @@ export class SupabaseService {
       limit?: number;
     } = {},
   ): Promise<any[]> {
-    const { page = 1, limit = 20 } = options;
-    const offset = (Math.max(1, page) - 1) * Math.max(1, limit);
-
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .select("badges")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) throw error;
-
-    const badges = Array.isArray(data?.badges) ? [...data.badges] : [];
-    badges.sort(
-      (a: any, b: any) =>
-        Date.parse(String(b?.dateAwarded ?? "")) -
-          Date.parse(String(a?.dateAwarded ?? "")) || 0,
+    return gamificationData.getUserBadges(
+      this.supabase,
+      userId,
+      options,
     );
-    return badges.slice(offset, offset + Math.max(1, limit));
   }
 
   /**
@@ -7704,135 +5520,69 @@ export class SupabaseService {
     badge: ReturnType<typeof createBadge> | null;
     badges: ReturnType<typeof createBadge>[];
   }> {
-    if (
-      typeof badgeId !== "string" ||
-      !Object.prototype.hasOwnProperty.call(BADGE_DEFINITIONS, badgeId)
-    ) {
-      throw Object.assign(
-        new PublicError(
-          `Unknown badge id: ${String(badgeId)}. Known ids: ${Object.keys(BADGE_DEFINITIONS).join(", ")}`,
-        ),
-        { statusCode: 400 },
-      );
-    }
-    const knownId = badgeId as keyof typeof BADGE_DEFINITIONS;
-
-    const { data: profile, error } = await this.supabase
-      .from("profiles")
-      .select("id, badges")
-      .eq("id", userId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!profile) {
-      throw Object.assign(new PublicError("User not found"), {
-        statusCode: 404,
-      });
-    }
-
-    const current: ReturnType<typeof createBadge>[] = Array.isArray(
-      profile.badges,
-    )
-      ? [...profile.badges]
-      : [];
-    const existing = current.find((b: any) => b?.id === knownId);
-    if (existing) {
-      return { awarded: false, badge: existing, badges: current };
-    }
-
-    const badge = createBadge(knownId, 1);
-    const next = [...current, badge];
-
-    // Service-role client: the only role the lockdown trigger lets write here.
-    const { error: writeError } = await this.supabase
-      .from("profiles")
-      .update({ badges: next })
-      .eq("id", userId);
-    if (writeError) throw writeError;
-
-    await cacheService.invalidateUserCache(userId);
-    await cacheService.deletePattern(`gamification:user:badges:${userId}:*`);
-    logger.info("Badge granted manually", { userId, badgeId: knownId, actorId });
-
-    // Phase 3 M: unlocked_badge had no writer. Only the FIRST award reaches
-    // here (the already-owned case returns above), so this cannot spam a feed.
-    void (async () => {
-      const { getActivityFeedService } = await import("./activityFeed");
-      await getActivityFeedService(this).record({
-        actorId: userId,
-        verb: "unlocked_badge",
-        objectType: "badge",
-        objectId: badgeId,
-        audienceType: "followers",
-        payload: { title: (badge as { name?: string } | null)?.name ?? null },
-      });
-    })();
-
-    return { awarded: true, badge, badges: next };
+    return gamificationData.awardBadge(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      badgeId,
+      actorId,
+    );
   }
 
   async getLevels(): Promise<any[]> {
-    const cacheKey = "gamification:levels";
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("levels")
-          .select("*")
-          .order("level_number", { ascending: true });
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 3600 },
-    ); // Cache for 1 hour
+    return gamificationData.getLevels(
+      this.supabase,
+    );
   }
 
   async getUserLevel(userId: string): Promise<any> {
-    const cacheKey = `gamification:user:level:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const user = await this.getUserById(userId);
-        if (!user) throw new Error("User not found");
-
-        const points = user.points || 0;
-        const levels = await this.getLevels();
-
-        // Find current level
-        let currentLevel = levels[0]; // Default to first level
-        let nextLevel = null;
-
-        for (let i = 0; i < levels.length; i++) {
-          if (points >= levels[i].points_required) {
-            currentLevel = levels[i];
-            nextLevel = levels[i + 1] || null;
-          } else {
-            break;
-          }
-        }
-
-        const progressToNextLevel = nextLevel
-          ? ((points - currentLevel.points_required) /
-              (nextLevel.points_required - currentLevel.points_required)) *
-            100
-          : 100;
-
-        return {
-          currentLevel: currentLevel.level_number,
-          levelName: currentLevel.name,
-          currentPoints: points,
-          pointsRequired: currentLevel.points_required,
-          nextLevelPoints:
-            nextLevel?.points_required || currentLevel.points_required,
-          progressToNextLevel: Math.min(100, Math.max(0, progressToNextLevel)),
-          rewards: currentLevel.rewards || [],
-        };
+    return gamificationData.getUserLevel(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
       },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+      userId,
+    );
   }
 
   async recordStudyActivity(
@@ -7841,82 +5591,57 @@ export class SupabaseService {
     amount = 1,
     activityDate?: string,
   ): Promise<any> {
-    const vAmount = Math.max(Math.floor(Number(amount) || 1), 0);
-    const activityDateStr =
-      activityDate && /^\d{4}-\d{2}-\d{2}$/.test(activityDate)
-        ? activityDate
-        : new Date().toISOString().slice(0, 10);
-
-    const { data, error } = await this.supabase.rpc("record_study_activity", {
-      p_user_id: userId,
-      p_type: type,
-      p_amount: vAmount,
-      p_activity_date: activityDateStr,
-    });
-
-    if (error) throw error;
-    return data;
+    return gamificationData.recordStudyActivity(
+      this.supabase,
+      userId,
+      type,
+      amount,
+      activityDate,
+    );
   }
 
   private profileToGamificationUser(
     profile: Record<string, unknown>,
     statsOverride?: Partial<UserStats>,
   ): User {
-    const normalizedStats = mapUserStatsFromApi(profile.stats || {});
-    return {
-      id: String(profile.id),
-      name: String(profile.name || ""),
-      email: String(profile.email || ""),
-      password: "",
-      phoneNumber: String(profile.phone || ""),
-      avatarUrl: String(profile.avatar_url || profile.avatarUrl || ""),
-      points: Number(profile.points) || 0,
-      badges: (profile.badges as User["badges"]) || [],
-      stats: {
-        ...initialUserStats,
-        ...normalizedStats,
-        ...(statsOverride || {}),
-      },
-    } as User;
+    return gamificationData.profileToGamificationUser(
+      this.supabase,
+      profile,
+      statsOverride,
+    );
   }
 
   async incrementUserStatsAndAwardBadges(
     userId: string,
     increments: Partial<UserStats>,
   ): Promise<GamificationSyncResult> {
-    const profile = await this.getUserById(userId);
-    if (!profile) {
-      throw new Error("User not found");
-    }
-
-    const base = this.profileToGamificationUser(
-      profile as unknown as Record<string, unknown>,
+    return gamificationData.incrementUserStatsAndAwardBadges(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      increments,
     );
-    const stats = { ...base.stats };
-    for (const key of Object.keys(increments) as (keyof UserStats)[]) {
-      const delta = increments[key];
-      if (typeof delta === "number" && delta !== 0) {
-        stats[key] = (stats[key] || 0) + delta;
-      }
-    }
-
-    const { updatedUser, awardedBadges } = checkAndAwardBadges({
-      ...base,
-      stats,
-    });
-    await this.updateUser(userId, {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-    });
-    await cacheService.delete(`user:${userId}`);
-
-    return {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-      awardedBadges,
-    };
   }
 
   /**
@@ -7945,190 +5670,41 @@ export class SupabaseService {
    *                      in place, so buyer_id = "who made the offer".
    */
   async recomputeDerivedUserStats(userId: string): Promise<Partial<UserStats>> {
-    const [
-      sessions,
-      questionCount,
-      topQuestion,
-      groupCount,
-      listingCount,
-      soldListings,
-      completedOrders,
-      fiveStarReviewCount,
-      offerCount,
-      ambassadorFlag,
-    ] = await Promise.all(
-      [
-        this.supabase
-          .from("test_sessions")
-          .select("start_time, test_results (score)")
-          .eq("user_id", userId)
-          .eq("status", "completed"),
-        this.supabase
-          .from("messages")
-          .select("id", { count: "exact", head: true })
-          .eq("sender_id", userId)
-          .eq("type", "QUESTION"),
-        this.supabase
-          .from("messages")
-          .select("upvotes")
-          .eq("sender_id", userId)
-          .eq("type", "QUESTION")
-          .order("upvotes", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        // createGroup writes `admin_ids: [userId]`, so element 0 is the creator;
-        // later admins are appended, leaving that entry intact. Filtering on
-        // `admin_ids->>0` directly would be neater, but supabase-js URL-encodes
-        // column names and PostgREST then fails to read it as a JSON path — so
-        // match on containment, which encodes safely, and check position here.
-        this.supabase
-          .from("groups")
-          .select("admin_ids")
-          .contains("admin_ids", [userId]),
-        this.supabase
-          .from("marketplace_listings")
-          .select("id", { count: "exact", head: true })
-          .eq("user_id", userId),
-        this.supabase
-          .from("marketplace_listings")
-          .select("id")
-          .eq("user_id", userId)
-          .eq("status", "sold"),
-        this.supabase
-          .from("marketplace_orders")
-          .select("listing_id")
-          .eq("seller_id", userId)
-          .eq("status", "completed"),
-        // Reviews carry no seller column, so filter through an inner join on the
-        // listing: `!inner` makes the embedded filter drop parent rows too, and
-        // the exact count is taken over that joined result.
-        this.supabase
-          .from("marketplace_reviews")
-          .select("id, marketplace_listings!inner(user_id)", {
-            count: "exact",
-            head: true,
-          })
-          .eq("rating", 5)
-          .eq("marketplace_listings.user_id", userId),
-        this.supabase
-          .from("marketplace_offers")
-          .select("id", { count: "exact", head: true })
-          .eq("buyer_id", userId),
-        this.supabase
-          .from("profiles")
-          .select("is_ambassador")
-          .eq("id", userId)
-          .maybeSingle(),
-      ],
+    return gamificationData.recomputeDerivedUserStats(
+      this.supabase,
+      userId,
     );
-
-    // Deduplicate by start-time, matching how the dashboard counts. A genuine
-    // double-submit can leave two session rows for one sitting, and the badge
-    // count has to agree with the number the user is shown.
-    const seenStartTimes = new Set<string>();
-    let testsCompleted = 0;
-    let highScoreTests = 0;
-    let perfectScoreTests = 0;
-
-    for (const row of (sessions.data || []) as any[]) {
-      const startTime = String(row.start_time ?? "");
-      if (startTime && seenStartTimes.has(startTime)) continue;
-      if (startTime) seenStartTimes.add(startTime);
-
-      testsCompleted++;
-      const result = Array.isArray(row.test_results)
-        ? row.test_results[0]
-        : row.test_results;
-      const score = Number(result?.score);
-      if (!Number.isFinite(score)) continue;
-      if (score >= 80) highScoreTests++;
-      if (score >= 100) perfectScoreTests++;
-    }
-
-    const derived: Partial<UserStats> = {
-      testsCompleted,
-      highScoreTests,
-      perfectScoreTests,
-    };
-
-    // A failed count must not be mistaken for "zero of them" — leaving the key
-    // out preserves whatever is already stored.
-    if (!questionCount.error && typeof questionCount.count === "number") {
-      derived.questionsCreated = questionCount.count;
-    }
-    if (!groupCount.error && Array.isArray(groupCount.data)) {
-      derived.groupsCreated = (groupCount.data as any[]).filter((row) => {
-        const admins = row?.admin_ids;
-        const first = Array.isArray(admins) ? admins[0] : undefined;
-        return String(first ?? "") === userId;
-      }).length;
-    }
-    if (!topQuestion.error) {
-      derived.questionUpvotesMax = Number(topQuestion.data?.upvotes) || 0;
-    }
-    if (sessions.error) {
-      delete derived.testsCompleted;
-      delete derived.highScoreTests;
-      delete derived.perfectScoreTests;
-      logger.warn("Could not recount test stats; keeping stored values", {
-        userId,
-        error: sessions.error.message,
-      });
-    }
-
-    // Marketplace counters — same rule: a failed read leaves the key out.
-    if (!listingCount.error && typeof listingCount.count === "number") {
-      derived.listingsCreated = listingCount.count;
-    }
-    if (soldListings.error || completedOrders.error) {
-      logger.warn("Could not recount listings sold; keeping stored value", {
-        userId,
-        error:
-          soldListings.error?.message ?? completedOrders.error?.message,
-      });
-    } else {
-      const soldIds = new Set<string>();
-      for (const row of (soldListings.data || []) as any[]) {
-        if (row?.id) soldIds.add(String(row.id));
-      }
-      for (const row of (completedOrders.data || []) as any[]) {
-        if (row?.listing_id) soldIds.add(String(row.listing_id));
-      }
-      derived.listingsSold = soldIds.size;
-    }
-    if (
-      !fiveStarReviewCount.error &&
-      typeof fiveStarReviewCount.count === "number"
-    ) {
-      derived.fiveStarReviews = fiveStarReviewCount.count;
-    }
-    if (!offerCount.error && typeof offerCount.count === "number") {
-      derived.offersMade = offerCount.count;
-    }
-    if (!ambassadorFlag.error) {
-      derived.campusAmbassador =
-        (ambassadorFlag.data as { is_ambassador?: boolean } | null)?.is_ambassador === true
-          ? 1
-          : 0;
-    }
-
-    return derived;
   }
 
   async syncGamificationProgress(
     userId: string,
   ): Promise<GamificationSyncResult> {
-    // Reconcile against source data before re-evaluating. checkAndAwardBadges
-    // only ever looks for currentLevel + 1, so a corrected-downwards count can
-    // never revoke a badge the user already holds.
-    const derived = await this.recomputeDerivedUserStats(userId).catch((err) => {
-      logger.warn("Stat recompute failed; evaluating against stored stats", {
-        userId,
-        err,
-      });
-      return {} as Partial<UserStats>;
-    });
-    return this.syncGamificationProgressWithStats(userId, { stats: derived });
+    return gamificationData.syncGamificationProgress(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+    );
   }
 
   /** Server-only: apply trusted stats before badge evaluation (e.g. after test completion). */
@@ -8139,45 +5715,33 @@ export class SupabaseService {
       activityDate?: string;
     } = {},
   ): Promise<GamificationSyncResult> {
-    const profile = await this.getUserById(userId);
-    if (!profile) {
-      throw new Error("User not found");
-    }
-
-    // What the profile holds now, before any recomputed stats are layered on —
-    // the baseline for deciding whether this sync actually changed anything.
-    const stored = this.profileToGamificationUser(
-      profile as unknown as Record<string, unknown>,
+    return gamificationData.syncGamificationProgressWithStats(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
+      userId,
+      options,
     );
-    const user = this.profileToGamificationUser(
-      profile as unknown as Record<string, unknown>,
-      options.stats,
-    );
-    const { updatedUser, awardedBadges } = checkAndAwardBadges(user);
-
-    // Both clients call this on every dashboard load, so writing unconditionally
-    // would mean a profile UPDATE per screen open for no reason. Only persist
-    // when the reconciliation or an award genuinely moved something.
-    const changed =
-      updatedUser.points !== stored.points ||
-      JSON.stringify(updatedUser.stats) !== JSON.stringify(stored.stats) ||
-      JSON.stringify(updatedUser.badges) !== JSON.stringify(stored.badges);
-
-    if (changed) {
-      await this.updateUser(userId, {
-        points: updatedUser.points,
-        badges: updatedUser.badges,
-        stats: updatedUser.stats,
-      });
-      await cacheService.delete(`user:${userId}`);
-    }
-
-    return {
-      points: updatedUser.points,
-      badges: updatedUser.badges,
-      stats: updatedUser.stats,
-      awardedBadges,
-    };
   }
 
   // No `score` parameter: the score of the test that triggered this is read back
@@ -8192,53 +5756,40 @@ export class SupabaseService {
     stats: UserStats;
     awardedBadges: User["badges"];
   }> {
-    const profile = await this.getUserById(userId);
-    if (!profile) {
-      throw new Error("User not found");
-    }
-
-    // Recount from the saved rows instead of incrementing. The result row is
-    // upserted on session_id, so it is idempotent — but the old increment was
-    // not, and re-submitting a test inflated these counters permanently. The
-    // session is marked completed before its result is written, so the test that
-    // triggered this is already included; if that ever changes, the count is one
-    // low until the next sync rather than wrong forever.
-    const stats = {
-      ...this.profileToGamificationUser(
-        profile as unknown as Record<string, unknown>,
-      ).stats,
-      ...(await this.recomputeDerivedUserStats(userId).catch((err) => {
-        logger.warn("Stat recompute failed after test completion", {
-          userId,
-          err,
-        });
-        return {} as Partial<UserStats>;
-      })),
-    };
-
-    const result = await this.syncGamificationProgressWithStats(userId, {
-      stats,
-    });
-    await this.recordStudyActivity(userId, "test", 1, activityDate).catch(
-      (err) => {
-        logger.warn("Failed to record study activity after test", {
-          userId,
-          err,
-        });
+    return gamificationData.applyTestCompletionGamification(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
       },
+      userId,
+      activityDate,
     );
-    await this.recomputeUserStreak(userId, activityDate).catch((err) => {
-      logger.warn("Failed to recompute streak after test", { userId, err });
-    });
-    return result;
   }
 
   async touchLastSeen(userId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq("id", userId);
-    if (error) throw error;
+    return gamificationData.touchLastSeen(
+      this.supabase,
+      userId,
+    );
   }
 
   async getStudyActivity(
@@ -8251,41 +5802,18 @@ export class SupabaseService {
       breakdown: Partial<Record<string, number>>;
     }>
   > {
-    const since = new Date();
-    since.setDate(since.getDate() - Math.max(1, days) + 1);
-    const sinceDate = since.toISOString().slice(0, 10);
-
-    const { data, error } = await this.supabase
-      .from("study_activity")
-      .select(
-        "activity_date, count, test_count, flashcard_count, new_flashcard_count, question_count, game_count, daily_quiz_count",
-      )
-      .eq("user_id", userId)
-      .gte("activity_date", sinceDate)
-      .order("activity_date", { ascending: true });
-
-    if (error) throw error;
-
-    return (data || []).map((row: any) => ({
-      date: row.activity_date,
-      count: row.count ?? 0,
-      breakdown: {
-        test: row.test_count ?? 0,
-        flashcard: row.flashcard_count ?? 0,
-        flashcard_new: row.new_flashcard_count ?? 0,
-        study_question: row.question_count ?? 0,
-        game: row.game_count ?? 0,
-        daily_quiz: row.daily_quiz_count ?? 0,
-      },
-    }));
+    return gamificationData.getStudyActivity(
+      this.supabase,
+      userId,
+      days,
+    );
   }
 
   private parseStreakReferenceDate(referenceDate?: string): Date {
-    if (referenceDate && /^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
-      const [y, m, d] = referenceDate.split("-").map(Number);
-      return new Date(y, m - 1, d);
-    }
-    return new Date();
+    return gamificationData.parseStreakReferenceDate(
+      this.supabase,
+      referenceDate,
+    );
   }
 
   /** Recompute streak from study_activity (heatmap-aligned, client-local dates). */
@@ -8300,44 +5828,33 @@ export class SupabaseService {
     streak_freezes: number;
     updated_at: string;
   }> {
-    const STREAK_LOOKBACK_DAYS = 400;
-    const activityDays = await this.getStudyActivity(
+    return gamificationData.recomputeUserStreak(
+      this.supabase,
+      {
+        service: this,
+        getUserById: (uid) => this.getUserById(uid),
+        updateUser: (uid, updates, options) =>
+          this.updateUser(uid, updates, options),
+        profileToGamificationUser: (profile, statsOverride) =>
+          this.profileToGamificationUser(profile, statsOverride),
+        parseStreakReferenceDate: (referenceDate) =>
+          this.parseStreakReferenceDate(referenceDate),
+        awardPoints: (uid, points, reason, source) =>
+          this.awardPoints(uid, points, reason, source),
+        getLevels: () => this.getLevels(),
+        getUserLevel: (uid) => this.getUserLevel(uid),
+        getStudyActivity: (uid, days) => this.getStudyActivity(uid, days),
+        recordStudyActivity: (uid, type, amount, activityDate) =>
+          this.recordStudyActivity(uid, type, amount, activityDate),
+        recomputeDerivedUserStats: (uid) => this.recomputeDerivedUserStats(uid),
+        recomputeUserStreak: (uid, referenceDate) =>
+          this.recomputeUserStreak(uid, referenceDate),
+        syncGamificationProgressWithStats: (uid, options) =>
+          this.syncGamificationProgressWithStats(uid, options),
+      },
       userId,
-      STREAK_LOOKBACK_DAYS,
+      referenceDate,
     );
-    const ref = this.parseStreakReferenceDate(referenceDate);
-    const { current, longest, lastActiveDate } = computeStudyStreak(
-      activityDays,
-      ref,
-    );
-
-    const { data: existing } = await this.supabase
-      .from("user_streaks")
-      .select("streak_freezes, longest_streak")
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    const streakFreezes = existing?.streak_freezes ?? 0;
-    const longestStreak = Math.max(existing?.longest_streak ?? 0, longest);
-
-    const { data, error } = await this.supabase
-      .from("user_streaks")
-      .upsert(
-        {
-          user_id: userId,
-          current_streak: current,
-          longest_streak: longestStreak,
-          last_login_date: lastActiveDate,
-          streak_freezes: streakFreezes,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id" },
-      )
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
   }
 
   // ===========================================================================

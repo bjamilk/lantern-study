@@ -185,6 +185,16 @@ function argumentRegion(src: string, start: number): { text: string; end: number
  * `columns` holds what could be read; `unresolved` names the arguments that
  * yielded nothing, so a new embed cannot hide behind an unreadable argument.
  */
+// KNOWN ISSUE (tracked, found during M1c): `literalBindings` is a FLAT,
+// last-one-wins map per file, so two different `const selectClause = …` in the
+// same file collapse into one entry and a select passed by that name resolves
+// to whichever literal the regex saw last. In an 18k-line file that is easy to
+// hit — `getFlashcards` was silently "resolved" through an unrelated chat
+// select for as long as both lived in `services/supabase.ts`. The guard still
+// never reports a bare embed it cannot see (an unreadable name lands in
+// `unresolved` and the frozen ledger), but a MIS-resolved name is scanned
+// against the wrong columns. Keying bindings by (name, scope) would fix it;
+// out of scope for a behaviour-preserving move.
 function scanSelects(src: string): { columns: string[]; unresolved: string[] } {
   const bindings = literalBindings(src);
   const exported = exportedLiteralBindings();
@@ -315,7 +325,7 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   'services/marketplaceOrders.ts::marketplace_listings': 16,
   'services/marketplaceOrders.ts::marketplace_transactions': 15,
   'services/studyPackFactory.ts::marketplace_listings': 1,
-  'services/supabase.ts::marketplace_listings': 7,
+  'services/supabase.ts::marketplace_listings': 6,
 
   // --- Jobs board (jobs lane). Membership/company/posting joins, single FK
   //     each today.
@@ -351,14 +361,31 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
 
   // --- supabase.ts membership joins not adjacent to the outage table pattern.
   //     group_members->groups and note_collaborators->notes are single-FK today.
-  'services/supabase.ts::achievements': 2,
-  'services/supabase.ts::groups': 2,
+  // The gamification embeds moved verbatim out of supabase.ts into the
+  // gamification repository (monolith lane M1c, step 12): both
+  // `user_achievements->achievements`, one `points_transactions->test_results`
+  // and one leaderboard `->marketplace_listings`. Same queries, new file — the
+  // rows moved with them rather than any count changing (supabase.ts drops
+  // achievements entirely, marketplace_listings 7 -> 6, test_results 2 -> 1).
+  'services/data/gamification.ts::achievements': 2,
+  'services/data/gamification.ts::marketplace_listings': 1,
+  'services/data/gamification.ts::test_results': 1,
+  'services/supabase.ts::groups': 1,
+  // `getPendingGroupInvitesForUser`' group_members->groups embed, moved
+  // verbatim out of supabase.ts into the groups repository (monolith lane M1c,
+  // step 10). Same query, new file: the row moved with it rather than the
+  // count changing — supabase.ts drops from 2 to 1 for the same reason.
+  'services/data/groups.ts::groups': 1,
   // `getUserGroups`' group_members->groups embed, moved verbatim out of
   // supabase.ts into the users repository (monolith lane M1b, step 6). Same
   // query, new file: the row moved with it rather than the count changing.
   'services/data/users.ts::groups': 1,
   'services/supabase.ts::notes': 1,
-  'services/supabase.ts::test_results': 4,
+  'services/supabase.ts::test_results': 1,
+  // Two of the four `test_sessions->test_results` embeds moved verbatim out of
+  // supabase.ts into the tests repository (monolith lane M1c, step 11). Same
+  // queries, new file: the rows moved with them rather than the count changing.
+  'services/data/tests.ts::test_results': 2,
 
   // --- Account lifecycle export. Single FK each today.
   'services/userDataLifecycle.ts::flashcards': 1,
@@ -421,6 +448,28 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/communities.ts::cols': 1,
       'services/communities.ts::columns': 2,
       'services/communityModeration.ts::cols': 1,
+      // offlineBundles' `getFlashcards`: `const selectClause = profile ===
+      // 'compact' ? '<columns>' : '<columns>'`, a ternary between two literals
+      // bound to a NAME rather than written at the call site, so the binding
+      // scan (which reads `const x = '<literal>'` only) cannot follow it.
+      // Neither branch contains a parenthesis, so no embed can hide there.
+      //
+      // It appears in this ledger only because monolith lane M1c step 9 moved
+      // the method out of `services/supabase.ts`, where an UNRELATED
+      // `const selectClause = \`...\`` in the chat section (line ~8548) happened
+      // to bind the same name to a literal and masked it. The select itself is
+      // unchanged; see the KNOWN ISSUE on `scanSelects` about that masking.
+      // groups' `getGroups` (`runList(selectClause)`) and `getGroupById`
+      // (`readOne(columns)`, called twice) — the `community_surface`
+      // capability ladders, which run the same query with and without the
+      // column migration 20260903120000 adds. Both arguments are fed from
+      // literal bindings in the same file (`baseClause`, GROUP_COLUMNS_BASE),
+      // so no embed hides behind the parameter. Moved here from
+      // `services/supabase.ts::columns`, which drops from 7 to 5, by monolith
+      // lane M1c step 10.
+      'services/data/groups.ts::columns': 2,
+      'services/data/groups.ts::selectClause': 1,
+      'services/data/offlineBundles.ts::selectClause': 1,
       'services/librarySearch.ts::column': 1,
       'services/moderation.ts::columns': 2,
       'services/schemaCapabilities.ts::column': 1,
@@ -430,7 +479,7 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // SET_NO_COVER_COLUMNS, SET_NO_EXAM_NO_COVER_COLUMNS) — each named so the
       // scan reads it at its definition, so no embed hides behind the ladder.
       'services/studySets.ts::columns': 5,
-      'services/supabase.ts::columns': 7,
+      'services/supabase.ts::columns': 5,
       'services/supabase.ts::select': 4,
     });
   });
