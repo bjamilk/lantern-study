@@ -83,6 +83,8 @@ import { COMMUNITY_COPY, isHiddenFromChatInbox, studyGroupAnnouncement } from '@
 import { canOpenCommunities } from './components/community/communityAccess';
 import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
+import { useCommunityNavigation } from './hooks/useCommunityNavigation';
+import { useCompanionContext } from './hooks/useCompanionContext';
 import type { CommunityNavigate } from './components/community/communityNavigation';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
@@ -122,65 +124,22 @@ import TestAnalysisModal from './components/TestAnalysisModal';
 import CreateMarketplaceListingModal from './components/CreateMarketplaceListingModal';
 import EditMarketplaceListingModal from './components/EditMarketplaceListingModal';
 import CreateLabModal from './components/CreateLabModal';
-// Heavy screens — loaded on demand to reduce initial bundle size
-const FlashcardsScreen = lazyWithRetry(() => import('./components/FlashcardsScreen'));
-const DeckDetailScreen = lazyWithRetry(() => import('./components/DeckDetailScreen'));
-const FlashcardReviewScreen = lazyWithRetry(() => import('./components/FlashcardReviewScreen'));
-const CramSessionScreen = lazyWithRetry(() => import('./components/CramSessionScreen'));
-const MatchStudyScreen = lazyWithRetry(() => import('./components/MatchStudyScreen'));
-const LearnStudyScreen = lazyWithRetry(() => import('./components/LearnStudyScreen'));
-const ImportAndStudyModal = lazyWithRetry(() => import('./components/ImportAndStudyModal'));
-const OnboardingFlow = lazyWithRetry(() => import('./components/OnboardingFlow'));
-const DailyQuestsWidget = lazyWithRetry(() => import('./components/DailyQuestsWidget'));
-const GameScreen = lazyWithRetry(() => import('./components/GameScreen').then(m => ({ default: m.GameScreen })));
-const GameResultScreen = lazyWithRetry(() => import('./components/GameResultScreen'));
-const TestTakingScreen = lazyWithRetry(() => import('./components/TestTakingScreen').then(m => ({ default: m.TestTakingScreen })));
-const TestReviewScreen = lazyWithRetry(() => import('./components/TestReviewScreen'));
-const BudgetTrackerScreen = lazyWithRetry(() => import('./components/BudgetTrackerScreen'));
-const MarketplaceScreen = lazyWithRetry(() => import('./components/MarketplaceScreen'));
-const MarketplaceListingDetailScreen = lazyWithRetry(() => import('./components/MarketplaceListingDetailScreen'));
-const MyListingsScreen = lazyWithRetry(() => import('./components/MyListingsScreen'));
-const MarketplacePurchasesScreen = lazyWithRetry(() => import('./components/MarketplacePurchasesScreen'));
-const StudyProductDraftsScreen = lazyWithRetry(() => import('./components/StudyProductDraftsScreen'));
-const SemesterProductsScreen = lazyWithRetry(() => import('./components/SemesterProductsScreen'));
-const StudyRoomScreen = lazyWithRetry(() => import('./components/StudyRoomScreen'));
-const CreatorProfileScreen = lazyWithRetry(() => import('./components/CreatorProfileScreen'));
-const DiscoverScreen = lazyWithRetry(() => import('./components/DiscoverScreen'));
-const InviteFriendsScreen = lazyWithRetry(() => import('./components/InviteFriendsScreen'));
-const CampusScreen = lazyWithRetry(() => import('./components/CampusScreen'));
-const CommunityDetailScreen = lazyWithRetry(() => import('./components/CommunityDetailScreen'));
-const CommunityChannelPane = lazyWithRetry(() => import('./components/community/CommunityChannelPane'));
-const MarketplaceFavoritesScreen = lazyWithRetry(() => import('./components/MarketplaceFavoritesScreen'));
-const MarketplaceInquiriesScreen = lazyWithRetry(() => import('./components/MarketplaceInquiriesScreen'));
-const MarketplaceOrdersScreen = lazyWithRetry(() => import('./components/MarketplaceOrdersScreen'));
-const MarketplaceCartScreen = lazyWithRetry(() => import('./components/MarketplaceCartScreen'));
-const MarketplaceCheckoutScreen = lazyWithRetry(() => import('./components/MarketplaceCheckoutScreen'));
-const ShopAccountScreen = lazyWithRetry(() => import('./components/ShopAccountScreen'));
-const MarketplaceAddressesScreen = lazyWithRetry(() => import('./components/MarketplaceAddressesScreen'));
-const MarketplaceOrderDetailScreen = lazyWithRetry(() => import('./components/MarketplaceOrderDetailScreen'));
-const SellerCustomersScreen = lazyWithRetry(() => import('./components/SellerCustomersScreen'));
-const SellerProfileScreen = lazyWithRetry(() => import('./components/SellerProfileScreen'));
-const JobsBoardScreen = lazyWithRetry(() => import('./components/JobsBoardScreen'));
-const JobDetailScreen = lazyWithRetry(() => import('./components/JobDetailScreen'));
-const CreateJobScreen = lazyWithRetry(() => import('./components/CreateJobScreen'));
-const MyJobPostingsScreen = lazyWithRetry(() => import('./components/MyJobPostingsScreen'));
-const MyJobApplicationsScreen = lazyWithRetry(() => import('./components/MyJobApplicationsScreen'));
-const JobEmployerScreen = lazyWithRetry(() => import('./components/JobEmployerScreen'));
-const JobEmployerPipelineScreen = lazyWithRetry(() => import('./components/JobEmployerPipelineScreen'));
-const JobCompanyScreen = lazyWithRetry(() => import('./components/JobCompanyScreen'));
-const AdminScreen = lazyWithRetry(() => import('./components/AdminScreen'));
-const TeachApp = lazyWithRetry(() => import('./components/teach/TeachApp'));
-const JoinClassPage = lazyWithRetry(() => import('./components/teach/JoinClassPage'));
-const NotesScreen = lazyWithRetry(() => import('./components/NotesScreen'));
+import {
+    FlashcardsScreen,
+    ImportAndStudyModal,
+    OnboardingFlow,
+    CommunityDetailScreen,
+    TeachApp,
+    JoinClassPage,
+    NotesScreen,
+    TestBuilderScreen,
+    LandingPage,
+    TeachLandingPage,
+    AppContentLoadingFallback,
+} from './routes/lazyScreens';
+import { SCREEN_REGISTRY } from './routes/screenRegistry';
+import type { ScreenContext } from './routes/screenRegistry';
 import NoteEditorScreen from './components/NoteEditorScreen';
-const LibraryScreen = lazyWithRetry(() => import('./components/LibraryScreen'));
-const StudyHubScreen = lazyWithRetry(() => import('./components/StudyHubScreen'));
-const CourseWorkspace = lazyWithRetry(() => import('./components/study/CourseWorkspace'));
-const TestsHomeScreen = lazyWithRetry(() => import('./components/TestsHomeScreen'));
-const TestBuilderScreen = lazyWithRetry(() => import('./components/TestBuilderScreen'));
-const AIToolsHub = lazyWithRetry(() => import('./components/AIToolsHub'));
-const LandingPage = lazyWithRetry(() => import('./components/marketing/LandingPage'));
-const TeachLandingPage = lazyWithRetry(() => import('./components/marketing/TeachLandingPage'));
 import AppShell from './components/layout/AppShell';
 import Breadcrumb from './components/layout/Breadcrumb';
 import { useAuthHandlers, INITIAL_BOOTSTRAP_LOAD_STATE } from './hooks/useAuthHandlers';
@@ -234,17 +193,6 @@ import { buildRetakeSession, planRetake } from './utils/testRetake';
 import { attemptKindFromConfig, type TestPlanDraft } from './utils/testBuilder';
 import { runTestGenerator } from './hooks/useStudyGenerators';
 import { runAiJob } from './stores/aiJobRunner';
-
-const AppContentLoadingFallback: React.FC = () => (
-    <div
-        className="flex-1 min-h-0 flex items-center justify-center bg-lantern-background"
-        role="status"
-        aria-label="Loading page"
-    >
-        <div className="animate-spin rounded-full h-8 w-8 border-2 border-lantern-primary/30 border-t-lantern-primary" />
-        <span className="sr-only">Loading page</span>
-    </div>
-);
 
 export const App: React.FC = () => {
     const { navigateTo, navigateToPath } = useAppNavigation();
@@ -386,11 +334,6 @@ export const App: React.FC = () => {
             announceInGroupId?: string;
         } | null
     >(null);
-    // Re-entrancy guard for the community actions that hit the server and then
-    // navigate (join channel, open/mint lounge, open study group). A ref, not
-    // state: it must block the second click within the same tick, before any
-    // re-render, or a double tap mints or joins twice.
-    const communityActionBusy = React.useRef(false);
 
     // Feature-tip checklist ticks. Driven by `isCompanionOpen` — opening the
     // companion once is the whole condition; `markChecklist` is idempotent.
@@ -398,15 +341,6 @@ export const App: React.FC = () => {
         if (isCompanionOpen) markChecklist('tryCompanion');
     }, [isCompanionOpen, markChecklist]);
 
-    // The community column lives only on the community's own modes (its home,
-    // its channels, a room opened from it). Anything else closes it.
-    useEffect(() => {
-        if (appMode === AppMode.COMMUNITY_DETAIL || appMode === AppMode.STUDY_ROOM) return;
-        // Route hydration seeds the community a microtask before it flips the
-        // mode; a render in between must not wipe what it just set.
-        if (parseAppRoute(window.location.pathname).mode === AppMode.COMMUNITY_DETAIL) return;
-        if (useUIStore.getState().activeCommunity) setActiveCommunity(null);
-    }, [appMode, setActiveCommunity]);
     // The ONE live-presence subscription for the active community (spec §3).
     useCommunityPresence();
     const myCommunities = useCommunityStore((s) => s.myCommunities);
@@ -428,15 +362,6 @@ export const App: React.FC = () => {
             ),
         [communityDetailBySlug, communityChannelsById, activeCommunity?.loungeGroupId, myCommunities]
     );
-    // The membership list carries each community's lounge pointer, so the chat
-    // list can tell a lounge from a board on a cold page load. Until it lands,
-    // a community's groups stay chats — never the reverse (§0a decision 1).
-    // Driven by `currentUser?.id` alone: memberships are per account, and the
-    // store dedupes, so a re-run on any other dep would be a wasted round trip.
-    React.useEffect(() => {
-        if (!currentUser?.id) return;
-        void useCommunityStore.getState().loadMine().catch(() => {});
-    }, [currentUser?.id]);
     const chatListGroups = React.useMemo(
         () =>
             (Array.isArray(groups)
@@ -448,70 +373,6 @@ export const App: React.FC = () => {
         appMode === AppMode.CHAT &&
         selectedChat?.chatType === 'group' &&
         isBoardGroup(selectedChat as unknown as Group, knownLounges);
-    /** Chat id whose community membership has already been re-requested once (F9). */
-    const boardSlugResolveRef = React.useRef<string | null>(null);
-    // Closing the Chat-tab bypass (spec §5.2 / §4.5): a board reached by a
-    // direct route replaces itself with the community page, which renders the
-    // board. It is not refused and it never falls back to a chat.
-    // Driven by `selectedChatIsBoard` + `selectedChat`: a board can only become
-    // selected through the chats list or a direct route, and both change those.
-    // FIXED (F9): when the slug could not be resolved this effect only
-    // re-requested memberships and returned, while AppMode.CHAT renders the
-    // loading fallback for a board — so a membership that never loaded (offline,
-    // or the student had been removed from the community) left a PERMANENT
-    // spinner with no way back. It now asks for memberships exactly once per
-    // board, and when the reload finishes with the slug still missing it says so
-    // and returns to the chats list. The give-up runs off the reload's own
-    // settle, not off a `myCommunities` change, because the case that produced
-    // the spinner is the one where that array never changes at all.
-    useEffect(() => {
-        if (!selectedChatIsBoard || !selectedChat) return;
-        const chatId = selectedChat.id;
-        const communityId = (selectedChat as unknown as Group).communityId;
-        const slug = myCommunities.find((c) => c.id === communityId)?.slug;
-        if (!slug) {
-            if (boardSlugResolveRef.current === chatId) return;
-            boardSlugResolveRef.current = chatId;
-            let cancelled = false;
-            void useCommunityStore
-                .getState()
-                .loadMine()
-                .catch(() => {})
-                .finally(() => {
-                    if (cancelled) return;
-                    const resolved = useCommunityStore
-                        .getState()
-                        .myCommunities.find((c) => c.id === communityId)?.slug;
-                    if (resolved) return;
-                    // Still nothing: this board is not reachable for this user.
-                    boardSlugResolveRef.current = null;
-                    setSelectedChat(null);
-                    navigateTo(AppMode.CHAT, {}, { replace: true });
-                    showToast(
-                        'That board could not be opened. You may have left the community, or you are offline.',
-                        'error'
-                    );
-                });
-            return () => {
-                cancelled = true;
-            };
-        }
-        boardSlugResolveRef.current = null;
-        const postId = parseAppRoute(window.location.pathname).params.postId;
-        navigateTo(AppMode.COMMUNITY_DETAIL, {
-            slug,
-            groupId: selectedChat.id,
-            ...(postId ? { postId } : {}),
-        });
-    }, [selectedChatIsBoard, selectedChat, myCommunities, navigateTo, setSelectedChat, showToast]);
-    // A community channel opened from the plain chats list shows `in <Community>`
-    // in its header; memberships resolve the id to a name + slug.
-    const selectedChatCommunityId =
-        selectedChat?.chatType === 'group' ? (selectedChat.communityId ?? null) : null;
-    useEffect(() => {
-        if (!selectedChatCommunityId || !currentUser?.id) return;
-        void useCommunityStore.getState().loadMine().catch(() => {});
-    }, [selectedChatCommunityId, currentUser?.id]);
 
     // Marks the three "you have been here" checklist items. Driven by `appMode`:
     // arriving at any of the listed modes is the whole condition.
@@ -719,11 +580,45 @@ export const App: React.FC = () => {
     // every render instead of mirroring it into state, so a reload, a deep link
     // and a Back step all resolve to the same place. ----
     const location = useLocation();
-    // `/discover/c/:slug/ch/:groupId` — the community owns its chat, so the
-    // channel id is read from the URL, never from a switch to AppMode.CHAT.
-    const communityRoute = appMode === AppMode.COMMUNITY_DETAIL ? parseAppRoute(location.pathname) : null;
-    const communityChannelId = communityRoute?.params?.groupId ?? null;
-    const communityRouteSlug = communityRoute?.params?.slug ?? null;
+    // Communities: the navigation contract, the route-derived channel id and
+    // the five effects that keep the column, the URL and the chats list in step
+    // (M7 — hooks/useCommunityNavigation.ts). Called HERE, immediately after
+    // `useLocation()`, because that is the first point every input exists and
+    // because the effects it registers must stay ahead of nothing in
+    // particular: see the note in that file about what they used to interleave
+    // with.
+    const {
+        communityRoute,
+        communityChannelId,
+        selectedChatCommunityId,
+        handleCommunityNavigate,
+        openCommunityChannel,
+        openDiscoverGroup,
+    } = useCommunityNavigation({
+        appMode,
+        currentUser,
+        location,
+        groups,
+        selectedChat,
+        setSelectedChat,
+        selectedChatIsBoard,
+        myCommunities,
+        activeCommunity,
+        activeCommunityDetail,
+        setActiveCommunity,
+        handleSelectChat,
+        handleInitiateDm,
+        setAppMode,
+        navigateTo,
+        showToast,
+        setDiscoverSection,
+        setStudyRoomJoin,
+        setSelectedStudyRoomId,
+        setCreateLabCommunity,
+        setCreateLabOpen,
+        setCreateGroupPreset,
+        setCreateGroupReturnMode,
+    });
     /**
      * The Shop's sub-states are read off the URL, never held in a local flag:
      * the By-course panel, one course inside it and the Sell sheet are places,
@@ -755,16 +650,6 @@ export const App: React.FC = () => {
         }
         navigateToPath(to, { replace: true });
     }, [navigateToPath]);
-    // Belt and braces for the column: whatever path led here, the community
-    // page always has an active community matching its URL (the column then
-    // resolves the placeholder by slug).
-    useEffect(() => {
-        if (!communityRouteSlug) return;
-        const current = useUIStore.getState().activeCommunity;
-        if (!current || current.slug !== communityRouteSlug) {
-            setActiveCommunity({ id: '', slug: communityRouteSlug, name: '', loungeGroupId: null });
-        }
-    }, [communityRouteSlug, setActiveCommunity]);
     // Decided once, in a lazy initialiser, so the onboarding overlay cannot flash
     // on a returning student between mount and the first localStorage read. A
     // lecturer arriving through the teach signup is marked complete and skipped.
@@ -941,217 +826,39 @@ export const App: React.FC = () => {
         [handleGenerateFlashcardsFromTestResult, setAnalyzingResult]
     );
 
-    // Build context object for the AI companion
-    // Everything the companion is told about the student, rebuilt whenever any
-    // of it changes. `currentScreen`, `courseId`, `noteId` and `noteContext` are
-    // what make its answers about the page in front of the student, so the memo
-    // deliberately depends on `appMode`, `selectedNote` and `location.pathname`.
-    // `noteContext` is capped at 6000 chars — the note body is untrusted length.
-    const companionContext = React.useMemo(() => {
-        const weakTopics = testResults.flatMap(r => r.tagBreakdown ? Object.entries(r.tagBreakdown)
-            .filter(([, s]: [string, any]) => s.total > 0 && s.correct / s.total < 0.6)
-            .map(([tag]) => tag) : []);
-        const uniqueWeak = [...new Set(weakTopics)].slice(0, 5);
-        const recentScore = testResults.length > 0
-            ? `Last test: ${Math.round(testResults[testResults.length - 1].score)}%`
-            : undefined;
-        // Budget summary for current month
-        let budgetSummary: string | undefined;
-        if (transactions.length > 0) {
-            const thisMonth = new Date().toISOString().slice(0, 7);
-            const monthlyExpenses = transactions.filter(t => t.type === TransactionType.EXPENSE && t.date?.startsWith(thisMonth));
-            const totalSpent = monthlyExpenses.reduce((s, t) => s + (t.amount || 0), 0);
-            if (budget?.monthlyLimit && budget.monthlyLimit > 0) {
-                budgetSummary = `Spent ₦${totalSpent.toFixed(0)} of ₦${budget.monthlyLimit.toFixed(0)} monthly budget this month`;
-            } else if (totalSpent > 0) {
-                budgetSummary = `Spent ₦${totalSpent.toFixed(0)} this month (no budget limit set)`;
-            }
-        }
-        return {
-            userName: currentUser?.firstName || currentUser?.name,
-            groups: groups.filter(g => !g.isArchived).map(g => g.name).slice(0, 5),
-            weakTopics: uniqueWeak,
-            dueCardsCount,
-            recentTestSummary: recentScore,
-            budgetSummary,
-            currentScreen: (() => {
-                switch (appMode) {
-                    case AppMode.DASHBOARD: return 'Dashboard';
-                    case AppMode.CHAT: return selectedChat ? `Group chat: ${(selectedChat as any).name || 'Chat'}` : 'Chat (no group selected)';
-                    case AppMode.FLASHCARDS: return selectedDeck ? `Flashcards – deck: ${selectedDeck.name}` : 'Flashcards (deck list)';
-                    case AppMode.TEST_ACTIVE: return 'Active test session';
-                    case AppMode.STUDY_ACTIVE: return 'Active study session';
-                    case AppMode.GAME: return 'Multiplayer quiz game';
-                    case AppMode.MARKETPLACE: return 'Marketplace';
-                    case AppMode.BUDGET_TRACKER: return 'Budget Tracker';
-                    case AppMode.OFFLINE: return 'Offline mode';
-                    case AppMode.NOTES: return 'Notes library';
-                    case AppMode.NOTE_EDITOR: return selectedNote ? `Note: ${selectedNote.title}` : 'Note editor';
-                    case AppMode.COURSE_WORKSPACE: return selectedNote ? `Course – ${selectedNote.title}` : 'Course workspace';
-                    case AppMode.STUDY_SET_WORKSPACE: return selectedNote ? `Study set – ${selectedNote.title}` : 'Study set';
-                    default: return undefined;
-                }
-            })(),
-            courseId:
-                selectedNote?.courseId ||
-                (appMode === AppMode.COURSE_WORKSPACE
-                    ? parseAppRoute(location.pathname).params.courseId
-                    : undefined),
-            noteId: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE ? selectedNote?.id : undefined,
-            noteContext: (appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE) && selectedNote
-                ? getNoteStudyContent({
-                    sourceType: selectedNote.sourceType,
-                    body: selectedNote.body,
-                    summary: selectedNote.summary,
-                    attachments: selectedNote.attachments,
-                  }).substring(0, 6000) || undefined
-                : undefined,
-            noteTitle: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE ? selectedNote?.title : undefined,
-            studyGoal,
-            activeSessionSummary: activeTestSession
-                ? `Taking a ${activeTestSession.config?.mode || 'test'} with ${activeTestSession.questions?.length ?? 0} questions`
-                : activeStudySession
-                ? `Study session with ${activeStudySession.questions?.length ?? 0} questions`
-                : undefined,
-        };
-    }, [testResults, groups, dueCardsCount, currentUser, transactions, budget, appMode, selectedChat, selectedDeck, activeTestSession, activeStudySession, selectedNote, studyGoal, location.pathname]);
 
-    /**
-     * Group the companion asked to build a test in, while its selection is
-     * still landing (F9). The test-config modal reads the SELECTED chat, so it
-     * must not mount before the selection it is meant to describe.
-     */
-    const pendingTestConfigGroupRef = React.useRef<string | null>(null);
-    React.useEffect(() => {
-        const pending = pendingTestConfigGroupRef.current;
-        if (!pending) return;
-        if (selectedChat?.chatType !== 'group' || selectedChat.id !== pending) return;
-        pendingTestConfigGroupRef.current = null;
-        setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
-        openModal('testConfig');
-    }, [selectedChat, setActiveTestConfigMode, openModal, getUserSettings]);
 
-    // The companion's tool calls, executed in App because they are navigations
-    // and modal opens the panel itself cannot perform. Anything the model can
-    // ask for must appear here; an unhandled `action.type` falls out of the
-    // switch silently and the student sees nothing happen.
-    const handleCompanionAction = React.useCallback((action: CompanionAction) => {
-        switch (action.type) {
-            case 'navigate_to_flashcards':
-                setAppMode(AppMode.FLASHCARDS);
-                setSelectedDeck(null);
-                break;
-            case 'open_test_config':
-                if (selectedChat?.chatType === 'group') {
-                    setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
-                    openModal('testConfig');
-                } else if (groups.length > 0) {
-                    // FIXED (F9): the modal used to be opened on a fixed 50 ms
-                    // timer after selecting the first group. On a slow render it
-                    // mounted while `selectedChat` was still the previous chat
-                    // (or none), so it built the test against the wrong group or
-                    // rendered nothing. The group is now recorded as PENDING and
-                    // the effect above opens the modal when that selection has
-                    // actually landed — no timer, and no wrong-group window.
-                    pendingTestConfigGroupRef.current = groups[0].id;
-                    handleSelectChat({ ...groups[0], chatType: 'group' });
-                }
-                break;
-            case 'open_create_flashcard':
-                openModal('createFlashcard');
-                break;
-            case 'navigate_to_dashboard':
-                setAppMode(AppMode.DASHBOARD);
-                break;
-            case 'navigate_to_chat':
-                if (action.payload?.groupId) {
-                    const targetGroup = groups.find(g => g.id === action.payload!.groupId);
-                    if (targetGroup) { handleSelectChat({ ...targetGroup, chatType: 'group' }); setAppMode(AppMode.CHAT); }
-                } else {
-                    setAppMode(AppMode.CHAT);
-                }
-                break;
-            case 'navigate_to_notes':
-                noteHandlers.navigateToNotes();
-                break;
-            case 'open_note_learn':
-                if (selectedNote) setAppMode(AppMode.NOTE_EDITOR);
-                else noteHandlers.navigateToNotes();
-                break;
-            // The one action that does work rather than navigate: generate cards
-            // from the student's weak topics or an explicit topic list, save them
-            // atomically, land on the result, and tell the companion what
-            // happened so its next message matches what the student can see.
-            case 'auto_generate_flashcards': {
-                if (!currentUser) break;
-                const topicsRaw = action.payload?.topics || '';
-                const deckName = action.payload?.deckName || (topicsRaw ? `Weak Areas: ${topicsRaw.split(',').slice(0, 2).join(', ')}` : 'Weak Areas Review');
-                const topics = topicsRaw || (companionContext.weakTopics?.join(', ') || '');
-
-                (async () => {
-                    try {
-                        const sourceContent = buildFlashcardSourceContent({
-                            topics,
-                            weakTopics: companionContext.weakTopics,
-                            selectedNote,
-                            notes,
-                        });
-                        if (sourceContent.trim().length < 50) {
-                            showToast('Add a note with at least 50 characters, or specify topics to generate flashcards.', 'error');
-                            return;
-                        }
-
-                        const topicList = (topics || companionContext.weakTopics?.join(', ') || 'review')
-                            .split(',')
-                            .map((t: string) => t.trim())
-                            .filter(Boolean);
-                        const cardCount = normalizeFlashcardCount(topicList.length * 4 || 10);
-
-                        const { flashcards: generated } = await aiGenerateFlashcards(sourceContent, {
-                            count: cardCount,
-                            style: 'concise',
-                        });
-                        if (!generated?.length) {
-                            showToast('Could not generate flashcards. Try again with more study material.', 'error');
-                            return;
-                        }
-
-                        // One atomic request: the deck and its cards land together
-                        // or neither does. The old loop left a deck announcing
-                        // cards it did not contain whenever the connection went
-                        // partway through.
-                        const fileCourseId = companionContext.courseId;
-                        const saved = await saveGeneratedDeck({
-                            jobId: `companion-${currentUser.id}-${Date.now()}`,
-                            userId: currentUser.id,
-                            deckName,
-                            description: `Auto-generated by Lantern for: ${topics || 'weak areas review'}`,
-                            courseId: fileCourseId,
-                            cards: generated.map((card) => ({ front: card.front, back: card.back })),
-                        });
-                        const newDeck =
-                            useFlashcardStore.getState().decks.find((d) => d.id === saved.ref.id) ??
-                            ({ id: saved.ref.id, name: saved.ref.name || deckName } as any);
-                        if (fileCourseId) {
-                            navigateTo(AppMode.COURSE_WORKSPACE, { courseId: fileCourseId });
-                        } else {
-                            setSelectedDeck(newDeck);
-                            setAppMode(AppMode.DECK_DETAIL);
-                        }
-                        showToast(`Created "${deckName}" with ${saved.saved} flashcards`, 'success');
-                        addNotification(`Created "${deckName}" with ${saved.saved} flashcards!`);
-                        useCompanionStore.getState().sendMessageStreaming(
-                            `[system] Flashcard generation complete: created ${generated.length} cards in the deck "${deckName}". Confirm to the user in a friendly way, mention they can find the deck ${fileCourseId ? 'in this course under Cards' : 'in Flashcards'}.`,
-                            companionContext
-                        );
-                    } catch (err: any) {
-                        showToast(err?.message || 'Failed to auto-generate flashcards', 'error');
-                    }
-                })();
-                break;
-            }
-        }
-    }, [selectedChat, groups, setAppMode, setSelectedDeck, openModal, handleSelectChat, currentUser, companionContext, addNotification, noteHandlers, selectedNote, notes, showToast, navigateTo]);
+    // The companion: what it is told about the student, and the tool calls it
+    // asks for (M7 — hooks/useCompanionContext.ts). Called where the memo and
+    // the executor used to sit, so the pending-group effect registers in the
+    // same place in the order as before.
+    const { companionContext, handleCompanionAction } = useCompanionContext({
+        testResults,
+        groups,
+        dueCardsCount,
+        currentUser,
+        transactions,
+        budget,
+        appMode,
+        selectedChat,
+        selectedDeck,
+        activeTestSession,
+        activeStudySession,
+        selectedNote,
+        notes,
+        studyGoal,
+        pathname: location.pathname,
+        setAppMode,
+        setSelectedDeck,
+        setActiveTestConfigMode,
+        openModal,
+        getUserSettings,
+        handleSelectChat,
+        navigateTo,
+        showToast,
+        addNotification,
+        noteHandlers,
+    });
     const duplicateInfo = useUIStore(s => s.duplicateInfo);
     const setDuplicateInfo = useUIStore(s => s.setDuplicateInfo);
     // Normalises whatever the open chat is into the ONE shape ChatWindow renders.
@@ -2192,279 +1899,10 @@ export const App: React.FC = () => {
         }
     };
 
-    // A just-joined discoverable group is not in `groups[]` until the next
-    // fetch; this stand-in carries enough (communityId above all) for the
-    // chat and the community column to render until the store reconciles.
-    const buildDiscoverGroupStub = (params: Record<string, unknown>) => ({
-        id: String(params.groupId),
-        name: String(params.groupName || 'Group'),
-        members: [] as User[],
-        adminIds: [] as string[],
-        unreadCount: 0,
-        description: '',
-        communityId: params.communityId ? String(params.communityId) : null,
-        visibility: (params.communityId ? 'community' : 'public') as 'community' | 'public',
-        memberCount: typeof params.memberCount === 'number' ? params.memberCount : undefined,
-    });
 
-    // Opening a group found in Discover. Already a member: select it and switch
-    // to Chat. Just joined (`params.joined`): insert the stub first, because the
-    // group list has not refetched yet. Neither joined nor known: do nothing —
-    // selecting a group the user is not in would render an empty chat.
-    const openDiscoverGroup = (params?: Record<string, unknown>) => {
-        const groupId = String(params?.groupId || '');
-        if (!groupId) return;
-        const target = groups.find((x) => x.id === groupId);
-        if (target) {
-            handleSelectChat({ ...target, chatType: 'group' });
-            setAppMode(AppMode.CHAT);
-            return;
-        }
-        if (!params?.joined) return;
-        const stub = buildDiscoverGroupStub(params);
-        useGroupStore.getState().updateGroups((prev) =>
-            prev.some((g) => g.id === groupId) ? prev : [...prev, stub]
-        );
-        handleSelectChat({ ...stub, chatType: 'group' });
-        setAppMode(AppMode.CHAT);
-    };
 
-    /**
-     * Open a channel INSIDE its community (founder rule §0a): the group is
-     * selected through the same path the chats list uses — read-marking,
-     * unread reset and realtime attach behave identically — but the app stays
-     * on the community's own URL, `/discover/c/:slug/ch/:groupId`.
-     */
-    const openCommunityChannel = (params: Record<string, unknown>) => {
-        const groupId = String(params.groupId || '');
-        if (!groupId) return;
-        const slug = String(
-            params.communitySlug || activeCommunity?.slug || parseAppRoute(location.pathname).params?.slug || ''
-        );
-        if (!slug) {
-            openDiscoverGroup(params);
-            return;
-        }
-        let target = useGroupStore.getState().groups.find((x) => x.id === groupId);
-        if (!target) {
-            if (!params.joined) return;
-            const stub = buildDiscoverGroupStub(params);
-            useGroupStore.getState().updateGroups((prev) =>
-                prev.some((g) => g.id === groupId) ? prev : [...prev, stub]
-            );
-            target = stub;
-        }
-        handleSelectChat({ ...target, chatType: 'group' }, { keepSurface: true });
-        navigateTo(AppMode.COMMUNITY_DETAIL, { slug, groupId });
-    };
 
-    // The members list is rendered by a lazy screen, so the anchor may not exist
-    // when the navigation completes: poll for it 20 times at 100 ms, then give
-    // up silently (the user is already on the right page either way).
-    const scrollToCommunityMembers = () => {
-        let tries = 0;
-        const tick = () => {
-            const el = document.getElementById('community-members');
-            if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                return;
-            }
-            if (tries++ < 20) window.setTimeout(tick, 100);
-        };
-        tick();
-    };
 
-    // The one navigation contract for the community column and page (spec §5.1).
-    const handleCommunityNavigate: CommunityNavigate = async (screen, params = {}) => {
-        const slugParam = String(params.slug || params.communitySlug || activeCommunity?.slug || '');
-        switch (screen) {
-            case 'Dashboard':
-                navigateTo(AppMode.DASHBOARD);
-                return;
-            case 'Discover':
-                setDiscoverSection('communities');
-                navigateTo(AppMode.DISCOVER);
-                return;
-            case 'Home':
-                if (slugParam) navigateTo(AppMode.COMMUNITY_DETAIL, { slug: slugParam });
-                return;
-            case 'CloseCommunity':
-                setActiveCommunity(null);
-                navigateTo(AppMode.CHAT, {});
-                return;
-            case 'Members':
-                if (!slugParam) return;
-                if (appMode !== AppMode.COMMUNITY_DETAIL || communityChannelId) {
-                    navigateTo(AppMode.COMMUNITY_DETAIL, { slug: slugParam });
-                }
-                scrollToCommunityMembers();
-                return;
-            case 'DirectMessages':
-                if (params?.userId) handleInitiateDm(String(params.userId));
-                return;
-            case 'GroupChat':
-                openCommunityChannel(params);
-                return;
-            case 'JoinChannel': {
-                const groupId = String(params.groupId || '');
-                const communityId = String(params.communityId || '');
-                if (!groupId || communityActionBusy.current) return;
-                // Guests see public channels but join the community first (§6,
-                // same as mobile's "Join the community to open" alert).
-                if (activeCommunityDetail && activeCommunityDetail.id === communityId && !activeCommunityDetail.isMember) {
-                    showToast(COMMUNITY_COPY.joinToOpen, 'info');
-                    return;
-                }
-                communityActionBusy.current = true;
-                try {
-                    await joinDiscoverableGroup(groupId);
-                    if (communityId) useCommunityStore.getState().invalidate(communityId);
-                    openCommunityChannel({ ...params, joined: true });
-                } catch (err) {
-                    showToast(err instanceof Error ? err.message : 'Could not join this channel', 'error');
-                } finally {
-                    communityActionBusy.current = false;
-                }
-                return;
-            }
-            case 'OpenLounge': {
-                const communityId = String(params.communityId || activeCommunity?.id || '');
-                if (!communityId || communityActionBusy.current) return;
-                const known = useUIStore.getState().activeCommunity;
-                const loungeId = known?.id === communityId ? known.loungeGroupId : null;
-                const inStore = loungeId
-                    ? useGroupStore.getState().groups.find((g) => g.id === loungeId && !g.isArchived)
-                    : undefined;
-                if (inStore) {
-                    openCommunityChannel({
-                        groupId: inStore.id,
-                        groupName: inStore.name,
-                        communityId,
-                        communitySlug: slugParam,
-                        joined: true,
-                    });
-                    return;
-                }
-                communityActionBusy.current = true;
-                try {
-                    // Idempotent: mints on first use, joins the caller either way.
-                    const lounge = await openCommunityLounge(communityId);
-                    const current = useUIStore.getState().activeCommunity;
-                    if (current && current.id === communityId && current.loungeGroupId !== lounge.groupId) {
-                        setActiveCommunity({ ...current, loungeGroupId: lounge.groupId });
-                    }
-                    useCommunityStore.getState().invalidate(communityId);
-                    // Pull the real group in before selecting it. Minting the
-                    // lounge joins the caller server-side, but the local groups
-                    // list does not know that yet, so without this the first tap
-                    // selected a stub with no members or messages and the pane
-                    // stayed on the community home while the URL said channel.
-                    // Mobile has always done this (CommunityDetailScreen).
-                    const userId = useAuthStore.getState().currentUser?.id;
-                    if (userId) {
-                        try {
-                            const refreshed = await fetchGroups(userId);
-                            if (refreshed) useGroupStore.getState().setGroups(refreshed);
-                        } catch {
-                            // A failed refresh still opens the channel: the stub
-                            // below keeps the tap working, and hydration retries.
-                        }
-                    }
-                    openCommunityChannel({
-                        groupId: lounge.groupId,
-                        groupName: lounge.name,
-                        communityId,
-                        communitySlug: slugParam,
-                        joined: true,
-                    });
-                } catch (err) {
-                    showToast(err instanceof Error ? err.message : 'Could not open the community chat', 'error');
-                } finally {
-                    communityActionBusy.current = false;
-                }
-                return;
-            }
-            case 'StudyRoom':
-                if (params.roomId) {
-                    setStudyRoomJoin(null);
-                    setSelectedStudyRoomId(String(params.roomId));
-                    navigateTo(AppMode.STUDY_ROOM, { roomId: String(params.roomId) });
-                } else {
-                    setSelectedStudyRoomId(null);
-                    setStudyRoomJoin({
-                        communityId: params.communityId ? String(params.communityId) : null,
-                        courseId: params.courseId ? String(params.courseId) : null,
-                        topic: params.topic ? String(params.topic) : null,
-                    });
-                    navigateTo(AppMode.STUDY_ROOM, {});
-                }
-                return;
-            case 'CreateLab':
-                setCreateLabCommunity({
-                    id: String(params.communityId || activeCommunity?.id || ''),
-                    name: String(params.communityName || activeCommunity?.name || activeCommunityDetail?.name || 'Community'),
-                    courseId: params.courseId ? String(params.courseId) : null,
-                });
-                setCreateLabOpen(true);
-                return;
-            case 'OpenStudyGroup': {
-                // A study group lives in Chat with the full study surface (§7).
-                // Unjoined rows join first, then land in Chat — never on a board.
-                const groupId = String(params.groupId || '');
-                if (!groupId || communityActionBusy.current) return;
-                const communityId = String(params.communityId || '');
-                const openInChat = () => {
-                    const target = useGroupStore.getState().groups.find((x) => x.id === groupId);
-                    if (target) handleSelectChat({ ...target, chatType: 'group' });
-                    navigateTo(AppMode.CHAT, {});
-                };
-                if (params.joined) {
-                    openInChat();
-                    return;
-                }
-                communityActionBusy.current = true;
-                try {
-                    await joinDiscoverableGroup(groupId);
-                    if (communityId) useCommunityStore.getState().invalidate(communityId);
-                    const userId = useAuthStore.getState().currentUser?.id;
-                    if (userId) {
-                        try {
-                            const refreshed = await fetchGroups(userId);
-                            if (refreshed) useGroupStore.getState().setGroups(refreshed);
-                        } catch {
-                            // A failed refresh still opens Chat; hydration retries.
-                        }
-                    }
-                    openInChat();
-                } catch (err) {
-                    showToast(err instanceof Error ? err.message : 'Could not open this study group', 'error');
-                } finally {
-                    communityActionBusy.current = false;
-                }
-                return;
-            }
-            case 'CreateGroup':
-            case 'StartStudyGroup':
-                setCreateGroupPreset({
-                    communityId: String(params.communityId || activeCommunity?.id || ''),
-                    communityName: String(params.communityName || activeCommunity?.name || activeCommunityDetail?.name || 'Community'),
-                    communitySlug: slugParam,
-                    communitySurface:
-                        screen === 'StartStudyGroup' || params.communitySurface === 'study_group'
-                            ? 'study_group'
-                            : 'board',
-                    prefillName: params.prefillName ? String(params.prefillName) : undefined,
-                    announceInGroupId: params.announceInGroupId
-                        ? String(params.announceInGroupId)
-                        : undefined,
-                });
-                setCreateGroupReturnMode(AppMode.COMMUNITY_DETAIL);
-                navigateTo(AppMode.CREATE_GROUP);
-                return;
-            default:
-                return;
-        }
-    };
 
     // The ONE ChatWindow wiring, hosted by the chat screen and by the community
     // page (a channel renders inside COMMUNITY_DETAIL — never AppMode.CHAT).
@@ -2508,1292 +1946,65 @@ export const App: React.FC = () => {
     // ================= THE SCREEN SWITCH =================
     // One `appMode` → one screen. The mode is the app's location for everything
     // that is not path-driven; `useRouteSync` keeps it and the URL in step, so
-    // this switch never reads the URL except where a screen genuinely needs a
+    // the registry never reads the URL except where a screen genuinely needs a
     // parameter the mode cannot carry (community slug, shop sub-state, study-set
-    // activity, campus slug). Cases that need a companion object return null and
-    // let the redirect effect above move the user out.
+    // activity, campus slug). Entries that need a companion object return null
+    // and let the redirect effect above move the user out.
+    //
+    // The 56 case bodies live in routes/screenRegistry.tsx (M7); this builds the
+    // context they read and looks the current mode up. `screenContext` is wide
+    // because the switch's closure was — see the note on `ScreenContext`.
+    const screenContext: ScreenContext = {
+        appMode, currentUser, users, handleCreateGroup, createGroupPreset, setCreateGroupPreset,
+        handleSelectChat, navigateTo, showToast, openCommunityChannel, handleEnterCreatedGroup,
+        createGroupReturnMode, selectedChatIsBoard, selectedChatCommunityId, myCommunities,
+        renderChatWindow, activeTestSession, handleUpdateAnswer, handleChangeQuestion,
+        handleToggleBookmark, handleSubmitTest, handlePauseSession, handleCancelActiveSession,
+        isSubmittingTest, activeStudySession, getUserSettings, handleEndStudySession,
+        activeGameSession, handleGameAnswer, handlePauseGame, setEndGameConfirmOpen, handleRematch,
+        setActiveGameSession, setAppMode, activeTestResult, testResults, groups,
+        setActiveTestResult, noteHandlers, handleRetakeTestFromResult,
+        handlePracticeFailedQuestions, handleAIExplainAnswer, theme, studyActivityDays,
+        handleOpenCreateDeckModal, setCreateGroupReturnMode, openStudyDestination, decks,
+        handleSelectDeck, openModal, handleRecordLecture, navigateToPath, toggleCompanion, budget,
+        transactions, isCompanionOpen, messages, setShowImportAndStudy, handleFlashcardStudy,
+        serverStreak, dueCardsCount, homeReviewPlan, handleOpenQuickTest, handleResumeSession,
+        pausedSessions, handleResumePausedSession, handleAbandonPausedSession, libraryTab,
+        handleLibraryTabChange, notes, renderNotesScreen, renderFlashcardsScreen,
+        setStudyProductSource, location, selectedDeck, flashcards, activeReviewSession,
+        handleUpdateSrsData, setActiveReviewSession, activeCramSession, handleCramAnswer,
+        handleEndCramSession, handleCramIncorrect, isBuildingTest, testBuilderError,
+        handleStartBuiltTest, handleBuildTestWithGroup, handleStartReview, handleStartCram,
+        handleStartMatch, handleStartLearn, handleOpenCreateFlashcardModal,
+        handleOpenEditFlashcardModal, handleDeleteFlashcard, handleOpenEditDeckModal,
+        handleMoveDeckToCourse, handleDeleteDeck, handleGenerateFlashcards, isGeneratingFlashcards,
+        handleResetDeckStatistics, handleExportDeck, handleLoadMoreFlashcards,
+        handleAIEnhanceFlashcard, companionContext, handleCompanionAction, setSelectedDeck,
+        handleStartNewTest, offlineBundles, handleStartOfflineSession, handleStudyDeck,
+        selectedNote, comments, notesSaving, getQuizForNote, studyGoal, dailyQuizProgress,
+        setStudyGoal, answerDailyQuestion, completeDailyQuiz, handleEndStudyMode, offlineDeckIds,
+        pendingSyncResults, pendingFlashcardReviews, handleDeleteBundle, handleSyncResults,
+        handleSyncFlashcardReviews, handleImportBundle, handleRenameBundle, isOnline,
+        setAddTransactionType, handleDeleteTransaction, toggleSidebar, myListingsRefreshKey,
+        marketplaceBrowseIntent, shopRoute, leaveShopSubState, setMarketplaceListingCategory,
+        setSelectedMarketplaceListingId, setSelectedMarketplaceListingInitialQuantity,
+        setSellerProfileReturnMode, setSelectedSellerId, selectedMarketplaceListingId,
+        selectedMarketplaceListingInitialQuantity, handleInitiateDm, setSelectedMarketplaceOrderId,
+        setMarketplaceBrowseIntent, setEditingMarketplaceListing, communityRoute,
+        communityChannelId, selectedChat, activeCommunity, activeCommunityDetail,
+        handleCommunityNavigate, discoverSection, standaloneRoute, openDiscoverGroup,
+        setStudyRoomJoin, setSelectedStudyRoomId, setCreateLabOpen, selectedSellerId,
+        sellerProfileReturnMode, studyProductSource, selectedStudyRoomId, studyRoomJoin,
+        setDiscoverSection, selectedMarketplaceOrderId, setMyListingsRefreshKey,
+        handleJobsNavigate, selectedJobId, selectedCompanyId, isPlatformAdmin,
+    };
+
     const renderScreen = () => {
-        switch (appMode) {
-            case AppMode.CREATE_GROUP:
-                return (
-                    <CreateGroupScreen
-                        currentUser={currentUser}
-                        allUsers={users}
-                        onCreateGroup={handleCreateGroup}
-                        initialDiscovery={createGroupPreset
-                            ? { visibility: 'community', communityId: createGroupPreset.communityId }
-                            : undefined}
-                        lockedCommunity={createGroupPreset
-                            ? { id: createGroupPreset.communityId, name: createGroupPreset.communityName }
-                            : undefined}
-                        communitySurface={createGroupPreset?.communitySurface}
-                        initialName={createGroupPreset?.prefillName}
-                        onEnterGroup={(group) => {
-                            if (createGroupPreset) {
-                                const preset = createGroupPreset;
-                                setCreateGroupPreset(null);
-                                if (preset.communitySurface === 'study_group') {
-                                    // §7 entry point 3: a group spawned from a board post
-                                    // leaves a plain TEXT pointer behind on that board, so
-                                    // the conversation keeps a link to what it produced.
-                                    // Fire-and-forget — the handoff must not wait on it.
-                                    if (preset.announceInGroupId && currentUser) {
-                                        void sendGroupMessage(
-                                            preset.announceInGroupId,
-                                            currentUser.id,
-                                            studyGroupAnnouncement(currentUser.name, group.name),
-                                        ).catch(() => undefined);
-                                    }
-                                    // The handoff is SHOWN, not inferred (§7): the user
-                                    // physically lands in the Chat tab, with a toast that
-                                    // says the group is also listed in the community.
-                                    const created = useGroupStore.getState().groups.find((g) => g.id === group.id);
-                                    if (created) handleSelectChat({ ...created, chatType: 'group' });
-                                    navigateTo(AppMode.CHAT, {});
-                                    showToast(COMMUNITY_COPY.createdInChat(group.name), 'success');
-                                    return;
-                                }
-                                // A board created from its community opens INSIDE the
-                                // community (founder rule §0a), not on the chat screen.
-                                openCommunityChannel({
-                                    groupId: group.id,
-                                    groupName: group.name,
-                                    joined: true,
-                                    communityId: preset.communityId,
-                                    communitySlug: preset.communitySlug,
-                                });
-                                return;
-                            }
-                            handleEnterCreatedGroup(group);
-                        }}
-                        onBack={() => {
-                            if (createGroupReturnMode === AppMode.COMMUNITY_DETAIL && createGroupPreset) {
-                                const slug = createGroupPreset.communitySlug;
-                                setCreateGroupPreset(null);
-                                navigateTo(AppMode.COMMUNITY_DETAIL, { slug });
-                                return;
-                            }
-                            setCreateGroupPreset(null);
-                            navigateTo(createGroupReturnMode || AppMode.CHAT);
-                        }}
-                    />
-                );
-            case AppMode.CHAT: {
-                // A board never renders here — the effect above is replacing this
-                // route with the community page.
-                if (selectedChatIsBoard) return <AppContentLoadingFallback />;
-                // Reached from the chats flyout: a community study group keeps the
-                // chat surface but its header links back to the community.
-                const chatCommunity = selectedChatCommunityId
-                    ? myCommunities.find((c) => c.id === selectedChatCommunityId)
-                    : undefined;
-                return renderChatWindow(
-                    chatCommunity
-                        ? {
-                            communityContext: {
-                                name: chatCommunity.name,
-                                onOpen: () => navigateTo(AppMode.COMMUNITY_DETAIL, { slug: chatCommunity.slug }),
-                            },
-                        }
-                        : undefined
-                );
-            }
-            case AppMode.TEST_ACTIVE:
-                if (!activeTestSession) return null;
-                return <TestTakingScreen mode="test" session={activeTestSession}
-                    onUpdateAnswer={handleUpdateAnswer} onChangeQuestion={handleChangeQuestion}
-                    onToggleBookmark={handleToggleBookmark} onSubmitTest={handleSubmitTest}
-                    onSubmitOfflineTest={handleSubmitTest} onPauseSession={handlePauseSession}
-                    onCancelSession={handleCancelActiveSession} isSubmittingTest={isSubmittingTest} />;
-            case AppMode.STUDY_ACTIVE:
-                if (!activeStudySession) return null;
-                return <TestTakingScreen mode="study" session={activeStudySession}
-                    showExplanationsImmediately={getUserSettings().study.showExplanationsImmediately}
-                    onUpdateAnswer={handleUpdateAnswer} onChangeQuestion={handleChangeQuestion}
-                    onToggleBookmark={handleToggleBookmark} onEndSession={handleEndStudySession}
-                    onPauseSession={handlePauseSession} onCancelSession={handleCancelActiveSession} />;
-            case AppMode.GAME_ACTIVE:
-                if (!activeGameSession) return null;
-                return <GameScreen
-                    session={activeGameSession}
-                    onUpdateAnswer={handleGameAnswer}
-                    onPauseSession={handlePauseGame}
-                    onRequestEndSession={() => setEndGameConfirmOpen(true)}
-                />;
-            case AppMode.GAME_RESULTS:
-                if (!activeGameSession || (!activeGameSession.isComplete && !activeGameSession.awaitingOpponent)) return null;
-                return <GameResultScreen session={activeGameSession} currentUser={currentUser} onRematch={handleRematch}
-                    onExit={() => { setActiveGameSession(null); setAppMode(AppMode.CHAT); }} />;
-            case AppMode.TEST_REVIEW:
-                if (!activeTestResult) return null;
-                {
-                    const sourceNoteId = activeTestResult.session?.config?.sourceNoteId || null;
-                    const sourceNoteTitle = activeTestResult.session?.config?.sourceNoteTitle;
-                    return <TestReviewScreen results={activeTestResult} allTestResults={testResults} groups={groups}
-                        onExit={() => { setActiveTestResult(null); setAppMode(AppMode.CHAT); }}
-                        onNavigateToDashboard={() => { setActiveTestResult(null); setAppMode(AppMode.DASHBOARD); }}
-                        onBackToNote={
-                          sourceNoteId
-                            ? () => {
-                                setActiveTestResult(null);
-                                void noteHandlers.openNote(sourceNoteId);
-                              }
-                            : undefined
-                        }
-                        backToNoteLabel={sourceNoteTitle ? `Back to ${sourceNoteTitle}` : undefined}
-                        onRetakeTest={(session) => { void handleRetakeTestFromResult(session, activeTestResult?.id); }}
-                        onPracticeFailedQuestions={handlePracticeFailedQuestions}
-                        onExplainAnswer={handleAIExplainAnswer} />;
-                }
-            case AppMode.DASHBOARD:
-                return <DashboardScreen theme={theme} testResults={testResults} groups={groups} currentUser={currentUser}
-                    studyActivityDays={studyActivityDays}
-                    onNavigateToChat={() => navigateTo(AppMode.CHAT)}
-                    onNavigateToFlashcards={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'flashcards' })}
-                    onOpenCreateDeck={handleOpenCreateDeckModal}
-                    onNavigateToMarketplace={() => navigateTo(AppMode.MARKETPLACE)}
-                    onNavigateToCreateGroup={() => {
-                        setCreateGroupReturnMode(AppMode.CHAT);
-                        navigateTo(AppMode.CREATE_GROUP);
-                    }}
-                    onNavigateToBudget={() => navigateTo(AppMode.BUDGET_TRACKER)}
-                    onNavigateToStudyHub={() => { void openStudyDestination(); }}
-                    onOpenCourseWorkspace={(courseId) => navigateTo(AppMode.COURSE_WORKSPACE, { courseId })}
-                    onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
-                    onNavigateToTests={() => navigateTo(AppMode.TESTS_HOME)}
-                    onOpenDeckById={(deckId) => {
-                        const deck = decks.find((d) => d.id === deckId);
-                        if (deck) handleSelectDeck(deck);
-                        else navigateTo(AppMode.DECK_DETAIL, { deckId });
-                    }}
-                    onOpenNoteById={(noteId) => { void noteHandlers.openNote(noteId); }}
-                    onOpenAcademicSettings={() => {
-                        openModal('settings');
-                        useUIStore.getState().setSettingsTab('academic');
-                    }}
-                    onRecordLecture={() => handleRecordLecture()}
-                    onNavigatePath={(path) => navigateToPath(path)}
-                    onNavigateToLibrary={() => navigateTo(AppMode.LIBRARY)}
-                    onNavigateToOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
-                    onToggleCompanion={toggleCompanion}
-                    deckCount={decks.length}
-                    hasBudgetSet={!!(budget?.monthlyLimit && budget.monthlyLimit > 0) || transactions.length > 0}
-                    hasOpenedLibrary={appMode === AppMode.LIBRARY || appMode === AppMode.NOTES || appMode === AppMode.FLASHCARDS}
-                    hasTriedCompanion={isCompanionOpen}
-                    hasSubmittedQuestion={Object.values(messages).some((list) =>
-                      Array.isArray(list) && list.some((m: any) => m?.senderId === currentUser.id && m?.type === MessageType.QUESTION)
-                    )}
-                    hasExploredMarketplace={appMode === AppMode.MARKETPLACE || appMode === AppMode.MARKETPLACE_LISTING_DETAIL}
-                    hasTriedOffline={appMode === AppMode.OFFLINE_MODE}
-                    onNavigateToNotes={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
-                    onOpenImportAndStudy={() => setShowImportAndStudy(true)}
-                    onNavigateToAITools={() => navigateTo(AppMode.AI_TOOLS)}
-                    onReviewDueCards={handleFlashcardStudy}
-                    serverStreak={serverStreak}
-                    dueCardsCount={dueCardsCount}
-                    reviewPlanTotalDue={homeReviewPlan.totalDue}
-                    onOpenQuickTest={handleOpenQuickTest}
-                    activeTestSession={activeTestSession}
-                    activeStudySession={activeStudySession}
-                    onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
-                    pausedSessions={pausedSessions}
-                    onResumePausedSession={handleResumePausedSession}
-                    onAbandonPausedSession={handleAbandonPausedSession}
-                />;
-            case AppMode.LIBRARY:
-                return (
-                    <LibraryScreen
-                        tab={libraryTab}
-                        onTabChange={handleLibraryTabChange}
-                        dueCardsCount={dueCardsCount}
-                        noteCount={notes.length}
-                        deckCount={decks.length}
-                        notesContent={renderNotesScreen(true)}
-                        flashcardsContent={renderFlashcardsScreen(true)}
-                        onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
-                        onOpenDeck={(deckId) => {
-                            const deck = decks.find((d) => d.id === deckId);
-                            // Route hydration fetches a deck that is not in the store yet (e.g. shared).
-                            if (deck) handleSelectDeck(deck);
-                            else navigateTo(AppMode.DECK_DETAIL, { deckId });
-                        }}
-                        onOpenOffline={() => navigateTo(AppMode.OFFLINE_MODE)}
-                        onOpenTests={() => navigateTo(AppMode.TESTS_HOME)}
-                        onCreateStudyPackFromCourse={(courseId, courseLabel) => {
-                            setStudyProductSource({ courseId, title: courseLabel });
-                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
-                        }}
-                        onTurnSemesterIntoProducts={() => setAppMode(AppMode.SEMESTER_PRODUCTS)}
-                        onOpenStudy={() => {
-                            useStudySetStore.getState().openPicker();
-                            navigateTo(AppMode.STUDY_HUB);
-                        }}
-                    />
-                );
-            case AppMode.STUDY_HUB:
-                return (
-                    <StudyHubScreen
-                        decks={decks}
-                        onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
-                        activeTestSession={activeTestSession}
-                        activeStudySession={activeStudySession}
-                        onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
-                        pausedSessions={pausedSessions}
-                        onResumePausedSession={handleResumePausedSession}
-                        onAbandonPausedSession={handleAbandonPausedSession}
-                        onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
-                    />
-                );
-            // Two modes, one case: a course workspace and a study-set workspace
-            // are the same surface over a different container. Within a set the
-            // ACTIVITY comes from the path (`/study/sets/:id/<activity>/…`), so
-            // the ladder below is ordered most-specific first — a live play or
-            // card session, then the builder, then a running test, then a deck —
-            // and only falls through to the workspace shell itself. Every exit
-            // goes back through `backToSet`, so leaving a session returns to the
-            // set's tab rather than to the global screen of that kind.
-            case AppMode.STUDY_SET_WORKSPACE:
-            case AppMode.COURSE_WORKSPACE: {
-                const workspaceRoute = parseAppRoute(location.pathname).params;
-                const workspaceCourseId = workspaceRoute.courseId;
-                const workspaceSetId = workspaceRoute.studySetId;
-                const setPath = parseStudySetPath(location.pathname);
-                if (workspaceSetId && setPath) {
-                    const backToSet = (activity: typeof setPath.activity, extras: Record<string, unknown> = {}) =>
-                        navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                            studySetId: workspaceSetId,
-                            workspaceActivity: activity,
-                            ...extras,
-                        });
-                    if (setPath.playSession === 'match') {
-                        const deck = selectedDeck || decks.find((row) => row.studySetId === workspaceSetId) || decks[0];
-                        if (deck) {
-                            return (
-                                <MatchStudyScreen
-                                    cards={flashcards.filter((fc) => fc.deckId === deck.id)}
-                                    deckName={deck.name}
-                                    onExit={() => backToSet('play')}
-                                    theme={theme}
-                                />
-                            );
-                        }
-                    }
-                    if (setPath.cardSession === 'review' && activeReviewSession) {
-                        return (
-                            <FlashcardReviewScreen
-                                session={activeReviewSession}
-                                onUpdateSrs={handleUpdateSrsData}
-                                onEndSession={() => {
-                                    setActiveReviewSession(null);
-                                    backToSet('cards', { deckId: setPath.deckId });
-                                }}
-                            />
-                        );
-                    }
-                    if (setPath.cardSession === 'cram' && activeCramSession) {
-                        return (
-                            <CramSessionScreen
-                                session={activeCramSession}
-                                onAnswer={handleCramAnswer}
-                                onEndSession={(stats) => {
-                                    handleEndCramSession(stats);
-                                    backToSet('cards', { deckId: setPath.deckId });
-                                }}
-                                onCramIncorrect={handleCramIncorrect}
-                            />
-                        );
-                    }
-                    if (setPath.cardSession === 'learn') {
-                        const deck = selectedDeck || decks.find((row) => row.id === setPath.deckId);
-                        if (deck) {
-                            return (
-                                <LearnStudyScreen
-                                    cards={flashcards.filter((fc) => fc.deckId === deck.id)}
-                                    deckName={deck.name}
-                                    onExit={() => backToSet('cards', { deckId: deck.id })}
-                                    theme={theme}
-                                />
-                            );
-                        }
-                    }
-                    if (setPath.activity === 'test' && setPath.createNew) {
-                        return (
-                            <TestBuilderScreen
-                                decks={decks
-                                    .filter((deck) => !deck.studySetId || deck.studySetId === workspaceSetId)
-                                    .map((deck) => ({
-                                        id: deck.id,
-                                        name: deck.name,
-                                        cardCount: flashcards.filter((card) => card.deckId === deck.id).length,
-                                    }))}
-                                notes={notes
-                                    .filter((note) => isQuizzableNote(note) && (!note.studySetId || note.studySetId === workspaceSetId))
-                                    .map((note) => ({ id: note.id, title: note.title }))}
-                                isBusy={isBuildingTest}
-                                busyLabel="Writing your questions\u2026 this keeps running if you leave the page."
-                                error={testBuilderError}
-                                onBack={() => backToSet('test')}
-                                onStart={(plan) => { void handleStartBuiltTest(plan); }}
-                                onOpenGroupChat={handleBuildTestWithGroup}
-                                // Built here, filed here: without this a test
-                                // built inside a set from an unfiled deck or
-                                // note belonged to no set, and the room's Test
-                                // tab could never list it.
-                                studySetId={workspaceSetId}
-                            />
-                        );
-                    }
-                    if (setPath.testId && (activeTestSession || activeStudySession)) {
-                        const session = activeTestSession || activeStudySession;
-                        if (session) {
-                            return (
-                                <TestTakingScreen
-                                    mode={activeStudySession ? 'study' : 'test'}
-                                    session={session}
-                                    onUpdateAnswer={handleUpdateAnswer}
-                                    onChangeQuestion={handleChangeQuestion}
-                                    onToggleBookmark={handleToggleBookmark}
-                                    onSubmitTest={handleSubmitTest}
-                                    onSubmitOfflineTest={handleSubmitTest}
-                                    onEndSession={handleEndStudySession}
-                                    onPauseSession={handlePauseSession}
-                                    onCancelSession={() => {
-                                        handleCancelActiveSession();
-                                        backToSet('test');
-                                    }}
-                                    isSubmittingTest={isSubmittingTest}
-                                />
-                            );
-                        }
-                    }
-                    if (setPath.activity === 'cards' && setPath.deckId && !setPath.cardSession) {
-                        const deck = selectedDeck?.id === setPath.deckId
-                            ? selectedDeck
-                            : decks.find((row) => row.id === setPath.deckId);
-                        if (deck) {
-                            return (
-                                <DeckDetailScreen
-                                    deck={deck}
-                                    flashcards={flashcards}
-                                    onBack={() => backToSet('cards')}
-                                    onStartReview={(next) => {
-                                        handleStartReview(next);
-                                        backToSet('cards', { deckId: next.id, cardSession: 'review' });
-                                    }}
-                                    onStartCram={(next) => {
-                                        handleStartCram(next);
-                                        backToSet('cards', { deckId: next.id, cardSession: 'cram' });
-                                    }}
-                                    onStartMatch={(next) => {
-                                        handleStartMatch(next);
-                                        backToSet('play', { playSession: 'match' });
-                                    }}
-                                    onStartLearn={(next) => {
-                                        handleStartLearn(next);
-                                        backToSet('cards', { deckId: next.id, cardSession: 'learn' });
-                                    }}
-                                    onOpenCreateFlashcard={handleOpenCreateFlashcardModal}
-                                    onOpenEditFlashcard={handleOpenEditFlashcardModal}
-                                    onDeleteFlashcard={handleDeleteFlashcard}
-                                    onOpenEditDeck={handleOpenEditDeckModal}
-                                    onMoveDeckToCourse={handleMoveDeckToCourse}
-                                    onDeleteDeck={handleDeleteDeck}
-                                    onGenerateFlashcards={handleGenerateFlashcards}
-                                    isGenerating={isGeneratingFlashcards}
-                                    onResetStatistics={handleResetDeckStatistics}
-                                    onExportDeck={handleExportDeck}
-                                    onLoadMoreCards={handleLoadMoreFlashcards}
-                                    onEnhanceFlashcard={handleAIEnhanceFlashcard}
-                                />
-                            );
-                        }
-                    }
-                }
-                if (!workspaceCourseId && !workspaceSetId) {
-                    return (
-                    <StudyHubScreen
-                        decks={decks}
-                        onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
-                        activeTestSession={activeTestSession}
-                        activeStudySession={activeStudySession}
-                        onResumeSession={() => handleResumeSession(activeTestSession ? AppMode.TEST_ACTIVE : AppMode.STUDY_ACTIVE)}
-                        pausedSessions={pausedSessions}
-                        onResumePausedSession={handleResumePausedSession}
-                        onAbandonPausedSession={handleAbandonPausedSession}
-                        onOpenStudySet={(studySetId) => navigateTo(AppMode.STUDY_SET_WORKSPACE, { studySetId })}
-                    />
-                    );
-                }
-                return (
-                    <CourseWorkspace
-                        courseId={workspaceCourseId}
-                        studySetId={workspaceSetId}
-                        routePath={setPath}
-                        theme={theme}
-                        companionContext={companionContext}
-                        onCompanionAction={handleCompanionAction}
-                        onSelectDeck={(deck) => {
-                            setSelectedDeck(deck);
-                            if (workspaceSetId) {
-                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                                    studySetId: workspaceSetId,
-                                    workspaceActivity: 'cards',
-                                    deckId: deck.id,
-                                });
-                                return;
-                            }
-                            handleSelectDeck(deck);
-                        }}
-                        onStartMatch={(deck) => {
-                            handleStartMatch(deck);
-                            if (workspaceSetId) {
-                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                                    studySetId: workspaceSetId,
-                                    workspaceActivity: 'play',
-                                    playSession: 'match',
-                                });
-                            }
-                        }}
-                        onStartCram={(deck, timer, cardIds) => {
-                            handleStartCram(deck, timer, cardIds);
-                            if (workspaceSetId) {
-                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                                    studySetId: workspaceSetId,
-                                    workspaceActivity: 'cards',
-                                    deckId: deck.id,
-                                    cardSession: 'cram',
-                                });
-                            }
-                        }}
-                        onOpenNote={(noteId) => {
-                            if (workspaceSetId) {
-                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                                    studySetId: workspaceSetId,
-                                    workspaceActivity: 'notes',
-                                    noteId,
-                                });
-                                return;
-                            }
-                            void noteHandlers.openNote(noteId);
-                        }}
-                        onNewTest={handleStartNewTest}
-                        onOpenTest={(testId) => {
-                            if (workspaceSetId) {
-                                navigateTo(AppMode.STUDY_SET_WORKSPACE, {
-                                    studySetId: workspaceSetId,
-                                    workspaceActivity: 'test',
-                                    testId,
-                                });
-                                return;
-                            }
-                            navigateToPath(buildTestDetailPath(testId));
-                        }}
-                        onOpenLibrary={() => navigateTo(AppMode.LIBRARY)}
-                    />
-                );
-            }
-            case AppMode.TESTS_HOME:
-                return (
-                    <TestsHomeScreen
-                        results={testResults}
-                        pausedSessions={pausedSessions}
-                        onResumePausedSession={handleResumePausedSession}
-                        onAbandonPausedSession={handleAbandonPausedSession}
-                        availableBundles={offlineBundles}
-                        onStartBundle={(bundleId) => handleStartOfflineSession(bundleId, 'test')}
-                        onNewTest={handleStartNewTest}
-                        onViewResult={(result) => { setActiveTestResult(result); setAppMode(AppMode.TEST_REVIEW); }}
-                        onRetakeResult={(result) => { void handleRetakeTestFromResult(result.session, result.id); }}
-                    />
-                );
-            case AppMode.AI_TOOLS:
-                return (
-                    <AIToolsHub
-                        theme={theme}
-                        onOpenNote={(noteId) => { void noteHandlers.openNote(noteId); }}
-                        onStartLearn={(result) => {
-                            // Review the deck the import JUST created — not whichever
-                            // deck happens to have the most due cards globally.
-                            const created = result.deckId
-                                ? useFlashcardStore.getState().decks.find(d => d.id === result.deckId)
-                                : undefined;
-                            if (created) handleStudyDeck(created);
-                            else handleFlashcardStudy();
-                        }}
-                        onTakePracticeTest={(result) => {
-                            navigateTo(AppMode.DASHBOARD);
-                            showToast(
-                                `Your ${result.quizQuestionCount}-question quiz is ready in the Daily quiz card.`,
-                                'success'
-                            );
-                        }}
-                        onComplete={() => showToast('Study materials ready!', 'success')}
-                    />
-                );
-            case AppMode.NOTES:
-                return renderNotesScreen(false);
-            case AppMode.NOTE_EDITOR:
-                if (!selectedNote) return null;
-                // `key={selectedNote.id}` deliberately remounts the editor when
-                // the open note changes: its editor state, autosave timer and
-                // quiz panel are all per-note and must not be carried across.
-                return (
-                    <NoteEditorScreen
-                        key={selectedNote.id}
-                        theme={theme}
-                        note={selectedNote}
-                        comments={comments}
-                        groups={groups}
-                        currentUserId={currentUser.id}
-                        isSaving={notesSaving}
-                        // The Library's Notes tab, not standalone `/notes`: that
-                        // screen has no entry in the sidebar or bottom nav, so
-                        // this button was the only way in — and it is the same
-                        // list, one course rail short. Every other "go to notes"
-                        // in this file already lands on the Library tab.
-                        onBack={() => navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' })}
-                        onSave={(updates) => noteHandlers.handleAutoSave(selectedNote.id, updates)}
-                        onCancelPendingSave={noteHandlers.cancelAutoSave}
-                        onSellAsStudyPack={() => {
-                            setStudyProductSource({ noteIds: [selectedNote.id], title: selectedNote.title });
-                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
-                        }}
-                        // Deleting a note that is mid-recording asks a different
-                        // question and discards the recording first; the ordinary
-                        // path just confirms. Either way the pending autosave is
-                        // cancelled and the selection cleared BEFORE the delete
-                        // request, so a queued save cannot resurrect the note.
-                        onDelete={async () => {
-                            const noteId = selectedNote.id;
-                            const lecture = useLectureRecordingStore.getState();
-                            if (lecture.noteId === noteId && lecture.status !== 'idle') {
-                                const ok = await confirmDialog({
-                                    title: 'Recording in progress',
-                                    message:
-                                        'This note has an active lecture recording. Delete the note and discard the recording?',
-                                    confirmLabel: 'Discard & delete',
-                                    danger: true,
-                                });
-                                if (!ok) return;
-                                lecture.discard();
-                            } else if (!(await confirmDialog({
-                                title: 'Delete note',
-                                message: 'Delete this note? This cannot be undone.',
-                                confirmLabel: 'Delete',
-                                danger: true,
-                            }))) {
-                                return;
-                            }
-                            noteHandlers.cancelAutoSave();
-                            useNotesStore.getState().setSelectedNote(null);
-                            navigateTo(AppMode.LIBRARY, { libraryTab: 'notes' });
-                            try {
-                                await noteHandlers.handleDeleteNote(noteId);
-                            } catch (e: any) {
-                                showToast(e?.message || 'Failed to delete note', 'error');
-                            }
-                        }}
-                        onSmartNote={async (editorState, options) => {
-                            try {
-                                const summary = await noteHandlers.handleSmartNote(selectedNote.id, editorState, options);
-                                if (summary && String(summary).trim().length >= 50) {
-                                    showToast('Smart notes ready!', 'success');
-                                } else {
-                                    showToast(
-                                      'Smart Notes returned thin content. Add more source text or wait for OCR.',
-                                      'error'
-                                    );
-                                }
-                            } catch (e: any) {
-                                showToast(e?.message || 'Smart note failed', 'error');
-                            }
-                        }}
-                        onChatWithNote={noteHandlers.handleChatWithNote}
-                        onGenerateFlashcards={async (editorState, jobHooks) => {
-                            try {
-                                const result = await noteHandlers.handleCreateFlashcardDeckFromNote(10, editorState, jobHooks);
-                                if (result?.deck) {
-                                    setSelectedDeck(result.deck as any);
-                                    setAppMode(AppMode.DECK_DETAIL);
-                                    // The count is of cards that exist server-side, never of
-                                    // cards that were merely generated: the save is atomic, so
-                                    // a short count means the model produced fewer, not that
-                                    // some were lost on the way to the library.
-                                    showToast(`Created ${result.savedCount} flashcards in "${result.deck.name}"`, 'success');
-                                }
-                            } catch (e: any) {
-                                showToast(e?.message || 'Failed to generate flashcards', 'error');
-                            }
-                        }}
-                        onGenerateQuiz={async (editorState, jobHooks) => {
-                            try {
-                                const existing = getQuizForNote(selectedNote.id);
-                                const session = await noteHandlers.handleStartNoteQuiz(
-                                    editorState,
-                                    jobHooks,
-                                    { replace: Boolean(existing?.completed) }
-                                );
-                                if (session?.questions?.length) {
-                                    showToast(`Quiz ready — ${session.questions.length} questions beside your note`, 'success');
-                                }
-                                return session;
-                            } catch (e: any) {
-                                showToast(e?.message || 'Failed to generate quiz', 'error');
-                            }
-                        }}
-                        studyGoal={studyGoal}
-                        dailyQuiz={getQuizForNote(selectedNote.id)}
-                        dailyQuizProgress={dailyQuizProgress}
-                        onStudyGoalChange={setStudyGoal}
-                        onDailyQuizAnswer={answerDailyQuestion}
-                        onCompleteDailyQuiz={completeDailyQuiz}
-                        onRegenerateQuiz={async () => {
-                            try {
-                                const session = await noteHandlers.handleStartNoteQuiz(
-                                    {
-                                        title: selectedNote.title,
-                                        body: selectedNote.body,
-                                    },
-                                    undefined,
-                                    { replace: true }
-                                );
-                                if (session?.questions?.length) {
-                                    showToast(`New quiz ready — ${session.questions.length} questions beside your note`, 'success');
-                                }
-                            } catch (e: any) {
-                                showToast(e?.message || 'Failed to generate quiz', 'error');
-                            }
-                        }}
-                        onPostComment={async (text) => {
-                            try {
-                                await noteHandlers.handlePostComment(selectedNote.id, text);
-                            } catch (e: any) {
-                                // Rethrow a real Error so the editor keeps the draft and
-                                // shows its inline composer error (which catches this).
-                                throw e instanceof Error ? e : new Error(e?.message || 'Failed to post comment');
-                            }
-                        }}
-                        onRefreshComments={() => useNotesStore.getState().loadComments(selectedNote.id)}
-                        onShareWithGroup={async (groupId) => {
-                            try {
-                                await noteHandlers.handleShareWithGroup(selectedNote.id, groupId);
-                                const groupName = groups.find((g) => g.id === groupId)?.name;
-                                showToast(groupName ? `Shared to ${groupName}` : 'Note shared', 'success');
-                            } catch (e: any) {
-                                showToast(e?.message || 'Failed to share note with group', 'error');
-                            }
-                        }}
-                        onTranscriptReady={() => {
-                            noteHandlers.cancelAutoSave();
-                            void useNotesStore.getState().loadNote(selectedNote.id);
-                        }}
-                    />
-                );
-            case AppMode.FLASHCARDS:
-                return renderFlashcardsScreen(false);
-            case AppMode.DECK_DETAIL:
-                if (!selectedDeck) return null;
-                return <DeckDetailScreen deck={selectedDeck} flashcards={flashcards}
-                    onBack={() => { setAppMode(AppMode.FLASHCARDS); setSelectedDeck(null); }}
-                    onStartReview={handleStartReview} onStartCram={handleStartCram}
-                    onStartMatch={handleStartMatch} onStartLearn={handleStartLearn}
-                    onOpenCreateFlashcard={handleOpenCreateFlashcardModal} onOpenEditFlashcard={handleOpenEditFlashcardModal}
-                    onDeleteFlashcard={handleDeleteFlashcard} onOpenEditDeck={handleOpenEditDeckModal}
-                    onMoveDeckToCourse={handleMoveDeckToCourse}
-                    onDeleteDeck={handleDeleteDeck} onGenerateFlashcards={handleGenerateFlashcards}
-                    isGenerating={isGeneratingFlashcards} onResetStatistics={handleResetDeckStatistics}
-                    onExportDeck={handleExportDeck}
-                    onLoadMoreCards={handleLoadMoreFlashcards}
-                    onEnhanceFlashcard={handleAIEnhanceFlashcard}
-                />;
-            case AppMode.FLASHCARD_REVIEW:
-                if (!activeReviewSession) return null;
-                return <FlashcardReviewScreen session={activeReviewSession} onUpdateSrs={handleUpdateSrsData}
-                    onEndSession={() => { setAppMode(AppMode.DECK_DETAIL); setActiveReviewSession(null); }} />;
-            case AppMode.FLASHCARD_CRAM:
-                if (!activeCramSession) return null;
-                return <CramSessionScreen session={activeCramSession} onAnswer={handleCramAnswer}
-                    onEndSession={handleEndCramSession} onCramIncorrect={handleCramIncorrect} />;
-            case AppMode.FLASHCARD_MATCH:
-                if (!selectedDeck) return null;
-                return <MatchStudyScreen
-                    cards={flashcards.filter(fc => fc.deckId === selectedDeck.id)}
-                    deckName={selectedDeck.name}
-                    onExit={handleEndStudyMode}
-                    theme={theme}
-                />;
-            case AppMode.FLASHCARD_LEARN:
-                if (!selectedDeck) return null;
-                return <LearnStudyScreen
-                    cards={flashcards.filter(fc => fc.deckId === selectedDeck.id)}
-                    deckName={selectedDeck.name}
-                    onExit={handleEndStudyMode}
-                    theme={theme}
-                />;
-            case AppMode.OFFLINE_MODE:
-                return <OfflineModeScreen offlineBundles={offlineBundles}
-                    offlineDecks={decks.filter(d => offlineDeckIds.includes(d.id))}
-                    pendingSyncResultsCount={pendingSyncResults.length}
-                    pendingFlashcardReviewsCount={pendingFlashcardReviews.length}
-                    onStartOfflineSession={handleStartOfflineSession} onDeleteBundle={handleDeleteBundle}
-                    onSyncPendingResults={handleSyncResults} onSyncFlashcardReviews={handleSyncFlashcardReviews}
-                    onImportBundle={handleImportBundle}
-                    onRenameBundle={handleRenameBundle} isOnline={isOnline} />;
-            case AppMode.BUDGET_TRACKER:
-                return <BudgetTrackerScreen currentUser={currentUser}
-                    transactions={transactions.filter(t => t.userId === currentUser.id)}
-                    budget={budget?.userId === currentUser.id ? budget : null}
-                    onOpenAddExpense={() => { setAddTransactionType('expense'); openModal('addTransaction'); }} onOpenAddIncome={() => { setAddTransactionType('income'); openModal('addTransaction'); }}
-                    onOpenSetBudget={() => openModal('setBudget')} onDeleteTransaction={handleDeleteTransaction}
-                    onToggleSidebar={toggleSidebar}
-                    onOpenSetMonthlyPlan={() => openModal('setMonthlyPlan')}
-                    onOpenSavingsGoal={() => openModal('savingsGoal')}
-                    onOpenRecurring={() => openModal('recurring')}
-                    onOpenExpenseSplit={() => openModal('expenseSplit')}
-                    onOpenFinancialToolkit={() => openModal('financialToolkit')} />;
-            // The Sell sheet has its own url (`/campus/shop/sell`) and opens
-            // over the Shop, so both paths render the same screen; the sheet
-            // itself is mounted from the route below.
-            case AppMode.CREATE_MARKETPLACE_LISTING:
-            case AppMode.MARKETPLACE:
-                return <MarketplaceScreen
-                    refreshKey={myListingsRefreshKey}
-                    initialBrowseNodeId={marketplaceBrowseIntent?.browseNodeId}
-                    initialTab={marketplaceBrowseIntent?.tab}
-                    initialCategory={marketplaceBrowseIntent?.category}
-                    courseBrowseOpen={shopRoute.view === 'courses'}
-                    courseBrowseCourseId={shopRoute.courseId}
-                    onOpenCourseBrowse={() => navigateToPath(SHOP_COURSES_PATH)}
-                    onOpenCourse={(courseId) => navigateToPath(
-                        `${SHOP_COURSES_PATH}/${encodeURIComponent(courseId)}`
-                    )}
-                    onOpenCourseIndex={() => leaveShopSubState(SHOP_COURSES_PATH)}
-                    onCloseCourseBrowse={() => leaveShopSubState(SHOP_PATH)}
-                    // The marketplace screens navigate by NAME, not by AppMode —
-                    // the same string contract mobile uses, so one screen can be
-                    // shared. Each `onNavigate` below is a translation table from
-                    // those names to modes plus the selection the target needs
-                    // (listing id, order id, seller id, …). An unrecognised name
-                    // falls through and does nothing.
-                    onNavigate={(screen, params) => {
-                    if (screen === 'CreateMarketplaceListing') {
-                        setMarketplaceListingCategory(params?.category || 'academic');
-                        navigateTo(AppMode.CREATE_MARKETPLACE_LISTING);
-                    } else if (screen === 'MarketplaceListingDetail') {
-                        setSelectedMarketplaceListingId(params.listingId);
-                        setSelectedMarketplaceListingInitialQuantity(
-                          params?.quantity != null ? Number(params.quantity) : null
-                        );
-                        setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                    } else if (screen === 'MyListings') {
-                        setAppMode(AppMode.MY_LISTINGS);
-                    } else if (screen === 'MarketplacePurchases') {
-                        setAppMode(AppMode.MARKETPLACE_PURCHASES);
-                    } else if (screen === 'StudyProductDrafts') {
-                        // No source: list existing drafts instead of generating a new one.
-                        setStudyProductSource(null);
-                        setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
-                    } else if (screen === 'MarketplaceFavorites') {
-                        setAppMode(AppMode.MARKETPLACE_FAVORITES);
-                    } else if (screen === 'MarketplaceInquiries') {
-                        setAppMode(AppMode.MARKETPLACE_INQUIRIES);
-                    } else if (screen === 'MarketplaceOrders') {
-                        setAppMode(AppMode.MARKETPLACE_ORDERS);
-                    } else if (screen === 'MarketplaceCart') {
-                        setAppMode(AppMode.MARKETPLACE_CART);
-                    } else if (screen === 'MarketplaceCheckout') {
-                        setAppMode(AppMode.MARKETPLACE_CHECKOUT);
-                    } else if (screen === 'MarketplaceYou') {
-                        setAppMode(AppMode.MARKETPLACE_YOU);
-                    } else if (screen === 'MarketplaceAddresses') {
-                        setAppMode(AppMode.MARKETPLACE_ADDRESSES);
-                    } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
-                        setSellerProfileReturnMode(AppMode.MARKETPLACE);
-                        setSelectedSellerId(params.userId || params.sellerId);
-                        setAppMode(AppMode.SELLER_PROFILE);
-                    } else if (screen === 'MarketplaceJobs') {
-                        navigateTo(AppMode.MARKETPLACE_JOBS);
-                    } else if (screen === 'Marketplace') {
-                        setAppMode(AppMode.MARKETPLACE);
-                    }
-                }} />;
-            case AppMode.MARKETPLACE_LISTING_DETAIL:
-                if (!selectedMarketplaceListingId) return null;
-                return <MarketplaceListingDetailScreen listingId={selectedMarketplaceListingId}
-                    initialQuantity={selectedMarketplaceListingInitialQuantity ?? undefined}
-                    onBack={() => {
-                        setSelectedMarketplaceListingInitialQuantity(null);
-                        setAppMode(AppMode.MARKETPLACE);
-                    }}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
-                        else if (screen === 'CreatorProfile' && (params?.userId || params?.sellerId)) {
-                            setSellerProfileReturnMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                            setSelectedSellerId(params.userId || params.sellerId);
-                            setAppMode(AppMode.CREATOR_PROFILE);
-                        } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
-                            setSellerProfileReturnMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                            setSelectedSellerId(params.userId || params.sellerId);
-                            setAppMode(AppMode.SELLER_PROFILE);
-                        } else if (screen === 'MarketplaceTransaction' || screen === 'MarketplaceOrderDetail') {
-                            setSelectedMarketplaceOrderId(params?.orderId);
-                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                        } else if (screen === 'MarketplaceOrders') {
-                            setAppMode(AppMode.MARKETPLACE_ORDERS);
-                        } else if (screen === 'MarketplaceCart') {
-                            setAppMode(AppMode.MARKETPLACE_CART);
-                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(String(params.listingId));
-                            setSelectedMarketplaceListingInitialQuantity(
-                              params?.quantity != null ? Number(params.quantity) : null
-                            );
-                        } else if (screen === 'Marketplace') {
-                            setMarketplaceBrowseIntent({
-                                browseNodeId: params?.browseNodeId ? String(params.browseNodeId) : '',
-                                tab: params?.tab,
-                                category: params?.category ? String(params.category) : '',
-                            });
-                            setAppMode(AppMode.MARKETPLACE);
-                        } else if (screen === 'MyListings') {
-                            setAppMode(AppMode.MY_LISTINGS);
-                        } else if (screen === 'EditMarketplaceListing' && params?.listing) {
-                            setEditingMarketplaceListing(params.listing);
-                            openModal('editMarketplaceListing');
-                        }
-                    }} />;
-            case AppMode.MY_LISTINGS:
-                return <MyListingsScreen onNavigate={(screen, params) => {
-                    if (screen === 'CreateMarketplaceListing') {
-                        setMarketplaceListingCategory(params?.category || 'academic');
-                        openModal('createMarketplaceListing');
-                    } else if (screen === 'EditMarketplaceListing') {
-                        setEditingMarketplaceListing(params.listing);
-                        openModal('editMarketplaceListing');
-                    } else if (screen === 'MarketplaceListingDetail') {
-                        setSelectedMarketplaceListingId(params.listingId);
-                        setSelectedMarketplaceListingInitialQuantity(
-                          params?.quantity != null ? Number(params.quantity) : null
-                        );
-                        setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                    } else if (screen === 'MarketplaceInquiries') {
-                        setAppMode(AppMode.MARKETPLACE_INQUIRIES);
-                    } else if (screen === 'MarketplaceOrders') {
-                        setAppMode(AppMode.MARKETPLACE_ORDERS);
-                    } else if (screen === 'MarketplaceCart') {
-                        setAppMode(AppMode.MARKETPLACE_CART);
-                    } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
-                        setSelectedMarketplaceOrderId(params.orderId);
-                        setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                    } else if (screen === 'SellerProfile' && (params?.userId || params?.sellerId)) {
-                        setSellerProfileReturnMode(AppMode.MY_LISTINGS);
-                        setSelectedSellerId(params.userId || params.sellerId);
-                        setAppMode(AppMode.SELLER_PROFILE);
-                    } else if (screen === 'SellerCustomers') {
-                        setAppMode(AppMode.SELLER_CUSTOMERS);
-                    } else if (screen === 'Marketplace') {
-                        setAppMode(AppMode.MARKETPLACE);
-                    }
-                }} onBack={() => setAppMode(AppMode.MARKETPLACE)} refreshKey={myListingsRefreshKey} />;
-            case AppMode.MARKETPLACE_PURCHASES:
-                return <MarketplacePurchasesScreen
-                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setSelectedMarketplaceListingInitialQuantity(null);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        } else if (screen === 'Marketplace') {
-                            setAppMode(AppMode.MARKETPLACE);
-                        }
-                    }} />;
-            case AppMode.CAMPUS_PAGE: {
-                // Phase 4 R: guest-visible, so the slug is read straight from the
-                // URL rather than plumbed through the UI store — a public page
-                // always has it in the path, and this works before any hydration.
-                const campusRoute = parseAppRoute(window.location.pathname);
-                const campusSlug = String(campusRoute.params?.slug || '');
-                if (!campusSlug) return null;
-                return <CampusScreen
-                    slug={campusSlug}
-                    programme={(campusRoute.params as { programme?: string })?.programme ?? null}
-                    onSignUp={() => { window.location.assign('/signup'); }}
-                    onBack={() => { window.location.assign('/'); }}
-                />;
-            }
-            case AppMode.INVITE_FRIENDS:
-                return <InviteFriendsScreen onBack={() => setAppMode(AppMode.DASHBOARD)} />;
-            case AppMode.COMMUNITY_DETAIL: {
-                // The URL is the authority: `/discover/c/:slug` is the community
-                // home, `/discover/c/:slug/ch/:groupId` is one of its channels
-                // rendered in this same mode with the column still out.
-                const slug = String(communityRoute?.params?.slug || '');
-                if (!slug) return null;
-                if (communityChannelId) {
-                    const backToCommunity = () => navigateTo(AppMode.COMMUNITY_DETAIL, { slug });
-                    // The community decides the surface, never the screen that
-                    // navigated here (spec §5.2): its lounge stays a live chat
-                    // ("General"), every other community group is a board.
-                    const renderLounge = () => {
-                        if (selectedChat?.chatType !== 'group' || selectedChat.id !== communityChannelId) {
-                            // Route hydration selects the group (or redirects to the
-                            // home when it is not one of the user's groups).
-                            return <AppContentLoadingFallback />;
-                        }
-                        return renderChatWindow({
-                            communityContext: {
-                                name: activeCommunity?.name || activeCommunityDetail?.name || 'Community',
-                                onOpen: backToCommunity,
-                            },
-                            onBack: backToCommunity,
-                        });
-                    };
-                    return <CommunityChannelPane
-                        slug={slug}
-                        groupId={communityChannelId}
-                        renderLounge={renderLounge}
-                        fallback={<AppContentLoadingFallback />}
-                        onBack={backToCommunity}
-                        onOpenMembers={() => void handleCommunityNavigate('Members', { slug })}
-                        onStartStudyGroup={(prefillName, fromPost) =>
-                            void handleCommunityNavigate('StartStudyGroup', {
-                                slug,
-                                communitySlug: slug,
-                                communityId: activeCommunityDetail?.id || activeCommunity?.id || '',
-                                communityName: activeCommunityDetail?.name || activeCommunity?.name || 'Community',
-                                ...(prefillName ? { prefillName } : {}),
-                                // §7 entry point 3 only — a group started from a POST
-                                // leaves a pointer behind; one started from the header
-                                // or the study nudge does not.
-                                ...(fromPost ? { announceInGroupId: communityChannelId } : {}),
-                            })
-                        } />;
-                }
-                return <CommunityDetailScreen
-                    slug={slug}
-                    onBack={() => void handleCommunityNavigate('Discover')}
-                    onNavigate={handleCommunityNavigate} />;
-            }
-            case AppMode.DISCOVER:
-                // Hub is gated inside DiscoverScreen: admins get the full
-                // communities/groups/people UI; everyone else gets coming soon.
-                // `/discover` and `/discover/c/:slug` stay routable either way.
-                return <DiscoverScreen
-                    initialSection={discoverSection === 'marketplace' ? 'communities' : discoverSection}
-                    // `/discover/new` and `/discover/join/:code` open a modal
-                    // over the hub — the two community actions one student
-                    // sends another, so both are links.
-                    initialAction={standaloneRoute.params.communityAction}
-                    initialCode={standaloneRoute.params.communityCode ?? null}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'Marketplace') {
-                            setAppMode(AppMode.MARKETPLACE);
-                        } else if (screen === 'CommunityDetail' && params?.slug) {
-                            navigateTo(AppMode.COMMUNITY_DETAIL, { slug: String(params.slug) });
-                        } else if (screen === 'CreatorProfile' && params?.userId) {
-                            setSelectedSellerId(String(params.userId));
-                            setSellerProfileReturnMode(AppMode.DISCOVER);
-                            setAppMode(AppMode.CREATOR_PROFILE);
-                        } else if (screen === 'GroupChat' && params?.groupId) {
-                            openDiscoverGroup(params);
-                        } else if (screen === 'StudyRoom') {
-                            setStudyRoomJoin({
-                                courseId: params?.courseId ? String(params.courseId) : null,
-                                topic: params?.topic ? String(params.topic) : null,
-                            });
-                            if (params?.roomId) setSelectedStudyRoomId(String(params.roomId));
-                            else setSelectedStudyRoomId(null);
-                            setAppMode(AppMode.STUDY_ROOM);
-                        } else if (screen === 'CreateLab') {
-                            setCreateLabOpen(true);
-                        } else if (screen === 'AcademicSetup') {
-                            useUIStore.getState().setSettingsTab('academic');
-                            openModal('settings');
-                        } else if (screen === 'CreateGroup') {
-                            setCreateGroupReturnMode(AppMode.DISCOVER);
-                            navigateTo(AppMode.CREATE_GROUP);
-                        } else if (screen === 'Library') {
-                            navigateTo(AppMode.LIBRARY);
-                        } else if (screen === 'Dashboard') {
-                            navigateTo(AppMode.DASHBOARD);
-                        }
-                    }} />;
-            case AppMode.CREATOR_PROFILE:
-                if (!selectedSellerId) return null;
-                return <CreatorProfileScreen
-                    userId={selectedSellerId}
-                    currentUserId={currentUser?.id}
-                    onBack={() => setAppMode(sellerProfileReturnMode || AppMode.MARKETPLACE)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setSelectedMarketplaceListingInitialQuantity(null);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        } else if (screen === 'DirectMessages' && params?.userId) {
-                            handleInitiateDm(String(params.userId));
-                        }
-                    }} />;
-            case AppMode.STUDY_PRODUCT_DRAFTS:
-                return <StudyProductDraftsScreen
-                    initialSource={studyProductSource}
-                    onSourceConsumed={() => setStudyProductSource(null)}
-                    onBack={() => { setStudyProductSource(null); setAppMode(AppMode.LIBRARY); }}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setStudyProductSource(null);
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setSelectedMarketplaceListingInitialQuantity(null);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        }
-                    }} />;
-            case AppMode.SEMESTER_PRODUCTS:
-                return (
-                    <SemesterProductsScreen
-                        onBack={() => setAppMode(AppMode.LIBRARY)}
-                        onNavigateToDrafts={() => {
-                            setStudyProductSource(null);
-                            setAppMode(AppMode.STUDY_PRODUCT_DRAFTS);
-                        }}
-                    />
-                );
-            case AppMode.STUDY_ROOM:
-                return (
-                    <StudyRoomScreen
-                        roomId={selectedStudyRoomId}
-                        join={studyRoomJoin}
-                        onBack={() => {
-                            // Back returns to the community the room was opened
-                            // from; otherwise to the hub's Room tab.
-                            if (activeCommunity) {
-                                navigateTo(AppMode.COMMUNITY_DETAIL, { slug: activeCommunity.slug });
-                                return;
-                            }
-                            setDiscoverSection('rooms');
-                            navigateTo(AppMode.DISCOVER);
-                        }}
-                        onNeedCourse={() => setCreateLabOpen(true)}
-                        onRoomReady={(id) => setSelectedStudyRoomId(id)}
-                        communityName={activeCommunity?.name || activeCommunityDetail?.name}
-                    />
-                );
-            case AppMode.MARKETPLACE_FAVORITES:
-                return <MarketplaceFavoritesScreen
-                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setSelectedMarketplaceListingInitialQuantity(
-                              params?.quantity != null ? Number(params.quantity) : null
-                            );
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        } else if (screen === 'CreateMarketplaceListing') {
-                            setMarketplaceListingCategory(params?.category || 'academic');
-                            openModal('createMarketplaceListing');
-                        } else if (screen === 'MyListings') {
-                            setAppMode(AppMode.MY_LISTINGS);
-                        } else if (screen === 'MarketplaceInquiries') {
-                            setAppMode(AppMode.MARKETPLACE_INQUIRIES);
-                        } else if (screen === 'MarketplaceOrders') {
-                            setAppMode(AppMode.MARKETPLACE_ORDERS);
-                        } else if (screen === 'MarketplaceCart') {
-                            setAppMode(AppMode.MARKETPLACE_CART);
-                        } else if (screen === 'MarketplaceJobs') {
-                            navigateTo(AppMode.MARKETPLACE_JOBS);
-                        } else if (screen === 'Marketplace') {
-                            setAppMode(AppMode.MARKETPLACE);
-                        }
-                    }} />;
-            case AppMode.MARKETPLACE_ORDERS:
-                return <MarketplaceOrdersScreen
-                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
-                            setSelectedMarketplaceOrderId(params.orderId);
-                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setSelectedMarketplaceListingInitialQuantity(
-                              params?.quantity != null ? Number(params.quantity) : null
-                            );
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        }
-                    }}
-                />;
-            case AppMode.MARKETPLACE_CART:
-                return <MarketplaceCartScreen
-                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'Marketplace') {
-                            setAppMode(AppMode.MARKETPLACE);
-                        } else if (screen === 'MarketplaceCheckout') {
-                            setAppMode(AppMode.MARKETPLACE_CHECKOUT);
-                        } else if (screen === 'MarketplaceOrders') {
-                            setAppMode(AppMode.MARKETPLACE_ORDERS);
-                        } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
-                            setSelectedMarketplaceOrderId(String(params.orderId));
-                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                        } else if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(String(params.listingId));
-                            setSelectedMarketplaceListingInitialQuantity(null);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        }
-                    }}
-                />;
-            case AppMode.MARKETPLACE_CHECKOUT:
-                return <MarketplaceCheckoutScreen
-                    onBack={() => setAppMode(AppMode.MARKETPLACE_CART)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceOrders') {
-                            setAppMode(AppMode.MARKETPLACE_ORDERS);
-                        } else if (screen === 'MarketplaceAddresses') {
-                            setAppMode(AppMode.MARKETPLACE_ADDRESSES);
-                        } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
-                            setSelectedMarketplaceOrderId(String(params.orderId));
-                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                        }
-                    }}
-                />;
-            case AppMode.MARKETPLACE_YOU:
-                return <ShopAccountScreen
-                    onBack={() => setAppMode(AppMode.MARKETPLACE)}
-                    onNavigate={(screen) => {
-                        if (screen === 'MarketplaceCart') setAppMode(AppMode.MARKETPLACE_CART);
-                        else if (screen === 'MarketplaceOrders') setAppMode(AppMode.MARKETPLACE_ORDERS);
-                        else if (screen === 'MarketplaceAddresses') setAppMode(AppMode.MARKETPLACE_ADDRESSES);
-                        else if (screen === 'MarketplaceFavorites') setAppMode(AppMode.MARKETPLACE_FAVORITES);
-                        else if (screen === 'MarketplacePurchases') setAppMode(AppMode.MARKETPLACE_PURCHASES);
-                        else if (screen === 'MarketplaceInquiries') setAppMode(AppMode.MARKETPLACE_INQUIRIES);
-                        else if (screen === 'MyListings') setAppMode(AppMode.MY_LISTINGS);
-                    }}
-                />;
-            case AppMode.MARKETPLACE_ADDRESSES:
-                return <MarketplaceAddressesScreen onBack={() => setAppMode(AppMode.MARKETPLACE_YOU)} />;
-            case AppMode.MARKETPLACE_ORDER_DETAIL:
-                if (!selectedMarketplaceOrderId) return null;
-                return <MarketplaceOrderDetailScreen
-                    orderId={selectedMarketplaceOrderId}
-                    onBack={() => setAppMode(AppMode.MARKETPLACE_ORDERS)}
-                    onOrderUpdated={() => setMyListingsRefreshKey((k) => k + 1)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceListingDetail' && params?.listingId) {
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        }
-                    }}
-                />;
-            case AppMode.SELLER_CUSTOMERS:
-                return <SellerCustomersScreen
-                    onBack={() => setAppMode(AppMode.MY_LISTINGS)}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
-                    }}
-                />;
-            case AppMode.MARKETPLACE_INQUIRIES:
-                return <MarketplaceInquiriesScreen onNavigate={(screen, params) => {
-                    if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
-                    else if (screen === 'MarketplaceListingDetail') {
-                        setSelectedMarketplaceListingId(params.listingId);
-                        setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                    }
-                    else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
-                        setSelectedMarketplaceOrderId(params.orderId);
-                        setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                    }
-                }} onBack={() => setAppMode(AppMode.MARKETPLACE)} userId={currentUser.id} />;
-            case AppMode.SELLER_PROFILE:
-                if (!selectedSellerId) return null;
-                // Back honours `sellerProfileReturnMode`, stamped by whichever
-                // screen opened this one — except when that origin was a listing
-                // whose id has since been cleared, which would bounce straight
-                // back out through the redirect effect.
-                return <SellerProfileScreen userId={selectedSellerId}
-                    onBack={() => {
-                        setSelectedSellerId(null);
-                        const backMode = sellerProfileReturnMode;
-                        if (backMode === AppMode.MARKETPLACE_LISTING_DETAIL && !selectedMarketplaceListingId) {
-                            setAppMode(AppMode.MARKETPLACE);
-                            return;
-                        }
-                        setAppMode(backMode);
-                    }}
-                    onNavigate={(screen, params) => {
-                        if (screen === 'MarketplaceListingDetail') {
-                            setSelectedMarketplaceListingId(params.listingId);
-                            setAppMode(AppMode.MARKETPLACE_LISTING_DETAIL);
-                        } else if (screen === 'DirectMessages' && params?.userId) handleInitiateDm(params.userId);
-                        else if (screen === 'MarketplaceOrders') {
-                            setAppMode(AppMode.MARKETPLACE_ORDERS);
-                        } else if (screen === 'MarketplaceOrderDetail' && params?.orderId) {
-                            setSelectedMarketplaceOrderId(params.orderId);
-                            setAppMode(AppMode.MARKETPLACE_ORDER_DETAIL);
-                        }
-                    }} />;
-            case AppMode.MARKETPLACE_JOBS:
-                return (
-                    <JobsBoardScreen onNavigate={handleJobsNavigate} />
-                );
-            case AppMode.MARKETPLACE_JOB_DETAIL:
-                if (!selectedJobId) return null;
-                return (
-                    <JobDetailScreen
-                        jobId={selectedJobId}
-                        onNavigate={handleJobsNavigate}
-                        onOpenDm={(threadId) => {
-                            handleSelectChat({ id: threadId, chatType: 'dm' } as any);
-                            navigateTo(AppMode.CHAT, { threadId });
-                        }}
-                    />
-                );
-            case AppMode.JOB_COMPANY:
-                if (!selectedCompanyId) return null;
-                return (
-                    <JobCompanyScreen
-                        companyId={selectedCompanyId}
-                        onNavigate={handleJobsNavigate}
-                    />
-                );
-            case AppMode.CREATE_MARKETPLACE_JOB:
-                return (
-                    <CreateJobScreen
-                        jobId={selectedJobId}
-                        onNavigate={handleJobsNavigate}
-                    />
-                );
-            case AppMode.MY_JOB_POSTINGS:
-                return (
-                    <MyJobPostingsScreen onNavigate={handleJobsNavigate} />
-                );
-            case AppMode.MY_JOB_APPLICATIONS:
-                return (
-                    <MyJobApplicationsScreen
-                        onNavigate={handleJobsNavigate}
-                        onOpenDm={(threadId) => {
-                            handleSelectChat({ id: threadId, chatType: 'dm' } as any);
-                            navigateTo(AppMode.CHAT, { threadId });
-                        }}
-                    />
-                );
-            case AppMode.JOB_EMPLOYER:
-                return (
-                    <JobEmployerScreen onNavigate={handleJobsNavigate} />
-                );
-            case AppMode.JOB_EMPLOYER_PIPELINE:
-                if (!selectedJobId) return null;
-                return (
-                    <JobEmployerPipelineScreen
-                        jobId={selectedJobId}
-                        onNavigate={handleJobsNavigate}
-                        onOpenDm={(threadId) => {
-                            handleSelectChat({ id: threadId, chatType: 'dm' } as any);
-                            navigateTo(AppMode.CHAT, { threadId });
-                        }}
-                    />
-                );
-            case AppMode.ADMIN:
-                if (!isPlatformAdmin) return null;
-                return <AdminScreen onBackToDashboard={() => setAppMode(AppMode.DASHBOARD)} />;
-            default:
-                return <div className="p-4">Mode not implemented yet.</div>;
-        }
+        const entry = SCREEN_REGISTRY[appMode];
+        // Unreachable through `AppMode`, kept because `appMode` can hold a value
+        // restored from an older build's URL or storage.
+        if (!entry) return <div className="p-4">Mode not implemented yet.</div>;
+        return entry(screenContext);
     };
 
     // Campus is one destination with three segments; each segment renders the
