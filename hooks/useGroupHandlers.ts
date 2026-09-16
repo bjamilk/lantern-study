@@ -50,18 +50,17 @@
  * — read it before changing anything here.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { User, Message, MessageType, AppMode, DMThread, DirectMessage, ChatItem } from '../types';
+import { User, Message, DMThread, DirectMessage } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
 import { mergeChatMessagesById } from '@lantern/shared/utils';
 import {
-    fetchGroupMembers, fetchMessages, fetchUserVotesForGroup, createNotification,
+    fetchMessages, fetchUserVotesForGroup, createNotification,
     fetchDirectMessages, markGroupAsRead, markDMAsRead, fetchDmThreads,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
     ensureAuthTokenReady,
 } from '../services/supabase';
-import { navigateForAppMode } from '../utils/appNavigation';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 
 // The in-flight guards and delivery-intent registries live in
@@ -72,10 +71,10 @@ export { MessageSendBusyError } from './groups/deliveryIntents';
 // The API-row normalisers live in ./groups/normalisers — every handler family
 // needs them, so they are imported rather than re-declared.
 import {
-    mapApiGroupMembers,
     normalizeFetchedMessages,
     mapDirectMessageFromApi,
 } from './groups/normalisers';
+import { useChatSelection } from './groups/useChatSelection';
 import { useVoteHandlers } from './groups/useVoteHandlers';
 import { useBoardHandlers } from './groups/useBoardHandlers';
 import { useDmHandlers } from './groups/useDmHandlers';
@@ -89,7 +88,6 @@ interface UseGroupHandlersParams {
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     const pendingCreatedGroupRef = useRef<any>(null);
     const groupMessagesFetchSeqRef = useRef(0);
-    const dmFetchSeqRef = useRef(0);
     /** Prior last_read_at for the open chat (group or DM) — used to scroll to first unread. */
     const [chatUnreadAnchor, setChatUnreadAnchor] = useState<{
         chatId: string;
@@ -131,89 +129,22 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
         }
     }, [currentUser, updateNotifications]);
 
-    /**
-     * The one chat-selection path. `keepSurface` is for a channel opened from
-     * INSIDE its community (founder rule: the community owns its chat): the
-     * group is selected exactly as from the chats list — same votes/members
-     * fetch, same read-marking through the selectedChat effect — but the app
-     * stays where it is; the caller navigates to the community's channel URL.
-     * Without it, selecting anything closes the community column and goes to
-     * the chat screen, as it always has.
-     *
-     * Selecting a GROUP kicks off votes + roster fetches; mark-as-read is deliberately NOT
-     * done here (the selectedChat effect below owns it, so deep links and list taps take one
-     * path). Selecting a DM marks it read and loads history, sequence-guarded via
-     * dmFetchSeqRef and re-checked against the live selectedChat before writing.
-     */
-    const handleSelectChat = useCallback((chat: ChatItem, options?: { keepSurface?: boolean }) => {
-        setSelectedChat(chat);
-        if (!options?.keepSurface) {
-            useUIStore.getState().setActiveCommunity(null);
-            if (chat.chatType === 'group') {
-                navigateForAppMode(AppMode.CHAT, { groupId: chat.id });
-            } else {
-                navigateForAppMode(AppMode.CHAT, { threadId: chat.id });
-            }
-        }
-        if (chat.chatType === 'group') {
-            if (currentUser) {
-                fetchUserVotesForGroup(chat.id, currentUser.id).then(fetchedVotes => {
-                    updateUserVotes(prev => ({ ...prev, ...fetchedVotes }));
-                }).catch(error => {
-                    console.error('Error fetching user votes:', error);
-                });
-                
-                // Mark-as-read (and unread anchor) runs in the selectedChat effect
-                // so deep links and list taps share one path without racing.
-            }
-            
-            fetchGroupMembers(chat.id, { bustCache: true }).then(fetchedMembers => {
-                const mappedMembers = mapApiGroupMembers(fetchedMembers);
-                
-                setSelectedChat(prev => prev && prev.id === chat.id ? { ...prev, members: mappedMembers } : prev);
-                updateGroups(prevGroups => prevGroups.map(g => 
-                    g.id === chat.id ? { ...g, members: mappedMembers } : g
-                ));
-            }).catch(error => {
-                console.error('Error fetching group members:', error);
-            });
-        } else if (chat.chatType === 'dm' && currentUser) {
-            markDMAsRead(chat.id, currentUser.id).then(() => {
-                updateDmThreads(prevThreads => prevThreads.map(t => 
-                    t.id === chat.id ? { ...t, unreadCount: 0 } : t
-                ));
-            }).catch(error => {
-                console.error('Error marking DM as read:', error);
-            });
-            
-            const otherUserId = (chat as DMThread).participantIds.find(id => id !== currentUser.id);
-            if (otherUserId) {
-                const requestId = ++dmFetchSeqRef.current;
-                const threadId = chat.id;
-                fetchDirectMessages(currentUser.id, otherUserId).then(fetchedMessages => {
-                    if (requestId !== dmFetchSeqRef.current) return;
-                    if (useUIStore.getState().selectedChat?.id !== threadId) return;
-                    const mappedMessages: DirectMessage[] = fetchedMessages.map((m: any) =>
-                        mapDirectMessageFromApi(m, chat.id)
-                    );
-                    updateDirectMessages(prev => ({
-                        ...prev,
-                        [chat.id]: mergeChatMessagesById(
-                            prev[chat.id] || [],
-                            mappedMessages as any
-                        ) as DirectMessage[],
-                    }));
-                }).catch(error => {
-                    console.error('Error fetching DM messages:', error);
-                });
-            }
-        }
-    }, [currentUser, setSelectedChat, updateMessages, updateUserVotes, updateGroups, updateDmThreads, updateDirectMessages, lowDataMode]);
-
-    /** Sync URL to chat list and clear the open conversation (mobile back). */
-    const handleChatBack = useCallback(() => {
-        navigateForAppMode(AppMode.CHAT, {}, { replace: true });
-    }, []);
+    // ── Chat selection ────────────────────────────────────────────────────────
+    // Moved verbatim to hooks/groups/useChatSelection — the one chat-selection
+    // path (with its keepSurface rule for community channels) and the chat-list
+    // back action. Called FIRST because `handleSelectChat` is a parameter of
+    // useDmHandlers and useGroupMutations below; it registers no effect, so this
+    // position cannot reorder anything.
+    const { handleSelectChat, handleChatBack, dmFetchSeqRef } = useChatSelection({
+        currentUser,
+        updateMessages,
+        updateUserVotes,
+        updateGroups,
+        updateDmThreads,
+        updateDirectMessages,
+        setSelectedChat,
+        lowDataMode,
+    });
 
     // Clear unread anchor when leaving or switching chats so the next open re-anchors.
     // Re-runs on selectedChat.id / .chatType; markedReadChatIdRef is what stops a re-render

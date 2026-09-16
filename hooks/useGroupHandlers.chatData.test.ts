@@ -204,9 +204,9 @@ describe('useGroupHandlers chat-data load', () => {
         await mountWith(GROUP_CHAT);
 
         expect(written.length).toBeGreaterThan(0);
-        const last = written[written.length - 1];
+        const last = written[written.length - 1] as Record<string, any[]>;
         expect(Object.keys(last)).toContain('group-1');
-        expect(last['group-1'].map((m: any) => m.id)).toEqual(['msg-1']);
+        expect((last['group-1'] ?? []).map((m: any) => m.id)).toEqual(['msg-1']);
     });
 
     it('does not re-mark the same group as read on a second render', async () => {
