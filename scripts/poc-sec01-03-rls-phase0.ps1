@@ -21,14 +21,40 @@ function Read-DotEnv([string]$Path) {
   return $vars
 }
 
+# Did a PATCH actually change anything?
+#
+# PostgREST enforces an RLS USING clause by FILTERING ROWS, not by refusing the
+# request: a blocked UPDATE matches zero rows and comes back 200/204, exactly
+# like a permitted UPDATE that happened to match nothing. So an HTTP status is
+# not an oracle for "was this blocked" -- and a status-only check reports a
+# working control as a breach. (It is also why the 42501 trigger in
+# 20260725024307 does not fire here: the policy filters the row out first, so
+# the trigger never sees it. Both outcomes are correct denials.)
+#
+# With Prefer: return=representation the response carries the rows that were
+# actually written, so an empty array is positive evidence of zero rows changed.
+# The service-role state re-reads after each attempt remain the ground truth;
+# this only stops those state checks from being contradicted by the status.
+function Test-MutationApplied($resp) {
+  if (-not $resp.ok) { return $false }          # refused outright
+  $b = if ($resp.body) { $resp.body.Trim() } else { '' }
+  if ($b -eq '' -or $b -eq '[]') { return $false } # accepted, zero rows written
+  return $true                                   # rows came back: it applied
+}
+
 function Invoke-Supabase {
   param(
     [string]$Method,
     [string]$Path,
     [hashtable]$Headers,
-    $Body = $null
+    $Body = $null,
+    [switch]$PreferRepresentation
   )
   $uri = "$SupabaseUrl$Path"
+  if ($PreferRepresentation) {
+    $Headers = $Headers.Clone()
+    $Headers['Prefer'] = 'return=representation'
+  }
   $params = @{ Method = $Method; Uri = $uri; Headers = $Headers; UseBasicParsing = $true }
   if ($null -ne $Body) {
     $params.ContentType = 'application/json'
@@ -184,11 +210,11 @@ try {
   }
 
   $activate = Invoke-Supabase -Method PATCH -Path "/rest/v1/group_members?group_id=eq.$groupId&user_id=eq.$attackerId" `
-    -Headers $attackerHeaders -Body @{ pending = $false }
-  if ($activate.ok) {
-    $failures += "SEC-01 FAIL: attacker activated pending membership (status $($activate.status))"
+    -Headers $attackerHeaders -Body @{ pending = $false } -PreferRepresentation
+  if (Test-MutationApplied $activate) {
+    $failures += "SEC-01 FAIL: attacker activated pending membership (status $($activate.status), rows written: $($activate.body))"
   } else {
-    Write-Host "SEC-01 PASS: pending self-activation blocked ($($activate.status))" -ForegroundColor Green
+    Write-Host "SEC-01 PASS: pending self-activation blocked (status $($activate.status), zero rows written)" -ForegroundColor Green
   }
 
   # Confirm still pending via service role
@@ -235,11 +261,11 @@ try {
 
   $expanded = @($ownerId, $attackerId, $outsiderId) | Sort-Object
   $expand = Invoke-Supabase -Method PATCH -Path "/rest/v1/dm_threads?id=eq.$threadId" `
-    -Headers $attackerHeaders -Body @{ participant_ids = @($expanded) }
-  if ($expand.ok) {
-    $failures += "SEC-03 FAIL: participant expanded participant_ids (status $($expand.status))"
+    -Headers $attackerHeaders -Body @{ participant_ids = @($expanded) } -PreferRepresentation
+  if (Test-MutationApplied $expand) {
+    $failures += "SEC-03 FAIL: participant expanded participant_ids (status $($expand.status), rows written: $($expand.body))"
   } else {
-    Write-Host "SEC-03 PASS: participant_ids expansion blocked ($($expand.status))" -ForegroundColor Green
+    Write-Host "SEC-03 PASS: participant_ids expansion blocked (status $($expand.status), zero rows written)" -ForegroundColor Green
   }
 
   $threadAfter = Invoke-RestMethod -Method GET -Uri "$SupabaseUrl/rest/v1/dm_threads?id=eq.$threadId&select=participant_ids" `

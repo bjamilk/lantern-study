@@ -340,7 +340,15 @@ jobs:
           # anon grants are reported, never gated: anon lacking SELECT is very
           # possibly the hardening these PoCs exist to verify. The RLS battery
           # judges it; the preflight only says what it saw.
+          # Checked, not assumed: all three campus lookups (poc-f01, poc-auth02,
+          # verify-rls-privileges) call Get-SeedCampusId with $script:AdminHeaders,
+          # i.e. the service role. No PoC reads this table as anon, so anon's
+          # grant on it cannot affect any result here. Production behaves the
+          # same way (its anon key is refused on PostgREST too), so this line is
+          # a note about the schema, never a gate.
           echo "  anon SELECT on marketplace_campuses: ${anon_kind_verdict:-permitted}"
+          echo "    (informational only -- no PoC reads this table as anon; all three"
+          echo "     campus lookups use the service role, and seeding is service-role anyway)"
 
           if [ "$ready" != "1" ]; then
             echo "::error::Schema readiness FAILED on project $url_ref -- the item(s) marked [FAIL] above are missing. The staging project's migrations are incomplete, so the PoCs would fail for reasons unrelated to security. Re-apply the migrations, then check grants with: select table_name, privilege_type from information_schema.role_table_grants where grantee in ('anon','authenticated') order by 1;"
