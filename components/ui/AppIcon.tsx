@@ -54,8 +54,16 @@ export interface AppIconProps {
   strokeWidth?: number;
   /** Screen-reader label, for the rare icon that carries meaning on its own. */
   'aria-label'?: string;
-  /** Set false only when a label above is the icon's whole meaning. */
-  'aria-hidden'?: boolean;
+  /**
+   * Set false only when a label above is the icon's whole meaning.
+   *
+   * Typed as React's `Booleanish` (`boolean | "true" | "false"`) rather than
+   * `boolean`: forty call sites write the JSX-idiomatic `aria-hidden="true"`,
+   * which React and the DOM treat identically to `aria-hidden={true}`. Those
+   * call sites type-checked nowhere until the root app graph was pulled into
+   * tsc (see apps/web/tsconfig.typecheck.json).
+   */
+  'aria-hidden'?: React.AriaAttributes['aria-hidden'];
   title?: string;
   onClick?: React.MouseEventHandler<SVGSVGElement>;
   style?: React.CSSProperties;

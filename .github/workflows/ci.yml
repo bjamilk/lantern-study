@@ -170,6 +170,12 @@ jobs:
       - name: Build web (turbo, cache bypassed)
         run: npx turbo run build --filter=@lantern/web --force
       - run: npm run typecheck --workspace=@lantern/web
+      # The step above checks apps/web/src only. The web app's vite `root` is
+      # the REPO ROOT, so App.tsx, components/, hooks/, stores/, services/ and
+      # utils/ are the real bundle inputs — and they were compiled by nothing.
+      # This holds their 827 pre-existing errors flat and fails on a new one.
+      - name: typecheck web root graph (ratcheting baseline)
+        run: npm run typecheck:root
       - name: vitest
         run: npx vitest run
         working-directory: apps/web
