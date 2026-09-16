@@ -45,6 +45,7 @@ import {
   type ChatHomeLounge,
 } from '@lantern/shared/chat';
 import { ChatGalleryModal } from './chat/ChatGalleryModal';
+import { ChatHeader } from './chat/ChatHeader';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
@@ -1601,46 +1602,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
-  const handleDropdownAction = (action: () => void) => {
-    action();
-    setIsDropdownOpen(false);
-  };
-
-  const muteOverflowMenu = chatMuted ? (
-    <MenuItem
-      onSelect={() => handleDropdownAction(() => void handleUnmute())}
-      icon={<AppIcon name="notifications-alert" size={16} className="text-lantern-text-tertiary" />}
-      disabled={muteBusy}
-    >
-      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
-    </MenuItem>
-  ) : (
-    <MenuSubmenu
-      label="Mute"
-      icon={<AppIcon name="notifications-off" size={16} className="text-lantern-text-tertiary" />}
-      open={muteDurationsOpen}
-      onOpenChange={setMuteDurationsOpen}
-    >
-      {CHAT_MUTE_DURATIONS.map((opt) => (
-        <MenuItem
-          key={opt.id}
-          onSelect={() => handleDropdownAction(() => void handleMuteFor(opt.id))}
-          className="pl-8"
-          disabled={muteBusy}
-        >
-          {opt.label}
-        </MenuItem>
-      ))}
-    </MenuSubmenu>
-  );
-
-  const questionCount = visibleMessages.filter(m => m.questionType).length;
-  // Fold the question count into the header subtitle so we can drop the separate
-  // stats strip row (member count already backs `description` when unset).
-  const headerSubtitle = isGroup && !isArchived && questionCount > 0
-    ? `${description} · ${questionCount} question${questionCount !== 1 ? 's' : ''}`
-    : description;
-
   // The conversation itself, extracted so it can be rendered either bare or
   // inside the marketplace Tabs without duplicating the list, composer and all
   // of their handlers.
@@ -2119,328 +2080,55 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background relative">
       {threadPanel}
       {/* Header — fixed at top */}
-      <div className="flex-shrink-0 z-20 relative">
-        <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-lantern-surface/90 backdrop-blur-md border-b border-lantern-border">
-          <div className="flex items-center min-w-0 gap-3">
-            {/* Mobile back button */}
-            {onBack && (
-              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-lantern-text-secondary hover:text-lantern-text rounded-lantern hover:bg-lantern-background-secondary relative z-20" aria-label={communityContext ? 'Back to community' : 'Back to chats'}>
-                <AppIcon name="arrow-back" size={20} />
-              </button>
-            )}
-            <div className="relative flex-shrink-0">
-              <Avatar
-                name={name}
-                id={isGroup ? chat.id : dmPeerId}
-                src={resolveAvatarSrc(avatarUrl, lowDataMode)}
-                size="md"
-                localOnly={lowDataMode}
-                className="ring-2 ring-white dark:ring-lantern-border"
-              />
-              {!isGroup && !isArchived && resolvedPeerPresence && formatChatPresenceLine(resolvedPeerPresence.settings, resolvedPeerPresence.lastSeenAt).status === 'online' && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-lantern-border rounded-full" aria-label="Online" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold truncate text-lantern-text" title={name}>{name}</h2>
-              <p className="text-xs text-lantern-text-secondary truncate" title={communityContext && !isArchived ? undefined : headerSubtitle}>
-                {isArchived ? (
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span>
-                ) : communityContext ? (
-                  <>
-                    {memberCountText ? `${memberCountText} · ` : ''}
-                    <button
-                      type="button"
-                      onClick={communityContext.onOpen}
-                      aria-label="Open community"
-                      className="text-xs text-lantern-primary hover:underline"
-                    >
-                      {COMMUNITY_COPY.inCommunity(communityContext.name)}
-                    </button>
-                    {isGroup && !communityHost && questionCount > 0 ? ` · ${questionCount} question${questionCount !== 1 ? 's' : ''}` : ''}
-                  </>
-                ) : headerSubtitle}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setThreadSearchOpen((open) => !open)}
-              className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern"
-              aria-label="Search in chat"
-              title="Search in chat"
-            >
-              <AppIcon name="search" size={18} />
-            </button>
-            {/* Quick-action toolbar for groups. Only the primary action (Question)
-                stays exposed on small screens; Test/Study fan out at lg+, and
-                everything else (visibility, mute) lives in the overflow menu
-                so each action sits in exactly one place per breakpoint. */}
-            {isGroup && group && !isArchived && !communityHost && (
-              <div className="flex items-center gap-1 mr-2">
-                <button
-                  onClick={onOpenQuestionModal}
-                  data-tip-id="chat.question"
-                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
-                  aria-label="Submit question"
-                  title="Submit Question"
-                >
-                  <AppIcon name="create" size={16} />
-                  <span className="hidden lg:inline">Question</span>
-                </button>
-                <button
-                  onClick={onOpenTestConfigModal}
-                  data-tip-id="chat.test"
-                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
-                  aria-label="Take a test"
-                  title="Take a Test"
-                >
-                  <AppIcon name="clipboard-check" size={16} />
-                  <span className="hidden lg:inline">Test</span>
-                </button>
-                <button
-                  onClick={onOpenStudyConfigModal}
-                  data-tip-id="chat.study"
-                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
-                  aria-label="Study mode"
-                  title="Study Mode"
-                >
-                  <AppIcon name="book-open" size={16} />
-                  <span className="hidden lg:inline">Study</span>
-                </button>
-              </div>
-            )}
-
-            {/* Overflow menu */}
-            <Menu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
-            <div className="relative">
-              <MenuTrigger
-                className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-                aria-label="Chat options"
-                data-tip-id={isGroupAdmin ? 'chat.aiGenerate' : undefined}
-              >
-                <AppIcon name="ellipsis-vertical" size={20} />
-              </MenuTrigger>
-              {isGroup && group && (
-                <MenuContent align="end" className="w-56">
-                  <MenuItem onSelect={() => handleDropdownAction(() => setThreadSearchOpen(true))} icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}>
-                    Search messages
-                  </MenuItem>
-                  <MenuItem
-                    onSelect={() => handleDropdownAction(() => setStarredOnly((on) => !on))}
-                    icon={<AppIcon name="star" size={16} className="text-lantern-text-tertiary" />}
-                    disabled={!starredOnly && starredIds.size === 0}
-                  >
-                    {starredOnly ? 'Show all messages' : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`}
-                  </MenuItem>
-                  <MenuItem onSelect={() => handleDropdownAction(() => setGalleryOpen(true))} icon={<AppIcon name="image" size={16} className="text-lantern-text-tertiary" />}>
-                    Photos and voice
-                  </MenuItem>
-                  <MenuSeparator />
-                  <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<AppIcon name="people" size={16} className="text-lantern-text-tertiary" />}>
-                    Group Info & Members
-                  </MenuItem>
-                  <MenuSeparator />
-                  {communityHost ? null : (
-                    <>
-                      <MenuSubmenu
-                        label="All questions"
-                        open={questionFiltersOpen}
-                        onOpenChange={setQuestionFiltersOpen}
-                      >
-                        {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
-                          <MenuItem
-                            key={opt.value}
-                            onSelect={() =>
-                              handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
-                            }
-                            className={`pl-8 ${
-                              questionVisibilityMode === opt.value
-                                ? 'text-lantern-primary font-medium'
-                                : ''
-                            }`}
-                          >
-                            {opt.label}
-                            {questionVisibilityMode === opt.value ? ' ✓' : ''}
-                          </MenuItem>
-                        ))}
-                      </MenuSubmenu>
-                      <MenuSeparator />
-                    </>
-                  )}
-                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-                    Notifications
-                  </div>
-                  {muteOverflowMenu}
-                  <MenuSeparator />
-                  {isArchived ? (
-                    <MenuItem
-                      onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                      icon={<AppIcon name="archive" size={16} />}
-                      className="text-amber-700 dark:text-amber-400"
-                    >
-                      Unarchive Group
-                    </MenuItem>
-                  ) : (
-                    <>
-                      {/* Every study affordance below belongs to a study group
-                          now, and a community's chat is never archivable by a
-                          member (§5.4 / §6). */}
-                      {communityHost ? null : (
-                        <>
-                          <MenuItem
-                            onSelect={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
-                            icon={<AppIcon name="add-circle" size={16} className="text-lantern-text-tertiary" />}
-                          >
-                            Create Sub-group
-                          </MenuItem>
-                          <MenuSeparator />
-                          <div className="lg:hidden">
-                            <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<AppIcon name="clipboard-check" size={16} className="text-lantern-text-tertiary" />}>
-                              Take a Test
-                            </MenuItem>
-                            <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<AppIcon name="book-open" size={16} className="text-lantern-text-tertiary" />}>
-                              Study Mode
-                            </MenuItem>
-                          </div>
-                          {onOpenAIGenerateModal && isGroupAdmin && (
-                            <MenuItem
-                              onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
-                              icon={<AppIcon name="sparkles" size={16} />}
-                              className="text-lantern-primary"
-                            >
-                              AI Generate Questions
-                            </MenuItem>
-                          )}
-                          <MenuSeparator />
-                          <MenuItem
-                            onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                            icon={<AppIcon name="archive" size={16} />}
-                            className="text-amber-600 dark:text-amber-400"
-                          >
-                            Archive Group
-                          </MenuItem>
-                        </>
-                      )}
-                    </>
-                  )}
-                </MenuContent>
-              )}
-              {!isGroup && chat && (
-                <MenuContent align="end" className="w-56">
-                  <MenuItem onSelect={() => handleDropdownAction(() => setThreadSearchOpen(true))} icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}>
-                    Search messages
-                  </MenuItem>
-                  <MenuItem
-                    onSelect={() => handleDropdownAction(() => setStarredOnly((on) => !on))}
-                    icon={<AppIcon name="star" size={16} className="text-lantern-text-tertiary" />}
-                    disabled={!starredOnly && starredIds.size === 0}
-                  >
-                    {starredOnly ? 'Show all messages' : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`}
-                  </MenuItem>
-                  <MenuItem onSelect={() => handleDropdownAction(() => setGalleryOpen(true))} icon={<AppIcon name="image" size={16} className="text-lantern-text-tertiary" />}>
-                    Photos and voice
-                  </MenuItem>
-                  <MenuSeparator />
-                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-                    Notifications
-                  </div>
-                  {muteOverflowMenu}
-                  <MenuSeparator />
-                  {(chat as any).isArchived ? (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        onUnarchiveDmThread?.(chat.id);
-                      }}
-                      icon={<AppIcon name="archive" size={16} />}
-                      className="text-amber-700 dark:text-amber-400"
-                    >
-                      Unarchive Conversation
-                    </MenuItem>
-                  ) : (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        onArchiveDmThread?.(chat.id);
-                      }}
-                      icon={<AppIcon name="archive" size={16} />}
-                      className="text-amber-600 dark:text-amber-400"
-                    >
-                      Archive Conversation
-                    </MenuItem>
-                  )}
-                  {dmPeerId && (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        void handleToggleDmBlock();
-                      }}
-                      icon={<AppIcon name="ban" size={16} />}
-                      className="text-red-600 dark:text-red-400"
-                    >
-                      {iBlockedThem ? 'Unblock User' : 'Block User'}
-                    </MenuItem>
-                  )}
-                  {dmPeerId && (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        setReportTarget({ type: 'user', id: dmPeerId, label: name });
-                      }}
-                      icon={<AppIcon name="flag" size={16} />}
-                      className="text-red-600 dark:text-red-400"
-                    >
-                      Report User…
-                    </MenuItem>
-                  )}
-                  <MenuSeparator />
-                  {onDeleteDmThread && (
-                    <MenuItem
-                      destructive
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        void confirmDialog({
-                          title: 'Delete conversation?',
-                          message: 'Delete this conversation? All messages will be permanently removed.',
-                          danger: true,
-                          confirmLabel: 'Delete',
-                        }).then((ok) => {
-                          if (ok) onDeleteDmThread(chat.id);
-                        });
-                      }}
-                      icon={<AppIcon name="trash" size={16} />}
-                    >
-                      Delete Conversation
-                    </MenuItem>
-                  )}
-                </MenuContent>
-              )}
-            </div>
-            </Menu>
-          </div>
-        </div>
-        {chatMuted && (
-          <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300">
-            <span className="inline-flex items-center gap-1.5 min-w-0">
-              <AppIcon name="notifications-off" size={14} className="shrink-0" aria-hidden />
-              <span className="truncate">
-                Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => void handleUnmute()}
-              disabled={muteBusy}
-              className="shrink-0 font-semibold underline-offset-2 hover:underline disabled:opacity-50"
-            >
-              Unmute
-            </button>
-          </div>
-        )}
-      </div>
+      <ChatHeader
+        chat={chat}
+        group={group}
+        isGroup={isGroup}
+        isGroupAdmin={isGroupAdmin}
+        isArchived={isArchived}
+        communityHost={communityHost}
+        name={name}
+        avatarUrl={avatarUrl}
+        description={description}
+        memberCountText={memberCountText}
+        dmPeerId={dmPeerId}
+        lowDataMode={lowDataMode}
+        resolvedPeerPresence={resolvedPeerPresence}
+        communityContext={communityContext}
+        visibleMessages={visibleMessages}
+        onBack={onBack}
+        isDropdownOpen={isDropdownOpen}
+        setIsDropdownOpen={setIsDropdownOpen}
+        questionFiltersOpen={questionFiltersOpen}
+        setQuestionFiltersOpen={setQuestionFiltersOpen}
+        questionVisibilityMode={questionVisibilityMode}
+        setQuestionVisibilityMode={setQuestionVisibilityMode}
+        starredOnly={starredOnly}
+        setStarredOnly={setStarredOnly}
+        starredIds={starredIds}
+        setGalleryOpen={setGalleryOpen}
+        setThreadSearchOpen={setThreadSearchOpen}
+        setReportTarget={setReportTarget}
+        chatMuted={chatMuted}
+        muteBusy={muteBusy}
+        muteUntilLabel={muteUntilLabel}
+        muteDurationsOpen={muteDurationsOpen}
+        setMuteDurationsOpen={setMuteDurationsOpen}
+        handleMuteFor={handleMuteFor}
+        handleUnmute={handleUnmute}
+        onOpenQuestionModal={onOpenQuestionModal}
+        onOpenTestConfigModal={onOpenTestConfigModal}
+        onOpenStudyConfigModal={onOpenStudyConfigModal}
+        onOpenGroupInfoModal={onOpenGroupInfoModal}
+        onOpenCreateSubGroupModal={onOpenCreateSubGroupModal}
+        onOpenAIGenerateModal={onOpenAIGenerateModal}
+        onToggleArchiveGroup={onToggleArchiveGroup}
+        onArchiveDmThread={onArchiveDmThread}
+        onUnarchiveDmThread={onUnarchiveDmThread}
+        onDeleteDmThread={onDeleteDmThread}
+        handleToggleDmBlock={handleToggleDmBlock}
+        iBlockedThem={iBlockedThem}
+      />
 
       {/* A DM that the server says is a marketplace inquiry gets the Chat/Offers
           tabs, the listing strip, the sticky deal bar and the order bar wrapped

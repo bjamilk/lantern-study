@@ -52,7 +52,10 @@ const SHELL = path.join(REPO_ROOT, 'components/ChatWindow.tsx');
  * lane started, and their state is not ChatWindow's to account for. Every M8
  * extraction adds its file here in the same commit that creates it.
  */
-const EXTRACTED_MODULES: string[] = [];
+const EXTRACTED_MODULES: string[] = [
+  'components/chat/ChatHeader.tsx',
+  'components/chat/ChatHeaderMenu.tsx',
+];
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
 
