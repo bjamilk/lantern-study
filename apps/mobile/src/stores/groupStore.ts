@@ -53,12 +53,11 @@ import {
   mergeDmThreadLists,
   filterMessagesAfterDmHistoryCutoff,
   createOptimisticClientMessageId,
-  withTransientRetry,
   DeliveryIntentRegistry,
   isUncertainDeliveryError,
   reconcileDeliveredItem,
 } from '@lantern/shared/utils';
-import * as api from '../services/api';
+import * as transport from './group/transport';
 import { isTransientSyncError } from '@lantern/shared';
 import { syncService } from '../services/syncService';
 import * as Crypto from 'expo-crypto';
@@ -241,8 +240,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
     try {
       const [apiGroups, unreadCounts] = await Promise.all([
-        api.fetchGroups(userId, { limit: 50 }),
-        api.fetchGroupUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
+        transport.fetchGroups(userId, { limit: 50 }),
+        transport.fetchGroupUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
       ]);
 
       const prevById = new Map(get().groups.map((g) => [g.id, g]));
@@ -303,7 +302,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     const adminIds = group?.adminIds || [];
 
     try {
-      const apiMembers = await api.fetchGroupMembers(groupId);
+      const apiMembers = await transport.fetchGroupMembers(groupId);
       const members = (Array.isArray(apiMembers) ? apiMembers : []).map((m: any) =>
         mapApiMember(m, adminIds)
       );
@@ -334,7 +333,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   fetchGroupUnreadCounts: async (userId: string) => {
     try {
-      const counts = await api.fetchGroupUnreadCounts(userId);
+      const counts = await transport.fetchGroupUnreadCounts(userId);
       set(state => ({
         groupUnreadCounts: counts,
         groups: state.groups.map(g => ({ ...g, unreadCount: counts[g.id] || 0 })),
@@ -346,7 +345,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   markGroupAsRead: async (groupId: string, userId: string) => {
     try {
-      const result = await api.markGroupAsRead(groupId, userId);
+      const result = await transport.markGroupAsRead(groupId, userId);
       set(state => ({
         groupUnreadCounts: { ...state.groupUnreadCounts, [groupId]: 0 },
         groups: state.groups.map(g => g.id === groupId ? { ...g, unreadCount: 0 } : g),
@@ -391,7 +390,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   hydrateGroup: async (groupId: string) => {
     try {
-      const apiGroup = await api.fetchGroup(groupId);
+      const apiGroup = await transport.fetchGroup(groupId);
       if (!(apiGroup as { id?: string })?.id) return;
       const mapped = mapApiGroup(apiGroup, get().groupUnreadCounts);
       set((state) => {
@@ -447,7 +446,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }
 
     try {
-      const result = await api.fetchMessages(groupId, {
+      const result = await transport.fetchMessages(groupId, {
         page,
         limit,
         ...(options?.rootsOnly ? { rootsOnly: true } : {}),
@@ -678,7 +677,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
 
     try {
-      const serverPayload = await api.sendMessage(groupId, senderId, {
+      const serverPayload = await transport.sendGroupMessage(groupId, senderId, {
         content: text,
         clientMessageId,
         replyToMessageId: options?.replyToMessageId,
@@ -782,7 +781,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   editGroupMessage: async (groupId: string, messageId: string, content: string) => {
-    const payload = await api.editGroupMessage(messageId, content);
+    const payload = await transport.editGroupMessage(messageId, content);
     set((state) => {
       const updated = applyGroupMessageMutation(state.messagesCache[groupId] || [], payload);
       const latest = [...updated].reverse().find(
@@ -801,7 +800,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   removeGroupMessage: async (groupId: string, messageId: string) => {
-    const payload = await api.removeGroupMessage(messageId);
+    const payload = await transport.removeGroupMessage(messageId);
     set((state) => {
       const updated = applyGroupMessageMutation(state.messagesCache[groupId] || [], payload);
       const latest = [...updated].reverse().find(
@@ -882,7 +881,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
           ? groupInput.avatarUrl
           : undefined;
 
-      const apiGroup = await api.createGroup({
+      const apiGroup = await transport.createGroup({
         name: groupInput.name,
         description: groupInput.description,
         avatar_url: createAvatarUrl,
@@ -905,7 +904,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
             : pendingAvatarDataUrl;
           const mimeMatch = pendingAvatarDataUrl.match(/^data:([^;]+);/);
           const contentType = mimeMatch?.[1] || 'image/jpeg';
-          const uploaded = await api.uploadGroupAvatar(apiGroup.id, {
+          const uploaded = await transport.uploadGroupAvatar(apiGroup.id, {
             fileName: contentType === 'image/png' ? 'avatar.png' : 'avatar.jpg',
             base64Data,
             contentType,
@@ -952,7 +951,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   leaveGroup: async (groupId: string, userId: string) => {
     try {
-      await api.leaveGroup(groupId, userId);
+      await transport.leaveGroup(groupId, userId);
       const groups = get().groups.filter(g => g.id !== groupId);
       set(state => ({
         groups,
@@ -977,7 +976,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     discovery?: { visibility?: 'private' | 'community' | 'public'; communityId?: string | null }
   ) => {
     try {
-      await api.updateGroup(groupId, {
+      await transport.updateGroup(groupId, {
         name,
         description,
         ...(discovery?.visibility ? { visibility: discovery.visibility } : {}),
@@ -1034,7 +1033,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     };
 
     try {
-      const result = await api.promoteGroupAdmin(groupId, userId) as any;
+      const result = await transport.promoteGroupAdmin(groupId, userId) as any;
       const adminIds = result?.adminIds || result?.admin_ids || [];
       applyAdminUpdate(adminIds.length ? adminIds : [...(get().groups.find(g => g.id === groupId)?.adminIds || []), userId]);
     } catch (error: any) {
@@ -1062,7 +1061,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     };
 
     try {
-      const result = await api.demoteGroupAdmin(groupId, userId) as any;
+      const result = await transport.demoteGroupAdmin(groupId, userId) as any;
       const adminIds = result?.adminIds || result?.admin_ids
         || (get().groups.find(g => g.id === groupId)?.adminIds || []).filter(id => id !== userId);
       applyAdminUpdate(adminIds);
@@ -1081,7 +1080,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   removeMember: async (groupId: string, userId: string) => {
     try {
-      await api.removeGroupMember(groupId, userId);
+      await transport.removeGroupMember(groupId, userId);
       const groups = get().groups.map(g => {
         if (g.id !== groupId) return g;
         const updatedMembers = g.members.filter(m => m.userId !== userId);
@@ -1150,7 +1149,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   archiveGroup: async (groupId: string) => {
     try {
       const group = get().groups.find(g => g.id === groupId);
-      await api.updateGroup(groupId, { isArchived: !group?.isArchived });
+      await transport.updateGroup(groupId, { isArchived: !group?.isArchived });
       const groups = get().groups.map(g =>
         g.id === groupId ? { ...g, isArchived: !g.isArchived } : g
       );
@@ -1172,7 +1171,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   deleteGroup: async (groupId: string) => {
     try {
-      await api.deleteGroup(groupId);
+      await transport.deleteGroup(groupId);
       const groups = get().groups.filter(g => g.id !== groupId && g.parentId !== groupId);
       set({ groups, currentGroup: null });
     } catch (error: any) {
@@ -1234,7 +1233,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       let cached = get().messagesCache[gid];
       if (!cached?.length) {
         try {
-          const result = await api.fetchMessages(gid, { page: 1, limit: 500 });
+          const result = await transport.fetchMessages(gid, { page: 1, limit: 500 });
           const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
           cached = apiMessages.map((m: any) => mapApiMessage(m, gid));
           set(state => ({
@@ -1295,8 +1294,8 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   fetchDmThreads: async (userId: string) => {
     try {
       const [threads, unreadCounts] = await Promise.all([
-        withTransientRetry(() => api.fetchDMThreads(userId), { delayMs: 400 }),
-        api.fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
+        transport.fetchDMThreads(userId),
+        transport.fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
       ]);
       const mapped = (Array.isArray(threads) ? threads : []).map((t) =>
         mapDmThread(t, unreadCounts)
@@ -1335,7 +1334,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   fetchDMUnreadCounts: async (userId: string) => {
     try {
-      const counts = await api.fetchDMUnreadCounts(userId);
+      const counts = await transport.fetchDMUnreadCounts(userId);
       set(state => ({
         dmUnreadCounts: counts,
         dmThreads: state.dmThreads.map(t => ({ ...t, unreadCount: counts[t.id] || 0 })),
@@ -1348,10 +1347,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   fetchDirectMessagesForThread: async (userId: string, otherUserId: string, threadId: string) => {
     const requestId = (dmFetchSeqByThread[threadId] = (dmFetchSeqByThread[threadId] || 0) + 1);
     try {
-      const result = await withTransientRetry(
-        () => api.fetchDirectMessages(userId, otherUserId),
-        { delayMs: 400 }
-      );
+      const result = await transport.fetchDirectMessages(userId, otherUserId);
       if (requestId !== dmFetchSeqByThread[threadId]) return true;
       const apiMessages = Array.isArray(result) ? result : (result as any)?.data || [];
       const mapped: DirectMessage[] = apiMessages.map((m: any) => mapDirectMessage(m, threadId));
@@ -1470,7 +1466,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     });
 
     try {
-      const sent = await api.sendDirectMessage(senderId, recipientId, text, clientMessageId, {
+      const sent = await transport.sendDirectMessage(senderId, recipientId, text, clientMessageId, {
         replyToMessageId: options?.replyToMessageId,
       });
       const confirmed = {
@@ -1561,7 +1557,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   editDirectMessage: async (threadId: string, messageId: string, content: string) => {
-    const payload = await api.editDirectMessage(messageId, content);
+    const payload = await transport.editDirectMessage(messageId, content);
     const incoming = mapDirectMessage(payload, threadId);
     set((state) => {
       const updated = applyDirectMessageMutation(
@@ -1587,7 +1583,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
   },
 
   removeDirectMessage: async (threadId: string, messageId: string) => {
-    const payload = await api.removeDirectMessage(messageId);
+    const payload = await transport.removeDirectMessage(messageId);
     const incoming = mapDirectMessage(payload, threadId);
     set((state) => {
       const updated = applyDirectMessageMutation(
@@ -1614,7 +1610,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   markDMAsRead: async (threadId: string, userId: string) => {
     try {
-      const result = await api.markDMAsRead(threadId, userId);
+      const result = await transport.markDMAsRead(threadId, userId);
       set(state => ({
         dmUnreadCounts: { ...state.dmUnreadCounts, [threadId]: 0 },
         dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, unreadCount: 0 } : t),
@@ -1631,7 +1627,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, isArchived: true } : t),
     }));
     try {
-      await api.archiveDmThread(threadId, userId);
+      await transport.archiveDmThread(threadId, userId);
     } catch (error) {
       console.warn('[GroupStore] Failed to archive DM thread:', error);
       // Rethrow so the screen can surface it and refetch; swallowing left
@@ -1645,7 +1641,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
       dmThreads: state.dmThreads.map(t => t.id === threadId ? { ...t, isArchived: false } : t),
     }));
     try {
-      await api.unarchiveDmThread(threadId, userId);
+      await transport.unarchiveDmThread(threadId, userId);
     } catch (error) {
       console.warn('[GroupStore] Failed to unarchive DM thread:', error);
       // Rethrow so the screen can surface it and refetch; swallowing left
@@ -1664,7 +1660,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }));
     get().removeDmThread(threadId);
     try {
-      await api.deleteDmThread(threadId, userId);
+      await transport.deleteDmThread(threadId, userId);
     } catch (error) {
       console.warn('[GroupStore] Failed to delete DM thread:', error);
       // Rethrow so the screen can surface it and refetch; swallowing left
@@ -1823,12 +1819,12 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   fetchThread: async (rootId, context) => {
     if ('groupId' in context) {
-      const raw = await api.fetchGroupThread(context.groupId, rootId);
+      const raw = await transport.fetchGroupThread(context.groupId, rootId);
       const roster = get().groups.find(g => g.id === context.groupId)?.members;
       const apiMessages = Array.isArray(raw) ? raw : [];
       return apiMessages.map((m: any) => mapApiMessage(m, context.groupId, roster));
     }
-    const raw = await api.fetchDmThread(context.threadId, rootId);
+    const raw = await transport.fetchDmThread(context.threadId, rootId);
     const apiMessages = Array.isArray(raw) ? raw : [];
     return apiMessages.map((m: any) => mapDirectMessage(m, context.threadId));
   },
@@ -1942,7 +1938,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     }));
 
     try {
-      await api.updateMessage(messageId, { flagged_as_similar_user_ids: newFlags });
+      await transport.updateMessage(messageId, { flagged_as_similar_user_ids: newFlags });
     } catch (error) {
       console.warn('[GroupStore] Failed to flag message:', error);
     }
@@ -1950,7 +1946,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
 
   fetchUserVotesForGroup: async (groupId: string, userId: string) => {
     try {
-      const votes = await api.fetchUserVotesForGroup(groupId, userId);
+      const votes = await transport.fetchUserVotesForGroup(groupId, userId);
       set({ userVotes: { ...get().userVotes, ...votes } });
     } catch (error) {
       console.warn('[GroupStore] Failed to fetch user votes:', error);
@@ -1978,7 +1974,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
     let serverQuestionStatus: string | undefined;
     try {
       if (currentVote === voteType) {
-        const removeResult = await api.removeVote(messageId, userId) as any;
+        const removeResult = await transport.removeVote(messageId, userId) as any;
         if (removeResult?.upvotes !== undefined) {
           newUpvotes = removeResult.upvotes;
           newDownvotes = removeResult.downvotes;
@@ -1990,7 +1986,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         serverQuestionStatus = removeResult?.questionStatus;
         newUserVote = undefined;
       } else {
-        const result = await api.voteOnMessage(messageId, userId, voteType) as any;
+        const result = await transport.voteOnMessage(messageId, userId, voteType) as any;
         if (result?.upvotes !== undefined) {
           newUpvotes = result.upvotes;
           newDownvotes = result.downvotes;
@@ -2023,7 +2019,7 @@ export const useGroupStore = create<GroupState>((set, get) => ({
         newQuestionStatus = resolvedStatus;
         if (!serverQuestionStatus) {
           try {
-            await api.updateQuestionStatus(messageId, resolvedStatus);
+            await transport.updateQuestionStatus(messageId, resolvedStatus);
           } catch (error) {
             console.warn('[GroupStore] Failed to update question status:', error);
           }
@@ -2075,7 +2071,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
   };
   try {
     if (data.kind === 'group' && data.groupId) {
-      const payload = await api.sendMessage(data.groupId, op.userId, {
+      const payload = await transport.sendGroupMessage(data.groupId, op.userId, {
         content: data.text,
         clientMessageId: data.clientMessageId,
         replyToMessageId: data.replyToMessageId,
@@ -2112,7 +2108,7 @@ syncService.registerHandler('message', async (op: { entityId: string; userId: st
         ),
       }));
     } else if (data.kind === 'dm' && data.threadId && data.recipientId) {
-      const sent = await api.sendDirectMessage(
+      const sent = await transport.sendDirectMessage(
         op.userId,
         data.recipientId,
         data.text,
