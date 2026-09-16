@@ -100,9 +100,18 @@ function Get-UserJwt([string]$Email, [string]$Password) {
 }
 
 function New-AuthUser([string]$Email, [string]$Password, [string]$Name) {
-  return Invoke-RestMethod -Method POST -Uri "$SupabaseUrl/auth/v1/admin/users" `
+  $user = Invoke-RestMethod -Method POST -Uri "$SupabaseUrl/auth/v1/admin/users" `
     -Headers $script:AdminHeaders -ContentType 'application/json' `
     -Body (@{ email = $Email; password = $Password; email_confirm = $true; user_metadata = @{ name = $Name } } | ConvertTo-Json)
+  # A wrong $SupabaseUrl (the Supabase *dashboard* URL instead of the project
+  # API URL) answers this POST with a 200 HTML page. Invoke-RestMethod happily
+  # returns that, .id is $null, and the first $user.id.Substring(0,8) blows up
+  # 50 lines later with "You cannot call a method on a null-valued expression"
+  # -- which says nothing about the real problem. Fail here, naming it.
+  if (-not $user -or -not $user.id) {
+    throw "Admin create-user did not return a user id. `$SupabaseUrl is probably not a Supabase project API URL (it must be https://<project-ref>.supabase.co -- Settings > API > Project URL -- not the dashboard URL). Response starts: $(([string]($user | ConvertTo-Json -Compress -Depth 3)) -replace '\s+', ' ' | ForEach-Object { if ($_.Length -gt 200) { $_.Substring(0,200) + '...' } else { $_ } })"
+  }
+  return $user
 }
 
 function Remove-AuthUser([string]$Id) {
