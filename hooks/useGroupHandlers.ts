@@ -10,26 +10,30 @@
  *  a re-export of `MessageSendBusyError`, which ChatWindow imports from THIS path
  *  and recognises by identity.
  * Touches: authStore, groupStore (groups, messages, dmThreads, directMessages,
- *  userVotes, notifications), uiStore (selectedChat, modals, appMode) — read here
- *  once and passed down; services/supabase only for the notification endpoints,
- *  which are the last handlers still defined in this file.
+ *  userVotes, notifications) and uiStore (selectedChat, modals, appMode) — read
+ *  here once and passed down. It reaches no transport of its own: every endpoint
+ *  this family calls is now reached through one of the nine hooks below.
  * Composition order, and why it is this order:
- *  1. `useChatSelection` — `handleSelectChat` / `handleChatBack`. First, because
- *     `handleSelectChat` is a parameter of (3) and (5). It registers no effect.
- *  2. `useChatDataSync` — the anchor-clear and chat-load effects, which were the
+ *  1. `useNotificationHandlers` — produces `addNotification`, which (4), (5), (6)
+ *     and (7) all take, so nothing else can come first.
+ *  2. `useChatSelection` — `handleSelectChat` / `handleChatBack`. Before (4) and
+ *     (5), which take `handleSelectChat`. It registers no effect.
+ *  3. `useChatDataSync` — the anchor-clear and chat-load effects, which were the
  *     first two effects this file registered, so it is called before every hook
  *     that registers one. It owns the unread anchor and takes the DM fetch
- *     counter from (1), which both bump on purpose.
- *  3. `useDmHandlers` — DM threads, sending, paging. Produces `handleSendDm`.
- *  4. `useMessageHandlers` — group send/edit/remove/receipts/paging. It FORWARDS
- *     a DM selection to `handleSendDm`, so it must come after (3).
- *  5. `useGroupMutations` — group CRUD, membership, admin.
- *  6. `useBoardHandlers` — posting a question to the board.
- *  7. `useVoteHandlers` — votes and flags on the question board.
- *  (1) before (3)/(5), (2) before every effect, and (3) before (4) are the
- *  load-bearing edges; the rest keep the reading order of the file they came
- *  from. `addNotification` stays HERE because three of the five mutation hooks
- *  take it — moving it would make the family circular.
+ *     counter from (2), which both bump on purpose.
+ *  4. `useDmHandlers` — DM threads, sending, paging. Produces `handleSendDm`.
+ *  5. `useMessageHandlers` — group send/edit/remove/receipts/paging. It FORWARDS
+ *     a DM selection to `handleSendDm`, so it must come after (4).
+ *  6. `useGroupMutations` — group CRUD, membership, admin. Produces
+ *     `refreshGroupMembersInState`.
+ *  7. `useBoardHandlers` — posting a question to the board.
+ *  8. `useVoteHandlers` — votes and flags on the question board.
+ *  9. `useChatModalOpeners` — the five modal openers. Last, because the group-info
+ *     opener takes `refreshGroupMembersInState` from (6).
+ *  (1) before (4)–(8), (2) before (4)/(5), (3) before every effect, (4) before
+ *  (5) and (6) before (9) are the load-bearing edges; the rest keep the reading
+ *  order of the file they came from.
  * Gotchas:
  *  - Optimistic sends are keyed by a clientMessageId minted through a
  *    DeliveryIntentRegistry (./groups/deliveryIntents), so a retry of the same
@@ -49,21 +53,18 @@
  * (what the chat-data load does, which the surface cannot see) — read both before
  * changing anything here.
  */
-import { useCallback, useRef } from 'react';
+import { useRef } from 'react';
 import { User } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
-import {
-    createNotification,
-    markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
-} from '../services/supabase';
 
 // The in-flight guards and delivery-intent registries live in
 // ./groups/deliveryIntents, because the question board and the message composer
 // both post into `group:<id>` and must share ONE registry. `MessageSendBusyError`
 // is re-exported from this module path: ChatWindow recognises it by identity.
 export { MessageSendBusyError } from './groups/deliveryIntents';
+import { useNotificationHandlers } from './groups/useNotificationHandlers';
 import { useChatSelection } from './groups/useChatSelection';
 import { useChatDataSync } from './groups/useChatDataSync';
 import { useVoteHandlers } from './groups/useVoteHandlers';
@@ -71,12 +72,17 @@ import { useBoardHandlers } from './groups/useBoardHandlers';
 import { useDmHandlers } from './groups/useDmHandlers';
 import { useMessageHandlers } from './groups/useMessageHandlers';
 import { useGroupMutations } from './groups/useGroupMutations';
+import { useChatModalOpeners } from './groups/useChatModalOpeners';
 
 interface UseGroupHandlersParams {
     users: User[];
 }
 
 export function useGroupHandlers({ users }: UseGroupHandlersParams) {
+    // KNOWN ISSUE (tracked, found during M9b): this ref is dead. It was the
+    // composer's staging slot for a just-created group before #64 moved
+    // handleCreateGroup out; useGroupMutations now declares and uses its own.
+    // Left in place rather than deleted, as this refactor deletes nothing.
     const pendingCreatedGroupRef = useRef<any>(null);
     const { currentUser, setCurrentUser } = useAuthStore();
     const {
@@ -97,28 +103,26 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     } = useUIStore();
 
     // ── Notifications ─────────────────────────────────────────────────────────
-    // Creates an untyped notification for the current user and appends it locally so it shows
-    // without waiting for the Realtime INSERT. Swallows failures — a notification that could
-    // not be written must never fail the action that triggered it.
-    const addNotification = useCallback(async (message: string) => {
-        if (!currentUser) return;
-        try {
-            const newNotification = await createNotification({
-                user_id: currentUser.id,
-                message
-            });
-            updateNotifications(prev => [...prev, newNotification]);
-        } catch (error) {
-            console.error('Failed to create notification:', error);
-        }
-    }, [currentUser, updateNotifications]);
+    // Moved verbatim to hooks/groups/useNotificationHandlers — writing a
+    // notification and the three list actions. Called FIRST because
+    // `addNotification` is a parameter of four of the hooks below.
+    const {
+        addNotification,
+        handleMarkNotificationAsRead,
+        handleMarkAllNotificationsAsRead,
+        handleClearAllNotifications,
+    } = useNotificationHandlers({
+        currentUser,
+        updateNotifications,
+        setNotifications,
+    });
 
     // ── Chat selection ────────────────────────────────────────────────────────
     // Moved verbatim to hooks/groups/useChatSelection — the one chat-selection
     // path (with its keepSurface rule for community channels) and the chat-list
-    // back action. Called FIRST because `handleSelectChat` is a parameter of
-    // useDmHandlers and useGroupMutations below; it registers no effect, so this
-    // position cannot reorder anything.
+    // back action. Called before useDmHandlers and useGroupMutations, which take
+    // `handleSelectChat`; it registers no effect, so this position cannot
+    // reorder anything.
     const { handleSelectChat, handleChatBack, dmFetchSeqRef } = useChatSelection({
         currentUser,
         updateMessages,
@@ -281,65 +285,22 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     });
 
     // ── Modal openers ─────────────────────────────────────────────────────────
-    // Thin wrappers; the only non-trivial one is group info, which busts the roster cache on
-    // open so the member sheet is never showing a stale list. The test/study/challenge
-    // openers differ only in the mode they stamp before opening the shared config sheet.
-    const onOpenQuestionModal = useCallback(() => openModal('question'), [openModal]);
-    const onOpenGroupInfoModal = useCallback(() => {
-        if (selectedChat?.chatType === 'group') {
-            refreshGroupMembersInState(selectedChat.id).catch(error => {
-                console.error('Failed to refresh group members:', error);
-            });
-        }
-        openModal('groupInfo');
-    }, [selectedChat, openModal, refreshGroupMembersInState]);
-    
-    const onOpenTestConfigModal = useCallback(() => {
-        setActiveTestConfigMode('test');
-        openModal('testConfig');
-    }, [setActiveTestConfigMode, openModal]);
-
-    const onOpenStudyConfigModal = useCallback(() => {
-        setActiveTestConfigMode('study');
-        openModal('testConfig');
-    }, [setActiveTestConfigMode, openModal]);
-
-    const handleChallengeUser = useCallback((opponent: User) => {
-        setChallengeOpponent(opponent);
-        setActiveTestConfigMode('game');
-        openModal('testConfig');
-    }, [setChallengeOpponent, setActiveTestConfigMode, openModal]);
-
-    // ── Notification list ─────────────────────────────────────────────────────
-    // Single-read is optimistic (the badge must drop instantly); mark-all and clear-all are
-    // server-first so the list is only emptied once the server agrees. All three swallow
-    // failures and log.
-    const handleMarkNotificationAsRead = useCallback(async (notificationId: string) => {
-        if (!currentUser) return;
-        // Optimistically update UI immediately
-        updateNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, read: true } : n));
-        try {
-            await markNotificationAsRead(notificationId, currentUser.id);
-        } catch (error) { console.error('Failed to mark notification as read:', error); }
-    }, [currentUser, updateNotifications]);
-
-    const handleMarkAllNotificationsAsRead = useCallback(async () => {
-        if (!currentUser) return;
-        try {
-            await markAllNotificationsAsRead(currentUser.id);
-            updateNotifications(prev => prev.map(n => ({ ...n, read: true })));
-        } catch (error) { console.error('Failed to mark all notifications as read:', error); }
-    }, [currentUser, updateNotifications]);
-
-    const handleClearAllNotifications = useCallback(async () => {
-        if (!currentUser) return;
-        try {
-            await deleteAllNotifications(currentUser.id);
-            setNotifications([]);
-        } catch (error) { console.error('Failed to clear all notifications:', error); }
-    }, [currentUser, setNotifications]);
-
-
+    // Moved verbatim to hooks/groups/useChatModalOpeners — the question, group
+    // info, test, study and challenge openers. Called LAST because the group-info
+    // opener takes `refreshGroupMembersInState` from useGroupMutations above.
+    const {
+        onOpenQuestionModal,
+        onOpenGroupInfoModal,
+        onOpenTestConfigModal,
+        onOpenStudyConfigModal,
+        handleChallengeUser,
+    } = useChatModalOpeners({
+        selectedChat,
+        openModal,
+        setActiveTestConfigMode,
+        setChallengeOpponent,
+        refreshGroupMembersInState,
+    });
 
     return {
         addNotification,
