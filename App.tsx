@@ -84,6 +84,7 @@ import { canOpenCommunities } from './components/community/communityAccess';
 import { collectKnownLounges, isBoardGroup } from './utils/communityBoards';
 import { useCommunityPresence } from './hooks/useCommunityPresence';
 import { useCommunityNavigation } from './hooks/useCommunityNavigation';
+import { useCompanionContext } from './hooks/useCompanionContext';
 import type { CommunityNavigate } from './components/community/communityNavigation';
 import { fetchChallenge } from './services/challenges';
 import { aiGenerateFlashcards } from './services/ai';
@@ -825,217 +826,39 @@ export const App: React.FC = () => {
         [handleGenerateFlashcardsFromTestResult, setAnalyzingResult]
     );
 
-    // Build context object for the AI companion
-    // Everything the companion is told about the student, rebuilt whenever any
-    // of it changes. `currentScreen`, `courseId`, `noteId` and `noteContext` are
-    // what make its answers about the page in front of the student, so the memo
-    // deliberately depends on `appMode`, `selectedNote` and `location.pathname`.
-    // `noteContext` is capped at 6000 chars — the note body is untrusted length.
-    const companionContext = React.useMemo(() => {
-        const weakTopics = testResults.flatMap(r => r.tagBreakdown ? Object.entries(r.tagBreakdown)
-            .filter(([, s]: [string, any]) => s.total > 0 && s.correct / s.total < 0.6)
-            .map(([tag]) => tag) : []);
-        const uniqueWeak = [...new Set(weakTopics)].slice(0, 5);
-        const recentScore = testResults.length > 0
-            ? `Last test: ${Math.round(testResults[testResults.length - 1].score)}%`
-            : undefined;
-        // Budget summary for current month
-        let budgetSummary: string | undefined;
-        if (transactions.length > 0) {
-            const thisMonth = new Date().toISOString().slice(0, 7);
-            const monthlyExpenses = transactions.filter(t => t.type === TransactionType.EXPENSE && t.date?.startsWith(thisMonth));
-            const totalSpent = monthlyExpenses.reduce((s, t) => s + (t.amount || 0), 0);
-            if (budget?.monthlyLimit && budget.monthlyLimit > 0) {
-                budgetSummary = `Spent ₦${totalSpent.toFixed(0)} of ₦${budget.monthlyLimit.toFixed(0)} monthly budget this month`;
-            } else if (totalSpent > 0) {
-                budgetSummary = `Spent ₦${totalSpent.toFixed(0)} this month (no budget limit set)`;
-            }
-        }
-        return {
-            userName: currentUser?.firstName || currentUser?.name,
-            groups: groups.filter(g => !g.isArchived).map(g => g.name).slice(0, 5),
-            weakTopics: uniqueWeak,
-            dueCardsCount,
-            recentTestSummary: recentScore,
-            budgetSummary,
-            currentScreen: (() => {
-                switch (appMode) {
-                    case AppMode.DASHBOARD: return 'Dashboard';
-                    case AppMode.CHAT: return selectedChat ? `Group chat: ${(selectedChat as any).name || 'Chat'}` : 'Chat (no group selected)';
-                    case AppMode.FLASHCARDS: return selectedDeck ? `Flashcards – deck: ${selectedDeck.name}` : 'Flashcards (deck list)';
-                    case AppMode.TEST_ACTIVE: return 'Active test session';
-                    case AppMode.STUDY_ACTIVE: return 'Active study session';
-                    case AppMode.GAME: return 'Multiplayer quiz game';
-                    case AppMode.MARKETPLACE: return 'Marketplace';
-                    case AppMode.BUDGET_TRACKER: return 'Budget Tracker';
-                    case AppMode.OFFLINE: return 'Offline mode';
-                    case AppMode.NOTES: return 'Notes library';
-                    case AppMode.NOTE_EDITOR: return selectedNote ? `Note: ${selectedNote.title}` : 'Note editor';
-                    case AppMode.COURSE_WORKSPACE: return selectedNote ? `Course – ${selectedNote.title}` : 'Course workspace';
-                    case AppMode.STUDY_SET_WORKSPACE: return selectedNote ? `Study set – ${selectedNote.title}` : 'Study set';
-                    default: return undefined;
-                }
-            })(),
-            courseId:
-                selectedNote?.courseId ||
-                (appMode === AppMode.COURSE_WORKSPACE
-                    ? parseAppRoute(location.pathname).params.courseId
-                    : undefined),
-            noteId: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE ? selectedNote?.id : undefined,
-            noteContext: (appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE) && selectedNote
-                ? getNoteStudyContent({
-                    sourceType: selectedNote.sourceType,
-                    body: selectedNote.body,
-                    summary: selectedNote.summary,
-                    attachments: selectedNote.attachments,
-                  }).substring(0, 6000) || undefined
-                : undefined,
-            noteTitle: appMode === AppMode.NOTE_EDITOR || appMode === AppMode.COURSE_WORKSPACE || appMode === AppMode.STUDY_SET_WORKSPACE ? selectedNote?.title : undefined,
-            studyGoal,
-            activeSessionSummary: activeTestSession
-                ? `Taking a ${activeTestSession.config?.mode || 'test'} with ${activeTestSession.questions?.length ?? 0} questions`
-                : activeStudySession
-                ? `Study session with ${activeStudySession.questions?.length ?? 0} questions`
-                : undefined,
-        };
-    }, [testResults, groups, dueCardsCount, currentUser, transactions, budget, appMode, selectedChat, selectedDeck, activeTestSession, activeStudySession, selectedNote, studyGoal, location.pathname]);
 
-    /**
-     * Group the companion asked to build a test in, while its selection is
-     * still landing (F9). The test-config modal reads the SELECTED chat, so it
-     * must not mount before the selection it is meant to describe.
-     */
-    const pendingTestConfigGroupRef = React.useRef<string | null>(null);
-    React.useEffect(() => {
-        const pending = pendingTestConfigGroupRef.current;
-        if (!pending) return;
-        if (selectedChat?.chatType !== 'group' || selectedChat.id !== pending) return;
-        pendingTestConfigGroupRef.current = null;
-        setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
-        openModal('testConfig');
-    }, [selectedChat, setActiveTestConfigMode, openModal, getUserSettings]);
 
-    // The companion's tool calls, executed in App because they are navigations
-    // and modal opens the panel itself cannot perform. Anything the model can
-    // ask for must appear here; an unhandled `action.type` falls out of the
-    // switch silently and the student sees nothing happen.
-    const handleCompanionAction = React.useCallback((action: CompanionAction) => {
-        switch (action.type) {
-            case 'navigate_to_flashcards':
-                setAppMode(AppMode.FLASHCARDS);
-                setSelectedDeck(null);
-                break;
-            case 'open_test_config':
-                if (selectedChat?.chatType === 'group') {
-                    setActiveTestConfigMode(getUserSettings().study.defaultTestMode === 'exam' ? 'test' : 'study');
-                    openModal('testConfig');
-                } else if (groups.length > 0) {
-                    // FIXED (F9): the modal used to be opened on a fixed 50 ms
-                    // timer after selecting the first group. On a slow render it
-                    // mounted while `selectedChat` was still the previous chat
-                    // (or none), so it built the test against the wrong group or
-                    // rendered nothing. The group is now recorded as PENDING and
-                    // the effect above opens the modal when that selection has
-                    // actually landed — no timer, and no wrong-group window.
-                    pendingTestConfigGroupRef.current = groups[0].id;
-                    handleSelectChat({ ...groups[0], chatType: 'group' });
-                }
-                break;
-            case 'open_create_flashcard':
-                openModal('createFlashcard');
-                break;
-            case 'navigate_to_dashboard':
-                setAppMode(AppMode.DASHBOARD);
-                break;
-            case 'navigate_to_chat':
-                if (action.payload?.groupId) {
-                    const targetGroup = groups.find(g => g.id === action.payload!.groupId);
-                    if (targetGroup) { handleSelectChat({ ...targetGroup, chatType: 'group' }); setAppMode(AppMode.CHAT); }
-                } else {
-                    setAppMode(AppMode.CHAT);
-                }
-                break;
-            case 'navigate_to_notes':
-                noteHandlers.navigateToNotes();
-                break;
-            case 'open_note_learn':
-                if (selectedNote) setAppMode(AppMode.NOTE_EDITOR);
-                else noteHandlers.navigateToNotes();
-                break;
-            // The one action that does work rather than navigate: generate cards
-            // from the student's weak topics or an explicit topic list, save them
-            // atomically, land on the result, and tell the companion what
-            // happened so its next message matches what the student can see.
-            case 'auto_generate_flashcards': {
-                if (!currentUser) break;
-                const topicsRaw = action.payload?.topics || '';
-                const deckName = action.payload?.deckName || (topicsRaw ? `Weak Areas: ${topicsRaw.split(',').slice(0, 2).join(', ')}` : 'Weak Areas Review');
-                const topics = topicsRaw || (companionContext.weakTopics?.join(', ') || '');
-
-                (async () => {
-                    try {
-                        const sourceContent = buildFlashcardSourceContent({
-                            topics,
-                            weakTopics: companionContext.weakTopics,
-                            selectedNote,
-                            notes,
-                        });
-                        if (sourceContent.trim().length < 50) {
-                            showToast('Add a note with at least 50 characters, or specify topics to generate flashcards.', 'error');
-                            return;
-                        }
-
-                        const topicList = (topics || companionContext.weakTopics?.join(', ') || 'review')
-                            .split(',')
-                            .map((t: string) => t.trim())
-                            .filter(Boolean);
-                        const cardCount = normalizeFlashcardCount(topicList.length * 4 || 10);
-
-                        const { flashcards: generated } = await aiGenerateFlashcards(sourceContent, {
-                            count: cardCount,
-                            style: 'concise',
-                        });
-                        if (!generated?.length) {
-                            showToast('Could not generate flashcards. Try again with more study material.', 'error');
-                            return;
-                        }
-
-                        // One atomic request: the deck and its cards land together
-                        // or neither does. The old loop left a deck announcing
-                        // cards it did not contain whenever the connection went
-                        // partway through.
-                        const fileCourseId = companionContext.courseId;
-                        const saved = await saveGeneratedDeck({
-                            jobId: `companion-${currentUser.id}-${Date.now()}`,
-                            userId: currentUser.id,
-                            deckName,
-                            description: `Auto-generated by Lantern for: ${topics || 'weak areas review'}`,
-                            courseId: fileCourseId,
-                            cards: generated.map((card) => ({ front: card.front, back: card.back })),
-                        });
-                        const newDeck =
-                            useFlashcardStore.getState().decks.find((d) => d.id === saved.ref.id) ??
-                            ({ id: saved.ref.id, name: saved.ref.name || deckName } as any);
-                        if (fileCourseId) {
-                            navigateTo(AppMode.COURSE_WORKSPACE, { courseId: fileCourseId });
-                        } else {
-                            setSelectedDeck(newDeck);
-                            setAppMode(AppMode.DECK_DETAIL);
-                        }
-                        showToast(`Created "${deckName}" with ${saved.saved} flashcards`, 'success');
-                        addNotification(`Created "${deckName}" with ${saved.saved} flashcards!`);
-                        useCompanionStore.getState().sendMessageStreaming(
-                            `[system] Flashcard generation complete: created ${generated.length} cards in the deck "${deckName}". Confirm to the user in a friendly way, mention they can find the deck ${fileCourseId ? 'in this course under Cards' : 'in Flashcards'}.`,
-                            companionContext
-                        );
-                    } catch (err: any) {
-                        showToast(err?.message || 'Failed to auto-generate flashcards', 'error');
-                    }
-                })();
-                break;
-            }
-        }
-    }, [selectedChat, groups, setAppMode, setSelectedDeck, openModal, handleSelectChat, currentUser, companionContext, addNotification, noteHandlers, selectedNote, notes, showToast, navigateTo]);
+    // The companion: what it is told about the student, and the tool calls it
+    // asks for (M7 — hooks/useCompanionContext.ts). Called where the memo and
+    // the executor used to sit, so the pending-group effect registers in the
+    // same place in the order as before.
+    const { companionContext, handleCompanionAction } = useCompanionContext({
+        testResults,
+        groups,
+        dueCardsCount,
+        currentUser,
+        transactions,
+        budget,
+        appMode,
+        selectedChat,
+        selectedDeck,
+        activeTestSession,
+        activeStudySession,
+        selectedNote,
+        notes,
+        studyGoal,
+        pathname: location.pathname,
+        setAppMode,
+        setSelectedDeck,
+        setActiveTestConfigMode,
+        openModal,
+        getUserSettings,
+        handleSelectChat,
+        navigateTo,
+        showToast,
+        addNotification,
+        noteHandlers,
+    });
     const duplicateInfo = useUIStore(s => s.duplicateInfo);
     const setDuplicateInfo = useUIStore(s => s.setDuplicateInfo);
     // Normalises whatever the open chat is into the ONE shape ChatWindow renders.
