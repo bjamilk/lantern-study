@@ -16,7 +16,7 @@ jest.mock('../services/adminAudit', () => ({
   getUserBlockState: jest.fn(async () => ({ banned: false, suspendedUntil: null })),
 }));
 
-import router, { initializeAdminRoutes } from './admin';
+import router, { initializeAdminRoutes, adminErrorHandler } from './admin';
 
 const ADMIN = 'admin-1';
 const STUDENT = 'student-1';
@@ -35,25 +35,52 @@ function fakeQuery() {
   return query;
 }
 
-function handlerFor(path: string) {
-  const layer: any = (router as any).stack.find(
-    (l: any) => l.route?.path === path && l.route?.methods?.get
-  );
-  const stack = layer.route.stack;
-  return stack[stack.length - 1].handle;
+/**
+ * The route's last handler, found by walking the router recursively: the admin
+ * surface is a tree of sub-routers, not a flat stack, so a `.stack.find` that
+ * only looks at the top level silently finds nothing.
+ */
+function handlerFor(path: string): any {
+  function walk(r: any): any {
+    for (const layer of r?.stack ?? []) {
+      if (layer.route?.path === path && layer.route?.methods?.get) {
+        const stack = layer.route.stack;
+        return stack[stack.length - 1].handle;
+      }
+      if (layer.name === 'router' && layer.handle?.stack) {
+        const found = walk(layer.handle);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+  const handle = walk(router);
+  if (!handle) throw new Error(`no GET ${path} in the admin router`);
+  return handle;
 }
 
+/**
+ * Drive the handler the way Express does after M4: the handler is wrapped in
+ * `asyncHandler`, so a failure reaches `next`, and it is `adminErrorHandler`
+ * (registered with `router.use` at the bottom of routes/admin.ts) that turns it
+ * into the response. Calling the handler with a no-op `next` would swallow
+ * every failure and make the third test below vacuous.
+ */
 async function call(limit?: string) {
   const req: any = { user: { id: ADMIN }, params: { userId: STUDENT }, query: limit ? { limit } : {} };
-  const res: any = { statusCode: 200, body: undefined };
+  const res: any = { statusCode: 200, body: undefined, locals: {}, headersSent: false };
   res.status = (code: number) => ((res.statusCode = code), res);
   await new Promise<void>((resolve) => {
     res.json = (body: unknown) => {
       res.body = body;
+      res.headersSent = true;
       resolve();
       return res;
     };
-    void handlerFor('/ai/companion/:userId')(req, res, () => undefined);
+    const next = (err?: unknown) => {
+      if (err) adminErrorHandler(err, req, res, () => undefined);
+    };
+    void handlerFor('/ai/companion/:userId')(req, res, next);
   });
   return res;
 }
