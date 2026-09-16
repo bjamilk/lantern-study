@@ -133,6 +133,7 @@ import {
     sendPresenceHeartbeat,
     shouldRunPresenceHeartbeat,
 } from '../services/presenceHeartbeat';
+import { useThemeDomSync } from './effects/useThemeDomSync';
 
 // A spurious SIGNED_OUT (refresh-token 400) can be recovered when a valid session
 // still lives in storage. Bound the recovery so a session that is genuinely dying
@@ -192,7 +193,7 @@ export function useAppEffects({
     } = useFlashcardStore();
     const { transactions, setTransactions, budget, setBudget, savingsGoals, expenseSplits, walletBalance, setSavingsGoals, setExpenseSplits, setWalletBalance } = useBudgetStore();
     const {
-        theme, setTheme, setAppMode,
+        setTheme, setAppMode,
         openModal, lowDataMode, setLowDataMode,
         selectedChat,
         isOnline,
@@ -2212,21 +2213,7 @@ export function useAppEffects({
     }, [pendingSyncResults, currentUser]);
 
     // --- Theme sync to DOM (signed-out visitors always see light — landing & auth) ---
-    // Re-runs on theme / currentUser. Toggling the `dark` class IS the whole theme switch;
-    // nothing here writes colour values. The stored 'theme' key is only updated while signed
-    // in, so forcing light for a visitor does not overwrite their saved preference.
-    useEffect(() => {
-        const effectiveTheme = currentUser ? theme : 'light';
-        if (effectiveTheme === 'dark') {
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-            if (currentUser) {
-                localStorage.setItem('theme', 'light');
-            }
-        }
-    }, [theme, currentUser]);
+    useThemeDomSync({ currentUser });
 
     // --- SRS Notifications ---
     // Use shared isCardDue once — do not add "new" + "date-due" (double-counts Again/new cards).
