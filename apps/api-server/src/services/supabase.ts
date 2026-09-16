@@ -6598,13 +6598,8 @@ export class SupabaseService {
         // verification progress the chat card shows.
         const withPeerUpvotes = await this.attachPeerUpvotes(data as any[]);
 
-        // `includeSenderId: false` preserves this loader's long-standing
-        // omission of the top-level `senderId`; see the KNOWN ISSUE on
-        // `mapChatMessageRow`.
         return withPeerUpvotes.map((msg: any) =>
-          mapChatMessageRow(msg, this.normalizeMessageRecord(msg), {
-            includeSenderId: false,
-          }),
+          mapChatMessageRow(msg, this.normalizeMessageRecord(msg)),
         );
       },
       { ttl: 30 },
