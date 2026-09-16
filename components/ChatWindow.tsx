@@ -11,21 +11,19 @@
  *    `hooks/useAppEffects.ts` and `hooks/useGroupHandlers.ts`). It writes back only
  *    through the `onSendMessage` / `onEditMessage` / `onRemoveMessage` callbacks and
  *    `groupStore.updateMessageInState` (reaction counts).
- *  - services/supabase: reactions (`addMessageReaction` / `removeMessageReaction` /
- *    `fetchUserReactionsFor*`), threads (`fetchGroupThread` / `fetchDmThread`), DM
+ *  - services/supabase: threads (`fetchGroupThread` / `fetchDmThread`), DM
  *    request accept/decline, block + mute status, presence (`fetchUserProfile`), and
  *    the marketplace set (`getInquiryByThread`, `fetchOffers`, `respondToOffer`,
  *    `fetchOrderForInquiry`, `updateMarketplaceOrder`, `resumeMarketplaceOrderCheckout`).
  *  - supabase realtime BROADCAST channels: `typing:<chatId>` and `chat-read:<chatId>`.
  *  - stores: `uiStore.lowDataMode`, `communityStore.myCommunities`, `toastStore`,
  *    `confirmStore.confirmDialog`, `useBudgetHandlers`.
- *  - localStorage: starred ids and the pinned message id, per user + scope + chat
- *    (`chatStarredStorageKey` / `chatPinnedMessageStorageKey`) — device-local, best effort.
+ *  - `hooks/chat/useMessageActions.ts` for reactions, stars, pins and copy —
+ *    which is where the reaction endpoints and the device-local localStorage
+ *    marks now live.
  * Gotchas:
  *  - EVERY hook must stay above the `if (!chat)` early return. Opening a chat from the
  *    empty state otherwise changes the hook count (React error #310).
- *  - Reaction writes go through the BFF endpoints. Do NOT move them back to a PostgREST
- *    `.upsert({ onConflict })`: the unique index is PARTIAL and every write 500s (42P10).
  *  - Auto-scroll is conditional on `isNearBottomRef` / own-message; the initial position
  *    is decided once per chat id by `initialAnchorDoneRef` and must wait for
  *    `unreadAnchorAt !== undefined`, which is the "mark-as-read has reported" signal.
@@ -34,26 +32,20 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  applyReactionLocally,
   buildChatHome,
-  chatPinnedMessageStorageKey,
-  chatStarredStorageKey,
   collectChatGalleryItems,
   formatChatPresenceLine,
-  parseStoredIdSet,
-  serializeIdSet,
   type ChatHomeLounge,
 } from '@lantern/shared/chat';
 import { ChatGalleryModal } from './chat/ChatGalleryModal';
+import { ChatHeader } from './chat/ChatHeader';
+import { MessageList } from './chat/MessageList';
+import { selectVisibleMessages, selectVisibleThreadMessages } from './chat/visibleMessages';
+import { useMessageActions } from '../hooks/chat/useMessageActions';
+import { useChatComposer } from '../hooks/chat/useChatComposer';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
-import {
-  addMessageReaction,
-  removeMessageReaction,
-  fetchUserReactionsForGroup,
-  fetchUserReactionsForThread,
-} from '../services/supabase';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
@@ -74,10 +66,8 @@ import {
   canWithdrawOffer,
   getOfferProposedBy,
   resolveGroupChatSenderLabel,
-  shouldRenderRemovedMessage,
 } from '@lantern/shared/utils';
 import {
-  CHAT_MUTE_DURATIONS,
   formatMuteUntilLabel,
   type ChatMuteDurationId,
 } from '@lantern/shared';
@@ -109,8 +99,6 @@ import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import {
   mapMessagesFromApi,
-  QUESTION_VISIBILITY_MODE_OPTIONS,
-  messagePassesQuestionVisibility,
   type QuestionVisibilityMode,
 } from '@lantern/shared/utils';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
@@ -275,82 +263,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  /**
-   * The viewer's OWN reactions per message: { messageId: ['👍'] }. Counts live
-   * on the message itself (server-owned, realtime-delivered); this map only
-   * decides which chips render as "mine". Kept local to the chat window rather
-   * than threaded through App state — nothing else needs it.
-   */
   const updateMessageInState = useGroupStore((state) => state.updateMessageInState);
   const showToast = useToastStore((state) => state.showToast);
-  const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
-
-  // Hydrate the viewer's own reactions whenever the open conversation changes.
-  // Driven by `chat.id` (+ type, which picks the group or DM endpoint). Failure
-  // is swallowed: counts still render, only the "mine" highlight is missing.
-  useEffect(() => {
-    if (!chat?.id) {
-      setMyReactions({});
-      return;
-    }
-    let cancelled = false;
-    const load = chat.chatType === 'group'
-      ? fetchUserReactionsForGroup(chat.id)
-      : fetchUserReactionsForThread(chat.id);
-    void load
-      .then((map) => {
-        if (!cancelled) setMyReactions(map || {});
-      })
-      .catch(() => {
-        // Best effort: chips just render unselected until the next open.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [chat?.id, chat?.chatType]);
-
-  /**
-   * Toggle one emoji. Optimistic on both halves — the viewer's own chip and the
-   * visible count — then reconciled with the authoritative counts the server
-   * returns. Everyone else sees it via the existing realtime message UPDATE.
-   *
-   * Failure path: BOTH optimistic halves are rolled back to the values captured
-   * before the write (`previousMine`, `previousCounts`) and the error surfaces as
-   * a toast. The write goes to the BFF reactions endpoint — see the file header
-   * on why it must never become a PostgREST upsert again.
-   */
-  const handleToggleReaction = useCallback(
-    async (messageId: string, emoji: string, added: boolean) => {
-      const previousMine = myReactions[messageId] ? [...myReactions[messageId]] : [];
-      const message = messagesProp.find((m) => m.id === messageId);
-      const previousCounts = message?.reactions;
-
-      setMyReactions((prev) => {
-        const mine = new Set(prev[messageId] || []);
-        if (added) mine.add(emoji);
-        else mine.delete(emoji);
-        return { ...prev, [messageId]: [...mine] };
-      });
-      updateMessageInState(messageId, {
-        reactions: applyReactionLocally(previousCounts, emoji, added),
-      });
-
-      try {
-        const reactions = added
-          ? await addMessageReaction(messageId, emoji)
-          : await removeMessageReaction(messageId, emoji);
-        updateMessageInState(messageId, { reactions });
-      } catch (error) {
-        setMyReactions((prev) => ({ ...prev, [messageId]: previousMine }));
-        updateMessageInState(messageId, { reactions: previousCounts });
-        showToast(
-          error instanceof Error ? error.message : 'Could not save that reaction',
-          'error'
-        );
-      }
-    },
-    [myReactions, messagesProp, updateMessageInState, showToast]
-  );
   const [questionFiltersOpen, setQuestionFiltersOpen] = useState(false);
   const [muteDurationsOpen, setMuteDurationsOpen] = useState(false);
   // "Report…" target: a group message (hover bar) or the DM peer (header menu).
@@ -379,25 +293,53 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [awaitingMessages, setAwaitingMessages] = useState(false);
   const [newMessagesBelow, setNewMessagesBelow] = useState(0);
   const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
-  const [replyTo, setReplyTo] = useState<MessageReplyPreview | null>(null);
-  const [seedMentionUsername, setSeedMentionUsername] = useState<string | null>(null);
-  const [editingMessage, setEditingMessage] = useState<{ id: string; text: string } | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
-  const [threadReplyTo, setThreadReplyTo] = useState<MessageReplyPreview | null>(null);
-  const [threadEditingMessage, setThreadEditingMessage] = useState<{ id: string; text: string } | null>(null);
-  // Separate mention seed for the thread composer so tapping an author's name
-  // seeds only the visible composer (main vs thread), not both at once.
-  const [threadSeedMentionUsername, setThreadSeedMentionUsername] = useState<string | null>(null);
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [starredOnly, setStarredOnly] = useState(false);
-  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
   const [threadSearch, setThreadSearch] = useState('');
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+
+  /**
+   * Reactions, stars, pins and copy — with the three pieces of state and the
+   * two effects they need. Called here rather than where the reaction block
+   * used to sit, because the three list-view setters it clears on close are
+   * declared just above.
+   */
+  const {
+    myReactions,
+    handleToggleReaction,
+    starredIds,
+    pinnedMessageId,
+    handleToggleStar,
+    handleTogglePin,
+    handleCopyMessage,
+  } = useMessageActions({
+    chat,
+    currentUser,
+    isGroup: chat?.chatType === 'group',
+    messagesProp,
+    updateMessageInState,
+    showToast,
+    setStarredOnly,
+    setThreadSearch,
+    setThreadSearchOpen,
+  });
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // The two ways the main list touches that node map, named so MessageRow can
+  // take them as props instead of closing over the ref. Both are exactly what
+  // the inline versions did before the list was extracted.
+  const registerMessageNode = useCallback((messageId: string, node: HTMLDivElement | null) => {
+    messageNodeRefs.current[messageId] = node;
+  }, []);
+  const scrollToMessageNode = useCallback((messageId: string) => {
+    messageNodeRefs.current[messageId]?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }, []);
   // Thread panel scroll: its own node map (so a reply-quote click scrolls within
   // the thread, not to the hidden main-list copy) plus a container + bottom sentinel.
   const threadMessageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -554,6 +496,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
+  /**
+   * The main and thread composers: reply/edit/mention-seed state, and the four
+   * handlers that act on it. Called exactly where its state used to be declared
+   * — it registers no effect, so nothing about effect order moved.
+   */
+  const {
+    replyTo,
+    setReplyTo,
+    seedMentionUsername,
+    setSeedMentionUsername,
+    editingMessage,
+    setEditingMessage,
+    threadReplyTo,
+    setThreadReplyTo,
+    threadEditingMessage,
+    setThreadEditingMessage,
+    threadSeedMentionUsername,
+    setThreadSeedMentionUsername,
+    handleComposerSend,
+    handleThreadSend,
+    beginEditingMessage,
+    handleRemoveMessage,
+  } = useChatComposer({
+    onSendMessage,
+    onEditMessage,
+    onRemoveMessage,
+    threadRootId,
+    loadThread,
+  });
+
   useEffect(() => {
     if (!threadRootId) {
       setThreadMessages([]);
@@ -599,70 +571,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setThreadRootId(rootId);
   };
 
-  // One composer serves both send and edit: an active `editingMessage` turns the
-  // submit into an edit. The optimistic message row and its failure handling
-  // belong to `onSendMessage` in the shell, not to this component.
-  const handleComposerSend = async (text: string, options?: SendMessageOptions) => {
-    if (!editingMessage) {
-      await onSendMessage(text, options);
-      return;
-    }
-    await onEditMessage(editingMessage.id, text);
-    useToastStore.getState().showToast('Message updated', 'success');
-    if (threadRootId) void loadThread(threadRootId);
-  };
-
-  const handleThreadSend = async (text: string, options?: SendMessageOptions) => {
-    if (threadEditingMessage) {
-      await onEditMessage(threadEditingMessage.id, text);
-      useToastStore.getState().showToast('Message updated', 'success');
-      if (threadRootId) await loadThread(threadRootId);
-      return;
-    }
-    // Reply target, most specific first. The `|| threadRootId` fallback is what
-    // guarantees a thread reply never escapes into the main conversation.
-    const replyId = options?.replyToMessageId || threadReplyTo?.id || threadRootId || undefined;
-    await onSendMessage(text, { ...options, replyToMessageId: replyId });
-    if (threadRootId) {
-      // Brief delay so the new message is queryable, then refresh panel + bump feed counts
-      window.setTimeout(() => void loadThread(threadRootId), 350);
-    }
-  };
-
-  const beginEditingMessage = (message: Message, inThread = false) => {
-    if (!message.text) return;
-    if (inThread) {
-      setThreadReplyTo(null);
-      setThreadEditingMessage({ id: message.id, text: message.text });
-      return;
-    }
-    setReplyTo(null);
-    setEditingMessage({ id: message.id, text: message.text });
-  };
-
-  const handleRemoveMessage = async (message: Message, inThread = false) => {
-    const confirmed = await confirmDialog({
-      title: 'Remove message?',
-      message:
-        'This will remove the message for everyone. It cannot be restored in chat, but an audit record will be retained.',
-      danger: true,
-      confirmLabel: 'Remove',
-    });
-    if (!confirmed) return;
-
-    try {
-      await onRemoveMessage(message.id);
-      if (editingMessage?.id === message.id) setEditingMessage(null);
-      if (threadEditingMessage?.id === message.id) setThreadEditingMessage(null);
-      if (inThread && threadRootId) await loadThread(threadRootId);
-      useToastStore.getState().showToast('Message removed', 'success');
-    } catch (error) {
-      useToastStore.getState().showToast(
-        error instanceof Error ? error.message : 'Could not remove message',
-        'error'
-      );
-    }
-  };
 
   // Scroll handler, two jobs: track "am I near the bottom" (which decides
   // whether a new message scrolls or only bumps the pill), and page in older
@@ -956,29 +864,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const isGroupChat = chat?.chatType === 'group';
   const visibleMessages = useMemo(
     () =>
-      messages.filter((msg) => {
-        if (isGroupChat && msg.isArchived) return false;
-        if (!shouldRenderRemovedMessage(msg, messages)) return false;
-        if (isGroupChat && !messagePassesQuestionVisibility(msg, questionVisibilityMode)) {
-          return false;
-        }
-        if (starredOnly && !starredIds.has(msg.id)) return false;
-        const query = threadSearch.trim().toLowerCase();
-        if (query.length >= 2) {
-          const hay = `${msg.text || ''} ${msg.questionStem || ''}`.toLowerCase();
-          if (!hay.includes(query)) return false;
-        }
-        return true;
+      selectVisibleMessages({
+        messages,
+        isGroupChat,
+        questionVisibilityMode,
+        starredOnly,
+        starredIds,
+        threadSearch,
       }),
     [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
   );
   const visibleThreadMessages = useMemo(
-    () =>
-      threadMessages.filter(
-        (message) =>
-          !(isGroupChat && message.isArchived) &&
-          shouldRenderRemovedMessage(message, threadMessages)
-      ),
+    () => selectVisibleThreadMessages(threadMessages, isGroupChat),
     [isGroupChat, threadMessages]
   );
   const threadRootMessage =
@@ -1190,73 +1087,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       cancelled = true;
     };
   }, [chat?.id, isGroup]);
-
-  // Device-local marks: starred ids + the one pinned message, re-read per
-  // user/scope/chat. Nothing here is synced, so another device shows different
-  // stars; every write is wrapped because storage can throw in private mode.
-  useEffect(() => {
-    if (!chat) {
-      setStarredIds(new Set());
-      setPinnedMessageId(null);
-      setStarredOnly(false);
-      setThreadSearch('');
-      setThreadSearchOpen(false);
-      return;
-    }
-    const scope = isGroup ? 'group' : 'dm';
-    try {
-      setStarredIds(parseStoredIdSet(localStorage.getItem(chatStarredStorageKey(currentUser.id, scope, chat.id))));
-      setPinnedMessageId(localStorage.getItem(chatPinnedMessageStorageKey(currentUser.id, scope, chat.id)));
-    } catch {
-      setStarredIds(new Set());
-      setPinnedMessageId(null);
-    }
-  }, [chat?.id, currentUser.id, isGroup]);
-
-  const persistStarredIds = (next: Set<string>) => {
-    if (!chat) return;
-    const scope = isGroup ? 'group' : 'dm';
-    try {
-      localStorage.setItem(chatStarredStorageKey(currentUser.id, scope, chat.id), serializeIdSet(next));
-    } catch {
-      // Device-local marks are best-effort.
-    }
-  };
-
-  const handleToggleStar = (message: Message) => {
-    setStarredIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(message.id)) next.delete(message.id);
-      else next.add(message.id);
-      persistStarredIds(next);
-      return next;
-    });
-  };
-
-  const handleTogglePin = (message: Message) => {
-    if (!chat) return;
-    const scope = isGroup ? 'group' : 'dm';
-    const key = chatPinnedMessageStorageKey(currentUser.id, scope, chat.id);
-    const next = pinnedMessageId === message.id ? null : message.id;
-    setPinnedMessageId(next);
-    try {
-      if (next) localStorage.setItem(key, next);
-      else localStorage.removeItem(key);
-    } catch {
-      // Device-local marks are best-effort.
-    }
-  };
-
-  const handleCopyMessage = async (message: Message) => {
-    const text = (message.questionStem || message.text || '').trim();
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Copied', 'success');
-    } catch {
-      showToast('Could not copy', 'error');
-    }
-  };
 
   const scrollToMessageId = (messageId: string) => {
     messageNodeRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -1601,46 +1431,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     }
   };
 
-  const handleDropdownAction = (action: () => void) => {
-    action();
-    setIsDropdownOpen(false);
-  };
-
-  const muteOverflowMenu = chatMuted ? (
-    <MenuItem
-      onSelect={() => handleDropdownAction(() => void handleUnmute())}
-      icon={<AppIcon name="notifications-alert" size={16} className="text-lantern-text-tertiary" />}
-      disabled={muteBusy}
-    >
-      Unmute{muteUntilLabel ? ` (until ${muteUntilLabel})` : ''}
-    </MenuItem>
-  ) : (
-    <MenuSubmenu
-      label="Mute"
-      icon={<AppIcon name="notifications-off" size={16} className="text-lantern-text-tertiary" />}
-      open={muteDurationsOpen}
-      onOpenChange={setMuteDurationsOpen}
-    >
-      {CHAT_MUTE_DURATIONS.map((opt) => (
-        <MenuItem
-          key={opt.id}
-          onSelect={() => handleDropdownAction(() => void handleMuteFor(opt.id))}
-          className="pl-8"
-          disabled={muteBusy}
-        >
-          {opt.label}
-        </MenuItem>
-      ))}
-    </MenuSubmenu>
-  );
-
-  const questionCount = visibleMessages.filter(m => m.questionType).length;
-  // Fold the question count into the header subtitle so we can drop the separate
-  // stats strip row (member count already backs `description` when unset).
-  const headerSubtitle = isGroup && !isArchived && questionCount > 0
-    ? `${description} · ${questionCount} question${questionCount !== 1 ? 's' : ''}`
-    : description;
-
   // The conversation itself, extracted so it can be rendered either bare or
   // inside the marketplace Tabs without duplicating the list, composer and all
   // of their handlers.
@@ -1693,182 +1483,50 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           </span>
         </button>
       )}
-      {/* `relative` anchors the "N new messages" pill over the list. The scroller
-          needs both `flex-1` and `min-h-0`: without `min-h-0` its automatic
-          minimum height is the full message list, so the pane grows instead of
-          scrolling and the composer is pushed off-screen. */}
-      <div className="relative flex-1 min-h-0 flex flex-col">
-      <div ref={messagesContainerRef} onScroll={handleScroll} className="flex-1 min-h-0 overflow-y-auto px-4 md:px-6 py-4 space-y-3">
-        {isLoadingMore && (
-          <div className="flex justify-center py-2" aria-live="polite">
-            <div className="w-5 h-5 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
-            <span className="sr-only">Loading older messages</span>
-          </div>
-        )}
-        {/* Per-row derivations: a date separator whenever the calendar day
-            changes, and "grouped with previous" (no repeated avatar/name) for a
-            same-sender message within 5 minutes. A row carrying the unread
-            divider is never grouped, so the divider cannot land mid-cluster. */}
-        {visibleMessages.map((msg, idx) => {
-          const msgDate = new Date(msg.timestamp);
-          const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
-          const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
-          const showDateSeparator = !prevDate
-            || msgDate.toDateString() !== prevDate.toDateString();
-          const isGroupedWithPrevious =
-            !!prevMsg &&
-            !showDateSeparator &&
-            !!prevMsg.sender?.id &&
-            !!msg.sender?.id &&
-            prevMsg.sender.id === msg.sender.id &&
-            msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
-
-          const formatDateLabel = (d: Date) => {
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-            const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-            if (diffDays === 0) return 'Today';
-            if (diffDays === 1) return 'Yesterday';
-            if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
-            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-          };
-
-          return (
-            <React.Fragment key={msg.id}>
-              {showDateSeparator && (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="flex-1 h-px bg-lantern-background-secondary" />
-                  <span className="text-xs font-medium text-lantern-text-tertiary whitespace-nowrap px-2">
-                    {formatDateLabel(msgDate)}
-                  </span>
-                  <div className="flex-1 h-px bg-lantern-background-secondary" />
-                </div>
-              )}
-              {firstUnreadId === msg.id && (
-                <div
-                  ref={firstUnreadRef}
-                  className="flex items-center gap-3 py-2"
-                  data-testid="unread-divider"
-                >
-                  <div className="flex-1 h-px bg-lantern-primary/40" />
-                  <span className="text-xs font-semibold text-lantern-primary whitespace-nowrap px-2">
-                    New messages
-                  </span>
-                  <div className="flex-1 h-px bg-lantern-primary/40" />
-                </div>
-              )}
-              <div
-                ref={(el) => {
-                  messageNodeRefs.current[msg.id] = el;
-                }}
-              >
-                <MessageItem
-                  message={msg}
-                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                  currentUserVote={userVotes[msg.id]}
-                  myReactions={myReactions[msg.id]}
-                  onToggleReaction={handleToggleReaction}
-                  onVoteQuestion={communityHost ? undefined : onVoteQuestion}
-                  onFlagAsSimilar={
-                    communityHost ? undefined : (messageId) => onFlagAsSimilar(messageId, chat.id)
-                  }
-                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                  group={group}
-                  currentUser={currentUser}
-                  isGroupedWithPrevious={isGroupedWithPrevious && firstUnreadId !== msg.id}
-                  isGroupChat={isGroup}
-                  onOpenThread={handleOpenThread}
-                  onEditMessage={(m) => beginEditingMessage(m)}
-                  onRemoveMessage={(m) => void handleRemoveMessage(m)}
-                  onReportMessage={
-                    isGroup
-                      ? (m) =>
-                          setReportTarget({
-                            type: 'message',
-                            id: m.id,
-                            label: m.sender?.name || m.sender?.username || 'this message',
-                          })
-                      : undefined
-                  }
-                  onReply={(m) => {
-                    setEditingMessage(null);
-                    setReplyTo({
-                      id: m.id,
-                      senderId: m.sender?.id,
-                      senderName: m.sender?.name || m.sender?.username,
-                      type: m.type,
-                      text: m.text,
-                      questionStem: m.questionStem,
-                    });
-                  }}
-                  onForward={(m) => setForwardMessage(m)}
-                  onCopy={(m) => void handleCopyMessage(m)}
-                  onStar={handleToggleStar}
-                  onPin={handleTogglePin}
-                  starred={starredIds.has(msg.id)}
-                  pinned={pinnedMessageId === msg.id}
-                  onMentionUser={(username) => setSeedMentionUsername(username)}
-                  onScrollToMessage={(messageId) => {
-                    messageNodeRefs.current[messageId]?.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'center',
-                    });
-                  }}
-                />
-              </div>
-            </React.Fragment>
-          );
-        })}
-        <div ref={messagesEndRef} />
-        {visibleMessages.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-16 text-center">
-            {awaitingMessages ? (
-              <>
-                <div className="w-10 h-10 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin mb-4" />
-                <p className="text-sm text-lantern-text-secondary">Loading messages…</p>
-              </>
-            ) : (
-              <>
-                <div className="w-16 h-16 rounded-2xl bg-lantern-background-secondary/60 dark:bg-lantern-surface flex items-center justify-center mb-4">
-                  <AppIcon name="chatbubbles" size={32} className="text-lantern-text-tertiary" />
-                </div>
-                <h3 className="text-base font-semibold text-lantern-text mb-1">
-                  {isArchived
-                    ? 'This group is archived'
-                    : starredOnly
-                      ? 'No starred messages yet'
-                      : threadSearch.trim().length >= 2
-                        ? 'No matches'
-                        : 'No messages yet'}
-                </h3>
-                <p className="text-sm text-lantern-text-secondary max-w-xs">
-                  {isArchived
-                    ? 'Unarchive the group to resume the conversation.'
-                    : starredOnly
-                      ? 'Long-press or open a message menu and tap Star to keep it here.'
-                      : threadSearch.trim().length >= 2
-                        ? 'Try a different search.'
-                        : isGroup
-                          ? `Be the first to write in ${name}.`
-                          : `Say hi to ${name}.`}
-                </p>
-              </>
-            )}
-          </div>
-        )}
-      </div>
-      {newMessagesBelow > 0 && (
-        <button
-          type="button"
-          onClick={() => scrollToBottom('smooth')}
-          className="absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1.5 rounded-full bg-lantern-primary text-white text-xs font-semibold shadow-lg hover:bg-lantern-primary-dark transition-colors"
-        >
-          ↓ {newMessagesBelow} new message{newMessagesBelow === 1 ? '' : 's'}
-        </button>
-      )}
-      </div>
-
+      <MessageList
+        visibleMessages={visibleMessages}
+        messagesContainerRef={messagesContainerRef}
+        messagesEndRef={messagesEndRef}
+        firstUnreadRef={firstUnreadRef}
+        handleScroll={handleScroll}
+        isLoadingMore={isLoadingMore}
+        awaitingMessages={awaitingMessages}
+        newMessagesBelow={newMessagesBelow}
+        scrollToBottom={scrollToBottom}
+        firstUnreadId={firstUnreadId}
+        isArchived={isArchived}
+        isGroup={isGroup}
+        starredOnly={starredOnly}
+        threadSearch={threadSearch}
+        name={name}
+        userVotes={userVotes}
+        myReactions={myReactions}
+        starredIds={starredIds}
+        pinnedMessageId={pinnedMessageId}
+        registerNode={registerMessageNode}
+        onScrollToMessage={scrollToMessageNode}
+        rowProps={{
+          currentUser,
+          chatId: chat.id,
+          isGroup,
+          group,
+          communityHost,
+          handleToggleReaction,
+          onVoteQuestion,
+          onFlagAsSimilar,
+          handleOpenThread,
+          beginEditingMessage,
+          handleRemoveMessage,
+          handleCopyMessage,
+          handleToggleStar,
+          handleTogglePin,
+          setReportTarget,
+          setEditingMessage,
+          setReplyTo,
+          setForwardMessage,
+          setSeedMentionUsername,
+        }}
+      />
       {/* Composer slot — mutually exclusive states, in precedence order:
           archived group → blocked DM → declined request → the real composer
           (which may itself be preceded by the accept/decline request banner).
@@ -2119,328 +1777,55 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background relative">
       {threadPanel}
       {/* Header — fixed at top */}
-      <div className="flex-shrink-0 z-20 relative">
-        <div className="flex items-center justify-between h-16 px-4 md:px-6 bg-lantern-surface/90 backdrop-blur-md border-b border-lantern-border">
-          <div className="flex items-center min-w-0 gap-3">
-            {/* Mobile back button */}
-            {onBack && (
-              <button type="button" onClick={onBack} className="md:hidden p-1.5 -ml-1 mr-1 text-lantern-text-secondary hover:text-lantern-text rounded-lantern hover:bg-lantern-background-secondary relative z-20" aria-label={communityContext ? 'Back to community' : 'Back to chats'}>
-                <AppIcon name="arrow-back" size={20} />
-              </button>
-            )}
-            <div className="relative flex-shrink-0">
-              <Avatar
-                name={name}
-                id={isGroup ? chat.id : dmPeerId}
-                src={resolveAvatarSrc(avatarUrl, lowDataMode)}
-                size="md"
-                localOnly={lowDataMode}
-                className="ring-2 ring-white dark:ring-lantern-border"
-              />
-              {!isGroup && !isArchived && resolvedPeerPresence && formatChatPresenceLine(resolvedPeerPresence.settings, resolvedPeerPresence.lastSeenAt).status === 'online' && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-emerald-400 border-2 border-white dark:border-lantern-border rounded-full" aria-label="Online" />
-              )}
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold truncate text-lantern-text" title={name}>{name}</h2>
-              <p className="text-xs text-lantern-text-secondary truncate" title={communityContext && !isArchived ? undefined : headerSubtitle}>
-                {isArchived ? (
-                  <span className="font-semibold text-amber-600 dark:text-amber-400">Archived</span>
-                ) : communityContext ? (
-                  <>
-                    {memberCountText ? `${memberCountText} · ` : ''}
-                    <button
-                      type="button"
-                      onClick={communityContext.onOpen}
-                      aria-label="Open community"
-                      className="text-xs text-lantern-primary hover:underline"
-                    >
-                      {COMMUNITY_COPY.inCommunity(communityContext.name)}
-                    </button>
-                    {isGroup && !communityHost && questionCount > 0 ? ` · ${questionCount} question${questionCount !== 1 ? 's' : ''}` : ''}
-                  </>
-                ) : headerSubtitle}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setThreadSearchOpen((open) => !open)}
-              className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern"
-              aria-label="Search in chat"
-              title="Search in chat"
-            >
-              <AppIcon name="search" size={18} />
-            </button>
-            {/* Quick-action toolbar for groups. Only the primary action (Question)
-                stays exposed on small screens; Test/Study fan out at lg+, and
-                everything else (visibility, mute) lives in the overflow menu
-                so each action sits in exactly one place per breakpoint. */}
-            {isGroup && group && !isArchived && !communityHost && (
-              <div className="flex items-center gap-1 mr-2">
-                <button
-                  onClick={onOpenQuestionModal}
-                  data-tip-id="chat.question"
-                  className="flex items-center gap-1.5 px-3 py-1.5 min-h-[36px] text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
-                  aria-label="Submit question"
-                  title="Submit Question"
-                >
-                  <AppIcon name="create" size={16} />
-                  <span className="hidden lg:inline">Question</span>
-                </button>
-                <button
-                  onClick={onOpenTestConfigModal}
-                  data-tip-id="chat.test"
-                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
-                  aria-label="Take a test"
-                  title="Take a Test"
-                >
-                  <AppIcon name="clipboard-check" size={16} />
-                  <span className="hidden lg:inline">Test</span>
-                </button>
-                <button
-                  onClick={onOpenStudyConfigModal}
-                  data-tip-id="chat.study"
-                  className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-lantern-text-secondary bg-lantern-background-secondary hover:bg-lantern-primary-background hover:text-lantern-primary rounded-lantern transition-colors duration-200"
-                  aria-label="Study mode"
-                  title="Study Mode"
-                >
-                  <AppIcon name="book-open" size={16} />
-                  <span className="hidden lg:inline">Study</span>
-                </button>
-              </div>
-            )}
-
-            {/* Overflow menu */}
-            <Menu open={isDropdownOpen} onOpenChange={setIsDropdownOpen}>
-            <div className="relative">
-              <MenuTrigger
-                className="p-2 text-lantern-text-secondary hover:text-lantern-primary hover:bg-lantern-background-secondary rounded-lantern transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-lantern-primary"
-                aria-label="Chat options"
-                data-tip-id={isGroupAdmin ? 'chat.aiGenerate' : undefined}
-              >
-                <AppIcon name="ellipsis-vertical" size={20} />
-              </MenuTrigger>
-              {isGroup && group && (
-                <MenuContent align="end" className="w-56">
-                  <MenuItem onSelect={() => handleDropdownAction(() => setThreadSearchOpen(true))} icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}>
-                    Search messages
-                  </MenuItem>
-                  <MenuItem
-                    onSelect={() => handleDropdownAction(() => setStarredOnly((on) => !on))}
-                    icon={<AppIcon name="star" size={16} className="text-lantern-text-tertiary" />}
-                    disabled={!starredOnly && starredIds.size === 0}
-                  >
-                    {starredOnly ? 'Show all messages' : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`}
-                  </MenuItem>
-                  <MenuItem onSelect={() => handleDropdownAction(() => setGalleryOpen(true))} icon={<AppIcon name="image" size={16} className="text-lantern-text-tertiary" />}>
-                    Photos and voice
-                  </MenuItem>
-                  <MenuSeparator />
-                  <MenuItem onSelect={() => handleDropdownAction(onOpenGroupInfoModal)} icon={<AppIcon name="people" size={16} className="text-lantern-text-tertiary" />}>
-                    Group Info & Members
-                  </MenuItem>
-                  <MenuSeparator />
-                  {communityHost ? null : (
-                    <>
-                      <MenuSubmenu
-                        label="All questions"
-                        open={questionFiltersOpen}
-                        onOpenChange={setQuestionFiltersOpen}
-                      >
-                        {QUESTION_VISIBILITY_MODE_OPTIONS.map((opt) => (
-                          <MenuItem
-                            key={opt.value}
-                            onSelect={() =>
-                              handleDropdownAction(() => setQuestionVisibilityMode(opt.value))
-                            }
-                            className={`pl-8 ${
-                              questionVisibilityMode === opt.value
-                                ? 'text-lantern-primary font-medium'
-                                : ''
-                            }`}
-                          >
-                            {opt.label}
-                            {questionVisibilityMode === opt.value ? ' ✓' : ''}
-                          </MenuItem>
-                        ))}
-                      </MenuSubmenu>
-                      <MenuSeparator />
-                    </>
-                  )}
-                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-                    Notifications
-                  </div>
-                  {muteOverflowMenu}
-                  <MenuSeparator />
-                  {isArchived ? (
-                    <MenuItem
-                      onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                      icon={<AppIcon name="archive" size={16} />}
-                      className="text-amber-700 dark:text-amber-400"
-                    >
-                      Unarchive Group
-                    </MenuItem>
-                  ) : (
-                    <>
-                      {/* Every study affordance below belongs to a study group
-                          now, and a community's chat is never archivable by a
-                          member (§5.4 / §6). */}
-                      {communityHost ? null : (
-                        <>
-                          <MenuItem
-                            onSelect={() => handleDropdownAction(() => onOpenCreateSubGroupModal(group.id))}
-                            icon={<AppIcon name="add-circle" size={16} className="text-lantern-text-tertiary" />}
-                          >
-                            Create Sub-group
-                          </MenuItem>
-                          <MenuSeparator />
-                          <div className="lg:hidden">
-                            <MenuItem onSelect={() => handleDropdownAction(onOpenTestConfigModal)} icon={<AppIcon name="clipboard-check" size={16} className="text-lantern-text-tertiary" />}>
-                              Take a Test
-                            </MenuItem>
-                            <MenuItem onSelect={() => handleDropdownAction(onOpenStudyConfigModal)} icon={<AppIcon name="book-open" size={16} className="text-lantern-text-tertiary" />}>
-                              Study Mode
-                            </MenuItem>
-                          </div>
-                          {onOpenAIGenerateModal && isGroupAdmin && (
-                            <MenuItem
-                              onSelect={() => handleDropdownAction(onOpenAIGenerateModal)}
-                              icon={<AppIcon name="sparkles" size={16} />}
-                              className="text-lantern-primary"
-                            >
-                              AI Generate Questions
-                            </MenuItem>
-                          )}
-                          <MenuSeparator />
-                          <MenuItem
-                            onSelect={() => handleDropdownAction(() => onToggleArchiveGroup(group.id))}
-                            icon={<AppIcon name="archive" size={16} />}
-                            className="text-amber-600 dark:text-amber-400"
-                          >
-                            Archive Group
-                          </MenuItem>
-                        </>
-                      )}
-                    </>
-                  )}
-                </MenuContent>
-              )}
-              {!isGroup && chat && (
-                <MenuContent align="end" className="w-56">
-                  <MenuItem onSelect={() => handleDropdownAction(() => setThreadSearchOpen(true))} icon={<AppIcon name="search" size={16} className="text-lantern-text-tertiary" />}>
-                    Search messages
-                  </MenuItem>
-                  <MenuItem
-                    onSelect={() => handleDropdownAction(() => setStarredOnly((on) => !on))}
-                    icon={<AppIcon name="star" size={16} className="text-lantern-text-tertiary" />}
-                    disabled={!starredOnly && starredIds.size === 0}
-                  >
-                    {starredOnly ? 'Show all messages' : `Starred messages${starredIds.size > 0 ? ` (${starredIds.size})` : ''}`}
-                  </MenuItem>
-                  <MenuItem onSelect={() => handleDropdownAction(() => setGalleryOpen(true))} icon={<AppIcon name="image" size={16} className="text-lantern-text-tertiary" />}>
-                    Photos and voice
-                  </MenuItem>
-                  <MenuSeparator />
-                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-lantern-text-tertiary">
-                    Notifications
-                  </div>
-                  {muteOverflowMenu}
-                  <MenuSeparator />
-                  {(chat as any).isArchived ? (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        onUnarchiveDmThread?.(chat.id);
-                      }}
-                      icon={<AppIcon name="archive" size={16} />}
-                      className="text-amber-700 dark:text-amber-400"
-                    >
-                      Unarchive Conversation
-                    </MenuItem>
-                  ) : (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        onArchiveDmThread?.(chat.id);
-                      }}
-                      icon={<AppIcon name="archive" size={16} />}
-                      className="text-amber-600 dark:text-amber-400"
-                    >
-                      Archive Conversation
-                    </MenuItem>
-                  )}
-                  {dmPeerId && (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        void handleToggleDmBlock();
-                      }}
-                      icon={<AppIcon name="ban" size={16} />}
-                      className="text-red-600 dark:text-red-400"
-                    >
-                      {iBlockedThem ? 'Unblock User' : 'Block User'}
-                    </MenuItem>
-                  )}
-                  {dmPeerId && (
-                    <MenuItem
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        setReportTarget({ type: 'user', id: dmPeerId, label: name });
-                      }}
-                      icon={<AppIcon name="flag" size={16} />}
-                      className="text-red-600 dark:text-red-400"
-                    >
-                      Report User…
-                    </MenuItem>
-                  )}
-                  <MenuSeparator />
-                  {onDeleteDmThread && (
-                    <MenuItem
-                      destructive
-                      onSelect={() => {
-                        setIsDropdownOpen(false);
-                        void confirmDialog({
-                          title: 'Delete conversation?',
-                          message: 'Delete this conversation? All messages will be permanently removed.',
-                          danger: true,
-                          confirmLabel: 'Delete',
-                        }).then((ok) => {
-                          if (ok) onDeleteDmThread(chat.id);
-                        });
-                      }}
-                      icon={<AppIcon name="trash" size={16} />}
-                    >
-                      Delete Conversation
-                    </MenuItem>
-                  )}
-                </MenuContent>
-              )}
-            </div>
-            </Menu>
-          </div>
-        </div>
-        {chatMuted && (
-          <div className="flex items-center justify-between gap-2 px-4 md:px-6 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40 text-xs text-amber-800 dark:text-amber-300">
-            <span className="inline-flex items-center gap-1.5 min-w-0">
-              <AppIcon name="notifications-off" size={14} className="shrink-0" aria-hidden />
-              <span className="truncate">
-                Notifications muted{muteUntilLabel ? ` until ${muteUntilLabel}` : ''}
-              </span>
-            </span>
-            <button
-              type="button"
-              onClick={() => void handleUnmute()}
-              disabled={muteBusy}
-              className="shrink-0 font-semibold underline-offset-2 hover:underline disabled:opacity-50"
-            >
-              Unmute
-            </button>
-          </div>
-        )}
-      </div>
+      <ChatHeader
+        chat={chat}
+        group={group}
+        isGroup={isGroup}
+        isGroupAdmin={isGroupAdmin}
+        isArchived={isArchived}
+        communityHost={communityHost}
+        name={name}
+        avatarUrl={avatarUrl}
+        description={description}
+        memberCountText={memberCountText}
+        dmPeerId={dmPeerId}
+        lowDataMode={lowDataMode}
+        resolvedPeerPresence={resolvedPeerPresence}
+        communityContext={communityContext}
+        visibleMessages={visibleMessages}
+        onBack={onBack}
+        isDropdownOpen={isDropdownOpen}
+        setIsDropdownOpen={setIsDropdownOpen}
+        questionFiltersOpen={questionFiltersOpen}
+        setQuestionFiltersOpen={setQuestionFiltersOpen}
+        questionVisibilityMode={questionVisibilityMode}
+        setQuestionVisibilityMode={setQuestionVisibilityMode}
+        starredOnly={starredOnly}
+        setStarredOnly={setStarredOnly}
+        starredIds={starredIds}
+        setGalleryOpen={setGalleryOpen}
+        setThreadSearchOpen={setThreadSearchOpen}
+        setReportTarget={setReportTarget}
+        chatMuted={chatMuted}
+        muteBusy={muteBusy}
+        muteUntilLabel={muteUntilLabel}
+        muteDurationsOpen={muteDurationsOpen}
+        setMuteDurationsOpen={setMuteDurationsOpen}
+        handleMuteFor={handleMuteFor}
+        handleUnmute={handleUnmute}
+        onOpenQuestionModal={onOpenQuestionModal}
+        onOpenTestConfigModal={onOpenTestConfigModal}
+        onOpenStudyConfigModal={onOpenStudyConfigModal}
+        onOpenGroupInfoModal={onOpenGroupInfoModal}
+        onOpenCreateSubGroupModal={onOpenCreateSubGroupModal}
+        onOpenAIGenerateModal={onOpenAIGenerateModal}
+        onToggleArchiveGroup={onToggleArchiveGroup}
+        onArchiveDmThread={onArchiveDmThread}
+        onUnarchiveDmThread={onUnarchiveDmThread}
+        onDeleteDmThread={onDeleteDmThread}
+        handleToggleDmBlock={handleToggleDmBlock}
+        iBlockedThem={iBlockedThem}
+      />
 
       {/* A DM that the server says is a marketplace inquiry gets the Chat/Offers
           tabs, the listing strip, the sticky deal bar and the order bar wrapped
