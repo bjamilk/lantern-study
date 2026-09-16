@@ -122,7 +122,7 @@ export function useGroupMutations({
             handleCloseCreateGroupModal();
         } catch (error) {
             console.error('Failed to create subgroup:', error);
-            alert('Failed to create subgroup. Please try again.');
+            useToastStore.getState().showToast('Failed to create subgroup. Please try again.', 'error');
         }
     }, [currentUser, updateGroups, handleSelectChat, updateMessages, handleCloseCreateGroupModal]);
 
@@ -256,7 +256,7 @@ export function useGroupMutations({
             };
         } catch (error) {
             console.error('Error creating group:', error);
-            alert('Failed to create group. Please try again.');
+            useToastStore.getState().showToast('Failed to create group. Please try again.', 'error');
             throw error;
         }
     }, [currentUser, setCurrentUser, updateGroups, updateMessages, addNotification]);
@@ -500,7 +500,7 @@ export function useGroupMutations({
             }
         } catch (error) {
             console.error('Failed to promote admin:', error);
-            alert('Failed to promote member to admin.');
+            useToastStore.getState().showToast('Failed to promote member to admin.', 'error');
             return;
         }
 
@@ -522,7 +522,7 @@ export function useGroupMutations({
         if (!groupToUpdate) return;
     
         if (groupToUpdate.adminIds.length <= 1 && groupToUpdate.adminIds.includes(userId)) {
-            alert("Cannot demote the only admin of the group.");
+            useToastStore.getState().showToast('Cannot demote the only admin of the group.', 'error');
             return;
         }
 
@@ -544,7 +544,7 @@ export function useGroupMutations({
             }
         } catch (error) {
             console.error('Failed to demote admin:', error);
-            alert('Failed to demote admin.');
+            useToastStore.getState().showToast('Failed to demote admin.', 'error');
         }
     }, [groups, users, currentUser, selectedChat, updateGroups, setSelectedChat]);
 
@@ -718,7 +718,7 @@ export function useGroupMutations({
                 closeModal('groupInfo');
             } catch (error) {
                 console.error('Error deleting group:', error);
-                alert('Failed to delete group. Please try again.');
+                useToastStore.getState().showToast('Failed to delete group. Please try again.', 'error');
             }
         }
     }, [groups, currentUser, selectedChat, getAllSubgroupIDs, updateGroups, updateMessages, setSelectedChat, closeModal]);
@@ -761,7 +761,7 @@ export function useGroupMutations({
             }
         } catch (error) {
             console.error('Error toggling archive status:', error);
-            alert('Failed to update group archive status. Please try again.');
+            useToastStore.getState().showToast('Failed to update group archive status. Please try again.', 'error');
         }
     }, [groups, currentUser, selectedChat, updateGroups, setSelectedChat]);
 
