@@ -477,7 +477,11 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   'services/data/gamification.ts::achievements': 2,
   'services/data/gamification.ts::marketplace_listings': 1,
   'services/data/gamification.ts::test_results': 1,
-  'services/supabase.ts::groups': 1,
+  // `fetchGroups`' group_members->groups embed, moved verbatim out of
+  // supabase.ts into the chat-send repository (monolith lane M1f, step 17) with
+  // the CHAT INTERNALS section it sat in. Same query, new file: the row moved
+  // with it rather than the count changing — supabase.ts drops to zero.
+  'services/data/chatSend.ts::groups': 1,
   // `getPendingGroupInvitesForUser`' group_members->groups embed, moved
   // verbatim out of supabase.ts into the groups repository (monolith lane M1c,
   // step 10). Same query, new file: the row moved with it rather than the
@@ -681,8 +685,20 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // SET_NO_COVER_COLUMNS, SET_NO_EXAM_NO_COVER_COLUMNS) — each named so the
       // scan reads it at its definition, so no embed hides behind the ladder.
       'services/studySets.ts::columns': 5,
-      'services/supabase.ts::columns': 4,
-      'services/supabase.ts::select': 3,
+      // The chat section's parameter-fed select wrappers, moved verbatim out
+      // of `services/supabase.ts` with the section by monolith lane M1f step
+      // 17: `getGroupThread`'s `runThread(columns)` (the reactions /
+      // board-columns capability ladder, read three times), and the three
+      // `select` wrappers behind `attachReplyPreview`,
+      // `attachReplyPreviewsBatch` and `resolveThreadRootForReply`, whose
+      // argument is a ternary between two literals in the same file. Every
+      // branch that embeds names `profiles!sender_id` / `profiles:sender_id`,
+      // the named form, so nothing bare hides behind the parameter. The rows
+      // moved with the code: `services/supabase.ts::columns` drops from 4 to 1
+      // and `::select` from 3 to zero.
+      'services/data/chatSend.ts::columns': 3,
+      'services/data/chatSend.ts::select': 3,
+      'services/supabase.ts::columns': 1,
     });
   });
 
