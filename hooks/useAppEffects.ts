@@ -1,86 +1,57 @@
 /**
- * The web app's effect barrel: every long-lived side effect App.tsx needs, in one hook —
- * session restore and auth-state handling, the signed-in bootstrap fan-out, all Realtime
- * subscriptions, theme/settings DOM sync, offline-queue persistence and replay, and the
- * SRS reminder scheduler.
+ * The web app's effect composer: every long-lived side effect App.tsx needs,
+ * called in one place, in one order.
+ *
+ * This file used to BE all of them — 29 `useEffect`s in a single 2,400-line
+ * function. Each concern now lives in its own module under `hooks/effects/`,
+ * moved body-for-body with its comments, and what remains here is the order
+ * they run in. That order is the behaviour this file owns: React runs effects
+ * in registration order, and several of these depend on it (the cross-account
+ * queue purge has to land before anything persists or replays a queue; every
+ * Realtime channel has to be created after the token-ready promotion).
  *
  * Exports: useAppEffects({ dataLoaded, setDataLoaded, bootstrapLoad, setBootstrapLoad,
  *  onChallengeNotification }) → { refreshDashboardGamification, dailyQuests, serverStreak,
  *  streakFreezes, questsLoaded, authTokenReady }.
- * Touches: auth/group/test/flashcard/budget/ui/notes/toast stores; supabase Realtime channels
- *  (notifications, dm_threads, dm_messages, messages, notes, note_collaborators, profiles,
- *  group_members) and the REST/BFF fetchers in services/supabase; localStorage keys
- *  'theme', 'offlineBundles', 'pendingSyncResults', 'monthlyBudget' and the onboarding flag;
- *  window events 'lantern:streak-updated', 'lantern:refresh-dm-threads', 'online',
- *  'visibilitychange'; the Notification API via utils/webNotifications.
+ * Touches: nothing directly any more, beyond the auth store and the
+ *  `authTokenReady` gate below. Each hook's own banner says what it touches.
+ *
  * Gotchas:
- *  - USER SWITCH / STALE CLOSURES: several effects outlive the account they were created
- *    for. Anything that writes a store or uploads a queue re-reads `use*Store.getState()`
- *    inside the effect body; an effect whose dep array carries the array itself would hold
- *    the PRE-purge snapshot and resurrect the previous user's data.
- *  - Every authenticated effect gates on `authTokenReady`, not just `currentUser`. Realtime
- *    channels subscribed without a live JWT pass RLS filters that drop every event.
- *  - `realtimeEpoch` is part of each channel name; bumping it (tab focus, CHANNEL_ERROR,
- *    TIMED_OUT) is how channels are recreated with a fresh token. `bumpRealtimeEpoch` is
- *    rate-limited so a persistently failing channel cannot spin a recreate loop.
- *  - A refresh merge (`mergeChatMessagesById(cached, serverList)`) is incoming-wins, which
- *    is server-wins ONLY in that argument order — swapping them lets the persisted cache
- *    clobber fresh server rows (reactions/edits vanish after a cold start).
- *  - SIGNED_OUT is not proof the user is signed out: a refresh-token 400 fires one
- *    spuriously. The handler tries to recover from the authority (BFF in cookie mode,
- *    stored session in legacy mode) before clearing anything, under a cooldown.
- *  - Theme is applied by toggling the `dark` class only; colour values live in index.css.
+ *  - `authTokenReady` is owned HERE rather than inside `useAuthRestore`, because
+ *    the presence heartbeat reads it and registers its effect BEFORE the restore
+ *    effects do. State has no registration order; effects do.
+ *  - Do not reorder the calls below to make the file read more tidily. Two tests
+ *    fail if you do: `apps/web/src/useAppEffects.surface.test.ts` (reads the
+ *    order out of the source) and `hooks/effects/appEffectsOrder.test.ts`
+ *    (renders the composer and reads the order out of the registrations).
+ *  - `useDailyStudyReminder` is called before the gamification hook for the same
+ *    reason: that is the order those two registered their effects in.
+ *
+ * Reading order for the modules, which is also the order they run:
+ *  useDailyStudyReminder → useGamificationRefresh → useDmThreadRefresh (no
+ *  effects; it provides the shared refresher) → usePresenceHeartbeat →
+ *  useAuthRestore → useAccountLifecycle → useBootstrapFanout →
+ *  useRealtimeSubscriptions → useOfflineQueuePersistence → useThemeDomSync →
+ *  useDeepLinkConsumption → useSrsReminders → useOnlineQueueReplay.
  */
-import { useEffect, useState, type Dispatch, type SetStateAction } from 'react';
-import { User } from '../types';
+import { useState, type Dispatch, type SetStateAction } from 'react';
 import { useAuthStore } from '../stores/authStore';
-import { reportUnexpectedSignOut, wasRecentIntentionalSignOut } from '../services/sentry';
-import { useGroupStore } from '../stores/groupStore';
-import { useTestStore } from '../stores/testStore';
-import { useFlashcardStore } from '../stores/flashcardStore';
-import { useBudgetStore } from '../stores/budgetStore';
-import { useUIStore } from '../stores/uiStore';
-import { resolvePlatformAdmin } from '../utils/platformAdmin';
-import { resolveDisplayName } from '../utils/displayIdentity';
-import {
-    supabase, setCachedAuthToken,
-    fetchUserProfile, createUserProfile,
-    ensureAuthTokenReady,
-    bootstrapAuthFromStorage,
-    readPersistedAuthUser,
-    shouldRefreshStoredSession,
-    resolveClientSession,
-    clearClientAuthSession,
-    clearAllClientAuthStorage,
-    getStoredSessionExpiresAt,
-} from '../services/supabase';
-import {
-    isCookieAuthEnabled,
-    exchangeCookieSession,
-    refreshCookieSession,
-} from '../services/authCookieSession';
-import { normalizeUserSettings } from '@lantern/shared/settings';
-import { mapUserStatsFromApi, normalizeTestPresets } from '@lantern/shared/utils/apiMappers';
+import { bootstrapAuthFromStorage, getStoredSessionExpiresAt } from '../services/supabase';
+import { isAccessTokenFreshEnough } from '../utils/authBootstrap';
+import { type BootstrapLoadState } from './useAuthHandlers';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
-import { useDeepLinkConsumption } from './effects/useDeepLinkConsumption';
-import { useDmThreadRefresh } from './effects/useDmThreadRefresh';
 import { useGamificationRefresh } from './effects/useGamificationRefresh';
+import { useDmThreadRefresh } from './effects/useDmThreadRefresh';
+import { usePresenceHeartbeat } from './effects/usePresenceHeartbeat';
 import { useAuthRestore } from './effects/useAuthRestore';
+import { useAccountLifecycle } from './effects/useAccountLifecycle';
 import { useBootstrapFanout } from './effects/useBootstrapFanout';
 import { useRealtimeSubscriptions } from './effects/useRealtimeSubscriptions';
-import {
-  INITIAL_BOOTSTRAP_LOAD_STATE,
-  type BootstrapLoadState,
-} from './useAuthHandlers';
-import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
-import { resetSessionExpiredGuard } from '../services/sessionHandler';
 import { useOfflineQueuePersistence } from './effects/useOfflineQueuePersistence';
-import { useAccountLifecycle } from './effects/useAccountLifecycle';
-import { usePresenceHeartbeat } from './effects/usePresenceHeartbeat';
-import { useOnlineQueueReplay } from './effects/useOnlineQueueReplay';
-import { useSrsReminders } from './effects/useSrsReminders';
 import { useThemeDomSync } from './effects/useThemeDomSync';
-
+import { useDeepLinkConsumption } from './effects/useDeepLinkConsumption';
+import { useSrsReminders } from './effects/useSrsReminders';
+import { useOnlineQueueReplay } from './effects/useOnlineQueueReplay';
 
 interface UseAppEffectsParams {
     dataLoaded: boolean;
@@ -104,26 +75,6 @@ export function useAppEffects({
         const boot = bootstrapAuthFromStorage();
         return Boolean(boot && isAccessTokenFreshEnough(getStoredSessionExpiresAt()));
     });
-    const {
-        updateGroups,
-        updateDmThreads,
-        setNotifications,
-    } = useGroupStore();
-    const {
-        setOfflineBundles,
-        setPendingSyncResults,
-        setTestResults, setUserQuestionStats,
-    } = useTestStore();
-    const {
-        setDecks,
-        setFlashcards,
-    } = useFlashcardStore();
-    const { transactions, setTransactions, budget, setBudget, savingsGoals, expenseSplits, walletBalance, setSavingsGoals, setExpenseSplits, setWalletBalance } = useBudgetStore();
-    const {
-        setTheme,
-        lowDataMode, setLowDataMode,
-    } = useUIStore();
-
 
     useDailyStudyReminder(currentUser);
 
@@ -156,6 +107,8 @@ export function useAppEffects({
     });
 
     // --- Account lifecycle: queue purge, appearance, settings sync, profile setup ---
+    // Stays ahead of the persist/replay hooks below: the purge has to land before
+    // anything observes the queue.
     useAccountLifecycle({ currentUser, authTokenReady, setCurrentUser });
 
     // --- The signed-in bootstrap fan-out, and the budget-extras write-back ---
