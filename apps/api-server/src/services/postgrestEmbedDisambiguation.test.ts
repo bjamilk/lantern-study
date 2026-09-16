@@ -362,7 +362,12 @@ const BARE_EMBED_ALLOWLIST: Record<string, number> = {
   // --- supabase.ts membership joins not adjacent to the outage table pattern.
   //     group_members->groups and note_collaborators->notes are single-FK today.
   'services/supabase.ts::achievements': 2,
-  'services/supabase.ts::groups': 2,
+  'services/supabase.ts::groups': 1,
+  // `getPendingGroupInvitesForUser`' group_members->groups embed, moved
+  // verbatim out of supabase.ts into the groups repository (monolith lane M1c,
+  // step 10). Same query, new file: the row moved with it rather than the
+  // count changing — supabase.ts drops from 2 to 1 for the same reason.
+  'services/data/groups.ts::groups': 1,
   // `getUserGroups`' group_members->groups embed, moved verbatim out of
   // supabase.ts into the users repository (monolith lane M1b, step 6). Same
   // query, new file: the row moved with it rather than the count changing.
@@ -442,6 +447,16 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // `const selectClause = \`...\`` in the chat section (line ~8548) happened
       // to bind the same name to a literal and masked it. The select itself is
       // unchanged; see the KNOWN ISSUE on `scanSelects` about that masking.
+      // groups' `getGroups` (`runList(selectClause)`) and `getGroupById`
+      // (`readOne(columns)`, called twice) — the `community_surface`
+      // capability ladders, which run the same query with and without the
+      // column migration 20260903120000 adds. Both arguments are fed from
+      // literal bindings in the same file (`baseClause`, GROUP_COLUMNS_BASE),
+      // so no embed hides behind the parameter. Moved here from
+      // `services/supabase.ts::columns`, which drops from 7 to 5, by monolith
+      // lane M1c step 10.
+      'services/data/groups.ts::columns': 2,
+      'services/data/groups.ts::selectClause': 1,
       'services/data/offlineBundles.ts::selectClause': 1,
       'services/librarySearch.ts::column': 1,
       'services/moderation.ts::columns': 2,
@@ -452,7 +467,7 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // SET_NO_COVER_COLUMNS, SET_NO_EXAM_NO_COVER_COLUMNS) — each named so the
       // scan reads it at its definition, so no embed hides behind the ladder.
       'services/studySets.ts::columns': 5,
-      'services/supabase.ts::columns': 7,
+      'services/supabase.ts::columns': 5,
       'services/supabase.ts::select': 4,
     });
   });
