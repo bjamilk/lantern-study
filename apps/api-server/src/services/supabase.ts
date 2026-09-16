@@ -94,6 +94,11 @@
  *    stale `packages/shared/dist` makes `tsc` disagree with the runtime.
  */
 import * as dataClient from "./data/client";
+import {
+  mapChatMessageRow,
+  mapProfileSender,
+  resolveNestedProfile,
+} from "./data/mappers";
 import * as academicData from "./data/academic";
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
@@ -108,7 +113,6 @@ import {
   Notification,
 } from "../types";
 import { cacheService } from "./cache";
-import { scrubEmailFromDisplayName } from "@lantern/shared/utils/displayNames";
 import { logger } from "../utils/logger";
 import { buildFlashcardUpdateData } from "../utils/flashcardUpdate";
 import {
@@ -291,12 +295,6 @@ type GamificationSyncResult = {
   awardedBadges: User["badges"];
 };
 
-type ProfileSenderRow = {
-  id?: string;
-  name?: string;
-  username?: string;
-  avatar_url?: string;
-};
 
 export type ChatMessageMutationStatus =
   | "ok"
@@ -369,28 +367,10 @@ export type BoardBookmarkPage = {
   serverBacked: boolean;
 };
 
-function mapProfileSender(
-  profile: ProfileSenderRow | null | undefined,
-  senderId: string,
-) {
-  return {
-    id: profile?.id || senderId,
-    // Never an address: a profiles row created from an email sign-up can hold
-    // the address itself, and this is the one serialiser every board, DM and
-    // group message sender passes through.
-    name: scrubEmailFromDisplayName(profile?.name) || "Unknown",
-    username: profile?.username || undefined,
-    avatarUrl: profile?.avatar_url,
-    points: 0,
-    badges: [],
-    stats: {},
-  };
-}
-
-function resolveNestedProfile(profiles: unknown): ProfileSenderRow | null {
-  if (Array.isArray(profiles)) return (profiles[0] as ProfileSenderRow) ?? null;
-  return (profiles as ProfileSenderRow) ?? null;
-}
+// `ProfileSenderRow`, `mapProfileSender` and `resolveNestedProfile` moved to
+// `data/mappers.ts` (monolith lane M1, step 4) alongside `mapChatMessageRow`,
+// the chat-message envelope they build. They stay module-private to the data
+// layer: nothing outside it imported them.
 
 /** Map a profiles table row (snake_case) to the API User shape (with snake_case aliases). */
 function mapProfileRowToUser(
@@ -3401,23 +3381,11 @@ export class SupabaseService {
         // `question_data`, but the count is computed, not selected.
         const withPeerUpvotes = await this.attachPeerUpvotes(withReposts);
 
-        return withPeerUpvotes.reverse().map((msg: any) => ({
-          id: msg.id,
-          groupId: msg.group_id,
-          sender: mapProfileSender(
-            resolveNestedProfile(msg.profiles),
-            msg.sender_id,
-          ),
-          senderId: msg.sender_id,
-          timestamp: msg.timestamp
-            ? new Date(msg.timestamp).toISOString()
-            : new Date().toISOString(),
-          flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
-          upvotes: msg.upvotes || 0,
-          downvotes: msg.downvotes || 0,
-          isArchived: msg.is_archived || false,
-          ...this.normalizeMessageRecord(msg),
-        }));
+        return withPeerUpvotes
+          .reverse()
+          .map((msg: any) =>
+            mapChatMessageRow(msg, this.normalizeMessageRecord(msg)),
+          );
       },
       { ttl: 120 },
     ); // Cache for 2 minutes
@@ -10763,23 +10731,9 @@ export class SupabaseService {
       groupId,
     );
 
-    const mapped = withCounts.map((msg: any) => ({
-      id: msg.id,
-      groupId: msg.group_id,
-      sender: mapProfileSender(
-        resolveNestedProfile(msg.profiles),
-        msg.sender_id,
-      ),
-      senderId: msg.sender_id,
-      timestamp: msg.timestamp
-        ? new Date(msg.timestamp).toISOString()
-        : new Date().toISOString(),
-      flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
-      upvotes: msg.upvotes || 0,
-      downvotes: msg.downvotes || 0,
-      isArchived: msg.is_archived || false,
-      ...this.normalizeMessageRecord(msg),
-    })) as Message[];
+    const mapped = withCounts.map((msg: any) =>
+      mapChatMessageRow(msg, this.normalizeMessageRecord(msg)),
+    ) as Message[];
 
     if (viewerUserId) {
       return this.enrichGroupMessageReceipts(mapped, groupId, viewerUserId);
@@ -12959,22 +12913,14 @@ export class SupabaseService {
         // verification progress the chat card shows.
         const withPeerUpvotes = await this.attachPeerUpvotes(data as any[]);
 
-        return withPeerUpvotes.map((msg: any) => ({
-          id: msg.id,
-          groupId: msg.group_id,
-          sender: mapProfileSender(
-            resolveNestedProfile(msg.profiles),
-            msg.sender_id,
-          ),
-          timestamp: msg.timestamp
-            ? new Date(msg.timestamp).toISOString()
-            : new Date().toISOString(),
-          flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
-          upvotes: msg.upvotes || 0,
-          downvotes: msg.downvotes || 0,
-          isArchived: msg.is_archived || false,
-          ...this.normalizeMessageRecord(msg),
-        }));
+        // `includeSenderId: false` preserves this loader's long-standing
+        // omission of the top-level `senderId`; see the KNOWN ISSUE on
+        // `mapChatMessageRow`.
+        return withPeerUpvotes.map((msg: any) =>
+          mapChatMessageRow(msg, this.normalizeMessageRecord(msg), {
+            includeSenderId: false,
+          }),
+        );
       },
       { ttl: 30 },
     ); // Cache for 30 seconds
