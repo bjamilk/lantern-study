@@ -41,11 +41,15 @@
  * show up here as a chain diff. Giving a handler a name, or adding or removing
  * a middleware layer, WILL show up, which is the point.
  *
- * Why the router is collected rather than an app: `routes/admin.ts` exports a
- * bare `Router`, and the `authMiddleware` → `requirePlatformAdmin` →
+ * Why the router is collected rather than an app: `routes/admin` exports a bare
+ * `Router`, and the `authMiddleware` → `requirePlatformAdmin` →
  * `adminRateLimit` stack is applied at the mount in `server.ts`. The inventory
- * records what this file registers, which is exactly what M4 moves; the mount
+ * records what the router registers, which is exactly what M4 moves; the mount
  * stack is out of scope and is not touched.
+ *
+ * After the split `import adminRouter from './admin'` resolves to
+ * `routes/admin/index.ts` — the import path no importer had to change, which is
+ * the shim.
  */
 import { execFileSync } from 'child_process';
 import path from 'path';
@@ -139,7 +143,8 @@ const DOCUMENTED_USE_ADDITIONS: string[] = [
   // Step 2: the router-scoped error middleware that lets the 47 handlers drop
   // their hand-rolled try/catch and use `asyncHandler` while still answering
   // with this router's own body shape (`{success:false, error}`) rather than
-  // the global handler's (`{error, message, timestamp, path}`).
+  // the global handler's (`{error, message, timestamp, path}`). After step 4 it
+  // is registered by `routes/admin/index.ts`, after every sub-router.
   'USE / [adminErrorHandler]',
 ];
 

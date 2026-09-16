@@ -614,18 +614,34 @@ describe('adminData table inventory', () => {
   });
 
   it('is the only module the admin routes reach the database through', () => {
-    const routes = require('fs').readFileSync(
-      require('path').join(__dirname, '../routes/admin.ts'),
-      'utf8'
-    );
-    // Comments may name them; code may not.
-    const code = routes
-      .split('\n')
-      .filter((line: string) => !/^\s*(\*|\/\/|\/\*)/.test(line))
-      .join('\n');
-    expect(code).not.toMatch(/\.from\(/);
-    expect(code).not.toMatch(/getClient\(\)/);
-    expect(code).not.toMatch(/auth\.admin\./);
-    expect(code).not.toMatch(/\.rpc\(/);
+    const fs = require('fs');
+    const path = require('path');
+    const dir = path.join(__dirname, '../routes/admin');
+    const files = fs.readdirSync(dir).filter((f: string) => f.endsWith('.ts'));
+
+    // A vacuous pass would be the failure mode here: an empty directory, or a
+    // rename, must not read as "no database access found".
+    expect(files.sort()).toEqual([
+      'analytics.ts',
+      'content.ts',
+      'context.ts',
+      'errors.ts',
+      'index.ts',
+      'moderation.ts',
+      'users.ts',
+    ]);
+
+    for (const file of files) {
+      // Comments may name them; code may not.
+      const code = fs
+        .readFileSync(path.join(dir, file), 'utf8')
+        .split('\n')
+        .filter((line: string) => !/^\s*(\*|\/\/|\/\*)/.test(line))
+        .join('\n');
+      expect({ file, from: /\.from\(/.test(code) }).toEqual({ file, from: false });
+      expect({ file, getClient: /getClient\(\)/.test(code) }).toEqual({ file, getClient: false });
+      expect({ file, authAdmin: /auth\.admin\./.test(code) }).toEqual({ file, authAdmin: false });
+      expect({ file, rpc: /\.rpc\(/.test(code) }).toEqual({ file, rpc: false });
+    }
   });
 });
