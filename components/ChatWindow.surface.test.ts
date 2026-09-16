@@ -69,6 +69,7 @@ const EXTRACTED_MODULES: string[] = [
   'components/chat/OffersPanel.tsx',
   'hooks/chat/useMarketplaceOffers.ts',
   'components/chat/ThreadPanel.tsx',
+  'components/chat/ChatHomeScreen.tsx',
 ];
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');

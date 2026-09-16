@@ -32,7 +32,6 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  buildChatHome,
   collectChatGalleryItems,
   formatChatPresenceLine,
   type ChatHomeLounge,
@@ -45,9 +44,9 @@ import { useMessageActions } from '../hooks/chat/useMessageActions';
 import { useChatComposer } from '../hooks/chat/useChatComposer';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
-import { ChatHomePane } from './chat/ChatHomePane';
 import { OffersPanel } from './chat/OffersPanel';
 import { ThreadPanel } from './chat/ThreadPanel';
+import { ChatHomeScreen } from './chat/ChatHomeScreen';
 import { useMarketplaceOffers } from '../hooks/chat/useMarketplaceOffers';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
@@ -58,7 +57,6 @@ import { Group, Message, User, DMThread, ChatItem, MessageReplyPreview } from '.
 import ReportContentModal from './moderation/ReportContentModal';
 import type { ContentReportTargetType } from '@lantern/shared';
 import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
-import GroupListItem from './GroupListItem';
 import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
 import { useUIStore } from '../stores/uiStore';
@@ -650,52 +648,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   });
 
 
-  // build top‑level vs subgroup map once
-  const { activeTopLevelGroups, archivedTopLevelGroups, subGroupsMap } = React.useMemo(() => {
-    const activeTop: Group[] = [];
-    const archivedTop: Group[] = [];
-    const map: Record<string, Group[]> = {};
-
-    (groups ?? []).forEach(g => {
-      if (g.parentId) {
-        if (!map[g.parentId]) map[g.parentId] = [];
-        map[g.parentId].push(g);
-      } else {
-        if (g.isArchived) archivedTop.push(g);
-        else activeTop.push(g);
-      }
-    });
-
-    const sortFn = (a: Group, b: Group) => a.name.localeCompare(b.name);
-    activeTop.sort(sortFn);
-    archivedTop.sort(sortFn);
-    Object.values(map).forEach(arr => arr.sort(sortFn));
-
-    return { activeTopLevelGroups: activeTop, archivedTopLevelGroups: archivedTop, subGroupsMap: map };
-  }, [groups]);
-
-  // recursive renderer for mobile list entries
-  const renderGroupWithSubgroups = (group: Group, nestingLevel: number = 0): React.ReactNode => {
-    const subGroups = subGroupsMap[group.id] || [];
-    const isExpanded = !!expandedParentGroups[group.id];
-
-    return (
-      <React.Fragment key={group.id}>
-        <GroupListItem
-          chat={{ ...group, chatType: 'group' as const }}
-          currentUser={currentUser}
-          isSelected={false}
-          onClick={() => onSelectChat?.({ ...group, chatType: 'group' as const })}
-          showText={true}
-          hasSubGroups={subGroups.length > 0}
-          isExpanded={isExpanded}
-          onToggleExpand={subGroups.length > 0 ? () => setExpandedParentGroups(prev => ({ ...prev, [group.id]: !prev[group.id] })) : undefined}
-          nestingLevel={nestingLevel}
-        />
-        {isExpanded && subGroups.map(sg => renderGroupWithSubgroups(sg, nestingLevel + 1))}
-      </React.Fragment>
-    );
-  };
 
   // Scrolling to the end also clears the pill and re-arms "near bottom", so the
   // two never disagree about where the reader is.
@@ -993,155 +945,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   // file header (React #310). Desktop gets the chat-home pane; small screens get
   // the full conversation list, since there is no sidebar there to hold it.
   if (!chat) {
-    // Desktop: show placeholder
-    // Mobile: show inline group/DM list for navigation
-    const inboundRequestThreads = dmThreads.filter(
-      (t) =>
-        !t.isArchived &&
-        t.status === 'pending' &&
-        typeof t.requestedBy === 'string' &&
-        t.requestedBy !== currentUser.id,
-    );
-    const activeDmThreads = dmThreads.filter(
-      (t) =>
-        !t.isArchived &&
-        !(
-          t.status === 'pending' &&
-          typeof t.requestedBy === 'string' &&
-          t.requestedBy !== currentUser.id
-        ),
-    );
-    const archivedDmThreads = dmThreads.filter(t => t.isArchived);
-    const totalArchived = archivedTopLevelGroups.length + archivedDmThreads.length;
-    const chatHome = buildChatHome({
-      currentUserId: currentUser.id,
-      groups,
-      dmThreads,
-      communities: chatHomeCommunities || myCommunities,
-      inquiries: buyerInquiries,
-    });
-
     return (
-      <div className="flex-1 flex flex-col bg-lantern-background">
-        <div className="hidden md:flex flex-1">
-          <ChatHomePane
-            model={chatHome}
-            onMessageSomeone={onOpenNewDmModal}
-            onNewGroup={onCreateGroup}
-            onSelectRecent={(recent) => {
-              if (recent.chatType === 'dm') {
-                const thread = dmThreads.find((t) => t.id === recent.id);
-                if (thread) onSelectChat?.({ ...thread, chatType: 'dm' });
-                return;
-              }
-              const group = groups.find((g) => g.id === recent.id);
-              if (group) onSelectChat?.({ ...group, chatType: 'group' });
-            }}
-            onOpenLounge={onOpenLounge}
-            onOpenInquiries={onOpenInquiries}
-          />
-        </div>
-
-        {/* Mobile group list */}
-        <div className="md:hidden flex-1 flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-lantern-surface border-b border-lantern-border">
-            <h1 className="text-lg font-bold text-lantern-text">Chats</h1>
-            <div className="flex items-center gap-2">
-              {onOpenNewDmModal && (
-                <button onClick={onOpenNewDmModal} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New message">
-                  <AppIcon name="chatbubble-ellipses" size={20} />
-                </button>
-              )}
-              {onCreateGroup && (
-                <button onClick={onCreateGroup} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New group">
-                  <AppIcon name="add-circle" size={20} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="flex-1 overflow-y-auto">
-            {activeTopLevelGroups.length === 0 &&
-            activeDmThreads.length === 0 &&
-            inboundRequestThreads.length === 0 ? (
-              <ChatHomePane
-                compact
-                model={chatHome}
-                onMessageSomeone={onOpenNewDmModal}
-                onNewGroup={onCreateGroup}
-                onOpenLounge={onOpenLounge}
-                onOpenInquiries={onOpenInquiries}
-              />
-            ) : (
-              <div className="divide-y divide-lantern-border">
-                {inboundRequestThreads.length > 0 && (
-                  <>
-                    <div className="px-4 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider bg-amber-50 dark:bg-amber-950/30">
-                      Message requests ({inboundRequestThreads.length})
-                    </div>
-                    {inboundRequestThreads.map((thread) => (
-                      <GroupListItem
-                        key={thread.id}
-                        chat={{ ...thread, chatType: 'dm' as const }}
-                        currentUser={currentUser}
-                        isSelected={false}
-                        onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
-                        showText={true}
-                      />
-                    ))}
-                  </>
-                )}
-
-                {/* DM threads */}
-                {activeDmThreads.map(thread => (
-                  <GroupListItem
-                    key={thread.id}
-                    chat={{ ...thread, chatType: 'dm' as const }}
-                    currentUser={currentUser}
-                    isSelected={false}
-                    onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
-                    showText={true}
-                  />
-                ))}
-
-                {/* Active groups */}
-                {activeTopLevelGroups.map(group => renderGroupWithSubgroups(group, 0))}
-
-                {/* Archived section (groups + DMs) */}
-                {totalArchived > 0 && (
-                  <>
-                    <div className="px-4 py-2 text-xs font-semibold text-lantern-text-tertiary uppercase tracking-wider bg-lantern-background-secondary">
-                      Archived ({totalArchived})
-                    </div>
-                    {archivedDmThreads.map(thread => (
-                      <GroupListItem
-                        key={thread.id}
-                        chat={{ ...thread, chatType: 'dm' as const }}
-                        currentUser={currentUser}
-                        isSelected={false}
-                        onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
-                        showText={true}
-                      />
-                    ))}
-                    {archivedTopLevelGroups.map(group => (
-                      <GroupListItem
-                        key={group.id}
-                        chat={{ ...group, chatType: 'group' as const }}
-                        currentUser={currentUser}
-                        isSelected={false}
-                        onClick={() => onSelectChat?.({ ...group, chatType: 'group' as const })}
-                        showText={true}
-                      />
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <ChatHomeScreen
+        currentUser={currentUser}
+        groups={groups}
+        dmThreads={dmThreads}
+        communities={chatHomeCommunities || myCommunities}
+        inquiries={buyerInquiries}
+        expandedParentGroups={expandedParentGroups}
+        setExpandedParentGroups={setExpandedParentGroups}
+        onSelectChat={onSelectChat}
+        onCreateGroup={onCreateGroup}
+        onOpenNewDmModal={onOpenNewDmModal}
+        onOpenLounge={onOpenLounge}
+        onOpenInquiries={onOpenInquiries}
+      />
     );
   }
 
