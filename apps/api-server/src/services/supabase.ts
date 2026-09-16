@@ -99,11 +99,32 @@ import {
   mapProfileSender,
   resolveNestedProfile,
 } from "./data/mappers";
+import {
+  COVER_IMAGE_BUCKET,
+  COVER_IMAGE_MIGRATION,
+  COVER_TABLE_BY_KIND,
+  CoverColumnMissingError,
+  CoverStorageUnavailableError,
+  isMissingCoverPathColumn,
+} from "./data/coverImages";
+export {
+  COVER_IMAGE_BUCKET,
+  COVER_IMAGE_MIGRATION,
+  COVER_TABLE_BY_KIND,
+  CoverColumnMissingError,
+  CoverStorageUnavailableError,
+  isMissingCoverPathColumn,
+};
 import * as academicData from "./data/academic";
+import * as decksData from "./data/decks";
+import * as uploadsData from "./data/uploads";
+import { writeWithTopicFallback } from "./data/academic";
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
 import * as notificationsData from "./data/notifications";
+import * as storageAclData from "./data/storageAcl";
+import * as usersData from "./data/users";
 import {
   DatabaseConfig,
   User,
@@ -234,7 +255,6 @@ import {
   normalizeCoverRef,
   parseStorageObjectUrl,
   parseStoredStorageRef,
-  storageThumbPath,
 } from "@lantern/shared/utils/storageUrl";
 import {
   resolveThreadRootId,
@@ -262,12 +282,7 @@ function extractMentionUsernames(text?: string | null): string[] {
   }
   return [...found];
 }
-import {
-  assertImageMagicBytes,
-  clampSignedUrlTtl,
-  detectImageMime,
-  STORAGE_SIGNED_URL_MAX_TTL,
-} from "../utils/fileValidation";
+import { detectImageMime } from "../utils/fileValidation";
 import { VersionConflictError } from "../utils/versionConflict";
 // Append-only learning log (Phase 1 · C). Value import of a leaf module
 // (learningEvents only type-imports this file), so no runtime import cycle.
@@ -281,10 +296,7 @@ import {
 import type { LearningSurface } from "@lantern/shared/learning";
 import { buildNoteStoragePath } from "./noteFiles";
 import { mapNoteCommentRow, NOTE_COMMENT_SELECT } from "./noteCommentMapping";
-import {
-  IMMUTABLE_IMAGE_CACHE_CONTROL,
-  processImageForUpload,
-} from "./imageProcessing";
+import { IMMUTABLE_IMAGE_CACHE_CONTROL } from "./imageProcessing";
 
 type UserStats = typeof initialUserStats;
 
@@ -372,92 +384,9 @@ export type BoardBookmarkPage = {
 // the chat-message envelope they build. They stay module-private to the data
 // layer: nothing outside it imported them.
 
-/** Map a profiles table row (snake_case) to the API User shape (with snake_case aliases). */
-function mapProfileRowToUser(
-  row: Record<string, unknown> | null | undefined,
-): User | null {
-  if (!row || typeof row !== "object") return null;
-  const avatarUrl = (row.avatar_url as string | undefined) || undefined;
-  const mapped = {
-    id: String(row.id),
-    name: String(row.name || ""),
-    username: (row.username as string | undefined) || undefined,
-    firstName: (row.first_name as string | undefined) || undefined,
-    lastName: (row.last_name as string | undefined) || undefined,
-    email: (row.email as string | undefined) || undefined,
-    phoneNumber: (row.phone as string | undefined) || undefined,
-    avatarUrl,
-    points: typeof row.points === "number" ? row.points : 0,
-    badges: Array.isArray(row.badges) ? row.badges : [],
-    stats: row.stats ?? {},
-    settings: row.settings ?? {},
-    settingsVersion:
-      typeof row.settings_version === "number"
-        ? row.settings_version
-        : Number(row.settings_version) || 1,
-    testPresets: Array.isArray(row.test_presets) ? row.test_presets : [],
-    test_presets: Array.isArray(row.test_presets) ? row.test_presets : [],
-    // Aliases for clients that still read snake_case from GET /users/:id
-    avatar_url: avatarUrl,
-    phone: (row.phone as string | undefined) || undefined,
-    first_name: (row.first_name as string | undefined) || undefined,
-    last_name: (row.last_name as string | undefined) || undefined,
-    // Academic identity (20260822130000). Absent columns (migration not yet
-    // applied) read as null so clients always see the keys.
-    institutionId: (row.institution_id as string | null | undefined) ?? null,
-    faculty: (row.faculty as string | null | undefined) ?? null,
-    programme: (row.programme as string | null | undefined) ?? null,
-    studyLevel: toNullableInt(row.study_level),
-    // 20260830090000. Absent column (migration unapplied) reads as null.
-    currentSemester: toNullableInt(row.current_semester),
-    entryYear: toNullableInt(row.entry_year),
-    expectedGraduationYear: toNullableInt(row.expected_graduation_year),
-    // Creator identity (20260823123000). Read back so "Edit bio" can prefill
-    // and the profile can render it; verification_level drives the Verified badge.
-    bio: (row.bio as string | null | undefined) ?? null,
-    verificationLevel: toNullableInt(row.verification_level) ?? 0,
-    lastSeenAt: typeof row.last_seen_at === "string" ? row.last_seen_at : null,
-  };
-  return mapped as User;
-}
-
-function toNullableInt(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function buildProfileUpsertRow(
-  profile: Partial<User> & {
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    phone?: string;
-    avatar_url?: string;
-  },
-  options?: { allowGamificationFields?: boolean },
-): Record<string, unknown> {
-  const allowGamification = options?.allowGamificationFields === true;
-  const row: Record<string, unknown> = {
-    id: profile.id,
-    name: profile.name,
-    avatar_url: profile.avatarUrl ?? profile.avatar_url,
-    phone: profile.phoneNumber ?? profile.phone,
-    points: allowGamification ? (profile.points ?? 0) : 0,
-    stats: allowGamification ? (profile.stats ?? {}) : {},
-    badges: allowGamification ? (profile.badges ?? []) : [],
-    settings: profile.settings ?? {},
-    username: profile.username ?? undefined,
-    first_name: profile.firstName ?? profile.first_name ?? undefined,
-    last_name: profile.lastName ?? profile.last_name ?? undefined,
-  };
-  if (profile.email) {
-    row.email = profile.email;
-  }
-  return Object.fromEntries(
-    Object.entries(row).filter(([, value]) => value !== undefined),
-  );
-}
+// `mapProfileRowToUser`, `toNullableInt` and `buildProfileUpsertRow` moved to
+// `data/users.ts` (monolith lane M1b, step 6) with the USERS AND PROFILES
+// section, their only caller. They stay module-private to the data layer.
 
 /**
  * Course reference carried on test/bundle payloads: top-level `courseId` wins,
@@ -528,99 +457,15 @@ export function resolveStudySetIdFromConfigLike(payload: any): string | null {
   return null;
 }
 
-async function writeWithTopicFallback(
-  run: (payload: Record<string, any>) => PromiseLike<any>,
-  payload: Record<string, any>,
-): Promise<any> {
-  const result = await run(payload);
-  if (result?.error && "study_set_id" in payload && isMissingStudySetColumn(result.error)) {
-    logger.warn(
-      "study_set_id missing — write retried without it (apply 20260911120000_study_sets.sql)",
-    );
-    const { study_set_id: _droppedSet, ...withoutSet } = payload;
-    return writeWithTopicFallback(run, withoutSet);
-  }
-  if (!result?.error || !("topic_id" in payload) || !isMissingTopicColumn(result.error)) {
-    return result;
-  }
-  logger.warn(
-    "topic_id missing — write retried without it (apply 20260826120000_course_topics.sql)",
-  );
-  const { topic_id: _dropped, ...rest } = payload;
-  return run(rest);
-}
+// `writeWithTopicFallback` moved to `data/academic.ts` (monolith lane M1b,
+// step 7): it is the write half of the course/topic filing that module owns,
+// and `data/decks.ts` needs it too. Imported above; 14 call sites unchanged.
 
-// ============ COVER IMAGES (decks + notes) ============
-
-/** Bucket for deck/note covers. Created by the service role on first upload. */
-export const COVER_IMAGE_BUCKET = "cover-images";
-
-/** Named so a 503 can tell the operator exactly what to apply. */
-export const COVER_IMAGE_MIGRATION = "20260913120000_cover_images.sql";
-
-/**
- * The cover_path column is missing, i.e. the migration above has not been
- * applied to this database. Callers answer 503 rather than 500 so the client
- * can say "not available yet" instead of "something broke".
- */
-export function isMissingCoverPathColumn(
-  error:
-    | { code?: string; message?: string; details?: string; hint?: string }
-    | null
-    | undefined,
-): boolean {
-  if (!error) return false;
-  // PostgREST and Postgres describe the same absence two different ways, and
-  // the column name can arrive in `details`/`hint` rather than `message`:
-  //   - UPDATE through PostgREST: PGRST204 "Could not find the 'cover_path'
-  //     column of 'study_sets' in the schema cache" (NOT a Postgres code);
-  //   - SELECT that reaches Postgres: 42703 "column decks.cover_path does not
-  //     exist".
-  // Matching only one of them is how a missing migration became a blank 500.
-  const code = String((error as { code?: unknown }).code ?? "");
-  const text =
-    `${error.message || ""} ${error.details || ""} ${error.hint || ""}`.toLowerCase();
-  if (!text.includes("cover_path")) return false;
-  return (
-    code === "PGRST204" ||
-    code === "42703" ||
-    text.includes("schema cache") ||
-    text.includes("does not exist")
-  );
-}
-
-export class CoverColumnMissingError extends Error {
-  readonly migration = COVER_IMAGE_MIGRATION;
-  constructor() {
-    super("Covers need a server update — try again later");
-    this.name = "CoverColumnMissingError";
-  }
-}
-
-/**
- * Storage could not take the bytes: the bucket is absent and could not be
- * created, its policy refuses the write, or the object name collided. A
- * distinct error so the route says "storage", not the blanket 500 that made
- * a missing bucket and a missing column look identical from the client.
- */
-export class CoverStorageUnavailableError extends Error {
-  readonly detail: string;
-  constructor(detail: string) {
-    super("Cover storage is not ready");
-    this.name = "CoverStorageUnavailableError";
-    this.detail = detail;
-  }
-}
-
-/** The table each cover kind writes its column on. */
-export const COVER_TABLE_BY_KIND: Record<
-  "deck" | "note" | "study-set",
-  "decks" | "notes" | "study_sets"
-> = {
-  deck: "decks",
-  note: "notes",
-  "study-set": "study_sets",
-};
+// The COVER IMAGES block (bucket + migration names, the missing-column
+// predicate, the two typed errors, the kind->table map) moved to
+// `data/coverImages.ts` (monolith lane M1b, step 7) so `data/decks.ts` can
+// use it without importing this file. Re-exported below, unchanged, for
+// `routes/notes.ts` and `coverImages.test.ts`.
 
 // ============ MARKETPLACE LISTING WRITE SANITIZERS (mass-assignment guard) ============
 // Known listing kinds, mirroring the DB CHECK constraint on
@@ -1022,11 +867,29 @@ export class SupabaseService {
     return profile === "compact" ? "compact" : "full";
   }
 
+  // ===========================================================================
+  // STORAGE REFERENCES, SIGNED URLS AND THE STORAGE ACL
+  //
+  // EXTRACTED (monolith lane M1b, step 5): the bodies now live in
+  // `data/storageAcl.ts` — read the invariants there before changing anything
+  // here. What is left is delegation.
+  //
+  // The gate's artefact-read predicates (`verifyDeckAccess`,
+  // `resolveNoteAccess`, `isGroupMember`, `isDmThreadParticipant`,
+  // `isProfileVisibleToViewer`, `canViewPeerChatAvatar`) still live in this
+  // file, in sections later lanes own, so they are INJECTED as `deps` rather
+  // than imported — that keeps `data/storageAcl.ts` a leaf.
+  //
+  // The deps object is built INLINE at each call site (the same shape
+  // `createNotification` uses below), and its arrows read `this.<method>` at
+  // CALL time. That is what keeps `storageAccess.test.ts`'s
+  // `jest.spyOn(service, 'isProfileVisibleToViewer')` working, and it avoids
+  // adding a helper method that the public-surface freeze would flag.
+  // ===========================================================================
+
   /** Rewrite legacy localhost:54321 storage URLs to the configured Supabase URL. */
   private normalizeStorageUrl(url: string): string {
-    if (!url) return url;
-    const base = this.supabaseUrl.replace(/\/$/, "");
-    return url.replace(/https?:\/\/(localhost|127\.0\.0\.1):54321/gi, base);
+    return storageAclData.normalizeStorageUrl(this.supabaseUrl, url);
   }
 
   resolveStorageReference(
@@ -1034,44 +897,26 @@ export class SupabaseService {
     path?: string,
     url?: string,
   ): { bucket: string; path: string } | null {
-    if (bucket && path) return { bucket, path };
-    if (!url) return null;
-    return (
-      parseStoredStorageRef(this.normalizeStorageUrl(url)) ||
-      parseStoredStorageRef(url)
+    return storageAclData.resolveStorageReference(
+      this.supabaseUrl,
+      bucket,
+      path,
+      url,
     );
   }
 
-  // FIXED (F10): the default was 24 h — the maximum — so every caller that
-  // omitted a TTL minted a day-long bearer link. It is now `undefined`, which
-  // lets `clampSignedUrlTtl` apply its conservative one-hour default, and the
-  // bucket is passed so a sensitive bucket gets its own lower ceiling.
   async createSignedStorageUrl(
     bucket: string,
     path: string,
     expiresInSeconds?: number,
   ): Promise<string> {
-    if (!isPrivateStorageBucket(bucket)) {
-      throw new Error(
-        "Signing is only allowed for known private storage buckets",
-      );
-    }
-    if (
-      !path ||
-      path.includes("..") ||
-      path.startsWith("/") ||
-      path.includes("\\")
-    ) {
-      throw new Error("Invalid storage path");
-    }
-    const ttl = clampSignedUrlTtl(expiresInSeconds, bucket);
-    const { data, error } = await this.supabase.storage
-      .from(bucket)
-      .createSignedUrl(path, ttl);
-    if (error || !data?.signedUrl) {
-      throw new Error(error?.message || "Failed to create signed URL");
-    }
-    return this.normalizeStorageUrl(data.signedUrl);
+    return storageAclData.createSignedStorageUrl(
+      this.supabase,
+      this.supabaseUrl,
+      bucket,
+      path,
+      expiresInSeconds,
+    );
   }
 
   /**
@@ -1085,28 +930,14 @@ export class SupabaseService {
     expiresInSeconds?: number,
     variant: "thumb" | "original" = "original",
   ): Promise<string> {
-    if (variant !== "thumb") {
-      return this.createSignedStorageUrl(bucket, path, expiresInSeconds);
-    }
-    const ttl = clampSignedUrlTtl(expiresInSeconds, bucket);
-    const thumbPath = storageThumbPath(path);
-    try {
-      const { data, error } = await this.supabase.storage
-        .from(bucket)
-        .createSignedUrls([thumbPath, path], ttl);
-      if (!error && data) {
-        const thumbResult = data[0];
-        const originalResult = data[1];
-        const signedUrl =
-          (thumbResult && !thumbResult.error && thumbResult.signedUrl) ||
-          (originalResult && !originalResult.error && originalResult.signedUrl) ||
-          null;
-        if (signedUrl) return this.normalizeStorageUrl(signedUrl);
-      }
-    } catch {
-      // Fall through to original-only sign.
-    }
-    return this.createSignedStorageUrl(bucket, path, expiresInSeconds);
+    return storageAclData.createSignedStorageUrlWithVariant(
+      this.supabase,
+      this.supabaseUrl,
+      bucket,
+      path,
+      expiresInSeconds,
+      variant,
+    );
   }
 
   /**
@@ -1120,61 +951,12 @@ export class SupabaseService {
       variant?: "thumb" | "original";
     },
   ): Promise<Map<number, string>> {
-    const variant = options?.variant || "original";
-    const signedByIndex = new Map<number, string>();
-    const byBucket = new Map<string, Array<{ index: number; path: string }>>();
-    for (const ref of refs) {
-      if (!ref.bucket || !ref.path || !isPrivateStorageBucket(ref.bucket)) continue;
-      const group = byBucket.get(ref.bucket) || [];
-      group.push({ index: ref.index, path: ref.path });
-      byBucket.set(ref.bucket, group);
-    }
-
-    for (const [bucket, items] of byBucket) {
-      try {
-        // FIXED (F10): the TTL is clamped PER BUCKET, inside the loop. One
-        // clamp outside it gave every bucket in a mixed batch the same
-        // ceiling, which is exactly how a sensitive bucket inherits a cover
-        // image's lifetime.
-        const ttl = clampSignedUrlTtl(options?.expiresInSeconds, bucket);
-        const paths =
-          variant === "thumb"
-            ? items.flatMap((item) => [storageThumbPath(item.path), item.path])
-            : items.map((item) => item.path);
-        const { data, error } = await this.supabase.storage
-          .from(bucket)
-          .createSignedUrls(paths, ttl);
-        if (error || !data) continue;
-        if (variant === "thumb") {
-          items.forEach((item, i) => {
-            const thumbResult = data[i * 2];
-            const originalResult = data[i * 2 + 1];
-            const signedUrl =
-              (thumbResult && !thumbResult.error && thumbResult.signedUrl) ||
-              (originalResult &&
-                !originalResult.error &&
-                originalResult.signedUrl) ||
-              null;
-            if (signedUrl) {
-              signedByIndex.set(item.index, this.normalizeStorageUrl(signedUrl));
-            }
-          });
-        } else {
-          items.forEach((item, i) => {
-            const result = data[i];
-            if (result && !result.error && result.signedUrl) {
-              signedByIndex.set(
-                item.index,
-                this.normalizeStorageUrl(result.signedUrl),
-              );
-            }
-          });
-        }
-      } catch {
-        // Bucket publicly readable or transient error; callers fall back to unsigned URLs.
-      }
-    }
-    return signedByIndex;
+    return storageAclData.signStorageDisplayUrls(
+      this.supabase,
+      this.supabaseUrl,
+      refs,
+      options,
+    );
   }
 
   async signStorageDisplayUrl(
@@ -1182,181 +964,43 @@ export class SupabaseService {
     expiresInSeconds = 60 * 60 * 24,
     variant: "thumb" | "original" = "original",
   ): Promise<string> {
-    if (!url || url.startsWith("data:")) return url;
-    const parsed =
-      parseStoredStorageRef(this.normalizeStorageUrl(url)) ||
-      parseStoredStorageRef(url);
-    // Unknown / non-private buckets: never mint service-role signed URLs for them.
-    if (!parsed || !isPrivateStorageBucket(parsed.bucket)) {
-      return this.normalizeStorageUrl(url);
-    }
-    return this.createSignedStorageUrlWithVariant(
-      parsed.bucket,
-      parsed.path,
+    return storageAclData.signStorageDisplayUrl(
+      this.supabase,
+      this.supabaseUrl,
+      url,
       expiresInSeconds,
       variant,
     );
   }
 
-  // ===========================================================================
-  // STORAGE ACL — the authorization gate for every signed URL
-  //
-  // All eight buckets are PRIVATE, so an object is only reachable through a
-  // signed URL, and `canAccessStorageObject` is the one thing standing between
-  // a caller and a signature. The service role can sign anything; this method
-  // decides whether it should. Treat it as security code, not plumbing.
-  //
-  // Invariants a change must preserve:
-  //
-  //  1. DENY BY DEFAULT. An unknown bucket returns false (the
-  //     `isPrivateStorageBucket` allowlist), and every branch below that does
-  //     not explicitly grant falls through to `return false` at the end.
-  //     Adding a bucket without adding a branch denies it — which is correct.
-  //  2. PATH HYGIENE. A path containing `..`, starting with `/`, or containing
-  //     a backslash is rejected outright, before anything is parsed out of it.
-  //     Authorization is then derived from path SEGMENTS (`parts[0]` is the
-  //     owner), so a traversal that survived would authorize the wrong object.
-  //  3. OWNER SHORT-CIRCUIT. `parts[0] === userId` grants; everything after
-  //     that point answers the harder question "may a NON-owner read this?".
-  //
-  // CONFUSED-DEPUTY DEFENCES (two, both deliberate and both easy to delete by
-  // accident). Object paths embed the UPLOADER's id, and rows that reference
-  // an object are written by users. So "some row I can read points at this
-  // object" is NOT proof the object is mine to share — an attacker can put any
-  // path in a row they own. Both checks below therefore require the PATH OWNER
-  // to be independently authorized on the referencing artefact:
-  //
-  //  - `canAccessFlashcardImage`: the viewer must be able to READ a deck that
-  //    references the object, AND the path owner must be able to EDIT that
-  //    same deck. Planting a stranger's image path on your own card grants
-  //    nothing, because you are not an editor of their deck.
-  //  - `canAccessQuestionImage`: the viewer must be a member of a group whose
-  //    message references the object, AND the path owner must be a member of
-  //    that same group.
-  //
-  // Both also match the reference EXACTLY (`storageUrlMatchesObject`) after an
-  // `ilike '%path%'` narrowing query; the ilike is a prefilter only, never the
-  // decision, and the pattern is escaped (`escapeIlikePattern`) so a path
-  // containing `%` or `_` cannot widen it.
-  //
-  // COVER PATHS are hardened at construction rather than at read time:
-  // `uploadCoverImage` strips the owner and artefact id segments to
-  // `[A-Za-z0-9_-]`, so neither can introduce a separator or a traversal, and
-  // `normalizeCoverRef` (packages/shared/src/utils/storageUrl.ts) refuses to
-  // bucket-qualify a ref that already names another private bucket, is absolute,
-  // or contains `..`/backslashes — a legacy ref cannot be rewritten into a
-  // pointer at someone else's bucket.
-  //
-  // Do not weaken any of the above to fix a 403. A cover or avatar that fails
-  // to load is a missing read predicate on the ARTEFACT, not a reason to widen
-  // the bucket rules.
-  // ===========================================================================
   async canAccessStorageObject(
     userId: string | null,
     bucket: string,
     path: string,
   ): Promise<boolean> {
-    // SEC-05: deny-by-default — never grant access to unknown / non-allowlisted buckets.
-    if (!isPrivateStorageBucket(bucket)) return false;
-    if (
-      !path ||
-      path.includes("..") ||
-      path.startsWith("/") ||
-      path.includes("\\")
-    ) {
-      return false;
-    }
-
-    const parts = path.split("/").filter(Boolean);
-    const ownerId = parts[0];
-    if (!ownerId) return false;
-    if (userId && ownerId === userId) return true;
-
-    if (bucket === "marketplace-images") {
-      // Published shop covers live under {owner}/shop/. Anyone who can see the
-      // shop card may re-sign them. Legacy covers under {owner}/temp/ stay
-      // owner-only here; list/profile responses sign those with the service role.
-      if (parts[1] === "shop") return true;
-      if (parts[1] === "listings" && parts[2]) {
-        const listingId = parts[2];
-        const { data } = await this.supabase
-          .from("marketplace_listings")
-          .select("id, status, user_id")
-          .eq("id", listingId)
-          .maybeSingle();
-        if (data?.status === "active") return true;
-        if (userId && data?.user_id === userId) return true;
-      }
-      return false;
-    }
-
-    if (bucket === "flashcard-images") {
-      if (!userId) return false;
-      return this.canAccessFlashcardImage(userId, path);
-    }
-
-    if (bucket === "question-images") {
-      if (!userId) return false;
-      return this.canAccessQuestionImage(userId, path);
-    }
-
-    if (bucket === COVER_IMAGE_BUCKET) {
-      // {ownerId}/decks/{deckId}/... or {ownerId}/notes/{noteId}/...
-      // The owner already returned true above; everyone else has to be able to
-      // READ the artefact the cover belongs to (shared deck, note collaborator),
-      // or the cover would 403 on exactly the screens that show it.
-      if (!userId) return false;
-      const scope = parts[1];
-      const artefactId = parts[2];
-      if (!artefactId) return false;
-      if (scope === "decks") {
-        return this.verifyDeckAccess(userId, artefactId, "read");
-      }
-      if (scope === "notes") {
-        const access = await this.resolveNoteAccess(artefactId, userId);
-        return Boolean(access);
-      }
-      return false;
-    }
-
-    if (bucket === "note-files") {
-      // Chat attachments: {ownerId}/chat/{groupId}/... or {ownerId}/chat/dm/{threadId}/...
-      if (userId && parts[1] === "chat" && parts[2]) {
-        if (parts[2] === "dm" && parts[3]) {
-          return this.isDmThreadParticipant(parts[3], userId);
-        }
-        return this.isGroupMember(parts[2], userId);
-      }
-      return false;
-    }
-
-    if (bucket === "profile-avatars") {
-      if (!userId) return false;
-      // Public/friends visibility, or conversation peers (DM / shared group) for chat bubbles.
-      if (await this.isProfileVisibleToViewer(userId, ownerId)) return true;
-      return this.canViewPeerChatAvatar(userId, ownerId);
-    }
-
-    if (bucket === "job-resumes") {
-      // Owner-only here (handled above). Employers reach an applicant's resume
-      // through the jobs-board application endpoint, which authorizes against
-      // the posting rather than the storage path.
-      return false;
-    }
-
-    if (bucket === "group-avatars") {
-      if (!userId) return false;
-      // Paths are {groupId}/avatar-...
-      const groupId = parts[0];
-      if (!groupId) return false;
-      return this.isGroupMember(groupId, userId);
-    }
-
-    return false;
+    return storageAclData.canAccessStorageObject(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, deckId, level) =>
+          this.verifyDeckAccess(uid, deckId, level),
+        resolveNoteAccess: (noteId, uid) => this.resolveNoteAccess(noteId, uid),
+        isDmThreadParticipant: (threadId, uid) =>
+          this.isDmThreadParticipant(threadId, uid),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        isProfileVisibleToViewer: (viewerId, targetId) =>
+          this.isProfileVisibleToViewer(viewerId, targetId),
+        canViewPeerChatAvatar: (viewerId, peerId) =>
+          this.canViewPeerChatAvatar(viewerId, peerId),
+      },
+      userId,
+      bucket,
+      path,
+    );
   }
 
+  /** @internal — no caller outside this file. */
   private escapeIlikePattern(value: string): string {
-    return value.replace(/[%_\\]/g, "\\$&");
+    return storageAclData.escapeIlikePattern(value);
   }
 
   /** True when stored image_url refers to exactly this storage object (not a substring plant). */
@@ -1365,10 +1009,7 @@ export class SupabaseService {
     bucket: string,
     path: string,
   ): boolean {
-    if (!imageUrl) return false;
-    if (imageUrl === path || imageUrl === `${bucket}/${path}`) return true;
-    const parsed = parseStorageObjectUrl(imageUrl);
-    return !!parsed && parsed.bucket === bucket && parsed.path === path;
+    return storageAclData.storageUrlMatchesObject(imageUrl, bucket, path);
   }
 
   /**
@@ -1380,38 +1021,15 @@ export class SupabaseService {
     userId: string,
     path: string,
   ): Promise<boolean> {
-    const pathOwner = path.split("/")[0];
-    if (!pathOwner) return false;
-
-    const escapedPath = this.escapeIlikePattern(path);
-    const { data: cards, error } = await this.supabase
-      .from("flashcards")
-      .select("deck_id, image_url")
-      .not("image_url", "is", null)
-      .ilike("image_url", `%${escapedPath}%`)
-      .limit(50);
-
-    if (error) throw error;
-    if (!cards?.length) return false;
-
-    const deckIds = [
-      ...new Set(
-        cards
-          .filter((c) =>
-            this.storageUrlMatchesObject(c.image_url, "flashcard-images", path),
-          )
-          .map((c) => c.deck_id)
-          .filter(Boolean),
-      ),
-    ];
-
-    for (const deckId of deckIds) {
-      const canRead = await this.verifyDeckAccess(userId, deckId, "read");
-      if (!canRead) continue;
-      // Path owner must be an editor/owner of the referencing deck — not merely mentioned in image_url.
-      if (await this.verifyDeckAccess(pathOwner, deckId, "edit")) return true;
-    }
-    return false;
+    return storageAclData.canAccessFlashcardImage(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, deckId, level) =>
+          this.verifyDeckAccess(uid, deckId, level),
+      },
+      userId,
+      path,
+    );
   }
 
   /**
@@ -1422,36 +1040,12 @@ export class SupabaseService {
     userId: string,
     path: string,
   ): Promise<boolean> {
-    const pathOwner = path.split("/")[0];
-    if (!pathOwner) return false;
-
-    const escapedPath = this.escapeIlikePattern(path);
-    const { data: rows, error } = await this.supabase
-      .from("messages")
-      .select("group_id, image_url")
-      .not("image_url", "is", null)
-      .ilike("image_url", `%${escapedPath}%`)
-      .limit(50);
-
-    if (error) throw error;
-    if (!rows?.length) return false;
-
-    const groupIds = [
-      ...new Set(
-        rows
-          .filter((r) =>
-            this.storageUrlMatchesObject(r.image_url, "question-images", path),
-          )
-          .map((r) => r.group_id)
-          .filter(Boolean),
-      ),
-    ];
-
-    for (const groupId of groupIds) {
-      if (!(await this.isGroupMember(groupId, userId))) continue;
-      if (await this.isGroupMember(groupId, pathOwner)) return true;
-    }
-    return false;
+    return storageAclData.canAccessQuestionImage(
+      this.supabase,
+      { isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid) },
+      userId,
+      path,
+    );
   }
 
   private async normalizeListingRecordAsync(listing: any): Promise<any> {
@@ -1620,73 +1214,29 @@ export class SupabaseService {
   // `invalidateProfilePresentationCaches` does with `deletePattern`.
   // ===========================================================================
   // User/Profile Functions
+  //
+  // EXTRACTED (monolith lane M1b, step 6): the bodies now live in
+  // `data/users.ts`, together with the three module-scope helpers only this
+  // section used (`mapProfileRowToUser`, `toNullableInt`,
+  // `buildProfileUpsertRow`). What is left here is delegation.
+
   async fetchUserProfile(userId: string): Promise<User | null> {
-    const cacheKey = `user:${userId}:profile`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .single();
-
-        if (error) throw error;
-        return data;
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return usersData.fetchUserProfile(this.supabase, userId);
   }
 
   async updateUserProfile(
     userId: string,
     updates: Partial<User>,
   ): Promise<User> {
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .update({
-        name: updates.name,
-        avatar_url: updates.avatarUrl,
-        phone: updates.phoneNumber,
-        points: updates.points,
-        stats: updates.stats,
-        badges: updates.badges,
-        settings: updates.settings,
-        username: updates.username,
-        first_name: updates.firstName,
-        last_name: updates.lastName,
-      })
-      .eq("id", userId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Invalidate cache
-    await cacheService.invalidateUserCache(userId);
-
-    return data;
+    return usersData.updateUserProfile(this.supabase, userId, updates);
   }
 
   async updateExpoPushToken(userId: string, token: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ expo_push_token: token })
-      .eq("id", userId);
-
-    if (error) throw error;
-    await cacheService.invalidateUserCache(userId);
+    return usersData.updateExpoPushToken(this.supabase, userId, token);
   }
 
   async clearExpoPushToken(userId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ expo_push_token: null })
-      .eq("id", userId);
-
-    if (error) throw error;
-    await cacheService.invalidateUserCache(userId);
+    return usersData.clearExpoPushToken(this.supabase, userId);
   }
 
   private async sendExpoPushForNotification(
@@ -1698,77 +1248,11 @@ export class SupabaseService {
       data?: Record<string, unknown>;
     },
   ): Promise<void> {
-    const pushTypes = new Set([
-      "challenge_invite",
-      "challenge_accepted",
-      "challenge_result",
-      "challenge_opponent_finished",
-      "marketplace_inquiry",
-      "marketplace_purchase",
-      "marketplace_order_update",
-      "marketplace_review_prompt",
-      "saved_search_match",
-      "job_alert",
-      "job_application",
-      "job_application_status",
-      "job_interview",
-      "job_interview_response",
-      "job_offer",
-      "job_offer_response",
-      "job_interview_reminder",
-      "job_offer_reminder",
-      "group_invite",
-      "group_message",
-      "badge_unlock",
-      "test_result",
-      "srs_reminder",
-      "dm_message",
-      // Jobs-board alert family: saved-search matches and pipeline reminders.
-      // Settings policy still applies per user (pushEnabled + marketplaceUpdates).
-      "job_alert",
-      "job_interview_reminder",
-      "job_offer_reminder",
-    ]);
-    if (notification.type && !pushTypes.has(notification.type)) return;
-
-    try {
-      const { data: profile, error } = await this.supabase
-        .from("profiles")
-        .select("expo_push_token, settings")
-        .eq("id", userId)
-        .single();
-
-      if (error || !profile?.expo_push_token) return;
-
-      const { shouldSendExpoPush } =
-        await import("../utils/userSettingsPolicy");
-      if (!shouldSendExpoPush(profile.settings, notification.type)) return;
-
-      const token = profile.expo_push_token as string;
-      if (!token.startsWith("ExponentPushToken")) return;
-
-      await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Accept-encoding": "gzip, deflate",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: token,
-          title: "Lantern Study",
-          body: notification.message,
-          data: {
-            type: notification.type,
-            link: notification.link,
-            ...(notification.data || {}),
-          },
-          sound: "default",
-        }),
-      });
-    } catch (err) {
-      logger.warn("Expo push notification failed", { userId, err });
-    }
+    return usersData.sendExpoPushForNotification(
+      this.supabase,
+      userId,
+      notification,
+    );
   }
 
   async createUserProfile(
@@ -1780,96 +1264,29 @@ export class SupabaseService {
       avatar_url?: string;
     },
   ): Promise<User> {
-    const row = buildProfileUpsertRow(profile);
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .upsert(row, { onConflict: "id" })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return usersData.createUserProfile(this.supabase, profile);
   }
 
   // New User Methods for API Routes
   async getUsers(
     options: { page?: number; limit?: number; search?: string } = {},
   ): Promise<User[]> {
-    const { page = 1, limit = 20, search } = options;
-    const offset = (page - 1) * limit;
-
-    let query = this.supabase
-      .from("profiles")
-      .select("*")
-      .range(offset, offset + limit - 1);
-
-    if (search) {
-      // Search by name, email, or username
-      const escaped = search.replace(/%/g, "\\%").replace(/_/g, "\\_");
-      const pattern = `%${escaped}%`;
-      query = query.or(
-        `name.ilike.${pattern},email.ilike.${pattern},username.ilike.${pattern}`,
-      );
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    return data || [];
+    return usersData.getUsers(this.supabase, options);
   }
 
   async getUserById(userId: string): Promise<User | null> {
-    const cacheKey = `user:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        return mapProfileRowToUser(data as Record<string, unknown>);
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return usersData.getUserById(this.supabase, userId);
   }
 
   async isProfileVisibleToViewer(
     viewerId: string,
     targetId: string,
   ): Promise<boolean> {
-    if (viewerId === targetId) return true;
-    const { data, error } = await this.supabase.rpc(
-      "profile_visible_to_viewer",
-      {
-        viewer_id: viewerId,
-        target_id: targetId,
-      },
-    );
-    if (error) throw error;
-    return data === true;
+    return usersData.isProfileVisibleToViewer(this.supabase, viewerId, targetId);
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .select("*")
-      .eq("email", email)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    return mapProfileRowToUser(data as Record<string, unknown>);
+    return usersData.getUserByEmail(this.supabase, email);
   }
 
   /**
@@ -1877,59 +1294,7 @@ export class SupabaseService {
    * SEC-06: resolution failures use one generic message (no email/ID existence leak).
    */
   async resolveCollaboratorUserId(identifier: string): Promise<string> {
-    const trimmed = identifier.trim();
-    const notFound = () => {
-      const err = new Error(
-        "Unable to add that collaborator. Check the @username and try again.",
-      ) as Error & { code?: string };
-      err.code = "collaborator_not_found";
-      throw err;
-    };
-
-    if (!trimmed) {
-      const err = new Error(
-        "Enter a @username to add a collaborator.",
-      ) as Error & { code?: string };
-      err.code = "collaborator_invalid";
-      throw err;
-    }
-
-    const uuidPattern =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (uuidPattern.test(trimmed)) {
-      const user = await this.getUserById(trimmed);
-      if (!user) notFound();
-      return user!.id;
-    }
-
-    // Email lookups must not reveal whether the address is registered (SEC-06).
-    if (trimmed.includes("@") && trimmed.includes(".")) {
-      const user = await this.getUserByEmail(trimmed);
-      if (!user) notFound();
-      return user!.id;
-    }
-
-    const username = trimmed.replace(/^@/, "").toLowerCase();
-    const { data: byUsername, error: usernameError } = await this.supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", username)
-      .maybeSingle();
-    if (usernameError) throw usernameError;
-    if (byUsername?.id) return byUsername.id;
-
-    const matches = await this.getUsers({ search: trimmed, limit: 5 });
-    if (matches.length === 1) return matches[0].id;
-    if (matches.length > 1) {
-      const err = new Error(
-        "Multiple users match that name. Use an exact @username instead.",
-      ) as Error & { code?: string };
-      err.code = "collaborator_ambiguous";
-      throw err;
-    }
-
-    notFound();
-    return ""; // unreachable
+    return usersData.resolveCollaboratorUserId(this.supabase, identifier);
   }
 
   async createUser(
@@ -1941,54 +1306,14 @@ export class SupabaseService {
       avatar_url?: string;
     },
   ): Promise<User> {
-    const row = buildProfileUpsertRow(userData);
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .upsert(row, { onConflict: "id" })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return usersData.createUser(this.supabase, userData);
   }
 
+  /** @internal — no caller outside this file. */
   private async invalidateProfilePresentationCaches(
     userId: string,
   ): Promise<void> {
-    const { data: memberships, error } = await this.supabase
-      .from("group_members")
-      .select("group_id")
-      .eq("user_id", userId)
-      .eq("pending", false);
-
-    if (error) {
-      logger.warn(
-        "Could not resolve profile group caches; invalidating globally",
-        {
-          userId,
-          error,
-        },
-      );
-      await Promise.all([
-        cacheService.deletePattern("group:members:*"),
-        cacheService.deletePattern("messages:group:*"),
-        cacheService.deletePattern("group:*:messages"),
-      ]);
-      return;
-    }
-
-    const groupIds = [
-      ...new Set(
-        (memberships || [])
-          .map(
-            (membership: { group_id?: string | null }) => membership.group_id,
-          )
-          .filter((groupId): groupId is string => Boolean(groupId)),
-      ),
-    ];
-    await Promise.all(
-      groupIds.map((groupId) => cacheService.invalidateGroupCache(groupId)),
-    );
+    return usersData.invalidateProfilePresentationCaches(this.supabase, userId);
   }
 
   async updateUser(
@@ -2002,120 +1327,7 @@ export class SupabaseService {
     },
     options: { expectedSettingsVersion?: number } = {},
   ): Promise<User | null> {
-    // Build update object, handling both camelCase and snake_case keys
-    const updateData: any = {};
-
-    if (updates.name !== undefined) updateData.name = updates.name;
-    if (updates.email !== undefined) updateData.email = updates.email;
-    if (updates.avatarUrl !== undefined)
-      updateData.avatar_url = updates.avatarUrl;
-    if (updates.avatar_url !== undefined)
-      updateData.avatar_url = updates.avatar_url;
-    if (updates.phoneNumber !== undefined)
-      updateData.phone = updates.phoneNumber;
-    if (updates.phone !== undefined) updateData.phone = updates.phone;
-    if (updates.username !== undefined) updateData.username = updates.username;
-    if (updates.firstName !== undefined)
-      updateData.first_name = updates.firstName;
-    if (updates.first_name !== undefined)
-      updateData.first_name = updates.first_name;
-    if (updates.lastName !== undefined) updateData.last_name = updates.lastName;
-    if (updates.last_name !== undefined)
-      updateData.last_name = updates.last_name;
-    if (updates.points !== undefined) updateData.points = updates.points;
-    if (updates.stats !== undefined) updateData.stats = updates.stats;
-    if (updates.badges !== undefined) updateData.badges = updates.badges;
-    // Creator bio (Phase 2 · J); normalized + length-checked in routes/users.ts.
-    if ((updates as { bio?: string | null }).bio !== undefined)
-      updateData.bio = (updates as { bio?: string | null }).bio ?? null;
-    // Academic identity columns (validated + institution-checked in routes/users.ts).
-    if (updates.institutionId !== undefined)
-      updateData.institution_id = updates.institutionId || null;
-    if (updates.faculty !== undefined) updateData.faculty = updates.faculty || null;
-    if (updates.programme !== undefined)
-      updateData.programme = updates.programme || null;
-    if (updates.studyLevel !== undefined)
-      updateData.study_level = updates.studyLevel ?? null;
-    if (updates.currentSemester !== undefined)
-      updateData.current_semester = updates.currentSemester ?? null;
-    if (updates.entryYear !== undefined)
-      updateData.entry_year = updates.entryYear ?? null;
-    if (updates.expectedGraduationYear !== undefined)
-      updateData.expected_graduation_year = updates.expectedGraduationYear ?? null;
-    if (updates.settings !== undefined) {
-      // Never nest test_presets into the settings JSONB blob.
-      const settingsPayload =
-        updates.settings &&
-        typeof updates.settings === "object" &&
-        !Array.isArray(updates.settings)
-          ? { ...(updates.settings as Record<string, unknown>) }
-          : updates.settings;
-      if (
-        settingsPayload &&
-        typeof settingsPayload === "object" &&
-        !Array.isArray(settingsPayload)
-      ) {
-        delete (settingsPayload as { test_presets?: unknown }).test_presets;
-      }
-      updateData.settings = settingsPayload;
-    }
-    // Dedicated column — do not merge into settings JSONB (would wipe other categories).
-    if (updates.test_presets !== undefined) {
-      updateData.test_presets = Array.isArray(updates.test_presets)
-        ? updates.test_presets
-        : [];
-    }
-
-    let expectedSettingsVersion = options.expectedSettingsVersion;
-    if (updateData.settings !== undefined && expectedSettingsVersion == null) {
-      const { data: current, error: currentError } = await this.supabase
-        .from("profiles")
-        .select("settings_version")
-        .eq("id", userId)
-        .maybeSingle();
-      if (currentError) throw currentError;
-      if (!current) return null;
-      expectedSettingsVersion = Number(current.settings_version) || 1;
-    }
-
-    let query = this.supabase
-      .from("profiles")
-      .update(updateData)
-      .eq("id", userId);
-    if (updateData.settings !== undefined && expectedSettingsVersion != null) {
-      query = query.eq("settings_version", expectedSettingsVersion);
-    }
-
-    const { data, error } = await query.select().maybeSingle();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    if (!data) {
-      if (updateData.settings !== undefined) {
-        const current = await this.getUserById(userId);
-        throw new VersionConflictError(
-          "Settings were updated on another device. Refresh and try again.",
-          current,
-        );
-      }
-      return null;
-    }
-
-    // Invalidate cache (exact user key + pattern)
-    await cacheService.invalidateUserCache(userId);
-    if (
-      Object.prototype.hasOwnProperty.call(updateData, "avatar_url") ||
-      Object.prototype.hasOwnProperty.call(updateData, "name") ||
-      Object.prototype.hasOwnProperty.call(updateData, "username")
-    ) {
-      // Group member lists and message responses embed profile presentation fields.
-      await this.invalidateProfilePresentationCaches(userId);
-    }
-
-    return mapProfileRowToUser(data as Record<string, unknown>);
+    return usersData.updateUser(this.supabase, userId, updates, options);
   }
 
   /**
@@ -2126,139 +1338,43 @@ export class SupabaseService {
    * means "no such account", never "partially deleted".
    */
   async deleteUser(userId: string): Promise<boolean> {
-    const { deleteUserAccountFully } = await import("./userDataLifecycle");
-    const result = await deleteUserAccountFully(this, userId);
-    return result.found;
+    // The lazy `import()` stays HERE, at the facade, because
+    // `deleteUserAccountFully` takes the whole `SupabaseService` — importing
+    // it from `data/users.ts` would point the data layer back at this file.
+    return usersData.deleteUser(
+      {
+        deleteUserAccountFully: async (id) =>
+          (await import("./userDataLifecycle")).deleteUserAccountFully(this, id),
+      },
+      userId,
+    );
   }
 
   async exportUserData(userId: string): Promise<Record<string, unknown>> {
-    const { exportUserDataArchive } = await import("./userDataLifecycle");
-    const { wrapSignedExport } = await import("./accountExportSign");
-    const archive = await exportUserDataArchive(this, userId);
-    let sourceEmail: string | null = null;
-    try {
-      const { data: authUser } =
-        await this.supabase.auth.admin.getUserById(userId);
-      sourceEmail = authUser?.user?.email ?? null;
-    } catch {
-      sourceEmail = null;
-    }
-    return wrapSignedExport({
-      sourceUserId: userId,
-      sourceEmail,
-      data: archive,
-    }) as unknown as Record<string, unknown>;
+    return usersData.exportUserData(
+      this.supabase,
+      {
+        exportUserDataArchive: async (id) =>
+          (await import("./userDataLifecycle")).exportUserDataArchive(this, id),
+      },
+      userId,
+    );
   }
 
   /** @deprecated use deleteUser — kept for internal reference */
   async deleteUserProfileOnly(userId: string): Promise<boolean> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .delete()
-      .eq("id", userId);
-
-    if (error) throw error;
-
-    // Invalidate cache
-    await cacheService.invalidateUserCache(userId);
-
-    return true;
+    return usersData.deleteUserProfileOnly(this.supabase, userId);
   }
 
   async getUserStats(userId: string): Promise<any> {
-    const cacheKey = `user:stats:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get user profile for basic stats
-        const user = await this.getUserById(userId);
-        if (!user) return null;
-
-        // Get additional stats from related tables
-        const { data: groupCount, error: groupError } = await this.supabase
-          .from("group_members")
-          .select("group_id", { count: "exact" })
-          .eq("user_id", userId);
-
-        const { data: messageCount, error: messageError } = await this.supabase
-          .from("messages")
-          .select("id", { count: "exact" })
-          .eq("sender_id", userId);
-
-        const { data: testResults, error: testError } = await this.supabase
-          .from("test_sessions")
-          .select("score")
-          .eq("user_id", userId);
-
-        if (groupError || messageError || testError) {
-          throw groupError || messageError || testError;
-        }
-
-        const avgScore =
-          testResults && testResults.length > 0
-            ? testResults.reduce(
-                (sum, result) => sum + (result.score || 0),
-                0,
-              ) / testResults.length
-            : 0;
-
-        return {
-          userId,
-          points: user.points || 0,
-          groupsCount: groupCount?.length || 0,
-          messagesCount: messageCount?.length || 0,
-          testsTaken: testResults?.length || 0,
-          averageScore: Math.round(avgScore * 100) / 100,
-          badges: user.badges || [],
-          stats: user.stats || {},
-        };
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return usersData.getUserStats(this.supabase, userId);
   }
 
   async getUserGroups(
     userId: string,
     options: { page?: number; limit?: number } = {},
   ): Promise<Group[]> {
-    const { page = 1, limit = 20 } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `user:groups:${userId}:${page}:${limit}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("group_members")
-          .select(
-            `
-          groups (
-            id,
-            name,
-            avatar_url,
-            description,
-            last_message,
-            last_message_time,
-            admin_ids,
-            permissions,
-            parent_id,
-            is_archived,
-            invite_id,
-            course_id,
-            created_at
-          )
-        `,
-          )
-          .eq("user_id", userId)
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-        return data?.map((item: any) => item.groups).filter(Boolean) || [];
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return usersData.getUserGroups(this.supabase, userId, options);
   }
 
   // ===========================================================================
@@ -4349,6 +3465,20 @@ export class SupabaseService {
   // Concurrent edits raise `VersionConflictError` rather than last-write-wins,
   // so a collaborator never silently overwrites another's edit.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1b, step 7): the bodies now live in
+  // `data/decks.ts`. The deck ACCESS gate (`verifyDeckAccess`,
+  // `getAccessibleDeckIds`, `getDeckForUser`) is not there yet — it sits
+  // inside the OFFLINE BUNDLES banner below, misfiled, and moves with that
+  // section — so it, and the course/topic resolvers, are injected as `deps`.
+  //
+  // The literal is written out INLINE at all eleven call sites, and it MUST
+  // stay that way. Several `supabase.*.test.ts` suites invoke these methods
+  // through `SupabaseService.prototype.<m>.call({ supabase }, …)` on a bare
+  // stand-in that never ran a constructor, so an instance field holding the
+  // deps reads as `undefined` there (it fails exactly this way — try it). The
+  // arrows also read `this.<method>` at CALL time, so a `jest.spyOn` still
+  // intercepts.
+
   async createDeck(
     deckData: {
       name: string;
@@ -4360,32 +3490,21 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any> {
-    const topicId = await this.resolveArtefactTopic({
-      topicId: deckData.topicId,
-      courseId: deckData.courseId,
-    });
-    const { data, error } = await writeWithTopicFallback(
-      (row) => this.supabase.from("decks").insert(row).select().single(),
+    return decksData.createDeck(
+      this.supabase,
       {
-        name: deckData.name,
-        description: deckData.description || "",
-        user_id: userId,
-        is_shared: deckData.isShared ?? false,
-        course_id: deckData.courseId || null,
-        ...(deckData.studySetId !== undefined ? { study_set_id: deckData.studySetId || null } : {}),
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
       },
+      deckData,
+      userId,
     );
-
-    if (error) {
-      logger.error("Error creating deck:", { error, deckData, userId });
-      throw new Error(error.message || "Failed to create deck");
-    }
-
-    // Cache the new deck
-    await cacheService.set(`deck:${data.id}`, data, 1800); // 30 minutes
-
-    return data;
   }
 
   /**
@@ -4410,73 +3529,22 @@ export class SupabaseService {
     cards: NormalizedDeckCard[],
     userId: string,
   ): Promise<{ deck: any; flashcards: any[]; atomic: boolean }> {
-    // Resolved before anything is written: a topic that belongs to another
-    // course is a PublicError (400), not a half-written deck.
-    const topicId = await this.resolveArtefactTopic({
-      topicId: deckData.topicId,
-      courseId: deckData.courseId,
-    });
-
-    const rpcResult = await this.tryCreateDeckWithCardsRpc(deckData, topicId, cards, userId);
-    if (rpcResult) {
-      if (deckData.studySetId) {
-        await this.updateDeck(rpcResult.deckId, { studySetId: deckData.studySetId }, userId);
-      }
-      await this.invalidateDeckCaches(userId, rpcResult.deckId);
-      const deck = await this.getDeckRow(rpcResult.deckId);
-      const flashcards = await this.getDeckCardRows(rpcResult.deckId);
-      return { deck, flashcards, atomic: true };
-    }
-
-    // ---- Compensating path (RPC not present on this database) ----
-    const { data: deck, error: deckError } = await writeWithTopicFallback(
-      (row) => this.supabase.from("decks").insert(row).select().single(),
+    return decksData.createDeckWithCards(
+      this.supabase,
       {
-        name: deckData.name,
-        description: deckData.description || "",
-        user_id: userId,
-        is_shared: deckData.isShared ?? false,
-        course_id: deckData.courseId || null,
-        ...(deckData.studySetId !== undefined ? { study_set_id: deckData.studySetId || null } : {}),
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
       },
+      deckData,
+      cards,
+      userId,
     );
-
-    if (deckError || !deck) {
-      logger.error("Error creating deck (with-cards)", { error: deckError, userId });
-      throw new DeckWithCardsError(
-        "DECK_WRITE_FAILED",
-        deckError?.message || "Failed to create deck",
-        true,
-      );
-    }
-
-    const { data: inserted, error: cardsError } = await this.supabase
-      .from("flashcards")
-      .insert(cards.map((card) => cardToFlashcardRow(card, deck.id)))
-      .select();
-
-    // A partial insert is the same failure as none: PostgREST inserts the array
-    // in one statement, so any error means zero rows landed.
-    if (cardsError || !inserted || inserted.length !== cards.length) {
-      const rolledBack = await this.deleteDeckRowBestEffort(deck.id);
-      logger.error("Cards failed after deck insert — deck removed", {
-        error: cardsError,
-        deckId: deck.id,
-        rolledBack,
-        expected: cards.length,
-        inserted: inserted?.length ?? 0,
-      });
-      await this.invalidateDeckCaches(userId, deck.id);
-      throw new DeckWithCardsError(
-        "CARD_WRITE_FAILED",
-        cardsError?.message || "Failed to save the deck's cards",
-        rolledBack,
-      );
-    }
-
-    await this.invalidateDeckCaches(userId, deck.id);
-    return { deck, flashcards: inserted, atomic: false };
   }
 
   /**
@@ -4496,43 +3564,22 @@ export class SupabaseService {
     cards: NormalizedDeckCard[],
     userId: string,
   ): Promise<{ deck: any; flashcards: any[]; atomic: boolean } | null> {
-    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
-    if (!canEdit) return null;
-
-    // The FULL row, not fetchDeckRecord's projection: the client merges what
-    // comes back over its local copy, and a row missing `topic_id` would file
-    // the student's deck under no topic until the next refetch.
-    const { data: deck, error: deckError } = await this.supabase
-      .from("decks")
-      .select("*")
-      .eq("id", deckId)
-      .maybeSingle();
-    if (deckError) throw deckError;
-    if (!deck) return null;
-
-    const { data: inserted, error: cardsError } = await this.supabase
-      .from("flashcards")
-      .insert(cards.map((card) => cardToFlashcardRow(card, deckId)))
-      .select();
-
-    if (cardsError || !inserted || inserted.length !== cards.length) {
-      logger.error("Cards failed for existing deck", {
-        error: cardsError,
-        deckId,
-        expected: cards.length,
-        inserted: inserted?.length ?? 0,
-      });
-      // One statement: an error means zero rows landed, so the deck is
-      // exactly as the student left it.
-      throw new DeckWithCardsError(
-        "CARD_WRITE_FAILED",
-        cardsError?.message || "Failed to save the deck's cards",
-        true,
-      );
-    }
-
-    await this.invalidateDeckCaches(userId, deckId);
-    return { deck, flashcards: inserted, atomic: true };
+    return decksData.addCardsToExistingDeck(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      cards,
+      userId,
+    );
   }
 
   /** Returns null when this database has no `create_deck_with_cards` yet. */
@@ -4547,82 +3594,43 @@ export class SupabaseService {
     cards: NormalizedDeckCard[],
     userId: string,
   ): Promise<{ deckId: string } | null> {
-    const { data, error } = await this.supabase.rpc("create_deck_with_cards", {
-      p_owner: userId,
-      p_deck: {
-        name: deckData.name,
-        description: deckData.description || "",
-        is_shared: deckData.isShared ?? false,
-        course_id: deckData.courseId || null,
-        ...(topicId ? { topic_id: topicId } : {}),
-      },
-      p_cards: cards.map((card) => ({
-        type: card.type,
-        front: card.front,
-        back: card.back,
-        clozeText: card.clozeText,
-        imageUrl: card.imageUrl,
-        occlusionData: card.occlusionData,
-        tags: card.tags,
-      })),
-    });
-
-    if (error) {
-      if (isMissingRpcError(error)) return null;
-      logger.error("create_deck_with_cards RPC failed", { error, userId });
-      // The function is transactional: an error means nothing was written.
-      throw new DeckWithCardsError(
-        "CARD_WRITE_FAILED",
-        error.message || "Failed to create deck",
-        true,
-      );
-    }
-
-    const deckId =
-      (data as any)?.deckId || (data as any)?.deck_id || (Array.isArray(data) ? data[0]?.deckId : null);
-    if (!deckId) {
-      throw new DeckWithCardsError("CARD_WRITE_FAILED", "Failed to create deck", true);
-    }
-    return { deckId: String(deckId) };
+    return decksData.tryCreateDeckWithCardsRpc(
+      this.supabase,
+      deckData,
+      topicId,
+      cards,
+      userId,
+    );
   }
 
   private async getDeckRow(deckId: string): Promise<any> {
-    const { data } = await this.supabase
-      .from("decks")
-      .select("*")
-      .eq("id", deckId)
-      .maybeSingle();
-    return data || { id: deckId };
+    return decksData.getDeckRow(
+      this.supabase,
+      deckId,
+    );
   }
 
   private async getDeckCardRows(deckId: string): Promise<any[]> {
-    const { data } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("deck_id", deckId);
-    return data || [];
+    return decksData.getDeckCardRows(
+      this.supabase,
+      deckId,
+    );
   }
 
   /** Best effort: report whether the orphan deck row is actually gone. */
   private async deleteDeckRowBestEffort(deckId: string): Promise<boolean> {
-    try {
-      const { error } = await this.supabase.from("decks").delete().eq("id", deckId);
-      return !error;
-    } catch (err) {
-      logger.error("Failed to remove partial deck", { deckId, err });
-      return false;
-    }
+    return decksData.deleteDeckRowBestEffort(
+      this.supabase,
+      deckId,
+    );
   }
 
   private async invalidateDeckCaches(userId: string, deckId?: string): Promise<void> {
-    if (deckId) {
-      await cacheService.delete(`deck:${deckId}`);
-      await cacheService.deletePattern(`deck:${deckId}:user:*`);
-    }
-    await cacheService.delete(`decks:user:${userId}`);
-    await cacheService.deletePattern(`decks:user:${userId}*`);
-    await cacheService.deletePattern(`decks:${userId}*`);
-    await cacheService.deletePattern("flashcards:*");
+    return decksData.invalidateDeckCaches(
+      this.supabase,
+      userId,
+      deckId,
+    );
   }
 
   async getDecks(
@@ -4638,148 +3646,46 @@ export class SupabaseService {
       topicFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
-    const page = Math.max(1, options.page || 1);
-    const limit = Math.min(
-      SupabaseService.MAX_DECK_PAGE_SIZE,
-      Math.max(1, options.limit || SupabaseService.DEFAULT_DECK_PAGE_SIZE),
+    return decksData.getDecks(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+      includeShared,
+      options,
     );
-    const profile = this.getResponseProfile(options.responseProfile);
-    const offset = (page - 1) * limit;
-    // v2: includeShared means owned + collaborator decks — never every globally shared deck.
-    const cacheKey = `decks:user:${userId}:scope:${includeShared ? "owned_collab" : "owned"}:p${page}:l${limit}:profile:${profile}:course:${courseFilterKey(options.courseFilter)}:topic:${courseFilterKey(options.topicFilter)}:v2`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const baseSelectClause =
-      profile === "compact"
-        ? "id, name, user_id, is_shared, course_id, study_set_id, created_at, study_count"
-        // study_count (Phase 3 M) is selected so "studied by N" can render;
-        // without it the counter is written but never readable by a client.
-        //
-        // study_set_id is projected for the same reason: the mappers already
-        // read it, so omitting it here made EVERY deck arrive as
-        // `studySetId: null` — a study set's Cards grid could never match its
-        // own decks, however correctly they had been filed.
-        : "id, name, description, user_id, is_shared, course_id, study_set_id, created_at, study_count";
-
-    let accessibleIds: string[] | null = null;
-    if (includeShared) {
-      // Owned decks + decks where the user is an explicit collaborator.
-      // Do NOT list every is_shared=true deck in the product (that leaked other users' libraries).
-      accessibleIds = await this.getAccessibleDeckIds(userId);
-      if (accessibleIds.length === 0) {
-        await cacheService.set(cacheKey, [], 1800);
-        return [];
-      }
-    }
-
-    // topic_id is projected (and filtered) only while it exists — naming a
-    // column the migration has not added yet 42703s the whole deck list.
-    // Same rule as topic_id: project cover_path only while it exists, or the
-    // whole deck list 42703s before the migration is applied.
-    let withCover = true;
-    const runQuery = (withTopic: boolean) => {
-      const selectClause = withCover
-        ? `${baseSelectClause}, cover_path`
-        : baseSelectClause;
-      let query = this.supabase
-        .from("decks")
-        .select(withTopic ? `${selectClause}, topic_id` : selectClause)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
-      query = applyCourseFilter(query, "course_id", options.courseFilter);
-      if (withTopic) {
-        query = applyCourseFilter(query, "topic_id", options.topicFilter);
-      }
-      return accessibleIds
-        ? query.in("id", accessibleIds)
-        : query.eq("user_id", userId);
-    };
-
-    let { data, error }: { data: any; error: any } = await runQuery(true);
-    if (error && isMissingCoverPathColumn(error)) {
-      withCover = false;
-      ({ data, error } = await runQuery(true));
-    }
-    if (error && isMissingTopicColumn(error)) {
-      // No deck can carry a topic before the migration: a named topic matches
-      // nothing, and "no topic" matches every deck.
-      if (options.topicFilter?.kind === "course") {
-        await cacheService.set(cacheKey, [], 1800);
-        return [];
-      }
-      ({ data, error } = await runQuery(false));
-    }
-
-    if (error) throw error;
-
-    const decks = (
-      (data || []) as unknown as Array<{ id: string; [key: string]: unknown }>
-    ).filter((d) => d && typeof d.id === "string" && d.id);
-    const deckIds = decks.map((d) => d.id);
-    const cardCountByDeck: Record<string, number> = {};
-
-    if (deckIds.length > 0) {
-      const { data: cardRows, error: countError } = await this.supabase
-        .from("flashcards")
-        .select("deck_id")
-        .in("deck_id", deckIds);
-
-      if (!countError && cardRows) {
-        for (const row of cardRows) {
-          const deckId = row.deck_id as string;
-          cardCountByDeck[deckId] = (cardCountByDeck[deckId] || 0) + 1;
-        }
-      }
-    }
-
-    const decksWithCounts = decks.map((d) => ({
-      ...d,
-      card_count: cardCountByDeck[d.id] || 0,
-      // Raw storage path; the client re-signs it through /storage/signed-urls.
-      coverPath: normalizeCoverRef((d as any).cover_path ?? null),
-    }));
-
-    await cacheService.set(cacheKey, decksWithCounts, 1800); // 30 minutes
-    return decksWithCounts;
   }
 
   async getSharedDecks(): Promise<any[]> {
-    const cacheKey = `decks:shared`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("decks")
-      .select("*")
-      .eq("is_shared", true)
-      .order("created_at", { ascending: false });
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return decksData.getSharedDecks(
+      this.supabase,
+    );
   }
 
   async getDeckCollaborators(deckId: string, userId: string): Promise<any[]> {
-    const hasAccess = await this.verifyDeckAccess(userId, deckId, "read");
-    if (!hasAccess) return [];
-
-    const cacheKey = `deck_collaborators:${deckId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("deck_collaborators")
-      .select(
-        "user_id, role, added_at, profiles!deck_collaborators_user_id_fkey(id, name, avatar_url)",
-      )
-      .eq("deck_id", deckId);
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 300);
-    return data;
+    return decksData.getDeckCollaborators(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async addDeckCollaborator(
@@ -4788,20 +3694,23 @@ export class SupabaseService {
     role: string = "editor",
     requesterId?: string,
   ): Promise<any> {
-    const actorId = requesterId || userId;
-    const canManage = await this.verifyDeckAccess(actorId, deckId, "owner");
-    if (!canManage) throw new Error("Access denied");
-
-    const { data, error } = await this.supabase
-      .from("deck_collaborators")
-      .insert({ deck_id: deckId, user_id: userId, role })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await cacheService.delete(`deck_collaborators:${deckId}`);
-    return data;
+    return decksData.addDeckCollaborator(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+      role,
+      requesterId,
+    );
   }
 
   async removeDeckCollaborator(
@@ -4809,43 +3718,29 @@ export class SupabaseService {
     userId: string,
     requesterId?: string,
   ): Promise<boolean> {
-    const actorId = requesterId || userId;
-    const isOwner = await this.verifyDeckAccess(actorId, deckId, "owner");
-    if (!isOwner && actorId !== userId) throw new Error("Access denied");
-
-    const { error } = await this.supabase
-      .from("deck_collaborators")
-      .delete()
-      .eq("deck_id", deckId)
-      .eq("user_id", userId);
-
-    if (error) throw error;
-
-    await cacheService.delete(`deck_collaborators:${deckId}`);
-    return true;
+    return decksData.removeDeckCollaborator(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+      requesterId,
+    );
   }
 
   async getDeck(deckId: string): Promise<any | null> {
-    const cacheKey = `deck:${deckId}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("decks")
-      // course_id/study_set_id: where the deck is filed. Without them a single
-      // deck read answered `courseId: null, studySetId: null` for every deck,
-      // whatever the row said.
-      .select("id, name, description, user_id, is_shared, course_id, study_set_id, created_at")
-      .eq("id", deckId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return decksData.getDeck(
+      this.supabase,
+      deckId,
+    );
   }
 
   async updateDeck(
@@ -4861,177 +3756,66 @@ export class SupabaseService {
     },
     userId: string,
   ): Promise<any | null> {
-    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
-    if (!canEdit) return null;
-
-    // Validated against the course the deck ENDS UP with; moving or unfiling
-    // the deck takes its topic with it.
-    const topicId = await this.resolveArtefactTopicPatch("decks", deckId, updates);
-
-    const { data, error } = await writeWithTopicFallback(
-      (payload) =>
-        this.supabase
-          .from("decks")
-          .update(payload)
-          .eq("id", deckId)
-          .select()
-          .single(),
+    return decksData.updateDeck(
+      this.supabase,
       {
-        name: updates.name,
-        description: updates.description,
-        is_public: updates.isPublic,
-        is_shared: updates.isShared,
-        // undefined = untouched (dropped by JSON), null = cleared
-        course_id: updates.courseId === undefined ? undefined : updates.courseId || null,
-        study_set_id: updates.studySetId === undefined ? undefined : updates.studySetId || null,
-        ...(topicId !== undefined ? { topic_id: topicId } : {}),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
       },
+      deckId,
+      updates,
+      userId,
     );
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    // Update cache
-    await cacheService.set(`deck:${deckId}`, data, 1800);
-    await cacheService.deletePattern(`deck:${deckId}:user:*`);
-
-    return data;
   }
 
   async deleteDeck(deckId: string, userId: string): Promise<boolean> {
-    const isOwner = await this.verifyDeckAccess(userId, deckId, "owner");
-    if (!isOwner) return false;
-
-    const { error } = await this.supabase
-      .from("decks")
-      .delete()
-      .eq("id", deckId);
-
-    if (error) throw error;
-
-    // Clear cache
-    await cacheService.delete(`deck:${deckId}`);
-    await cacheService.deletePattern(`deck:${deckId}:user:*`);
-    await cacheService.deletePattern(`decks:user:*`);
-
-    return true;
+    return decksData.deleteDeck(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async exportDeck(deckId: string, userId: string): Promise<any | null> {
-    const deck = await this.getDeckForUser(deckId, userId);
-    if (!deck) return null;
-
-    const { data: flashcards, error } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("deck_id", deckId)
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-
-    return {
-      deck,
-      flashcards: flashcards || [],
-    };
+    return decksData.exportDeck(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async importDeck(importData: any, userId: string): Promise<any> {
-    // Always create exactly one new deck owned by the authenticated user.
-    // Never honor foreign user_id / deck id / is_shared from the payload.
-    const deckName =
-      typeof importData?.deck?.name === "string" && importData.deck.name.trim()
-        ? importData.deck.name.trim().slice(0, 200)
-        : "Imported Deck";
-    const deckDescription =
-      typeof importData?.deck?.description === "string"
-        ? importData.deck.description.slice(0, 2000)
-        : "";
-
-    const { data: newDeck, error: deckError } = await this.supabase
-      .from("decks")
-      .insert({
-        name: deckName,
-        description: deckDescription,
-        user_id: userId,
-        is_shared: false,
-      })
-      .select()
-      .single();
-
-    if (deckError) {
-      logger.error("Error creating deck during import:", deckError);
-      throw deckError;
-    }
-
-    // Import flashcards (removed user_id as it doesn't exist in flashcards schema)
-    if (importData.flashcards && importData.flashcards.length > 0) {
-      const flashcardsToInsert = importData.flashcards.map((card: any) => {
-        const cardType = card.type || "BASIC";
-        const insertData: any = {
-          deck_id: newDeck.id,
-          type: cardType,
-        };
-
-        if (cardType === "CLOZE") {
-          insertData.cloze_text = card.clozeText || card.cloze_text;
-        } else if (cardType === "IMAGE_OCCLUSION") {
-          insertData.front = card.front;
-          insertData.back = card.back;
-          const occlusionData = card.occlusion_data || card.occlusionData;
-          if (occlusionData) {
-            insertData.occlusion_data = occlusionData;
-          }
-        } else {
-          insertData.front = card.front;
-          insertData.back = card.back;
-        }
-
-        const imageUrl = card.image_url || card.imageUrl;
-        if (imageUrl) {
-          insertData.image_url = imageUrl;
-        }
-
-        if (card.tags && card.tags.length > 0) {
-          insertData.tags = card.tags;
-        }
-
-        return insertData;
-      });
-
-      const { error: cardsError } = await this.supabase
-        .from("flashcards")
-        .insert(flashcardsToInsert);
-
-      if (cardsError) {
-        logger.error("Error importing flashcards:", cardsError);
-        throw cardsError;
-      }
-    }
-
-    // Invalidate user's deck cache so the new deck shows up
-    await cacheService.delete(`decks:user:${userId}`);
-    await cacheService.deletePattern(`decks:user:${userId}*`);
-    await cacheService.deletePattern(`decks:${userId}*`);
-
-    // Invalidate flashcard caches so newly imported cards show up
-    await cacheService.deletePattern("flashcards:*");
-
-    // Cache the new deck
-    await cacheService.set(`deck:${newDeck.id}`, newDeck, 1800);
-
-    // fetch back the inserted cards so callers can update state immediately
-    let insertedFlashcards: any[] = [];
-    if (importData.flashcards && importData.flashcards.length > 0) {
-      const { data: cards } = await this.supabase
-        .from("flashcards")
-        .select("*")
-        .eq("deck_id", newDeck.id);
-      insertedFlashcards = cards || [];
-    }
-
-    return { deck: newDeck, flashcards: insertedFlashcards };
+    return decksData.importDeck(
+      this.supabase,
+      importData,
+      userId,
+    );
   }
 
   /**
@@ -5057,51 +3841,11 @@ export class SupabaseService {
       tags?: unknown;
     }>,
   ): Promise<void> {
-    const { error: deleteError } = await this.supabase
-      .from("flashcards")
-      .delete()
-      .eq("deck_id", deckId);
-    if (deleteError) {
-      logger.error("Error clearing deck cards for replacement:", deleteError);
-      throw deleteError;
-    }
-
-    if (cards && cards.length > 0) {
-      const rows = cards.map((card) => {
-        const cardType = card.type || "BASIC";
-        const insertData: any = { deck_id: deckId, type: cardType };
-        if (cardType === "CLOZE") {
-          insertData.cloze_text = card.clozeText || card.cloze_text;
-        } else if (cardType === "IMAGE_OCCLUSION") {
-          insertData.front = card.front;
-          insertData.back = card.back;
-          const occlusionData = card.occlusion_data || card.occlusionData;
-          if (occlusionData) insertData.occlusion_data = occlusionData;
-        } else {
-          insertData.front = card.front;
-          insertData.back = card.back;
-        }
-        const imageUrl = card.image_url || card.imageUrl;
-        if (imageUrl) insertData.image_url = imageUrl;
-        if (Array.isArray(card.tags) && card.tags.length > 0) {
-          insertData.tags = card.tags;
-        }
-        return insertData;
-      });
-      const { error: insertError } = await this.supabase
-        .from("flashcards")
-        .insert(rows);
-      if (insertError) {
-        logger.error("Error inserting replacement deck cards:", insertError);
-        throw insertError;
-      }
-    }
-
-    await cacheService.deletePattern("flashcards:*");
-    await cacheService.delete(`deck:${deckId}`);
-    // The per-user deck list bakes in a computed card_count, so it must be
-    // rebuilt after the card set changes (same broad pattern importDeck uses).
-    await cacheService.deletePattern(`decks:user:*`);
+    return decksData.replaceDeckCards(
+      this.supabase,
+      deckId,
+      cards,
+    );
   }
 
   async createFlashcard(flashcardData: {
@@ -5115,60 +3859,20 @@ export class SupabaseService {
     tags?: string[];
     userId?: string;
   }): Promise<any> {
-    const cardType = flashcardData.type || "BASIC";
-
-    if (!flashcardData.userId) {
-      throw new Error("Authentication required");
-    }
-    const canEdit = await this.verifyDeckAccess(
-      flashcardData.userId,
-      flashcardData.deckId,
-      "edit",
+    return decksData.createFlashcard(
+      this.supabase,
+      {
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getDeckForUser: (id, uid) => this.getDeckForUser(id, uid),
+        resolveArtefactTopic: (input) => this.resolveArtefactTopic(input),
+        resolveArtefactTopicPatch: (table, id, updates) =>
+          this.resolveArtefactTopicPatch(table, id, updates),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardData,
     );
-    if (!canEdit) {
-      throw new Error("Deck not found or access denied");
-    }
-
-    const insertData: any = {
-      deck_id: flashcardData.deckId,
-      type: cardType,
-    };
-
-    if (cardType === "CLOZE") {
-      // CLOZE cards must have cloze_text and front/back must be NULL per DB constraint
-      insertData.cloze_text = flashcardData.clozeText;
-      // front and back are left as NULL for CLOZE cards
-    } else {
-      // For BASIC and IMAGE_OCCLUSION, allow an optional image URL.
-      insertData.front = flashcardData.front;
-      insertData.back =
-        cardType === "IMAGE_OCCLUSION" ? null : flashcardData.back;
-      insertData.image_url = flashcardData.imageUrl;
-    }
-
-    if (cardType === "IMAGE_OCCLUSION") {
-      insertData.occlusion_data = flashcardData.occlusionData;
-    }
-
-    if (flashcardData.tags && flashcardData.tags.length > 0) {
-      insertData.tags = flashcardData.tags;
-    }
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .insert(insertData)
-      .select()
-      .single();
-
-    if (error) {
-      logger.error("Error creating flashcard:", { error, flashcardData });
-      throw new Error(error.message || "Failed to create flashcard");
-    }
-
-    // Invalidate deck cache
-    await cacheService.deletePattern(`flashcards:*`);
-
-    return data;
   }
 
   // ===========================================================================
@@ -5201,35 +3905,28 @@ export class SupabaseService {
   // maximum), and a frozen signed URL stored in a row is how chat and board
   // photos went blank after a day.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1b, step 8): the bodies now live in
+  // `data/uploads.ts`. Signing is INJECTED rather than imported sibling-to-
+  // sibling from `data/storageAcl.ts`: `coverImages.test.ts` spies on
+  // `createSignedStorageUrl` HERE and asserts the upload returns what the spy
+  // produced, so a direct call would step around it. The two chat uploads also
+  // take the group / DM membership checks, which still live in this file.
+  //
+  // The literals are INLINE for the reason spelled out on the decks block
+  // above: these methods are also invoked on bare stand-ins in tests.
+
   /** Best-effort sibling thumb upload; failures never fail the parent upload. */
   private async uploadSiblingThumb(
     bucket: string,
     filePath: string,
     thumb: Buffer | null,
   ): Promise<void> {
-    if (!thumb) return;
-    try {
-      const { error: thumbError } = await this.supabase.storage
-        .from(bucket)
-        .upload(storageThumbPath(filePath), thumb, {
-          contentType: "image/webp",
-          cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-          upsert: true,
-        });
-      if (thumbError) {
-        logger.warn("Thumbnail upload failed", {
-          bucket,
-          filePath,
-          error: thumbError.message,
-        });
-      }
-    } catch (thumbErr: any) {
-      logger.warn("Thumbnail generation/upload failed", {
-        bucket,
-        filePath,
-        error: thumbErr?.message,
-      });
-    }
+    return uploadsData.uploadSiblingThumb(
+      this.supabase,
+      bucket,
+      filePath,
+      thumb,
+    );
   }
 
   async uploadFlashcardImage(params: {
@@ -5239,60 +3936,16 @@ export class SupabaseService {
     userId: string;
     folder?: string;
   }): Promise<{ url: string; path: string }> {
-    const bucket = "flashcard-images";
-    const timestamp = Date.now();
-    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
-    const folderSegment = params.folder
-      ? `${params.folder.replace(/\.\./g, "").replace(/^\/+|\/+$/g, "")}/`
-      : "";
-
-    const buffer = Buffer.from(params.base64Data, "base64");
-    assertImageMagicBytes(buffer, params.contentType);
-    const { normalized, thumb } = await processImageForUpload(
-      buffer,
-      "flashcard",
-      { detectedMime: detectImageMime(buffer) || params.contentType },
+    return uploadsData.uploadFlashcardImage(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+      },
+      params,
     );
-    const baseName =
-      params.fileName
-        .replace(/\.[^/.]+$/, "")
-        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "flashcard";
-    const filePath = `${ownerPrefix}${folderSegment}${timestamp}-${baseName}.${normalized.ext}`;
-
-    const attemptUpload = async () => {
-      return this.supabase.storage.from(bucket).upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: false,
-      });
-    };
-
-    let uploadResult = await attemptUpload();
-
-    // If bucket doesn't exist, create it and retry once.
-    if (
-      uploadResult.error &&
-      typeof uploadResult.error.message === "string" &&
-      uploadResult.error.message.toLowerCase().includes("bucket") &&
-      uploadResult.error.message.toLowerCase().includes("not found")
-    ) {
-      await this.supabase.storage.createBucket(bucket, { public: false });
-      uploadResult = await attemptUpload();
-    }
-
-    const { error } = uploadResult;
-    if (error) {
-      logger.error("Error uploading flashcard image:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    await this.uploadSiblingThumb(bucket, filePath, thumb);
-    const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
-
-    return {
-      url: signedUrl,
-      path: filePath,
-    };
   }
 
   /**
@@ -5307,28 +3960,10 @@ export class SupabaseService {
   async assertCoverColumn(
     kind: "deck" | "note" | "study-set",
   ): Promise<void> {
-    const table = COVER_TABLE_BY_KIND[kind];
-    const { error } = await this.supabase
-      .from(table)
-      .select("cover_path")
-      .limit(1);
-    if (!error) return;
-    if (isMissingCoverPathColumn(error)) {
-      logger.error("[cover] cover_path column missing", {
-        table,
-        migration: COVER_IMAGE_MIGRATION,
-        code: (error as any)?.code,
-        message: error.message,
-      });
-      throw new CoverColumnMissingError();
-    }
-    // Anything else (RLS on an empty probe, a transient read) is not a reason
-    // to refuse the upload — the owner-scoped write below reports it properly.
-    logger.warn("[cover] column probe failed (continuing)", {
-      table,
-      code: (error as any)?.code,
-      message: error.message,
-    });
+    return uploadsData.assertCoverColumn(
+      this.supabase,
+      kind,
+    );
   }
 
   /**
@@ -5346,116 +3981,24 @@ export class SupabaseService {
     base64Data: string;
     contentType: string;
   }): Promise<{ path: string; url: string; thumbUrl: string | null }> {
-    const bucket = COVER_IMAGE_BUCKET;
-    const buffer = Buffer.from(params.base64Data, "base64");
-    if (buffer.length > 10 * 1024 * 1024) {
-      throw new Error("Image exceeds 10 MB limit");
-    }
-    assertImageMagicBytes(buffer, params.contentType);
-    const { normalized, thumb } = await processImageForUpload(
-      buffer,
-      "flashcard",
-      { detectedMime: detectImageMime(buffer) || params.contentType },
+    return uploadsData.uploadCoverImage(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+      },
+      params,
     );
-
-    const ownerSegment = params.userId.replace(/[^a-zA-Z0-9_-]/g, "");
-    const idSegment = params.id.replace(/[^a-zA-Z0-9_-]/g, "");
-    const kindSegment =
-      params.kind === "deck"
-        ? "decks"
-        : params.kind === "study-set"
-          ? "study-sets"
-          : "notes";
-    const baseName =
-      params.fileName
-        .replace(/\.[^/.]+$/, "")
-        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "cover";
-    // Timestamped so the path changes on every replace: the objects are served
-    // with an immutable cache header, and reusing a path would serve the old
-    // picture from cache forever.
-    const filePath = `${ownerSegment}/${kindSegment}/${idSegment}/${Date.now()}-${baseName}.${normalized.ext}`;
-
-    const attemptUpload = async () =>
-      this.supabase.storage.from(bucket).upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: false,
-      });
-
-    let uploadResult = await attemptUpload();
-    // First cover ever uploaded: the bucket does not exist yet. The service
-    // role can create it, so this needs no dashboard step.
-    if (
-      uploadResult.error &&
-      typeof uploadResult.error.message === "string" &&
-      uploadResult.error.message.toLowerCase().includes("bucket") &&
-      uploadResult.error.message.toLowerCase().includes("not found")
-    ) {
-      const created = await this.supabase.storage.createBucket(bucket, {
-        public: false,
-        allowedMimeTypes: ["image/webp", "image/png", "image/jpeg", "image/gif"],
-        fileSizeLimit: 10 * 1024 * 1024,
-      });
-      // createBucket returns its error rather than throwing. Swallowing it is
-      // how "the bucket does not exist and cannot be made" became a blank 500.
-      if ((created as any)?.error) {
-        logger.error("[cover] bucket auto-create failed", {
-          bucket,
-          message: (created as any).error?.message,
-        });
-        throw new CoverStorageUnavailableError(
-          (created as any).error?.message || "bucket could not be created",
-        );
-      }
-      uploadResult = await attemptUpload();
-    }
-    if (uploadResult.error) {
-      logger.error("[cover] upload failed", {
-        bucket,
-        filePath,
-        message: uploadResult.error.message,
-      });
-      throw new CoverStorageUnavailableError(uploadResult.error.message);
-    }
-
-    await this.uploadSiblingThumb(bucket, filePath, thumb);
-    const url = await this.createSignedStorageUrl(bucket, filePath);
-    let thumbUrl: string | null = null;
-    if (thumb) {
-      try {
-        thumbUrl = await this.createSignedStorageUrlWithVariant(
-          bucket,
-          filePath,
-          60 * 60 * 24,
-          "thumb",
-        );
-      } catch {
-        thumbUrl = null;
-      }
-    }
-    // Bucket-qualified, so `parseStoredStorageRef` resolves it on every client
-    // without a cover-specific special case. A bare path parses as null there
-    // and is handed straight to <img>, which renders an empty box.
-    return { path: `${bucket}/${filePath}`, url, thumbUrl };
   }
 
   /** Best-effort removal of a cover object and its sibling thumb. Never throws. */
   async deleteCoverObject(coverPath: string | null | undefined): Promise<void> {
-    if (!coverPath) return;
-    const path = coverPath.startsWith(`${COVER_IMAGE_BUCKET}/`)
-      ? coverPath.slice(COVER_IMAGE_BUCKET.length + 1)
-      : coverPath;
-    if (!path || path.includes("..")) return;
-    try {
-      await this.supabase.storage
-        .from(COVER_IMAGE_BUCKET)
-        .remove([path, storageThumbPath(path)]);
-    } catch (error: any) {
-      logger.warn("Cover object delete failed", {
-        path,
-        error: error?.message,
-      });
-    }
+    return uploadsData.deleteCoverObject(
+      this.supabase,
+      coverPath,
+    );
   }
 
   /**
@@ -5467,31 +4010,12 @@ export class SupabaseService {
     userId: string,
     coverPath: string | null,
   ): Promise<{ previousPath: string | null }> {
-    const { data: current, error: readError } = await this.supabase
-      .from("decks")
-      .select("id, cover_path")
-      .eq("id", deckId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (readError) {
-      if (isMissingCoverPathColumn(readError)) throw new CoverColumnMissingError();
-      throw readError;
-    }
-    if (!current) return { previousPath: null };
-
-    const { error } = await this.supabase
-      .from("decks")
-      .update({ cover_path: coverPath })
-      .eq("id", deckId)
-      .eq("user_id", userId);
-    if (error) {
-      if (isMissingCoverPathColumn(error)) throw new CoverColumnMissingError();
-      throw error;
-    }
-    await cacheService.deletePattern(`deck:${deckId}:user:*`);
-    await cacheService.deletePattern(`decks:user:${userId}*`);
-    await cacheService.deletePattern(`decks:${userId}*`);
-    return { previousPath: (current as any).cover_path ?? null };
+    return uploadsData.setDeckCoverPath(
+      this.supabase,
+      deckId,
+      userId,
+      coverPath,
+    );
   }
 
   /** Same for notes. Owner-scoped: a cover is the owner's presentation choice. */
@@ -5500,29 +4024,12 @@ export class SupabaseService {
     userId: string,
     coverPath: string | null,
   ): Promise<{ previousPath: string | null }> {
-    const { data: current, error: readError } = await this.supabase
-      .from("notes")
-      .select("id, cover_path")
-      .eq("id", noteId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (readError) {
-      if (isMissingCoverPathColumn(readError)) throw new CoverColumnMissingError();
-      throw readError;
-    }
-    if (!current) return { previousPath: null };
-
-    const { error } = await this.supabase
-      .from("notes")
-      .update({ cover_path: coverPath })
-      .eq("id", noteId)
-      .eq("user_id", userId);
-    if (error) {
-      if (isMissingCoverPathColumn(error)) throw new CoverColumnMissingError();
-      throw error;
-    }
-    await cacheService.delete(`note:${noteId}`);
-    return { previousPath: (current as any).cover_path ?? null };
+    return uploadsData.setNoteCoverPath(
+      this.supabase,
+      noteId,
+      userId,
+      coverPath,
+    );
   }
 
   /**
@@ -5535,29 +4042,12 @@ export class SupabaseService {
     userId: string,
     coverPath: string | null,
   ): Promise<{ previousPath: string | null }> {
-    const { data: current, error: readError } = await this.supabase
-      .from("study_sets")
-      .select("id, cover_path")
-      .eq("id", setId)
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (readError) {
-      if (isMissingCoverPathColumn(readError))
-        throw new CoverColumnMissingError();
-      throw readError;
-    }
-    if (!current) return { previousPath: null };
-
-    const { error } = await this.supabase
-      .from("study_sets")
-      .update({ cover_path: coverPath })
-      .eq("id", setId)
-      .eq("user_id", userId);
-    if (error) {
-      if (isMissingCoverPathColumn(error)) throw new CoverColumnMissingError();
-      throw error;
-    }
-    return { previousPath: (current as any).cover_path ?? null };
+    return uploadsData.setStudySetCoverPath(
+      this.supabase,
+      setId,
+      userId,
+      coverPath,
+    );
   }
 
   /** SEC-07: marketplace images — magic-byte validated server upload. */
@@ -5569,60 +4059,16 @@ export class SupabaseService {
     listingId?: string;
     purpose?: "shop" | "listing";
   }): Promise<{ url: string; path: string; storageUrl: string }> {
-    const bucket = "marketplace-images";
-    const timestamp = Date.now();
-    const buffer = Buffer.from(params.base64Data, "base64");
-    if (buffer.length > 10 * 1024 * 1024) {
-      throw new Error("Image exceeds 10 MB limit");
-    }
-    // Prefer magic bytes — clients often send the wrong MIME after compression / camera export.
-    const detected = detectImageMime(buffer);
-    if (!detected) {
-      throw new Error(
-        "File content is not a supported image (JPEG, PNG, GIF, or WebP). HEIC/HEIF photos must be converted first.",
-      );
-    }
-    const { normalized, thumb } = await processImageForUpload(
-      buffer,
-      "marketplace",
-      { detectedMime: detected },
+    return uploadsData.uploadMarketplaceImage(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+      },
+      params,
     );
-    const baseName =
-      params.fileName
-        .replace(/\.[^/.]+$/, "")
-        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "photo";
-    const safeName = `${baseName}.${normalized.ext}`;
-    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
-    const listingSegment = params.listingId
-      ? `listings/${params.listingId.replace(/[^a-zA-Z0-9_-]/g, "")}/`
-      : params.purpose === "shop"
-        ? "shop/"
-        : "temp/";
-    const filePath = `${ownerPrefix}${listingSegment}${timestamp}-${safeName}`;
-
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: false,
-      });
-    if (error) {
-      logger.error("Error uploading marketplace image:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    // Grid thumbnail at a deterministic sibling path (<path>.thumb.webp).
-    await this.uploadSiblingThumb(bucket, filePath, thumb);
-
-    const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
-    const storageUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
-
-    return {
-      url: await this.createSignedStorageUrl(bucket, filePath),
-      path: filePath,
-      storageUrl,
-    };
   }
 
   /** SEC-07: chat images stored under note-files/{userId}/chat/{groupId}/... */
@@ -5633,54 +4079,19 @@ export class SupabaseService {
     userId: string;
     groupId?: string;
   }): Promise<{ url: string; path: string }> {
-    const bucket = "note-files";
-    const timestamp = Date.now();
-    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
-    const chatId = (params.groupId || "general").replace(/[^a-zA-Z0-9_-]/g, "");
-    if (params.groupId) {
-      const member = await this.isGroupMember(params.groupId, params.userId);
-      if (!member) throw new Error("Not a member of this group");
-    }
-    const buffer = Buffer.from(params.base64Data, "base64");
-    if (buffer.length > 10 * 1024 * 1024) {
-      throw new Error("Image exceeds 10 MB limit");
-    }
-    assertImageMagicBytes(buffer, params.contentType);
-    const { normalized, thumb } = await processImageForUpload(buffer, "chat", {
-      detectedMime: detectImageMime(buffer) || params.contentType,
-    });
-    const baseName =
-      params.fileName
-        .replace(/\.[^/.]+$/, "")
-        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "chat";
-    const filePath = `${ownerPrefix}chat/${chatId}/${timestamp}-${baseName}.${normalized.ext}`;
-
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: false,
-      });
-    if (error) {
-      logger.error("Error uploading chat image:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    await this.uploadSiblingThumb(bucket, filePath, thumb);
-
-    return {
-      // `clampSignedUrlTtl` caps every signed URL at STORAGE_SIGNED_URL_MAX_TTL
-      // (24h), so asking for a week only ever produced a 24h URL that then
-      // rotted inside `messages.text`. Ask for what we actually get, and let
-      // clients re-sign on read (POST /api/v1/storage/signed-url[s]).
-      url: await this.createSignedStorageUrl(
-        bucket,
-        filePath,
-        STORAGE_SIGNED_URL_MAX_TTL,
-      ),
-      path: filePath,
-    };
+    return uploadsData.uploadChatImage(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        isDmThreadParticipant: (threadId, uid) =>
+          this.isDmThreadParticipant(threadId, uid),
+      },
+      params,
+    );
   }
 
   /** Chat voice notes under note-files/{userId}/chat/{groupId|dm/threadId}/... */
@@ -5692,78 +4103,19 @@ export class SupabaseService {
     groupId?: string;
     threadId?: string;
   }): Promise<{ url: string; path: string }> {
-    const bucket = "note-files";
-    const timestamp = Date.now();
-    const safeName = params.fileName.replace(/[^a-zA-Z0-9_.-]/g, "_");
-    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
-    const allowed = [
-      "audio/webm",
-      "audio/mp4",
-      "audio/m4a",
-      "audio/mpeg",
-      "audio/ogg",
-      "audio/wav",
-      "audio/x-m4a",
-    ];
-    const contentType =
-      params.contentType === "audio/x-m4a" ? "audio/mp4" : params.contentType;
-    if (
-      !allowed.includes(params.contentType) &&
-      !allowed.includes(contentType)
-    ) {
-      throw new Error(
-        "Unsupported audio type. Use webm, mp4/m4a, ogg, or wav.",
-      );
-    }
-    let chatSegment: string;
-    if (params.groupId) {
-      const member = await this.isGroupMember(params.groupId, params.userId);
-      if (!member) throw new Error("Not a member of this group");
-      chatSegment = params.groupId.replace(/[^a-zA-Z0-9_-]/g, "");
-    } else if (params.threadId) {
-      const participant = await this.isDmThreadParticipant(
-        params.threadId,
-        params.userId,
-      );
-      if (!participant)
-        throw new Error("Not a participant of this conversation");
-      chatSegment = `dm/${params.threadId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
-    } else {
-      chatSegment = "general";
-    }
-    const filePath = `${ownerPrefix}chat/${chatSegment}/${timestamp}-${safeName}`;
-    const buffer = Buffer.from(params.base64Data, "base64");
-    if (buffer.length > 8 * 1024 * 1024) {
-      throw new Error("Audio exceeds 8 MB limit");
-    }
-    if (buffer.length < 256) {
-      throw new Error("Audio recording is empty or too short");
-    }
-
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(filePath, buffer, {
-        contentType,
-        cacheControl: "3600",
-        upsert: false,
-      });
-    if (error) {
-      logger.error("Error uploading chat audio:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    return {
-      // `clampSignedUrlTtl` caps every signed URL at STORAGE_SIGNED_URL_MAX_TTL
-      // (24h), so asking for a week only ever produced a 24h URL that then
-      // rotted inside `messages.text`. Ask for what we actually get, and let
-      // clients re-sign on read (POST /api/v1/storage/signed-url[s]).
-      url: await this.createSignedStorageUrl(
-        bucket,
-        filePath,
-        STORAGE_SIGNED_URL_MAX_TTL,
-      ),
-      path: filePath,
-    };
+    return uploadsData.uploadChatAudio(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+        isGroupMember: (groupId, uid) => this.isGroupMember(groupId, uid),
+        isDmThreadParticipant: (threadId, uid) =>
+          this.isDmThreadParticipant(threadId, uid),
+      },
+      params,
+    );
   }
 
   /** SEC-07: question/message images — magic-byte validated server upload. */
@@ -5773,43 +4125,16 @@ export class SupabaseService {
     contentType: string;
     userId: string;
   }): Promise<{ url: string; path: string }> {
-    const bucket = "question-images";
-    const timestamp = Date.now();
-    const ownerPrefix = `${params.userId.replace(/[^a-zA-Z0-9_-]/g, "")}/`;
-    const buffer = Buffer.from(params.base64Data, "base64");
-    if (buffer.length > 10 * 1024 * 1024) {
-      throw new Error("Image exceeds 10 MB limit");
-    }
-    assertImageMagicBytes(buffer, params.contentType);
-    const { normalized, thumb } = await processImageForUpload(
-      buffer,
-      "question",
-      { detectedMime: detectImageMime(buffer) || params.contentType },
+    return uploadsData.uploadQuestionImage(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+      },
+      params,
     );
-    const baseName =
-      params.fileName
-        .replace(/\.[^/.]+$/, "")
-        .replace(/[^a-zA-Z0-9_.-]/g, "_") || "question";
-    const filePath = `${ownerPrefix}questions/${timestamp}-${baseName}.${normalized.ext}`;
-
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: false,
-      });
-    if (error) {
-      logger.error("Error uploading question image:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    await this.uploadSiblingThumb(bucket, filePath, thumb);
-
-    return {
-      url: await this.createSignedStorageUrl(bucket, filePath),
-      path: filePath,
-    };
   }
 
   async uploadProfileAvatar(params: {
@@ -5818,64 +4143,16 @@ export class SupabaseService {
     contentType: string;
     userId: string;
   }): Promise<{ url: string; path: string; avatarUrl: string }> {
-    const bucket = "profile-avatars";
-    const safeUserId = params.userId.replace(/[^a-zA-Z0-9_-]/g, "");
-    const buffer = Buffer.from(params.base64Data, "base64");
-    // Prefer magic-byte detection — web clients compress to WebP but often send the original file MIME.
-    const detected = detectImageMime(buffer);
-    if (!detected) {
-      throw new Error(
-        "File content is not a supported image (JPEG, PNG, GIF, or WebP).",
-      );
-    }
-    const { normalized } = await processImageForUpload(buffer, "avatar", {
-      detectedMime: detected,
-    });
-    // Versioned path so clients and CDNs do not keep serving a stale avatar after replace.
-    const version = Date.now();
-    const filePath = `${safeUserId}/avatar-${version}.${normalized.ext}`;
-
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: true,
-      });
-
-    if (error) {
-      logger.error("Error uploading profile avatar:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    // Best-effort cleanup of older avatar objects for this user.
-    try {
-      const { data: existing } = await this.supabase.storage
-        .from(bucket)
-        .list(safeUserId, { limit: 50 });
-      const stale = (existing || [])
-        .map((obj) => obj.name)
-        .filter(
-          (name) =>
-            name.startsWith("avatar") &&
-            name !== `avatar-${version}.${normalized.ext}`,
-        )
-        .map((name) => `${safeUserId}/${name}`);
-      if (stale.length > 0) {
-        await this.supabase.storage.from(bucket).remove(stale);
-      }
-    } catch (cleanupError) {
-      logger.warn("Failed to clean up old profile avatars", {
-        cleanupError,
-        userId: safeUserId,
-      });
-    }
-
-    const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
-    const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
-    const avatarUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
-
-    return { url: signedUrl, path: filePath, avatarUrl };
+    return uploadsData.uploadProfileAvatar(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+      },
+      params,
+    );
   }
 
   async uploadGroupAvatar(params: {
@@ -5884,61 +4161,16 @@ export class SupabaseService {
     base64Data: string;
     contentType: string;
   }): Promise<{ url: string; path: string; avatarUrl: string }> {
-    const bucket = "group-avatars";
-    const safeGroupId = params.groupId.replace(/[^a-zA-Z0-9_-]/g, "");
-    const buffer = Buffer.from(params.base64Data, "base64");
-    const detected = detectImageMime(buffer);
-    if (!detected) {
-      throw new Error(
-        "File content is not a supported image (JPEG, PNG, GIF, or WebP).",
-      );
-    }
-    const { normalized } = await processImageForUpload(buffer, "avatar", {
-      detectedMime: detected,
-    });
-    const version = Date.now();
-    const filePath = `${safeGroupId}/avatar-${version}.${normalized.ext}`;
-
-    const { error } = await this.supabase.storage
-      .from(bucket)
-      .upload(filePath, normalized.buffer, {
-        contentType: normalized.contentType,
-        cacheControl: IMMUTABLE_IMAGE_CACHE_CONTROL,
-        upsert: true,
-      });
-
-    if (error) {
-      logger.error("Error uploading group avatar:", { error, filePath });
-      throw new Error(error.message);
-    }
-
-    try {
-      const { data: existing } = await this.supabase.storage
-        .from(bucket)
-        .list(safeGroupId, { limit: 50 });
-      const stale = (existing || [])
-        .map((obj) => obj.name)
-        .filter(
-          (name) =>
-            name.startsWith("avatar") &&
-            name !== `avatar-${version}.${normalized.ext}`,
-        )
-        .map((name) => `${safeGroupId}/${name}`);
-      if (stale.length > 0) {
-        await this.supabase.storage.from(bucket).remove(stale);
-      }
-    } catch (cleanupError) {
-      logger.warn("Failed to clean up old group avatars", {
-        cleanupError,
-        groupId: safeGroupId,
-      });
-    }
-
-    const signedUrl = await this.createSignedStorageUrl(bucket, filePath);
-    const base = process.env.SUPABASE_URL?.replace(/\/$/, "") || "";
-    const avatarUrl = `${base}/storage/v1/object/${bucket}/${filePath}`;
-
-    return { url: signedUrl, path: filePath, avatarUrl };
+    return uploadsData.uploadGroupAvatar(
+      this.supabase,
+      {
+        createSignedStorageUrl: (bucket, path, ttl) =>
+          this.createSignedStorageUrl(bucket, path, ttl),
+        createSignedStorageUrlWithVariant: (bucket, path, ttl, variant) =>
+          this.createSignedStorageUrlWithVariant(bucket, path, ttl, variant),
+      },
+      params,
+    );
   }
 
   // ===========================================================================

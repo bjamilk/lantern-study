@@ -31,6 +31,12 @@
  * artefact has no course", which both rejects a valid topic and silently
  * CLEARS an existing one on a patch that merely re-sends the same course.
  */
+import {
+  isMissingStudySetColumn,
+  isMissingTopicColumn,
+} from "../academicCourses";
+import { logger } from "../../utils/logger";
+
 import type { DataClient } from "./client";
 
 /**
@@ -122,4 +128,48 @@ export async function currentArtefactCourseId(
     .maybeSingle();
   if (error) throw error;
   return (data as { course_id?: string | null } | null)?.course_id ?? null;
+}
+
+/**
+ * Run a write, and retry it with the not-yet-migrated columns dropped.
+ *
+ * Moved here verbatim from `services/supabase.ts` module scope (monolith lane
+ * M1b, step 7) because it is the write half of the same course/topic filing
+ * this module owns, and `data/decks.ts` needs it too. Fourteen call sites
+ * across the monolith still use it, so it is exported rather than private.
+ *
+ * `study_set_id` is dropped first and the write RETRIED (recursively, so the
+ * topic ladder below still runs on the retry); `topic_id` is dropped second
+ * and the write re-run once. Both ladders exist because these migrations are
+ * hand-applied — see the KNOWN ISSUE on `reactionsMissingTable` for why they
+ * cannot simply be removed.
+ */
+export async function writeWithTopicFallback(
+  run: (payload: Record<string, any>) => PromiseLike<any>,
+  payload: Record<string, any>,
+): Promise<any> {
+  const result = await run(payload);
+  if (
+    result?.error &&
+    "study_set_id" in payload &&
+    isMissingStudySetColumn(result.error)
+  ) {
+    logger.warn(
+      "study_set_id missing — write retried without it (apply 20260911120000_study_sets.sql)",
+    );
+    const { study_set_id: _droppedSet, ...withoutSet } = payload;
+    return writeWithTopicFallback(run, withoutSet);
+  }
+  if (
+    !result?.error ||
+    !("topic_id" in payload) ||
+    !isMissingTopicColumn(result.error)
+  ) {
+    return result;
+  }
+  logger.warn(
+    "topic_id missing — write retried without it (apply 20260826120000_course_topics.sql)",
+  );
+  const { topic_id: _dropped, ...rest } = payload;
+  return run(rest);
 }
