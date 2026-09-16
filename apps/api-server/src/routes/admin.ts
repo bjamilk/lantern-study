@@ -55,7 +55,12 @@
  * bottom of this file. See the "Error convention (M4)" banner for why it is
  * router-scoped rather than the global handler.
  *
- * What it touches: Supabase tables `profiles`, `platform_admins`,
+ * What it touches. Since M4 this file performs NO database access of its own:
+ * every query, GoTrue admin call and RPC lives in `services/adminData.ts`, and
+ * `adminData.queryShape.test.ts` both pins each query's table, filters and
+ * columns and asserts that no `.from(`, `getClient()`, `auth.admin.` or
+ * `.rpc(` reappears here. Through that module it touches Supabase tables
+ * `profiles`, `platform_admins`,
  * `admin_audit_log`, `content_reports`, `marketplace_listings`,
  * `marketplace_reports`, `marketplace_orders`, `groups`, `group_members`,
  * `messages`, `decks`, `flashcards`, `offline_bundles`, `ai_analytics`,
@@ -95,60 +100,22 @@ import { getMarketplaceOrdersService, invalidateSellerAnalyticsCache } from '../
 import { setUserSessionCutoff } from '../services/tokenDenylist';
 import { clearAuthTokenCache } from '../middleware/auth';
 import { asyncHandler } from '../middleware/errorHandler';
+import * as adminData from '../services/adminData';
 
-/**
- * How long a ban lasts at the auth layer. GoTrue takes a duration string, not
- * an end date, and has no "forever" — ~100 years is the conventional stand-in.
- * A ban is lifted explicitly by setting 'none', never by expiry.
- */
-export const AUTH_BAN_DURATION = '876000h';
-
-/**
- * Ban or unban a user in GoTrue itself.
- *
- * Why this exists: banning only wrote profiles.settings and signed the user
- * out. Signing out invalidates the tokens they already hold — it does not stop
- * them signing straight back in for a fresh one. Setting banned_until makes
- * GoTrue refuse to issue tokens at all, which is what "banned" should mean.
- *
- * Never throws: the ban is already recorded in the database and enforced by
- * the API, so a GoTrue hiccup must not fail the admin's action or leave the
- * two halves inconsistent. Returns whether the auth layer agreed, so the
- * caller can surface it.
- */
-export async function setAuthBan(
-  client: any,
-  userId: string,
-  duration: typeof AUTH_BAN_DURATION | 'none'
-): Promise<boolean> {
-  try {
-    const { error } = await client.auth.admin.updateUserById(userId, {
-      ban_duration: duration,
-    });
-    if (error) {
-      logger.warn('Auth-layer ban update failed', {
-        userId,
-        duration,
-        error: error.message,
-      });
-      return false;
-    }
-    return true;
-  } catch (err) {
-    logger.warn('Auth-layer ban update threw', {
-      userId,
-      duration,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return false;
-  }
-}
 import { logger } from '../utils/logger';
 import { invalidateListingCaches } from '../utils/marketplaceCache';
 import { getModerationService } from '../services/moderation';
 import { PublicError } from '../utils/safeError';
 import { MAX_SUSPENSION_DAYS, isSuspensionActive } from '@lantern/shared/moderation';
 import { isMarketplaceListingModerated } from '@lantern/shared/marketplace';
+
+/**
+ * The auth-layer ban lives in `services/adminData` with the rest of the admin
+ * data access (M4). Re-exported here so `adminAuthBan.test.ts` and any other
+ * importer keep their existing module path.
+ */
+export { AUTH_BAN_DURATION, setAuthBan } from '../services/adminData';
+import { AUTH_BAN_DURATION } from '../services/adminData';
 
 const router = Router();
 
@@ -319,7 +286,6 @@ async function getAuthUserInfoForUserIds(
 ): Promise<Record<string, { email?: string; isPlatformAdmin?: boolean }>> {
   if (!userIds.length) return {};
 
-  const client: any = supabaseService.getClient();
   const result: Record<string, { email?: string; isPlatformAdmin?: boolean }> = {};
   const uncached: string[] = [];
 
@@ -336,7 +302,7 @@ async function getAuthUserInfoForUserIds(
     const entries = await Promise.all(
       uncached.map(async (userId) => {
         try {
-          const { data, error } = await client.auth.admin.getUserById(userId);
+          const { data, error } = await adminData.getAuthUser(supabaseService, userId);
           if (error) return [userId, {}] as const;
           const info = {
             email: data?.user?.email,
@@ -390,63 +356,41 @@ router.get('/ai/provider-probe', adminRoute(async (req: any, res: any) => {
 
 // GET /api/v1/admin/stats
 router.get('/stats', adminRoute(async (req: any, res: any) => {
-  const client = supabaseService.getClient();
   const todayStart = startOfDayIso();
   const last7d = daysAgoIso(7);
   const last24h = daysAgoIso(1);
 
-  const [
-    { count: userCount },
-    { count: listingCount },
-    { count: activeListingCount },
-    { count: reportCount },
-    { count: aiEventCount },
-    { count: newUsersToday },
-    { count: reportsResolved7d },
-    { count: aiEventsLast7d },
-    { count: groupCount },
-    { count: messageCount24h },
-    { count: deckCount },
-    { count: offlineBundleCount },
-    { count: openDisputeCount },
-  ] = await Promise.all([
-    client.from('profiles').select('id', { count: 'exact', head: true }),
-    client.from('marketplace_listings').select('id', { count: 'exact', head: true }),
-    client.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('status', 'active'),
-    client.from('marketplace_reports').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    client.from('ai_analytics').select('id', { count: 'exact', head: true }).gte('created_at', last24h),
-    client.from('profiles').select('id', { count: 'exact', head: true }).gte('created_at', todayStart),
-    client.from('marketplace_reports').select('id', { count: 'exact', head: true }).eq('status', 'resolved').gte('resolved_at', last7d),
-    client.from('ai_analytics').select('id', { count: 'exact', head: true }).gte('created_at', last7d),
-    client.from('groups').select('id', { count: 'exact', head: true }).eq('is_archived', false),
-    client.from('messages').select('id', { count: 'exact', head: true }).gte('timestamp', last24h),
-    client.from('decks').select('id', { count: 'exact', head: true }).is('removed_by_admin_at', null),
-    client.from('offline_bundles').select('id', { count: 'exact', head: true }),
-    client.from('marketplace_orders').select('id', { count: 'exact', head: true }).eq('status', 'disputed'),
-  ]);
+  const {
+    userCount,
+    listingCount,
+    activeListingCount,
+    reportCount,
+    aiEventCount,
+    newUsersToday,
+    reportsResolved7d,
+    aiEventsLast7d,
+    groupCount,
+    messageCount24h,
+    deckCount,
+    offlineBundleCount,
+    openDisputeCount,
+  } = await adminData.getDashboardCounts(supabaseService, { todayStart, last7d, last24h });
 
   // Distinct study_activity users in the last 7 days (same definition as Analytics tab WAU/DAU family).
   const sevenDaysAgoDate = new Date();
   sevenDaysAgoDate.setUTCDate(sevenDaysAgoDate.getUTCDate() - 6);
   const sevenDaysAgoYmd = sevenDaysAgoDate.toISOString().slice(0, 10);
-  const { data: recentStudyUsers } = await client
-    .from('study_activity')
-    .select('user_id')
-    .gte('activity_date', sevenDaysAgoYmd)
-    .gt('count', 0)
-    .limit(10000);
+  const { data: recentStudyUsers } = await adminData.listRecentStudyActivityUsers(
+    supabaseService,
+    sevenDaysAgoYmd
+  );
   const activeUsers7d = new Set((recentStudyUsers || []).map((r: any) => r.user_id).filter(Boolean)).size;
 
   // Real token spend when the inference log has it (recorded since the
   // usage-tracking change); the old events-times-flat-guess only as fallback
   // for windows that predate token recording. Blended $/1M tokens is
   // env-tunable because it is pricing, not code.
-  const { data: tokenRows } = await client
-    .from('ai_inference_log')
-    .select('token_estimate')
-    .gte('created_at', last7d)
-    .not('token_estimate', 'is', null)
-    .limit(10000);
+  const { data: tokenRows } = await adminData.listAiTokenEstimates(supabaseService, last7d, 10000);
   const aiTokens7d = (tokenRows || []).reduce(
     (sum: number, r: any) => sum + (typeof r.token_estimate === 'number' ? r.token_estimate : 0),
     0
@@ -511,16 +455,11 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const search = (req.query.search as string)?.trim() || '';
   const offset = (page - 1) * limit;
-  const client = supabaseService.getClient();
 
   const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
   if (search && uuidPattern.test(search)) {
-    const { data: profile, error } = await client
-      .from('profiles')
-      .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
-      .eq('id', search)
-      .maybeSingle();
+    const { data: profile, error } = await adminData.getUserForAdminList(supabaseService, search);
     if (error) throw error;
     const authMap = profile ? await getAuthUserInfoForUserIds([profile.id]) : {};
     const normalized = profile
@@ -543,18 +482,16 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
     // RPC (20260817120000): the old listUsers page scan stopped at 1000
     // users and silently fell back to name-only matching, so a real email
     // could return "no results". Returns every match, not just the first.
-    const { data: emailMatches, error: rpcError } = await client.rpc(
-      'admin_search_users_by_email',
-      { search_query: search, result_limit: limit }
+    const { data: emailMatches, error: rpcError } = await adminData.searchUsersByEmail(
+      supabaseService,
+      search,
+      limit
     );
 
     if (!rpcError && Array.isArray(emailMatches) && emailMatches.length > 0) {
       const ids = emailMatches.map((m: any) => m.id);
-      const { data: profiles } = await client
-        .from('profiles')
-        .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
-        .in('id', ids);
-      const profileById = new Map((profiles || []).map((p: any) => [p.id, p]));
+      const { data: profiles } = await adminData.getUsersForAdminList(supabaseService, ids);
+      const profileById = new Map<string, any>((profiles || []).map((p: any) => [p.id, p]));
       const normalized = emailMatches.map((m: any) => {
         const row = profileById.get(m.id) || { id: m.id, name: m.email, settings: {} };
         return {
@@ -574,21 +511,19 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
     // Function not deployed yet (or no match): legacy bounded page scan so
     // the search keeps working before the migration is applied.
     if (rpcError) {
-      const authClient: any = client;
       let matchedUser: any = null;
       for (let authPage = 1; authPage <= 5 && !matchedUser; authPage++) {
-        const { data: authData } = await authClient.auth.admin.listUsers({ page: authPage, perPage: 200 });
+        const { data: authData } = await adminData.listAuthUsers(supabaseService, authPage, 200);
         matchedUser = (authData?.users || []).find((u: any) =>
           u.email?.toLowerCase().includes(search.toLowerCase())
         );
         if ((authData?.users || []).length < 200) break;
       }
       if (matchedUser) {
-        const { data: profile } = await client
-          .from('profiles')
-          .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at')
-          .eq('id', matchedUser.id)
-          .maybeSingle();
+        const { data: profile } = await adminData.getUserForAdminList(
+          supabaseService,
+          matchedUser.id
+        );
         const row = profile || {
           id: matchedUser.id,
           name: matchedUser.user_metadata?.name || matchedUser.email,
@@ -610,18 +545,11 @@ router.get('/users', adminRoute(async (req: any, res: any) => {
     }
   }
 
-  let query = client
-    .from('profiles')
-    .select('id, name, username, first_name, last_name, avatar_url, points, settings, created_at', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (search) {
-    const safeSearch = escapePostgrestSearch(search);
-    query = query.or(`name.ilike.%${safeSearch}%,username.ilike.%${safeSearch}%,first_name.ilike.%${safeSearch}%,last_name.ilike.%${safeSearch}%`);
-  }
-
-  const { data, error, count } = await query;
+  const { data, error, count } = await adminData.listUsersPage(supabaseService, {
+    escapedSearch: search ? escapePostgrestSearch(search) : undefined,
+    offset,
+    limit,
+  });
   if (error) throw error;
 
   const userIds = (data || []).map((u: any) => u.id);
@@ -672,8 +600,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     suspendedUntil = parsed.toISOString();
   }
 
-  const client = supabaseService.getClient();
-  const { data: profile, error: fetchErr } = await client.from('profiles').select('settings').eq('id', id).single();
+  const { data: profile, error: fetchErr } = await adminData.getUserSettings(supabaseService, id);
 
   if (fetchErr || !profile) {
     return res.status(404).json({ success: false, error: 'User not found' });
@@ -694,7 +621,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
   if (status === 'suspended') nextSettings.suspended_until = suspendedUntil;
   else if (status === 'active') delete nextSettings.suspended_until;
 
-  const { error } = await client.from('profiles').update({ settings: nextSettings }).eq('id', id);
+  const { error } = await adminData.setUserSettings(supabaseService, id, nextSettings);
   if (error) throw error;
 
   await logAdminAction(supabaseService, {
@@ -718,7 +645,7 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
 
   if (status === 'banned') {
     try {
-      await client.auth.admin.signOut(id, 'global');
+      await adminData.signOutEverywhere(supabaseService, id);
     } catch (signOutErr) {
       logger.warn('Supabase global signOut failed on ban', { id, signOutErr });
     }
@@ -735,10 +662,10 @@ router.patch('/users/:id/status', validateAdminUserStatus, handleValidationError
     // API. What it does reopen is token minting outside the API: a client
     // talking to GoTrue directly with the anon key can still sign in. Treat
     // `authBanApplied: false` as work to redo, not as noise.
-    authBanApplied = await setAuthBan(client, id, AUTH_BAN_DURATION);
+    authBanApplied = await adminData.applyAuthBan(supabaseService, id, AUTH_BAN_DURATION);
   } else if (status === 'active') {
     // Lift the auth-layer ban, or an unbanned user could never sign in again.
-    authBanApplied = await setAuthBan(client, id, 'none');
+    authBanApplied = await adminData.applyAuthBan(supabaseService, id, 'none');
   } else if (status === 'suspended') {
     await supabaseService
       .createNotification(id, {
@@ -842,8 +769,7 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
     return res.status(400).json({ success: false, error: 'You cannot revoke your own admin role.' });
   }
 
-  const client: any = supabaseService.getClient();
-  const { data: userData, error: fetchErr } = await client.auth.admin.getUserById(id);
+  const { data: userData, error: fetchErr } = await adminData.getAuthUser(supabaseService, id);
   if (fetchErr || !userData?.user) {
     return res.status(404).json({ success: false, error: 'User not found' });
   }
@@ -862,22 +788,20 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
     is_platform_admin: isPlatformAdmin === true,
   };
 
-  const { error: updateErr } = await client.auth.admin.updateUserById(id, {
-    app_metadata: nextMetadata,
-  });
+  const { error: updateErr } = await adminData.setAuthUserMetadata(supabaseService, id, nextMetadata);
   if (updateErr) throw updateErr;
 
-  const { data: profile } = await client.from('profiles').select('settings').eq('id', id).single();
+  const { data: profile } = await adminData.getUserSettings(supabaseService, id);
   const nextSettings = {
     ...(profile?.settings || {}),
     is_platform_admin: isPlatformAdmin === true,
   };
-  await client.from('profiles').update({ settings: nextSettings }).eq('id', id);
+  await adminData.setUserSettings(supabaseService, id, nextSettings);
 
   if (isPlatformAdmin === true) {
-    await client.from('platform_admins').upsert({ user_id: id, granted_by: req.user.id }, { onConflict: 'user_id' });
+    await adminData.grantPlatformAdmin(supabaseService, id, req.user.id);
   } else {
-    await client.from('platform_admins').delete().eq('user_id', id);
+    await adminData.revokePlatformAdmin(supabaseService, id);
   }
 
   await logAdminAction(supabaseService, {
@@ -889,7 +813,7 @@ router.patch('/users/:id/role', validateAdminUserRole, handleValidationErrors, a
 
   if (isPlatformAdmin !== true) {
     try {
-      await client.auth.admin.signOut(id, 'global');
+      await adminData.signOutEverywhere(supabaseService, id);
     } catch (signOutErr) {
       logger.warn('Supabase global signOut failed on role revoke', { id, signOutErr });
     }
@@ -923,16 +847,11 @@ router.get('/marketplace/listings', adminRoute(async (req: any, res: any) => {
   const status = (req.query.status as string) || '';
   const offset = (page - 1) * limit;
 
-  let query = supabaseService
-    .getClient()
-    .from('marketplace_listings')
-    .select('id, title, price, category, status, created_at, views_count, user_id, seller:profiles!marketplace_listings_user_id_fkey(id, name)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-
-  if (status) query = query.eq('status', status);
-
-  const { data, error, count } = await query;
+  const { data, error, count } = await adminData.listListingsForAdmin(supabaseService, {
+    status: status || undefined,
+    offset,
+    limit,
+  });
   if (error) throw error;
 
   res.json({
@@ -979,12 +898,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
     return res.status(400).json({ success: false, error: 'status must be active or suspended_by_admin' });
   }
 
-  const client = supabaseService.getClient();
-  const { data: current } = await client
-    .from('marketplace_listings')
-    .select('id, status, user_id, title')
-    .eq('id', id)
-    .maybeSingle();
+  const { data: current } = await adminData.getListingForModeration(supabaseService, id);
   if (!current) return res.status(404).json({ success: false, error: 'Listing not found' });
 
   const moderation = getModerationService(supabaseService);
@@ -995,10 +909,7 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
       ? await moderation.resolveRestoredListingStatus(id)
       : status;
 
-  const { error } = await client
-    .from('marketplace_listings')
-    .update({ status: statusToWrite })
-    .eq('id', id);
+  const { error } = await adminData.setListingStatus(supabaseService, id, statusToWrite);
   if (error) throw error;
 
   // Restoring a listing outside the appeal flow clears its takedown state
@@ -1007,16 +918,13 @@ router.patch('/marketplace/listings/:id', adminRoute(async (req: any, res: any) 
   if (status === 'active' && isMarketplaceListingModerated(current.status)) {
     await moderation.clearListingTakedown(id).catch((e) => logger.warn('clearListingTakedown failed', { id, e }));
   } else if (status === 'suspended_by_admin' && current.status !== 'suspended_by_admin') {
-    await client
-      .from('marketplace_listings')
-      .update({
-        rights_status: 'under_review',
-        takedown_reason: reason || 'Suspended pending Lantern review',
-        takedown_at: new Date().toISOString(),
-        takedown_by: req.user.id,
+    await adminData
+      .setListingUnderReview(supabaseService, id, {
+        reason: reason || 'Suspended pending Lantern review',
+        at: new Date().toISOString(),
+        by: req.user.id,
       })
-      .eq('id', id)
-      .then(({ error: e }) => e && logger.warn('suspend takedown fields failed', { id, e }));
+      .then(({ error: e }: { error?: unknown }) => e && logger.warn('suspend takedown fields failed', { id, e }));
     await supabaseService
       .createNotification(current.user_id, {
         type: 'warning',
@@ -1165,12 +1073,7 @@ router.put('/reports/:id', validateUuidParam('id'), handleValidationErrors, mode
 
   if (result.action === 'remove_content') {
     // Listing takedowns change what the public sees.
-    const { data: report } = await supabaseService
-      .getClient()
-      .from('content_reports')
-      .select('target_type, target_id')
-      .eq('id', id)
-      .maybeSingle();
+    const { data: report } = await adminData.getReportTarget(supabaseService, id);
     if (report && (report.target_type === 'listing' || report.target_type === 'question_bank')) {
       await invalidateListingCaches(cacheService, String(report.target_id));
       await cacheService.deletePattern('marketplace:listings:*');
@@ -1225,7 +1128,7 @@ router.get('/ai-analytics', adminRoute(async (req: any, res: any) => {
   const days = Math.min(90, Math.max(1, parseInt(req.query.days as string) || 7));
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-  const { data, error } = await supabaseService.getClient().from('ai_analytics').select('event, created_at, user_id').gte('created_at', since).order('created_at', { ascending: false }).limit(5000);
+  const { data, error } = await adminData.listAiEvents(supabaseService, since, 5000);
   if (error) throw error;
 
   const byEvent: Record<string, number> = {};
@@ -1256,13 +1159,7 @@ router.get('/ai-tokens', adminRoute(async (req: any, res: any) => {
   const since = daysAgoIso(days);
   const ROW_LIMIT = 10000;
 
-  const { data, error } = await supabaseService
-    .getClient()
-    .from('ai_inference_log')
-    .select('feature, provider, token_estimate, created_at')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(ROW_LIMIT);
+  const { data, error } = await adminData.listAiInferenceRows(supabaseService, since, ROW_LIMIT);
   if (error) throw error;
 
   const rows = data || [];
@@ -1291,13 +1188,7 @@ router.get('/events', adminRoute(async (req: any, res: any) => {
   const since = daysAgoIso(days);
   const ROW_LIMIT = 10000;
 
-  const { data, error } = await supabaseService
-    .getClient()
-    .from('product_events')
-    .select('event, surface, user_id, created_at')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(ROW_LIMIT);
+  const { data, error } = await adminData.listProductEvents(supabaseService, since, ROW_LIMIT);
   if (error) throw error;
 
   const rows = data || [];
@@ -1317,7 +1208,7 @@ router.get('/ai-analytics/users', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
   const since = daysAgoIso(days);
 
-  const { data, error } = await supabaseService.getClient().from('ai_analytics').select('user_id, event, created_at').gte('created_at', since).limit(20000);
+  const { data, error } = await adminData.listAiEventsByUser(supabaseService, since, 20000);
   if (error) throw error;
 
   const usageMap: Record<string, number> = {};
@@ -1334,7 +1225,7 @@ router.get('/ai-analytics/users', adminRoute(async (req: any, res: any) => {
   const userIds = top.map((u) => u.userId).filter((id) => id !== 'unknown');
   const authMap = await getAuthUserInfoForUserIds(userIds);
 
-  const { data: profileRows } = await supabaseService.getClient().from('profiles').select('id, name, username').in('id', userIds);
+  const { data: profileRows } = await adminData.getProfileSummaries(supabaseService, userIds);
   const profileMap = Object.fromEntries((profileRows || []).map((p: any) => [p.id, p]));
 
   res.json({
@@ -1354,13 +1245,11 @@ router.get('/ai-analytics/users', adminRoute(async (req: any, res: any) => {
 
 router.get('/activity', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(50, Math.max(1, parseInt(req.query.limit as string) || 10));
-  const client = supabaseService.getClient();
-
   const [usersRes, reportsRes, listingsRes, aiRes] = await Promise.all([
-    client.from('profiles').select('id, name, username, created_at').order('created_at', { ascending: false }).limit(limit),
-    client.from('marketplace_reports').select('id, reason, created_at, reporter_id').order('created_at', { ascending: false }).limit(limit),
-    client.from('marketplace_listings').select('id, title, created_at, user_id, status').order('created_at', { ascending: false }).limit(limit),
-    client.from('ai_analytics').select('id, event, created_at, user_id').order('created_at', { ascending: false }).limit(limit),
+    adminData.listRecentUsers(supabaseService, limit),
+    adminData.listRecentMarketplaceReports(supabaseService, limit),
+    adminData.listRecentListings(supabaseService, limit),
+    adminData.listRecentAiEvents(supabaseService, limit),
   ]);
 
   const activities: Array<{
@@ -1424,12 +1313,7 @@ router.get('/activity', adminRoute(async (req: any, res: any) => {
 // GET /api/v1/admin/audit
 router.get('/audit', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 30));
-  const client = supabaseService.getClient();
-  const { data, error } = await client
-    .from('admin_audit_log')
-    .select('id, actor_id, action, target_type, target_id, metadata, reason, created_at')
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const { data, error } = await adminData.listAuditEntries(supabaseService, limit);
 
   if (error) {
     const code = error.code || '';
@@ -1442,9 +1326,9 @@ router.get('/audit', adminRoute(async (req: any, res: any) => {
     throw error;
   }
 
-  const actorIds = [...new Set((data || []).map((r: any) => r.actor_id).filter(Boolean))];
+  const actorIds = [...new Set((data || []).map((r: any) => r.actor_id).filter(Boolean))] as string[];
   const { data: actors } = actorIds.length
-    ? await client.from('profiles').select('id, name, username').in('id', actorIds)
+    ? await adminData.getProfileSummaries(supabaseService, actorIds)
     : { data: [] };
   const actorMap = Object.fromEntries((actors || []).map((a: any) => [a.id, a]));
 
@@ -1461,29 +1345,15 @@ router.get('/audit', adminRoute(async (req: any, res: any) => {
 // GET /api/v1/admin/users/:id
 router.get('/users/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
-  const client = supabaseService.getClient();
   const last7d = daysAgoIso(7);
 
-  const { data: profile, error } = await client
-    .from('profiles')
-    .select('id, name, username, first_name, last_name, avatar_url, points, badges, settings, stats, created_at')
-    .eq('id', id)
-    .maybeSingle();
+  const { data: profile, error } = await adminData.getUserDetail(supabaseService, id);
   if (error) throw error;
   if (!profile) return res.status(404).json({ success: false, error: 'User not found' });
 
   const authMap = await getAuthUserInfoForUserIds([id]);
-  const [
-    { count: groupCount },
-    { count: listingCount },
-    { count: deckCount },
-    { count: aiEvents7d },
-    activeStrikes,
-  ] = await Promise.all([
-    client.from('group_members').select('group_id', { count: 'exact', head: true }).eq('user_id', id),
-    client.from('marketplace_listings').select('id', { count: 'exact', head: true }).eq('user_id', id),
-    client.from('decks').select('id', { count: 'exact', head: true }).eq('user_id', id).is('removed_by_admin_at', null),
-    client.from('ai_analytics').select('id', { count: 'exact', head: true }).eq('user_id', id).gte('created_at', last7d),
+  const [{ groupCount, listingCount, deckCount, aiEvents7d }, activeStrikes] = await Promise.all([
+    adminData.getUserCounts(supabaseService, id, last7d),
     getModerationService(supabaseService).countActiveStrikes(id).catch(() => 0),
   ]);
 
@@ -1597,16 +1467,11 @@ router.get('/groups', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const search = (req.query.search as string)?.trim() || '';
   const offset = (page - 1) * limit;
-  let query = supabaseService.getClient()
-    .from('groups')
-    .select('id, name, description, is_archived, created_at, last_message_time', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-  if (search) {
-    const safe = escapePostgrestSearch(search);
-    query = query.ilike('name', `%${safe}%`);
-  }
-  const { data, error, count } = await query;
+  const { data, error, count } = await adminData.listGroupsForAdmin(supabaseService, {
+    escapedSearch: search ? escapePostgrestSearch(search) : undefined,
+    offset,
+    limit,
+  });
   if (error) throw error;
   res.json({ success: true, data: data || [], pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) } });
 }));
@@ -1615,7 +1480,7 @@ router.get('/groups', adminRoute(async (req: any, res: any) => {
 router.patch('/groups/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { isArchived, reason } = req.body as { isArchived: boolean; reason?: string };
-  const { error } = await supabaseService.getClient().from('groups').update({ is_archived: isArchived === true }).eq('id', id);
+  const { error } = await adminData.setGroupArchived(supabaseService, id, isArchived === true);
   if (error) throw error;
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -1633,13 +1498,11 @@ router.get('/messages', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const groupId = (req.query.groupId as string) || '';
   const offset = (page - 1) * limit;
-  let query = supabaseService.getClient()
-    .from('messages')
-    .select('id, group_id, sender_id, text, timestamp, type, sender:profiles!messages_sender_id_fkey(id, name, username)', { count: 'exact' })
-    .order('timestamp', { ascending: false })
-    .range(offset, offset + limit - 1);
-  if (groupId) query = query.eq('group_id', groupId);
-  const { data, error, count } = await query;
+  const { data, error, count } = await adminData.listMessagesForAdmin(supabaseService, {
+    groupId: groupId || undefined,
+    offset,
+    limit,
+  });
   if (error) throw error;
   res.json({ success: true, data: data || [], pagination: { page, limit, total: count ?? 0, pages: Math.ceil((count ?? 0) / limit) } });
 }));
@@ -1648,7 +1511,7 @@ router.get('/messages', adminRoute(async (req: any, res: any) => {
 router.delete('/messages/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { reason } = req.body || {};
-  const { error } = await supabaseService.getClient().from('messages').delete().eq('id', id);
+  const { error } = await adminData.deleteMessage(supabaseService, id);
   if (error) throw error;
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -1666,23 +1529,17 @@ router.get('/decks', adminRoute(async (req: any, res: any) => {
   const limit = Math.min(100, parseInt(req.query.limit as string) || 20);
   const search = (req.query.search as string)?.trim() || '';
   const offset = (page - 1) * limit;
-  let query = supabaseService.getClient()
-    .from('decks')
-    .select('id, name, description, user_id, created_at, removed_by_admin_at, owner:profiles!decks_user_id_fkey(id, name, username)', { count: 'exact' })
-    .is('removed_by_admin_at', null)
-    .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
-  if (search) {
-    const safe = escapePostgrestSearch(search);
-    query = query.ilike('name', `%${safe}%`);
-  }
-  const { data, error, count } = await query;
+  const { data, error, count } = await adminData.listDecksForAdmin(supabaseService, {
+    escapedSearch: search ? escapePostgrestSearch(search) : undefined,
+    offset,
+    limit,
+  });
   if (error) throw error;
 
   const deckIds = (data || []).map((d: any) => d.id);
   const cardCounts: Record<string, number> = {};
   if (deckIds.length) {
-    const { data: cards } = await supabaseService.getClient().from('flashcards').select('deck_id').in('deck_id', deckIds);
+    const { data: cards } = await adminData.listFlashcardDeckIds(supabaseService, deckIds);
     for (const c of cards || []) {
       cardCounts[c.deck_id] = (cardCounts[c.deck_id] || 0) + 1;
     }
@@ -1699,7 +1556,7 @@ router.get('/decks', adminRoute(async (req: any, res: any) => {
 router.delete('/decks/:id', adminRoute(async (req: any, res: any) => {
   const { id } = req.params;
   const { reason } = req.body || {};
-  const { error } = await supabaseService.getClient().from('decks').update({ removed_by_admin_at: new Date().toISOString() }).eq('id', id);
+  const { error } = await adminData.removeDeck(supabaseService, id, new Date().toISOString());
   if (error) throw error;
   await logAdminAction(supabaseService, {
     actorId: req.user.id,
@@ -1715,22 +1572,18 @@ router.delete('/decks/:id', adminRoute(async (req: any, res: any) => {
 router.get('/offline/summary', adminRoute(async (req: any, res: any) => {
   // count:'exact' so the console can say "showing 50 of N" — the hard cap
   // used to be invisible, indistinguishable from a complete list.
-  const { data: bundles, error, count } = await supabaseService.getClient()
-    .from('offline_bundles')
-    .select('id, user_id, display_name, group_name, updated_at, created_at', { count: 'exact' })
-    .order('updated_at', { ascending: false })
-    .limit(50);
+  const { data: bundles, error, count } = await adminData.listOfflineBundles(supabaseService);
   if (error) throw error;
 
   const rows = bundles || [];
-  const userIds = [...new Set(rows.map((b: { user_id: string }) => b.user_id).filter(Boolean))];
+  const userIds = [...new Set(rows.map((b: { user_id: string }) => b.user_id).filter(Boolean))] as string[];
   let profileById: Record<string, { id: string; name?: string; username?: string }> = {};
 
   if (userIds.length > 0) {
-    const { data: profiles, error: profileError } = await supabaseService.getClient()
-      .from('profiles')
-      .select('id, name, username')
-      .in('id', userIds);
+    const { data: profiles, error: profileError } = await adminData.getProfileSummaries(
+      supabaseService,
+      userIds
+    );
     if (profileError) throw profileError;
     profileById = Object.fromEntries((profiles || []).map((p: { id: string; name?: string; username?: string }) => [p.id, p]));
   }
@@ -1786,12 +1639,7 @@ router.get('/ai/companion/:userId', adminRoute(async (req: any, res: any) => {
     targetId: userId,
     metadata: { limit },
   });
-  const { data, error } = await supabaseService.getClient()
-    .from('ai_companion_messages')
-    .select('id, role, content, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const { data, error } = await adminData.listCompanionMessages(supabaseService, userId, limit);
   if (error) throw error;
   res.json({ success: true, data: (data || []).reverse() });
 }));
@@ -1930,18 +1778,11 @@ router.patch('/jobs/reports/:id', validateUuidParam('id'), handleValidationError
     );
     return res.json({ success: true, data: result });
   }
-  const { data: updated, error } = await supabaseService
-    .getClient()
-    .from('content_reports')
-    .update({
-      status: 'resolved',
-      admin_note: typeof note === 'string' && note.trim() ? note.trim().slice(0, 1000) : null,
-      resolved_by: req.user.id,
-      resolved_at: new Date().toISOString(),
-    })
-    .eq('id', req.params.id)
-    .select('id')
-    .maybeSingle();
+  const { data: updated, error } = await adminData.resolveReport(supabaseService, req.params.id, {
+    note: typeof note === 'string' && note.trim() ? note.trim().slice(0, 1000) : null,
+    resolvedBy: req.user.id,
+    resolvedAt: new Date().toISOString(),
+  });
   if (error) throw error;
   if (!updated) return res.status(404).json({ success: false, error: 'Report not found' });
   await logAdminAction(supabaseService, {
