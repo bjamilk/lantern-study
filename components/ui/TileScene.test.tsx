@@ -68,7 +68,7 @@ describe('TileScene renderer', () => {
   it('paints the two fills as variables, and nothing as a literal colour', () => {
     for (const name of TILE_SCENE_NAMES) {
       const html = render(name);
-      const fills = [...html.matchAll(/fill="([^"]+)"/g)].map((m) => m[1]);
+      const fills = [...html.matchAll(/fill="([^"]+)"/g)].map((m) => m[1] ?? "");
       for (const fill of fills) {
         expect(['none'], `${name}: ${fill}`).toSatisfy(
           () => fill === 'none' || fill.startsWith('var(--tile-fill') || fill.startsWith('var(--tile-shade')
