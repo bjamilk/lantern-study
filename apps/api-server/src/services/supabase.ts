@@ -94,6 +94,11 @@
  *    stale `packages/shared/dist` makes `tsc` disagree with the runtime.
  */
 import * as dataClient from "./data/client";
+import * as academicData from "./data/academic";
+import * as adminAnalyticsData from "./data/adminAnalytics";
+import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
+import * as categoriesData from "./data/categories";
+import * as notificationsData from "./data/notifications";
 import {
   DatabaseConfig,
   User,
@@ -7508,6 +7513,11 @@ export class SupabaseService {
   // bug.
   // ===========================================================================
   // Notification Methods for API Routes
+  //
+  // EXTRACTED (monolith lane M1, step 3): the bodies now live in
+  // `data/notifications.ts`. `createNotification`'s two outward calls
+  // (`isChatMuted`, `sendExpoPushForNotification`) are passed in as `deps`
+  // because they belong to sections still in this file.
   async getUserNotifications(
     userId: string,
     options: {
@@ -7516,79 +7526,22 @@ export class SupabaseService {
       unreadOnly?: boolean;
     } = {},
   ): Promise<Notification[]> {
-    const { page = 1, limit = 20, unreadOnly = false } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `notifications:${userId}:${page}:${limit}:${unreadOnly}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        let query = this.supabase
-          .from("notifications")
-          .select("*")
-          .eq("user_id", userId);
-
-        if (unreadOnly) {
-          query = query.eq("read", false);
-        }
-
-        const { data, error } = await query
-          .order("date", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-
-        return data || [];
-      },
-      { ttl: 120 },
-    ); // Cache for 2 minutes
+    return notificationsData.getUserNotifications(
+      this.supabase,
+      userId,
+      options,
+    );
   }
 
   async getNotificationById(
     notificationId: string,
     userId?: string,
   ): Promise<Notification | null> {
-    // The ownership check MUST live outside `cached`. It used to sit INSIDE
-    // the loader, so it ran only on a cache MISS: the first caller populated
-    // `notification:${id}` with the row, and every later caller — any user at
-    // all — got a HIT that skipped the check and returned a stranger's
-    // notification for the next 5 minutes.
-    //
-    // The key stays unscoped on purpose. What is cached is now the raw row,
-    // which is the same for every viewer and carries no access decision, and
-    // three call sites outside this method (routes/notifications.ts, and
-    // markNotificationRead/deleteNotification below) invalidate by this exact
-    // string — a per-user suffix would leave those deletes matching nothing
-    // and serve read notifications as unread. Access is decided per call
-    // below, so a hit is checked just as strictly as a miss.
-    const cacheKey = `notification:${notificationId}`;
-
-    const data = await cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("notifications")
-          .select("*")
-          .eq("id", notificationId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        return data;
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
-
-    if (!data) return null;
-    // Check if notification belongs to user
-    if (userId && data.user_id !== userId) {
-      return null; // Access denied
-    }
-    return data;
+    return notificationsData.getNotificationById(
+      this.supabase,
+      notificationId,
+      userId,
+    );
   }
 
   async createNotification(
@@ -7601,160 +7554,38 @@ export class SupabaseService {
       force?: boolean;
     },
   ): Promise<Notification | null> {
-    if (!notificationData.force) {
-      const { data: profile, error: profileError } = await this.supabase
-        .from("profiles")
-        .select("settings")
-        .eq("id", userId)
-        .single();
-
-      if (!profileError && profile) {
-        const { shouldCreateInAppNotification } =
-          await import("../utils/userSettingsPolicy");
-        if (
-          !shouldCreateInAppNotification(
-            profile.settings,
-            notificationData.type,
-          )
-        ) {
-          return null;
-        }
-      }
-
-      const type = notificationData.type || "info";
-      const { CHAT_MUTEABLE_NOTIFICATION_TYPES } =
-        await import("@lantern/shared/utils/chatMute");
-      if (CHAT_MUTEABLE_NOTIFICATION_TYPES.has(type)) {
-        const data = notificationData.data || {};
-        const groupId = typeof data.groupId === "string" ? data.groupId : null;
-        const threadId =
-          typeof data.threadId === "string" ? data.threadId : null;
-        if (groupId && (await this.isChatMuted(userId, "group", groupId))) {
-          return null;
-        }
-        if (threadId && (await this.isChatMuted(userId, "dm", threadId))) {
-          return null;
-        }
-      }
-    }
-
-    const { data, error } = await this.supabase
-      .from("notifications")
-      .insert({
-        user_id: userId,
-        message: notificationData.message,
-        link: notificationData.link,
-        type: notificationData.type || "info",
-        data: notificationData.data || {},
-        read: false,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.deletePattern(`notifications:${userId}:*`);
-    await cacheService.delete(`notifications:stats:${userId}`);
-
-    void this.sendExpoPushForNotification(userId, notificationData);
-
-    return data;
+    return notificationsData.createNotification(
+      this.supabase,
+      userId,
+      notificationData,
+      {
+        isChatMuted: (uid, scopeType, scopeId) =>
+          this.isChatMuted(uid, scopeType, scopeId),
+        sendExpoPushForNotification: (uid, notification) =>
+          this.sendExpoPushForNotification(uid, notification),
+      },
+    );
   }
 
   async markNotificationAsRead(
     notificationId: string,
   ): Promise<Notification | null> {
-    const { data, error } = await this.supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("id", notificationId)
-      .select()
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    // Invalidate caches
-    await cacheService.delete(`notification:${notificationId}`);
-    await cacheService.deletePattern(`notifications:${data.user_id}:*`);
-    await cacheService.delete(`notifications:stats:${data.user_id}`);
-
-    return data;
+    return notificationsData.markNotificationAsRead(
+      this.supabase,
+      notificationId,
+    );
   }
 
   async markAllNotificationsAsRead(userId: string): Promise<number> {
-    const { data, error } = await this.supabase
-      .from("notifications")
-      .update({ read: true })
-      .eq("user_id", userId)
-      .eq("read", false)
-      .select("id");
-
-    if (error) throw error;
-
-    const updatedCount = data?.length || 0;
-
-    // Invalidate caches
-    await cacheService.deletePattern(`notifications:${userId}:*`);
-    await cacheService.delete(`notifications:stats:${userId}`);
-
-    return updatedCount;
+    return notificationsData.markAllNotificationsAsRead(this.supabase, userId);
   }
 
   async deleteNotification(notificationId: string): Promise<boolean> {
-    // Get notification first to know which user to invalidate
-    const { data: notification, error: fetchError } = await this.supabase
-      .from("notifications")
-      .select("user_id")
-      .eq("id", notificationId)
-      .single();
-
-    if (fetchError) {
-      if (fetchError.code === "PGRST116") return false; // Not found
-      throw fetchError;
-    }
-
-    const { error } = await this.supabase
-      .from("notifications")
-      .delete()
-      .eq("id", notificationId);
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.delete(`notification:${notificationId}`);
-    await cacheService.deletePattern(`notifications:${notification.user_id}:*`);
-    await cacheService.delete(`notifications:stats:${notification.user_id}`);
-
-    return true;
+    return notificationsData.deleteNotification(this.supabase, notificationId);
   }
 
   async deleteAllNotifications(userId: string): Promise<number> {
-    // Count notifications first
-    const { count, error: countError } = await this.supabase
-      .from("notifications")
-      .select("*", { count: "exact", head: true })
-      .eq("user_id", userId);
-
-    if (countError) throw countError;
-
-    // Delete all notifications for user
-    const { error } = await this.supabase
-      .from("notifications")
-      .delete()
-      .eq("user_id", userId);
-
-    if (error) throw error;
-
-    // Invalidate caches
-    await cacheService.deletePattern(`notifications:${userId}:*`);
-    await cacheService.deletePattern(`notification:*`);
-    await cacheService.delete(`notifications:stats:${userId}`);
-
-    return count || 0;
+    return notificationsData.deleteAllNotifications(this.supabase, userId);
   }
 
   async getNotificationStats(userId: string): Promise<{
@@ -7762,26 +7593,7 @@ export class SupabaseService {
     unread: number;
     read: number;
   }> {
-    const cacheKey = `notifications:stats:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("notifications")
-          .select("read")
-          .eq("user_id", userId);
-
-        if (error) throw error;
-
-        const total = data?.length || 0;
-        const unread = data?.filter((n) => !n.read).length || 0;
-        const read = total - unread;
-
-        return { total, unread, read };
-      },
-      { ttl: 60 },
-    ); // Cache for 1 minute
+    return notificationsData.getNotificationStats(this.supabase, userId);
   }
 
   async createBulkNotifications(
@@ -7792,28 +7604,10 @@ export class SupabaseService {
       type?: string;
     }>,
   ): Promise<Notification[]> {
-    const notificationsToInsert = notifications.map((n) => ({
-      user_id: n.userId,
-      message: n.message,
-      link: n.link,
-      type: n.type || "info",
-      read: false,
-    }));
-
-    const { data, error } = await this.supabase
-      .from("notifications")
-      .insert(notificationsToInsert)
-      .select();
-
-    if (error) throw error;
-
-    // Invalidate caches for affected users
-    const affectedUserIds = [...new Set(notifications.map((n) => n.userId))];
-    for (const userId of affectedUserIds) {
-      await cacheService.deletePattern(`notifications:${userId}:*`);
-    }
-
-    return data || [];
+    return notificationsData.createBulkNotifications(
+      this.supabase,
+      notifications,
+    );
   }
 
   // ===========================================================================
@@ -16235,108 +16029,33 @@ export class SupabaseService {
   // every field a client expects.
   // ===========================================================================
   // ============ CUSTOM CATEGORIES ============
+  //
+  // EXTRACTED (monolith lane M1, step 3): the bodies now live in
+  // `data/categories.ts`; what is left here is delegation.
 
   async getCustomCategories(): Promise<any[]> {
-    const { data, error } = await this.supabase
-      .from("custom_categories")
-      .select("*")
-      .order("usage_count", { ascending: false });
-
-    if (error) throw error;
-    return data || [];
+    return categoriesData.getCustomCategories(this.supabase);
   }
 
   async createCustomCategory(name: string, userId: string): Promise<any> {
-    // Upsert: if name exists, return existing
-    const { data: existing } = await this.supabase
-      .from("custom_categories")
-      .select("*")
-      .eq("name", name)
-      .single();
-
-    if (existing) return existing;
-
-    const { data, error } = await this.supabase
-      .from("custom_categories")
-      .insert({ name, created_by: userId })
-      .select()
-      .single();
-
-    if (error) {
-      // Handle race condition: another insert happened between select and insert
-      if (error.code === "23505") {
-        const { data: raceData } = await this.supabase
-          .from("custom_categories")
-          .select("*")
-          .eq("name", name)
-          .single();
-        return raceData;
-      }
-      throw error;
-    }
-    return data;
+    return categoriesData.createCustomCategory(this.supabase, name, userId);
   }
 
   async incrementCategoryUsage(categoryName: string): Promise<void> {
-    // Increment usage_count by 1 for the given category
-    const { data } = await this.supabase
-      .from("custom_categories")
-      .select("usage_count")
-      .eq("name", categoryName)
-      .single();
-
-    if (data) {
-      await this.supabase
-        .from("custom_categories")
-        .update({ usage_count: (data.usage_count || 0) + 1 })
-        .eq("name", categoryName);
-    }
+    return categoriesData.incrementCategoryUsage(this.supabase, categoryName);
   }
 
   // ============ USER PREFERENCES ============
 
   async getUserPreferences(userId: string): Promise<any | null> {
-    const { data, error } = await this.supabase
-      .from("user_preferences")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-
-    if (error && error.code !== "PGRST116") {
-      // PGRST116 = no rows returned
-      logger.error("Error fetching user preferences", { userId, error });
-      throw error;
-    }
-
-    return data;
+    return categoriesData.getUserPreferences(this.supabase, userId);
   }
 
   async upsertUserPreferences(
     userId: string,
     prefs: { theme?: string; preferences?: Record<string, any> },
   ): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("user_preferences")
-      .upsert(
-        {
-          user_id: userId,
-          theme: prefs.theme || "light",
-          preferences: prefs.preferences || {},
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "user_id",
-        },
-      )
-      .select()
-      .single();
-
-    if (error) {
-      logger.error("Error upserting user preferences", { userId, error });
-      throw error;
-    }
-
-    return data;
+    return categoriesData.upsertUserPreferences(this.supabase, userId, prefs);
   }
 
   // ===========================================================================
@@ -16358,6 +16077,11 @@ export class SupabaseService {
   // cannot simply be removed.
   // ===========================================================================
   // ─── Course topics (Phase 1 · A) ──────────────────────────────
+  //
+  // EXTRACTED (monolith lane M1, step 3): the bodies now live in
+  // `data/academic.ts`. The topic lookup is passed in as a
+  // `resolveForArtefact` callback so that module stays a leaf and does not
+  // import `SupabaseService` back.
 
   /**
    * The topic to store on an artefact, validated against the course the row
@@ -16373,29 +16097,10 @@ export class SupabaseService {
     /** The row's course before this write; omit on create — nothing to orphan. */
     currentCourseId?: string | null;
   }): Promise<string | null | undefined> {
-    const { topicId, courseId, currentCourseId } = input;
-
-    if (topicId === undefined) {
-      // A patch that moves the artefact to another course (or unfiles it) must
-      // take the topic with it: a topic outliving its course is exactly the
-      // orphan the invariant forbids.
-      const movedCourse =
-        courseId !== undefined &&
-        currentCourseId !== undefined &&
-        String(courseId ?? "") !== String(currentCourseId ?? "");
-      return movedCourse ? null : undefined;
-    }
-    if (topicId === null || topicId === "") return null;
-
-    const effectiveCourseId =
-      courseId !== undefined
-        ? typeof courseId === "string" && courseId
-          ? courseId
-          : null
-        : (currentCourseId ?? null);
-    return getCourseTopicsService(this).resolveForArtefact(
-      topicId,
-      effectiveCourseId,
+    return academicData.resolveArtefactTopic(
+      (topicId, courseId) =>
+        getCourseTopicsService(this).resolveForArtefact(topicId, courseId),
+      input,
     );
   }
 
@@ -16408,14 +16113,14 @@ export class SupabaseService {
     id: string,
     updates: { topicId?: unknown; courseId?: unknown },
   ): Promise<string | null | undefined> {
-    if (updates.topicId === undefined && updates.courseId === undefined) {
-      return undefined;
-    }
-    return this.resolveArtefactTopic({
-      topicId: updates.topicId,
-      courseId: updates.courseId,
-      currentCourseId: await this.currentArtefactCourseId(table, id),
-    });
+    return academicData.resolveArtefactTopicPatch(
+      this.supabase,
+      (topicId, courseId) =>
+        getCourseTopicsService(this).resolveForArtefact(topicId, courseId),
+      table,
+      id,
+      updates,
+    );
   }
 
   /** The artefact's course as stored today; null when it has none (or is gone). */
@@ -16423,17 +16128,7 @@ export class SupabaseService {
     table: string,
     id: string,
   ): Promise<string | null> {
-    // supabase-js RESOLVES on a Postgres error, so an unchecked read here would
-    // report "this artefact has no course" for a transient failure — which both
-    // rejects a valid topic and silently CLEARS an existing one on a patch that
-    // merely re-sends the same course. Fail the write instead of guessing.
-    const { data, error } = await this.supabase
-      .from(table)
-      .select("course_id")
-      .eq("id", id)
-      .maybeSingle();
-    if (error) throw error;
-    return (data as { course_id?: string | null } | null)?.course_id ?? null;
+    return academicData.currentArtefactCourseId(this.supabase, table, id);
   }
 
   // ===========================================================================
@@ -18052,155 +17747,14 @@ export class SupabaseService {
   // and the service role will happily run it for anyone.
   // ===========================================================================
   async getAdminAnalytics(days: number): Promise<AdminAnalyticsPayload> {
-    const [{ data, error }, { data: zoneData, error: zoneError }] =
-      await Promise.all([
-        this.supabase.rpc("admin_analytics", { p_days: days }),
-        this.supabase.rpc("marketplace_zone_analytics", { p_days: days }),
-      ]);
-    if (error) throw error;
-
-    const analytics = data as AdminAnalyticsPayload;
-    if (zoneError || !zoneData || typeof zoneData !== "object") {
-      if (zoneError) {
-        logger.warn("marketplace_zone_analytics RPC failed", {
-          error: zoneError.message,
-        });
-      }
-      return analytics;
-    }
-
-    const zones = zoneData as {
-      gmvByZone?: Array<{ zone: string; gmv: number; orders: number }>;
-      listingsByZone?: Array<{
-        zone: string;
-        total: number;
-        active: number;
-        sold: number;
-      }>;
-      searchesByZone?: Array<{ zone: string; count: number }>;
-      searchesByCampus?: Array<{ campus: string; count: number }>;
-    };
-    return {
-      ...analytics,
-      marketplaceKpis: analytics.marketplaceKpis
-        ? {
-            ...analytics.marketplaceKpis,
-            gmvByZone: zones.gmvByZone || [],
-            listingsByZone: zones.listingsByZone || [],
-          }
-        : analytics.marketplaceKpis,
-      searchAnalytics: analytics.searchAnalytics
-        ? {
-            ...analytics.searchAnalytics,
-            searchesByCampus:
-              zones.searchesByCampus ||
-              analytics.searchAnalytics.searchesByCampus,
-            searchesByZone: zones.searchesByZone || [],
-          }
-        : analytics.searchAnalytics,
-    };
+    return adminAnalyticsData.getAdminAnalytics(this.supabase, days);
   }
 }
 
-export interface AdminAnalyticsPayload {
-  periodDays: number;
-  kpis: {
-    totalUsers: number;
-    dau: number;
-    wau: number;
-    mau: number;
-    mobileAppUsers: number;
-    webOnlyUsers: number;
-    activeGroups: number;
-  };
-  marketplaceKpis?: {
-    gmv: number;
-    ordersCount: number;
-    aov: number;
-    disputedRate: number;
-    disputedCount: number;
-    gmvByCategory: Array<{ category: string; gmv: number; orders: number }>;
-    gmvByCampus: Array<{ campus: string; gmv: number; orders: number }>;
-    gmvByZone?: Array<{ zone: string; gmv: number; orders: number }>;
-    listingsByZone?: Array<{
-      zone: string;
-      total: number;
-      active: number;
-      sold: number;
-    }>;
-  };
-  retentionCohorts?: {
-    signups: number;
-    d1: number;
-    d7: number;
-    d30: number;
-    d1Count: number;
-    d7Count: number;
-    d30Count: number;
-  };
-  searchAnalytics?: {
-    topQueries: Array<{ query: string; count: number }>;
-    zeroResultQueries: Array<{ query: string; count: number }>;
-    searchesByCampus: Array<{ campus: string; count: number }>;
-    searchesByZone?: Array<{ zone: string; count: number }>;
-    totalSearches: number;
-  };
-  acquisitionFunnel?: {
-    guestListingViews: number;
-    signupStarted: number;
-    signupsCompleted: number;
-    onboardingCompleted: number;
-  };
-  studyFunnel?: {
-    testsStarted: number;
-    testsCompleted: number;
-    testsCompletedWeb: number;
-    testsCompletedMobile: number;
-    flashcardSessionsStarted: number;
-    flashcardSessionsCompleted: number;
-    notesCreated: number;
-    aiToolUses: number;
-    aiToolsByType: Record<string, number>;
-  };
-  platformFromEvents?: {
-    webDau: number;
-    mobileDau: number;
-    webActivePeriod: number;
-    mobileActivePeriod: number;
-  };
-  streakDistribution: Record<string, number>;
-  featureTotals: {
-    tests: number;
-    flashcards: number;
-    newFlashcards: number;
-    questions: number;
-    games: number;
-    dailyQuizzes: number;
-    studyActions: number;
-  };
-  aiByFeature: Record<string, number>;
-  platformSplit: {
-    mobileAppUsers: number;
-    webOnlyUsers: number;
-  };
-  series: Array<{
-    date: string;
-    signups: number;
-    activeUsers: number;
-    tests: number;
-    flashcards: number;
-    newFlashcards: number;
-    questions: number;
-    games: number;
-    dailyQuizzes: number;
-    groupMessages: number;
-    dmMessages: number;
-    aiEvents: number;
-    newListings: number;
-    orders: number;
-    gmv?: number;
-  }>;
-}
+// `AdminAnalyticsPayload` moved to `data/adminAnalytics.ts` with the function
+// that builds it; re-exported here because routes import the type from this
+// path.
+export type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 
 // Configuration - do NOT create singleton at module level
 // The server.ts initializes the service with proper config
