@@ -448,6 +448,14 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/communities.ts::cols': 1,
       'services/communities.ts::columns': 2,
       'services/communityModeration.ts::cols': 1,
+      // directMessages' `getDirectMessages` (`runDmPage(columns)`) — the
+      // `dm_messages.reactions` capability ladder, which runs the same page
+      // query with and without the column migration 20260830120000 adds. The
+      // argument is fed from `baseDmSelect` (a literal binding in the same
+      // file) and from `reactionColumns(baseDmSelect)`, so no embed hides
+      // behind the parameter. Moved here from `services/supabase.ts::columns`,
+      // which drops from 5 to 4, by monolith lane M1d step 14.
+      'services/data/directMessages.ts::columns': 1,
       // offlineBundles' `getFlashcards`: `const selectClause = profile ===
       // 'compact' ? '<columns>' : '<columns>'`, a ternary between two literals
       // bound to a NAME rather than written at the call site, so the binding
@@ -479,7 +487,7 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // SET_NO_COVER_COLUMNS, SET_NO_EXAM_NO_COVER_COLUMNS) — each named so the
       // scan reads it at its definition, so no embed hides behind the ladder.
       'services/studySets.ts::columns': 5,
-      'services/supabase.ts::columns': 5,
+      'services/supabase.ts::columns': 4,
       'services/supabase.ts::select': 4,
     });
   });

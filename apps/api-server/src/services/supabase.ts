@@ -117,6 +117,7 @@ export {
 };
 import * as academicData from "./data/academic";
 import * as decksData from "./data/decks";
+import * as directMessagesData from "./data/directMessages";
 import * as uploadsData from "./data/uploads";
 import {
   resolveCourseIdFromConfigLike,
@@ -3766,6 +3767,23 @@ export class SupabaseService {
   // A first message from a stranger lands as a request; `acceptDmMessageRequest`
   // and `declineDmMessageRequest` resolve it.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1d, step 14): the bodies now live in
+  // `data/directMessages.ts`. Nothing outside the section read any constant of
+  // it.
+  //
+  // Nine call sites reach chat internals still in the CHAT INTERNALS section
+  // below (`attachReplyPreview`, `attachReplyPreviewsBatch`,
+  // `attachThreadReplyCounts`, `enrichDmMessageReceipts`,
+  // `resolveThreadRootForReply`, `createNotification`,
+  // `normalizeMessageRecord`), plus the sibling `isDmBlockedBetween` and the
+  // `learningConnections` recorder, which needs `this`. The `deps` literal is
+  // written out INLINE at those call sites, and it MUST stay that way:
+  // `supabase.messageReactions.test.ts` drives `getDirectMessages` through
+  // `SupabaseService.prototype.getDirectMessages.call(self, …)` on a bare
+  // `{ supabase, attachReplyPreviewsBatch, attachThreadReplyCounts,
+  // enrichDmMessageReceipts }` stand-in that never ran a constructor. An
+  // instance field holding the deps reads as `undefined` there, and the arrows
+  // read `this.<method>` at CALL time so a `jest.spyOn` still intercepts.
   async getDirectMessages(
     userId: string,
     otherUserId: string,
@@ -3774,130 +3792,20 @@ export class SupabaseService {
       limit?: number;
     } = {},
   ): Promise<Message[]> {
-    const { page = 1, limit = 50 } = options;
-    const offset = (page - 1) * limit;
-
-    // Create thread ID from sorted user IDs
-    const sortedIds = [userId, otherUserId].sort();
-    const threadId = sortedIds.join("-");
-
-    try {
-      const { data: threadMeta } = await this.supabase
-        .from("dm_threads")
-        .select("history_cleared_at")
-        .eq("id", threadId)
-        .maybeSingle();
-      const historyClearedAt = readDmHistoryClearedAt(
-        threadMeta?.history_cleared_at,
-        userId,
-      );
-
-      const baseDmSelect = `
-          id,
-          thread_id,
-          sender_id,
-          text,
-          timestamp,
-          edited_at,
-          removed_at,
-          client_message_id,
-          reply_to_message_id,
-          thread_root_id,
-          profiles:sender_id (
-            id,
-            name,
-            avatar_url
-          )
-        `;
-      // `dm_messages.reactions` lands in the same migration as
-      // `messages.reactions` (20260830120000), so one capability answers for
-      // both. Without it a DM read {} until a realtime UPDATE arrived.
-      const runDmPage = (columns: string) => {
-        let query = this.supabase
-          .from("dm_messages")
-          .select(columns)
-          .eq("thread_id", threadId)
-          .order("timestamp", { ascending: false })
-          .range(offset, offset + limit - 1);
-
-        // Delete-for-me: never return pre-cutoff history to the deleter.
-        if (historyClearedAt) {
-          query = query.gt("timestamp", historyClearedAt);
-        }
-        return query;
-      };
-
-      const dmSelect = await reactionColumns(this.supabase, baseDmSelect);
-      let { data, error } = (await runDmPage(dmSelect)) as {
-        data: any[] | null;
-        error: any;
-      };
-      if (error && isMissingColumnError(error) && dmSelect !== baseDmSelect) {
-        markMessageReactionsColumnMissing();
-        ({ data, error } = (await runDmPage(baseDmSelect)) as {
-          data: any[] | null;
-          error: any;
-        });
-      }
-
-      if (error) {
-        logger.error("Error fetching DM messages from database", {
-          error,
-          threadId,
-        });
-        return [];
-      }
-
-      const withReplies = await this.attachReplyPreviewsBatch(
-        data || [],
-        "dm_messages",
-      );
-      const withCounts = await this.attachThreadReplyCounts(
-        withReplies,
-        "dm_messages",
-        "thread_id",
-        threadId,
-      );
-
-      const mapped = withCounts.reverse().map((msg: any) => ({
-        id: msg.id,
-        threadId: msg.thread_id,
-        sender: mapProfileSender(
-          resolveNestedProfile(msg.profiles),
-          msg.sender_id,
-        ),
-        senderId: msg.sender_id,
-        timestamp: new Date(msg.timestamp),
-        type: "TEXT" as const,
-        ...(!msg.removed_at ? { text: msg.text } : {}),
-        editedAt: msg.edited_at || undefined,
-        removedAt: msg.removed_at || undefined,
-        isRemoved: !!msg.removed_at,
-        upvotes: 0,
-        downvotes: 0,
-        flaggedAsSimilarUserIds: [],
-        clientMessageId: msg.client_message_id || undefined,
-        reactions: normalizeReactions(msg.reactions),
-        replyToMessageId: msg.reply_to_message_id || undefined,
-        replyTo: msg.replyTo || undefined,
-        threadRootId: msg.thread_root_id || undefined,
-        replyCount: typeof msg.replyCount === "number" ? msg.replyCount : 0,
-      })) as Message[];
-
-      return this.enrichDmMessageReceipts(
-        mapped,
-        threadId,
-        userId,
-        otherUserId,
-      );
-    } catch (error) {
-      logger.error("Exception fetching DM messages", {
-        error,
-        userId,
-        otherUserId,
-      });
-      return [];
-    }
+    return directMessagesData.getDirectMessages(
+      this.supabase,
+      {
+        attachReplyPreviewsBatch: (rows, table) =>
+          this.attachReplyPreviewsBatch(rows, table),
+        attachThreadReplyCounts: (rows, table, scopeColumn, scopeId) =>
+          this.attachThreadReplyCounts(rows, table, scopeColumn, scopeId),
+        enrichDmMessageReceipts: (messages, threadId, uid, otherId) =>
+          this.enrichDmMessageReceipts(messages, threadId, uid, otherId),
+      },
+      userId,
+      otherUserId,
+      options,
+    );
   }
 
   async sendDirectMessage(
@@ -3910,330 +3818,45 @@ export class SupabaseService {
       replyToMessageId?: string;
     },
   ): Promise<Message> {
-    let asMessageRequest = false;
-
-    const { usersAreBlocked, resolveDirectMessageAccess } =
-      await import("../utils/userSettingsPolicy");
-    // Blocks always apply — even marketplace / bypassPrivacy paths.
-    if (await usersAreBlocked(this.supabase, senderId, recipientId)) {
-      throw new Error("You cannot message this user");
-    }
-
-    if (!options?.bypassPrivacy) {
-      const { data: recipientProfile, error: recipientError } =
-        await this.supabase
-          .from("profiles")
-          .select("settings")
-          .eq("id", recipientId)
-          .single();
-
-      if (recipientError || !recipientProfile) {
-        throw new Error("Recipient not found");
-      }
-
-      const access = await resolveDirectMessageAccess(
-        this.supabase,
-        senderId,
-        recipientId,
-        recipientProfile.settings,
-      );
-      if (access.mode === "deny") {
-        throw new Error(access.reason || "Direct messages are not allowed");
-      }
-      asMessageRequest = access.mode === "request";
-    }
-
-    // Create thread ID from sorted user IDs
-    const sortedIds = [senderId, recipientId].sort();
-    const threadId = sortedIds.join("-");
-
-    try {
-      const { data: existingThread } = await this.supabase
-        .from("dm_threads")
-        .select("id, status, requested_by, archived_by, history_cleared_at")
-        .eq("id", threadId)
-        .maybeSingle();
-
-      // Marketplace / bypass and recipient replies open the thread; cold outreach stays pending.
-      let nextStatus: "open" | "pending" | "declined" = "open";
-      let nextRequestedBy: string | null = null;
-      if (options?.bypassPrivacy) {
-        nextStatus = "open";
-        nextRequestedBy = null;
-      } else if (asMessageRequest) {
-        nextStatus = "pending";
-        nextRequestedBy =
-          (typeof existingThread?.requested_by === "string" &&
-            existingThread.requested_by) ||
-          senderId;
-      } else if (
-        existingThread?.status === "pending" &&
-        existingThread.requested_by !== senderId
-      ) {
-        // Recipient replied → accept.
-        nextStatus = "open";
-        nextRequestedBy = null;
-      } else if (existingThread?.status === "open") {
-        nextStatus = "open";
-        nextRequestedBy = null;
-      } else {
-        nextStatus = "open";
-        nextRequestedBy = null;
-      }
-
-      const { error: threadError } = await this.supabase
-        .from("dm_threads")
-        .upsert(
-          {
-            id: threadId,
-            participant_ids: sortedIds,
-            participants: {},
-            last_message: content,
-            last_message_time: new Date().toISOString(),
-            status: nextStatus,
-            requested_by: nextRequestedBy,
-          },
-          { onConflict: "id" },
-        );
-
-      if (threadError) {
-        logger.error("Error creating/updating DM thread", {
-          error: threadError,
-        });
-        throw new Error(`Failed to create DM thread: ${threadError.message}`);
-      }
-
-      // Insert the message
-      const insertPayload: Record<string, unknown> = {
-        thread_id: threadId,
-        sender_id: senderId,
-        text: content,
-      };
-      if (options?.clientMessageId) {
-        insertPayload.client_message_id = options.clientMessageId;
-      }
-      if (options?.replyToMessageId) {
-        insertPayload.reply_to_message_id = options.replyToMessageId;
-        insertPayload.thread_root_id = await this.resolveThreadRootForReply(
-          "dm_messages",
-          options.replyToMessageId,
-          { threadId },
-        );
-      }
-
-      const dmSelect = `
-          id,
-          thread_id,
-          sender_id,
-          text,
-          timestamp,
-          edited_at,
-          removed_at,
-          client_message_id,
-          reply_to_message_id,
-          thread_root_id,
-          profiles:sender_id (
-            id,
-            name,
-            avatar_url
-          )
-        `;
-
-      const { data, error } = await this.supabase
-        .from("dm_messages")
-        .insert(insertPayload)
-        .select(dmSelect)
-        .single();
-
-      if (error) {
-        if (error.code === "23505" && options?.clientMessageId) {
-          const { data: existing } = await this.supabase
-            .from("dm_messages")
-            .select(dmSelect)
-            .eq("thread_id", threadId)
-            .eq("sender_id", senderId)
-            .eq("client_message_id", options.clientMessageId)
-            .maybeSingle();
-          if (existing) {
-            const withReply = await this.attachReplyPreview(
-              existing,
-              "dm_messages",
-            );
-            return {
-              id: withReply.id,
-              sender: mapProfileSender(
-                resolveNestedProfile(withReply.profiles),
-                withReply.sender_id,
-              ),
-              senderId: withReply.sender_id,
-              recipientId,
-              timestamp: new Date(withReply.timestamp),
-              type: "TEXT" as const,
-              ...(!withReply.removed_at ? { text: withReply.text } : {}),
-              editedAt: withReply.edited_at || undefined,
-              removedAt: withReply.removed_at || undefined,
-              isRemoved: !!withReply.removed_at,
-              upvotes: 0,
-              downvotes: 0,
-              flaggedAsSimilarUserIds: [],
-              clientMessageId:
-                withReply.client_message_id || options?.clientMessageId || undefined,
-              replyToMessageId: withReply.reply_to_message_id || undefined,
-              replyTo: withReply.replyTo || undefined,
-              threadRootId: withReply.thread_root_id || undefined,
-              replyCount: 0,
-              receiptStatus: "sent" as const,
-            } as unknown as Message;
-          }
-        }
-        logger.error("Error inserting DM message", { error });
-        throw new Error(`Failed to send DM: ${error.message}`);
-      }
-
-      // Un-archive for recipient, un-hide for inbox resurrection, and update
-      // last message. Clearing hidden_by resurfaces the thread. Clear the *sender's*
-      // history_cleared_at so their first message after delete-for-me is visible;
-      // the recipient's cutoff is preserved.
-      const archivedBy: string[] = Array.isArray(existingThread?.archived_by)
-        ? existingThread.archived_by
-        : [];
-      const updatedArchivedBy = archivedBy.filter(
-        (id: string) => id !== recipientId,
-      );
-      const nextHistoryClearedAt = clearDmHistoryClearedAtForUser(
-        existingThread?.history_cleared_at,
-        senderId,
-      );
-
-      await this.supabase
-        .from("dm_threads")
-        .update({
-          last_message: content,
-          last_message_time: new Date().toISOString(),
-          archived_by: updatedArchivedBy,
-          hidden_by: [],
-          status: nextStatus,
-          requested_by: nextRequestedBy,
-          history_cleared_at: nextHistoryClearedAt,
-        })
-        .eq("id", threadId);
-
-      const senderProfile = Array.isArray(data.profiles)
-        ? (data.profiles as unknown as any[])[0]
-        : (data.profiles as unknown as any);
-      const senderName = senderProfile?.name || "Someone";
-      const preview =
-        content.length > 80 ? `${content.slice(0, 80)}…` : content;
-      const isRequestNotify = nextStatus === "pending";
-
-      void this.createNotification(recipientId, {
-        message: isRequestNotify
-          ? `${senderName} sent a message request: "${preview}"`
-          : `${senderName} sent you a message`,
-        link: `dm:${threadId}:${senderId}`,
-        type: isRequestNotify ? "dm_message_request" : "dm_message",
-        data: {
-          threadId,
-          senderId,
-          messageId: data.id,
-          preview,
-          status: nextStatus,
-        },
-      }).catch((err) => {
-        logger.error("Failed to create DM notification", {
-          error: err,
-          recipientId,
-          threadId,
-        });
-      });
-
-      const withReply = await this.attachReplyPreview(data, "dm_messages");
-      return {
-        id: withReply.id,
-        sender: mapProfileSender(
-          resolveNestedProfile(withReply.profiles),
-          withReply.sender_id,
-        ),
-        senderId: withReply.sender_id,
-        recipientId,
-        timestamp: new Date(withReply.timestamp),
-        type: "TEXT" as const,
-        text: withReply.text,
-        editedAt: withReply.edited_at || undefined,
-        removedAt: withReply.removed_at || undefined,
-        isRemoved: !!withReply.removed_at,
-        upvotes: 0,
-        downvotes: 0,
-        flaggedAsSimilarUserIds: [],
-        clientMessageId:
-          withReply.client_message_id || options?.clientMessageId || undefined,
-        replyToMessageId: withReply.reply_to_message_id || undefined,
-        replyTo: withReply.replyTo || undefined,
-        threadRootId: withReply.thread_root_id || undefined,
-        replyCount: 0,
-        receiptStatus: "sent" as const,
-        threadStatus: nextStatus,
-        isMessageRequest: nextStatus === "pending",
-      } as unknown as Message;
-    } catch (error: any) {
-      logger.error("Exception sending DM", {
-        error: error.message,
-        senderId,
-        recipientId,
-      });
-      throw error;
-    }
+    return directMessagesData.sendDirectMessage(
+      this.supabase,
+      {
+        attachReplyPreview: (row, table) =>
+          this.attachReplyPreview(row, table),
+        resolveThreadRootForReply: (table, replyToMessageId, scope) =>
+          this.resolveThreadRootForReply(table, replyToMessageId, scope),
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification),
+      },
+      senderId,
+      recipientId,
+      content,
+      options,
+    );
   }
 
   async blockUser(blockerId: string, blockedId: string): Promise<void> {
-    if (!blockerId || !blockedId || blockerId === blockedId) {
-      throw new Error("Invalid block request");
-    }
-    const { error } = await this.supabase
-      .from("user_blocks")
-      .upsert(
-        { blocker_id: blockerId, blocked_id: blockedId },
-        { onConflict: "blocker_id,blocked_id" },
-      );
-    if (error) throw error;
+    return directMessagesData.blockUser(this.supabase, blockerId, blockedId);
   }
 
   async unblockUser(blockerId: string, blockedId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("user_blocks")
-      .delete()
-      .eq("blocker_id", blockerId)
-      .eq("blocked_id", blockedId);
-    if (error) throw error;
+    return directMessagesData.unblockUser(this.supabase, blockerId, blockedId);
   }
 
   async listBlockedUserIds(blockerId: string): Promise<string[]> {
-    const { data, error } = await this.supabase
-      .from("user_blocks")
-      .select("blocked_id")
-      .eq("blocker_id", blockerId)
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return (data || [])
-      .map((row: { blocked_id?: string }) => row.blocked_id)
-      .filter((id: string | undefined): id is string => typeof id === "string");
+    return directMessagesData.listBlockedUserIds(this.supabase, blockerId);
   }
 
   async isDmBlockedBetween(userIdA: string, userIdB: string): Promise<boolean> {
-    const { usersAreBlocked } = await import("../utils/userSettingsPolicy");
-    return usersAreBlocked(this.supabase, userIdA, userIdB);
+    return directMessagesData.isDmBlockedBetween(
+      this.supabase,
+      userIdA,
+      userIdB,
+    );
   }
 
   async didUserBlock(blockerId: string, blockedId: string): Promise<boolean> {
-    if (!blockerId || !blockedId || blockerId === blockedId) return false;
-    const { data, error } = await this.supabase
-      .from("user_blocks")
-      .select("blocker_id")
-      .eq("blocker_id", blockerId)
-      .eq("blocked_id", blockedId)
-      .maybeSingle();
-    if (error && error.code !== "PGRST116") throw error;
-    return !!data?.blocker_id;
+    return directMessagesData.didUserBlock(this.supabase, blockerId, blockedId);
   }
 
   async acceptDmMessageRequest(
@@ -4244,69 +3867,22 @@ export class SupabaseService {
     status: "open";
     requestedBy: null;
   }> {
-    const { data: thread, error } = await this.supabase
-      .from("dm_threads")
-      .select("id, participant_ids, status, requested_by")
-      .eq("id", threadId)
-      .maybeSingle();
-    if (error && error.code !== "PGRST116") throw error;
-    if (!thread) throw new Error("Thread not found");
-
-    const pids = Array.isArray(thread.participant_ids)
-      ? thread.participant_ids
-      : [];
-    if (!pids.includes(userId)) throw new Error("Access denied");
-    if (thread.status === "open") {
-      return { id: thread.id, status: "open", requestedBy: null };
-    }
-    if (thread.status !== "pending") {
-      throw new Error("This message request cannot be accepted");
-    }
-    if (thread.requested_by === userId) {
-      throw new Error("Only the recipient can accept this message request");
-    }
-
-    const otherId = pids.find((id: string) => id !== userId);
-    if (otherId && (await this.isDmBlockedBetween(userId, otherId))) {
-      throw new Error("You cannot message this user");
-    }
-
-    const { error: updateError } = await this.supabase
-      .from("dm_threads")
-      .update({ status: "open", requested_by: null })
-      .eq("id", threadId);
-    if (updateError) throw updateError;
-
-    // North-star metric (Phase 3 · O): accepting a request is the accepter
-    // opening a channel for the requester, so the accepter is the actor.
-    // objectType is deliberately NULL: the learning_connections CHECK allows
-    // only challenge|question|deck|note|listing|order|review|profile, and a
-    // 'dm_thread' value would fail it — silently, since record() swallows.
-    if (thread?.requested_by) {
-      const { getLearningConnectionsService } = await import("./learningConnections");
-      await getLearningConnectionsService(this).record({
-        actorId: userId,
-        beneficiaryId: thread.requested_by as string,
-        kind: "dm_accepted",
-        objectId: threadId,
-      });
-    }
-
-    if (typeof thread.requested_by === "string") {
-      void this.createNotification(thread.requested_by, {
-        message: "Your message request was accepted",
-        link: `dm:${threadId}:${userId}`,
-        type: "dm_message",
-        data: { threadId, senderId: userId, status: "open" },
-      }).catch((err) => {
-        logger.warn("Failed to notify requester of accepted DM request", {
-          err,
-          threadId,
-        });
-      });
-    }
-
-    return { id: threadId, status: "open", requestedBy: null };
+    return directMessagesData.acceptDmMessageRequest(
+      this.supabase,
+      {
+        isDmBlockedBetween: (a, b) => this.isDmBlockedBetween(a, b),
+        recordLearningConnection: async (input) => {
+          const { getLearningConnectionsService } = await import(
+            "./learningConnections"
+          );
+          await getLearningConnectionsService(this).record(input as never);
+        },
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification),
+      },
+      threadId,
+      userId,
+    );
   }
 
   async declineDmMessageRequest(
@@ -4317,45 +3893,11 @@ export class SupabaseService {
     status: "declined";
     requestedBy: string | null;
   }> {
-    const { data: thread, error } = await this.supabase
-      .from("dm_threads")
-      .select("id, participant_ids, status, requested_by")
-      .eq("id", threadId)
-      .maybeSingle();
-    if (error && error.code !== "PGRST116") throw error;
-    if (!thread) throw new Error("Thread not found");
-
-    const pids = Array.isArray(thread.participant_ids)
-      ? thread.participant_ids
-      : [];
-    if (!pids.includes(userId)) throw new Error("Access denied");
-    if (thread.status === "declined") {
-      return {
-        id: thread.id,
-        status: "declined",
-        requestedBy:
-          typeof thread.requested_by === "string" ? thread.requested_by : null,
-      };
-    }
-    if (thread.status !== "pending") {
-      throw new Error("This message request cannot be declined");
-    }
-    if (thread.requested_by === userId) {
-      throw new Error("Only the recipient can decline this message request");
-    }
-
-    const { error: updateError } = await this.supabase
-      .from("dm_threads")
-      .update({ status: "declined" })
-      .eq("id", threadId);
-    if (updateError) throw updateError;
-
-    return {
-      id: threadId,
-      status: "declined",
-      requestedBy:
-        typeof thread.requested_by === "string" ? thread.requested_by : null,
-    };
+    return directMessagesData.declineDmMessageRequest(
+      this.supabase,
+      threadId,
+      userId,
+    );
   }
 
   async searchMessages(
@@ -4367,76 +3909,14 @@ export class SupabaseService {
       requestingUserId?: string;
     } = {},
   ): Promise<Message[]> {
-    const { groupId, userId, limit = 50, requestingUserId } = options;
-
-    // Build search query
-    let searchQuery = this.supabase
-      .from("messages")
-      .select(
-        `
-        id,
-        group_id,
-        sender_id,
-        type,
-        text,
-        question_data,
-        flagged_as_similar_user_ids,
-        timestamp,
-        profiles!sender_id (
-          id,
-          name,
-          username,
-          avatar_url
-        )
-      `,
-      )
-      .ilike("text", `%${query}%`)
-      .is("removed_at", null)
-      .eq("is_archived", false)
-      .limit(limit);
-
-    if (groupId) {
-      searchQuery = searchQuery.eq("group_id", groupId);
-    }
-
-    if (userId) {
-      searchQuery = searchQuery.eq("sender_id", userId);
-    }
-
-    // If requesting user is specified, only search in groups they're members of
-    if (requestingUserId && !groupId) {
-      const { data: memberGroups, error: memberError } = await this.supabase
-        .from("group_members")
-        .select("group_id")
-        .eq("user_id", requestingUserId);
-
-      if (memberError) throw memberError;
-
-      const groupIds = memberGroups?.map((mg) => mg.group_id) || [];
-      if (groupIds.length === 0) return [];
-
-      searchQuery = searchQuery.in("group_id", groupIds);
-    }
-
-    const { data, error } = await searchQuery.order("timestamp", {
-      ascending: false,
-    });
-
-    if (error) throw error;
-
-    return (data || []).map((msg: any) => ({
-      id: msg.id,
-      groupId: msg.group_id,
-      sender: mapProfileSender(msg.profiles, msg.sender_id),
-      senderId: msg.sender_id,
-      timestamp: msg.timestamp
-        ? new Date(msg.timestamp).toISOString()
-        : new Date().toISOString(),
-      flaggedAsSimilarUserIds: msg.flagged_as_similar_user_ids || [],
-      upvotes: 0,
-      downvotes: 0,
-      ...this.normalizeMessageRecord(msg),
-    }));
+    return directMessagesData.searchMessages(
+      this.supabase,
+      {
+        normalizeMessageRecord: (row) => this.normalizeMessageRecord(row),
+      },
+      query,
+      options,
+    );
   }
 
   // ===========================================================================
