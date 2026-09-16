@@ -118,11 +118,15 @@ export {
 import * as academicData from "./data/academic";
 import * as decksData from "./data/decks";
 import * as uploadsData from "./data/uploads";
-import { writeWithTopicFallback } from "./data/academic";
+import {
+  resolveCourseIdFromConfigLike,
+  writeWithTopicFallback,
+} from "./data/academic";
 import * as adminAnalyticsData from "./data/adminAnalytics";
 import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
 import * as notificationsData from "./data/notifications";
+import * as offlineBundlesData from "./data/offlineBundles";
 import * as storageAclData from "./data/storageAcl";
 import * as usersData from "./data/users";
 import {
@@ -388,20 +392,9 @@ export type BoardBookmarkPage = {
 // `data/users.ts` (monolith lane M1b, step 6) with the USERS AND PROFILES
 // section, their only caller. They stay module-private to the data layer.
 
-/**
- * Course reference carried on test/bundle payloads: top-level `courseId` wins,
- * else `config.courseId`. Anything that is not a UUID is ignored (null).
- */
-const COURSE_UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-function resolveCourseIdFromConfigLike(
-  payload: { courseId?: unknown; config?: { courseId?: unknown } | null } | null | undefined,
-): string | null {
-  const candidate = payload?.courseId ?? payload?.config?.courseId ?? null;
-  return typeof candidate === "string" && COURSE_UUID_RE.test(candidate)
-    ? candidate
-    : null;
-}
+// `resolveCourseIdFromConfigLike` moved to `data/academic.ts` (monolith lane
+// M1c, step 9): the OFFLINE BUNDLES and TESTS sections are its only callers
+// and they now land in two different data modules. Imported above.
 
 /**
  * Topic reference on the same payloads. Returned RAW, unlike the course above:
@@ -858,8 +851,9 @@ export class SupabaseService {
   private static readonly MAX_GROUP_PAGE_SIZE = 50;
   private static readonly DEFAULT_DECK_PAGE_SIZE = 20;
   private static readonly MAX_DECK_PAGE_SIZE = 50;
-  private static readonly DEFAULT_FLASHCARD_PAGE_SIZE = 50;
-  private static readonly MAX_FLASHCARD_PAGE_SIZE = 100;
+  // DEFAULT_FLASHCARD_PAGE_SIZE / MAX_FLASHCARD_PAGE_SIZE moved to
+  // `data/offlineBundles.ts` (monolith lane M1c, step 9) with `getFlashcards`,
+  // their only reader.
   private static readonly DEFAULT_MESSAGE_PAGE_SIZE = 50;
   private static readonly MAX_MESSAGE_PAGE_SIZE = 100;
 
@@ -4184,6 +4178,20 @@ export class SupabaseService {
   // target is the plain `(user_id, bundle_id)` unique index, so re-saving a
   // bundle replaces the snapshot rather than accumulating copies.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1c, step 9): the bodies now live in
+  // `data/offlineBundles.ts`. Only the first three methods are really about
+  // bundles — the deck access gate, the flashcard row layer and the
+  // per-question stats drifted under this banner years ago and move as one
+  // unit so the plan's step boundary stays honest. See that module's banner.
+  //
+  // Several of these methods call each other. The `deps` literal is written
+  // out INLINE at all nine call sites that need it, and it MUST stay that way.
+  // `supabase.resetDeck.test.ts`, `learningEvents.test.ts` and
+  // `supabase.deckWithCards.test.ts` stub these methods on a bare stand-in and
+  // drive the entry point through `SupabaseService.prototype.<m>.call(self, …)`;
+  // an instance field holding the deps reads as `undefined` there, and the
+  // arrows read `this.<method>` at CALL time so a `jest.spyOn` still
+  // intercepts.
   // Offline bundle persistence
   async getOfflineBundles(
     userId: string,
@@ -4192,126 +4200,28 @@ export class SupabaseService {
       courseFilter?: CourseFilter;
     } = {},
   ): Promise<any[]> {
-    let query = this.supabase
-      .from("offline_bundles")
-      .select("*")
-      .eq("user_id", userId)
-      .order("downloaded_at", { ascending: false });
-    query = applyCourseFilter(query, "course_id", options.courseFilter);
-
-    const { data, error } = await query;
-
-    if (error) {
-      logger.error("Error fetching offline bundles:", { error, userId });
-      throw error;
-    }
-
-    return data || [];
+    return offlineBundlesData.getOfflineBundles(this.supabase, userId, options);
   }
 
   async saveOfflineBundle(userId: string, bundle: any): Promise<void> {
-    // Course lives in BOTH the column (filterable) and config.courseId (the
-    // shape the offline runtime already round-trips).
-    const courseId = resolveCourseIdFromConfigLike(bundle);
-    const config = { ...(bundle.config || {}) };
-    if (courseId) config.courseId = courseId;
-    else if (bundle.courseId === null) delete config.courseId;
-    const insert = {
-      user_id: userId,
-      bundle_id: bundle.bundleId,
-      config,
-      course_id: courseId,
-      questions: bundle.questions || [],
-      group_name: bundle.groupName || null,
-      display_name: bundle.displayName ?? null,
-      downloaded_at: bundle.downloadedAt || new Date().toISOString(),
-    };
-
-    const { data, error } = await this.supabase
-      .from("offline_bundles")
-      .upsert(insert, { onConflict: "user_id,bundle_id" });
-
-    if (error) {
-      logger.error("Error saving offline bundle:", {
-        error,
-        userId,
-        bundleId: bundle.bundleId,
-      });
-      throw error;
-    }
-
-    return;
+    return offlineBundlesData.saveOfflineBundle(this.supabase, userId, bundle);
   }
 
   async deleteOfflineBundle(userId: string, bundleId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("offline_bundles")
-      .delete()
-      .eq("user_id", userId)
-      .eq("bundle_id", bundleId);
-
-    if (error) {
-      logger.error("Error deleting offline bundle:", {
-        error,
-        userId,
-        bundleId,
-      });
-      throw error;
-    }
-
-    return;
+    return offlineBundlesData.deleteOfflineBundle(
+      this.supabase,
+      userId,
+      bundleId,
+    );
   }
 
   async getAccessibleDeckIds(userId: string): Promise<string[]> {
-    const [
-      { data: ownedDecks, error: ownedError },
-      { data: collaboratorRows, error: collabError },
-    ] = await Promise.all([
-      this.supabase.from("decks").select("id").eq("user_id", userId),
-      this.supabase
-        .from("deck_collaborators")
-        .select("deck_id")
-        .eq("user_id", userId),
-    ]);
-
-    if (ownedError) throw ownedError;
-    if (collabError) throw collabError;
-
-    const ids = new Set<string>();
-    for (const deck of ownedDecks || []) ids.add(deck.id);
-    for (const row of collaboratorRows || []) {
-      if (row.deck_id) ids.add(row.deck_id);
-    }
-    return Array.from(ids);
+    return offlineBundlesData.getAccessibleDeckIds(this.supabase, userId);
   }
 
   /** Internal fetch — no access check. */
   private async fetchDeckRecord(deckId: string): Promise<any | null> {
-    // study_set_id: this record is what a deck read is answered from, and a
-    // projection that omits the column reports every deck as unfiled.
-    const BASE =
-      "id, name, description, user_id, is_shared, course_id, study_set_id, created_at";
-    const run = (withCover: boolean) =>
-      this.supabase
-        .from("decks")
-        .select(withCover ? `${BASE}, cover_path` : BASE)
-        .eq("id", deckId)
-        .maybeSingle();
-
-    // cover_path is projected only while it exists — naming a column the
-    // migration has not added yet 42703s EVERY deck read, and deck reads gate
-    // access checks, so that would take the whole flashcards feature down.
-    let { data, error }: { data: any; error: any } = await run(true);
-    if (error && isMissingCoverPathColumn(error)) {
-      ({ data, error } = await run(false));
-    }
-
-    if (error) throw error;
-    if (!data) return null;
-    return {
-      ...data,
-      coverPath: normalizeCoverRef((data as any).cover_path ?? null),
-    };
+    return offlineBundlesData.fetchDeckRecord(this.supabase, deckId);
   }
 
   async verifyDeckAccess(
@@ -4319,67 +4229,73 @@ export class SupabaseService {
     deckId: string,
     level: "read" | "edit" | "owner" = "read",
   ): Promise<boolean> {
-    const deck = await this.fetchDeckRecord(deckId);
-    if (!deck) return false;
-
-    const isOwner = deck.user_id === userId;
-    if (level === "owner") return isOwner;
-    if (isOwner) return true;
-
-    const { data: collab, error: collabError } = await this.supabase
-      .from("deck_collaborators")
-      .select("role")
-      .eq("deck_id", deckId)
-      .eq("user_id", userId)
-      .maybeSingle();
-
-    if (collabError) throw collabError;
-
-    if (collab) {
-      if (level === "read") return true;
-      if (level === "edit")
-        return collab.role === "editor" || collab.role === "owner";
-    }
-
-    if (level === "read" && deck.is_shared) return true;
-    return false;
+    return offlineBundlesData.verifyDeckAccess(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+      deckId,
+      level,
+    );
   }
 
   async getDeckForUser(deckId: string, userId: string): Promise<any | null> {
-    const cacheKey = `deck:${deckId}:user:${userId}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached !== null) return cached;
-
-    const hasAccess = await this.verifyDeckAccess(userId, deckId, "read");
-    if (!hasAccess) return null;
-
-    const deck = await this.fetchDeckRecord(deckId);
-    if (deck) await cacheService.set(cacheKey, deck, 1800);
-    return deck;
+    return offlineBundlesData.getDeckForUser(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
+    );
   }
 
   async getFlashcardForUser(
     flashcardId: string,
     userId: string,
   ): Promise<any | null> {
-    const cacheKey = `flashcard:${flashcardId}:user:${userId}`;
-    const cached = await cacheService.get<any>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("id", flashcardId)
-      .maybeSingle();
-
-    if (error) throw error;
-    if (!data) return null;
-
-    const hasAccess = await this.verifyDeckAccess(userId, data.deck_id, "read");
-    if (!hasAccess) return null;
-
-    await cacheService.set(cacheKey, data, 1800);
-    return data;
+    return offlineBundlesData.getFlashcardForUser(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardId,
+      userId,
+    );
   }
 
   async getFlashcards(
@@ -4391,85 +4307,34 @@ export class SupabaseService {
       responseProfile?: "compact" | "full";
     },
   ): Promise<any[]> {
-    const {
-      page = 1,
-      limit = SupabaseService.DEFAULT_FLASHCARD_PAGE_SIZE,
-      responseProfile = "full",
-    } = options || {};
-    const profile = this.getResponseProfile(responseProfile);
-    const safeLimit = Math.min(
-      SupabaseService.MAX_FLASHCARD_PAGE_SIZE,
-      Math.max(1, limit),
+    return offlineBundlesData.getFlashcards(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+      deckId,
+      options,
     );
-    const safePage = Math.max(1, page);
-    const offset = (safePage - 1) * safeLimit;
-
-    const selectClause =
-      profile === "compact"
-        ? "id, deck_id, type, front, image_url, tags, created_at, version, updated_at"
-        : "id, deck_id, type, front, back, cloze_text, image_url, occlusion_data, srs_data, tags, created_at, version, updated_at";
-
-    const accessibleDeckIds = await this.getAccessibleDeckIds(userId);
-
-    if (accessibleDeckIds.length === 0) {
-      return [];
-    }
-
-    let query = this.supabase
-      .from("flashcards")
-      .select(selectClause)
-      .in("deck_id", accessibleDeckIds)
-      .order("created_at", { ascending: false });
-
-    if (deckId) {
-      if (!accessibleDeckIds.includes(deckId)) {
-        return [];
-      }
-      query = query.eq("deck_id", deckId);
-    }
-
-    const { data, error } = await query.range(offset, offset + safeLimit - 1);
-
-    if (error) throw error;
-
-    return data || [];
   }
 
   async getFlashcard(flashcardId: string): Promise<any | null> {
-    const cacheKey = `flashcard:${flashcardId}`;
-    const cached = await cacheService.get<any>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .select("*")
-      .eq("id", flashcardId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return offlineBundlesData.getFlashcard(this.supabase, flashcardId);
   }
 
   async getFlashcardComments(flashcardId: string): Promise<any[]> {
-    const cacheKey = `flashcard_comments:${flashcardId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    if (cached !== null) return cached;
-
-    const { data, error } = await this.supabase
-      .from("flashcard_comments")
-      .select("*")
-      .eq("flashcard_id", flashcardId)
-      .order("created_at", { ascending: true });
-
-    if (error) throw error;
-
-    await cacheService.set(cacheKey, data, 300);
-    return data;
+    return offlineBundlesData.getFlashcardComments(this.supabase, flashcardId);
   }
 
   async addFlashcardComment(
@@ -4477,16 +4342,12 @@ export class SupabaseService {
     userId: string,
     comment: string,
   ): Promise<any> {
-    const { data, error } = await this.supabase
-      .from("flashcard_comments")
-      .insert({ flashcard_id: flashcardId, user_id: userId, comment })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    await cacheService.delete(`flashcard_comments:${flashcardId}`);
-    return data;
+    return offlineBundlesData.addFlashcardComment(
+      this.supabase,
+      flashcardId,
+      userId,
+      comment,
+    );
   }
 
   async reviewFlashcard(
@@ -4501,116 +4362,27 @@ export class SupabaseService {
       occurredAt?: string | null;
     } = {},
   ): Promise<any | null> {
-    const existing = await this.getFlashcardForUser(flashcardId, userId);
-    if (!existing) return null;
-
-    const canEdit = await this.verifyDeckAccess(
-      userId,
-      existing.deck_id,
-      "edit",
-    );
-    if (!canEdit) return null;
-
-    const prefs = await this.getUserPreferences(userId);
-    const settings = normalizeUserSettings(
-      prefs?.preferences ?? prefs?.settings ?? {},
-    );
-    const newSrsData = calculateFsrsData(existing.srs_data, rating, {
-      maxInterval: getSrsMaxInterval(settings.study),
-    });
-
-    const expectedVersion =
-      options.expectedVersion != null &&
-      Number.isFinite(Number(options.expectedVersion))
-        ? Number(options.expectedVersion)
-        : Number(existing.version) || 1;
-    const updated = await this.updateFlashcard(
+    return offlineBundlesData.reviewFlashcard(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
       flashcardId,
-      { srsData: newSrsData },
       userId,
-      { expectedVersion },
+      rating,
+      options,
     );
-
-    // learning_events: card_reviewed with the FSRS state before/after. Only
-    // after the CAS write landed (a 409 throws above and emits nothing).
-    // recordLearningEvent never throws — the review never fails on telemetry.
-    if (updated) {
-      // One round trip for BOTH the course id (telemetry, as before) and the
-      // deck owner (needed by the two Phase 3 writes below) — same query count
-      // this path had previously.
-      const deckMeta = await lookupDeckOwnerAndCourse(this, existing.deck_id);
-
-      await recordLearningEvent(
-        this,
-        buildCardReviewedEvent({
-          userId,
-          flashcardId,
-          deckId: existing.deck_id,
-          courseId: deckMeta.courseId,
-          rating,
-          srsBefore: existing.srs_data ?? null,
-          srsAfter: updated.srs_data ?? newSrsData,
-          surface: options.surface ?? "api",
-          occurredAt: options.occurredAt ?? null,
-        }),
-      );
-
-      // Keep the mastery graph's card-side numbers (due counts, maturity)
-      // moving with reviews, not only test submissions. The service debounces
-      // (30s), so a 60-card session costs a couple of refreshes, and
-      // refresh() never throws — a stale graph must not fail a review.
-      try {
-        const { getTopicMasteryService } = await import("./topicMastery");
-        getTopicMasteryService(this).refreshAsync(userId);
-      } catch {
-        /* mastery refresh is best-effort */
-      }
-
-      // Phase 3 M + O — "this person studied this deck", at most once per
-      // window per (deck, user).
-      //
-      // This is the hottest path in the app: it fires on EVERY graded card, so
-      // a realistic session is 20-100 calls of which exactly one is useful.
-      // record_deck_study is idempotent (it counts distinct people, not
-      // sessions), so an unguarded call would be correct but would burn a
-      // round trip per card. The cache key is set only AFTER the work resolves,
-      // so a transient failure retries on the next card instead of being
-      // suppressed for the whole window.
-      if (deckMeta.ownerId && deckMeta.ownerId !== userId) {
-        const studyKey = `deck_study:${existing.deck_id}:${userId}`;
-        void (async () => {
-          try {
-            if (await cacheService.get(studyKey)) return;
-            // supabase-js RESOLVES on a PostgREST/Postgres error rather than
-            // rejecting, so the result must be inspected. Without this the
-            // catch below never fires, the key is stamped anyway, and the
-            // "transient failures self-heal on the next card" promise in the
-            // comment above is silently false for a full 6 hours.
-            const { error: studyError } = await this.supabase.rpc("record_deck_study", {
-              p_deck_id: existing.deck_id,
-              p_user_id: userId,
-            });
-            if (studyError) throw studyError;
-            const { getLearningConnectionsService } = await import("./learningConnections");
-            await getLearningConnectionsService(this).record({
-              // The deck's OWNER is the actor — their deck taught someone.
-              // `userId` here is the STUDIER and is the beneficiary; passing it
-              // as actorId would invert the metric.
-              actorId: deckMeta.ownerId as string,
-              beneficiaryId: userId,
-              kind: "deck_collaborated",
-              objectType: "deck",
-              objectId: existing.deck_id,
-              courseId: deckMeta.courseId,
-            });
-            await cacheService.set(studyKey, 1, 6 * 60 * 60);
-          } catch {
-            /* best-effort: a counter must never fail a review */
-          }
-        })();
-      }
-    }
-    return updated;
   }
 
   async updateFlashcard(
@@ -4627,100 +4399,52 @@ export class SupabaseService {
     userId?: string,
     options: { expectedVersion?: number } = {},
   ): Promise<any | null> {
-    const existing = userId
-      ? await this.getFlashcardForUser(flashcardId, userId)
-      : await this.getFlashcard(flashcardId);
-    if (!existing) return null;
-    if (userId) {
-      const canEdit = await this.verifyDeckAccess(
-        userId,
-        existing.deck_id,
-        "edit",
-      );
-      if (!canEdit) return null;
-    }
-
-    // Build update object with only defined fields.
-    // CLOZE rows require front/back NULL (check_flashcard_fields); clients often
-    // send front:'' which must not be written as an empty string.
-    const updateData: any = buildFlashcardUpdateData(existing.type, updates);
-
-    // If no fields to update, just return the current flashcard
-    if (Object.keys(updateData).length === 0) {
-      return existing;
-    }
-
-    const expectedVersion =
-      options.expectedVersion != null
-        ? Number(options.expectedVersion)
-        : Number(existing.version) || 1;
-
-    const { data, error } = await this.supabase
-      .from("flashcards")
-      .update(updateData)
-      .eq("id", flashcardId)
-      .eq("version", expectedVersion)
-      .select()
-      .maybeSingle();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      logger.error("Error updating flashcard:", {
-        error,
-        flashcardId,
-        updates,
-      });
-      throw new Error(error.message || "Failed to update flashcard");
-    }
-
-    if (!data) {
-      const current = userId
-        ? await this.getFlashcardForUser(flashcardId, userId)
-        : await this.getFlashcard(flashcardId);
-      throw new VersionConflictError(
-        "Flashcard was updated by another request. Retry the review.",
-        current,
-      );
-    }
-
-    // Update cache and invalidate deck cache
-    await cacheService.set(`flashcard:${flashcardId}`, data, 1800);
-    if (userId)
-      await cacheService.delete(`flashcard:${flashcardId}:user:${userId}`);
-    await cacheService.deletePattern(`flashcards:*`);
-
-    return data;
+    return offlineBundlesData.updateFlashcard(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardId,
+      updates,
+      userId,
+      options,
+    );
   }
 
   async deleteFlashcard(
     flashcardId: string,
     userId?: string,
   ): Promise<boolean> {
-    const flashcard = userId
-      ? await this.getFlashcardForUser(flashcardId, userId)
-      : await this.getFlashcard(flashcardId);
-    if (!flashcard) return false;
-    if (userId) {
-      const canEdit = await this.verifyDeckAccess(
-        userId,
-        flashcard.deck_id,
-        "edit",
-      );
-      if (!canEdit) return false;
-    }
-
-    const { error } = await this.supabase
-      .from("flashcards")
-      .delete()
-      .eq("id", flashcardId);
-
-    if (error) throw error;
-
-    // Clear caches
-    await cacheService.delete(`flashcard:${flashcardId}`);
-    await cacheService.deletePattern(`flashcards:*`);
-
-    return true;
+    return offlineBundlesData.deleteFlashcard(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      flashcardId,
+      userId,
+    );
   }
 
   /**
@@ -4728,79 +4452,28 @@ export class SupabaseService {
    * render "Questions to review" even when lean test history omits questions.
    */
   private async attachQuestionStatStems(rows: any[]): Promise<any[]> {
-    if (!rows.length) return rows;
-    const questionIds = [
-      ...new Set(
-        rows
-          .map((row) => row?.question_id || row?.questionId)
-          .filter((id): id is string => typeof id === "string" && !!id),
-      ),
-    ];
-    if (!questionIds.length) return rows;
-
-    const { data: messages, error } = await this.supabase
-      .from("messages")
-      .select("id, group_id, text, question_data, groups:group_id(name)")
-      .in("id", questionIds);
-
-    if (error) {
-      logger.warn("Failed to attach question stems for user stats", { error });
-      return rows;
-    }
-
-    const byId = new Map<string, any>();
-    (messages || []).forEach((msg: any) => {
-      if (msg?.id) byId.set(msg.id, msg);
-    });
-
-    return rows.map((row) => {
-      const questionId = row?.question_id || row?.questionId;
-      const msg = questionId ? byId.get(questionId) : null;
-      if (!msg) return row;
-      const qd =
-        msg.question_data && typeof msg.question_data === "object"
-          ? msg.question_data
-          : {};
-      const stem =
-        (typeof qd.questionStem === "string" && qd.questionStem) ||
-        (typeof qd.question === "string" && qd.question) ||
-        (typeof qd.text === "string" && qd.text) ||
-        (typeof msg.text === "string" && msg.text) ||
-        null;
-      const groupProfile = Array.isArray(msg.groups)
-        ? msg.groups[0]
-        : msg.groups;
-      const groupName =
-        (typeof groupProfile?.name === "string" && groupProfile.name) || null;
-      return {
-        ...row,
-        question_stem: stem,
-        group_id: msg.group_id || row.group_id || null,
-        group_name: groupName,
-      };
-    });
+    return offlineBundlesData.attachQuestionStatStems(this.supabase, rows);
   }
 
   async getUserQuestionStats(userId: string): Promise<any[]> {
-    const cacheKey = `user-stats:${userId}`;
-    const cached = await cacheService.get<any[]>(cacheKey);
-    let rows: any[];
-    if (cached !== null && cached !== undefined) {
-      rows = Array.isArray(cached) ? cached : [];
-    } else {
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .select("*")
-        .eq("user_id", userId)
-        .order("last_attempted", { ascending: false });
-
-      if (error) throw error;
-
-      rows = Array.isArray(data) ? data : [];
-      await cacheService.set(cacheKey, rows, 1800); // 30 minutes
-    }
-
-    return this.attachQuestionStatStems(rows);
+    return offlineBundlesData.getUserQuestionStats(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      userId,
+    );
   }
 
   async updateUserQuestionStats(
@@ -4812,86 +4485,23 @@ export class SupabaseService {
       last_attempted?: Date;
     },
   ): Promise<any> {
-    // Check if stats exist
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_question_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("question_id", questionId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    let result;
-    if (existing) {
-      // Update existing stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .update({
-          correct_attempts:
-            stats.correct_attempts !== undefined
-              ? stats.correct_attempts
-              : existing.correct_attempts,
-          incorrect_attempts:
-            stats.incorrect_attempts !== undefined
-              ? stats.incorrect_attempts
-              : existing.incorrect_attempts,
-          last_attempted: stats.last_attempted || existing.last_attempted,
-        })
-        .eq("user_id", userId)
-        .eq("question_id", questionId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    } else {
-      // Create new stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .insert({
-          user_id: userId,
-          question_id: questionId,
-          correct_attempts: stats.correct_attempts || 0,
-          incorrect_attempts: stats.incorrect_attempts || 0,
-          last_attempted: stats.last_attempted || new Date(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    }
-
-    // Invalidate both cache key shapes used by summary + dedicated routes.
-    await cacheService.delete(`user-stats:${userId}`);
-    await cacheService.delete(`user:question-stats:${userId}`);
-
-    return result;
+    return offlineBundlesData.updateUserQuestionStats(
+      this.supabase,
+      userId,
+      questionId,
+      stats,
+    );
   }
 
   async getUserQuestionStat(
     userId: string,
     questionId: string,
   ): Promise<any | null> {
-    const cacheKey = `user-stat:${userId}:${questionId}`;
-    const cached = await cacheService.get(cacheKey);
-    if (cached !== null) return cached as any;
-
-    const { data, error } = await this.supabase
-      .from("user_question_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("question_id", questionId)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null;
-      throw error;
-    }
-
-    await cacheService.set(cacheKey, data, 1800); // 30 minutes
-    return data;
+    return offlineBundlesData.getUserQuestionStat(
+      this.supabase,
+      userId,
+      questionId,
+    );
   }
 
   async upsertUserQuestionStat(
@@ -4903,98 +4513,34 @@ export class SupabaseService {
       lastAttempted?: Date;
     },
   ): Promise<any> {
-    // Check if stats exist
-    const { data: existing, error: checkError } = await this.supabase
-      .from("user_question_stats")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("question_id", questionId)
-      .single();
-
-    if (checkError && checkError.code !== "PGRST116") throw checkError;
-
-    let result;
-    if (existing) {
-      // Update existing stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .update({
-          correct_attempts:
-            stats.correctAttempts !== undefined
-              ? stats.correctAttempts
-              : existing.correct_attempts,
-          incorrect_attempts:
-            stats.incorrectAttempts !== undefined
-              ? stats.incorrectAttempts
-              : existing.incorrect_attempts,
-          last_attempted: stats.lastAttempted || existing.last_attempted,
-        })
-        .eq("user_id", userId)
-        .eq("question_id", questionId)
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    } else {
-      // Create new stats
-      const { data, error } = await this.supabase
-        .from("user_question_stats")
-        .insert({
-          user_id: userId,
-          question_id: questionId,
-          correct_attempts: stats.correctAttempts || 0,
-          incorrect_attempts: stats.incorrectAttempts || 0,
-          last_attempted: stats.lastAttempted || new Date(),
-        })
-        .select()
-        .single();
-
-      if (error) throw error;
-      result = data;
-    }
-
-    // Invalidate both cache key shapes used by summary + dedicated routes.
-    await cacheService.delete(`user-stats:${userId}`);
-    await cacheService.delete(`user:question-stats:${userId}`);
-
-    return result;
+    return offlineBundlesData.upsertUserQuestionStat(
+      this.supabase,
+      userId,
+      questionId,
+      stats,
+    );
   }
 
   async resetDeckStatistics(deckId: string, userId: string): Promise<any> {
-    const canEdit = await this.verifyDeckAccess(userId, deckId, "edit");
-    if (!canEdit) throw new Error("Deck not found or access denied");
-
-    // clear srs_data on all cards in deck so they appear new again
-    const { error: cardError } = await this.supabase
-      .from("flashcards")
-      .update({ srs_data: {} })
-      .eq("deck_id", deckId);
-
-    if (cardError) throw cardError;
-
-    // Reviews read the card (and its version) through the per-card caches
-    // (`flashcard:{id}` and `flashcard:{id}:user:{userId}`). The bulk update
-    // above just changed every card underneath those entries, so a review
-    // graded after a reset would validate against a stale version and be
-    // dropped. Purge each card's cache entries so the next read is fresh.
-    const { data: deckCards, error: deckCardsError } = await this.supabase
-      .from("flashcards")
-      .select("id")
-      .eq("deck_id", deckId);
-    if (deckCardsError) throw deckCardsError;
-    await Promise.all(
-      ((deckCards || []) as Array<{ id: string }>).flatMap((card) => [
-        cacheService.delete(`flashcard:${card.id}`),
-        cacheService.deletePattern(`flashcard:${card.id}:user:*`),
-      ]),
+    return offlineBundlesData.resetDeckStatistics(
+      this.supabase,
+      {
+        service: this,
+        fetchDeckRecord: (id) => this.fetchDeckRecord(id),
+        verifyDeckAccess: (uid, id, level) =>
+          this.verifyDeckAccess(uid, id, level),
+        getAccessibleDeckIds: (uid) => this.getAccessibleDeckIds(uid),
+        getFlashcard: (id) => this.getFlashcard(id),
+        getFlashcardForUser: (id, uid) => this.getFlashcardForUser(id, uid),
+        updateFlashcard: (id, updates, uid, options) =>
+          this.updateFlashcard(id, updates, uid, options),
+        attachQuestionStatStems: (rows) => this.attachQuestionStatStems(rows),
+        getUserPreferences: (uid) => this.getUserPreferences(uid),
+        getResponseProfile: (profile) => this.getResponseProfile(profile),
+      },
+      deckId,
+      userId,
     );
-
-    // also invalidate any related cache entries
-    await cacheService.deletePattern(`flashcards:*`);
-    await cacheService.delete(`deck:${deckId}`);
-
-    return { success: true };
   }
 
   // ===========================================================================

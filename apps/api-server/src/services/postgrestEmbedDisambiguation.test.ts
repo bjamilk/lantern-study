@@ -185,6 +185,16 @@ function argumentRegion(src: string, start: number): { text: string; end: number
  * `columns` holds what could be read; `unresolved` names the arguments that
  * yielded nothing, so a new embed cannot hide behind an unreadable argument.
  */
+// KNOWN ISSUE (tracked, found during M1c): `literalBindings` is a FLAT,
+// last-one-wins map per file, so two different `const selectClause = …` in the
+// same file collapse into one entry and a select passed by that name resolves
+// to whichever literal the regex saw last. In an 18k-line file that is easy to
+// hit — `getFlashcards` was silently "resolved" through an unrelated chat
+// select for as long as both lived in `services/supabase.ts`. The guard still
+// never reports a bare embed it cannot see (an unreadable name lands in
+// `unresolved` and the frozen ledger), but a MIS-resolved name is scanned
+// against the wrong columns. Keying bindings by (name, scope) would fix it;
+// out of scope for a behaviour-preserving move.
 function scanSelects(src: string): { columns: string[]; unresolved: string[] } {
   const bindings = literalBindings(src);
   const exported = exportedLiteralBindings();
@@ -421,6 +431,18 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/communities.ts::cols': 1,
       'services/communities.ts::columns': 2,
       'services/communityModeration.ts::cols': 1,
+      // offlineBundles' `getFlashcards`: `const selectClause = profile ===
+      // 'compact' ? '<columns>' : '<columns>'`, a ternary between two literals
+      // bound to a NAME rather than written at the call site, so the binding
+      // scan (which reads `const x = '<literal>'` only) cannot follow it.
+      // Neither branch contains a parenthesis, so no embed can hide there.
+      //
+      // It appears in this ledger only because monolith lane M1c step 9 moved
+      // the method out of `services/supabase.ts`, where an UNRELATED
+      // `const selectClause = \`...\`` in the chat section (line ~8548) happened
+      // to bind the same name to a literal and masked it. The select itself is
+      // unchanged; see the KNOWN ISSUE on `scanSelects` about that masking.
+      'services/data/offlineBundles.ts::selectClause': 1,
       'services/librarySearch.ts::column': 1,
       'services/moderation.ts::columns': 2,
       'services/schemaCapabilities.ts::column': 1,

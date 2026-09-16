@@ -40,6 +40,26 @@ import { logger } from "../../utils/logger";
 import type { DataClient } from "./client";
 
 /**
+ * Course reference carried on test/bundle payloads: top-level `courseId` wins,
+ * else `config.courseId`. Anything that is not a UUID is ignored (null).
+ *
+ * Moved here from `services/supabase.ts` module scope (monolith lane M1c,
+ * step 9): the OFFLINE BUNDLES and TESTS sections are its only two callers and
+ * they now live in two different data modules, so it needs a shared home. It
+ * belongs with the academic filing because that is what a `courseId` is.
+ */
+const COURSE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function resolveCourseIdFromConfigLike(
+  payload: { courseId?: unknown; config?: { courseId?: unknown } | null } | null | undefined,
+): string | null {
+  const candidate = payload?.courseId ?? payload?.config?.courseId ?? null;
+  return typeof candidate === "string" && COURSE_UUID_RE.test(candidate)
+    ? candidate
+    : null;
+}
+
+/**
  * Validates a topic id against a course id, resolving to the id to store or
  * throwing a `PublicError`. Supplied by the caller (it is
  * `CourseTopicsService.resolveForArtefact`) so this module does not depend on
