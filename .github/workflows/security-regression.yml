@@ -85,6 +85,11 @@ jobs:
           if [ -n "${stripped:-}" ]; then
             echo "::notice title=VITE_SUPABASE_URL was normalised::The secret ends in '$stripped'. The PoCs append their own service paths, so it was stripped for this run. Please edit the secret to the bare project URL (https://<project-ref>.supabase.co) so the two cannot drift."
           fi
+          # The normalised URL is not byte-identical to the secret, so GitHub's
+          # automatic masking does not cover it and it printed in clear in the
+          # next step's env block -- leaking the staging project ref into public
+          # PR logs. Register it explicitly.
+          echo "::add-mask::$url"
           echo "supabase_url=$url" >> "$GITHUB_OUTPUT"
           cat > .env <<EOF
           VITE_SUPABASE_URL=$url
@@ -107,12 +112,18 @@ jobs:
       # PoCs die deep inside with "You cannot call a method on a null-valued
       # expression" or "expected denial, got status=200" -- which reads like a
       # real security failure and is not one. Diagnose it once, up front.
-      - name: Preflight - VITE_SUPABASE_URL is a Supabase project API URL
+      # Diagnose the target and the keys before running anything against them.
+      # Every earlier revision of this step guessed at one cause and named it
+      # confidently; this one reports what it actually observed -- key formats,
+      # which project each key is for, and which header combination is refused --
+      # and only then gates. Nothing here prints a key.
+      - name: Preflight - Supabase target and keys
         id: preflight
         shell: bash
         env:
           SUPABASE_URL: ${{ steps.write_env.outputs.supabase_url }}
           ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+          SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           url="${SUPABASE_URL%/}"
           case "$url" in
@@ -122,60 +133,110 @@ jobs:
               exit 1
               ;;
           esac
-          # What this probe can and cannot conclude:
-          #
-          #   non-JSON body      -> not PostgREST at all (HTML: dashboard, a
-          #                         login redirect, some other app). Wrong host.
-          #   JSON body          -> we ARE talking to PostgREST. That is the
-          #                         thing being established here, and it holds
-          #                         whether the status is 200 (the OpenAPI
-          #                         document) or an error. Do not read a status
-          #                         code as a verdict on the host.
-          #   404 / PGRST125     -> a PATH problem, not a credential one.
-          #   401 / 403          -> a KEY problem.
-          #
-          # The earlier version collapsed the last two into "the anon key is
-          # probably wrong", which sent the founder looking at the right secret
-          # for the wrong reason.
-          code=$(curl -sS -o /tmp/preflight.body -w '%{http_code}' \
-            -H "apikey: $ANON_KEY" -H "Authorization: Bearer $ANON_KEY" \
-            "$url/rest/v1/" || echo 000)
-          first=$(head -c 1 /tmp/preflight.body 2>/dev/null || echo '')
-          body=$(head -c 300 /tmp/preflight.body 2>/dev/null || echo '')
-          if [ "$first" != "{" ] && [ "$first" != "[" ]; then
-            echo "::error::VITE_SUPABASE_URL does not serve PostgREST. GET <url>/rest/v1/ returned HTTP $code with a non-JSON body."
-            echo "First 300 bytes of the response (the URL itself is masked as a secret):"
-            echo "$body"
-            echo "Set VITE_SUPABASE_URL to the STAGING project's API URL: https://<project-ref>.supabase.co"
+
+          # The project ref is the first host label. It is an identifier, not a
+          # credential (it is in every client bundle), so it is safe to print --
+          # and it is the only way to say *which* project a key belongs to.
+          url_ref=$(printf '%s' "$url" | sed -E 's#^https?://([^.]+)\..*#\1#')
+          echo "Project ref from VITE_SUPABASE_URL: $url_ref"
+
+          # --- key formats (never the keys themselves) ---------------------
+          classify() {
+            case "$1" in
+              eyJ*)              echo "legacy JWT" ;;
+              sb_publishable_*)  echo "new-style publishable" ;;
+              sb_secret_*)       echo "new-style secret" ;;
+              "")                echo "EMPTY" ;;
+              *)                 echo "unrecognised (not a Supabase key format)" ;;
+            esac
+          }
+          anon_kind=$(classify "$ANON_KEY")
+          service_kind=$(classify "$SERVICE_KEY")
+          echo "VITE_SUPABASE_ANON_KEY format:     $anon_kind"
+          echo "SUPABASE_SERVICE_ROLE_KEY format:  $service_kind"
+
+          # A legacy JWT names its project in the `ref` claim. Decode only the
+          # payload, read only `ref`, print only the comparison.
+          jwt_ref() {
+            payload=$(printf '%s' "$1" | cut -d. -f2 | tr '_-' '/+')
+            case $(( ${#payload} % 4 )) in 2) payload="$payload==";; 3) payload="$payload=";; esac
+            printf '%s' "$payload" | base64 -d 2>/dev/null \
+              | sed -n 's/.*"ref"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' || true
+          }
+          ref_mismatch=0
+          for pair in "VITE_SUPABASE_ANON_KEY:$anon_kind:$ANON_KEY" "SUPABASE_SERVICE_ROLE_KEY:$service_kind:$SERVICE_KEY"; do
+            name="${pair%%:*}"; rest="${pair#*:}"; kind="${rest%%:*}"; key="${rest#*:}"
+            if [ "$kind" = "legacy JWT" ]; then
+              kref=$(jwt_ref "$key" || true)
+              if [ -z "$kref" ]; then
+                echo "$name: legacy JWT with no readable ref claim."
+              elif [ "$kref" = "$url_ref" ]; then
+                echo "$name: ref claim matches the project in VITE_SUPABASE_URL."
+              else
+                echo "::error::$name does not match: the key is for project $kref, but VITE_SUPABASE_URL is project $url_ref."
+                ref_mismatch=1
+              fi
+            fi
+          done
+
+          # --- which header combination is refused -------------------------
+          # The PoC scripts send BOTH `apikey` and `Authorization: Bearer` with
+          # the anon key, so test the combinations separately: if only the Bearer
+          # form fails, the key is fine and the scripts' header usage is the bug.
+          hdr_probe() { # $1 url, $2 key, $3 mode
+            case "$3" in
+              apikey) curl -sS -o /tmp/pf.body -w '%{http_code}' -H "apikey: $2" "$1" || echo 000 ;;
+              bearer) curl -sS -o /tmp/pf.body -w '%{http_code}' -H "Authorization: Bearer $2" "$1" || echo 000 ;;
+              both)   curl -sS -o /tmp/pf.body -w '%{http_code}' -H "apikey: $2" -H "Authorization: Bearer $2" "$1" || echo 000 ;;
+            esac
+          }
+          # marketplace_campuses is a table every PoC needs anyway, and PostgREST
+          # applies RLS by filtering rows -- it does not reject a valid key -- so
+          # an empty array here is still a passing answer about the key.
+          anon_target="$url/rest/v1/marketplace_campuses?select=id&limit=1"
+          echo "Anon key against $anon_target (project $url_ref):"
+          for mode in apikey bearer both; do
+            c=$(hdr_probe "$anon_target" "$ANON_KEY" "$mode")
+            echo "  apikey+bearer mode '$mode': HTTP $c $(head -c 160 /tmp/pf.body 2>/dev/null)"
+            eval "anon_$mode=$c"
+          done
+
+          echo "Service-role key against <url>/auth/v1/admin/users (expect 200):"
+          svc=$(curl -sS -o /tmp/pf.body -w '%{http_code}' \
+            -H "apikey: $SERVICE_KEY" -H "Authorization: Bearer $SERVICE_KEY" \
+            "$url/auth/v1/admin/users?per_page=1" || echo 000)
+          echo "  HTTP $svc $(head -c 160 /tmp/pf.body 2>/dev/null)"
+
+          # --- verdict -----------------------------------------------------
+          if [ "$ref_mismatch" = "1" ]; then exit 1; fi
+
+          case "$anon_kind" in
+            "new-style publishable")
+              if [ "${anon_both:-0}" != "200" ] && [ "${anon_apikey:-0}" = "200" ]; then
+                echo "::error::VITE_SUPABASE_ANON_KEY is a new-style publishable key. It works in the apikey header but not as an Authorization Bearer token -- new-style keys are not JWTs -- and the PoC scripts send it as both."
+                echo "Two ways out, both legitimate:"
+                echo "  a) Give CI this project's LEGACY anon key (Settings > API > Legacy API keys; enable them if hidden)."
+                echo "  b) Change the scripts to stop sending the anon key as a Bearer token. PostgREST needs only the apikey header for anon reads; user-scoped calls already carry the user's JWT from GoTrue, which is what the Authorization header is for."
+                exit 1
+              fi
+              ;;
+          esac
+
+          if [ "${anon_both:-0}" != "200" ]; then
+            case "${anon_both:-0}" in
+              401|403) echo "::error::The anon key was refused (HTTP $anon_both) with the headers the PoCs actually send. Every PoC signs in with this key, so a mismatch would make each 'blocked' result meaningless." ;;
+              404)     echo "::error::marketplace_campuses does not exist on project $url_ref (HTTP 404). Apply the migrations to the staging project; the PoCs need this table." ;;
+              *)       echo "::error::The anon probe returned an unexpected HTTP $anon_both." ;;
+            esac
             exit 1
           fi
-          case "$body" in
-            *PGRST125*)
-              echo "::error::PostgREST returned PGRST125 (Invalid path specified in request URL). VITE_SUPABASE_URL probably includes a service path such as /rest/v1; it must be the bare project URL https://<project-ref>.supabase.co."
-              exit 1
-              ;;
-          esac
-          case "$code" in
-            2*)
-              echo "Preflight OK: the target speaks PostgREST (HTTP $code)."
-              ;;
-            401|403)
-              echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned HTTP $code. VITE_SUPABASE_ANON_KEY probably does not belong to the project in VITE_SUPABASE_URL."
-              echo "$body"
-              exit 1
-              ;;
-            404)
-              echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned HTTP 404 - a path problem, not a credential one. VITE_SUPABASE_URL probably includes a service path (e.g. it ends in /rest/v1), so the request went to /rest/v1/rest/v1/."
-              echo "Set the secret to the bare project URL: https://<project-ref>.supabase.co"
-              echo "$body"
-              exit 1
-              ;;
-            *)
-              echo "::error::Reached PostgREST, but GET <url>/rest/v1/ returned an unexpected HTTP $code."
-              echo "$body"
-              exit 1
-              ;;
-          esac
+
+          if [ "$svc" != "200" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE_KEY was refused by the admin API (HTTP $svc). The PoCs seed and clean up with it; without it they cannot run."
+            exit 1
+          fi
+
+          echo "Preflight OK: project $url_ref reachable, both keys accepted."
 
       - name: F-01 marketplace offers PoC
         if: ${{ !cancelled() && steps.write_env.outcome == 'success' && steps.preflight.outcome == 'success' }}
