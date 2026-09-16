@@ -82,17 +82,14 @@ export function resolveNestedProfile(
  * because the extraction was behaviour-preserving; the client audit found
  * nothing that reads the ABSENCE of `senderId` as a marker (every use compares
  * it to the viewer's id), so the field is now always present.
+ *
+ * The `includeSenderId` option that carried that difference is GONE (monolith
+ * lane M1e): its last call site, the question-pool loader in
+ * `services/supabase.ts`, no longer passes it.
  */
 export function mapChatMessageRow(
   row: any,
   normalized: Partial<Message> & { type: "TEXT" | "QUESTION" },
-  /**
-   * @deprecated No-op, kept only so the one remaining
-   * `{ includeSenderId: false }` call site in `services/supabase.ts` (the
-   * question-pool loader, owned by the chat lane) still compiles. Delete the
-   * argument there and this parameter with it.
-   */
-  _options: { includeSenderId?: boolean } = {},
 ): Message {
   return {
     id: row.id,

@@ -652,6 +652,23 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       // so no embed hides behind the parameter. Moved here from
       // `services/supabase.ts::columns`, which drops from 7 to 5, by monolith
       // lane M1c step 10.
+      // `getGroupMessages`' `runPage(selectClause)` — the same
+      // parameter-fed-wrapper idiom as the rows above: the column list is a
+      // ternary between two template literals bound to `baseSelectClause`, so
+      // the binding scan (which reads `const x = '<literal>'` only) cannot
+      // follow it. Both branches embed `profiles!sender_id (...)`, the column
+      // form, so nothing bare hides there.
+      //
+      // It appears in this ledger only once bindings are keyed by (name,
+      // scope): the flat map used to resolve this wrapper's `selectClause`
+      // through the LAST `const selectClause` in the file — the marketplace
+      // fallback-search select in `buildFallbackQuery` — so the board's page
+      // query was being scanned against marketplace listing columns.
+      //
+      // Moved here from `services/supabase.ts::selectClause`, which drops to
+      // zero, by monolith lane M1e step 16: the method now lives in the group
+      // messages repository, so the pin moved with the code.
+      'services/data/groupMessages.ts::selectClause': 1,
       'services/data/groups.ts::columns': 2,
       'services/data/groups.ts::selectClause': 1,
       'services/data/offlineBundles.ts::selectClause': 1,
@@ -666,19 +683,6 @@ describe('no bare PostgREST embed escapes disambiguation', () => {
       'services/studySets.ts::columns': 5,
       'services/supabase.ts::columns': 4,
       'services/supabase.ts::select': 3,
-      // `getGroupMessages`' `runPage(selectClause)` — the same
-      // parameter-fed-wrapper idiom as the rows above: the column list is a
-      // ternary between two template literals bound to `baseSelectClause`, so
-      // the binding scan (which reads `const x = '<literal>'` only) cannot
-      // follow it. Both branches embed `profiles!sender_id (...)`, the column
-      // form, so nothing bare hides there.
-      //
-      // It appears in this ledger only once bindings are keyed by (name,
-      // scope): the flat map used to resolve this wrapper's `selectClause`
-      // through the LAST `const selectClause` in the file — the marketplace
-      // fallback-search select in `buildFallbackQuery` — so the board's page
-      // query was being scanned against marketplace listing columns.
-      'services/supabase.ts::selectClause': 1,
     });
   });
 

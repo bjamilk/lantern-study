@@ -22,12 +22,12 @@ describe("mapChatMessageRow", () => {
     expect(mapChatMessageRow(row(), text).senderId).toBe("u1");
   });
 
-  it("emits senderId for the question pool too, whatever the legacy option says", () => {
+  it("emits senderId for the question pool too", () => {
     // The question-pool loader used to pass `{ includeSenderId: false }`, so
     // the same message answered with `sender.id` but no `senderId` depending
-    // on which endpoint it came from. The option is a no-op now.
-    expect(mapChatMessageRow(row(), text, { includeSenderId: false }).senderId).toBe("u1");
-    expect(mapChatMessageRow(row(), text, {}).senderId).toBe("u1");
+    // on which endpoint it came from. Both the option and that call site are
+    // gone; every loader goes through this one mapper and gets the field.
+    expect(mapChatMessageRow(row(), text).senderId).toBe("u1");
   });
 
   it("keeps sender.id and senderId consistent", () => {
