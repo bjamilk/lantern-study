@@ -30,11 +30,16 @@
  *   node scripts/check-web-typecheck.mjs --update   # rewrite the baseline
  */
 import { spawnSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Both spellings: a checkout reached through a symlink (macOS /tmp -> /private/tmp,
+// a symlinked CI workspace) makes tsc print the resolved one.
+const ROOT_SPELLINGS = [...new Set([REPO_ROOT, realpathSync(REPO_ROOT)])].map((r) =>
+  `${r.split('\\').join('/')}/`,
+);
 const PROJECT = 'apps/web/tsconfig.typecheck.json';
 const BASELINE_PATH = path.join(REPO_ROOT, 'scripts', 'web-typecheck-baseline.json');
 const MESSAGE_KEY_LENGTH = 200;
@@ -67,6 +72,20 @@ function runTsc() {
   return `${result.stdout || ''}${result.stderr || ''}`;
 }
 
+/**
+ * Some tsc messages quote an ABSOLUTE path — TS7016 names the .js file it could
+ * not find types for, for instance. Left alone, that path bakes the machine
+ * into the key: a baseline generated on a laptop is 53 "new" errors on a CI
+ * runner checked out under /home/runner. Rewrite the checkout root, wherever it
+ * is, to a fixed token. Separators are normalised too so a Windows checkout
+ * produces the same keys as a POSIX one.
+ */
+function normalise(text) {
+  let out = text.split('\\').join('/');
+  for (const root of ROOT_SPELLINGS) out = out.split(root).join('<repo>/');
+  return out;
+}
+
 /** @returns {Map<string, number>} key -> how many times it occurred */
 function collect(output) {
   const counts = new Map();
@@ -74,8 +93,7 @@ function collect(output) {
     const match = ERROR_LINE.exec(rawLine);
     if (!match) continue;
     const { file, code, message } = match.groups;
-    // Normalise separators so a Windows checkout produces the same keys.
-    const key = `${file.split(path.sep).join('/')} ${code} ${message.slice(0, MESSAGE_KEY_LENGTH)}`;
+    const key = `${normalise(file)} ${code} ${normalise(message).slice(0, MESSAGE_KEY_LENGTH)}`;
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return counts;
