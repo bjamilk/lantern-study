@@ -49,7 +49,7 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   // The ChatWindow decomposition (lanes M8 and M8b) split this file's 80 across
   // the shell and components/chat/* below. Nothing was added at any step — the
   // ledger's total is unchanged, and every one of these moved verbatim.
-  'components/ChatWindow.tsx': 16,
+  'components/ChatWindow.tsx': 13,
   'components/CollaboratorsModal.tsx': 11,
   'components/ContactForm.tsx': 12,
   'components/CookieNoticeBanner.tsx': 18,
@@ -175,6 +175,7 @@ export const TYPE_SCALE_ALLOWLIST: Readonly<Record<string, number>> = {
   'components/chat/MessageReactions.tsx': 3,
   'components/chat/MessageRow.tsx': 2,
   'components/chat/OffersPanel.tsx': 49,
+  'components/chat/ThreadPanel.tsx': 3,
   'components/community/BoardComposer.tsx': 4,
   'components/community/BoardPostCard.tsx': 19,
   'components/community/BoardPostPanel.tsx': 12,

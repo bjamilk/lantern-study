@@ -68,6 +68,7 @@ const EXTRACTED_MODULES: string[] = [
   'hooks/chat/useChatComposer.ts',
   'components/chat/OffersPanel.tsx',
   'hooks/chat/useMarketplaceOffers.ts',
+  'components/chat/ThreadPanel.tsx',
 ];
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');

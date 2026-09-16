@@ -47,6 +47,7 @@ import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
 import { OffersPanel } from './chat/OffersPanel';
+import { ThreadPanel } from './chat/ThreadPanel';
 import { useMarketplaceOffers } from '../hooks/chat/useMarketplaceOffers';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
@@ -54,7 +55,6 @@ import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
 import { confirmDialog } from '../stores/confirmStore';
 import { Group, Message, User, DMThread, ChatItem, MessageReplyPreview } from '../types';
-import MessageItem from './MessageItem';
 import ReportContentModal from './moderation/ReportContentModal';
 import type { ContentReportTargetType } from '@lantern/shared';
 import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
@@ -1478,154 +1478,51 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     </>
   );
 
-  // Thread overlay. It is absolutely positioned inside this component's own
-  // `relative` root rather than portalled, so it covers the conversation but not
-  // the app chrome. The backdrop click closes it; `stopPropagation` on the panel
-  // keeps clicks inside from doing the same. The thread composer disappears when
-  // the root message has been removed — a closed thread takes no new replies.
-  const threadPanel = threadRootId && chat ? (
-    <div
-      className="absolute inset-0 z-30 flex justify-end bg-black/30"
-      onClick={() => setThreadRootId(null)}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="chat-thread-title"
-        className="w-full max-w-md h-full bg-lantern-surface border-l border-lantern-border flex flex-col shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between h-14 px-4 border-b border-lantern-border flex-shrink-0">
-          <div>
-            <p id="chat-thread-title" className="text-sm font-semibold text-lantern-text">Thread</p>
-            <p className="text-[11px] text-lantern-text-tertiary">
-              {Math.max(0, visibleThreadMessages.length - 1)}{' '}
-              {visibleThreadMessages.length - 1 === 1 ? 'reply' : 'replies'}
-            </p>
-          </div>
-          <button
-            ref={threadCloseButtonRef}
-            type="button"
-            onClick={() => setThreadRootId(null)}
-            className="p-1.5 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
-            aria-label="Close thread"
-          >
-            <AppIcon name="close" size={20} />
-          </button>
-        </div>
-        <div ref={threadScrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
-          {threadLoading ? (
-            <div className="flex justify-center py-10">
-              <div className="w-8 h-8 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
-            </div>
-          ) : (
-            visibleThreadMessages.map((msg) => (
-              <div
-                key={msg.id}
-                ref={(el) => {
-                  threadMessageNodeRefs.current[msg.id] = el;
-                }}
-              >
-                <MessageItem
-                  message={msg}
-                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                  currentUserVote={userVotes[msg.id]}
-                  myReactions={myReactions[msg.id]}
-                  onToggleReaction={handleToggleReaction}
-                  onVoteQuestion={communityHost ? undefined : onVoteQuestion}
-                  onFlagAsSimilar={
-                    communityHost ? undefined : (messageId) => onFlagAsSimilar(messageId, chat.id)
-                  }
-                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                  group={group}
-                  currentUser={currentUser}
-                  isGroupChat={chat.chatType === 'group'}
-                  onEditMessage={(m) => beginEditingMessage(m, true)}
-                  onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
-                  onReportMessage={
-                    chat.chatType === 'group'
-                      ? (m) =>
-                          setReportTarget({
-                            type: 'message',
-                            id: m.id,
-                            label: m.sender?.name || m.sender?.username || 'this message',
-                          })
-                      : undefined
-                  }
-                  onReply={(m) => {
-                    setThreadEditingMessage(null);
-                    setThreadReplyTo({
-                      id: m.id,
-                      senderId: m.sender?.id,
-                      senderName: m.sender?.name || m.sender?.username,
-                      type: m.type,
-                      text: m.text,
-                      questionStem: m.questionStem,
-                    });
-                  }}
-                  onForward={(m) => setForwardMessage(m)}
-                  onCopy={(m) => void handleCopyMessage(m)}
-                  onStar={handleToggleStar}
-                  onPin={handleTogglePin}
-                  starred={starredIds.has(msg.id)}
-                  pinned={pinnedMessageId === msg.id}
-                  onMentionUser={(username) => setThreadSeedMentionUsername(username)}
-                  onScrollToMessage={(messageId) => {
-                    threadMessageNodeRefs.current[messageId]?.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'center',
-                    });
-                  }}
-                />
-              </div>
-            ))
-          )}
-          <div ref={threadEndRef} />
-        </div>
-        {!isArchived && !isThreadRootRemoved && (
-          <div className="flex-shrink-0 border-t border-lantern-border">
-            <MessageInputBar
-              onSendMessage={handleThreadSend}
-              onAIQuery={chat.chatType === 'group' && !communityHost ? onAIQuery : undefined}
-              mentionCandidates={mentionCandidates}
-              seedMentionUsername={threadSeedMentionUsername}
-              onSeedMentionConsumed={() => setThreadSeedMentionUsername(null)}
-              replyTo={threadReplyTo}
-              // Clearing a reply inside a thread falls BACK to the root rather
-              // than to nothing — there is no such thing as a thread message
-              // with no thread.
-              onClearReply={() => {
-                const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];
-                if (root) {
-                  setThreadReplyTo({
-                    id: root.id,
-                    senderId: root.sender?.id,
-                    senderName: root.sender?.name || root.sender?.username,
-                    type: root.type,
-                    text: root.text,
-                    questionStem: root.questionStem,
-                  });
-                }
-              }}
-              editingMessage={threadEditingMessage}
-              onClearEdit={() => setThreadEditingMessage(null)}
-              groupId={chat.chatType === 'group' ? chat.id : undefined}
-              threadId={chat.chatType === 'dm' ? chat.id : undefined}
-            />
-          </div>
-        )}
-        {!isArchived && isThreadRootRemoved && (
-          <div className="border-t border-lantern-border px-4 py-3 text-center text-xs text-lantern-text-secondary">
-            This thread is closed because its original message was removed.
-          </div>
-        )}
-      </div>
-    </div>
-  ) : null;
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background relative">
-      {threadPanel}
+      {/* Thread overlay — see components/chat/ThreadPanel.tsx for why it is
+          positioned inside this component's root rather than portalled. */}
+      <ThreadPanel
+        threadRootId={threadRootId}
+        chat={chat}
+        currentUser={currentUser}
+        group={group}
+        communityHost={communityHost}
+        isArchived={isArchived}
+        isThreadRootRemoved={isThreadRootRemoved}
+        threadLoading={threadLoading}
+        visibleThreadMessages={visibleThreadMessages}
+        threadMessages={threadMessages}
+        threadReplyTo={threadReplyTo}
+        threadEditingMessage={threadEditingMessage}
+        threadSeedMentionUsername={threadSeedMentionUsername}
+        threadScrollRef={threadScrollRef}
+        threadEndRef={threadEndRef}
+        threadCloseButtonRef={threadCloseButtonRef}
+        threadMessageNodeRefs={threadMessageNodeRefs}
+        userVotes={userVotes}
+        myReactions={myReactions}
+        starredIds={starredIds}
+        pinnedMessageId={pinnedMessageId}
+        mentionCandidates={mentionCandidates}
+        setThreadRootId={setThreadRootId}
+        setThreadReplyTo={setThreadReplyTo}
+        setThreadEditingMessage={setThreadEditingMessage}
+        setThreadSeedMentionUsername={setThreadSeedMentionUsername}
+        setForwardMessage={setForwardMessage}
+        setReportTarget={setReportTarget}
+        handleThreadSend={handleThreadSend}
+        handleToggleReaction={handleToggleReaction}
+        handleCopyMessage={handleCopyMessage}
+        handleToggleStar={handleToggleStar}
+        handleTogglePin={handleTogglePin}
+        beginEditingMessage={beginEditingMessage}
+        handleRemoveMessage={handleRemoveMessage}
+        onVoteQuestion={onVoteQuestion}
+        onFlagAsSimilar={onFlagAsSimilar}
+        onAIQuery={onAIQuery}
+      />
       {/* Header — fixed at top */}
       <ChatHeader
         chat={chat}
