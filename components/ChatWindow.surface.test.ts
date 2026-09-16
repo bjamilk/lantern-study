@@ -1,5 +1,6 @@
 /**
- * The safety net for the `components/ChatWindow.tsx` decomposition (lane M8).
+ * The safety net for the `components/ChatWindow.tsx` decomposition (lanes M8
+ * and M8b).
  *
  * `ChatWindow` is one 2,783-line function at cyclomatic 510 holding **50 pieces
  * of component state** — the worst hooks violation in the repo. Splitting it
@@ -31,6 +32,11 @@
  *
  * Reading order for a reviewer: this file first, then `components/ChatWindow.tsx`
  * (the shell), then the modules under `components/chat/` and `hooks/chat/`.
+ *
+ * M8b (the second pass) adds a third render mode — a DM — because the three
+ * blocks it moves (the Offers tab, the thread side panel, the conversation
+ * pane) are all reached through the DM branch, and extends `EXTRACTED_MODULES`
+ * once per extraction so the state census keeps counting the pieces that left.
  */
 import fs from 'fs';
 import path from 'path';
@@ -60,6 +66,14 @@ const EXTRACTED_MODULES: string[] = [
   'components/chat/visibleMessages.ts',
   'hooks/chat/useMessageActions.ts',
   'hooks/chat/useChatComposer.ts',
+  'components/chat/OffersPanel.tsx',
+  'hooks/chat/useMarketplaceOffers.ts',
+  'components/chat/ThreadPanel.tsx',
+  'components/chat/ChatHomeScreen.tsx',
+  'hooks/chat/useChatScroll.ts',
+  'hooks/chat/useChatRealtime.ts',
+  'hooks/chat/useDmRelationship.ts',
+  'components/chat/ConversationPane.tsx',
 ];
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
@@ -348,6 +362,13 @@ const groupChat = {
   description: 'Second years',
 } as never;
 
+const dmChat = {
+  id: 'd1',
+  chatType: 'dm',
+  participantIds: ['u1', 'u2'],
+  participants: { u2: { id: 'u2', name: 'Chidi Nwosu', username: 'chidi' } },
+} as never;
+
 describe('ChatWindow renders', () => {
   it('renders the chat-home pane when no conversation is open', () => {
     const html = renderToStaticMarkup(
@@ -372,6 +393,35 @@ describe('ChatWindow renders', () => {
     expect(html).toContain('No messages yet');
     // Composer: the search affordance and a text entry both present.
     expect(html).toContain('aria-label="Search in chat"');
+    expect(html).toMatch(/<textarea|<input/);
+  });
+
+  /**
+   * The third render mode, added for lane M8b. A DM is not a cheaper group: it
+   * is the branch that carries the peer name in the header instead of a group
+   * name, the request/block composer states, and — when the server says the
+   * thread is a marketplace inquiry — the Offers tab. M8b moves the Offers tab,
+   * the thread side panel and the conversation pane out of the shell, and all
+   * three of those are reached through this branch, so a smoke that only ever
+   * mounted a group would not notice one of them being wired up wrong.
+   *
+   * Static markup, so `inquiry` is still null here (it is set by an effect) and
+   * this asserts the BARE DM path. That is deliberate: the Offers tab gets its
+   * own render test next to its own module, where its props can be passed
+   * directly instead of being faked into existence through a mocked fetch.
+   */
+  it('renders a DM conversation: peer name in the header, composer', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(ChatWindow, {
+        ...(baseProps as object),
+        chat: dmChat,
+        dmThreads: [dmChat],
+      } as never)
+    );
+    // Header: the peer's name, not a group name.
+    expect(html).toContain('Chidi Nwosu');
+    expect(html).toContain('No messages yet');
+    // Composer: present, because the DM is neither archived nor blocked.
     expect(html).toMatch(/<textarea|<input/);
   });
 });

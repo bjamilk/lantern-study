@@ -11,28 +11,47 @@
  *    `hooks/useAppEffects.ts` and `hooks/useGroupHandlers.ts`). It writes back only
  *    through the `onSendMessage` / `onEditMessage` / `onRemoveMessage` callbacks and
  *    `groupStore.updateMessageInState` (reaction counts).
- *  - services/supabase: threads (`fetchGroupThread` / `fetchDmThread`), DM
- *    request accept/decline, block + mute status, presence (`fetchUserProfile`), and
- *    the marketplace set (`getInquiryByThread`, `fetchOffers`, `respondToOffer`,
- *    `fetchOrderForInquiry`, `updateMarketplaceOrder`, `resumeMarketplaceOrderCheckout`).
- *  - supabase realtime BROADCAST channels: `typing:<chatId>` and `chat-read:<chatId>`.
+ *  - services/supabase: threads (`fetchGroupThread` / `fetchDmThread`) and
+ *    presence (`fetchUserProfile`). The marketplace set moved with the Offers
+ *    tab (`hooks/chat/useMarketplaceOffers.ts`), the DM request/block/mute set
+ *    with `hooks/chat/useDmRelationship.ts`.
+ *  - supabase realtime BROADCAST channels, through `hooks/chat/useChatRealtime.ts`.
  *  - stores: `uiStore.lowDataMode`, `communityStore.myCommunities`, `toastStore`,
- *    `confirmStore.confirmDialog`, `useBudgetHandlers`.
+ *    `useBudgetHandlers`.
  *  - `hooks/chat/useMessageActions.ts` for reactions, stars, pins and copy —
  *    which is where the reaction endpoints and the device-local localStorage
  *    marks now live.
+ *
+ * What this file still owns, after lanes M8 and M8b: the props, the thread
+ * panel's fetch and focus, the composer/thread reset, and the wiring that hands
+ * every other concern to a module. The map:
+ *
+ *   components/chat/ChatHeader.tsx        the header bar
+ *   components/chat/ChatHeaderMenu.tsx    its overflow menu
+ *   components/chat/MessageList.tsx       the scrolling list
+ *   components/chat/MessageRow.tsx        one row of it
+ *   components/chat/ConversationPane.tsx  the banners and the composer slot
+ *   components/chat/ThreadPanel.tsx       the thread side panel
+ *   components/chat/ChatHomeScreen.tsx    the `chat === null` screen
+ *   components/chat/OffersPanel.tsx       the marketplace Offers tab
+ *   hooks/chat/useChatComposer.ts         reply / edit / mention state
+ *   hooks/chat/useMessageActions.ts       reactions, stars, pins, copy
+ *   hooks/chat/useChatScroll.ts           anchor, auto-scroll, paging
+ *   hooks/chat/useChatRealtime.ts         typing and read broadcasts
+ *   hooks/chat/useDmRelationship.ts       request, block, mute
+ *   hooks/chat/useMarketplaceOffers.ts    inquiry, offers, order
+ *
  * Gotchas:
  *  - EVERY hook must stay above the `if (!chat)` early return. Opening a chat from the
  *    empty state otherwise changes the hook count (React error #310).
- *  - Auto-scroll is conditional on `isNearBottomRef` / own-message; the initial position
- *    is decided once per chat id by `initialAnchorDoneRef` and must wait for
- *    `unreadAnchorAt !== undefined`, which is the "mark-as-read has reported" signal.
+ *  - The hook CALL ORDER here is load-bearing, and three of the hooks argue for
+ *    their own position in their banners. `useChatScroll` in particular must be
+ *    called after the chat-reset effect below, never before it.
  *  - Colours are `lantern-*` tokens plus Tailwind palette steps with explicit `dark:`
  *    pairs; there is no JS theme branch here and none should be added.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  buildChatHome,
   collectChatGalleryItems,
   formatChatPresenceLine,
   type ChatHomeLounge,
@@ -45,56 +64,28 @@ import { useMessageActions } from '../hooks/chat/useMessageActions';
 import { useChatComposer } from '../hooks/chat/useChatComposer';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
-import { ChatHomePane } from './chat/ChatHomePane';
+import { OffersPanel } from './chat/OffersPanel';
+import { ThreadPanel } from './chat/ThreadPanel';
+import { ChatHomeScreen } from './chat/ChatHomeScreen';
+import { ConversationPane } from './chat/ConversationPane';
+import { useMarketplaceOffers } from '../hooks/chat/useMarketplaceOffers';
+import { useChatScroll } from '../hooks/chat/useChatScroll';
+import { useChatRealtime } from '../hooks/chat/useChatRealtime';
+import { useDmRelationship } from '../hooks/chat/useDmRelationship';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
 import { useToastStore } from '../stores/toastStore';
-import { confirmDialog } from '../stores/confirmStore';
-import { Group, Message, User, DMThread, ChatItem, MarketplaceInquiry, MarketplaceOffer, MarketplaceOrder, MessageReplyPreview } from '../types';
-import MessageItem from './MessageItem';
+import { Group, Message, User, DMThread, ChatItem, MessageReplyPreview } from '../types';
 import ReportContentModal from './moderation/ReportContentModal';
 import type { ContentReportTargetType } from '@lantern/shared';
-import MessageInputBar, { type SendMessageOptions } from './MessageInputBar';
-import GroupListItem from './GroupListItem';
-import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator, Tabs, TabList, Tab, TabPanel } from './ui';
+import { type SendMessageOptions } from './MessageInputBar';
+import { Avatar, Menu, MenuTrigger, MenuContent, MenuItem, MenuSubmenu, MenuSeparator } from './ui';
 import { resolveAvatarSrc } from '../utils/avatar';
-import { normalizeStorageUrl } from '../utils/storageUrl';
 import { useUIStore } from '../stores/uiStore';
-import {
-  canRespondToOffer,
-  canWithdrawOffer,
-  getOfferProposedBy,
-  resolveGroupChatSenderLabel,
-} from '@lantern/shared/utils';
-import {
-  formatMuteUntilLabel,
-  type ChatMuteDurationId,
-} from '@lantern/shared';
+import { resolveGroupChatSenderLabel } from '@lantern/shared/utils';
 import { isCommunityBoard } from '@lantern/shared/network';
-import {
-  getInquiryByThread,
-  fetchOffers,
-  respondToOffer,
-  updateInquiryStatus,
-  fetchOrderForInquiry,
-  updateMarketplaceOrder,
-  resumeMarketplaceOrderCheckout,
-  supabase,
-  fetchGroupThread,
-  fetchDmThread,
-  acceptDmMessageRequest,
-  declineDmMessageRequest,
-  getDmBlockStatus,
-  blockUser,
-  unblockUser,
-  getDmMuteStatus,
-  muteDmThread,
-  unmuteDmThread,
-  getGroupMuteStatus,
-  muteGroupChat,
-  unmuteGroupChat,
-} from '../services/supabase';
+import { supabase, fetchGroupThread, fetchDmThread } from '../services/supabase';
 import MakeOfferModal from './MakeOfferModal';
 import { useBudgetHandlers } from '../hooks/useBudgetHandlers';
 import {
@@ -102,7 +93,6 @@ import {
   type QuestionVisibilityMode,
 } from '@lantern/shared/utils';
 import { useQuestionVisibilityMode } from '../hooks/useQuestionVisibilityMode';
-import { AppIcon } from './ui/AppIcon';
 
 
 interface ChatWindowProps {
@@ -164,8 +154,6 @@ interface ChatWindowProps {
 // How close to the bottom still counts as "following the conversation": inside
 // this band a new message scrolls you down, outside it the "N new messages"
 // pill appears instead.
-const NEAR_BOTTOM_PX = 120;
-
 const ChatWindow: React.FC<ChatWindowProps> = ({
   chat, messages: messagesProp, currentUser, userVotes,
   onSendMessage, onEditMessage, onRemoveMessage, onOpenQuestionModal, onOpenGroupInfoModal,
@@ -259,9 +247,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   }, [chat, currentUser.id, peerPresence]);
   const { refreshBudgetTransactions } = useBudgetHandlers();
   const [questionVisibilityMode, setQuestionVisibilityMode] = useQuestionVisibilityMode();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-  const messagesContainerRef = useRef<HTMLDivElement>(null);
-  const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const updateMessageInState = useGroupStore((state) => state.updateMessageInState);
   const showToast = useToastStore((state) => state.showToast);
@@ -273,26 +258,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     id: string;
     label?: string;
   } | null>(null);
-  // --- Scroll bookkeeping. These are refs, not state, because the scroll
-  // handler and the live-message effect read them during the same commit that
-  // would be setting them; a state round-trip would act on stale values.
-  // `initialAnchorDoneRef` holds the chat id whose opening position has already
-  // been decided, which is what makes the anchor once-per-conversation.
-  const prevMessageCountRef = useRef(messages.length);
-  const lastMessageIdRef = useRef<string | null>(null);
-  const isNearBottomRef = useRef(true);
-  const initialAnchorDoneRef = useRef<string | null>(null);
-
   // --- Conversation view state. All of it is per-chat and reset by the
   // `chat?.id` effect below; none of it is persisted except starred/pinned,
   // which are device-local localStorage marks.
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [typingUserIds, setTypingUserIds] = useState<string[]>([]);
-  const typingTimeoutsRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  const [hasMore, setHasMore] = useState(true);
-  const [awaitingMessages, setAwaitingMessages] = useState(false);
-  const [newMessagesBelow, setNewMessagesBelow] = useState(0);
-  const [firstUnreadId, setFirstUnreadId] = useState<string | null>(null);
   const [threadRootId, setThreadRootId] = useState<string | null>(null);
   const [threadMessages, setThreadMessages] = useState<Message[]>([]);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -348,14 +316,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const threadCloseButtonRef = useRef<HTMLButtonElement | null>(null);
   const threadReturnFocusRef = useRef<HTMLElement | null>(null);
 
-  // Reset loading/hasMore/scroll state when the chat changes
+  // What the list actually renders, in filter order: archived-out, removed
+  // tombstone policy (a removed message still renders when something replies to
+  // it), the group question-visibility mode, the starred-only view, then the
+  // in-chat search (2+ chars). EVERY scroll and unread computation below works on
+  // this array, not on `messages` — the divider must sit at the first unread row
+  // the reader can actually see.
+  const isGroupChat = chat?.chatType === 'group';
+  const visibleMessages = useMemo(
+    () =>
+      selectVisibleMessages({
+        messages,
+        isGroupChat,
+        questionVisibilityMode,
+        starredOnly,
+        starredIds,
+        threadSearch,
+      }),
+    [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
+  );
+  // Declared here, above the chat-reset effect, because `useChatScroll` below
+  // takes it — and that hook has to be called AFTER the reset effect, never
+  // before it. Moving a pure `useMemo` earlier changes no behaviour: every one
+  // of its inputs is already declared above this point.
+
+  // Reset composer and thread state when the chat changes. The scroll half of
+  // this effect moved to `hooks/chat/useChatScroll.ts`, which registers its own
+  // `chat?.id` effect directly after this one — see that file's banner.
   // Driven by `chat?.id` alone — a re-render of the same conversation must not
   // clear a reply draft, close an open thread or re-arm the scroll anchor.
   useEffect(() => {
-    setHasMore(true);
-    setIsLoadingMore(false);
-    setNewMessagesBelow(0);
-    setFirstUnreadId(null);
     setReplyTo(null);
     setEditingMessage(null);
     setThreadRootId(null);
@@ -363,19 +353,32 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setThreadReplyTo(null);
     setThreadEditingMessage(null);
     messageNodeRefs.current = {};
-    isNearBottomRef.current = true;
-    initialAnchorDoneRef.current = null;
-    if (chat) {
-      setAwaitingMessages(true);
-    }
   }, [chat?.id]);
 
-  // First messages have arrived → drop the "Loading messages…" state.
-  useEffect(() => {
-    if (messages.length > 0) {
-      setAwaitingMessages(false);
-    }
-  }, [messages.length, chat?.id]);
+  /**
+   * The conversation's scroll position: the unread anchor, auto-scroll, the
+   * "N new messages" pill and older-history paging. Called directly after the
+   * reset effect above, which is the placement its banner argues for.
+   */
+  const {
+    messagesEndRef,
+    messagesContainerRef,
+    firstUnreadRef,
+    isLoadingMore,
+    awaitingMessages,
+    newMessagesBelow,
+    firstUnreadId,
+    scrollToBottom,
+    handleScroll,
+  } = useChatScroll({
+    chat,
+    currentUserId: currentUser.id,
+    messagesLength: messages.length,
+    visibleMessages,
+    unreadAnchorAt,
+    onLoadMoreMessages,
+    onLoadMoreDirectMessages,
+  });
 
   // Overflow menu closes → collapse its submenus, so reopening it starts at the
   // top level. Opening pre-expands the question filter only when a non-default
@@ -389,75 +392,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     setQuestionFiltersOpen(questionVisibilityMode !== 'all');
   }, [isDropdownOpen, questionVisibilityMode]);
 
-  // Backstop for the loading state: an empty conversation never sets
-  // `messages.length > 0`, so without this the spinner would run forever
-  // instead of settling into "No messages yet".
-  useEffect(() => {
-    if (!chat) return;
-    const timer = window.setTimeout(() => setAwaitingMessages(false), 10_000);
-    return () => window.clearTimeout(timer);
-  }, [chat?.id]);
-
-  const typingChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
-
-  // Typing indicators via Supabase broadcast
-  // Subscription setup/teardown, keyed on `chat.id`: one broadcast channel per
-  // conversation. Each peer's id is held for 3s by a per-user timer that a fresh
-  // broadcast resets. TEARDOWN must clear every timer, empty the id list and
-  // remove the channel — otherwise a stale "X is typing…" follows you into the
-  // next conversation.
-  useEffect(() => {
-    if (!chat?.id) return;
-    const channel = supabase.channel(`typing:${chat.id}`);
-    typingChannelRef.current = channel;
-    channel
-      .on('broadcast', { event: 'typing' }, ({ payload }) => {
-        const userId = payload?.userId as string | undefined;
-        if (!userId || userId === currentUser.id) return;
-        setTypingUserIds((prev) => (prev.includes(userId) ? prev : [...prev, userId]));
-        if (typingTimeoutsRef.current[userId]) clearTimeout(typingTimeoutsRef.current[userId]);
-        typingTimeoutsRef.current[userId] = setTimeout(() => {
-          setTypingUserIds((prev) => prev.filter((id) => id !== userId));
-          delete typingTimeoutsRef.current[userId];
-        }, 3000);
-      })
-      .subscribe();
-    return () => {
-      Object.values(typingTimeoutsRef.current).forEach(clearTimeout);
-      typingTimeoutsRef.current = {};
-      setTypingUserIds([]);
-      typingChannelRef.current = null;
-      void supabase.removeChannel(channel);
-    };
-  }, [chat?.id, currentUser.id]);
-
-  const broadcastTyping = () => {
-    void typingChannelRef.current?.send({
-      type: 'broadcast',
-      event: 'typing',
-      payload: { userId: currentUser.id },
-    });
-  };
-
-  // Peer mark-read broadcasts → refresh blue ticks on own messages
-  // A second channel per conversation, skipped entirely in low-data mode
-  // (`lowDataMode` is a dep, so toggling it subscribes/unsubscribes). Own
-  // broadcasts are ignored; the shell applies the watermark via `onPeerChatRead`.
-  useEffect(() => {
-    if (!chat?.id || lowDataMode) return;
-    const channel = supabase.channel(`chat-read:${chat.id}`);
-    channel
-      .on('broadcast', { event: 'read' }, ({ payload }) => {
-        const userId = payload?.userId as string | undefined;
-        const lastReadAt = payload?.lastReadAt as string | undefined;
-        if (!userId || !lastReadAt || userId === currentUser.id) return;
-        onPeerChatRead?.({ userId, lastReadAt });
-      })
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [chat?.id, currentUser.id, lowDataMode, onPeerChatRead]);
+  /**
+   * Typing and read-receipt broadcasts. Called exactly where `typingChannelRef`
+   * was declared, so both of its effects keep their position in the effect
+   * order; `typingUserIds` and its timeout map moved down here with them.
+   */
+  const { typingUserIds, broadcastTyping } = useChatRealtime({
+    chatId: chat?.id,
+    currentUserId: currentUser.id,
+    lowDataMode,
+    onPeerChatRead,
+  });
 
   // --- Thread side panel. Threads are NOT part of `messages`: they are fetched
   // whole per root id and kept in `threadMessages`, so every mutation inside the
@@ -572,308 +517,45 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   };
 
 
-  // Scroll handler, two jobs: track "am I near the bottom" (which decides
-  // whether a new message scrolls or only bumps the pill), and page in older
-  // history at the very top. The scroll position is restored by height delta
-  // after a page loads, so the list does not jump under the reader; `hasMore`
-  // latches false on an empty page or a chat type with no pager.
-  const handleScroll = async (e: React.UIEvent<HTMLDivElement>) => {
-    const container = e.currentTarget;
-    const distanceFromBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight;
-    const nearBottom = distanceFromBottom <= NEAR_BOTTOM_PX;
-    isNearBottomRef.current = nearBottom;
-    if (nearBottom && newMessagesBelow > 0) {
-      setNewMessagesBelow(0);
-    }
-
-    // Load more when scrolled to the top (groups and DMs both page older history)
-    if (container.scrollTop === 0 && !isLoadingMore && hasMore && chat) {
-      const loadOlder =
-        chat.chatType === 'group'
-          ? onLoadMoreMessages
-          : chat.chatType === 'dm'
-            ? onLoadMoreDirectMessages
-            : undefined;
-      if (!loadOlder) {
-        // No pager for this chat type — stop implying more history exists.
-        setHasMore(false);
-        return;
-      }
-      setIsLoadingMore(true);
-      const prevScrollHeight = container.scrollHeight;
-
-      try {
-        const count = await loadOlder(chat.id);
-        if (count === 0) {
-          setHasMore(false);
-        } else {
-          // Restore scroll position to prevent jumping
-          requestAnimationFrame(() => {
-            if (container) {
-              container.scrollTop = container.scrollHeight - prevScrollHeight;
-            }
-          });
-        }
-      } catch (err) {
-        console.error('Error loading older messages:', err);
-      } finally {
-        setIsLoadingMore(false);
-      }
-    }
-  };
-
   // tree state used for mobile grouping
   const [expandedParentGroups, setExpandedParentGroups] = useState<Record<string, boolean>>({});
 
-  // Marketplace Inquiry & Offers states
-  const [inquiry, setInquiry] = useState<MarketplaceInquiry | null>(null);
-  const [activeOffer, setActiveOffer] = useState<MarketplaceOffer | null>(null);
-  const [offerHistory, setOfferHistory] = useState<MarketplaceOffer[]>([]);
-  const [activeTab, setActiveTab] = useState<'chat' | 'offers'>('chat');
-  const [showMakeOfferModal, setShowMakeOfferModal] = useState(false);
-  const [showCounterInput, setShowCounterInput] = useState(false);
-  const [counterValue, setCounterValue] = useState('');
-  const [offerLoading, setOfferLoading] = useState(false);
-  const [offerError, setOfferError] = useState('');
-  const [activeOrder, setActiveOrder] = useState<MarketplaceOrder | null>(null);
-  const [orderActionLoading, setOrderActionLoading] = useState(false);
-
-  // --- Marketplace negotiation. Offers are fetched for the viewer's ROLE and
-  // then narrowed to this listing/pair client-side; the "active" offer is the
-  // newest still-pending one, everything else is history.
-  const loadOfferHistory = async (inquiryData: MarketplaceInquiry) => {
-    try {
-      const role = currentUser.id === inquiryData.buyer_id ? 'buyer' : 'seller';
-      const offers = await fetchOffers(role);
-      const filtered = offers.filter(
-        (o: MarketplaceOffer) =>
-          o.listing_id === inquiryData.listing_id &&
-          (o.buyer_id === inquiryData.buyer_id || o.seller_id === inquiryData.seller_id)
-      );
-      // History oldest → newest; active offer is latest pending only
-      filtered.sort(
-        (a: MarketplaceOffer, b: MarketplaceOffer) =>
-          new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-      );
-      setOfferHistory(filtered);
-
-      const pending = filtered.filter((o: MarketplaceOffer) => o.status === 'pending');
-      const active = pending.length > 0 ? pending[pending.length - 1] : null;
-      setActiveOffer(active);
-    } catch (err) {
-      console.error('Error loading offer history:', err);
-    }
-  };
-
-  // Accept / decline / counter / withdraw. Order of effects matters:
-  //  1. the server call (money side),
-  //  2. a plain chat message so the negotiation leaves a visible trail — fired
-  //     without awaiting, and a failure here is logged only: a lost narration
-  //     line must never look like a failed offer response,
-  //  3. accept-as-buyer leaves the app for Paystack and returns early; every
-  //     other path re-reads the inquiry from the server rather than assuming a
-  //     status (forcing 'negotiating' once left the pill amber over a live order).
-  const handleRespond = async (action: 'accept' | 'decline' | 'counter' | 'withdraw', counterAmount?: number) => {
-    if (!activeOffer || !inquiry) return;
-    setOfferLoading(true);
-    setOfferError('');
-    try {
-      const acceptResult = await respondToOffer(activeOffer.id, action, counterAmount);
-      
-      // Send DM notification for visual history
-      let dmContent = '';
-      if (action === 'accept') {
-        const payUrl =
-          (acceptResult as { authorizationUrl?: string })?.authorizationUrl ||
-          (acceptResult as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
-        dmContent = payUrl
-          ? `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! Complete Paystack checkout to pay — you pay the offer amount, nothing added.`
-          : `[Offer] I accepted your offer of ₦${activeOffer.amount.toLocaleString()}! An order has been created — arrange pickup or delivery in Orders.`;
-      } else if (action === 'decline') {
-        dmContent = `[Offer] I declined the offer of ₦${activeOffer.amount.toLocaleString()}.`;
-      } else if (action === 'withdraw') {
-        dmContent = `[Offer] I withdrew my offer of ₦${activeOffer.amount.toLocaleString()}.`;
-      } else if (action === 'counter' && counterAmount) {
-        dmContent = `[Offer] I countered your offer with a counter-offer of ₦${counterAmount.toLocaleString()}.`;
-      }
-
-      if (dmContent) {
-        // FIXED (F1): `onSendMessage` may return a promise, and a bare try/catch
-        // cannot see its rejection — a failed narration message escaped as an
-        // unhandled rejection. It now goes through Promise.resolve().catch, which
-        // also matters because onSendMessage REJECTS on a busy send lock since
-        // E3 H16 (see MessageSendBusyError in hooks/useGroupHandlers). This is a
-        // fire-and-forget narration line: log it, never surface it.
-        void Promise.resolve()
-          .then(() => onSendMessage(dmContent))
-          .catch((msgErr) => {
-            console.error('Failed to send status update message to chat:', msgErr);
-          });
-      }
-
-      if (action === 'accept') {
-        const payUrl =
-          (acceptResult as { authorizationUrl?: string })?.authorizationUrl ||
-          (acceptResult as { checkout?: { authorizationUrl?: string } })?.checkout?.authorizationUrl;
-        const isBuyer = currentUser?.id === activeOffer.buyer_id;
-        if (payUrl && isBuyer) {
-          window.location.assign(payUrl);
-          return;
-        }
-        try {
-          // The server sets the inquiry status when an offer is accepted; re-fetch it
-          // as the source of truth instead of forcing 'negotiating' (which left the
-          // status pill stuck on amber even though a live order already existed).
-          const refreshedInquiry = await getInquiryByThread(chat.id);
-          if (refreshedInquiry) setInquiry(refreshedInquiry);
-          const order = await fetchOrderForInquiry(inquiry.id);
-          if (order) setActiveOrder(order);
-          await refreshBudgetTransactions(currentUser.id);
-          if (payUrl && !isBuyer) {
-            useToastStore.getState().showToast(
-              'Offer accepted. The buyer will complete Paystack checkout.',
-              'info'
-            );
-          }
-        } catch (err) {
-          console.error('Failed to load order after offer acceptance:', err);
-        }
-      } else if (action === 'counter') {
-        try {
-          await updateInquiryStatus(inquiry.id, 'negotiating');
-          const updated = await getInquiryByThread(chat.id);
-          if (updated) setInquiry(updated);
-        } catch (err) {
-          console.error('Failed to update inquiry status to negotiating:', err);
-        }
-      }
-
-      await loadOfferHistory(inquiry);
-      setShowCounterInput(false);
-    } catch (err: any) {
-      setOfferError(err.message || `Failed to ${action} offer`);
-    } finally {
-      setOfferLoading(false);
-    }
-  };
-
-  // Reset offer/order UI only when the conversation itself changes.
-  useEffect(() => {
-    setActiveTab('chat');
-    setInquiry(null);
-    setActiveOffer(null);
-    setOfferHistory([]);
-    setShowCounterInput(false);
-    setCounterValue('');
-    setOfferError('');
-    setActiveOrder(null);
-  }, [chat?.id]);
-
-  // Resolve marketplace inquiry context durably: ask the server whether THIS thread
-  // is an inquiry (source of truth) rather than substring-matching a fragile "[Offer]"
-  // marker in message text, which false-negatives on seed drift and false-positives on
-  // a literally typed "[Offer]". Depends only on the chat id, so it never re-fires on an
-  // unrelated parent re-render (which used to bounce the user off the Offers tab).
-  useEffect(() => {
-    if (!chat || chat.chatType !== 'dm') return;
-    let cancelled = false;
-    const loadInquiryContext = async () => {
-      try {
-        const inquiryData = await getInquiryByThread(chat.id);
-        if (cancelled) return;
-        if (inquiryData) {
-          setInquiry(inquiryData);
-          await loadOfferHistory(inquiryData);
-          if (cancelled) return;
-          const order = await fetchOrderForInquiry(inquiryData.id);
-          if (!cancelled && order) setActiveOrder(order);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error('Error loading inquiry context:', err);
-        }
-      }
-    };
-    void loadInquiryContext();
-    return () => { cancelled = true; };
-  }, [chat?.id, chat?.chatType]);
+  /**
+   * The marketplace half of a DM: inquiry, offers, order, and the four money
+   * actions. Called exactly where its ten pieces of state used to be declared,
+   * so the two effects it carries keep their position in the shell's effect
+   * order (nothing else calls a hook between here and where they used to sit).
+   */
+  const {
+    inquiry,
+    setInquiry,
+    activeOffer,
+    offerHistory,
+    activeTab,
+    setActiveTab,
+    showMakeOfferModal,
+    setShowMakeOfferModal,
+    showCounterInput,
+    setShowCounterInput,
+    counterValue,
+    setCounterValue,
+    offerLoading,
+    offerError,
+    activeOrder,
+    setActiveOrder,
+    orderActionLoading,
+    setOrderActionLoading,
+    loadOfferHistory,
+    handleRespond,
+  } = useMarketplaceOffers({
+    chat,
+    currentUser,
+    onSendMessage,
+    refreshBudgetTransactions,
+  });
 
 
-  // build top‑level vs subgroup map once
-  const { activeTopLevelGroups, archivedTopLevelGroups, subGroupsMap } = React.useMemo(() => {
-    const activeTop: Group[] = [];
-    const archivedTop: Group[] = [];
-    const map: Record<string, Group[]> = {};
 
-    (groups ?? []).forEach(g => {
-      if (g.parentId) {
-        if (!map[g.parentId]) map[g.parentId] = [];
-        map[g.parentId].push(g);
-      } else {
-        if (g.isArchived) archivedTop.push(g);
-        else activeTop.push(g);
-      }
-    });
-
-    const sortFn = (a: Group, b: Group) => a.name.localeCompare(b.name);
-    activeTop.sort(sortFn);
-    archivedTop.sort(sortFn);
-    Object.values(map).forEach(arr => arr.sort(sortFn));
-
-    return { activeTopLevelGroups: activeTop, archivedTopLevelGroups: archivedTop, subGroupsMap: map };
-  }, [groups]);
-
-  // recursive renderer for mobile list entries
-  const renderGroupWithSubgroups = (group: Group, nestingLevel: number = 0): React.ReactNode => {
-    const subGroups = subGroupsMap[group.id] || [];
-    const isExpanded = !!expandedParentGroups[group.id];
-
-    return (
-      <React.Fragment key={group.id}>
-        <GroupListItem
-          chat={{ ...group, chatType: 'group' as const }}
-          currentUser={currentUser}
-          isSelected={false}
-          onClick={() => onSelectChat?.({ ...group, chatType: 'group' as const })}
-          showText={true}
-          hasSubGroups={subGroups.length > 0}
-          isExpanded={isExpanded}
-          onToggleExpand={subGroups.length > 0 ? () => setExpandedParentGroups(prev => ({ ...prev, [group.id]: !prev[group.id] })) : undefined}
-          nestingLevel={nestingLevel}
-        />
-        {isExpanded && subGroups.map(sg => renderGroupWithSubgroups(sg, nestingLevel + 1))}
-      </React.Fragment>
-    );
-  };
-
-  // Scrolling to the end also clears the pill and re-arms "near bottom", so the
-  // two never disagree about where the reader is.
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    messagesEndRef.current?.scrollIntoView({ behavior });
-    setNewMessagesBelow(0);
-    isNearBottomRef.current = true;
-  };
-
-  // What the list actually renders, in filter order: archived-out, removed
-  // tombstone policy (a removed message still renders when something replies to
-  // it), the group question-visibility mode, the starred-only view, then the
-  // in-chat search (2+ chars). EVERY scroll and unread computation below works on
-  // this array, not on `messages` — the divider must sit at the first unread row
-  // the reader can actually see.
-  const isGroupChat = chat?.chatType === 'group';
-  const visibleMessages = useMemo(
-    () =>
-      selectVisibleMessages({
-        messages,
-        isGroupChat,
-        questionVisibilityMode,
-        starredOnly,
-        starredIds,
-        threadSearch,
-      }),
-    [messages, isGroupChat, questionVisibilityMode, starredOnly, starredIds, threadSearch]
-  );
   const visibleThreadMessages = useMemo(
     () => selectVisibleThreadMessages(threadMessages, isGroupChat),
     [isGroupChat, threadMessages]
@@ -895,98 +577,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       !container || container.scrollHeight - container.scrollTop - container.clientHeight < 160;
     if (nearBottom) end.scrollIntoView({ block: 'end' });
   }, [threadRootId, threadLoading, visibleThreadMessages.length]);
-
-  // Compute first unread once the prior marker and messages are available (group + DM).
-  // `unreadAnchorAt === undefined` means "not reported yet" and must WAIT;
-  // `null` means fully read. Own messages can never be the first unread.
-  useEffect(() => {
-    if (!chat?.id) {
-      setFirstUnreadId(null);
-      return;
-    }
-    if (unreadAnchorAt === undefined) return;
-    if (visibleMessages.length === 0) return;
-
-    if (unreadAnchorAt == null) {
-      setFirstUnreadId(null);
-      return;
-    }
-
-    const anchorMs = new Date(unreadAnchorAt).getTime();
-    if (Number.isNaN(anchorMs)) {
-      setFirstUnreadId(null);
-      return;
-    }
-
-    const first = visibleMessages.find((msg) => {
-      const senderId = msg.sender?.id;
-      if (senderId && senderId === currentUser.id) return false;
-      const ts = new Date(msg.timestamp).getTime();
-      return !Number.isNaN(ts) && ts > anchorMs;
-    });
-    setFirstUnreadId(first?.id ?? null);
-  }, [chat?.id, unreadAnchorAt, visibleMessages, currentUser.id]);
-
-  // Initial open: scroll to first unread (or bottom when fully read).
-  // Runs at most once per chat id (`initialAnchorDoneRef`), and it also seeds
-  // `lastMessageIdRef`/`prevMessageCountRef` so the live-update effect below can
-  // tell "the list just mounted" from "a new message arrived".
-  useEffect(() => {
-    if (!chat?.id) return;
-    if (visibleMessages.length === 0) return;
-    if (initialAnchorDoneRef.current === chat.id) return;
-
-    // Wait until mark-as-read has reported a marker (null = none / fully read).
-    if (unreadAnchorAt === undefined) return;
-    // Wait a tick so the unread divider DOM node exists when needed.
-    const timer = window.setTimeout(() => {
-      if (initialAnchorDoneRef.current === chat.id) return;
-      initialAnchorDoneRef.current = chat.id;
-      lastMessageIdRef.current =
-        visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1].id : null;
-      prevMessageCountRef.current = visibleMessages.length;
-
-      if (firstUnreadId && firstUnreadRef.current) {
-        firstUnreadRef.current.scrollIntoView({ behavior: 'auto', block: 'start' });
-        isNearBottomRef.current = false;
-      } else {
-        scrollToBottom('auto');
-      }
-    }, 50);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat?.id, visibleMessages.length, firstUnreadId, unreadAnchorAt]);
-
-  // Live updates: only auto-scroll when near bottom or the new message is ours.
-  // Driven by the identity of the LAST id in `visibleMessages`: an edit, a
-  // reaction or a filter change re-runs this effect but exits at the first guard,
-  // so only a genuinely new tail message scrolls or increments the pill.
-  useEffect(() => {
-    const last = visibleMessages.length > 0 ? visibleMessages[visibleMessages.length - 1] : null;
-    const lastId = last?.id ?? null;
-    if (!lastId || lastId === lastMessageIdRef.current) {
-      lastMessageIdRef.current = lastId;
-      prevMessageCountRef.current = visibleMessages.length;
-      return;
-    }
-
-    // Skip the very first paint for a chat — handled by the initial-anchor effect.
-    if (initialAnchorDoneRef.current !== chat?.id) {
-      lastMessageIdRef.current = lastId;
-      prevMessageCountRef.current = visibleMessages.length;
-      return;
-    }
-
-    const isOwn = last?.sender?.id === currentUser.id;
-    if (isOwn || isNearBottomRef.current) {
-      scrollToBottom('smooth');
-    } else {
-      const added = Math.max(1, visibleMessages.length - prevMessageCountRef.current);
-      setNewMessagesBelow((n) => n + added);
-    }
-    lastMessageIdRef.current = lastId;
-    prevMessageCountRef.current = visibleMessages.length;
-  }, [visibleMessages, currentUser.id, chat?.id]);
 
   // All hooks below must stay above the `if (!chat)` return — opening a chat
   // from the empty state must not change hook count (React #310).
@@ -1019,75 +609,29 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     return members;
   }, [isGroup, isGroupAdminForMentions, groupMemberListForMentions, currentUser.id]);
 
-  const dmThreadForHooks =
-    chat && chat.chatType !== 'group' ? (chat as DMThread & { chatType?: 'dm' }) : null;
-  const [dmRequestStatus, setDmRequestStatus] = useState<'open' | 'pending' | 'declined'>('open');
-  const [dmRequestBusy, setDmRequestBusy] = useState(false);
-  const [dmBlocked, setDmBlocked] = useState(false);
-  const [iBlockedThem, setIBlockedThem] = useState(false);
-  const [dmBlockBusy, setDmBlockBusy] = useState(false);
-  const [chatMuted, setChatMuted] = useState(false);
-  const [chatMutedUntil, setChatMutedUntil] = useState<string | null>(null);
-  const [muteBusy, setMuteBusy] = useState(false);
-
-  const dmPeerId =
-    dmThreadForHooks && Array.isArray(dmThreadForHooks.participantIds)
-      ? dmThreadForHooks.participantIds.find((id) => id !== currentUser.id)
-      : undefined;
-
-  useEffect(() => {
-    setDmRequestStatus(dmThreadForHooks?.status || 'open');
-  }, [dmThreadForHooks?.id, dmThreadForHooks?.status]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!dmPeerId || isGroup || !chat) {
-      setDmBlocked(false);
-      setIBlockedThem(false);
-      return;
-    }
-    void getDmBlockStatus(currentUser.id, dmPeerId)
-      .then((status) => {
-        if (cancelled) return;
-        setDmBlocked(!!status.blocked);
-        setIBlockedThem(!!status.iBlockedThem);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setDmBlocked(false);
-        setIBlockedThem(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [currentUser.id, dmPeerId, isGroup, chat?.id]);
-
-  useEffect(() => {
-    let cancelled = false;
-    if (!chat) {
-      setChatMuted(false);
-      setChatMutedUntil(null);
-      return;
-    }
-    const load = isGroup
-      ? getGroupMuteStatus(chat.id)
-      : getDmMuteStatus(chat.id);
-    void load
-      .then((status) => {
-        if (cancelled) return;
-        setChatMuted(!!status?.muted);
-        setChatMutedUntil(status?.mutedUntil ?? null);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setChatMuted(false);
-        setChatMutedUntil(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [chat?.id, isGroup]);
-
+  /**
+   * Request / block / mute: the three server-backed facts about the other side
+   * of this conversation, and the five actions that change them. Called exactly
+   * where `dmThreadForHooks` used to be declared, so its three effects keep
+   * their position in the shell's effect order.
+   */
+  const {
+    dmThread,
+    dmPeerId,
+    dmRequestStatus,
+    dmRequestBusy,
+    dmBlocked,
+    iBlockedThem,
+    dmBlockBusy,
+    chatMuted,
+    muteBusy,
+    muteUntilLabel,
+    handleMuteFor,
+    handleUnmute,
+    handleAcceptDmRequest,
+    handleDeclineDmRequest,
+    handleToggleDmBlock,
+  } = useDmRelationship({ chat, currentUser, isGroup, onDmThreadStatusChange });
   const scrollToMessageId = (messageId: string) => {
     messageNodeRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
@@ -1095,203 +639,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const galleryItems = useMemo(() => collectChatGalleryItems(messages), [messages]);
   const pinnedMessage = pinnedMessageId ? messages.find((m) => m.id === pinnedMessageId) : undefined;
 
-  const handleMuteFor = async (duration: ChatMuteDurationId) => {
-    if (!chat || muteBusy) return;
-    setMuteBusy(true);
-    try {
-      const status = isGroup
-        ? await muteGroupChat(chat.id, duration)
-        : await muteDmThread(chat.id, duration);
-      if (!status?.muted) {
-        useToastStore.getState().showToast('Could not mute notifications.', 'error');
-        return;
-      }
-      setChatMuted(true);
-      setChatMutedUntil(status.mutedUntil);
-      const untilLabel = formatMuteUntilLabel(status.mutedUntil);
-      useToastStore.getState().showToast(
-        untilLabel ? `Notifications muted until ${untilLabel}.` : 'Notifications muted.',
-        'success'
-      );
-    } finally {
-      setMuteBusy(false);
-    }
-  };
-
-  const handleUnmute = async () => {
-    if (!chat || muteBusy) return;
-    setMuteBusy(true);
-    try {
-      const status = isGroup
-        ? await unmuteGroupChat(chat.id)
-        : await unmuteDmThread(chat.id);
-      if (!status || status.muted) {
-        useToastStore.getState().showToast('Could not unmute notifications.', 'error');
-        return;
-      }
-      setChatMuted(false);
-      setChatMutedUntil(null);
-      useToastStore.getState().showToast('Notifications unmuted.', 'success');
-    } finally {
-      setMuteBusy(false);
-    }
-  };
-
-  const muteUntilLabel = formatMuteUntilLabel(chatMutedUntil);
-
   // No conversation selected. NOTHING below this line may call a hook — see the
   // file header (React #310). Desktop gets the chat-home pane; small screens get
   // the full conversation list, since there is no sidebar there to hold it.
   if (!chat) {
-    // Desktop: show placeholder
-    // Mobile: show inline group/DM list for navigation
-    const inboundRequestThreads = dmThreads.filter(
-      (t) =>
-        !t.isArchived &&
-        t.status === 'pending' &&
-        typeof t.requestedBy === 'string' &&
-        t.requestedBy !== currentUser.id,
-    );
-    const activeDmThreads = dmThreads.filter(
-      (t) =>
-        !t.isArchived &&
-        !(
-          t.status === 'pending' &&
-          typeof t.requestedBy === 'string' &&
-          t.requestedBy !== currentUser.id
-        ),
-    );
-    const archivedDmThreads = dmThreads.filter(t => t.isArchived);
-    const totalArchived = archivedTopLevelGroups.length + archivedDmThreads.length;
-    const chatHome = buildChatHome({
-      currentUserId: currentUser.id,
-      groups,
-      dmThreads,
-      communities: chatHomeCommunities || myCommunities,
-      inquiries: buyerInquiries,
-    });
-
     return (
-      <div className="flex-1 flex flex-col bg-lantern-background">
-        <div className="hidden md:flex flex-1">
-          <ChatHomePane
-            model={chatHome}
-            onMessageSomeone={onOpenNewDmModal}
-            onNewGroup={onCreateGroup}
-            onSelectRecent={(recent) => {
-              if (recent.chatType === 'dm') {
-                const thread = dmThreads.find((t) => t.id === recent.id);
-                if (thread) onSelectChat?.({ ...thread, chatType: 'dm' });
-                return;
-              }
-              const group = groups.find((g) => g.id === recent.id);
-              if (group) onSelectChat?.({ ...group, chatType: 'group' });
-            }}
-            onOpenLounge={onOpenLounge}
-            onOpenInquiries={onOpenInquiries}
-          />
-        </div>
-
-        {/* Mobile group list */}
-        <div className="md:hidden flex-1 flex flex-col">
-          {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 bg-lantern-surface border-b border-lantern-border">
-            <h1 className="text-lg font-bold text-lantern-text">Chats</h1>
-            <div className="flex items-center gap-2">
-              {onOpenNewDmModal && (
-                <button onClick={onOpenNewDmModal} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New message">
-                  <AppIcon name="chatbubble-ellipses" size={20} />
-                </button>
-              )}
-              {onCreateGroup && (
-                <button onClick={onCreateGroup} className="p-2 min-w-[44px] min-h-[44px] flex items-center justify-center text-lantern-text-secondary hover:text-lantern-primary rounded-lantern hover:bg-lantern-background-secondary" title="New group">
-                  <AppIcon name="add-circle" size={20} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* List */}
-          <div className="flex-1 overflow-y-auto">
-            {activeTopLevelGroups.length === 0 &&
-            activeDmThreads.length === 0 &&
-            inboundRequestThreads.length === 0 ? (
-              <ChatHomePane
-                compact
-                model={chatHome}
-                onMessageSomeone={onOpenNewDmModal}
-                onNewGroup={onCreateGroup}
-                onOpenLounge={onOpenLounge}
-                onOpenInquiries={onOpenInquiries}
-              />
-            ) : (
-              <div className="divide-y divide-lantern-border">
-                {inboundRequestThreads.length > 0 && (
-                  <>
-                    <div className="px-4 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300 uppercase tracking-wider bg-amber-50 dark:bg-amber-950/30">
-                      Message requests ({inboundRequestThreads.length})
-                    </div>
-                    {inboundRequestThreads.map((thread) => (
-                      <GroupListItem
-                        key={thread.id}
-                        chat={{ ...thread, chatType: 'dm' as const }}
-                        currentUser={currentUser}
-                        isSelected={false}
-                        onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
-                        showText={true}
-                      />
-                    ))}
-                  </>
-                )}
-
-                {/* DM threads */}
-                {activeDmThreads.map(thread => (
-                  <GroupListItem
-                    key={thread.id}
-                    chat={{ ...thread, chatType: 'dm' as const }}
-                    currentUser={currentUser}
-                    isSelected={false}
-                    onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
-                    showText={true}
-                  />
-                ))}
-
-                {/* Active groups */}
-                {activeTopLevelGroups.map(group => renderGroupWithSubgroups(group, 0))}
-
-                {/* Archived section (groups + DMs) */}
-                {totalArchived > 0 && (
-                  <>
-                    <div className="px-4 py-2 text-xs font-semibold text-lantern-text-tertiary uppercase tracking-wider bg-lantern-background-secondary">
-                      Archived ({totalArchived})
-                    </div>
-                    {archivedDmThreads.map(thread => (
-                      <GroupListItem
-                        key={thread.id}
-                        chat={{ ...thread, chatType: 'dm' as const }}
-                        currentUser={currentUser}
-                        isSelected={false}
-                        onClick={() => onSelectChat?.({ ...thread, chatType: 'dm' as const })}
-                        showText={true}
-                      />
-                    ))}
-                    {archivedTopLevelGroups.map(group => (
-                      <GroupListItem
-                        key={group.id}
-                        chat={{ ...group, chatType: 'group' as const }}
-                        currentUser={currentUser}
-                        isSelected={false}
-                        onClick={() => onSelectChat?.({ ...group, chatType: 'group' as const })}
-                        showText={true}
-                      />
-                    ))}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+      <ChatHomeScreen
+        currentUser={currentUser}
+        groups={groups}
+        dmThreads={dmThreads}
+        communities={chatHomeCommunities || myCommunities}
+        inquiries={buyerInquiries}
+        expandedParentGroups={expandedParentGroups}
+        setExpandedParentGroups={setExpandedParentGroups}
+        onSelectChat={onSelectChat}
+        onCreateGroup={onCreateGroup}
+        onOpenNewDmModal={onOpenNewDmModal}
+        onOpenLounge={onOpenLounge}
+        onOpenInquiries={onOpenInquiries}
+      />
     );
   }
 
@@ -1338,7 +704,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     : '';
 
   const isArchived = isGroup ? group.isArchived : (chat as any).isArchived;
-  const dmThread = dmThreadForHooks;
 
   const dmPresenceLabel = !isGroup && resolvedPeerPresence
     ? formatChatPresenceLine(resolvedPeerPresence.settings, resolvedPeerPresence.lastSeenAt).label
@@ -1366,416 +731,146 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
     dmThread.requestedBy &&
     dmThread.requestedBy !== currentUser.id;
 
-  const handleAcceptDmRequest = async () => {
-    if (!dmThread?.id || dmRequestBusy) return;
-    setDmRequestBusy(true);
-    try {
-      await acceptDmMessageRequest(dmThread.id);
-      setDmRequestStatus('open');
-      onDmThreadStatusChange?.(dmThread.id, { status: 'open', requestedBy: null });
-      useToastStore.getState().showToast('Message request accepted', 'success');
-    } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not accept request', 'error');
-    } finally {
-      setDmRequestBusy(false);
-    }
-  };
 
-  const handleDeclineDmRequest = async () => {
-    if (!dmThread?.id || dmRequestBusy) return;
-    setDmRequestBusy(true);
-    try {
-      await declineDmMessageRequest(dmThread.id);
-      setDmRequestStatus('declined');
-      onDmThreadStatusChange?.(dmThread.id, {
-        status: 'declined',
-        requestedBy: dmThread.requestedBy ?? null,
-      });
-      useToastStore.getState().showToast('Message request declined', 'success');
-    } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not decline request', 'error');
-    } finally {
-      setDmRequestBusy(false);
-    }
-  };
+  // The conversation itself, built here and rendered either bare or inside the
+  // marketplace Tabs without duplicating the list, composer and all of their
+  // handlers. The list stays in the shell, which owns its twenty-odd props;
+  // `ConversationPane` wraps it with the banners and the composer slot.
+  const messageList = (
+        <MessageList
+          visibleMessages={visibleMessages}
+          messagesContainerRef={messagesContainerRef}
+          messagesEndRef={messagesEndRef}
+          firstUnreadRef={firstUnreadRef}
+          handleScroll={handleScroll}
+          isLoadingMore={isLoadingMore}
+          awaitingMessages={awaitingMessages}
+          newMessagesBelow={newMessagesBelow}
+          scrollToBottom={scrollToBottom}
+          firstUnreadId={firstUnreadId}
+          isArchived={isArchived}
+          isGroup={isGroup}
+          starredOnly={starredOnly}
+          threadSearch={threadSearch}
+          name={name}
+          userVotes={userVotes}
+          myReactions={myReactions}
+          starredIds={starredIds}
+          pinnedMessageId={pinnedMessageId}
+          registerNode={registerMessageNode}
+          onScrollToMessage={scrollToMessageNode}
+          rowProps={{
+            currentUser,
+            chatId: chat.id,
+            isGroup,
+            group,
+            communityHost,
+            handleToggleReaction,
+            onVoteQuestion,
+            onFlagAsSimilar,
+            handleOpenThread,
+            beginEditingMessage,
+            handleRemoveMessage,
+            handleCopyMessage,
+            handleToggleStar,
+            handleTogglePin,
+            setReportTarget,
+            setEditingMessage,
+            setReplyTo,
+            setForwardMessage,
+            setSeedMentionUsername,
+          }}
+        />
+  );
 
-  const handleToggleDmBlock = async () => {
-    if (!dmPeerId || dmBlockBusy) return;
-    if (!iBlockedThem) {
-      const ok = await confirmDialog({
-        title: 'Block user',
-        message: `Block ${name}? They won’t be able to message you, and you won’t be able to message them until you unblock.`,
-        confirmLabel: 'Block',
-        danger: true,
-      });
-      if (!ok) return;
-    }
-    setDmBlockBusy(true);
-    try {
-      if (iBlockedThem) {
-        await unblockUser(currentUser.id, dmPeerId);
-        setIBlockedThem(false);
-        const status = await getDmBlockStatus(currentUser.id, dmPeerId);
-        setDmBlocked(!!status.blocked);
-        useToastStore.getState().showToast('User unblocked', 'success');
-      } else {
-        await blockUser(currentUser.id, dmPeerId);
-        setIBlockedThem(true);
-        setDmBlocked(true);
-        useToastStore.getState().showToast('User blocked', 'success');
-      }
-    } catch (err: any) {
-      useToastStore.getState().showToast(err?.message || 'Could not update block', 'error');
-    } finally {
-      setDmBlockBusy(false);
-    }
-  };
-
-  // The conversation itself, extracted so it can be rendered either bare or
-  // inside the marketplace Tabs without duplicating the list, composer and all
-  // of their handlers.
   const chatPanelContent = (
-    <>
-      {threadSearchOpen && (
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-lantern-border bg-lantern-surface">
-          <AppIcon name="search" size={16} className="text-lantern-text-tertiary" />
-          <input
-            type="search"
-            value={threadSearch}
-            onChange={(e) => setThreadSearch(e.target.value)}
-            placeholder="Search this chat"
-            aria-label="Search this chat"
-            className="flex-1 bg-transparent text-body text-lantern-text outline-none"
-            autoFocus
-          />
-          <button
-            type="button"
-            onClick={() => {
-              setThreadSearch('');
-              setThreadSearchOpen(false);
-            }}
-            className="text-caption font-semibold text-lantern-primary"
-          >
-            Close
-          </button>
-        </div>
-      )}
-      {starredOnly && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200/70 dark:border-amber-900/40">
-          <AppIcon name="star" size={14} className="text-amber-500" />
-          <p className="flex-1 text-caption font-semibold text-amber-800 dark:text-amber-300">
-            Starred messages ({visibleMessages.length})
-          </p>
-          <button type="button" onClick={() => setStarredOnly(false)} className="text-caption font-semibold text-amber-800">
-            Show all
-          </button>
-        </div>
-      )}
-      {pinnedMessage && (
-        <button
-          type="button"
-          onClick={() => scrollToMessageId(pinnedMessage.id)}
-          className="flex items-center gap-2 w-full px-4 py-2 text-left border-b border-lantern-border bg-lantern-background-secondary"
-        >
-          <AppIcon name="pin" size={14} className="text-lantern-text-tertiary" />
-          <span className="flex-1 text-caption truncate text-lantern-text">
-            {pinnedMessage.questionStem || pinnedMessage.text || 'Pinned message'}
-          </span>
-        </button>
-      )}
-      <MessageList
-        visibleMessages={visibleMessages}
-        messagesContainerRef={messagesContainerRef}
-        messagesEndRef={messagesEndRef}
-        firstUnreadRef={firstUnreadRef}
-        handleScroll={handleScroll}
-        isLoadingMore={isLoadingMore}
-        awaitingMessages={awaitingMessages}
-        newMessagesBelow={newMessagesBelow}
-        scrollToBottom={scrollToBottom}
-        firstUnreadId={firstUnreadId}
+    <ConversationPane
+      chat={chat}
+      isGroup={isGroup}
+      isArchived={isArchived}
+      communityHost={communityHost}
+      group={group}
+      messageList={messageList}
+      visibleMessagesCount={visibleMessages.length}
+      threadSearchOpen={threadSearchOpen}
+      threadSearch={threadSearch}
+      setThreadSearch={setThreadSearch}
+      setThreadSearchOpen={setThreadSearchOpen}
+      starredOnly={starredOnly}
+      setStarredOnly={setStarredOnly}
+      pinnedMessage={pinnedMessage}
+      scrollToMessageId={scrollToMessageId}
+      onToggleArchiveGroup={onToggleArchiveGroup}
+      dmBlocked={dmBlocked}
+      iBlockedThem={iBlockedThem}
+      dmBlockBusy={dmBlockBusy}
+      handleToggleDmBlock={() => handleToggleDmBlock(name)}
+      isDmRequestRecipient={isDmRequestRecipient}
+      isDmRequestSender={isDmRequestSender}
+      isDmRequestDeclinedForRecipient={isDmRequestDeclinedForRecipient}
+      dmRequestBusy={dmRequestBusy}
+      handleAcceptDmRequest={handleAcceptDmRequest}
+      handleDeclineDmRequest={handleDeclineDmRequest}
+      typingLabels={typingLabels}
+      handleComposerSend={handleComposerSend}
+      onOpenQuestionModal={onOpenQuestionModal}
+      onAIQuery={onAIQuery}
+      broadcastTyping={broadcastTyping}
+      mentionCandidates={mentionCandidates}
+      seedMentionUsername={seedMentionUsername}
+      setSeedMentionUsername={setSeedMentionUsername}
+      replyTo={replyTo}
+      setReplyTo={setReplyTo}
+      editingMessage={editingMessage}
+      setEditingMessage={setEditingMessage}
+    />
+  );
+
+
+  return (
+    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background relative">
+      {/* Thread overlay — see components/chat/ThreadPanel.tsx for why it is
+          positioned inside this component's root rather than portalled. */}
+      <ThreadPanel
+        threadRootId={threadRootId}
+        chat={chat}
+        currentUser={currentUser}
+        group={group}
+        communityHost={communityHost}
         isArchived={isArchived}
-        isGroup={isGroup}
-        starredOnly={starredOnly}
-        threadSearch={threadSearch}
-        name={name}
+        isThreadRootRemoved={isThreadRootRemoved}
+        threadLoading={threadLoading}
+        visibleThreadMessages={visibleThreadMessages}
+        threadMessages={threadMessages}
+        threadReplyTo={threadReplyTo}
+        threadEditingMessage={threadEditingMessage}
+        threadSeedMentionUsername={threadSeedMentionUsername}
+        threadScrollRef={threadScrollRef}
+        threadEndRef={threadEndRef}
+        threadCloseButtonRef={threadCloseButtonRef}
+        threadMessageNodeRefs={threadMessageNodeRefs}
         userVotes={userVotes}
         myReactions={myReactions}
         starredIds={starredIds}
         pinnedMessageId={pinnedMessageId}
-        registerNode={registerMessageNode}
-        onScrollToMessage={scrollToMessageNode}
-        rowProps={{
-          currentUser,
-          chatId: chat.id,
-          isGroup,
-          group,
-          communityHost,
-          handleToggleReaction,
-          onVoteQuestion,
-          onFlagAsSimilar,
-          handleOpenThread,
-          beginEditingMessage,
-          handleRemoveMessage,
-          handleCopyMessage,
-          handleToggleStar,
-          handleTogglePin,
-          setReportTarget,
-          setEditingMessage,
-          setReplyTo,
-          setForwardMessage,
-          setSeedMentionUsername,
-        }}
+        mentionCandidates={mentionCandidates}
+        setThreadRootId={setThreadRootId}
+        setThreadReplyTo={setThreadReplyTo}
+        setThreadEditingMessage={setThreadEditingMessage}
+        setThreadSeedMentionUsername={setThreadSeedMentionUsername}
+        setForwardMessage={setForwardMessage}
+        setReportTarget={setReportTarget}
+        handleThreadSend={handleThreadSend}
+        handleToggleReaction={handleToggleReaction}
+        handleCopyMessage={handleCopyMessage}
+        handleToggleStar={handleToggleStar}
+        handleTogglePin={handleTogglePin}
+        beginEditingMessage={beginEditingMessage}
+        handleRemoveMessage={handleRemoveMessage}
+        onVoteQuestion={onVoteQuestion}
+        onFlagAsSimilar={onFlagAsSimilar}
+        onAIQuery={onAIQuery}
       />
-      {/* Composer slot — mutually exclusive states, in precedence order:
-          archived group → blocked DM → declined request → the real composer
-          (which may itself be preceded by the accept/decline request banner).
-          `flex-shrink-0` keeps every one of them at full height beside the
-          scrolling list; `pb-16 md:pb-0` clears the mobile bottom nav. */}
-      {isArchived ? (
-        <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/40 flex-shrink-0">
-          <AppIcon name="archive" size={16} className="text-amber-600 dark:text-amber-400" />
-          <p className="text-sm text-amber-800 dark:text-amber-300">
-            This group is archived.
-          </p>
-          <button
-            onClick={() => onToggleArchiveGroup(group!.id)}
-            className="text-sm font-semibold text-amber-700 dark:text-amber-300 hover:text-amber-900 dark:hover:text-amber-100 underline underline-offset-2 transition-colors duration-150"
-          >
-            Unarchive
-          </button>
-        </div>
-      ) : dmBlocked ? (
-        <div className="flex flex-col items-center justify-center gap-2 p-4 pb-20 md:pb-4 bg-lantern-background-secondary border-t border-lantern-border flex-shrink-0">
-          <p className="text-sm text-lantern-text-secondary text-center">
-            {iBlockedThem
-              ? 'You blocked this user. Messaging is disabled until you unblock them.'
-              : 'You can’t message this user.'}
-          </p>
-          {iBlockedThem && (
-            <button
-              type="button"
-              disabled={dmBlockBusy}
-              onClick={() => void handleToggleDmBlock()}
-              className="px-3 py-1.5 rounded-lg text-sm font-semibold border border-lantern-border text-lantern-text hover:bg-lantern-surface disabled:opacity-60"
-            >
-              Unblock
-            </button>
-          )}
-        </div>
-      ) : isDmRequestDeclinedForRecipient ? (
-        <div className="flex items-center justify-center gap-3 p-4 pb-20 md:pb-4 bg-lantern-background-secondary border-t border-lantern-border flex-shrink-0">
-          <p className="text-sm text-lantern-text-secondary">
-            You declined this message request. It stays one-way unless they send again.
-          </p>
-        </div>
-      ) : (
-        <div className="flex-shrink-0 pb-16 md:pb-0 bg-lantern-surface relative z-20 border-t border-lantern-border">
-          {isDmRequestRecipient && (
-            <div className="px-4 py-3 border-b border-amber-200 dark:border-amber-800/40 bg-amber-50 dark:bg-amber-950/30">
-              <p className="text-sm text-amber-900 dark:text-amber-200 mb-2">
-                Message request — reply or accept to open a two-way chat. Decline to keep it one-way.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={dmRequestBusy}
-                  onClick={() => void handleAcceptDmRequest()}
-                  className="px-3 py-1.5 rounded-lg text-sm font-semibold bg-lantern-primary text-white hover:bg-lantern-primary-dark disabled:opacity-60"
-                >
-                  Accept
-                </button>
-                <button
-                  type="button"
-                  disabled={dmRequestBusy}
-                  onClick={() => void handleDeclineDmRequest()}
-                  className="px-3 py-1.5 rounded-lg text-sm font-semibold border border-lantern-border text-lantern-text hover:bg-lantern-background-secondary disabled:opacity-60"
-                >
-                  Decline
-                </button>
-              </div>
-            </div>
-          )}
-          {isDmRequestSender && (
-            <p className="px-4 py-2 text-xs text-lantern-text-secondary border-b border-lantern-border bg-lantern-background-secondary">
-              Message request sent — they can see your messages. Two-way chat opens when they accept or reply.
-            </p>
-          )}
-          {typingLabels.length > 0 && (
-            <p className="px-4 py-1 text-xs text-lantern-text-tertiary" aria-live="polite">
-              {typingLabels.length === 1
-                ? `${typingLabels[0]} is typing…`
-                : `${typingLabels.slice(0, 2).join(' and ')} are typing…`}
-            </p>
-          )}
-          <MessageInputBar
-            onSendMessage={handleComposerSend}
-            onOpenQuestionModal={isGroup && !communityHost ? onOpenQuestionModal : undefined}
-            onAIQuery={isGroup && !communityHost ? onAIQuery : undefined}
-            onTyping={broadcastTyping}
-            mentionCandidates={mentionCandidates}
-            seedMentionUsername={seedMentionUsername}
-            onSeedMentionConsumed={() => setSeedMentionUsername(null)}
-            replyTo={replyTo}
-            onClearReply={() => setReplyTo(null)}
-            editingMessage={editingMessage}
-            onClearEdit={() => setEditingMessage(null)}
-            groupId={isGroup ? chat.id : undefined}
-            threadId={!isGroup ? chat.id : undefined}
-          />
-        </div>
-      )}
-    </>
-  );
-
-  // Thread overlay. It is absolutely positioned inside this component's own
-  // `relative` root rather than portalled, so it covers the conversation but not
-  // the app chrome. The backdrop click closes it; `stopPropagation` on the panel
-  // keeps clicks inside from doing the same. The thread composer disappears when
-  // the root message has been removed — a closed thread takes no new replies.
-  const threadPanel = threadRootId && chat ? (
-    <div
-      className="absolute inset-0 z-30 flex justify-end bg-black/30"
-      onClick={() => setThreadRootId(null)}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="chat-thread-title"
-        className="w-full max-w-md h-full bg-lantern-surface border-l border-lantern-border flex flex-col shadow-xl"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <div className="flex items-center justify-between h-14 px-4 border-b border-lantern-border flex-shrink-0">
-          <div>
-            <p id="chat-thread-title" className="text-sm font-semibold text-lantern-text">Thread</p>
-            <p className="text-[11px] text-lantern-text-tertiary">
-              {Math.max(0, visibleThreadMessages.length - 1)}{' '}
-              {visibleThreadMessages.length - 1 === 1 ? 'reply' : 'replies'}
-            </p>
-          </div>
-          <button
-            ref={threadCloseButtonRef}
-            type="button"
-            onClick={() => setThreadRootId(null)}
-            className="p-1.5 rounded-lg text-lantern-text-secondary hover:bg-lantern-background-secondary"
-            aria-label="Close thread"
-          >
-            <AppIcon name="close" size={20} />
-          </button>
-        </div>
-        <div ref={threadScrollRef} className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
-          {threadLoading ? (
-            <div className="flex justify-center py-10">
-              <div className="w-8 h-8 border-2 border-lantern-primary/30 border-t-lantern-primary rounded-full animate-spin" />
-            </div>
-          ) : (
-            visibleThreadMessages.map((msg) => (
-              <div
-                key={msg.id}
-                ref={(el) => {
-                  threadMessageNodeRefs.current[msg.id] = el;
-                }}
-              >
-                <MessageItem
-                  message={msg}
-                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                  currentUserVote={userVotes[msg.id]}
-                  myReactions={myReactions[msg.id]}
-                  onToggleReaction={handleToggleReaction}
-                  onVoteQuestion={communityHost ? undefined : onVoteQuestion}
-                  onFlagAsSimilar={
-                    communityHost ? undefined : (messageId) => onFlagAsSimilar(messageId, chat.id)
-                  }
-                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                  group={group}
-                  currentUser={currentUser}
-                  isGroupChat={chat.chatType === 'group'}
-                  onEditMessage={(m) => beginEditingMessage(m, true)}
-                  onRemoveMessage={(m) => void handleRemoveMessage(m, true)}
-                  onReportMessage={
-                    chat.chatType === 'group'
-                      ? (m) =>
-                          setReportTarget({
-                            type: 'message',
-                            id: m.id,
-                            label: m.sender?.name || m.sender?.username || 'this message',
-                          })
-                      : undefined
-                  }
-                  onReply={(m) => {
-                    setThreadEditingMessage(null);
-                    setThreadReplyTo({
-                      id: m.id,
-                      senderId: m.sender?.id,
-                      senderName: m.sender?.name || m.sender?.username,
-                      type: m.type,
-                      text: m.text,
-                      questionStem: m.questionStem,
-                    });
-                  }}
-                  onForward={(m) => setForwardMessage(m)}
-                  onCopy={(m) => void handleCopyMessage(m)}
-                  onStar={handleToggleStar}
-                  onPin={handleTogglePin}
-                  starred={starredIds.has(msg.id)}
-                  pinned={pinnedMessageId === msg.id}
-                  onMentionUser={(username) => setThreadSeedMentionUsername(username)}
-                  onScrollToMessage={(messageId) => {
-                    threadMessageNodeRefs.current[messageId]?.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'center',
-                    });
-                  }}
-                />
-              </div>
-            ))
-          )}
-          <div ref={threadEndRef} />
-        </div>
-        {!isArchived && !isThreadRootRemoved && (
-          <div className="flex-shrink-0 border-t border-lantern-border">
-            <MessageInputBar
-              onSendMessage={handleThreadSend}
-              onAIQuery={chat.chatType === 'group' && !communityHost ? onAIQuery : undefined}
-              mentionCandidates={mentionCandidates}
-              seedMentionUsername={threadSeedMentionUsername}
-              onSeedMentionConsumed={() => setThreadSeedMentionUsername(null)}
-              replyTo={threadReplyTo}
-              // Clearing a reply inside a thread falls BACK to the root rather
-              // than to nothing — there is no such thing as a thread message
-              // with no thread.
-              onClearReply={() => {
-                const root = threadMessages.find((m) => m.id === threadRootId) || threadMessages[0];
-                if (root) {
-                  setThreadReplyTo({
-                    id: root.id,
-                    senderId: root.sender?.id,
-                    senderName: root.sender?.name || root.sender?.username,
-                    type: root.type,
-                    text: root.text,
-                    questionStem: root.questionStem,
-                  });
-                }
-              }}
-              editingMessage={threadEditingMessage}
-              onClearEdit={() => setThreadEditingMessage(null)}
-              groupId={chat.chatType === 'group' ? chat.id : undefined}
-              threadId={chat.chatType === 'dm' ? chat.id : undefined}
-            />
-          </div>
-        )}
-        {!isArchived && isThreadRootRemoved && (
-          <div className="border-t border-lantern-border px-4 py-3 text-center text-xs text-lantern-text-secondary">
-            This thread is closed because its original message was removed.
-          </div>
-        )}
-      </div>
-    </div>
-  ) : null;
-
-  return (
-    <div className="flex-1 flex flex-col min-h-0 overflow-hidden bg-lantern-background relative">
-      {threadPanel}
       {/* Header — fixed at top */}
       <ChatHeader
         chat={chat}
@@ -1823,7 +918,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         onArchiveDmThread={onArchiveDmThread}
         onUnarchiveDmThread={onUnarchiveDmThread}
         onDeleteDmThread={onDeleteDmThread}
-        handleToggleDmBlock={handleToggleDmBlock}
+        handleToggleDmBlock={() => handleToggleDmBlock(name)}
         iBlockedThem={iBlockedThem}
       />
 
@@ -1833,464 +928,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
           bare. The deal bar is hidden once an order exists — the order bar owns
           those states — so the two can never offer contradictory actions. */}
       {chat.chatType === 'dm' && inquiry ? (
-        <Tabs
-          value={activeTab}
-          onValueChange={(value) => setActiveTab(value as 'chat' | 'offers')}
-          variant="segmented"
-          aria-label="Marketplace conversation"
-          className="flex flex-col flex-1 min-h-0"
-        >
-          <div className="flex-shrink-0 bg-lantern-surface border-b border-lantern-border px-4 py-3 flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3 min-w-0">
-              {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
-                <img
-                  src={normalizeStorageUrl(inquiry.listing.images[0])}
-                  alt={inquiry.listing.title}
-                  className="w-12 h-12 rounded-lg object-cover bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex-shrink-0 border border-lantern-border"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-              ) : (
-                <div className="w-12 h-12 rounded-lg bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center flex-shrink-0 border border-lantern-border">
-                  <AppIcon name="bag" size={24} className="text-lantern-text-tertiary" />
-                </div>
-              )}
-              <div className="min-w-0">
-                <h4 className="text-sm font-semibold text-lantern-text truncate leading-snug">
-                  {inquiry.listing?.title}
-                </h4>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-sm font-bold text-lantern-primary">
-                    {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
-                  </span>
-                  <span className={`text-label tracking-normal font-semibold px-2 py-0.5 rounded-full capitalize ${
-                    inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                    inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                    inquiry.status === 'closed' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary' :
-                    'bg-lantern-primary-background text-lantern-primary-dark dark:bg-lantern-primary-background dark:text-lantern-primary-light'
-                  }`}>
-                    {inquiry.status}
-                  </span>
-                </div>
-              </div>
-            </div>
-            <TabList className="bg-lantern-background p-0.5 rounded-lg border border-lantern-border !border-solid">
-              <Tab value="chat" index={0} className="!text-xs !font-semibold !px-3 !py-2 !rounded-md">
-                Chat
-              </Tab>
-              <Tab
-                value="offers"
-                index={1}
-                className="!text-xs !font-semibold !px-3 !py-2 !rounded-md"
-                badge={activeOffer ? <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> : undefined}
-              >
-                Offers
-              </Tab>
-            </TabList>
-          </div>
-
-          {/* Sticky deal bar — surfaces the ONE primary action in the chat view so a
-              buyer/seller never has to hunt in the Offers tab. Hidden once an order
-              exists (the order bar below drives those states). */}
-          {!activeOrder && (() => {
-            const pending = activeOffer && activeOffer.status === 'pending' ? activeOffer : null;
-            const canRespond = pending ? canRespondToOffer(pending, currentUser.id) : false;
-            const canWithdraw = pending ? canWithdrawOffer(pending, currentUser.id) : false;
-            const isBuyer = currentUser.id === inquiry.buyer_id;
-            if (inquiry.status === 'purchased' || inquiry.status === 'closed') return null;
-            return (
-              <div className="flex-shrink-0 px-4 py-2.5 bg-lantern-surface border-b border-lantern-border flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                {pending ? (
-                  <>
-                    <span className="text-xs font-semibold text-lantern-text">
-                      {getOfferProposedBy(pending) === 'seller' ? 'Counter-offer' : 'Offer'}: ₦{pending.amount.toLocaleString()}
-                    </span>
-                    {canRespond ? (
-                      <div className="flex items-center gap-1.5">
-                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('accept')} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50">Accept</button>
-                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('decline')} className="text-xs font-semibold px-3 py-1.5 rounded-lantern border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background-secondary disabled:opacity-50">Decline</button>
-                        <button type="button" onClick={() => setActiveTab('offers')} className="text-xs font-medium px-2 py-1.5 text-lantern-primary hover:underline">Counter</button>
-                      </div>
-                    ) : canWithdraw ? (
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-lantern-text-secondary">Waiting for a response</span>
-                        <button type="button" disabled={offerLoading} onClick={() => void handleRespond('withdraw')} className="text-xs font-medium px-2 py-1.5 text-lantern-text-secondary hover:text-red-600 hover:underline disabled:opacity-50">Withdraw</button>
-                      </div>
-                    ) : (
-                      <span className="text-xs text-lantern-text-secondary">Awaiting a response</span>
-                    )}
-                  </>
-                ) : isBuyer ? (
-                  <>
-                    <span className="text-xs text-lantern-text-secondary">No active offer.</span>
-                    <button type="button" onClick={() => setShowMakeOfferModal(true)} className="text-xs font-semibold px-3 py-1.5 rounded-lantern bg-emerald-600 text-white hover:bg-emerald-700 inline-flex items-center gap-1.5">
-                      <AppIcon name="currency" size={14} /> Make an offer
-                    </button>
-                  </>
-                ) : (
-                  <span className="text-xs text-lantern-text-secondary">Waiting for the buyer to make an offer.</span>
-                )}
-                <button type="button" onClick={() => setActiveTab(activeTab === 'offers' ? 'chat' : 'offers')} className="ml-auto text-[11px] font-medium text-lantern-primary hover:underline">
-                  {activeTab === 'offers' ? 'View chat' : 'View details'}
-                </button>
-                <span className="basis-full text-label tracking-normal text-lantern-text-tertiary">Paystack-protected · you pay the listed price</span>
-              </div>
-            );
-          })()}
-
-          {activeOrder && activeOrder.status !== 'completed' && activeOrder.status !== 'cancelled' && (
-            <div className="flex-shrink-0 px-4 py-2 bg-lantern-primary-background dark:bg-lantern-primary-background border-b border-lantern-primary/20 dark:border-lantern-primary/30 flex flex-wrap gap-2 items-center">
-              <span className="text-xs font-medium text-lantern-primary-dark dark:text-lantern-primary-light">
-                Order: {activeOrder.status.replace(/_/g, ' ')} · ₦{Number(activeOrder.amount).toLocaleString()}
-              </span>
-              {currentUser.id === inquiry.seller_id && activeOrder.status === 'paid' && (
-                <button
-                  type="button"
-                  disabled={orderActionLoading}
-                  className="text-xs px-2 py-1 rounded-md bg-lantern-primary text-white disabled:opacity-50"
-                  onClick={async () => {
-                    setOrderActionLoading(true);
-                    try {
-                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'mark_ready' });
-                      setActiveOrder(updated);
-                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                    finally { setOrderActionLoading(false); }
-                  }}
-                >
-                  Mark ready
-                </button>
-              )}
-              {currentUser.id === inquiry.seller_id && ['pending_payment', 'awaiting_payment'].includes(activeOrder.status) && (
-                <span className="text-xs text-lantern-text-secondary">Awaiting buyer payment</span>
-              )}
-              {currentUser.id === inquiry.buyer_id && ['pending_payment', 'awaiting_payment'].includes(activeOrder.status) && (
-                <button
-                  type="button"
-                  disabled={orderActionLoading}
-                  className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white disabled:opacity-50"
-                  onClick={async () => {
-                    setOrderActionLoading(true);
-                    try {
-                      // Resume the Paystack checkout for an unpaid order (buyers pay in-app).
-                      const res = await resumeMarketplaceOrderCheckout(activeOrder.id);
-                      if (res?.authorizationUrl) {
-                        window.location.assign(res.authorizationUrl);
-                        return;
-                      }
-                      useToastStore.getState().showToast('Could not start checkout. Please try again.', 'error');
-                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Could not start checkout', 'error'); }
-                    finally { setOrderActionLoading(false); }
-                  }}
-                >
-                  Pay now · ₦{Number(activeOrder.amount).toLocaleString()}
-                </button>
-              )}
-              {currentUser.id === inquiry.buyer_id && ['paid', 'ready_for_pickup'].includes(activeOrder.status) && (
-                <button
-                  type="button"
-                  disabled={orderActionLoading}
-                  className="text-xs px-2 py-1 rounded-md bg-emerald-600 text-white"
-                  onClick={async () => {
-                    setOrderActionLoading(true);
-                    try {
-                      const updated = await updateMarketplaceOrder(activeOrder.id, { action: 'confirm_received' });
-                      setActiveOrder(updated);
-                    } catch (e: any) { useToastStore.getState().showToast(e.message || 'Something went wrong', 'error'); }
-                    finally { setOrderActionLoading(false); }
-                  }}
-                >
-                  Confirm received
-                </button>
-              )}
-            </div>
-          )}
-
-          <TabPanel value="chat" className="flex flex-col flex-1 min-h-0 overflow-hidden">
-            {chatPanelContent}
-          </TabPanel>
-
-          <TabPanel value="offers" className="flex-1 flex flex-col bg-lantern-background overflow-y-auto p-4 md:p-6 min-h-0">
-            {/* Listing Card */}
-            <div className="bg-lantern-surface rounded-2xl p-4 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm flex flex-col sm:flex-row gap-4 mb-6">
-              {inquiry.listing?.images && inquiry.listing.images.length > 0 ? (
-                <img
-                  src={normalizeStorageUrl(inquiry.listing.images[0])}
-                  alt={inquiry.listing.title}
-                  className="w-full sm:w-32 h-32 rounded-xl object-cover bg-lantern-background-secondary dark:bg-lantern-surface-secondary border border-lantern-border flex-shrink-0"
-                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
-                />
-              ) : (
-                <div className="w-full sm:w-32 h-32 rounded-xl bg-lantern-background-secondary dark:bg-lantern-surface-secondary flex items-center justify-center border border-lantern-border flex-shrink-0">
-                  <AppIcon name="bag" size={40} className="text-lantern-text-tertiary" />
-                </div>
-              )}
-              <div className="flex-1 flex flex-col justify-between min-w-0">
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <h3 className="text-base font-bold text-lantern-text line-clamp-2">
-                      {inquiry.listing?.title}
-                    </h3>
-                    <span className={`text-label font-bold px-2 py-0.5 rounded-md uppercase flex-shrink-0 ${
-                      inquiry.status === 'purchased' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                      inquiry.status === 'negotiating' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                      inquiry.status === 'closed' ? 'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary' :
-                      'bg-lantern-primary-background text-lantern-primary-dark dark:bg-lantern-primary-background dark:text-lantern-primary-light'
-                    }`}>
-                      {inquiry.status}
-                    </span>
-                  </div>
-                  <p className="text-xs text-lantern-text-secondary mt-1 capitalize font-medium">
-                    Category: {inquiry.listing?.category || 'academic'}
-                  </p>
-                </div>
-                
-                <div className="flex items-baseline gap-2 mt-4">
-                  <span className="text-xs text-lantern-text-secondary">Asking Price:</span>
-                  <span className="text-lg font-extrabold text-lantern-primary">
-                    {inquiry.listing?.price ? `₦${inquiry.listing.price.toLocaleString()}` : 'Free'}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Active Offer Section */}
-            <div className="bg-lantern-surface rounded-2xl p-5 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm mb-6">
-              <h3 className="text-sm font-bold text-lantern-text mb-4 flex items-center gap-1.5">
-                <AppIcon name="currency" size={20} className="text-emerald-500" />
-                Active Offer
-              </h3>
-              
-              {activeOffer ? (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center p-4 bg-lantern-background dark:bg-lantern-surface-secondary/40 rounded-xl border border-lantern-border/60 dark:border-lantern-border/60 gap-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-lantern-text-secondary">Offered Amount:</span>
-                        <span className="text-lg font-bold text-lantern-text">
-                          ₦{activeOffer.amount.toLocaleString()}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-lantern-text-tertiary mt-0.5 font-medium">
-                        Submitted on {new Date(activeOffer.created_at).toLocaleDateString()}
-                      </p>
-                      {activeOffer.message && (
-                        <p className="text-xs italic text-lantern-text-secondary mt-2 bg-lantern-surface p-2 rounded-lg border border-lantern-border/50">
-                          "{activeOffer.message}"
-                        </p>
-                      )}
-                    </div>
-                    
-                    <div className="flex-shrink-0">
-                      <span className={`px-2.5 py-1 text-xs font-semibold rounded-full capitalize ${
-                        activeOffer.status === 'pending' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' :
-                        activeOffer.status === 'countered' ? 'bg-lantern-primary-background text-lantern-primary-dark dark:bg-lantern-primary-background dark:text-lantern-primary-light' :
-                        activeOffer.status === 'accepted' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' :
-                        activeOffer.status === 'declined' ? 'bg-red-100 text-red-800 dark:bg-red-950/40 dark:text-red-300' :
-                        'bg-lantern-background-secondary text-lantern-text dark:bg-lantern-background-secondary/40 dark:text-lantern-text-tertiary'
-                      }`}>
-                        Offer {activeOffer.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* `canRespondToOffer` and `canWithdrawOffer` are shared helpers,
-                      so web and mobile cannot disagree about whose turn it is; the
-                      Accept/Decline labels flip to "Counter" from the same source. */}
-                  {/* Action Controls — turn-based on proposed_by */}
-                  <div className="pt-2">
-                    {offerError && <p className="text-xs text-red-500 mb-3 font-semibold">{offerError}</p>}
-
-                    {(() => {
-                      const proposedBy = getOfferProposedBy(activeOffer);
-                      const canRespond = canRespondToOffer(activeOffer, currentUser.id);
-                      const canWithdraw = canWithdrawOffer(activeOffer, currentUser.id);
-                      const isBuyerView = currentUser.id === activeOffer.buyer_id;
-                      const acceptLabel = proposedBy === 'seller' ? 'Accept Counter' : 'Accept Offer';
-                      const declineLabel = proposedBy === 'seller' ? 'Decline Counter' : 'Decline Offer';
-
-                      if (canWithdraw && !canRespond) {
-                        return (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              disabled={offerLoading}
-                              onClick={() => handleRespond('withdraw')}
-                              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                            >
-                              {offerLoading ? 'Withdrawing...' : 'Withdraw Offer'}
-                            </button>
-                          </div>
-                        );
-                      }
-
-                      if (!canRespond) {
-                        return (
-                          <p className="text-xs text-lantern-text-secondary font-medium">
-                            {isBuyerView
-                              ? 'Waiting for the seller to respond…'
-                              : 'Waiting for the buyer to respond…'}
-                          </p>
-                        );
-                      }
-
-                      return (
-                        <div className="flex flex-col gap-3">
-                          {!showCounterInput && (
-                            <div className="flex flex-wrap gap-2">
-                              <button
-                                disabled={offerLoading}
-                                onClick={() => handleRespond('accept')}
-                                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                              >
-                                {acceptLabel}
-                              </button>
-                              <button
-                                disabled={offerLoading}
-                                onClick={() => handleRespond('decline')}
-                                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                              >
-                                {declineLabel}
-                              </button>
-                              <button
-                                disabled={offerLoading}
-                                onClick={() => { setShowCounterInput(true); setCounterValue(''); }}
-                                className="px-4 py-2 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-xl transition-colors shadow-sm"
-                              >
-                                Counter Offer
-                              </button>
-                              {canWithdraw && (
-                                <button
-                                  disabled={offerLoading}
-                                  onClick={() => handleRespond('withdraw')}
-                                  className="px-4 py-2 border border-lantern-border text-lantern-text-secondary hover:bg-lantern-background dark:hover:bg-lantern-surface-secondary text-xs font-bold rounded-xl transition-colors"
-                                >
-                                  Withdraw
-                                </button>
-                              )}
-                            </div>
-                          )}
-
-                          {showCounterInput && (
-                            <div className="flex flex-col gap-2 p-3 bg-lantern-background dark:bg-lantern-surface-secondary/30 rounded-xl border border-lantern-border">
-                              <label className="text-xs font-bold text-lantern-text">
-                                Counter Offer Amount (₦)
-                              </label>
-                              <div className="flex gap-2">
-                                <input
-                                  type="number"
-                                  value={counterValue}
-                                  onChange={(e) => setCounterValue(e.target.value)}
-                                  placeholder="Enter counter amount"
-                                  className="flex-1 px-3 py-1.5 border border-lantern-border rounded-lg focus:ring-2 focus:ring-lantern-primary bg-lantern-surface text-lantern-text text-sm font-semibold"
-                                />
-                                <button
-                                  disabled={offerLoading || !counterValue || parseFloat(counterValue) <= 0}
-                                  onClick={() => handleRespond('counter', parseFloat(counterValue))}
-                                  className="px-4 py-1.5 bg-lantern-primary hover:bg-lantern-primary-dark disabled:bg-lantern-border text-white text-xs font-bold rounded-lg transition-colors"
-                                >
-                                  Send Counter
-                                </button>
-                                <button
-                                  disabled={offerLoading}
-                                  onClick={() => setShowCounterInput(false)}
-                                  className="px-3 py-1.5 bg-lantern-surface text-lantern-text border border-lantern-border text-xs font-bold rounded-lg transition-colors hover:bg-lantern-background"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center py-6 text-center">
-                  {(() => {
-                    const dealDone = inquiry.status === 'purchased' || inquiry.status === 'closed';
-                    const hasLiveOrder = !!activeOrder && activeOrder.status !== 'cancelled';
-                    if (dealDone || hasLiveOrder) {
-                      // A deal is struck — don't re-offer to buy an item already ordered.
-                      return (
-                        <p className="text-sm text-lantern-text-secondary font-medium">
-                          {activeOrder
-                            ? `This deal is confirmed — order ${activeOrder.status.replace(/_/g, ' ')}.`
-                            : 'This listing has been purchased or the inquiry is closed.'}
-                        </p>
-                      );
-                    }
-                    return (
-                      <>
-                        <p className="text-sm text-lantern-text-secondary mb-4 font-medium">
-                          There are no active offers in negotiation.
-                        </p>
-                        {currentUser.id === inquiry.buyer_id && (
-                          <button
-                            onClick={() => setShowMakeOfferModal(true)}
-                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-1.5"
-                          >
-                            <AppIcon name="currency" size={16} />
-                            Make an Offer
-                          </button>
-                        )}
-                      </>
-                    );
-                  })()}
-                </div>
-              )}
-            </div>
-
-            {/* Negotiation History Timeline */}
-            <div className="bg-lantern-surface rounded-2xl p-5 border border-lantern-border/60 dark:border-lantern-border/60 shadow-sm flex-1">
-              <h3 className="text-sm font-bold text-lantern-text mb-4">
-                Negotiation History
-              </h3>
-              
-              {offerHistory.length === 0 ? (
-                <p className="text-xs text-lantern-text-tertiary text-center py-8">
-                  No previous offers or counter-offers recorded.
-                </p>
-              ) : (
-                <div className="relative border-l border-lantern-border ml-3 pl-5 space-y-6">
-                  {offerHistory.map((offer) => {
-                    return (
-                      <div key={offer.id} className="relative">
-                        {/* Dot indicator */}
-                        <span className={`absolute -left-[26px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-lantern-border ${
-                          offer.status === 'accepted' ? 'bg-emerald-500' :
-                          offer.status === 'declined' ? 'bg-red-500' :
-                          offer.status === 'withdrawn' ? 'bg-lantern-border' :
-                          offer.status === 'countered' ? 'bg-amber-500' :
-                          'bg-lantern-primary'
-                        }`} />
-                        
-                        <div>
-                          <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs font-bold text-lantern-text">
-                              ₦{offer.amount.toLocaleString()}
-                            </span>
-                            <span className="text-label tracking-normal text-lantern-text-tertiary font-medium">
-                              {new Date(offer.created_at).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-xs text-lantern-text-secondary mt-1">
-                            {getOfferProposedBy(offer) === 'seller'
-                              ? `${offer.seller_id === currentUser.id ? 'You' : 'Seller'} countered ₦${offer.amount.toLocaleString()} (${offer.status})`
-                              : `${offer.buyer_id === currentUser.id ? 'You' : 'Buyer'} offered ₦${offer.amount.toLocaleString()} (${offer.status})`}
-                          </p>
-                          {offer.message && (
-                            <p className="text-xs italic text-lantern-text-tertiary mt-1">
-                              "{offer.message}"
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </TabPanel>
-        </Tabs>
+        <OffersPanel
+          inquiry={inquiry}
+          activeOffer={activeOffer}
+          offerHistory={offerHistory}
+          activeOrder={activeOrder}
+          currentUser={currentUser}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          offerError={offerError}
+          offerLoading={offerLoading}
+          showCounterInput={showCounterInput}
+          setShowCounterInput={setShowCounterInput}
+          counterValue={counterValue}
+          setCounterValue={setCounterValue}
+          setShowMakeOfferModal={setShowMakeOfferModal}
+          orderActionLoading={orderActionLoading}
+          setOrderActionLoading={setOrderActionLoading}
+          setActiveOrder={setActiveOrder}
+          handleRespond={handleRespond}
+          chatPanel={chatPanelContent}
+        />
       ) : (
         <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
           {chatPanelContent}
