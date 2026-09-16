@@ -1,0 +1,20 @@
+{
+  // Your editor type-checks the root web graph (App.tsx, components/, hooks/,
+  // stores/, services/, utils/, design-system/) against the repo-root
+  // tsconfig.json, because that is the nearest enclosing config. That config is
+  // NOT strict and has no `include`, so it sweeps the whole monorepo: what you
+  // see here is neither what CI enforces nor a gate you can trust.
+  //
+  // CI holds that graph to apps/web/tsconfig.typecheck.json — strict, plus
+  // noUncheckedIndexedAccess — through scripts/check-web-typecheck.mjs, against
+  // a baseline that may only shrink. Before you push root web source, run:
+  //
+  //     node scripts/check-web-typecheck.mjs
+  //
+  // Making the root config strict to close the gap was measured (#75) and
+  // rejected: root `tsc` already reports ~26k errors non-strict because of the
+  // missing `include`, and ~28k strict — a different problem from the 764
+  // baselined errors, and not one a tsconfig flag fixes.
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true
+}
