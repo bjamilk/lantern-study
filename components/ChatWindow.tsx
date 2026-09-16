@@ -11,21 +11,19 @@
  *    `hooks/useAppEffects.ts` and `hooks/useGroupHandlers.ts`). It writes back only
  *    through the `onSendMessage` / `onEditMessage` / `onRemoveMessage` callbacks and
  *    `groupStore.updateMessageInState` (reaction counts).
- *  - services/supabase: reactions (`addMessageReaction` / `removeMessageReaction` /
- *    `fetchUserReactionsFor*`), threads (`fetchGroupThread` / `fetchDmThread`), DM
+ *  - services/supabase: threads (`fetchGroupThread` / `fetchDmThread`), DM
  *    request accept/decline, block + mute status, presence (`fetchUserProfile`), and
  *    the marketplace set (`getInquiryByThread`, `fetchOffers`, `respondToOffer`,
  *    `fetchOrderForInquiry`, `updateMarketplaceOrder`, `resumeMarketplaceOrderCheckout`).
  *  - supabase realtime BROADCAST channels: `typing:<chatId>` and `chat-read:<chatId>`.
  *  - stores: `uiStore.lowDataMode`, `communityStore.myCommunities`, `toastStore`,
  *    `confirmStore.confirmDialog`, `useBudgetHandlers`.
- *  - localStorage: starred ids and the pinned message id, per user + scope + chat
- *    (`chatStarredStorageKey` / `chatPinnedMessageStorageKey`) — device-local, best effort.
+ *  - `hooks/chat/useMessageActions.ts` for reactions, stars, pins and copy —
+ *    which is where the reaction endpoints and the device-local localStorage
+ *    marks now live.
  * Gotchas:
  *  - EVERY hook must stay above the `if (!chat)` early return. Opening a chat from the
  *    empty state otherwise changes the hook count (React error #310).
- *  - Reaction writes go through the BFF endpoints. Do NOT move them back to a PostgREST
- *    `.upsert({ onConflict })`: the unique index is PARTIAL and every write 500s (42P10).
  *  - Auto-scroll is conditional on `isNearBottomRef` / own-message; the initial position
  *    is decided once per chat id by `initialAnchorDoneRef` and must wait for
  *    `unreadAnchorAt !== undefined`, which is the "mark-as-read has reported" signal.
@@ -34,29 +32,19 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  applyReactionLocally,
   buildChatHome,
-  chatPinnedMessageStorageKey,
-  chatStarredStorageKey,
   collectChatGalleryItems,
   formatChatPresenceLine,
-  parseStoredIdSet,
-  serializeIdSet,
   type ChatHomeLounge,
 } from '@lantern/shared/chat';
 import { ChatGalleryModal } from './chat/ChatGalleryModal';
 import { ChatHeader } from './chat/ChatHeader';
 import { MessageList } from './chat/MessageList';
 import { selectVisibleMessages, selectVisibleThreadMessages } from './chat/visibleMessages';
+import { useMessageActions } from '../hooks/chat/useMessageActions';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
-import {
-  addMessageReaction,
-  removeMessageReaction,
-  fetchUserReactionsForGroup,
-  fetchUserReactionsForThread,
-} from '../services/supabase';
 import { useGroupStore } from '../stores/groupStore';
 import { useCommunityStore } from '../stores/communityStore';
 import { fetchMyInquiries, fetchUserProfile } from '../services/supabase';
@@ -274,82 +262,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const firstUnreadRef = useRef<HTMLDivElement>(null);
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  /**
-   * The viewer's OWN reactions per message: { messageId: ['👍'] }. Counts live
-   * on the message itself (server-owned, realtime-delivered); this map only
-   * decides which chips render as "mine". Kept local to the chat window rather
-   * than threaded through App state — nothing else needs it.
-   */
   const updateMessageInState = useGroupStore((state) => state.updateMessageInState);
   const showToast = useToastStore((state) => state.showToast);
-  const [myReactions, setMyReactions] = useState<Record<string, string[]>>({});
-
-  // Hydrate the viewer's own reactions whenever the open conversation changes.
-  // Driven by `chat.id` (+ type, which picks the group or DM endpoint). Failure
-  // is swallowed: counts still render, only the "mine" highlight is missing.
-  useEffect(() => {
-    if (!chat?.id) {
-      setMyReactions({});
-      return;
-    }
-    let cancelled = false;
-    const load = chat.chatType === 'group'
-      ? fetchUserReactionsForGroup(chat.id)
-      : fetchUserReactionsForThread(chat.id);
-    void load
-      .then((map) => {
-        if (!cancelled) setMyReactions(map || {});
-      })
-      .catch(() => {
-        // Best effort: chips just render unselected until the next open.
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [chat?.id, chat?.chatType]);
-
-  /**
-   * Toggle one emoji. Optimistic on both halves — the viewer's own chip and the
-   * visible count — then reconciled with the authoritative counts the server
-   * returns. Everyone else sees it via the existing realtime message UPDATE.
-   *
-   * Failure path: BOTH optimistic halves are rolled back to the values captured
-   * before the write (`previousMine`, `previousCounts`) and the error surfaces as
-   * a toast. The write goes to the BFF reactions endpoint — see the file header
-   * on why it must never become a PostgREST upsert again.
-   */
-  const handleToggleReaction = useCallback(
-    async (messageId: string, emoji: string, added: boolean) => {
-      const previousMine = myReactions[messageId] ? [...myReactions[messageId]] : [];
-      const message = messagesProp.find((m) => m.id === messageId);
-      const previousCounts = message?.reactions;
-
-      setMyReactions((prev) => {
-        const mine = new Set(prev[messageId] || []);
-        if (added) mine.add(emoji);
-        else mine.delete(emoji);
-        return { ...prev, [messageId]: [...mine] };
-      });
-      updateMessageInState(messageId, {
-        reactions: applyReactionLocally(previousCounts, emoji, added),
-      });
-
-      try {
-        const reactions = added
-          ? await addMessageReaction(messageId, emoji)
-          : await removeMessageReaction(messageId, emoji);
-        updateMessageInState(messageId, { reactions });
-      } catch (error) {
-        setMyReactions((prev) => ({ ...prev, [messageId]: previousMine }));
-        updateMessageInState(messageId, { reactions: previousCounts });
-        showToast(
-          error instanceof Error ? error.message : 'Could not save that reaction',
-          'error'
-        );
-      }
-    },
-    [myReactions, messagesProp, updateMessageInState, showToast]
-  );
   const [questionFiltersOpen, setQuestionFiltersOpen] = useState(false);
   const [muteDurationsOpen, setMuteDurationsOpen] = useState(false);
   // "Report…" target: a group message (hover bar) or the DM peer (header menu).
@@ -389,13 +303,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   // Separate mention seed for the thread composer so tapping an author's name
   // seeds only the visible composer (main vs thread), not both at once.
   const [threadSeedMentionUsername, setThreadSeedMentionUsername] = useState<string | null>(null);
-  const [starredIds, setStarredIds] = useState<Set<string>>(new Set());
   const [starredOnly, setStarredOnly] = useState(false);
-  const [pinnedMessageId, setPinnedMessageId] = useState<string | null>(null);
   const [threadSearchOpen, setThreadSearchOpen] = useState(false);
   const [threadSearch, setThreadSearch] = useState('');
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
+
+  /**
+   * Reactions, stars, pins and copy — with the three pieces of state and the
+   * two effects they need. Called here rather than where the reaction block
+   * used to sit, because the three list-view setters it clears on close are
+   * declared just above.
+   */
+  const {
+    myReactions,
+    handleToggleReaction,
+    starredIds,
+    pinnedMessageId,
+    handleToggleStar,
+    handleTogglePin,
+    handleCopyMessage,
+  } = useMessageActions({
+    chat,
+    currentUser,
+    isGroup: chat?.chatType === 'group',
+    messagesProp,
+    updateMessageInState,
+    showToast,
+    setStarredOnly,
+    setThreadSearch,
+    setThreadSearchOpen,
+  });
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
   // The two ways the main list touches that node map, named so MessageRow can
   // take them as props instead of closing over the ref. Both are exactly what
@@ -1190,73 +1128,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
       cancelled = true;
     };
   }, [chat?.id, isGroup]);
-
-  // Device-local marks: starred ids + the one pinned message, re-read per
-  // user/scope/chat. Nothing here is synced, so another device shows different
-  // stars; every write is wrapped because storage can throw in private mode.
-  useEffect(() => {
-    if (!chat) {
-      setStarredIds(new Set());
-      setPinnedMessageId(null);
-      setStarredOnly(false);
-      setThreadSearch('');
-      setThreadSearchOpen(false);
-      return;
-    }
-    const scope = isGroup ? 'group' : 'dm';
-    try {
-      setStarredIds(parseStoredIdSet(localStorage.getItem(chatStarredStorageKey(currentUser.id, scope, chat.id))));
-      setPinnedMessageId(localStorage.getItem(chatPinnedMessageStorageKey(currentUser.id, scope, chat.id)));
-    } catch {
-      setStarredIds(new Set());
-      setPinnedMessageId(null);
-    }
-  }, [chat?.id, currentUser.id, isGroup]);
-
-  const persistStarredIds = (next: Set<string>) => {
-    if (!chat) return;
-    const scope = isGroup ? 'group' : 'dm';
-    try {
-      localStorage.setItem(chatStarredStorageKey(currentUser.id, scope, chat.id), serializeIdSet(next));
-    } catch {
-      // Device-local marks are best-effort.
-    }
-  };
-
-  const handleToggleStar = (message: Message) => {
-    setStarredIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(message.id)) next.delete(message.id);
-      else next.add(message.id);
-      persistStarredIds(next);
-      return next;
-    });
-  };
-
-  const handleTogglePin = (message: Message) => {
-    if (!chat) return;
-    const scope = isGroup ? 'group' : 'dm';
-    const key = chatPinnedMessageStorageKey(currentUser.id, scope, chat.id);
-    const next = pinnedMessageId === message.id ? null : message.id;
-    setPinnedMessageId(next);
-    try {
-      if (next) localStorage.setItem(key, next);
-      else localStorage.removeItem(key);
-    } catch {
-      // Device-local marks are best-effort.
-    }
-  };
-
-  const handleCopyMessage = async (message: Message) => {
-    const text = (message.questionStem || message.text || '').trim();
-    if (!text) return;
-    try {
-      await navigator.clipboard.writeText(text);
-      showToast('Copied', 'success');
-    } catch {
-      showToast('Could not copy', 'error');
-    }
-  };
 
   const scrollToMessageId = (messageId: string) => {
     messageNodeRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });

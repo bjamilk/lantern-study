@@ -21,7 +21,9 @@ import { ChatHeaderMenu, type ChatHeaderMenuProps } from './ChatHeaderMenu';
  */
 vi.mock('../ui', () => ({
   Menu: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
-  MenuTrigger: ({ children, ...rest }: never) => <button {...(rest as object)}>{children}</button>,
+  MenuTrigger: ({ children, ...rest }: Record<string, unknown>) => (
+    <button {...rest}>{children as React.ReactNode}</button>
+  ),
   MenuContent: ({ children }: { children?: React.ReactNode }) => <div role="menu">{children}</div>,
   MenuItem: ({ children, disabled }: { children?: React.ReactNode; disabled?: boolean }) => (
     <button type="button" disabled={disabled}>

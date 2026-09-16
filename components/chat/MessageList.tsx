@@ -27,11 +27,11 @@ import type { Message } from '../../types';
 export interface MessageListProps {
   visibleMessages: Message[];
   /** The scroller node. ChatWindow owns every read of it. */
-  messagesContainerRef: React.RefObject<HTMLDivElement>;
+  messagesContainerRef: React.RefObject<HTMLDivElement | null>;
   /** The bottom sentinel auto-scroll scrolls into view. */
-  messagesEndRef: React.RefObject<HTMLDivElement>;
+  messagesEndRef: React.RefObject<HTMLDivElement | null>;
   /** Attached to the unread divider, wherever in the list it lands. */
-  firstUnreadRef: React.RefObject<HTMLDivElement>;
+  firstUnreadRef: React.RefObject<HTMLDivElement | null>;
   handleScroll: (event: React.UIEvent<HTMLDivElement>) => void;
   isLoadingMore: boolean;
   awaitingMessages: boolean;
@@ -94,7 +94,7 @@ export const MessageList: React.FC<MessageListProps> = ({
         <MessageRow
           key={msg.id}
           message={msg}
-          previousMessage={idx > 0 ? visibleMessages[idx - 1] : null}
+          previousMessage={(idx > 0 ? visibleMessages[idx - 1] : null) ?? null}
           isFirstUnread={firstUnreadId === msg.id}
           firstUnreadRef={firstUnreadRef}
           registerNode={registerNode}

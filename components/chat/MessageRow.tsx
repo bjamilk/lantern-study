@@ -33,7 +33,7 @@ export interface MessageRowProps {
   /** True when this row is where the unread divider goes. */
   isFirstUnread: boolean;
   /** Attached to the unread divider so the list can scroll to it. */
-  firstUnreadRef: React.RefObject<HTMLDivElement>;
+  firstUnreadRef: React.RefObject<HTMLDivElement | null>;
   /** Records this row's DOM node under the message id, for scroll-to-message. */
   registerNode: (messageId: string, node: HTMLDivElement | null) => void;
   onScrollToMessage: (messageId: string) => void;
@@ -151,7 +151,7 @@ export const MessageRow: React.FC<MessageRowProps> = ({
       )}
       <div
         ref={(el) => {
-          messageNodeRefs.current[msg.id] = el;
+          registerNode(msg.id, el);
         }}
       >
         <MessageItem

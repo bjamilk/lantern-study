@@ -60,16 +60,16 @@ export interface ChatHeaderProps {
 
   // --- Menus and the view state they toggle -------------------------------
   isDropdownOpen: boolean;
-  setIsDropdownOpen: (open: boolean) => void;
+  setIsDropdownOpen: React.Dispatch<React.SetStateAction<boolean>>;
   questionFiltersOpen: boolean;
-  setQuestionFiltersOpen: (open: boolean) => void;
+  setQuestionFiltersOpen: React.Dispatch<React.SetStateAction<boolean>>;
   questionVisibilityMode: QuestionVisibilityMode;
   setQuestionVisibilityMode: (mode: QuestionVisibilityMode) => void;
   starredOnly: boolean;
   setStarredOnly: React.Dispatch<React.SetStateAction<boolean>>;
   starredIds: Set<string>;
-  setGalleryOpen: (open: boolean) => void;
-  setThreadSearchOpen: (open: boolean) => void;
+  setGalleryOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  setThreadSearchOpen: React.Dispatch<React.SetStateAction<boolean>>;
   setReportTarget: (target: { type: ContentReportTargetType; id: string; label?: string } | null) => void;
 
   // --- Mute ----------------------------------------------------------------
@@ -77,7 +77,7 @@ export interface ChatHeaderProps {
   muteBusy: boolean;
   muteUntilLabel: string | null;
   muteDurationsOpen: boolean;
-  setMuteDurationsOpen: (open: boolean) => void;
+  setMuteDurationsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleMuteFor: (duration: ChatMuteDurationId) => Promise<void> | void;
   handleUnmute: () => Promise<void> | void;
 
