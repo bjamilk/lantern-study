@@ -46,6 +46,7 @@ import {
 } from '@lantern/shared/chat';
 import { ChatGalleryModal } from './chat/ChatGalleryModal';
 import { ChatHeader } from './chat/ChatHeader';
+import { MessageRow } from './chat/MessageRow';
 import { ForwardChatModal } from './chat/ForwardChatModal';
 import { COMMUNITY_COPY } from '@lantern/shared/network';
 import { ChatHomePane } from './chat/ChatHomePane';
@@ -399,6 +400,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [forwardMessage, setForwardMessage] = useState<Message | null>(null);
   const messageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // The two ways the main list touches that node map, named so MessageRow can
+  // take them as props instead of closing over the ref. Both are exactly what
+  // the inline versions did before the list was extracted.
+  const registerMessageNode = useCallback((messageId: string, node: HTMLDivElement | null) => {
+    messageNodeRefs.current[messageId] = node;
+  }, []);
+  const scrollToMessageNode = useCallback((messageId: string) => {
+    messageNodeRefs.current[messageId]?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
+    });
+  }, []);
   // Thread panel scroll: its own node map (so a reply-quote click scrolls within
   // the thread, not to the hidden main-list copy) plus a container + bottom sentinel.
   const threadMessageNodeRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -1666,121 +1679,40 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
             <span className="sr-only">Loading older messages</span>
           </div>
         )}
-        {/* Per-row derivations: a date separator whenever the calendar day
-            changes, and "grouped with previous" (no repeated avatar/name) for a
-            same-sender message within 5 minutes. A row carrying the unread
-            divider is never grouped, so the divider cannot land mid-cluster. */}
-        {visibleMessages.map((msg, idx) => {
-          const msgDate = new Date(msg.timestamp);
-          const prevMsg = idx > 0 ? visibleMessages[idx - 1] : null;
-          const prevDate = prevMsg ? new Date(prevMsg.timestamp) : null;
-          const showDateSeparator = !prevDate
-            || msgDate.toDateString() !== prevDate.toDateString();
-          const isGroupedWithPrevious =
-            !!prevMsg &&
-            !showDateSeparator &&
-            !!prevMsg.sender?.id &&
-            !!msg.sender?.id &&
-            prevMsg.sender.id === msg.sender.id &&
-            msgDate.getTime() - prevDate!.getTime() < 5 * 60 * 1000;
-
-          const formatDateLabel = (d: Date) => {
-            const now = new Date();
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const target = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-            const diffDays = Math.round((today.getTime() - target.getTime()) / 86400000);
-            if (diffDays === 0) return 'Today';
-            if (diffDays === 1) return 'Yesterday';
-            if (diffDays < 7) return d.toLocaleDateString(undefined, { weekday: 'long' });
-            return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: d.getFullYear() !== now.getFullYear() ? 'numeric' : undefined });
-          };
-
-          return (
-            <React.Fragment key={msg.id}>
-              {showDateSeparator && (
-                <div className="flex items-center gap-3 py-2">
-                  <div className="flex-1 h-px bg-lantern-background-secondary" />
-                  <span className="text-xs font-medium text-lantern-text-tertiary whitespace-nowrap px-2">
-                    {formatDateLabel(msgDate)}
-                  </span>
-                  <div className="flex-1 h-px bg-lantern-background-secondary" />
-                </div>
-              )}
-              {firstUnreadId === msg.id && (
-                <div
-                  ref={firstUnreadRef}
-                  className="flex items-center gap-3 py-2"
-                  data-testid="unread-divider"
-                >
-                  <div className="flex-1 h-px bg-lantern-primary/40" />
-                  <span className="text-xs font-semibold text-lantern-primary whitespace-nowrap px-2">
-                    New messages
-                  </span>
-                  <div className="flex-1 h-px bg-lantern-primary/40" />
-                </div>
-              )}
-              <div
-                ref={(el) => {
-                  messageNodeRefs.current[msg.id] = el;
-                }}
-              >
-                <MessageItem
-                  message={msg}
-                  isCurrentUserMessage={msg.sender?.id === currentUser.id}
-                  currentUserVote={userVotes[msg.id]}
-                  myReactions={myReactions[msg.id]}
-                  onToggleReaction={handleToggleReaction}
-                  onVoteQuestion={communityHost ? undefined : onVoteQuestion}
-                  onFlagAsSimilar={
-                    communityHost ? undefined : (messageId) => onFlagAsSimilar(messageId, chat.id)
-                  }
-                  currentUserFlagged={msg.flaggedAsSimilarUserIds?.includes(currentUser.id)}
-                  group={group}
-                  currentUser={currentUser}
-                  isGroupedWithPrevious={isGroupedWithPrevious && firstUnreadId !== msg.id}
-                  isGroupChat={isGroup}
-                  onOpenThread={handleOpenThread}
-                  onEditMessage={(m) => beginEditingMessage(m)}
-                  onRemoveMessage={(m) => void handleRemoveMessage(m)}
-                  onReportMessage={
-                    isGroup
-                      ? (m) =>
-                          setReportTarget({
-                            type: 'message',
-                            id: m.id,
-                            label: m.sender?.name || m.sender?.username || 'this message',
-                          })
-                      : undefined
-                  }
-                  onReply={(m) => {
-                    setEditingMessage(null);
-                    setReplyTo({
-                      id: m.id,
-                      senderId: m.sender?.id,
-                      senderName: m.sender?.name || m.sender?.username,
-                      type: m.type,
-                      text: m.text,
-                      questionStem: m.questionStem,
-                    });
-                  }}
-                  onForward={(m) => setForwardMessage(m)}
-                  onCopy={(m) => void handleCopyMessage(m)}
-                  onStar={handleToggleStar}
-                  onPin={handleTogglePin}
-                  starred={starredIds.has(msg.id)}
-                  pinned={pinnedMessageId === msg.id}
-                  onMentionUser={(username) => setSeedMentionUsername(username)}
-                  onScrollToMessage={(messageId) => {
-                    messageNodeRefs.current[messageId]?.scrollIntoView({
-                      behavior: 'smooth',
-                      block: 'center',
-                    });
-                  }}
-                />
-              </div>
-            </React.Fragment>
-          );
-        })}
+        {visibleMessages.map((msg, idx) => (
+          <MessageRow
+            key={msg.id}
+            message={msg}
+            previousMessage={idx > 0 ? visibleMessages[idx - 1] : null}
+            isFirstUnread={firstUnreadId === msg.id}
+            firstUnreadRef={firstUnreadRef}
+            registerNode={registerMessageNode}
+            onScrollToMessage={scrollToMessageNode}
+            currentUserVote={userVotes[msg.id]}
+            myReactions={myReactions[msg.id]}
+            starred={starredIds.has(msg.id)}
+            pinned={pinnedMessageId === msg.id}
+            currentUser={currentUser}
+            chatId={chat.id}
+            isGroup={isGroup}
+            group={group}
+            communityHost={communityHost}
+            handleToggleReaction={handleToggleReaction}
+            onVoteQuestion={onVoteQuestion}
+            onFlagAsSimilar={onFlagAsSimilar}
+            handleOpenThread={handleOpenThread}
+            beginEditingMessage={beginEditingMessage}
+            handleRemoveMessage={handleRemoveMessage}
+            handleCopyMessage={handleCopyMessage}
+            handleToggleStar={handleToggleStar}
+            handleTogglePin={handleTogglePin}
+            setReportTarget={setReportTarget}
+            setEditingMessage={setEditingMessage}
+            setReplyTo={setReplyTo}
+            setForwardMessage={setForwardMessage}
+            setSeedMentionUsername={setSeedMentionUsername}
+          />
+        ))}
         <div ref={messagesEndRef} />
         {visibleMessages.length === 0 && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
@@ -1829,7 +1761,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({
         </button>
       )}
       </div>
-
       {/* Composer slot — mutually exclusive states, in precedence order:
           archived group → blocked DM → declined request → the real composer
           (which may itself be preceded by the accept/decline request banner).

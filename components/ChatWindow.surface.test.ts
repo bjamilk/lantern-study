@@ -55,6 +55,7 @@ const SHELL = path.join(REPO_ROOT, 'components/ChatWindow.tsx');
 const EXTRACTED_MODULES: string[] = [
   'components/chat/ChatHeader.tsx',
   'components/chat/ChatHeaderMenu.tsx',
+  'components/chat/MessageRow.tsx',
 ];
 
 const read = (file: string) => fs.readFileSync(file, 'utf8');
