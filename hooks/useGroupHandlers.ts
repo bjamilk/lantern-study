@@ -31,7 +31,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { User, Group, Message, MessageType, QuestionType, QuestionOption, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, QuestionStatus, ChatItem, MatchingItem, DiagramLabel } from '../types';
+import { User, Group, Message, MessageType, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, ChatItem } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
@@ -45,7 +45,6 @@ import {
     createOptimisticClientMessageId,
     computeDmReceiptStatus,
     resolveThreadRootId,
-    DeliveryIntentRegistry,
     isUncertainDeliveryError,
     reconcileDeliveredItem,
 } from '@lantern/shared/utils';
@@ -72,28 +71,19 @@ import { navigateForAppMode } from '../utils/appNavigation';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
 import { mergeFetchedGroups } from '../utils/groupListMerge';
 import { useVoteHandlers } from './groups/useVoteHandlers';
+import { useBoardHandlers } from './groups/useBoardHandlers';
 
-// Module-level (not per-mount) in-flight guards: a remount must not let the same send,
-// question submit or vote fire twice. The two DeliveryIntentRegistry instances hold the
-// clientMessageId minted for each distinct payload so a retry reuses it instead of posting
-// a second copy.
-const sendingGroupIds = new Set<string>();
-const sendingThreadIds = new Set<string>();
-
-/**
- * Thrown when a send is refused because one is already in flight for the same
- * group or DM thread (E3 H16). The composer catches it, restores the text the
- * student typed and shows this sentence — silence used to eat the message.
- */
-export class MessageSendBusyError extends Error {
-    constructor(message = 'Still sending your last message — your text was kept, try again in a moment.') {
-        super(message);
-        this.name = 'MessageSendBusyError';
-    }
-}
-const submittingQuestionGroupIds = new Set<string>();
-const groupDeliveryIntents = new DeliveryIntentRegistry();
-const dmDeliveryIntents = new DeliveryIntentRegistry();
+// The in-flight guards and delivery-intent registries now live in
+// ./groups/deliveryIntents, because the question board and the message composer
+// both post into `group:<id>` and must share ONE registry. `MessageSendBusyError`
+// is re-exported from this module path: ChatWindow recognises it by identity.
+export { MessageSendBusyError } from './groups/deliveryIntents';
+import {
+    sendingGroupIds,
+    sendingThreadIds,
+    dmDeliveryIntents,
+    MessageSendBusyError,
+} from './groups/deliveryIntents';
 
 interface UseGroupHandlersParams {
     users: User[];
@@ -1186,141 +1176,19 @@ export function useGroupHandlers({ users }: UseGroupHandlersParams) {
     }, [currentUser, handleSelectChat, setAppMode]);
 
     // ── Questions ─────────────────────────────────────────────────────────────
-    // Posts a question as a chat message. A question is a Message whose `type` is
-    // MessageType.QUESTION; the actual kind (MCQ, matching, diagram, …) rides in
-    // `questionType` and every downstream reader must use that field, not `type`.
-    // Before sending, the group's loaded messages are scanned for a case-insensitive stem
-    // match — a hit diverts to the duplicate modal instead of posting. Unlike text sends this
-    // is server-first (no optimistic bubble); the delivery intent still guards a retry.
-    const handleQuestionSubmit = useCallback(async (
-        stem: string, 
-        explanation: string, 
-        questionType: QuestionType, 
-        options?: QuestionOption[], 
-        correctAnswerIds?: string[], 
-        imageUrl?: string,
-        tags?: string[],
-        acceptableAnswers?: string[], 
-        matchingPromptItems?: MatchingItem[],
-        matchingAnswerItems?: MatchingItem[],
-        correctMatches?: { promptItemId: string; answerItemId: string }[],
-        diagramLabels?: DiagramLabel[]
-    ) => {
-        if (!currentUser || !selectedChat || selectedChat.chatType !== 'group') return;
-        const groupId = selectedChat.id;
-        if (submittingQuestionGroupIds.has(groupId)) return;
-        submittingQuestionGroupIds.add(groupId);
-        let deliveryFingerprint: string | undefined;
-        let clientMessageId: string | undefined;
-        try {
-            const existingMessages = messages[groupId] || [];
-            const trimmedStem = stem.trim().toLowerCase();
-            const existingQuestion = existingMessages.find(
-                msg => msg.type === MessageType.QUESTION && msg.questionStem?.trim().toLowerCase() === trimmedStem
-            );
-
-            const newQuestionData = {
-                groupId,
-                type: MessageType.QUESTION,
-                questionStem: stem,
-                explanation,
-                questionType,
-                options,
-                correctAnswerIds,
-                imageUrl,
-                tags,
-                questionStatus: QuestionStatus.PENDING,
-                acceptableAnswers,
-                matchingPromptItems,
-                matchingAnswerItems,
-                correctMatches,
-                diagramLabels,
-            };
-
-            if (existingQuestion) {
-                setDuplicateInfo({ newQuestionData, existingQuestion });
-                openModal('duplicateQuestion');
-                closeModal('question');
-                return;
-            }
-
-            const content = JSON.stringify({
-                type: MessageType.QUESTION,
-                ...newQuestionData
-            });
-            deliveryFingerprint = JSON.stringify({
-                ...newQuestionData,
-                imageUrl: imageUrl ? 'attached' : undefined,
-            });
-            clientMessageId = groupDeliveryIntents.resolve(
-                `group:${groupId}`,
-                deliveryFingerprint,
-                uuidv4
-            );
-            const sent = await sendMessage(groupId, currentUser.id, content, clientMessageId);
-            if (!sent) {
-                throw new Error('Failed to send message');
-            }
-            const savedQuestion: Message = {
-                id: sent.id,
-                sender: currentUser,
-                timestamp: new Date(sent.timestamp || new Date()),
-                upvotes: 0,
-                downvotes: 0,
-                ...newQuestionData,
-            };
-            updateMessages(prev => ({
-                ...prev,
-                [groupId]: reconcileDeliveredItem(prev[groupId] || [], savedQuestion)
-            }));
-            groupDeliveryIntents.clear(`group:${groupId}`, deliveryFingerprint, clientMessageId);
-            
-            if (currentUser) {
-                const updatedStats = {
-                    ...currentUser.stats,
-                    questionsCreated: (currentUser.stats.questionsCreated || 0) + 1,
-                };
-
-                void syncGamificationProgress()
-                    .then((synced) => {
-                        setCurrentUser({
-                            ...currentUser,
-                            points: synced.points,
-                            badges: synced.badges,
-                            stats: synced.stats,
-                        });
-                        (synced.awardedBadges || []).forEach(badge => {
-                            const badgeDef = BADGE_DEFINITIONS[badge.id];
-                            const levelInfo = badgeDef?.levels.find(l => l.level === badge.level);
-                            addNotification(`Badge Unlocked: ${badge.name}! You've earned ${levelInfo?.points || 0} points.`);
-                        });
-                    })
-                    .catch(error => console.error('Failed to sync gamification after question submit:', error));
-            }
-            
-            closeModal('question');
-        } catch (error) {
-            console.error('Error submitting question:', error);
-            if (deliveryFingerprint && clientMessageId) {
-                if (isUncertainDeliveryError(error)) {
-                    groupDeliveryIntents.markUncertain(
-                        `group:${groupId}`,
-                        deliveryFingerprint,
-                        clientMessageId
-                    );
-                } else {
-                    groupDeliveryIntents.clear(
-                        `group:${groupId}`,
-                        deliveryFingerprint,
-                        clientMessageId
-                    );
-                }
-            }
-            alert('Failed to submit question. Please try again.');
-        } finally {
-            submittingQuestionGroupIds.delete(groupId);
-        }
-    }, [currentUser, selectedChat, messages, updateMessages, setCurrentUser, openModal, closeModal, setDuplicateInfo, addNotification]);
+    // Moved verbatim to hooks/groups/useBoardHandlers — handleQuestionSubmit posts a
+    // question as a chat message, diverting to the duplicate modal on a stem match.
+    const { handleQuestionSubmit } = useBoardHandlers({
+        currentUser,
+        setCurrentUser,
+        messages,
+        updateMessages,
+        selectedChat,
+        openModal,
+        closeModal,
+        setDuplicateInfo,
+        addNotification,
+    });
 
     // ── Read receipts ─────────────────────────────────────────────────────────
     // Applies a peer's read watermark to the messages THIS user sent in the open chat.
