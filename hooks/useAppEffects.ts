@@ -83,6 +83,7 @@ import { normalizeMonthlyPlans, readPlanForMonth } from '@lantern/shared/utils';
 import { fetchBudgetWalletData } from '../services/budgetApi';
 import { useDailyStudyReminder } from './useDailyStudyReminder';
 import { useDeepLinkConsumption } from './effects/useDeepLinkConsumption';
+import { useDmThreadRefresh, mapFetchedDmThreads } from './effects/useDmThreadRefresh';
 import { useGamificationRefresh } from './effects/useGamificationRefresh';
 import { DirectMessage } from '../types';
 import { useToastStore } from '../stores/toastStore';
@@ -90,7 +91,7 @@ import {
   INITIAL_BOOTSTRAP_LOAD_STATE,
   type BootstrapLoadState,
 } from './useAuthHandlers';
-import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
+import { mergeDmThreadLists } from '../utils/dmThreads';
 import { mergeFetchedGroups } from '../utils/groupListMerge';
 import { isAccessTokenFreshEnough, shouldRestorePersistedAuthUser } from '../utils/authBootstrap';
 import { resetSessionExpiredGuard } from '../services/sessionHandler';
@@ -112,10 +113,6 @@ function allBootstrapDomainsSettled(state: BootstrapLoadState): boolean {
   return Object.values(state).every((status) => status !== 'pending');
 }
 
-function mapFetchedDmThreads(fetched: any[], dmUnreadCounts: Record<string, number>) {
-    if (!Array.isArray(fetched)) return [];
-    return fetched.map((t: any) => mapDmThreadFromApi(t, dmUnreadCounts));
-}
 
 interface UseAppEffectsParams {
     dataLoaded: boolean;
@@ -184,25 +181,8 @@ export function useAppEffects({
         questsLoaded,
     } = useGamificationRefresh({ setCurrentUser });
 
-    // Shared DM-thread refresher used by the realtime handlers and the manual refresh event.
-    // Threads and unread counts are fetched together; a unread-count failure degrades to {}
-    // rather than failing the whole refresh.
-    const refreshDmThreadsForUser = useCallback(async (userId: string) => {
-        try {
-            const [fetchedThreads, dmUnreadCounts] = await Promise.all([
-                fetchDmThreads(userId),
-                fetchDMUnreadCounts(userId).catch(() => ({} as Record<string, number>)),
-            ]);
-            if (Array.isArray(fetchedThreads)) {
-                const mapped = mapFetchedDmThreads(fetchedThreads, dmUnreadCounts);
-                // Soft merge: keep optimistic first-message threads; never wipe on failure
-                // (failures throw before we get here).
-                updateDmThreads((prev) => mergeDmThreadLists(prev, mapped, 'soft'));
-            }
-        } catch (err) {
-            console.warn('[DM] Failed to refresh threads:', err);
-        }
-    }, [updateDmThreads]);
+    // --- The shared DM-thread refresher (realtime handlers + the manual refresh event) ---
+    const refreshDmThreadsForUser = useDmThreadRefresh();
 
     // --- Presence heartbeat for online status ---
     usePresenceHeartbeat({ currentUser, authTokenReady });
