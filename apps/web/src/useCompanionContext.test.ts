@@ -42,8 +42,26 @@ const base: CompanionContextInput = {
     pathname: '/',
 };
 
-const result = (score: number, tags: Record<string, { correct: number; total: number }>) =>
-    ({ score, tagBreakdown: tags }) as unknown as CompanionContextInput['testResults'][number];
+/**
+ * A finished test: for each tag, `correct` right answers out of `total`
+ * attempted questions. Weak topics are tallied from the session the web
+ * actually has — `questions` + `userAnswers` — not from a `tagBreakdown`
+ * field, which nothing ever produced (#70).
+ */
+const result = (score: number, tags: Record<string, { correct: number; total: number }>) => {
+    const questions: Array<{ id: string; tags?: string[] }> = [];
+    const userAnswers: Record<string, { isCorrect: boolean }> = {};
+    let n = 0;
+    for (const [tag, stats] of Object.entries(tags)) {
+        for (let i = 0; i < stats.total; i++) {
+            const id = `q${n++}`;
+            questions.push(tag === 'untagged' ? { id } : { id, tags: [tag] });
+            userAnswers[id] = { isCorrect: i < stats.correct };
+        }
+    }
+    return { score, session: { questions, userAnswers } } as unknown as
+        CompanionContextInput['testResults'][number];
+};
 
 describe('buildCompanionContext — what the model is told', () => {
     it('counts a topic as weak below 60% and leaves the rest out', () => {
@@ -55,10 +73,44 @@ describe('buildCompanionContext — what the model is told', () => {
                     Renal: { correct: 3, total: 4 }, // 75% — not weak
                     Neuro: { correct: 3, total: 5 }, // exactly 60% — not weak
                     Empty: { correct: 0, total: 0 }, // never attempted — not weak
+                    Thin: { correct: 0, total: 2 }, // under the 3-question floor
                 }),
             ],
         });
         expect(context.weakTopics).toEqual(['Cardio']);
+    });
+
+    it('reports no weak topic when nothing is weak', () => {
+        const context = buildCompanionContext({
+            ...base,
+            testResults: [result(90, { Renal: { correct: 9, total: 10 } })],
+        });
+        expect(context.weakTopics).toEqual([]);
+    });
+
+    it('reports nothing at all with no tests', () => {
+        expect(buildCompanionContext(base).weakTopics).toEqual([]);
+    });
+
+    it('buckets untagged questions under General, like the dashboards', () => {
+        const context = buildCompanionContext({
+            ...base,
+            testResults: [result(0, { untagged: { correct: 0, total: 4 } })],
+        });
+        expect(context.weakTopics).toEqual(['General']);
+    });
+
+    it('puts the weakest topic first', () => {
+        const context = buildCompanionContext({
+            ...base,
+            testResults: [
+                result(40, {
+                    Barely: { correct: 2, total: 4 }, // 50%
+                    Worst: { correct: 0, total: 4 }, // 0%
+                }),
+            ],
+        });
+        expect(context.weakTopics).toEqual(['Worst', 'Barely']);
     });
 
     it('never sends more than five weak topics, and never sends one twice', () => {
@@ -115,6 +167,21 @@ describe('buildCompanionContext — what the model is told', () => {
         expect(
             buildCompanionContext({ ...base, appMode: AppMode.TEST_ACTIVE }).currentScreen,
         ).toBe('Active test session');
+    });
+
+    it('names the game and offline screens (#69 — these cases never matched)', () => {
+        // The switch used to say `AppMode.GAME` / `AppMode.OFFLINE`, neither of
+        // which is an enum member, so both read as `undefined` and the
+        // companion was told nothing on those two screens.
+        expect(
+            buildCompanionContext({ ...base, appMode: AppMode.GAME_ACTIVE }).currentScreen,
+        ).toBe('Multiplayer quiz game');
+        expect(
+            buildCompanionContext({ ...base, appMode: AppMode.GAME_RESULTS }).currentScreen,
+        ).toBe('Multiplayer quiz game results');
+        expect(
+            buildCompanionContext({ ...base, appMode: AppMode.OFFLINE_MODE }).currentScreen,
+        ).toBe('Offline mode');
     });
 
     it('caps the note it sends at 6000 characters', () => {

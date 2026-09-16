@@ -51,6 +51,8 @@ test-results/
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
+# Committed so every editor gets the same warning about the root tsconfig (#75).
+!.vscode/settings.json
 .idea
 .DS_Store
 *.suo
