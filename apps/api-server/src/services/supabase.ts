@@ -316,15 +316,11 @@ import {
   withDmHistoryClearedAt,
 } from "@lantern/shared/utils/dmHistoryCutoff";
 
-function extractMentionUsernames(text?: string | null): string[] {
-  if (!text) return [];
-  const found = new Set<string>();
-  for (const match of text.matchAll(/@([a-zA-Z0-9_]{2,32})\b/g)) {
-    const username = match[1];
-    if (username) found.add(username.toLowerCase());
-  }
-  return [...found];
-}
+// `extractMentionUsernames` moved to `data/chatSend.ts` (monolith lane M1f,
+// step 17) with the chat section, its only caller.
+import * as chatSendData from "./data/chatSend";
+import type { MessagePinResult } from "./data/chatSend";
+export type { MessagePinResult } from "./data/chatSend";
 import { detectImageMime } from "../utils/fileValidation";
 import { VersionConflictError } from "../utils/versionConflict";
 // Append-only learning log (Phase 1 · C). Value import of a leaf module
@@ -353,19 +349,9 @@ type UserStats = typeof initialUserStats;
 // and `removeChatMessage`, their only producers. Re-exported above so
 // `routes/messages.ts` keeps importing them from here.
 
-/**
- * Why a pin did or did not happen. The route maps each to its own code so the
- * client can say the true thing: 503 the migration is not applied yet, 400 the
- * group is not a board, 403 the caller may not pin, 404 no such message or no
- * access to it.
- */
-export type MessagePinResult =
-  | { status: "ok"; message: Record<string, unknown> }
-  | { status: "unavailable" }
-  | { status: "not_found" }
-  | { status: "not_board" }
-  | { status: "not_pinnable" }
-  | { status: "forbidden" };
+// `MessagePinResult` moved to `data/chatSend.ts` (monolith lane M1f, step 17)
+// with `setMessagePin`, its only producer. Imported and re-exported above so
+// `routes/messages.ts` keeps importing it from here.
 
 // `BoardRepostResult`, `BoardRepostUndoResult`, `MessageBookmarkResult` and
 // `BoardBookmarkPage` moved to `data/boardActions.ts` (monolith lane M1d,
@@ -4526,6 +4512,27 @@ export class SupabaseService {
   // what feeds the community mute check (`assertNotMutedInCommunity`, module
   // scope above) on every write path.
   // ===========================================================================
+  // EXTRACTED (monolith lane M1f, step 17): the bodies now live in
+  // `services/data/chatSend.ts`, a plain module of functions over the injected
+  // client, together with `extractMentionUsernames` (module scope above until
+  // this lane; the chat section was its only caller). The three helpers
+  // immediately below — `generateTestQuestions`, `calculateTestScore`,
+  // `updateUserStats` — sit under this banner only by where they were pasted:
+  // they belong to the tests domain and `data/tests.ts` already consumes them
+  // through its own `deps`, so they stayed put rather than being filed under a
+  // chat name.
+  //
+  // EVERY sibling call goes through the `deps` literal, written out INLINE at
+  // each call site, and it MUST stay that way: `supabase.sendPath.contract`,
+  // `supabase.boardMessages`, `supabase.boardMedia`, `supabase.boardRepost`,
+  // `supabase.messagePin`, `supabase.messageReactions` and
+  // `supabase.boardPaging` all build a bare `self = { supabase,
+  // resolveBoardContext: …, notifyMentionedUsers: …, … }` and drive the entry
+  // point through `SupabaseService.prototype.<m>.call(self, …)`. An instance
+  // field holding the deps reads as `undefined` there, and the arrows read
+  // `this.<method>` at CALL time so those stubs — and any `jest.spyOn` — still
+  // intercept. The ONE exception is `assertNotMutedInCommunity`, still a
+  // STATIC import at the send site — see the banner in `data/communityMute.ts`.
   // Helper methods
   private generateTestQuestions(config: any): any[] {
     // Simplified question generation - in a real app this would be more sophisticated
@@ -4588,86 +4595,11 @@ export class SupabaseService {
 
   // Group Functions
   async fetchGroups(userId: string): Promise<Group[]> {
-    const cacheKey = `user:${userId}:groups`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("group_members")
-          .select(
-            `
-          groups (
-            id,
-            name,
-            avatar_url,
-            description,
-            last_message,
-            last_message_time,
-            admin_ids,
-            permissions,
-            parent_id,
-            is_archived,
-            invite_id,
-            course_id,
-            created_at
-          )
-        `,
-          )
-          .eq("user_id", userId);
-
-        if (error) throw error;
-        return data.map((item: any) => item.groups);
-      },
-      { ttl: 60 },
-    ); // Cache for 1 minute
+    return chatSendData.fetchGroups(this.supabase, userId);
   }
 
   async fetchGroupMembers(groupId: string): Promise<User[]> {
-    const cacheKey = `group:${groupId}:members`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("group_members")
-          .select(
-            `
-          user_id,
-          profiles!user_id (
-            id,
-            name,
-            username,
-            avatar_url,
-            phone
-          )
-        `,
-          )
-          .eq("group_id", groupId)
-          .eq("pending", false);
-
-        if (error) throw error;
-        const members: User[] = [];
-        for (const item of data || []) {
-          const profile = Array.isArray(item.profiles)
-            ? item.profiles[0]
-            : item.profiles;
-          if (!profile) continue;
-          members.push({
-            id: profile.id || item.user_id,
-            name: profile.name,
-            username: profile.username,
-            avatarUrl: profile.avatar_url,
-            phoneNumber: profile.phone,
-            points: 0,
-            badges: [],
-            stats: {},
-          } as User);
-        }
-        return members;
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return chatSendData.fetchGroupMembers(this.supabase, groupId);
   }
 
   // Message Functions
@@ -4676,24 +4608,12 @@ export class SupabaseService {
     userId: string,
     clientMessageId: string,
   ): Promise<any | null> {
-    const { data, error } = await this.supabase
-      .from("messages")
-      .select("*")
-      .eq("group_id", groupId)
-      .eq("sender_id", userId)
-      .eq("client_message_id", clientMessageId)
-      .maybeSingle();
-
-    if (error) {
-      logger.error("findGroupMessageByClientId failed", {
-        error,
-        groupId,
-        userId,
-        clientMessageId,
-      });
-      return null;
-    }
-    return data;
+    return chatSendData.findGroupMessageByClientId(
+      this.supabase,
+      groupId,
+      userId,
+      clientMessageId,
+    );
   }
 
   private async resolveGroupMentionUserIds(
@@ -4702,139 +4622,53 @@ export class SupabaseService {
     content: string,
     explicitIds?: string[],
   ): Promise<string[]> {
-    const usernames = extractMentionUsernames(content);
-    const members = await this.fetchGroupMembers(groupId);
-    const byUsername = new Map<string, string>();
-    const usernameById = new Map<string, string>();
-    const memberIds: string[] = [];
-    for (const m of members || []) {
-      const username = (m as any)?.username;
-      const id = (m as any)?.id;
-      if (typeof id === "string") memberIds.push(id);
-      if (username && id) {
-        const key = String(username).toLowerCase();
-        byUsername.set(key, id);
-        usernameById.set(id, key);
-      }
-    }
-    const memberIdSet = new Set(memberIds);
-    const fromText = usernames
-      .filter((u) => u !== "all")
-      .map((u: string) => byUsername.get(u))
-      .filter(
-        (id: string | undefined): id is string => !!id && id !== senderId,
-      );
-
-    // Admins may @all to notify every active member except themselves.
-    if (
-      usernames.includes("all") &&
-      (await this.isGroupAdmin(groupId, senderId))
-    ) {
-      for (const id of memberIds) {
-        if (id !== senderId) fromText.push(id);
-      }
-    }
-
-    // Only accept client-provided IDs that match @usernames actually in the text
-    // (prevents non-admins from mass-notifying via a forged mentionedUserIds list).
-    const mentionedUsernameSet = new Set(usernames.filter((u) => u !== "all"));
-    const fromExplicit = (explicitIds || []).filter((id) => {
-      if (!memberIdSet.has(id) || id === senderId || id === "__all__")
-        return false;
-      const username = usernameById.get(id);
-      return !!username && mentionedUsernameSet.has(username);
-    });
-    return [...new Set([...fromText, ...fromExplicit])];
+    return chatSendData.resolveGroupMentionUserIds(
+      {
+        fetchGroupMembers: (gid) => this.fetchGroupMembers(gid),
+        isGroupAdmin: (gid, uid) => this.isGroupAdmin(gid, uid),
+      },
+      groupId,
+      senderId,
+      content,
+      explicitIds,
+    );
   }
 
   private buildReplyToFromParent(
     parent: any,
     table: "messages" | "dm_messages",
   ): Record<string, unknown> {
-    const profile = Array.isArray(parent.profiles)
-      ? parent.profiles[0]
-      : parent.profiles;
-    const isRemoved = !!parent.removed_at;
-    if (table === "dm_messages") {
-      return {
-        id: parent.id,
-        senderId: parent.sender_id,
-        senderName:
-          profile?.name ||
-          (profile?.username ? `@${profile.username}` : "Member"),
-        type: "TEXT",
-        text: isRemoved ? undefined : parent.text,
-        isRemoved,
-      };
-    }
-    const qd =
-      parent.question_data && typeof parent.question_data === "object"
-        ? parent.question_data
-        : {};
-    return {
-      id: parent.id,
-      senderId: parent.sender_id,
-      senderName:
-        profile?.name ||
-        (profile?.username ? `@${profile.username}` : "Member"),
-      type: parent.type,
-      text: isRemoved ? undefined : parent.text,
-      questionStem: isRemoved ? undefined : qd.questionStem,
-      isRemoved,
-    };
+    return chatSendData.buildReplyToFromParent(parent, table);
   }
 
   private async attachReplyPreview(
     message: any,
     table: "messages" | "dm_messages" = "messages",
   ): Promise<any> {
-    const replyId = message?.reply_to_message_id || message?.replyToMessageId;
-    if (!replyId) return message;
-    const select =
-      table === "dm_messages"
-        ? "id, sender_id, text, removed_at, profiles:sender_id(id, name, username)"
-        : "id, sender_id, type, text, question_data, removed_at, profiles:sender_id(id, name, username)";
-    const { data: parent } = await this.supabase
-      .from(table)
-      .select(select)
-      .eq("id", replyId)
-      .maybeSingle();
-    if (!parent) return { ...message, replyTo: null };
-    return { ...message, replyTo: this.buildReplyToFromParent(parent, table) };
+    return chatSendData.attachReplyPreview(
+      this.supabase,
+      {
+        buildReplyToFromParent: (parent, t) =>
+          this.buildReplyToFromParent(parent, t),
+      },
+      message,
+      table,
+    );
   }
 
   private async attachReplyPreviewsBatch(
     messages: any[],
     table: "messages" | "dm_messages",
   ): Promise<any[]> {
-    if (!messages.length) return messages;
-    const replyIds = [
-      ...new Set(
-        messages
-          .map((m) => m?.reply_to_message_id || m?.replyToMessageId)
-          .filter((id): id is string => typeof id === "string" && !!id),
-      ),
-    ];
-    if (!replyIds.length) return messages;
-    const select =
-      table === "dm_messages"
-        ? "id, sender_id, text, removed_at, profiles:sender_id(id, name, username)"
-        : "id, sender_id, type, text, question_data, removed_at, profiles:sender_id(id, name, username)";
-    const { data: parents } = await this.supabase
-      .from(table)
-      .select(select)
-      .in("id", replyIds);
-    const byId = new Map((parents || []).map((p: any) => [p.id, p]));
-    return messages.map((message) => {
-      const replyId = message?.reply_to_message_id || message?.replyToMessageId;
-      if (!replyId) return message;
-      const parent = byId.get(replyId);
-      if (!parent) return { ...message, replyTo: null };
-      return {
-        ...message,
-        replyTo: this.buildReplyToFromParent(parent, table),
-      };
-    });
+    return chatSendData.attachReplyPreviewsBatch(
+      this.supabase,
+      {
+        buildReplyToFromParent: (parent, t) =>
+          this.buildReplyToFromParent(parent, t),
+      },
+      messages,
+      table,
+    );
   }
 
   /** Count replies per thread_root_id for messages in a conversation scope. */
@@ -4844,46 +4678,13 @@ export class SupabaseService {
     scopeColumn: "group_id" | "thread_id",
     scopeId: string,
   ): Promise<any[]> {
-    if (!messages.length) return messages;
-    const candidateRootIds = [
-      ...new Set(
-        messages.flatMap((m) => {
-          const id = m?.id;
-          const root = m?.thread_root_id || m?.threadRootId;
-          return [id, root].filter(
-            (x): x is string => typeof x === "string" && !!x,
-          );
-        }),
-      ),
-    ];
-    if (!candidateRootIds.length) return messages;
-
-    const { data, error } = await this.supabase
-      .from(table)
-      .select("thread_root_id")
-      .eq(scopeColumn, scopeId)
-      .is("removed_at", null)
-      .in("thread_root_id", candidateRootIds);
-
-    if (error) {
-      logger.warn("attachThreadReplyCounts failed", { error, table, scopeId });
-      return messages.map((m) => ({ ...m, replyCount: m.replyCount ?? 0 }));
-    }
-
-    const counts = new Map<string, number>();
-    for (const row of data || []) {
-      const rootId = (row as { thread_root_id?: string }).thread_root_id;
-      if (!rootId) continue;
-      counts.set(rootId, (counts.get(rootId) || 0) + 1);
-    }
-
-    return messages.map((m) => {
-      // Only a thread root carries a reply count. Falling back to the root id
-      // for replies gave every message in the thread the root's count, so each
-      // reply rendered its own "N replies" chip.
-      const isThreadRoot = !(m.thread_root_id || m.threadRootId);
-      return { ...m, replyCount: isThreadRoot ? counts.get(m.id) || 0 : 0 };
-    });
+    return chatSendData.attachThreadReplyCounts(
+      this.supabase,
+      messages,
+      table,
+      scopeColumn,
+      scopeId,
+    );
   }
 
   private async enrichGroupMessageReceipts(
@@ -4891,33 +4692,12 @@ export class SupabaseService {
     groupId: string,
     viewerUserId: string,
   ): Promise<Message[]> {
-    const hasOwn = messages.some(
-      (m) =>
-        (m as any).senderId === viewerUserId || m.sender?.id === viewerUserId,
+    return chatSendData.enrichGroupMessageReceipts(
+      this.supabase,
+      messages,
+      groupId,
+      viewerUserId,
     );
-    if (!hasOwn) return messages;
-
-    const { data: members, error } = await this.supabase
-      .from("group_members")
-      .select("user_id, last_read_at")
-      .eq("group_id", groupId)
-      .eq("pending", false);
-
-    if (error) {
-      logger.warn("enrichGroupMessageReceipts failed", { error, groupId });
-      return messages;
-    }
-
-    const watermarks = (members || [])
-      .filter((m: { user_id: string }) => m.user_id !== viewerUserId)
-      .map((m: { last_read_at?: string | null }) => m.last_read_at);
-
-    return messages.map((msg) => {
-      const senderId = (msg as any).senderId || msg.sender?.id;
-      if (senderId !== viewerUserId) return msg;
-      const receipt = computeGroupReceipt(msg.timestamp, watermarks);
-      return { ...msg, ...receipt };
-    });
   }
 
   private async enrichDmMessageReceipts(
@@ -4926,33 +4706,13 @@ export class SupabaseService {
     viewerUserId: string,
     peerUserId: string,
   ): Promise<Message[]> {
-    const hasOwn = messages.some(
-      (m) =>
-        (m as any).senderId === viewerUserId || m.sender?.id === viewerUserId,
+    return chatSendData.enrichDmMessageReceipts(
+      this.supabase,
+      messages,
+      threadId,
+      viewerUserId,
+      peerUserId,
     );
-    if (!hasOwn) return messages;
-
-    const { data: readStatus, error } = await this.supabase
-      .from("dm_read_status")
-      .select("last_read_at")
-      .eq("thread_id", threadId)
-      .eq("user_id", peerUserId)
-      .maybeSingle();
-
-    if (error) {
-      logger.warn("enrichDmMessageReceipts failed", { error, threadId });
-      return messages;
-    }
-
-    const peerLastReadAt = readStatus?.last_read_at;
-    return messages.map((msg) => {
-      const senderId = (msg as any).senderId || msg.sender?.id;
-      if (senderId !== viewerUserId) return msg;
-      return {
-        ...msg,
-        receiptStatus: computeDmReceiptStatus(msg.timestamp, peerLastReadAt),
-      };
-    });
   }
 
   /** Resolve thread_root_id for a reply; validates parent is in the same conversation. */
@@ -4961,38 +4721,12 @@ export class SupabaseService {
     replyToMessageId: string,
     scope: { groupId?: string; threadId?: string },
   ): Promise<string> {
-    const select =
-      table === "messages"
-        ? "id, group_id, thread_root_id, removed_at"
-        : "id, thread_id, thread_root_id, removed_at";
-    const { data: parent, error } = await this.supabase
-      .from(table)
-      .select(select)
-      .eq("id", replyToMessageId)
-      .maybeSingle();
-
-    if (error || !parent) {
-      throw new Error("Reply target message not found");
-    }
-    if ((parent as any).removed_at) {
-      throw new Error("Cannot reply to a removed message");
-    }
-    if (table === "messages" && (parent as any).group_id !== scope.groupId) {
-      throw new Error("Reply target is not in this group");
-    }
-    if (
-      table === "dm_messages" &&
-      (parent as any).thread_id !== scope.threadId
-    ) {
-      throw new Error("Reply target is not in this conversation");
-    }
-    const rootId = resolveThreadRootId(
-      parent as { id: string; thread_root_id?: string | null },
+    return chatSendData.resolveThreadRootForReply(
+      this.supabase,
+      table,
+      replyToMessageId,
+      scope,
     );
-    if (!rootId) {
-      throw new Error("Reply target message not found");
-    }
-    return rootId;
   }
 
   /** Lightweight realtime broadcast so open senders can refresh blue ticks. */
@@ -5000,33 +4734,7 @@ export class SupabaseService {
     chatId: string,
     payload: { userId: string; lastReadAt: string },
   ): Promise<void> {
-    try {
-      const channel = this.supabase.channel(`chat-read:${chatId}`);
-      await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          void this.supabase.removeChannel(channel);
-          reject(new Error("broadcast timeout"));
-        }, 2500);
-        channel.subscribe(async (status) => {
-          if (status !== "SUBSCRIBED") return;
-          try {
-            await channel.send({
-              type: "broadcast",
-              event: "read",
-              payload,
-            });
-            resolve();
-          } catch (err) {
-            reject(err);
-          } finally {
-            clearTimeout(timer);
-            void this.supabase.removeChannel(channel);
-          }
-        });
-      });
-    } catch (err) {
-      logger.warn("broadcastChatRead failed", { chatId, err });
-    }
+    return chatSendData.broadcastChatRead(this.supabase, chatId, payload);
   }
 
   async getGroupThread(
@@ -5034,102 +4742,21 @@ export class SupabaseService {
     rootId: string,
     viewerUserId?: string,
   ): Promise<Message[]> {
-    // The thread carries the board post's own row, and the post screen renders
-    // it as the header — so it needs the board columns too, or a post opened
-    // from a pin older than the loaded page comes back untitled.
-    const baseThreadSelect = `
-      id,
-      group_id,
-      sender_id,
-      type,
-      text,
-      question_data,
-      flagged_as_similar_user_ids,
-      timestamp,
-      edited_at,
-      removed_at,
-      upvotes,
-      downvotes,
-      is_archived,
-      image_url,
-      client_message_id,
-      reply_to_message_id,
-      mentioned_user_ids,
-      thread_root_id,
-      profiles!sender_id (
-        id,
-        name,
-        username,
-        avatar_url
-      )
-    `;
-    const selectClause = await reactionColumns(
+    return chatSendData.getGroupThread(
       this.supabase,
-      await messageColumns(this.supabase, baseThreadSelect),
-    );
-
-    const runThread = (columns: string) =>
-      Promise.all([
-        this.supabase
-          .from("messages")
-          .select(columns)
-          .eq("id", rootId)
-          .eq("group_id", groupId)
-          .maybeSingle(),
-        this.supabase
-          .from("messages")
-          .select(columns)
-          .eq("group_id", groupId)
-          .eq("thread_root_id", rootId)
-          .order("timestamp", { ascending: true }),
-      ]);
-
-    let [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
-      await runThread(selectClause);
-    if (
-      (rootError && isMissingColumnError(rootError)) ||
-      (repliesError && isMissingColumnError(repliesError))
-    ) {
-      // Same two-step ladder as getGroupMessages: drop `reactions` first
-      // (20260830120000), then the board columns (20260903120000).
-      markMessageReactionsColumnMissing();
-      [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
-        await runThread(await messageColumns(this.supabase, baseThreadSelect));
-    }
-    if (
-      (rootError && isMissingColumnError(rootError)) ||
-      (repliesError && isMissingColumnError(repliesError))
-    ) {
-      // Pre-migration: no titles and no pins, but the thread still loads.
-      markMessageBoardColumnsMissing();
-      [{ data: root, error: rootError }, { data: replies, error: repliesError }] =
-        await runThread(baseThreadSelect);
-    }
-
-    if (rootError) throw rootError;
-    if (repliesError) throw repliesError;
-    if (!root) return [];
-
-    const combined = [root, ...(replies || [])];
-    const withReplies = await this.attachReplyPreviewsBatch(
-      combined,
-      "messages",
-    );
-    const withCounts = await this.attachThreadReplyCounts(
-      withReplies,
-      "messages",
-      "group_id",
+      {
+        attachReplyPreviewsBatch: (rows, table) =>
+          this.attachReplyPreviewsBatch(rows, table),
+        attachThreadReplyCounts: (rows, table, scopeColumn, scopeId) =>
+          this.attachThreadReplyCounts(rows, table, scopeColumn, scopeId),
+        normalizeMessageRecord: (row) => this.normalizeMessageRecord(row),
+        enrichGroupMessageReceipts: (messages, gid, viewer) =>
+          this.enrichGroupMessageReceipts(messages, gid, viewer),
+      },
       groupId,
+      rootId,
+      viewerUserId,
     );
-
-    const mapped = withCounts.map((msg: any) =>
-      mapChatMessageRow(msg, this.normalizeMessageRecord(msg)),
-    ) as Message[];
-
-    if (viewerUserId) {
-      return this.enrichGroupMessageReceipts(mapped, groupId, viewerUserId);
-    }
-    return mapped;
   }
 
   async getDmThread(
@@ -5137,110 +4764,19 @@ export class SupabaseService {
     rootId: string,
     viewerUserId: string,
   ): Promise<Message[]> {
-    const { data: thread, error: threadError } = await this.supabase
-      .from("dm_threads")
-      .select("participant_ids, history_cleared_at")
-      .eq("id", threadId)
-      .maybeSingle();
-    if (threadError) throw threadError;
-    const participantIds = Array.isArray(thread?.participant_ids)
-      ? thread!.participant_ids
-      : [];
-    if (!participantIds.includes(viewerUserId)) {
-      throw new Error("Access denied");
-    }
-    const peerUserId = participantIds.find((id: string) => id !== viewerUserId);
-    if (!peerUserId) {
-      throw new Error("Invalid DM thread");
-    }
-    const historyClearedAt = readDmHistoryClearedAt(
-      thread?.history_cleared_at,
-      viewerUserId,
-    );
-
-    const selectClause = `
-      id,
-      thread_id,
-      sender_id,
-      text,
-      timestamp,
-      edited_at,
-      removed_at,
-      reply_to_message_id,
-      thread_root_id,
-      profiles:sender_id (
-        id,
-        name,
-        avatar_url
-      )
-    `;
-
-    const [
-      { data: root, error: rootError },
-      { data: replies, error: repliesError },
-    ] = await Promise.all([
-      this.supabase
-        .from("dm_messages")
-        .select(selectClause)
-        .eq("id", rootId)
-        .eq("thread_id", threadId)
-        .maybeSingle(),
-      this.supabase
-        .from("dm_messages")
-        .select(selectClause)
-        .eq("thread_id", threadId)
-        .eq("thread_root_id", rootId)
-        .order("timestamp", { ascending: true }),
-    ]);
-
-    if (rootError) throw rootError;
-    if (repliesError) throw repliesError;
-    if (!root) return [];
-
-    const combined = filterMessagesAfterDmHistoryCutoff(
-      [root, ...(replies || [])],
-      historyClearedAt,
-    );
-    if (!combined.length) return [];
-    const withReplies = await this.attachReplyPreviewsBatch(
-      combined,
-      "dm_messages",
-    );
-    const withCounts = await this.attachThreadReplyCounts(
-      withReplies,
-      "dm_messages",
-      "thread_id",
+    return chatSendData.getDmThread(
+      this.supabase,
+      {
+        attachReplyPreviewsBatch: (rows, table) =>
+          this.attachReplyPreviewsBatch(rows, table),
+        attachThreadReplyCounts: (rows, table, scopeColumn, scopeId) =>
+          this.attachThreadReplyCounts(rows, table, scopeColumn, scopeId),
+        enrichDmMessageReceipts: (messages, tid, viewer, peer) =>
+          this.enrichDmMessageReceipts(messages, tid, viewer, peer),
+      },
       threadId,
-    );
-
-    const mapped = withCounts.map((msg: any) => ({
-      id: msg.id,
-      threadId: msg.thread_id,
-      sender: mapProfileSender(
-        resolveNestedProfile(msg.profiles),
-        msg.sender_id,
-      ),
-      senderId: msg.sender_id,
-      timestamp: new Date(msg.timestamp),
-      type: "TEXT" as const,
-      ...(!msg.removed_at ? { text: msg.text } : {}),
-      editedAt: msg.edited_at || undefined,
-      removedAt: msg.removed_at || undefined,
-      isRemoved: !!msg.removed_at,
-      upvotes: 0,
-      downvotes: 0,
-      flaggedAsSimilarUserIds: [],
-      replyToMessageId: msg.reply_to_message_id || undefined,
-      replyTo: msg.replyTo || undefined,
-      threadRootId: msg.thread_root_id || undefined,
-      replyCount: typeof msg.replyCount === "number" ? msg.replyCount : 0,
-    })) as Message[];
-
-    return this.enrichDmMessageReceipts(
-      mapped,
-      threadId,
+      rootId,
       viewerUserId,
-      peerUserId,
     );
   }
 
@@ -5254,47 +4790,14 @@ export class SupabaseService {
     /** Board mentions link into the community, never into Chat (spec §3.9). */
     link?: string;
   }): Promise<void> {
-    const {
-      groupId,
-      senderId,
-      messageId,
-      mentionedUserIds,
-      preview,
-      mentionedEveryone,
-    } = params;
-    if (!mentionedUserIds.length) return;
-    const [groupMeta, sender] = await Promise.all([
-      this.getGroupById(groupId),
-      this.getUserById(senderId),
-    ]);
-    const groupName = (groupMeta as any)?.name || "a group";
-    const actor =
-      sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
-    const snippet = preview.slice(0, 80);
-    const message = mentionedEveryone
-      ? `${actor} mentioned everyone in ${groupName}: ${snippet}`
-      : `${actor} mentioned you in ${groupName}: ${snippet}`;
-    await Promise.all(
-      mentionedUserIds.map((recipientId) =>
-        this.createNotification(recipientId, {
-          message,
-          link: params.link || `/chat/${groupId}?messageId=${messageId}`,
-          type: "mention",
-          data: {
-            groupId,
-            messageId,
-            senderId,
-            preview: snippet,
-            mentionedEveryone: !!mentionedEveryone,
-          },
-        }).catch((err) => {
-          logger.warn("Failed to notify mentioned user", {
-            err,
-            recipientId,
-            messageId,
-          });
-        }),
-      ),
+    return chatSendData.notifyMentionedUsers(
+      {
+        getGroupById: (gid, uid) => this.getGroupById(gid, uid),
+        getUserById: (uid) => this.getUserById(uid),
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification as any),
+      },
+      params,
     );
   }
 
@@ -5306,48 +4809,16 @@ export class SupabaseService {
     preview: string;
     skipUserIds?: string[];
   }): Promise<void> {
-    const {
-      groupId,
-      senderId,
-      messageId,
-      replyToMessageId,
-      preview,
-      skipUserIds,
-    } = params;
-    const { data: parent, error } = await this.supabase
-      .from("messages")
-      .select("id, sender_id")
-      .eq("id", replyToMessageId)
-      .eq("group_id", groupId)
-      .maybeSingle();
-    if (error || !parent?.sender_id || parent.sender_id === senderId) return;
-    if (skipUserIds?.includes(parent.sender_id)) return;
-
-    const [groupMeta, sender] = await Promise.all([
-      this.getGroupById(groupId),
-      this.getUserById(senderId),
-    ]);
-    const groupName = (groupMeta as any)?.name || "a group";
-    const actor =
-      sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
-    await this.createNotification(parent.sender_id, {
-      message: `${actor} replied to you in ${groupName}: ${preview.slice(0, 80)}`,
-      link: `/chat/${groupId}?messageId=${messageId}`,
-      type: "reply",
-      data: {
-        groupId,
-        messageId,
-        senderId,
-        replyToMessageId,
-        preview: preview.slice(0, 80),
+    return chatSendData.notifyReplyRecipient(
+      this.supabase,
+      {
+        getGroupById: (gid, uid) => this.getGroupById(gid, uid),
+        getUserById: (uid) => this.getUserById(uid),
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification as any),
       },
-    }).catch((err) => {
-      logger.warn("Failed to notify reply recipient", {
-        err,
-        messageId,
-        replyToMessageId,
-      });
-    });
+      params,
+    );
   }
 
   /**
@@ -5373,30 +4844,12 @@ export class SupabaseService {
     communityId: string | null,
     createdBy: string | null,
   ): Promise<CommunityRole | null> {
-    if (!communityId) return null;
-    try {
-      const { data } = await (this.supabase as any)
-        .from("community_members")
-        .select("role")
-        .eq("community_id", communityId)
-        .eq("user_id", userId)
-        .is("opted_out_at", null)
-        .maybeSingle();
-      if (!data) return null;
-      return resolveCommunityRole(
-        (data as { role?: string | null }).role ?? null,
-        userId,
-        createdBy,
-      );
-    } catch (err) {
-      // Fail CLOSED: an unresolvable role is not a moderator, so the worst
-      // case is an announcement refused, never one forged.
-      logger.warn("resolveCommunityRoleFor failed, treating as member", {
-        err,
-        communityId,
-      });
-      return null;
-    }
+    return chatSendData.resolveCommunityRoleFor(
+      this.supabase,
+      userId,
+      communityId,
+      createdBy,
+    );
   }
 
   private async resolveBoardContext(groupId: string): Promise<{
@@ -5407,76 +4860,11 @@ export class SupabaseService {
     loungeGroupId: string | null;
     adminIds: string[];
   }> {
-    const empty = {
-      isBoard: false,
-      communityId: null,
-      communitySlug: null,
-      communityCreatedBy: null,
-      loungeGroupId: null,
-      adminIds: [] as string[],
-    };
-    if (!groupId) return empty;
-    const cacheKey = `board:context:${groupId}`;
-    const hit = await cacheService.get<typeof empty>(cacheKey);
-    if (hit) return hit;
-
-    const group = await this.getGroupById(groupId);
-    if (!group?.communityId) return empty;
-
-    const readCommunity = (columns: string) =>
-      (this.supabase as any)
-        .from("communities")
-        .select(columns)
-        .eq("id", group.communityId)
-        .maybeSingle();
-
-    type CommunityPointer = {
-      slug?: string | null;
-      created_by?: string | null;
-      lounge_group_id?: string | null;
-    };
-    let community: CommunityPointer | null = null;
-    try {
-      // lounge_group_id only exists once 20260829170000 is applied.
-      let { data, error } = await readCommunity("id, slug, created_by, lounge_group_id");
-      if (error && isMissingColumnError(error)) {
-        ({ data, error } = await readCommunity("id, slug, created_by"));
-      }
-      if (error) throw error;
-      community = (data || {}) as CommunityPointer;
-    } catch (err) {
-      /**
-       * The surface itself comes from the GROUP row, which we already have, so
-       * a failed community read degrades the deep link (to /discover, never to
-       * /chat) rather than failing the send. Deliberately NOT cached: an owner
-       * would otherwise be refused a pin for the whole TTL.
-       */
-      logger.warn("resolveBoardContext: community read failed, degrading", {
-        err,
-        groupId,
-      });
-      return {
-        isBoard: isCommunityBoard(group),
-        communityId: group.communityId,
-        communitySlug: null,
-        communityCreatedBy: null,
-        loungeGroupId: null,
-        adminIds: group.adminIds || [],
-      };
-    }
-
-    const loungeGroupId = community?.lounge_group_id ?? null;
-    const context = {
-      // The lounge is a chat, not a board (founder decision 1).
-      isBoard: loungeGroupId === groupId ? false : isCommunityBoard(group),
-      communityId: group.communityId,
-      communitySlug: community?.slug ?? null,
-      communityCreatedBy: community?.created_by ?? null,
-      loungeGroupId,
-      adminIds: group.adminIds || [],
-    };
-    await cacheService.set(cacheKey, context, 300);
-    return context;
+    return chatSendData.resolveBoardContext(
+      this.supabase,
+      { getGroupById: (gid, uid) => this.getGroupById(gid, uid) },
+      groupId,
+    );
   }
 
   /**
@@ -5494,88 +4882,15 @@ export class SupabaseService {
     skipUserIds?: string[];
     communitySlug: string | null;
   }): Promise<void> {
-    const {
-      groupId,
-      senderId,
-      messageId,
-      threadRootId,
-      preview,
-      skipUserIds,
-      communitySlug,
-    } = params;
-
-    const [{ data: root }, { data: replies }] = await Promise.all([
-      this.supabase
-        .from("messages")
-        .select("id, sender_id")
-        .eq("id", threadRootId)
-        .maybeSingle(),
-      this.supabase
-        .from("messages")
-        .select("sender_id")
-        .eq("group_id", groupId)
-        .eq("thread_root_id", threadRootId)
-        .limit(200),
-    ]);
-
-    const rootAuthorId = (root as { sender_id?: string } | null)?.sender_id ?? null;
-    const skip = new Set([senderId, ...(skipUserIds || [])]);
-
-    const repliers: string[] = [];
-    for (const row of (replies || []) as Array<{ sender_id?: string }>) {
-      const id = row?.sender_id;
-      if (!id || skip.has(id) || id === rootAuthorId || repliers.includes(id)) continue;
-      repliers.push(id);
-    }
-
-    const recipients: Array<{ id: string; isRootAuthor: boolean }> = [];
-    if (rootAuthorId && !skip.has(rootAuthorId)) {
-      recipients.push({ id: rootAuthorId, isRootAuthor: true });
-    }
-    for (const id of repliers) recipients.push({ id, isRootAuthor: false });
-    if (!recipients.length) return;
-
-    const [groupMeta, sender] = await Promise.all([
-      this.getGroupById(groupId),
-      this.getUserById(senderId),
-    ]);
-    const boardName = (groupMeta as any)?.name || "a board";
-    const actor =
-      sender?.name || (sender?.username ? `@${sender.username}` : "Someone");
-    /**
-     * Point at the POST, not at the comment row: a comment has no surface of
-     * its own, and `?messageId=` was read by no client. `boardPostDeepLinkPath`
-     * falls back to the board link with no slug and to `/discover` with none —
-     * never to `/chat/:groupId`, which is the one surface a board must not
-     * open in. Links already sent keep working: `?messageId=` is simply a
-     * query string on a path that still resolves.
-     */
-    const link = boardPostDeepLinkPath(communitySlug, groupId, threadRootId);
-    const snippet = preview.slice(0, 80);
-
-    await Promise.all(
-      recipients.slice(0, BOARD_COMMENT_NOTIFY_MAX).map((recipient) =>
-        this.createNotification(recipient.id, {
-          message: recipient.isRootAuthor
-            ? `${actor} replied to your post in ${boardName}: ${snippet}`
-            : `${actor} commented on a post you follow in ${boardName}: ${snippet}`,
-          link,
-          type: "reply",
-          data: {
-            groupId,
-            messageId,
-            senderId,
-            threadRootId,
-            preview: snippet,
-          },
-        }).catch((err) => {
-          logger.warn("Failed to notify board comment recipient", {
-            err,
-            recipientId: recipient.id,
-            messageId,
-          });
-        }),
-      ),
+    return chatSendData.notifyBoardCommentRecipients(
+      this.supabase,
+      {
+        getGroupById: (gid, uid) => this.getGroupById(gid, uid),
+        getUserById: (uid) => this.getUserById(uid),
+        createNotification: (uid, notification) =>
+          this.createNotification(uid, notification as any),
+      },
+      params,
     );
   }
 
@@ -5610,433 +4925,35 @@ export class SupabaseService {
       postKind?: string | null;
     },
   ): Promise<any> {
-    let messageData: any;
-    let isQuestion = false;
-    /**
-     * `client_message_id` is client-supplied, and `repost:<id>` is the third
-     * clause of the repost discriminator (`isBoardRepostRow`). Refuse the
-     * prefix on the ORDINARY send path so it cannot be forged onto a comment
-     * that later loses `thread_root_id` to ON DELETE SET NULL, and so a
-     * crafted send cannot squat the unique-index slot a real repost needs.
-     * Reposts are written by `createBoardRepost`, never here.
-     */
-    if (
-      typeof clientMessageId === "string" &&
-      clientMessageId.startsWith(BOARD_REPOST_CLIENT_ID_PREFIX)
-    ) {
-      logger.warn("sendMessage: refused a reserved repost client_message_id", {
-        groupId,
-        userId,
-      });
-      clientMessageId = undefined;
-    }
-    const replyToMessageId =
-      typeof options?.replyToMessageId === "string" && options.replyToMessageId
-        ? options.replyToMessageId
-        : undefined;
-
-    const board = await this.resolveBoardContext(groupId);
-    // A muted member reads everything and writes nothing — on the board, in
-    // the lounge and in every channel. Checked before any parsing so a mute
-    // cannot be sidestepped by the shape of the payload.
-    await assertNotMutedInCommunity(this.supabase, userId, board.communityId);
-
-    /**
-     * The whole safety property of a board (spec §3.4): a post whose body
-     * happens to be JSON must NOT become a QUESTION. Skipping the parse keeps
-     * type='TEXT', leaves question_data null, never fires the
-     * groups.question_count trigger, and stops routes/messages.ts writing a
-     * group_question_posted learning event — that branch tests the type.
-     */
-    if (board.isBoard) {
-      logger.info("sendMessage: board post, question parsing skipped", {
-        groupId,
-      });
-    } else {
-      // First, try to parse as JSON to check if it's a question
-      try {
-        messageData = JSON.parse(content);
-        isQuestion = messageData.type === "QUESTION" || messageData.questionStem;
-        logger.info("sendMessage: Parsed content as JSON", {
-          isQuestion,
-          type: messageData.type,
-          hasQuestionStem: !!messageData.questionStem,
-        });
-      } catch (parseError) {
-        // Not JSON, treat as text message
-        logger.info("sendMessage: Content is plain text");
-        isQuestion = false;
-      }
-    }
-
-    const mentionSource = isQuestion
-      ? String(messageData?.questionStem || content)
-      : content;
-    const mentionedUserIds = await this.resolveGroupMentionUserIds(
+    return chatSendData.sendMessage(
+      this.supabase,
+      {
+        resolveBoardContext: (gid) => this.resolveBoardContext(gid),
+        resolveGroupMentionUserIds: (gid, sid, text, explicitIds) =>
+          this.resolveGroupMentionUserIds(gid, sid, text, explicitIds),
+        resolveThreadRootForReply: (table, replyToId, scope) =>
+          this.resolveThreadRootForReply(table, replyToId, scope),
+        findGroupMessageByClientId: (gid, uid, clientId) =>
+          this.findGroupMessageByClientId(gid, uid, clientId),
+        resolveCommunityRoleFor: (uid, communityId, createdBy) =>
+          this.resolveCommunityRoleFor(uid, communityId, createdBy),
+        incrementUserStatsAndAwardBadges: (uid, increments) =>
+          this.incrementUserStatsAndAwardBadges(uid, increments),
+        notifyGroupMessageRecipients: (params) =>
+          this.notifyGroupMessageRecipients(params),
+        notifyMentionedUsers: (params) => this.notifyMentionedUsers(params),
+        notifyReplyRecipient: (params) => this.notifyReplyRecipient(params),
+        notifyBoardCommentRecipients: (params) =>
+          this.notifyBoardCommentRecipients(params),
+        attachReplyPreview: (message, table) =>
+          this.attachReplyPreview(message, table),
+      },
       groupId,
       userId,
-      mentionSource,
-      options?.mentionedUserIds,
+      content,
+      clientMessageId,
+      options,
     );
-
-    let threadRootId: string | undefined;
-    if (replyToMessageId) {
-      threadRootId = await this.resolveThreadRootForReply(
-        "messages",
-        replyToMessageId,
-        {
-          groupId,
-        },
-      );
-    }
-
-    if (isQuestion) {
-      // Question message
-      logger.info("sendMessage: Inserting QUESTION message", {
-        groupId,
-        userId,
-        questionStem: messageData.questionStem?.substring(0, 50),
-        questionType: messageData.questionType,
-      });
-
-      const insertBase: Record<string, unknown> = {
-        group_id: groupId,
-        sender_id: userId,
-        mentioned_user_ids: mentionedUserIds,
-      };
-      if (clientMessageId) {
-        insertBase.client_message_id = clientMessageId;
-      }
-      if (replyToMessageId) {
-        insertBase.reply_to_message_id = replyToMessageId;
-      }
-      if (threadRootId) {
-        insertBase.thread_root_id = threadRootId;
-      }
-
-      const { data, error } = await this.supabase
-        .from("messages")
-        .insert({
-          ...insertBase,
-          type: "QUESTION",
-          question_data: messageData,
-        })
-        .select()
-        .single();
-
-      if (error) {
-        if (error.code === "23505" && clientMessageId) {
-          const existing = await this.findGroupMessageByClientId(
-            groupId,
-            userId,
-            clientMessageId,
-          );
-          if (existing) return existing;
-        }
-        logger.error("sendMessage: Failed to insert QUESTION message", {
-          error,
-        });
-        throw error;
-      }
-
-      logger.info("sendMessage: QUESTION message inserted successfully", {
-        messageId: data.id,
-        timestamp: data.timestamp,
-      });
-
-      // Invalidate cache
-      await cacheService.invalidateGroupCache(groupId);
-
-      await this.incrementUserStatsAndAwardBadges(userId, {
-        questionsCreated: 1,
-      }).catch((err) => {
-        logger.warn("Failed to increment questionsCreated gamification", {
-          userId,
-          err,
-        });
-      });
-
-      const questionPreview = messageData.questionStem
-        ? `New question: ${String(messageData.questionStem).substring(0, 50)}`
-        : "posted a new question";
-      void this.supabase
-        .from("groups")
-        .update({
-          last_message: questionPreview,
-          last_message_time: data.timestamp || new Date().toISOString(),
-        })
-        .eq("id", groupId);
-      const mentionedEveryone =
-        extractMentionUsernames(mentionSource).includes("all");
-      void this.notifyGroupMessageRecipients({
-        groupId,
-        senderId: userId,
-        content: questionPreview,
-        messageId: data.id,
-        excludeUserIds: mentionedUserIds,
-      }).catch((err) => {
-        logger.error("Failed to notify group message recipients", {
-          err,
-          groupId,
-          messageId: data.id,
-        });
-      });
-      void this.notifyMentionedUsers({
-        groupId,
-        senderId: userId,
-        messageId: data.id,
-        mentionedUserIds,
-        preview: questionPreview,
-        mentionedEveryone,
-      });
-      if (replyToMessageId) {
-        void this.notifyReplyRecipient({
-          groupId,
-          senderId: userId,
-          messageId: data.id,
-          replyToMessageId,
-          preview: questionPreview,
-          skipUserIds: mentionedUserIds,
-        });
-      }
-
-      const withReply = await this.attachReplyPreview(data);
-      return {
-        ...withReply,
-        threadRootId: withReply.thread_root_id || undefined,
-        replyCount: 0,
-        receiptStatus: "sent" as const,
-        seenByCount: 0,
-        seenByTotal: 0,
-      };
-    } else {
-      // Text message
-      logger.info("sendMessage: Inserting TEXT message", { groupId, userId });
-
-      const insertBase: Record<string, unknown> = {
-        group_id: groupId,
-        sender_id: userId,
-        mentioned_user_ids: mentionedUserIds,
-      };
-      if (clientMessageId) {
-        insertBase.client_message_id = clientMessageId;
-      }
-      if (replyToMessageId) {
-        insertBase.reply_to_message_id = replyToMessageId;
-      }
-      if (threadRootId) {
-        insertBase.thread_root_id = threadRootId;
-      }
-
-      // A board post's optional title. Pre-migration the column does not
-      // exist and the title is DROPPED, not rejected (spec §3.1).
-      const subject =
-        typeof options?.subject === "string" && options.subject.trim()
-          ? options.subject.trim().slice(0, BOARD_POST_SUBJECT_MAX)
-          : null;
-      const withSubject = !!subject && (await hasMessageBoardColumns(this.supabase));
-
-      /**
-       * The post's kind. Only meaningful on a board — a group chat message
-       * has no kind, and writing one there would put a badge on a chat
-       * bubble. An `announcement` is moderators-only and pins itself, so the
-       * role is resolved here (the one query it costs is paid only by the
-       * rare announcement), and the cap is enforced after the insert.
-       */
-      const requestedKind = board.isBoard
-        ? normalizeBoardPostKind(options?.postKind)
-        : BOARD_POST_KIND_DEFAULT;
-      let postKind: BoardPostKind = requestedKind;
-      if (requestedKind === "announcement") {
-        const role = await this.resolveCommunityRoleFor(
-          userId,
-          board.communityId,
-          board.communityCreatedBy,
-        );
-        if (!canPostBoardKind(role, "announcement")) {
-          throw Object.assign(
-            new Error(COMMUNITY_MODERATION_COPY.restrictedKind),
-            { statusCode: 403 },
-          );
-        }
-      }
-      const withPostKind =
-        board.isBoard &&
-        postKind !== BOARD_POST_KIND_DEFAULT &&
-        (await hasMessagePostKind(this.supabase));
-      if (!withPostKind) postKind = BOARD_POST_KIND_DEFAULT;
-      // An announcement pins itself. Pre-migration `withPostKind` is false, so
-      // it degrades to an ordinary post rather than an unlabelled pin that
-      // nothing can find again.
-      const announcementPin =
-        withPostKind && requestedKind === "announcement" ? new Date().toISOString() : null;
-      /**
-       * `image_url` is written on BOARDS ONLY this phase: group chat and DMs
-       * keep sending a photo as its own markdown message, and widening that
-       * here would change how every existing chat bubble renders. The path
-       * check is repeated (the route already ran it) because this is the last
-       * gate before the column is written.
-       */
-      const attachedImageUrl =
-        board.isBoard &&
-        typeof options?.imageUrl === "string" &&
-        isBoardImageUrlAllowed({
-          url: options.imageUrl,
-          userId,
-          groupId,
-          parse: parseStorageObjectUrl,
-        })
-          ? options.imageUrl
-          : null;
-      const insertText = (includeSubject: boolean, includeKind: boolean) =>
-        (this.supabase as any)
-          .from("messages")
-          .insert({
-            ...insertBase,
-            type: "TEXT",
-            text: content,
-            ...(includeSubject ? { subject } : {}),
-            ...(includeKind
-              ? {
-                  post_kind: postKind,
-                  ...(announcementPin
-                    ? { pinned_at: announcementPin, pinned_by: userId }
-                    : {}),
-                }
-              : {}),
-            ...(attachedImageUrl ? { image_url: attachedImageUrl } : {}),
-          })
-          .select()
-          .single();
-
-      let { data, error } = await insertText(withSubject, withPostKind);
-      if (error && withPostKind && isMissingColumnError(error)) {
-        // 20260908120000 is not applied: keep the post, drop the kind.
-        markMessagePostKindMissing();
-        ({ data, error } = await insertText(withSubject, false));
-      }
-      if (error && withSubject && isMissingColumnError(error)) {
-        markMessageBoardColumnsMissing();
-        ({ data, error } = await insertText(false, false));
-      }
-
-      if (error) {
-        if (error.code === "23505" && clientMessageId) {
-          const existing = await this.findGroupMessageByClientId(
-            groupId,
-            userId,
-            clientMessageId,
-          );
-          if (existing) return existing;
-        }
-        logger.error("sendMessage: Failed to insert TEXT message", { error });
-        throw error;
-      }
-
-      logger.info("sendMessage: TEXT message inserted successfully", {
-        messageId: data.id,
-      });
-
-      // Keep group list preview in sync for recipients who have not opened the chat yet.
-      void this.supabase
-        .from("groups")
-        .update({
-          last_message: content,
-          last_message_time: data.timestamp || new Date().toISOString(),
-        })
-        .eq("id", groupId)
-        .then(({ error: groupUpdateError }) => {
-          if (groupUpdateError) {
-            logger.warn("Failed to update group last_message after send", {
-              groupId,
-              error: groupUpdateError,
-            });
-          }
-        });
-
-      const mentionedEveryone =
-        extractMentionUsernames(content).includes("all");
-      /**
-       * Notification policy (§0a decision 3, §3.9). A BOARD post issues NO
-       * per-post fan-out: `notifyGroupMessageRecipients` inserts one
-       * notification plus one push per non-sender member, which on a
-       * community-scale board is a campus-wide push per post. The unread
-       * badge is the Phase 1 signal. Mentions still notify immediately, and a
-       * comment notifies the thread instead — both into the community, never
-       * into Chat.
-       */
-      // A mention inside a COMMENT must open the post that holds it, so the
-      // link carries the thread root when there is one (§8.2).
-      const boardLink = board.isBoard
-        ? boardPostDeepLinkPath(board.communitySlug, groupId, threadRootId ?? data.id)
-        : undefined;
-
-      if (!board.isBoard) {
-        void this.notifyGroupMessageRecipients({
-          groupId,
-          senderId: userId,
-          content,
-          messageId: data.id,
-          excludeUserIds: mentionedUserIds,
-        }).catch((err) => {
-          logger.error("Failed to notify group message recipients", {
-            err,
-            groupId,
-            messageId: data.id,
-          });
-        });
-      }
-      void this.notifyMentionedUsers({
-        groupId,
-        senderId: userId,
-        messageId: data.id,
-        mentionedUserIds,
-        preview: content,
-        mentionedEveryone,
-        link: boardLink,
-      });
-      if (board.isBoard) {
-        if (threadRootId) {
-          void this.notifyBoardCommentRecipients({
-            groupId,
-            senderId: userId,
-            messageId: data.id,
-            threadRootId,
-            preview: content,
-            skipUserIds: mentionedUserIds,
-            communitySlug: board.communitySlug,
-          }).catch((err) => {
-            logger.warn("Failed to notify board comment recipients", {
-              err,
-              groupId,
-              messageId: data.id,
-            });
-          });
-        }
-      } else if (replyToMessageId) {
-        void this.notifyReplyRecipient({
-          groupId,
-          senderId: userId,
-          messageId: data.id,
-          replyToMessageId,
-          preview: content,
-          skipUserIds: mentionedUserIds,
-        });
-      }
-
-      // Invalidate cache
-      await cacheService.invalidateGroupCache(groupId);
-
-      const withReply = await this.attachReplyPreview(data);
-      return {
-        ...withReply,
-        threadRootId: withReply.thread_root_id || undefined,
-        replyCount: 0,
-        receiptStatus: "sent" as const,
-        seenByCount: 0,
-        seenByTotal: 0,
-      };
-    }
   }
 
   /**
@@ -6048,85 +4965,11 @@ export class SupabaseService {
    * same way GET /messages/group/:groupId does it.
    */
   async getPinnedMessage(groupId: string): Promise<Message | null> {
-    if (!groupId) return null;
-    if (!(await hasMessageBoardColumns(this.supabase))) return null;
-
-    const baseSelect = `
-      id,
-      group_id,
-      sender_id,
-      type,
-      text,
-      subject,
-      pinned_at,
-      pinned_by,
-      question_data,
-      timestamp,
-      edited_at,
-      removed_at,
-      upvotes,
-      downvotes,
-      image_url,
-      client_message_id,
-      reply_to_message_id,
-      mentioned_user_ids,
-      thread_root_id,
-      profiles!sender_id (
-        id,
-        name,
-        username,
-        avatar_url
-      )
-    `;
-    // The pinned strip renders the same card as the board list, so it needs
-    // the same reaction counts (20260830120000, which may not be applied).
-    const select = await reactionColumns(this.supabase, baseSelect);
-    const runPinned = (columns: string) =>
-      (this.supabase as any)
-        .from("messages")
-        .select(columns)
-        .eq("group_id", groupId)
-        .not("pinned_at", "is", null)
-        // A pin outlives the post it points at: `remove_chat_message` predates
-        // `pinned_at` and never clears it, and a comment can carry a pin from a
-        // hand-crafted PUT. Neither belongs on the board's PINNED strip.
-        .is("removed_at", null)
-        .is("thread_root_id", null)
-        .order("pinned_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-    let { data, error } = await runPinned(select);
-    if (error && isMissingColumnError(error) && select !== baseSelect) {
-      // `reactions` (20260830120000) is the only optional column this query
-      // adds — the board columns were already probed above — so drop it and
-      // keep the pin rather than losing titles and pins process-wide.
-      markMessageReactionsColumnMissing();
-      ({ data, error } = await runPinned(baseSelect));
-    }
-
-    if (error) {
-      if (isMissingColumnError(error)) {
-        markMessageBoardColumnsMissing();
-        return null;
-      }
-      throw error;
-    }
-    if (!data) return null;
-
-    const msg = data as any;
-    return {
-      id: msg.id,
-      groupId: msg.group_id,
-      sender: mapProfileSender(resolveNestedProfile(msg.profiles), msg.sender_id),
-      senderId: msg.sender_id,
-      timestamp: msg.timestamp
-        ? new Date(msg.timestamp).toISOString()
-        : new Date().toISOString(),
-      upvotes: msg.upvotes || 0,
-      downvotes: msg.downvotes || 0,
-      ...this.normalizeMessageRecord(msg),
-    } as Message;
+    return chatSendData.getPinnedMessage(
+      this.supabase,
+      { normalizeMessageRecord: (row) => this.normalizeMessageRecord(row) },
+      groupId,
+    );
   }
 
   /**
@@ -6143,91 +4986,18 @@ export class SupabaseService {
     userId: string,
     pinned: boolean,
   ): Promise<MessagePinResult> {
-    if (!(await hasMessageBoardColumns(this.supabase))) {
-      return { status: "unavailable" };
-    }
-
-    const { data: row, error: readError } = await this.supabase
-      .from("messages")
-      .select("id, group_id, removed_at, thread_root_id")
-      .eq("id", messageId)
-      .maybeSingle();
-    if (readError) {
-      if (isMissingColumnError(readError)) {
-        markMessageBoardColumnsMissing();
-        return { status: "unavailable" };
-      }
-      throw readError;
-    }
-    const target = row as {
-      group_id?: string;
-      removed_at?: string | null;
-      thread_root_id?: string | null;
-    } | null;
-    const groupId = target?.group_id;
-    if (!groupId) return { status: "not_found" };
-
-    // Only a live root post can BE pinned. Unpinning stays allowed on both, so
-    // a pin left behind by a deletion is still clearable.
-    if (pinned && (target?.removed_at || target?.thread_root_id)) {
-      return { status: "not_pinnable" };
-    }
-
-    // Same access rule as reading the board: membership, or 404.
-    const group = await this.getGroupById(groupId, userId);
-    if (!group) return { status: "not_found" };
-
-    const board = await this.resolveBoardContext(groupId);
-    if (!board.isBoard) return { status: "not_board" };
-
-    const role = board.communityId
-      ? resolveCommunityRole(
-          await this.communityMemberRole(board.communityId, userId),
-          userId,
-          board.communityCreatedBy,
-        )
-      : null;
-    if (!canPinOnBoard({ role, adminIds: group.adminIds || [], userId })) {
-      return { status: "forbidden" };
-    }
-
-    const clearPins = () =>
-      (this.supabase as any)
-        .from("messages")
-        .update({ pinned_at: null, pinned_by: null })
-        .eq("group_id", groupId)
-        .not("pinned_at", "is", null);
-
-    const applyPin = () =>
-      (this.supabase as any)
-        .from("messages")
-        .update(
-          pinned
-            ? { pinned_at: new Date().toISOString(), pinned_by: userId }
-            : { pinned_at: null, pinned_by: null },
-        )
-        .eq("id", messageId)
-        .select()
-        .single();
-
-    if (pinned) await clearPins();
-    let { data, error } = await applyPin();
-    if (error && (error as { code?: string }).code === "23505" && pinned) {
-      await clearPins();
-      ({ data, error } = await applyPin());
-    }
-    if (error) {
-      if (isMissingColumnError(error)) {
-        markMessageBoardColumnsMissing();
-        return { status: "unavailable" };
-      }
-      throw error;
-    }
-
-    await cacheService.deletePattern(`messages:group:${groupId}:*`);
-    await cacheService.delete(`message:raw:${messageId}`);
-
-    return { status: "ok", message: data };
+    return chatSendData.setMessagePin(
+      this.supabase,
+      {
+        getGroupById: (gid, uid) => this.getGroupById(gid, uid),
+        resolveBoardContext: (gid) => this.resolveBoardContext(gid),
+        communityMemberRole: (communityId, uid) =>
+          this.communityMemberRole(communityId, uid),
+      },
+      messageId,
+      userId,
+      pinned,
+    );
   }
 
   // =========================================================================
