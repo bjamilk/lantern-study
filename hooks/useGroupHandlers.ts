@@ -1,99 +1,86 @@
 /**
- * Chat + group handler barrel for the web app: chat selection and message loading, group and
- * DM sending with optimistic reconciliation, message edit/remove, question submission and
- * voting, group CRUD and membership/admin management, and the notification list handlers.
+ * Chat + group handler barrel for the web app — now a COMPOSER: it owns chat
+ * selection, the chat-data load for the open conversation, the unread anchor and
+ * the notification handlers, and calls the five `hooks/groups/*` hooks that own
+ * the mutation domains. Its return shape is unchanged, so no caller moved.
  *
- * Exports: useGroupHandlers({ users }) — the handler bundle App.tsx spreads into the chat
- *  screens, plus `unreadAnchorAt` (where to draw the "new messages" divider) and
- *  `addNotification` (reused by the test/game handler barrels).
- * Touches: authStore, groupStore (groups, messages, dmThreads, directMessages, userVotes,
- *  notifications, dmHistoryClearedAtByThread), uiStore (selectedChat, modals, appMode);
- *  services/supabase for groups, messages, DMs, votes, invites, admin and notification
- *  endpoints; confirmStore and toastStore for user-facing prompts.
+ * Exports: useGroupHandlers({ users }) — the handler bundle App.tsx spreads into
+ *  the chat screens, plus `unreadAnchorAt` (where to draw the "new messages"
+ *  divider) and `addNotification` (reused by the test/game handler barrels); and
+ *  a re-export of `MessageSendBusyError`, which ChatWindow imports from THIS path
+ *  and recognises by identity.
+ * Touches: authStore, groupStore (groups, messages, dmThreads, directMessages,
+ *  userVotes, notifications, dmHistoryClearedAtByThread), uiStore (selectedChat,
+ *  modals, appMode); services/supabase for the chat-load, read-receipt and
+ *  notification-list endpoints — every other endpoint is now reached through one
+ *  of the domain hooks.
+ * Composition order, and why it is this order:
+ *  1. `useDmHandlers` — DM threads, sending, paging. Produces `handleSendDm`.
+ *  2. `useMessageHandlers` — group send/edit/remove/receipts/paging. It FORWARDS
+ *     a DM selection to `handleSendDm`, so it must come after (1).
+ *  3. `useGroupMutations` — group CRUD, membership, admin.
+ *  4. `useBoardHandlers` — posting a question to the board.
+ *  5. `useVoteHandlers` — votes and flags on the question board.
+ *  Only (1) before (2) is load-bearing; the rest keep the reading order of the
+ *  file they came from. `addNotification` and `handleSelectChat` stay here
+ *  because three of the five hooks take them — moving either would make the
+ *  family circular.
  * Gotchas:
- *  - Refresh merges use `mergeChatMessagesById(cached, serverList)`, which is incoming-wins
- *    and therefore SERVER-WINS only in that argument order; it keeps local-only (pending)
- *    rows. Swapping the arguments lets the cache clobber fresh server rows.
- *  - Optimistic sends are keyed by a clientMessageId minted through a DeliveryIntentRegistry,
- *    so a retry of the same text reuses the same id and the server can dedupe. On failure the
- *    error is classified: an UNCERTAIN delivery error keeps the intent (markUncertain) so a
- *    retry cannot double-post; any other error clears it.
- *  - Module-level `sendingGroupIds` / `sendingThreadIds` / `submittingQuestionGroupIds`
- *    (and `votingMessageIds`, now in hooks/groups/useVoteHandlers) are in-flight guards
- *    shared across every mount of this hook. The two SEND locks THROW `MessageSendBusyError` when held (exported here) — they must never
- *    return silently, because the composer clears its text before awaiting and restores it
- *    only from a rejection (E3 H16).
- *  - Fetches are sequence-guarded (`groupMessagesFetchSeqRef`, `dmFetchSeqRef`) and
- *    re-checked against the live selectedChat, so a slow response for a chat the user has
- *    left never writes into the chat now on screen.
- *  - Questions are messages: `type` is MessageType.QUESTION and the real kind lives in
- *    `questionType`.
+ *  - Refresh merges use `mergeChatMessagesById(cached, serverList)`, which is
+ *    incoming-wins and therefore SERVER-WINS only in that argument order; it keeps
+ *    local-only (pending) rows. Swapping the arguments lets the cache clobber
+ *    fresh server rows.
+ *  - Optimistic sends are keyed by a clientMessageId minted through a
+ *    DeliveryIntentRegistry (./groups/deliveryIntents), so a retry of the same
+ *    text reuses the same id and the server can dedupe. On failure the error is
+ *    classified: an UNCERTAIN delivery error keeps the intent (markUncertain) so
+ *    a retry cannot double-post; any other error clears it.
+ *  - The in-flight guards are module-level, shared across every mount. The two
+ *    SEND locks THROW `MessageSendBusyError` when held — they must never return
+ *    silently, because the composer clears its text before awaiting and restores
+ *    it only from a rejection (E3 H16).
+ *  - Fetches here are sequence-guarded (`groupMessagesFetchSeqRef`,
+ *    `dmFetchSeqRef`) and re-checked against the live selectedChat, so a slow
+ *    response for a chat the user has left never writes into the chat now on
+ *    screen.
+ *  - Questions are messages: `type` is MessageType.QUESTION and the real kind
+ *    lives in `questionType`.
+ *
+ * The safety net for this decomposition is `hooks/useGroupHandlers.surface.test.ts`
+ * — read it before changing anything here.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { v4 as uuidv4 } from 'uuid';
-import { User, Group, Message, MessageType, AppMode, DMThread, DirectMessage, AppNotification, GroupPermissions, ChatItem } from '../types';
+import { User, Message, MessageType, AppMode, DMThread, DirectMessage, ChatItem } from '../types';
 import { useAuthStore } from '../stores/authStore';
 import { useGroupStore } from '../stores/groupStore';
 import { useUIStore } from '../stores/uiStore';
-import { initialUserStats } from '../utils/helpers';
+import { mergeChatMessagesById } from '@lantern/shared/utils';
 import {
-    formatActorLabel,
-    mapMessagesFromApi,
-    mapMessageFromApi,
-    mergeChatMessagesById,
-    isTempMessageId,
-    createOptimisticClientMessageId,
-    computeDmReceiptStatus,
-    resolveThreadRootId,
-    isUncertainDeliveryError,
-    reconcileDeliveredItem,
-} from '@lantern/shared/utils';
-import { mapGroupMemberRow, mapGroupRow, mapGroupRows } from '@lantern/shared/groups';
-import { BADGE_DEFINITIONS } from '../gamification';
-import {
-    createGroup, fetchGroups, fetchGroupMembers, addGroupMember, addGroupMembersBatch,
-    uploadGroupAvatar, acceptGroupInvite, declineGroupInvite,
-    sendMessage, fetchMessages, fetchUserVotesForGroup, createNotification,
-    updateUserProfile, deleteGroup, updateGroup, promoteGroupAdmin, demoteGroupAdmin, fetchDirectMessages,
-    sendDirectMessage, markGroupAsRead, markDMAsRead, fetchDmThreads,
+    fetchGroupMembers, fetchMessages, fetchUserVotesForGroup, createNotification,
+    fetchDirectMessages, markGroupAsRead, markDMAsRead, fetchDmThreads,
     markNotificationAsRead, markAllNotificationsAsRead, deleteAllNotifications,
-    deleteDmThread, archiveDmThread, unarchiveDmThread, fetchUserProfile, ensureAuthTokenReady,
-    editGroupMessage, removeGroupMessage, editDirectMessage, removeDirectMessage,
-    removeGroupMember,
-    leaveGroup,
-    type ChatMessageMutationPayload,
+    ensureAuthTokenReady,
 } from '../services/supabase';
-import { confirmDialog } from '../stores/confirmStore';
-import { planDeleteGroupConfirm, planRevokeInvitationConfirm } from '../utils/destructiveConfirm';
-import { useToastStore } from '../stores/toastStore';
-import { syncGamificationProgress } from '../services/gamificationStreak';
 import { navigateForAppMode } from '../utils/appNavigation';
 import { mapDmThreadFromApi, mergeDmThreadLists } from '../utils/dmThreads';
-import { mergeFetchedGroups } from '../utils/groupListMerge';
-import { useVoteHandlers } from './groups/useVoteHandlers';
-import { useBoardHandlers } from './groups/useBoardHandlers';
 
-// The in-flight guards and delivery-intent registries now live in
+// The in-flight guards and delivery-intent registries live in
 // ./groups/deliveryIntents, because the question board and the message composer
 // both post into `group:<id>` and must share ONE registry. `MessageSendBusyError`
 // is re-exported from this module path: ChatWindow recognises it by identity.
 export { MessageSendBusyError } from './groups/deliveryIntents';
-// The API-row normalisers moved verbatim to ./groups/normalisers — every handler
-// family needs them, so they are imported rather than re-declared.
+// The API-row normalisers live in ./groups/normalisers — every handler family
+// needs them, so they are imported rather than re-declared.
 import {
     mapApiGroupMembers,
     normalizeFetchedMessages,
     mapDirectMessageFromApi,
 } from './groups/normalisers';
+import { useVoteHandlers } from './groups/useVoteHandlers';
+import { useBoardHandlers } from './groups/useBoardHandlers';
 import { useDmHandlers } from './groups/useDmHandlers';
 import { useMessageHandlers } from './groups/useMessageHandlers';
 import { useGroupMutations } from './groups/useGroupMutations';
-import {
-    sendingGroupIds,
-    sendingThreadIds,
-    dmDeliveryIntents,
-    MessageSendBusyError,
-} from './groups/deliveryIntents';
 
 interface UseGroupHandlersParams {
     users: User[];
