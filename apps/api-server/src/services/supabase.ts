@@ -1,9 +1,9 @@
 /**
  * SupabaseService — the API server's single data-access layer.
  *
- * This module builds ONE Supabase client from the SERVICE ROLE key
- * (`constructor`, `createClient(config.url, config.serviceRoleKey, …)`) and
- * every route handler in the server reaches Postgres and Storage through it.
+ * This module holds ONE Supabase client built from the SERVICE ROLE key
+ * (`constructor` → `data/client.ts`'s `createDataClient`) and every route
+ * handler in the server reaches Postgres and Storage through it.
  *
  * ## The service role bypasses RLS
  *
@@ -93,7 +93,7 @@
  *    `tsconfig` `paths` or it compiles locally and fails only in CI, and a
  *    stale `packages/shared/dist` makes `tsc` disagree with the runtime.
  */
-import { createClient } from "@supabase/supabase-js";
+import * as dataClient from "./data/client";
 import {
   DatabaseConfig,
   User,
@@ -1016,25 +1016,10 @@ async function assertNotMutedInCommunity(
   }
 }
 
-/**
- * FIXED (F10): is this GoTrue failure the INFRASTRUCTURE's fault rather than
- * the token's?
- *
- * supabase-js reports a network failure as `AuthRetryableFetchError` (status 0
- * or absent) and a gateway failure as a 5xx; a token that is simply bad comes
- * back as a 401/403. Everything unrecognised is treated as transient on
- * purpose: mistaking an outage for a bad token silently signs a student out,
- * while mistaking a bad token for an outage only answers 503 to a caller whose
- * credential was not going to work anyway.
- */
-export function isTransientAuthError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') return true;
-  const name = (error as { name?: unknown }).name;
-  if (name === 'AuthRetryableFetchError') return true;
-  const status = (error as { status?: unknown }).status;
-  if (typeof status !== 'number' || status === 0) return true;
-  return status >= 500;
-}
+// `isTransientAuthError` now lives in `data/client.ts` beside the token
+// verification that is its only caller. Re-exported here because
+// `middleware/auth.ts` imports it from this path.
+export { isTransientAuthError } from "./data/client";
 
 export class SupabaseService {
   private supabase;
@@ -1618,12 +1603,7 @@ export class SupabaseService {
 
   constructor(config: DatabaseConfig) {
     this.supabaseUrl = config.url;
-    this.supabase = createClient(config.url, config.serviceRoleKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    });
+    this.supabase = dataClient.createDataClient(config);
   }
 
   // Get the raw Supabase client for direct operations (RPC calls, etc.)
@@ -13273,6 +13253,10 @@ export class SupabaseService {
   // `isPlatformAdmin` (a `platform_admins` lookup) is the only privilege check
   // in this file, and `verifySupabaseToken` validates a caller's access token
   // against gotrue. `healthCheck` is the readiness probe.
+  //
+  // EXTRACTED (monolith lane M1, step 2): the bodies of all four now live in
+  // `data/client.ts`; what is left here is delegation, kept so the 97
+  // importers of this module do not have to move in the same PR.
   // ===========================================================================
   // Real-time subscription helpers (for future use)
   getSupabaseClient() {
@@ -13280,32 +13264,11 @@ export class SupabaseService {
   }
 
   async isPlatformAdmin(userId: string): Promise<boolean> {
-    const { data: row } = await this.supabase
-      .from("platform_admins")
-      .select("user_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (row) return true;
-
-    const { data: authData, error } =
-      await this.supabase.auth.admin.getUserById(userId);
-    if (error || !authData?.user) return false;
-    return authData.user.app_metadata?.is_platform_admin === true;
+    return dataClient.isPlatformAdmin(this.supabase, userId);
   }
 
   async healthCheck(): Promise<boolean> {
-    try {
-      const { data, error } = await this.supabase
-        .from("profiles")
-        .select("id")
-        .limit(1);
-
-      if (error) throw error;
-      return true;
-    } catch (error) {
-      logger.error("Database health check failed:", error);
-      return false;
-    }
+    return dataClient.healthCheck(this.supabase);
   }
 
   // FIXED (F10): verification used to collapse "this token is bad" and
@@ -13317,26 +13280,13 @@ export class SupabaseService {
   async verifySupabaseToken(
     accessToken: string,
   ): Promise<{ user: any; isValid: boolean }> {
-    const result = await this.verifySupabaseTokenDetailed(accessToken);
-    return { user: result.user, isValid: result.isValid };
+    return dataClient.verifySupabaseToken(this.supabase, accessToken);
   }
 
   async verifySupabaseTokenDetailed(
     accessToken: string,
   ): Promise<{ user: any; isValid: boolean; transient: boolean }> {
-    try {
-      const { data, error } = await this.supabase.auth.getUser(accessToken);
-      if (error) {
-        return { user: null, isValid: false, transient: isTransientAuthError(error) };
-      }
-      return { user: data.user, isValid: true, transient: false };
-    } catch (error) {
-      // A throw out of getUser is never a statement about the token — the SDK
-      // returns bad-credential outcomes in `error`, so reaching here means the
-      // call itself failed.
-      logger.error("Token verification failed:", error);
-      return { user: null, isValid: false, transient: true };
-    }
+    return dataClient.verifySupabaseTokenDetailed(this.supabase, accessToken);
   }
 
   // ===========================================================================
