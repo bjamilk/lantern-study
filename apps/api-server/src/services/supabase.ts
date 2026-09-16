@@ -105,6 +105,7 @@ import type { AdminAnalyticsPayload } from "./data/adminAnalytics";
 import * as categoriesData from "./data/categories";
 import * as notificationsData from "./data/notifications";
 import * as storageAclData from "./data/storageAcl";
+import * as usersData from "./data/users";
 import {
   DatabaseConfig,
   User,
@@ -373,92 +374,9 @@ export type BoardBookmarkPage = {
 // the chat-message envelope they build. They stay module-private to the data
 // layer: nothing outside it imported them.
 
-/** Map a profiles table row (snake_case) to the API User shape (with snake_case aliases). */
-function mapProfileRowToUser(
-  row: Record<string, unknown> | null | undefined,
-): User | null {
-  if (!row || typeof row !== "object") return null;
-  const avatarUrl = (row.avatar_url as string | undefined) || undefined;
-  const mapped = {
-    id: String(row.id),
-    name: String(row.name || ""),
-    username: (row.username as string | undefined) || undefined,
-    firstName: (row.first_name as string | undefined) || undefined,
-    lastName: (row.last_name as string | undefined) || undefined,
-    email: (row.email as string | undefined) || undefined,
-    phoneNumber: (row.phone as string | undefined) || undefined,
-    avatarUrl,
-    points: typeof row.points === "number" ? row.points : 0,
-    badges: Array.isArray(row.badges) ? row.badges : [],
-    stats: row.stats ?? {},
-    settings: row.settings ?? {},
-    settingsVersion:
-      typeof row.settings_version === "number"
-        ? row.settings_version
-        : Number(row.settings_version) || 1,
-    testPresets: Array.isArray(row.test_presets) ? row.test_presets : [],
-    test_presets: Array.isArray(row.test_presets) ? row.test_presets : [],
-    // Aliases for clients that still read snake_case from GET /users/:id
-    avatar_url: avatarUrl,
-    phone: (row.phone as string | undefined) || undefined,
-    first_name: (row.first_name as string | undefined) || undefined,
-    last_name: (row.last_name as string | undefined) || undefined,
-    // Academic identity (20260822130000). Absent columns (migration not yet
-    // applied) read as null so clients always see the keys.
-    institutionId: (row.institution_id as string | null | undefined) ?? null,
-    faculty: (row.faculty as string | null | undefined) ?? null,
-    programme: (row.programme as string | null | undefined) ?? null,
-    studyLevel: toNullableInt(row.study_level),
-    // 20260830090000. Absent column (migration unapplied) reads as null.
-    currentSemester: toNullableInt(row.current_semester),
-    entryYear: toNullableInt(row.entry_year),
-    expectedGraduationYear: toNullableInt(row.expected_graduation_year),
-    // Creator identity (20260823123000). Read back so "Edit bio" can prefill
-    // and the profile can render it; verification_level drives the Verified badge.
-    bio: (row.bio as string | null | undefined) ?? null,
-    verificationLevel: toNullableInt(row.verification_level) ?? 0,
-    lastSeenAt: typeof row.last_seen_at === "string" ? row.last_seen_at : null,
-  };
-  return mapped as User;
-}
-
-function toNullableInt(value: unknown): number | null {
-  if (value == null || value === "") return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
-}
-
-function buildProfileUpsertRow(
-  profile: Partial<User> & {
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    phone?: string;
-    avatar_url?: string;
-  },
-  options?: { allowGamificationFields?: boolean },
-): Record<string, unknown> {
-  const allowGamification = options?.allowGamificationFields === true;
-  const row: Record<string, unknown> = {
-    id: profile.id,
-    name: profile.name,
-    avatar_url: profile.avatarUrl ?? profile.avatar_url,
-    phone: profile.phoneNumber ?? profile.phone,
-    points: allowGamification ? (profile.points ?? 0) : 0,
-    stats: allowGamification ? (profile.stats ?? {}) : {},
-    badges: allowGamification ? (profile.badges ?? []) : [],
-    settings: profile.settings ?? {},
-    username: profile.username ?? undefined,
-    first_name: profile.firstName ?? profile.first_name ?? undefined,
-    last_name: profile.lastName ?? profile.last_name ?? undefined,
-  };
-  if (profile.email) {
-    row.email = profile.email;
-  }
-  return Object.fromEntries(
-    Object.entries(row).filter(([, value]) => value !== undefined),
-  );
-}
+// `mapProfileRowToUser`, `toNullableInt` and `buildProfileUpsertRow` moved to
+// `data/users.ts` (monolith lane M1b, step 6) with the USERS AND PROFILES
+// section, their only caller. They stay module-private to the data layer.
 
 /**
  * Course reference carried on test/bundle payloads: top-level `courseId` wins,
@@ -1370,73 +1288,29 @@ export class SupabaseService {
   // `invalidateProfilePresentationCaches` does with `deletePattern`.
   // ===========================================================================
   // User/Profile Functions
+  //
+  // EXTRACTED (monolith lane M1b, step 6): the bodies now live in
+  // `data/users.ts`, together with the three module-scope helpers only this
+  // section used (`mapProfileRowToUser`, `toNullableInt`,
+  // `buildProfileUpsertRow`). What is left here is delegation.
+
   async fetchUserProfile(userId: string): Promise<User | null> {
-    const cacheKey = `user:${userId}:profile`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .single();
-
-        if (error) throw error;
-        return data;
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return usersData.fetchUserProfile(this.supabase, userId);
   }
 
   async updateUserProfile(
     userId: string,
     updates: Partial<User>,
   ): Promise<User> {
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .update({
-        name: updates.name,
-        avatar_url: updates.avatarUrl,
-        phone: updates.phoneNumber,
-        points: updates.points,
-        stats: updates.stats,
-        badges: updates.badges,
-        settings: updates.settings,
-        username: updates.username,
-        first_name: updates.firstName,
-        last_name: updates.lastName,
-      })
-      .eq("id", userId)
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Invalidate cache
-    await cacheService.invalidateUserCache(userId);
-
-    return data;
+    return usersData.updateUserProfile(this.supabase, userId, updates);
   }
 
   async updateExpoPushToken(userId: string, token: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ expo_push_token: token })
-      .eq("id", userId);
-
-    if (error) throw error;
-    await cacheService.invalidateUserCache(userId);
+    return usersData.updateExpoPushToken(this.supabase, userId, token);
   }
 
   async clearExpoPushToken(userId: string): Promise<void> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .update({ expo_push_token: null })
-      .eq("id", userId);
-
-    if (error) throw error;
-    await cacheService.invalidateUserCache(userId);
+    return usersData.clearExpoPushToken(this.supabase, userId);
   }
 
   private async sendExpoPushForNotification(
@@ -1448,77 +1322,11 @@ export class SupabaseService {
       data?: Record<string, unknown>;
     },
   ): Promise<void> {
-    const pushTypes = new Set([
-      "challenge_invite",
-      "challenge_accepted",
-      "challenge_result",
-      "challenge_opponent_finished",
-      "marketplace_inquiry",
-      "marketplace_purchase",
-      "marketplace_order_update",
-      "marketplace_review_prompt",
-      "saved_search_match",
-      "job_alert",
-      "job_application",
-      "job_application_status",
-      "job_interview",
-      "job_interview_response",
-      "job_offer",
-      "job_offer_response",
-      "job_interview_reminder",
-      "job_offer_reminder",
-      "group_invite",
-      "group_message",
-      "badge_unlock",
-      "test_result",
-      "srs_reminder",
-      "dm_message",
-      // Jobs-board alert family: saved-search matches and pipeline reminders.
-      // Settings policy still applies per user (pushEnabled + marketplaceUpdates).
-      "job_alert",
-      "job_interview_reminder",
-      "job_offer_reminder",
-    ]);
-    if (notification.type && !pushTypes.has(notification.type)) return;
-
-    try {
-      const { data: profile, error } = await this.supabase
-        .from("profiles")
-        .select("expo_push_token, settings")
-        .eq("id", userId)
-        .single();
-
-      if (error || !profile?.expo_push_token) return;
-
-      const { shouldSendExpoPush } =
-        await import("../utils/userSettingsPolicy");
-      if (!shouldSendExpoPush(profile.settings, notification.type)) return;
-
-      const token = profile.expo_push_token as string;
-      if (!token.startsWith("ExponentPushToken")) return;
-
-      await fetch("https://exp.host/--/api/v2/push/send", {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Accept-encoding": "gzip, deflate",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          to: token,
-          title: "Lantern Study",
-          body: notification.message,
-          data: {
-            type: notification.type,
-            link: notification.link,
-            ...(notification.data || {}),
-          },
-          sound: "default",
-        }),
-      });
-    } catch (err) {
-      logger.warn("Expo push notification failed", { userId, err });
-    }
+    return usersData.sendExpoPushForNotification(
+      this.supabase,
+      userId,
+      notification,
+    );
   }
 
   async createUserProfile(
@@ -1530,96 +1338,29 @@ export class SupabaseService {
       avatar_url?: string;
     },
   ): Promise<User> {
-    const row = buildProfileUpsertRow(profile);
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .upsert(row, { onConflict: "id" })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return usersData.createUserProfile(this.supabase, profile);
   }
 
   // New User Methods for API Routes
   async getUsers(
     options: { page?: number; limit?: number; search?: string } = {},
   ): Promise<User[]> {
-    const { page = 1, limit = 20, search } = options;
-    const offset = (page - 1) * limit;
-
-    let query = this.supabase
-      .from("profiles")
-      .select("*")
-      .range(offset, offset + limit - 1);
-
-    if (search) {
-      // Search by name, email, or username
-      const escaped = search.replace(/%/g, "\\%").replace(/_/g, "\\_");
-      const pattern = `%${escaped}%`;
-      query = query.or(
-        `name.ilike.${pattern},email.ilike.${pattern},username.ilike.${pattern}`,
-      );
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    return data || [];
+    return usersData.getUsers(this.supabase, options);
   }
 
   async getUserById(userId: string): Promise<User | null> {
-    const cacheKey = `user:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .single();
-
-        if (error) {
-          if (error.code === "PGRST116") return null; // Not found
-          throw error;
-        }
-
-        return mapProfileRowToUser(data as Record<string, unknown>);
-      },
-      { ttl: 600 },
-    ); // Cache for 10 minutes
+    return usersData.getUserById(this.supabase, userId);
   }
 
   async isProfileVisibleToViewer(
     viewerId: string,
     targetId: string,
   ): Promise<boolean> {
-    if (viewerId === targetId) return true;
-    const { data, error } = await this.supabase.rpc(
-      "profile_visible_to_viewer",
-      {
-        viewer_id: viewerId,
-        target_id: targetId,
-      },
-    );
-    if (error) throw error;
-    return data === true;
+    return usersData.isProfileVisibleToViewer(this.supabase, viewerId, targetId);
   }
 
   async getUserByEmail(email: string): Promise<User | null> {
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .select("*")
-      .eq("email", email)
-      .single();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    return mapProfileRowToUser(data as Record<string, unknown>);
+    return usersData.getUserByEmail(this.supabase, email);
   }
 
   /**
@@ -1627,59 +1368,7 @@ export class SupabaseService {
    * SEC-06: resolution failures use one generic message (no email/ID existence leak).
    */
   async resolveCollaboratorUserId(identifier: string): Promise<string> {
-    const trimmed = identifier.trim();
-    const notFound = () => {
-      const err = new Error(
-        "Unable to add that collaborator. Check the @username and try again.",
-      ) as Error & { code?: string };
-      err.code = "collaborator_not_found";
-      throw err;
-    };
-
-    if (!trimmed) {
-      const err = new Error(
-        "Enter a @username to add a collaborator.",
-      ) as Error & { code?: string };
-      err.code = "collaborator_invalid";
-      throw err;
-    }
-
-    const uuidPattern =
-      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (uuidPattern.test(trimmed)) {
-      const user = await this.getUserById(trimmed);
-      if (!user) notFound();
-      return user!.id;
-    }
-
-    // Email lookups must not reveal whether the address is registered (SEC-06).
-    if (trimmed.includes("@") && trimmed.includes(".")) {
-      const user = await this.getUserByEmail(trimmed);
-      if (!user) notFound();
-      return user!.id;
-    }
-
-    const username = trimmed.replace(/^@/, "").toLowerCase();
-    const { data: byUsername, error: usernameError } = await this.supabase
-      .from("profiles")
-      .select("id")
-      .eq("username", username)
-      .maybeSingle();
-    if (usernameError) throw usernameError;
-    if (byUsername?.id) return byUsername.id;
-
-    const matches = await this.getUsers({ search: trimmed, limit: 5 });
-    if (matches.length === 1) return matches[0].id;
-    if (matches.length > 1) {
-      const err = new Error(
-        "Multiple users match that name. Use an exact @username instead.",
-      ) as Error & { code?: string };
-      err.code = "collaborator_ambiguous";
-      throw err;
-    }
-
-    notFound();
-    return ""; // unreachable
+    return usersData.resolveCollaboratorUserId(this.supabase, identifier);
   }
 
   async createUser(
@@ -1691,54 +1380,14 @@ export class SupabaseService {
       avatar_url?: string;
     },
   ): Promise<User> {
-    const row = buildProfileUpsertRow(userData);
-    const { data, error } = await this.supabase
-      .from("profiles")
-      .upsert(row, { onConflict: "id" })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    return usersData.createUser(this.supabase, userData);
   }
 
+  /** @internal — no caller outside this file. */
   private async invalidateProfilePresentationCaches(
     userId: string,
   ): Promise<void> {
-    const { data: memberships, error } = await this.supabase
-      .from("group_members")
-      .select("group_id")
-      .eq("user_id", userId)
-      .eq("pending", false);
-
-    if (error) {
-      logger.warn(
-        "Could not resolve profile group caches; invalidating globally",
-        {
-          userId,
-          error,
-        },
-      );
-      await Promise.all([
-        cacheService.deletePattern("group:members:*"),
-        cacheService.deletePattern("messages:group:*"),
-        cacheService.deletePattern("group:*:messages"),
-      ]);
-      return;
-    }
-
-    const groupIds = [
-      ...new Set(
-        (memberships || [])
-          .map(
-            (membership: { group_id?: string | null }) => membership.group_id,
-          )
-          .filter((groupId): groupId is string => Boolean(groupId)),
-      ),
-    ];
-    await Promise.all(
-      groupIds.map((groupId) => cacheService.invalidateGroupCache(groupId)),
-    );
+    return usersData.invalidateProfilePresentationCaches(this.supabase, userId);
   }
 
   async updateUser(
@@ -1752,120 +1401,7 @@ export class SupabaseService {
     },
     options: { expectedSettingsVersion?: number } = {},
   ): Promise<User | null> {
-    // Build update object, handling both camelCase and snake_case keys
-    const updateData: any = {};
-
-    if (updates.name !== undefined) updateData.name = updates.name;
-    if (updates.email !== undefined) updateData.email = updates.email;
-    if (updates.avatarUrl !== undefined)
-      updateData.avatar_url = updates.avatarUrl;
-    if (updates.avatar_url !== undefined)
-      updateData.avatar_url = updates.avatar_url;
-    if (updates.phoneNumber !== undefined)
-      updateData.phone = updates.phoneNumber;
-    if (updates.phone !== undefined) updateData.phone = updates.phone;
-    if (updates.username !== undefined) updateData.username = updates.username;
-    if (updates.firstName !== undefined)
-      updateData.first_name = updates.firstName;
-    if (updates.first_name !== undefined)
-      updateData.first_name = updates.first_name;
-    if (updates.lastName !== undefined) updateData.last_name = updates.lastName;
-    if (updates.last_name !== undefined)
-      updateData.last_name = updates.last_name;
-    if (updates.points !== undefined) updateData.points = updates.points;
-    if (updates.stats !== undefined) updateData.stats = updates.stats;
-    if (updates.badges !== undefined) updateData.badges = updates.badges;
-    // Creator bio (Phase 2 · J); normalized + length-checked in routes/users.ts.
-    if ((updates as { bio?: string | null }).bio !== undefined)
-      updateData.bio = (updates as { bio?: string | null }).bio ?? null;
-    // Academic identity columns (validated + institution-checked in routes/users.ts).
-    if (updates.institutionId !== undefined)
-      updateData.institution_id = updates.institutionId || null;
-    if (updates.faculty !== undefined) updateData.faculty = updates.faculty || null;
-    if (updates.programme !== undefined)
-      updateData.programme = updates.programme || null;
-    if (updates.studyLevel !== undefined)
-      updateData.study_level = updates.studyLevel ?? null;
-    if (updates.currentSemester !== undefined)
-      updateData.current_semester = updates.currentSemester ?? null;
-    if (updates.entryYear !== undefined)
-      updateData.entry_year = updates.entryYear ?? null;
-    if (updates.expectedGraduationYear !== undefined)
-      updateData.expected_graduation_year = updates.expectedGraduationYear ?? null;
-    if (updates.settings !== undefined) {
-      // Never nest test_presets into the settings JSONB blob.
-      const settingsPayload =
-        updates.settings &&
-        typeof updates.settings === "object" &&
-        !Array.isArray(updates.settings)
-          ? { ...(updates.settings as Record<string, unknown>) }
-          : updates.settings;
-      if (
-        settingsPayload &&
-        typeof settingsPayload === "object" &&
-        !Array.isArray(settingsPayload)
-      ) {
-        delete (settingsPayload as { test_presets?: unknown }).test_presets;
-      }
-      updateData.settings = settingsPayload;
-    }
-    // Dedicated column — do not merge into settings JSONB (would wipe other categories).
-    if (updates.test_presets !== undefined) {
-      updateData.test_presets = Array.isArray(updates.test_presets)
-        ? updates.test_presets
-        : [];
-    }
-
-    let expectedSettingsVersion = options.expectedSettingsVersion;
-    if (updateData.settings !== undefined && expectedSettingsVersion == null) {
-      const { data: current, error: currentError } = await this.supabase
-        .from("profiles")
-        .select("settings_version")
-        .eq("id", userId)
-        .maybeSingle();
-      if (currentError) throw currentError;
-      if (!current) return null;
-      expectedSettingsVersion = Number(current.settings_version) || 1;
-    }
-
-    let query = this.supabase
-      .from("profiles")
-      .update(updateData)
-      .eq("id", userId);
-    if (updateData.settings !== undefined && expectedSettingsVersion != null) {
-      query = query.eq("settings_version", expectedSettingsVersion);
-    }
-
-    const { data, error } = await query.select().maybeSingle();
-
-    if (error) {
-      if (error.code === "PGRST116") return null; // Not found
-      throw error;
-    }
-
-    if (!data) {
-      if (updateData.settings !== undefined) {
-        const current = await this.getUserById(userId);
-        throw new VersionConflictError(
-          "Settings were updated on another device. Refresh and try again.",
-          current,
-        );
-      }
-      return null;
-    }
-
-    // Invalidate cache (exact user key + pattern)
-    await cacheService.invalidateUserCache(userId);
-    if (
-      Object.prototype.hasOwnProperty.call(updateData, "avatar_url") ||
-      Object.prototype.hasOwnProperty.call(updateData, "name") ||
-      Object.prototype.hasOwnProperty.call(updateData, "username")
-    ) {
-      // Group member lists and message responses embed profile presentation fields.
-      await this.invalidateProfilePresentationCaches(userId);
-    }
-
-    return mapProfileRowToUser(data as Record<string, unknown>);
+    return usersData.updateUser(this.supabase, userId, updates, options);
   }
 
   /**
@@ -1876,139 +1412,43 @@ export class SupabaseService {
    * means "no such account", never "partially deleted".
    */
   async deleteUser(userId: string): Promise<boolean> {
-    const { deleteUserAccountFully } = await import("./userDataLifecycle");
-    const result = await deleteUserAccountFully(this, userId);
-    return result.found;
+    // The lazy `import()` stays HERE, at the facade, because
+    // `deleteUserAccountFully` takes the whole `SupabaseService` — importing
+    // it from `data/users.ts` would point the data layer back at this file.
+    return usersData.deleteUser(
+      {
+        deleteUserAccountFully: async (id) =>
+          (await import("./userDataLifecycle")).deleteUserAccountFully(this, id),
+      },
+      userId,
+    );
   }
 
   async exportUserData(userId: string): Promise<Record<string, unknown>> {
-    const { exportUserDataArchive } = await import("./userDataLifecycle");
-    const { wrapSignedExport } = await import("./accountExportSign");
-    const archive = await exportUserDataArchive(this, userId);
-    let sourceEmail: string | null = null;
-    try {
-      const { data: authUser } =
-        await this.supabase.auth.admin.getUserById(userId);
-      sourceEmail = authUser?.user?.email ?? null;
-    } catch {
-      sourceEmail = null;
-    }
-    return wrapSignedExport({
-      sourceUserId: userId,
-      sourceEmail,
-      data: archive,
-    }) as unknown as Record<string, unknown>;
+    return usersData.exportUserData(
+      this.supabase,
+      {
+        exportUserDataArchive: async (id) =>
+          (await import("./userDataLifecycle")).exportUserDataArchive(this, id),
+      },
+      userId,
+    );
   }
 
   /** @deprecated use deleteUser — kept for internal reference */
   async deleteUserProfileOnly(userId: string): Promise<boolean> {
-    const { error } = await this.supabase
-      .from("profiles")
-      .delete()
-      .eq("id", userId);
-
-    if (error) throw error;
-
-    // Invalidate cache
-    await cacheService.invalidateUserCache(userId);
-
-    return true;
+    return usersData.deleteUserProfileOnly(this.supabase, userId);
   }
 
   async getUserStats(userId: string): Promise<any> {
-    const cacheKey = `user:stats:${userId}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        // Get user profile for basic stats
-        const user = await this.getUserById(userId);
-        if (!user) return null;
-
-        // Get additional stats from related tables
-        const { data: groupCount, error: groupError } = await this.supabase
-          .from("group_members")
-          .select("group_id", { count: "exact" })
-          .eq("user_id", userId);
-
-        const { data: messageCount, error: messageError } = await this.supabase
-          .from("messages")
-          .select("id", { count: "exact" })
-          .eq("sender_id", userId);
-
-        const { data: testResults, error: testError } = await this.supabase
-          .from("test_sessions")
-          .select("score")
-          .eq("user_id", userId);
-
-        if (groupError || messageError || testError) {
-          throw groupError || messageError || testError;
-        }
-
-        const avgScore =
-          testResults && testResults.length > 0
-            ? testResults.reduce(
-                (sum, result) => sum + (result.score || 0),
-                0,
-              ) / testResults.length
-            : 0;
-
-        return {
-          userId,
-          points: user.points || 0,
-          groupsCount: groupCount?.length || 0,
-          messagesCount: messageCount?.length || 0,
-          testsTaken: testResults?.length || 0,
-          averageScore: Math.round(avgScore * 100) / 100,
-          badges: user.badges || [],
-          stats: user.stats || {},
-        };
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return usersData.getUserStats(this.supabase, userId);
   }
 
   async getUserGroups(
     userId: string,
     options: { page?: number; limit?: number } = {},
   ): Promise<Group[]> {
-    const { page = 1, limit = 20 } = options;
-    const offset = (page - 1) * limit;
-
-    const cacheKey = `user:groups:${userId}:${page}:${limit}`;
-
-    return cacheService.cached(
-      cacheKey,
-      async () => {
-        const { data, error } = await this.supabase
-          .from("group_members")
-          .select(
-            `
-          groups (
-            id,
-            name,
-            avatar_url,
-            description,
-            last_message,
-            last_message_time,
-            admin_ids,
-            permissions,
-            parent_id,
-            is_archived,
-            invite_id,
-            course_id,
-            created_at
-          )
-        `,
-          )
-          .eq("user_id", userId)
-          .range(offset, offset + limit - 1);
-
-        if (error) throw error;
-        return data?.map((item: any) => item.groups).filter(Boolean) || [];
-      },
-      { ttl: 300 },
-    ); // Cache for 5 minutes
+    return usersData.getUserGroups(this.supabase, userId, options);
   }
 
   // ===========================================================================
