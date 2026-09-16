@@ -34,10 +34,66 @@
 import {
   isMissingStudySetColumn,
   isMissingTopicColumn,
+  type CourseFilter,
 } from "../academicCourses";
 import { logger } from "../../utils/logger";
 
 import type { DataClient } from "./client";
+
+/**
+ * Course reference carried on test/bundle payloads: top-level `courseId` wins,
+ * else `config.courseId`. Anything that is not a UUID is ignored (null).
+ *
+ * Moved here from `services/supabase.ts` module scope (monolith lane M1c,
+ * step 9): the OFFLINE BUNDLES and TESTS sections are its only two callers and
+ * they now live in two different data modules, so it needs a shared home. It
+ * belongs with the academic filing because that is what a `courseId` is.
+ */
+const COURSE_UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function resolveCourseIdFromConfigLike(
+  payload: { courseId?: unknown; config?: { courseId?: unknown } | null } | null | undefined,
+): string | null {
+  const candidate = payload?.courseId ?? payload?.config?.courseId ?? null;
+  return typeof candidate === "string" && COURSE_UUID_RE.test(candidate)
+    ? candidate
+    : null;
+}
+
+/**
+ * Pull a study set id off a create payload, wherever the client put it.
+ *
+ * Mirrors `resolveCourseIdFromConfigLike`: a set may arrive top-level
+ * (`studySetId` / `study_set_id`) or on the nested `config`, and a session must
+ * be filed the same way whichever door it came through.
+ *
+ * Moved here from `services/supabase.ts` module scope (monolith lane M1c,
+ * step 11), next to its course twin, so `data/tests.ts` can read it without
+ * importing the facade back. Re-exported from `services/supabase.ts` for
+ * `studySetIdFromConfig.test.ts`.
+ */
+export function resolveStudySetIdFromConfigLike(payload: any): string | null {
+  const candidates = [
+    payload?.studySetId,
+    payload?.study_set_id,
+    payload?.config?.studySetId,
+    payload?.config?.study_set_id,
+  ];
+  for (const value of candidates) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * A topic filter only narrows a query when it names one; none/invalid do not.
+ *
+ * Moved here from `services/supabase.ts` module scope (monolith lane M1c,
+ * step 11): `data/tests.ts` and the facade both read it.
+ */
+export const topicFilterApplies = (
+  filter: CourseFilter | undefined,
+): boolean => filter?.kind === "course" || filter?.kind === "unfiled";
 
 /**
  * Validates a topic id against a course id, resolving to the id to store or
